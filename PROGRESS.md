@@ -7,7 +7,7 @@ Certified: 0/300 · Product-true: 0
 
 ## Next shift
 Top item: FTF-0001 — Initialize monorepo
-Blocked: trigger tooling — relay has not fired (see QUEUE.md "Owner actions — current")
+Blocked: none yet — relay has not fired (see QUEUE.md "Owner actions — current")
 
 ## Metrics
 Certified / denominator: 0/300
