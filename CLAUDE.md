@@ -22,10 +22,12 @@ SOURCE_ROOTS: TBD — repo is fresh; first real value comes from FTF-0001
   (Initialize monorepo). Do not treat any guessed list as authoritative until
   that task merges and S1.1 is re-run against the actual layout.
 REPO_VISIBILITY: private (owner-confirmed)
-CLAUDE.md hash: sha256:d5f9c5b80708345c9eeb4dfea307e1e0bed4dc97365c681c6fcf54574478eaa4
-  — computed on this file with the placeholder still in place (self-reference
-  is unavoidable); treat as a drift tripwire, not a self-verifying checksum.
-  Recompute and re-pin here whenever this file's content changes.
+CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
+  sha256sum of this file, one line, no prefix) — do not hardcode a hash value
+  in any prompt or doc. CI (.github/workflows/ci.yml) fails the build if
+  CLAUDE.md.sha256 doesn't match `sha256sum CLAUDE.md`, so any relay/watchdog
+  session can compare sha256sum(CLAUDE.md) to CLAUDE.md.sha256 directly instead
+  of carrying a stale pinned value that goes wrong on every future edit.
 
 ## Setup gaps (declared, not silently worked around)
 - No GitHub/git-host MCP connector was available to the control-plane session

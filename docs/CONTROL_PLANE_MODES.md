@@ -15,8 +15,16 @@ never independently certify, audit, or promote its own work.
 3. Read docs/certifications/queue.md — anything awaiting certification?
 4. Read docs/certifications/watchdog-findings.md — any unreviewed findings?
 Then: if BLOCKER.md has content → UNBLOCK mode. If certifications/queue.md has
-pending items → CERTIFY mode. If CLAUDE.md changed since its hash was last
-pinned → re-verify and re-pin.
+pending items → CERTIFY mode. Check CLAUDE.md integrity by comparing
+`sha256sum CLAUDE.md` against the committed CLAUDE.md.sha256 (CI enforces
+this on every PR too — .github/workflows/ci.yml). If they match, no action.
+If they don't (or CLAUDE.md.sha256 is missing), CLAUDE.md changed without
+its hash file being regenerated in the same commit — that commit's author
+should have run `sha256sum CLAUDE.md | awk '{print $1}' > CLAUDE.md.sha256`
+and committed it alongside their change; fix it the same way now, or write
+BLOCKER.md if the cause isn't obviously a benign edit. Never hardcode a
+CLAUDE.md hash value in a relay/watchdog prompt — always compare against
+the committed file, which is the only value that can't go stale.
 
 ### CERTIFY (independent review of relay's L1 work — this is the core loop)
 1. Read the PR diff.
