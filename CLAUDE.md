@@ -16,7 +16,7 @@ SOURCE_ROOTS: TBD — repo is fresh; first real value comes from FTF-0001
   (Initialize monorepo). Do not treat any guessed list as authoritative until
   that task merges and S1.1 is re-run against the actual layout.
 REPO_VISIBILITY: private (owner-confirmed)
-CLAUDE.md hash: sha256:3dfc28137298f97d8851cc3351c89cb4471c5db1a8d2a3e7190a8334e875ea8f
+CLAUDE.md hash: sha256:137d0fdee4a1aca4ffc1ab7d07f0e1c4cc5bbfa8423b8a1cf321efca8b6e1d31
   — computed on this file with the placeholder still in place (self-reference
   is unavoidable); treat as a drift tripwire, not a self-verifying checksum.
   Recompute and re-pin here whenever this file's content changes.

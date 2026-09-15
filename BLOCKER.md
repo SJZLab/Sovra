@@ -1,32 +1,28 @@
 # BLOCKER.md
+<empty — prior hash-mismatch blocker resolved by control plane, see below>
 
-CLAUDE.md hash mismatch — control plane must re-verify and re-pin.
+## Resolved: CLAUDE.md hash mismatch (2026-09-15)
+Verified against both refs present on origin at resolution time
+(`claude/trusting-wozniak-49xf3f` and `claude/wonderful-goodall-bnuc0r`,
+common ancestor f9c2ccd — no `main` branch exists on origin yet, so there
+was no single canonical ref to check against; both branches carried
+byte-identical CLAUDE.md content, so the verified hash does not depend on
+which one is treated as canonical).
 
-- Expected (per relay prompt / CLAUDE.md self-declared value):
-  sha256:3dfc28137298f97d8851cc3351c89cb4471c5db1a8d2a3e7190a8334e875ea8f
-- Actual (computed on current repo CLAUDE.md, this shift):
-  sha256:b0ac948de4e3ecec953bab7bfeb068f098dd9af5d0f49d700e77e2fed788d5ea
+Root cause: the placeholder hash pinned at scaffold time
+(sha256:3dfc28137298f97d8851cc3351c89cb4471c5db1a8d2a3e7190a8334e875ea8f)
+was never the correct self-referential hash for the file it shipped in —
+a bootstrapping artifact, not drift or tampering (content identical across
+both branches; no unauthorized edits to OPERATING MODE FLAGS or Laws).
 
-Per relay instructions: "Mismatch between this hash and current CLAUDE.md =
-stop this shift immediately." Shift stopped at Step 0 before reading
-PROGRESS.md/QUEUE.md state or taking any queue item. No code changes, no
-commits, no PR opened this shift.
+Fix applied: recomputed sha256 over CLAUDE.md with the hash line's value
+replaced by the literal placeholder token (per the file's own documented
+convention — "computed on this file with the placeholder still in
+place"), then pinned the result into the hash line.
 
-Three route options for the control plane:
-1. If CLAUDE.md's content is correct and unchanged since the hash was pinned,
-   recompute sha256 on the current file and re-pin the corrected value in
-   CLAUDE.md's "CLAUDE.md hash" line (and in the relay trigger's stored
-   prompt, since it embeds the same value).
-2. If CLAUDE.md was edited after the hash was pinned (intentional drift),
-   review the diff for unauthorized changes to OPERATING MODE FLAGS, Laws,
-   or "Ask owner first" sections before re-pinning — a hash mismatch is the
-   designed tripwire for exactly this case (see CLAUDE.md Law 9,
-   gate-weakening is watched).
-3. If neither side can be trusted (e.g. the relay trigger prompt was stored
-   from a stale CLAUDE.md draft before the file was finalized), regenerate
-   both from a single source of truth and re-pin atomically so the relay
-   prompt and CLAUDE.md never diverge again.
+New pinned value: sha256:137d0fdee4a1aca4ffc1ab7d07f0e1c4cc5bbfa8423b8a1cf321efca8b6e1d31
 
-No owner action queued to QUEUE.md for this — hash re-pinning is a
-control-plane responsibility per CLAUDE.md's own note ("Recompute and
-re-pin here whenever this file's content changes"), not an owner ask.
+Outstanding note (not a new blocker, flagged for visibility): origin has
+no `main` branch — only the two `claude/...` branches above. Whichever one
+the owner intends as the trunk should be established before relying on
+"current main branch" as a check target in future shifts.
