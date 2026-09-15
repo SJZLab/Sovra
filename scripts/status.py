@@ -46,6 +46,7 @@ def main():
         1 for e in matrix.values()
         if e.get('proof_state') == 'L2-CERTIFIED'
         and e.get('certification_state') in ('CERTIFIED', 'PROMOTED')
+        and e.get('proving_symbol')
     )
 
     print(f'Status: {certified}/{len(matrix)} certified · {product_true} product-true')
