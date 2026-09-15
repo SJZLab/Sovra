@@ -9,12 +9,10 @@ proving_symbol; it is structural layout, not a live-wired path, so it is
 CERTIFIED without counting toward product-true)
 
 ## Owner actions — current
-- 2026-09-15: Two setup gaps block relay start — (1) no GitHub connector
-  available to push this scaffold to SJZLab/Sovra, (2) no trigger tooling
-  available to create the 2h relay / watchdog triggers. See CLAUDE.md
-  "Setup gaps". Push this scaffold, then create the triggers (or grant a
-  control-plane session both a git-host connector and trigger tooling and
-  re-run Groundwork S1.7/S1.8).
+- 2026-09-15: One setup gap remains — no trigger tooling available to
+  create the 2h relay / watchdog triggers. See CLAUDE.md "Setup gaps".
+  Owner must create them (or grant a control-plane session trigger
+  tooling and re-run Groundwork S1.7/S1.8).
 
 ## Active (relay works this)
 Nothing active — FTF-0001 merged and certified (see Done below). Next

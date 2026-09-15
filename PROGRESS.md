@@ -82,7 +82,19 @@ Knowledge graph: not set up (cognee-cli not found this shift; still
 text-search fallback per S1.9)
 
 ## Open owner asks
-See QUEUE.md "Owner actions — current" (unchanged this shift — two setup
-gaps, dated 2026-09-15, still there pending owner response; a note about
-gap #1 possibly being stale was added to docs/certifications/queue.md for
-Control plane to verify, not asserted as resolved).
+2026-09-15: Owner resolved setup gap #1 (GitHub connector) — repo
+push/PR/merge access is solved via a Claude Code terminal session (6 PRs
+merged, real CI verified this shift); no longer a blocker for
+relay/certification work. Removed from QUEUE.md "Owner actions — current"
+per the "remove the moment the owner responds" rule. Separately and
+explicitly *not* tracked here: the owner also noted the GitHub connector
+inside claude.ai chat itself still errors on repo access — downgraded by
+the owner to a known product bug worth periodic re-checking, not a Sovra
+blocker, so it stays out of QUEUE.md.
+Gap #2 (2h relay / watchdog trigger tooling) is still open — see QUEUE.md
+"Owner actions — current".
+Not yet done, flagged for the owner but not acted on unilaterally:
+CLAUDE.md's OPERATING MODE FLAGS (`GIT_CONNECTOR: none`, `GIT_WRITE: none`)
+and "Setup gaps" section describe the pre-resolution state and are now
+stale. Editing CLAUDE.md changes its hash-pinned content (drift tripwire),
+so this wasn't done without being asked.
