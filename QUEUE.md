@@ -7,12 +7,11 @@ Certified: 0/300 · Provisional: 0 · Blocked: 0
 Product-true (Law 16): 0 — must match certified
 
 ## Owner actions — current
-- 2026-09-15: Two setup gaps block relay start — (1) no GitHub connector
-  available to push this scaffold to SJZLab/Sovra, (2) no trigger tooling
-  available to create the 2h relay / watchdog triggers. See CLAUDE.md
-  "Setup gaps". Push this scaffold, then create the triggers (or grant a
-  control-plane session both a git-host connector and trigger tooling and
-  re-run Groundwork S1.7/S1.8).
+- 2026-09-15: One setup gap blocks relay start — no trigger tooling available
+  to create the 2h relay / watchdog triggers. GitHub connector gap resolved
+  (scaffold pushed). See CLAUDE.md "Setup gaps". Create the triggers to
+  enable relay start (or grant a control-plane session trigger tooling and
+  re-run Groundwork S1.8).
 
 ## Active (relay works this)
 - [ ] FTF-0001 — Initialize monorepo (no deps; requirements AF-31, AF-35;
