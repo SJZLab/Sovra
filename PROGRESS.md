@@ -1,100 +1,110 @@
 # PROGRESS — Sovra
-Updated: 2026-09-15T00:00:00Z · Shift: 1 (first relay shift genuinely completed end-to-end)
+Updated: 2026-09-15T00:00:00Z · Shift: this is a relay OPERATE/blocker shift
+(no new FTF work — see "This shift"). Denominator: 1/300 certified,
+unchanged.
 
-## Last shift
-Completed: FTF-0001 — Initialize monorepo — CERTIFIED (L2, control-plane,
-2026-09-15). Merged as PR #3, merge commit
-7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561; ledger entry in
-docs/certifications/ledger.md. Not yet PROMOTED — L4 gate is release-only
-and hasn't run.
-PRs: https://github.com/SJZLab/Sovra/pull/3 (merged),
-https://github.com/SJZLab/Sovra/pull/4 (merged — unrelated pre-existing
-workflow-YAML fix needed before PR #3 could get real CI)
-Certified: 1/300 · Product-true: 0
+## Last shift(s) — condensed (full detail in git history / ledger / watchdog-findings)
+- FTF-0001 (Initialize monorepo) implemented, PR #3 merged
+  (`7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561`), L1-PROVEN.
+- PR #4: unrelated pre-existing YAML-quoting bug fixed across all three
+  GitHub Actions workflow files (real CI was returning 0 jobs before this).
+- PR #5: FTF-0001 certified L2 — later found self-certified (same session
+  authored PR #3 and PR #5, Law 4 violation) by watchdog PR #13
+  (`77b3b2f`), reverted to PROVISIONAL (`3804dfa`), then independently
+  re-certified by a session with no session-ID overlap with either
+  (`795cc44`, merged via PR #14). Both ledger entries are in
+  docs/certifications/ledger.md; the Certified count was never inflated —
+  it stayed 1/300 across the correction.
+- PR #6: added docs/CONTROL_PLANE_MODES.md (OPERATE/CERTIFY/UNBLOCK
+  procedure for any session).
+- PR #7: resolved owner action — GitHub connector setup gap (relay/control
+  plane sessions do have working push/PR/merge access via GitHub MCP; the
+  claude.ai chat connector picker bug is separately tracked as a known
+  product bug, not a Sovra blocker).
+- PR #8: wired docs/CONTROL_PLANE_MODES.md into CLAUDE.md's Read-first
+  line, re-pinned CLAUDE.md's internal self-reference hash.
+- PR #9: a relay shift correctly stopped on a CLAUDE.md hash mismatch
+  caused by PR #8's re-pin outpacing the then-current scheduled trigger's
+  baked-in hash value (BLOCKER.md written, no work touched).
+- PR #10: re-derived SOURCE_ROOTS in scripts/product_truth_check.py from
+  FTF-0001's real layout (apps/web, apps/api,
+  workers/{training,evaluation,data,deploy}, packages/shared).
+- PR #11: fixed the PR #9 root cause architecturally — CLAUDE.md hash is
+  no longer baked into trigger prompts; a session now compares
+  `sha256sum CLAUDE.md` against the committed CLAUDE.md.sha256 directly,
+  which can't go stale independent of a CLAUDE.md edit.
+- PR #12: status.py now requires a non-empty proving_symbol to count
+  toward product-true (closes a loophole where a blank symbol could look
+  like a pass).
+- Watchdog PR #2/#13: two findings logged and resolved (a false "gap
+  resolved" status claim, and the FTF-0001 self-certification above).
+Certified: 1/300 · Product-true: 0 (unchanged all of the above — only
+FTF-0001 is certified and it claims no proving_symbol, so it doesn't count
+toward product-true by design).
 
-## This shift
-STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md — all as
-of prior scaffold-only state (0/300, no relay shift had run).
-STEP 0.2: cognee-cli not found on PATH — text-search fallback active
-(product_truth_check.py's deterministic text search only; no Cognee MCP
-recall used this shift).
-Hash check: scheduled-task-asserted CLAUDE.md hash
-(sha256:68f978e58d9cd6a98e57e4447bbd97960e5c0d5e87acd7be840bfcb8600c39a7)
-verified against `sha256sum CLAUDE.md` on the actual checked-out file —
-match, no drift. (CLAUDE.md's own internal self-reference line reads a
-different, stale placeholder value — the file explicitly documents that
-line as non-self-verifying, so it is not the check that matters here.)
-STEP 1: picked FTF-0001 (only Active item; only item with a full-enough
-contract per docs/architecture/CRITERION_MAPPING.md "Known gap").
-STEP 2 (PEV):
-  P — read SPEC.md, docs/architecture/ARCHITECTURE.md (seven components),
-      docs/architecture/REFERENCE_REPOSITORIES.md, docs/adr/0001, and
-      docs/spec-matrix.yaml's FTF-0001 row. No stack was pinned anywhere in
-      the repo, so I chose conventional, low-risk tooling: pnpm workspace
-      for the JS/TS side (apps/web, packages/shared) and a uv workspace for
-      the Python side (apps/api, workers/{training,evaluation,data,deploy})
-      — Python because Axolotl/Inspect AI/Argilla, which the workers wrap,
-      are Python packages. This is scaffolding (manifests + READMEs), not
-      an implementation, so it doesn't lock in a framework choice.
-  E — wrote tests/test_ftf_0001_monorepo_layout.py FIRST, ran it against
-      the pre-scaffold tree: 26/26 checks failed (output bound to
-      criterion ID FTF-0001, see commit message). Then created the root
-      workspace config (README.md, package.json, pnpm-workspace.yaml,
-      pyproject.toml, .gitignore) and the seven component directories from
-      ARCHITECTURE.md §2, each with a README + manifest. Re-ran the same
-      test: 0 failures. Committed as 00bacb5c992938e47ad4b294c77bf3e48c5c203e.
-  V — ran `python3 scripts/product_truth_check.py --fail-on-unwired`: clean
-      (0/0 — FTF-0001 claims no proving_symbol; it's structural layout, not
-      a live-wired code path, so there's no live-caller assertion to fault-
-      inject against). Opened PR against main from
-      relay/ftf-0001-init-monorepo (never pushed directly to main, per
-      CLAUDE.md's hard instruction-tier norm). Marked PROVISIONAL. Appended
-      to docs/certifications/queue.md for Control plane.
-Updated docs/spec-matrix.yaml FTF-0001: implementation_state=IMPLEMENTED,
-proof_state=L1-PROVEN, certification_state=PROVISIONAL,
-proving_test=tests/test_ftf_0001_monorepo_layout.py, evidence_hash=commit
-sha above. Did NOT set certification_state=CERTIFIED (Law 4 — producer
-never certifies own work) and did NOT fill
-scripts/product_truth_check.py's SOURCE_ROOTS yet (its own comment says to
-fill it "the moment FTF-0001 merges" — this PR hasn't merged).
-Did NOT edit QUEUE.md's "Owner actions — current" block myself. This
-session did have working GitHub MCP write access end-to-end (branch,
-commit, push, PR) — flagged that as a note for Control plane in
-docs/certifications/queue.md rather than declaring the connector setup gap
-resolved unilaterally, given the prior watchdog finding
-(docs/certifications/watchdog-findings.md, 2026-09-15) about exactly this
-kind of unverified "gap resolved" claim.
+## This shift (2026-09-15)
+STEP 0.1: read PROGRESS.md (this file, pre-rewrite), QUEUE.md,
+docs/certifications/queue.md, docs/certifications/ledger.md,
+docs/certifications/watchdog-findings.md — all already reflected the state
+summarized above; nothing pending certification, no unreviewed watchdog
+findings.
+STEP 0.2: `cognee-cli` not on PATH — text-search fallback active again
+this shift (same as every prior shift).
+Hash check: ran `sha256sum CLAUDE.md`, compared against the committed
+CLAUDE.md.sha256 (this scheduled trigger no longer bakes in a value, per
+PR #11) — match
+(`6ac215c16e9adac14ed2f7b88c93e615a3c5f10bc9bab3dfd6b5893174e6dd04`), no
+drift.
+Found BLOCKER.md still contained PR #9's stale hash-mismatch entry even
+though its root cause was fixed by PR #11. Verified the fix holds (hash
+matches cleanly now) and cleared that entry per
+docs/CONTROL_PLANE_MODES.md UNBLOCK step 4.
+STEP 1: QUEUE.md "Active" names FTF-0002 as the next candidate once
+SOURCE_ROOTS is re-derived. Confirmed SOURCE_ROOTS was re-derived (PR
+#10). But cross-checked docs/architecture/CRITERION_MAPPING.md's "Known
+gap" section (confirmed via `git log` unchanged since the initial scaffold
+commit) and docs/TASK_INDEX.md line 327: every task's real DoD
+(acceptance/negative-acceptance/verification contract, "Section 85") is
+still unsupplied, and only FTF-0001 was ever named as detailed enough to
+pick up without it. With FTF-0001 done, this gap now blocks the entire
+remaining backlog, not just one item. Per CLAUDE.md's relay charter ("if
+an item's DoD is unclear — write BLOCKER.md and stop. Do not improvise the
+DoD"), did not pick up FTF-0002 or improvise its DoD.
+STEP 2: N/A — no code/test/certification work this shift; this was an
+OPERATE-style check-in plus a genuine STEP-4(b) blocker.
+Ran `python3 scripts/product_truth_check.py --fail-on-unwired` as a sanity
+check (not tied to any new criterion): clean, 0/0, no regression.
+Wrote a fresh BLOCKER.md: closed the stale PR #9 entry, opened a new entry
+detailing the Section-85 DoD gap with three route options for control
+plane/owner. Added a dated entry to QUEUE.md "Owner actions — current"
+(did not touch the existing trigger-tooling ask, which is still open and
+unresolved). Did not touch docs/spec-matrix.yaml or
+docs/certifications/ledger.md — no certification state changed.
+No new commits to source/tests; PROGRESS.md, QUEUE.md, BLOCKER.md are the
+only files this shift touched. Will open a PR against `main` per CLAUDE.md's
+no-direct-push norm even though this shift is tracker/ops content, not
+product code.
 
 ## Next shift
-Top item: re-derive SOURCE_ROOTS in scripts/product_truth_check.py from
-FTF-0001's real layout (apps/web, apps/api,
-workers/{training,evaluation,data,deploy}, packages/shared), then FTF-0002
-(lint/type checks) and FTF-0005 (config) become the next candidates per
-QUEUE.md's dependency read order.
-Blocked: none.
+Top item: if the owner/control plane has supplied Section 85 content (or
+an explicit narrower DoD authorization) for FTF-0002 or another queue item
+by then, pick that item up per STEP 1/2. Otherwise, re-run the same
+OPERATE check-in (hash, queue, certifications, watchdog) and expect the
+same BLOCKER.md outcome — this is not a "stuck, retry 3x" loop condition,
+it's a correctly-reported waiting state each time until the input changes.
+Blocked: entire FTF-0002+ backlog, on missing Section 85 DoD content (see
+BLOCKER.md, QUEUE.md "Owner actions — current").
 
 ## Metrics
 Certified / denominator: 1/300
 Product-true (Law 16): 0 — must match certified; FTF-0001 has no
 proving_symbol so it is CERTIFIED without counting toward product-true
 L4 gate: not run (Tier 3, release-only — relay never dispatches it)
-Knowledge graph: not set up (cognee-cli not found this shift; still
-text-search fallback per S1.9)
+Knowledge graph: not set up (cognee-cli not found this shift either; still
+text-search fallback)
 
 ## Open owner asks
-2026-09-15: Owner resolved setup gap #1 (GitHub connector) — repo
-push/PR/merge access is solved via a Claude Code terminal session (6 PRs
-merged, real CI verified this shift); no longer a blocker for
-relay/certification work. Removed from QUEUE.md "Owner actions — current"
-per the "remove the moment the owner responds" rule. Separately and
-explicitly *not* tracked here: the owner also noted the GitHub connector
-inside claude.ai chat itself still errors on repo access — downgraded by
-the owner to a known product bug worth periodic re-checking, not a Sovra
-blocker, so it stays out of QUEUE.md.
-Gap #2 (2h relay / watchdog trigger tooling) is still open — see QUEUE.md
-"Owner actions — current".
-Not yet done, flagged for the owner but not acted on unilaterally:
-CLAUDE.md's OPERATING MODE FLAGS (`GIT_CONNECTOR: none`, `GIT_WRITE: none`)
-and "Setup gaps" section describe the pre-resolution state and are now
-stale. Editing CLAUDE.md changes its hash-pinned content (drift tripwire),
-so this wasn't done without being asked.
+See QUEUE.md "Owner actions — current" (single source of truth per
+CLAUDE.md — not duplicated here). As of this shift: (1) 2h relay/watchdog
+trigger tooling still not created, (2) Section 85 DoD content needed for
+FTF-0002 onward (new this shift).
