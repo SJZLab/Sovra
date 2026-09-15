@@ -1,0 +1,33 @@
+name: Release Gate
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    if: github.ref != 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      # PLACEHOLDER — full E2E + integration suite. Release-only, never per-item,
+      # never dispatched by the relay (CLAUDE.md Law + Ship Gate rule).
+      - name: Full E2E + integration
+        run: echo "TODO: full suite once product exists"
+      - name: Product-truth full scan
+        run: python3 scripts/product_truth_check.py --all-roots --fail-on-unwired
+      - name: Containment check
+        run: |
+          if command -v bwrap >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then
+            echo "containment available"
+          else
+            echo "CONTAINMENT: none — this release is GATED-MANUALLY, not L4"
+          fi

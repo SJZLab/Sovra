@@ -1,0 +1,15 @@
+name: Smoke
+on:
+  deployment_status:
+    types: [success]
+jobs:
+  smoke:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # PLACEHOLDER — health check + critical path only, no full E2E.
+      # Fill once FTF-R008 (internal compact/production placement) and the
+      # first Railway deploy target exist.
+      - name: Smoke
+        run: echo "TODO: health check against Railway deploy URL once FTF-R008 lands"

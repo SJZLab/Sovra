@@ -1,0 +1,26 @@
+name: CI
+on: [pull_request]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      # PLACEHOLDER — FTF-0001/0002/0003 (monorepo init, lint/format/type checks,
+      # test harnesses) define the real stack commands here. Zero E2E in Tier 1.
+      - name: Typecheck + lint + unit
+        run: echo "TODO: fill once FTF-0001/0002/0003 land (monorepo + lint/type + test harness)"
+      - name: Product-truth check
+        run: python3 scripts/product_truth_check.py --fail-on-unwired
+      - name: Status tool
+        run: python3 scripts/status.py
+      # Knowledge graph ingestion — commented out until M0 closes (N/A for fresh
+      # repo, but left disabled until FTF-0001 lands so there is something to ingest).
+      # - name: Update knowledge graph
+      #   run: |
+      #     pip install cognee --quiet
+      #     cognee-cli remember .
