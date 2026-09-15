@@ -21,7 +21,7 @@ jobs:
       # PLACEHOLDER — full E2E + integration suite. Release-only, never per-item,
       # never dispatched by the relay (CLAUDE.md Law + Ship Gate rule).
       - name: Full E2E + integration
-        run: echo "TODO: full suite once product exists"
+        run: 'echo "TODO: full suite once product exists"'
       - name: Product-truth full scan
         run: python3 scripts/product_truth_check.py --all-roots --fail-on-unwired
       - name: Containment check

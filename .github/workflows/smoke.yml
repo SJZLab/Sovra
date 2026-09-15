@@ -12,4 +12,4 @@ jobs:
       # Fill once FTF-R008 (internal compact/production placement) and the
       # first Railway deploy target exist.
       - name: Smoke
-        run: echo "TODO: health check against Railway deploy URL once FTF-R008 lands"
+        run: 'echo "TODO: health check against Railway deploy URL once FTF-R008 lands"'
