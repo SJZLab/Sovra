@@ -48,6 +48,11 @@ Never certify a PR authored by this same session/identity — that's
 self-certification (Law 4). Never accept the producer's own local test run as
 the certifying evidence; CI must have actually run it independently.
 
+Before certifying any PR, compare your own session ID against every commit's
+session ID on that PR. If any match, you are not an independent certifier for
+that PR — say so and stop. State the session-ID comparison explicitly in
+every ledger.md entry, not just a role label.
+
 ### UNBLOCK (relay wrote BLOCKER.md)
 1. Read BLOCKER.md: what failed, what was tried, the relay's route options.
 2. Code/logic problem → pick or extend a route option; if it needs an owner

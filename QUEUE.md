@@ -44,3 +44,11 @@ full contract isn't available to you, write BLOCKER.md — do not improvise.
       7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561. Ledger:
       docs/certifications/ledger.md. Not yet PROMOTED — L4 gate is
       release-only and hasn't run.
+      Note: the original 2026-09-15 L2 certification was found
+      self-certified (watchdog PR #13 — PR #3 and PR #5 share session
+      identity, Law 4 violation), briefly reverted to PROVISIONAL, then
+      independently re-verified and re-certified same day by a session
+      with no session-ID overlap with either PR #3/#5 or PR #13. See
+      docs/certifications/ledger.md for both entries. Count below was
+      never inflated by this — it stayed 1/300 before and after, since
+      the correction and re-certification landed together.
