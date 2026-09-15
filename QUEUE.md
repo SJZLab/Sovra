@@ -3,8 +3,9 @@ Updated: 2026-09-15 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 0/300 · Provisional: 0 · Blocked: 0
-Product-true (Law 16): 0 — must match certified
+Certified: 0/300 · Provisional: 1 (FTF-0001) · Blocked: 0
+Product-true (Law 16): 0 — must match certified (FTF-0001 has no
+proving_symbol; it is structural layout, not a live-wired path)
 
 ## Owner actions — current
 - 2026-09-15: Two setup gaps block relay start — (1) no GitHub connector
@@ -15,9 +16,12 @@ Product-true (Law 16): 0 — must match certified
   re-run Groundwork S1.7/S1.8).
 
 ## Active (relay works this)
-- [ ] FTF-0001 — Initialize monorepo (no deps; requirements AF-31, AF-35;
-      scenarios Q01, Q26). First item — nothing else is unblocked until this
-      merges and SOURCE_ROOTS is re-derived from the real layout.
+- [~] FTF-0001 — Initialize monorepo (no deps; requirements AF-31, AF-35;
+      scenarios Q01, Q26). L1-PROVEN this shift (2026-09-15), PR opened as
+      PROVISIONAL against main from relay/ftf-0001-init-monorepo, appended
+      to docs/certifications/queue.md. Awaiting Control plane L2
+      certification — not self-certified (Law 4). Nothing else unblocks
+      until this merges and SOURCE_ROOTS is re-derived from the real layout.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
