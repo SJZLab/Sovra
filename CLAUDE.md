@@ -3,6 +3,12 @@ Read first: SPEC.md → docs/spec-matrix.yaml → docs/architecture/ → docs/ce
 
 OPERATING MODE FLAGS:
 BRANCH_PROTECTION: instruction-tier (not probed — no git connector this session)
+  — not machine-enforced, so this is a hard instruction, not a suggestion:
+  every session opens a PR against main and never pushes directly to main,
+  even though nothing currently stops it. (2026-09-15: two unrelated sessions
+  each pushed a scaffold commit straight to origin, one landing as a new
+  `main` with an unearned "gap resolved" status claim — see
+  docs/certifications/watchdog-findings.md. This line exists to close that.)
 CONTAINMENT: none (GATED_MANUALLY: true)
 DEPLOY_TARGET: Railway
 CI_PROVIDER: GitHub Actions (assumed — not probed)
@@ -16,7 +22,7 @@ SOURCE_ROOTS: TBD — repo is fresh; first real value comes from FTF-0001
   (Initialize monorepo). Do not treat any guessed list as authoritative until
   that task merges and S1.1 is re-run against the actual layout.
 REPO_VISIBILITY: private (owner-confirmed)
-CLAUDE.md hash: sha256:137d0fdee4a1aca4ffc1ab7d07f0e1c4cc5bbfa8423b8a1cf321efca8b6e1d31
+CLAUDE.md hash: sha256:49826e3ea02e36a41ddecc4c2720e869a61262853754c242d515e33948075544
   — computed on this file with the placeholder still in place (self-reference
   is unavoidable); treat as a drift tripwire, not a self-verifying checksum.
   Recompute and re-pin here whenever this file's content changes.
