@@ -1,0 +1,10 @@
+[project]
+name = "sovra-worker-training"
+version = "0.0.0"
+description = "Sovra training worker (Axolotl-backed)"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

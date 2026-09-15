@@ -1,0 +1,18 @@
+[project]
+name = "sovra"
+version = "0.0.0"
+description = "Sovra (Model Factory) — Python workspace root"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = [
+  "apps/api",
+  "workers/training",
+  "workers/evaluation",
+  "workers/data",
+  "workers/deploy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
