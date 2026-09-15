@@ -14,3 +14,7 @@ Format per entry: criterion ID · PR · commit · validated-by · date
   docs/certifications/queue.md history for this entry (PR #3) and PR #4
   (unrelated pre-existing workflow-YAML fix required to get real CI
   running on PR #3).
+
+SUPERSEDED — original certification was self-certified (PR #3 and PR #5
+share session identity), invalid per Law 4, found by watchdog PR #13,
+corrected 2026-09-15.
