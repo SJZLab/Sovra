@@ -4,7 +4,7 @@ Updated: 2026-09-15T00:00:00Z · Shift: 1 (first relay shift to actually execute
 ## Last shift
 Completed: FTF-0001 — Initialize monorepo (L1-PROVEN, PROVISIONAL — not
 self-certified)
-PRs: relay/ftf-0001-init-monorepo → main (see PR link below once assigned)
+PRs: https://github.com/SJZLab/Sovra/pull/3 (relay/ftf-0001-init-monorepo → main)
 Certified: 0/300 · Product-true: 0
 
 ## This shift

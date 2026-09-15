@@ -2,8 +2,7 @@
 Relay appends PROVISIONAL items here for the Control plane to certify.
 
 ## 2026-09-15 — FTF-0001 — Initialize monorepo
-- **PR:** relay/ftf-0001-init-monorepo → main (opened this shift; see PR link
-  in PROGRESS.md once assigned)
+- **PR:** https://github.com/SJZLab/Sovra/pull/3 (relay/ftf-0001-init-monorepo → main)
 - **Commit:** 00bacb5c992938e47ad4b294c77bf3e48c5c203e
 - **Test:** tests/test_ftf_0001_monorepo_layout.py — 26 checks
 - **Evidence:** run against pre-scaffold tree → 26/26 FAIL (root config +

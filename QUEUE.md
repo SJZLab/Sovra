@@ -18,7 +18,7 @@ proving_symbol; it is structural layout, not a live-wired path)
 ## Active (relay works this)
 - [~] FTF-0001 — Initialize monorepo (no deps; requirements AF-31, AF-35;
       scenarios Q01, Q26). L1-PROVEN this shift (2026-09-15), PR opened as
-      PROVISIONAL against main from relay/ftf-0001-init-monorepo, appended
+      PROVISIONAL: https://github.com/SJZLab/Sovra/pull/3, appended
       to docs/certifications/queue.md. Awaiting Control plane L2
       certification — not self-certified (Law 4). Nothing else unblocks
       until this merges and SOURCE_ROOTS is re-derived from the real layout.
