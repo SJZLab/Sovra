@@ -1,5 +1,5 @@
 # CLAUDE.md — how to work on Sovra (Model Factory)
-Read first: SPEC.md → docs/spec-matrix.yaml → docs/architecture/ → docs/certifications/ → docs/adr/
+Read first: docs/CONTROL_PLANE_MODES.md → SPEC.md → docs/spec-matrix.yaml → docs/architecture/ → docs/certifications/ → docs/adr/
 
 OPERATING MODE FLAGS:
 BRANCH_PROTECTION: instruction-tier (not probed — no git connector this session)
@@ -22,7 +22,7 @@ SOURCE_ROOTS: TBD — repo is fresh; first real value comes from FTF-0001
   (Initialize monorepo). Do not treat any guessed list as authoritative until
   that task merges and S1.1 is re-run against the actual layout.
 REPO_VISIBILITY: private (owner-confirmed)
-CLAUDE.md hash: sha256:49826e3ea02e36a41ddecc4c2720e869a61262853754c242d515e33948075544
+CLAUDE.md hash: sha256:d5f9c5b80708345c9eeb4dfea307e1e0bed4dc97365c681c6fcf54574478eaa4
   — computed on this file with the placeholder still in place (self-reference
   is unavoidable); treat as a drift tripwire, not a self-verifying checksum.
   Recompute and re-pin here whenever this file's content changes.
