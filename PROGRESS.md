@@ -1,11 +1,16 @@
 # PROGRESS — Sovra
-Updated: 2026-09-15T00:00:00Z · Shift: 1 (first relay shift to actually execute an item)
+Updated: 2026-09-15T00:00:00Z · Shift: 1 (first relay shift genuinely completed end-to-end)
 
 ## Last shift
-Completed: FTF-0001 — Initialize monorepo (L1-PROVEN, PROVISIONAL — not
-self-certified)
-PRs: https://github.com/SJZLab/Sovra/pull/3 (relay/ftf-0001-init-monorepo → main)
-Certified: 0/300 · Product-true: 0
+Completed: FTF-0001 — Initialize monorepo — CERTIFIED (L2, control-plane,
+2026-09-15). Merged as PR #3, merge commit
+7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561; ledger entry in
+docs/certifications/ledger.md. Not yet PROMOTED — L4 gate is release-only
+and hasn't run.
+PRs: https://github.com/SJZLab/Sovra/pull/3 (merged),
+https://github.com/SJZLab/Sovra/pull/4 (merged — unrelated pre-existing
+workflow-YAML fix needed before PR #3 could get real CI)
+Certified: 1/300 · Product-true: 0
 
 ## This shift
 STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md — all as
@@ -61,18 +66,17 @@ resolved unilaterally, given the prior watchdog finding
 kind of unverified "gap resolved" claim.
 
 ## Next shift
-Top item: FTF-0001 awaits Control plane L2 certification + merge. Once
-merged: re-derive SOURCE_ROOTS in scripts/product_truth_check.py from the
-real layout, then FTF-0002 (lint/type checks) and FTF-0005 (config) become
-the next candidates per QUEUE.md's dependency read order.
-Blocked: none. Stopping this shift per stop condition (a) — this item is
-now N/N L1-PROVEN with nothing else unblocked; awaiting Control plane
-certification and (eventually) the L4 gate before PROMOTE.
+Top item: re-derive SOURCE_ROOTS in scripts/product_truth_check.py from
+FTF-0001's real layout (apps/web, apps/api,
+workers/{training,evaluation,data,deploy}, packages/shared), then FTF-0002
+(lint/type checks) and FTF-0005 (config) become the next candidates per
+QUEUE.md's dependency read order.
+Blocked: none.
 
 ## Metrics
-Certified / denominator: 0/300 (1 PROVISIONAL, pending L2)
+Certified / denominator: 1/300
 Product-true (Law 16): 0 — must match certified; FTF-0001 has no
-proving_symbol so it is not counted as product-true either way
+proving_symbol so it is CERTIFIED without counting toward product-true
 L4 gate: not run (Tier 3, release-only — relay never dispatches it)
 Knowledge graph: not set up (cognee-cli not found this shift; still
 text-search fallback per S1.9)

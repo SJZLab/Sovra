@@ -2,13 +2,13 @@
 # implementation_state: ABSENT/IMPLEMENTED/WIRED | proof_state: UNPROVEN/L1-PROVEN/L2-CERTIFIED
 # certification_state: NONE/PROVISIONAL/CERTIFIED/PROMOTED
 FTF-0001:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Initialize monorepo
-  evidence_hash: 00bacb5c992938e47ad4b294c77bf3e48c5c203e
+  evidence_hash: 7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-31, AF-35; scenarios=Q01, Q26; deps=none
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/test_ftf_0001_monorepo_layout.py
 FTF-0002:
