@@ -9,10 +9,27 @@ proving_symbol; it is structural layout, not a live-wired path, so it is
 CERTIFIED without counting toward product-true)
 
 ## Owner actions — current
-- 2026-09-15: One setup gap remains — no trigger tooling available to
-  create the 2h relay / watchdog triggers. See CLAUDE.md "Setup gaps".
-  Owner must create them (or grant a control-plane session trigger
-  tooling and re-run Groundwork S1.7/S1.8).
+- 2026-09-15: One setup gap remains — no *durable* trigger tooling
+  available to create the 2h relay / watchdog triggers. See CLAUDE.md
+  "Setup gaps". Owner must create them (or grant a control-plane session
+  trigger tooling and re-run Groundwork S1.7/S1.8). Note: this shift's
+  own session was itself invoked by some external schedule (its prompt
+  says "started automatically by a schedule"), so a trigger mechanism
+  exists for the relay cadence at minimum — not confirming this gap
+  resolved without evidence of the watchdog trigger and the 08:30/19:30
+  report cadence too, per the prior watchdog finding on unverified
+  "gap resolved" claims. Owner: please confirm what's actually configured.
+- 2026-09-15: Relay is blocked past FTF-0001 — every next-queued item
+  (FTF-0002 first, per dependency order below) needs its full Section 85
+  acceptance/negative-acceptance/verification contract
+  (`docs/TASK_INDEX.md` "Execution interpretation"), which has never been
+  supplied to this repo (confirmed: `docs/TASK_INDEX.md` and
+  `docs/architecture/CRITERION_MAPPING.md` unchanged since the initial
+  scaffold commit `f9c2ccd`). Owner or control plane must either supply
+  real per-task contracts, or write a decided, sliced DoD directly into
+  this file's "Active" section for one task (per CLAUDE.md "Relay is
+  execution-only"), before the relay can pick up any further item without
+  improvising. See BLOCKER.md for full detail.
 
 ## Active (relay works this)
 Nothing active — FTF-0001 merged and certified (see Done below). Next
