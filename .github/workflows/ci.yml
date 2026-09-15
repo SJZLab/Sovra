@@ -5,6 +5,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify CLAUDE.md.sha256
+        run: |
+          if [ ! -f CLAUDE.md ]; then
+            echo "CLAUDE.md not found — nothing to verify."
+            exit 0
+          fi
+          if [ ! -f CLAUDE.md.sha256 ]; then
+            echo "CLAUDE.md exists but CLAUDE.md.sha256 is missing."
+            echo "Generate it and commit it alongside CLAUDE.md:"
+            echo "  sha256sum CLAUDE.md | awk '{print \$1}' > CLAUDE.md.sha256"
+            exit 1
+          fi
+          expected=$(sha256sum CLAUDE.md | awk '{print $1}')
+          actual=$(tr -d '[:space:]' < CLAUDE.md.sha256)
+          if [ "$expected" != "$actual" ]; then
+            echo "CLAUDE.md.sha256 is stale."
+            echo "  CLAUDE.md.sha256 contains: $actual"
+            echo "  sha256sum CLAUDE.md gives: $expected"
+            echo "Regenerate and commit it in the SAME commit as the CLAUDE.md change:"
+            echo "  sha256sum CLAUDE.md | awk '{print \$1}' > CLAUDE.md.sha256"
+            exit 1
+          fi
+          echo "CLAUDE.md.sha256 verified: $actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
