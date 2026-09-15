@@ -13,11 +13,22 @@ CERTIFIED without counting toward product-true)
   create the 2h relay / watchdog triggers. See CLAUDE.md "Setup gaps".
   Owner must create them (or grant a control-plane session trigger
   tooling and re-run Groundwork S1.7/S1.8).
+- 2026-09-15: Section 85 (per-task acceptance/negative-acceptance/
+  verification contract) was never supplied for any of the 300 tasks
+  except FTF-0001. This has silently blocked all further relay work since
+  scaffold creation — see BLOCKER.md for the three route options. Needs an
+  owner/control-plane decision: supply the content, have control plane
+  write a narrow DoD for bootstrap-only tasks, or formally descope the
+  requirement for that task class.
 
 ## Active (relay works this)
-Nothing active — FTF-0001 merged and certified (see Done below). Next
-unblocked item is FTF-0002 (lint/type checks) once SOURCE_ROOTS is
-re-derived from the real layout landed by FTF-0001.
+Nothing active — FTF-0001 merged and certified (see Done below).
+SOURCE_ROOTS has since been re-derived (PR #10), so FTF-0002 (lint/type
+checks) is dependency-unblocked, but it is still not pickable: it has no
+Section 85 acceptance/negative-acceptance/verification contract (see
+docs/architecture/CRITERION_MAPPING.md "Known gap" and BLOCKER.md,
+2026-09-15). Do not mark FTF-0002 Active until that contract exists or
+control plane writes one per CONTROL_PLANE_MODES.md UNBLOCK step 2.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

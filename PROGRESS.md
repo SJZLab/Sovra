@@ -1,7 +1,36 @@
 # PROGRESS — Sovra
-Updated: 2026-09-15T00:00:00Z · Shift: 1 (first relay shift genuinely completed end-to-end)
+Updated: 2026-09-15T21:00:00Z · Shift: relay, 2026-09-15 (blocked, no code
+change — see BLOCKER.md)
 
-## Last shift
+## This shift (relay)
+STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md,
+docs/certifications/watchdog-findings.md. State as of HEAD `1b50304`:
+FTF-0001 CERTIFIED (independently re-certified after a self-certification
+finding — see ledger.md and watchdog-findings.md, both already
+dispositioned, nothing new to review there). Certified: 1/300,
+product-true: 0.
+Hash check: `sha256sum CLAUDE.md` == committed `CLAUDE.md.sha256`
+(`6ac215c1...`) — clean, no drift.
+Resolved a stale BLOCKER.md left over from an earlier same-day shift
+(CLAUDE.md-hash-mismatch incident, PR #9): its root-cause fix (PR #11,
+self-verifying `CLAUDE.md.sha256` convention) is now confirmed working —
+this shift's hash check passed cleanly under the new convention. Cleared
+that entry.
+STEP 1: QUEUE.md Active was empty; SOURCE_ROOTS (the stated blocker on
+FTF-0002) had already been re-derived (PR #10), but FTF-0002 still has no
+Section 85 acceptance/negative-acceptance/verification contract per
+`docs/architecture/CRITERION_MAPPING.md` "Known gap" (true of every
+remaining task, not just FTF-0002 — confirmed no Section 85 content exists
+anywhere in the tree). Declining to improvise a DoD per CLAUDE.md "Relay is
+execution-only". Wrote a fresh BLOCKER.md with three route options and
+added the gap to QUEUE.md "Owner actions — current" (it had never been
+surfaced there before, only documented passively in CRITERION_MAPPING.md
+since scaffold creation).
+STEP 3: this file, before stopping.
+STEP 4: stop condition (b) — true blocker (DoD unclear for every
+dependency-unblocked item). No code changed. No PR opened this shift.
+
+## Last shift (pre-existing, kept for history)
 Completed: FTF-0001 — Initialize monorepo — CERTIFIED (L2, control-plane,
 2026-09-15). Merged as PR #3, merge commit
 7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561; ledger entry in
