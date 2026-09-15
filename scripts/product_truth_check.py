@@ -13,20 +13,19 @@ during shift work — these are complementary, not the same path.
 """
 import pathlib, sys, argparse
 
-# PROVISIONAL — Sovra is a fresh repo; the monorepo layout does not exist yet
-# (FTF-0001 "Initialize monorepo" is the first queue item). Fill this list for
-# real the moment FTF-0001 merges, from whatever layout it actually produces —
-# do not leave this list as a guess once the repo has source directories.
-# Best-effort projection from docs/architecture/ARCHITECTURE.md's seven-component
-# split, pending confirmation:
+# Re-derived from the real layout FTF-0001 produced (PR #3), not a guess.
+# Each component is currently a flat directory (README.md + manifest only,
+# no src/ subdirectory yet — that's a later queue item, not FTF-0001's).
+# When a component gains a src/ (or equivalent) convention, narrow its
+# entry here rather than leaving the wider root once real code lands.
 SOURCE_ROOTS = [
-    # 'apps/web/src',        # Unified Factory UI
-    # 'apps/api/src',        # Factory API + policy
-    # 'workers/training',    # Axolotl-backed training worker
-    # 'workers/evaluation',  # Inspect AI-backed evaluation worker
-    # 'workers/data',        # Argilla-backed data/review worker
-    # 'workers/deploy',      # deployment controller (vLLM/LiteLLM)
-    # 'packages/shared',     # shared schema/adapter contracts
+    'apps/web',           # Unified Factory UI
+    'apps/api',           # Factory API + policy
+    'workers/training',   # Axolotl-backed training worker
+    'workers/evaluation', # Inspect AI-backed evaluation worker
+    'workers/data',       # Argilla-backed data/review worker
+    'workers/deploy',     # deployment controller (vLLM/LiteLLM)
+    'packages/shared',    # shared schema/adapter contracts
 ]
 
 TEST_PATTERNS = ['/test/', '/tests/', '.test.', '.spec.', '_test.', 'test_']
