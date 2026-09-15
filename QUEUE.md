@@ -3,9 +3,10 @@ Updated: 2026-09-15 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 0/300 · Provisional: 1 (FTF-0001) · Blocked: 0
+Certified: 1/300 · Provisional: 0 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001 has no
-proving_symbol; it is structural layout, not a live-wired path)
+proving_symbol; it is structural layout, not a live-wired path, so it is
+CERTIFIED without counting toward product-true)
 
 ## Owner actions — current
 - 2026-09-15: Two setup gaps block relay start — (1) no GitHub connector
@@ -16,12 +17,9 @@ proving_symbol; it is structural layout, not a live-wired path)
   re-run Groundwork S1.7/S1.8).
 
 ## Active (relay works this)
-- [~] FTF-0001 — Initialize monorepo (no deps; requirements AF-31, AF-35;
-      scenarios Q01, Q26). L1-PROVEN this shift (2026-09-15), PR opened as
-      PROVISIONAL: https://github.com/SJZLab/Sovra/pull/3, appended
-      to docs/certifications/queue.md. Awaiting Control plane L2
-      certification — not self-certified (Law 4). Nothing else unblocks
-      until this merges and SOURCE_ROOTS is re-derived from the real layout.
+Nothing active — FTF-0001 merged and certified (see Done below). Next
+unblocked item is FTF-0002 (lint/type checks) once SOURCE_ROOTS is
+re-derived from the real layout landed by FTF-0001.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -43,3 +41,8 @@ full contract isn't available to you, write BLOCKER.md — do not improvise.
 ## Blocked
 
 ## Done (certified + promoted via L4)
+- [x] FTF-0001 — Initialize monorepo. CERTIFIED 2026-09-15 (control-plane
+      L2). PR: https://github.com/SJZLab/Sovra/pull/3, merge commit
+      7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561. Ledger:
+      docs/certifications/ledger.md. Not yet PROMOTED — L4 gate is
+      release-only and hasn't run.
