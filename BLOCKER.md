@@ -53,3 +53,31 @@ work.
 No QUEUE.md item was picked or worked this shift. No commits made to
 source beyond this BLOCKER.md. Stopping per STEP 4(b)/(hash-mismatch hard
 stop).
+
+---
+
+## Control-plane review (2026-09-15)
+Independently re-verified: `sha256sum CLAUDE.md` on `main` HEAD `c1a3870`
+gives `f324e834bb6f29972fa5c78bb574bbba41b3af67d009695eea675b292ed7cd2d`,
+confirming this shift's root-cause check exactly. This session's own
+`c1a3870` commit message explicitly anticipated this fire, so it is
+expected fallout from an authorized edit (CLAUDE.md's Read-first wiring +
+hash re-pin, owner-requested), not tampering. Diagnosis is correct; route
+option 1 is the fix.
+
+**Not resolved yet:** re-pinning the *scheduled relay trigger's* baked-in
+hash to `sha256:f324e834bb6f29972fa5c78bb574bbba41b3af67d009695eea675b292ed7cd2d`
+requires editing the trigger's own configuration, which lives outside this
+repo and outside this session's tool surface (same `create_trigger`/
+`fire_trigger` gap CLAUDE.md's "Setup gaps" already declares) — matches
+route option 2. Reported to the owner directly in the conversation driving
+this session rather than closed out here. This entry stays as a live
+record, not cleared, until the owner confirms the trigger's hash is
+updated — the next relay fire will either succeed (fix applied) or
+regenerate an equally-accurate BLOCKER.md (fix not yet applied); either
+outcome is informative, so nothing is lost by leaving this in place.
+
+Route option 3 (rethink the hashing convention so a naive external
+`sha256sum` and the file's self-reference agree without manual re-sync) is
+a real architectural question, not something control plane is deciding
+unilaterally here — flagged to the owner alongside this entry.
