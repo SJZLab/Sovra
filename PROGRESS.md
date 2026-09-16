@@ -1,5 +1,146 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T19:10:00Z
+Updated: 2026-09-16T21:02:23Z
+
+## 2026-09-16T21:02:23Z — FTF-R001 implemented (Provisional, PR #47 opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main` (local
+branch tip matched `origin/main` exactly at `5ffd2c4`), no open PRs, no
+live BLOCKER.md entry. QUEUE.md Active/Provisional both empty, 7/300
+certified, Blocked: 1 (FTF-0102).
+
+STEP 1: QUEUE.md's own "Owner actions" block named FTF-0102 as the next
+dependency-ready item, but it is blocked on the still-open 2026-09-16
+new-runtime-dependency owner ask, and FTF-0101 is blocked behind FTF-0102
+itself. Rather than treating the queue as exhausted, checked
+`docs/spec-matrix.yaml` directly for any other item whose real
+dependencies are already CERTIFIED: FTF-R001 (Freeze seven-component
+architecture, ownership and version-lock schemas) has `deps=FTF-0001,
+FTF-H001`, both CERTIFIED — a real, separate dependency-ready item,
+unrelated to the blocked FTF-0101/FTF-0102 pair and not requiring any new
+runtime dependency (schema/doc freeze, no Postgres/SQLAlchemy/FastAPI
+involved). Pulled its real DoD via `tools/r1_handoff.py packet FTF-R001
+--plan FINE_TUNING_FACTORY_RELEASE_1.md` (not improvised) before claiming.
+
+STEP 2 (PEV):
+- P: read the task packet in full. `files` lists
+  `packages/component-contracts/architecture.schema.json`,
+  `spec/component-lock.schema.json`, `spec/deployment-profiles.yaml`,
+  `docs/architecture/reuse-ownership.md` — a schema/contract freeze, not a
+  live service. Confirmed no `packages/component-contracts/` or
+  `packages/integrations/` directories existed yet. Decided: freeze the
+  two JSON Schema contracts for real (not decorative JSON sitting next to
+  hand-written duplicate logic) by writing a bounded validator that
+  actually reads and enforces them, rather than writing Python business
+  logic with the schema files as unused documentation. Deliberately did
+  not create `ExternalRunBinding` or
+  `packages/integrations/{mlflow,argilla,litellm}/` — no live component
+  run or adapter exists yet to back them; disclosed as a follow-up rather
+  than inventing placeholder adapters (Law 11), same pattern as FTF-H001's
+  undelivered contract-stub paths and FTF-0004's `web` exclusion.
+- E: wrote `packages/component-contracts/architecture.schema.json`
+  (`ComponentBinding` pinned to exactly the seven canonical component
+  keys via its `componentKey` enum; an `allOf`/`if`/`then` rule
+  structurally forces Axolotl/Inspect AI to `deployment_mode:
+  worker_package` with `approved_endpoint: null` — Section 77.1: worker-
+  executed software, not assumed always-on HTTP services; LiteLLM pinned
+  to `existing_gateway`; `release_approval_authorities` capped to exactly
+  one entry via `minItems`/`maxItems: 1`, whose `component_key` must be
+  `null` — Section 77.4's "no competing authority", a vendor component
+  can never hold release approval), `spec/component-lock.schema.json`
+  (`ComponentVersionLock`; `package_version` pattern requires an exact
+  pinned semantic version, `image_digest`/`configuration_digest` pattern
+  requires a real `sha256:` content digest — neither matches a mutable
+  `latest`/`main`/`master`/`HEAD` tag), `spec/deployment-profiles.yaml`
+  (the four Section 79.2 placement profiles verbatim + the Section 79.5
+  assertion-applicability worked example), `docs/architecture/
+  reuse-ownership.md` (ComponentBinding/VersionLock/ExternalRunBinding
+  ownership, the Section 77.3 responsibility table, the Section 77.6 "UI
+  calls the Factory API, never a vendor dashboard" rule), and
+  `scripts/architecture_lock.py` — a bounded JSON Schema validator
+  (`type`/`enum`/`const`/`pattern`/`minLength`/`required`/`properties`/
+  `additionalProperties`/`items`/`minItems`/`maxItems`/`allOf`-`if`-`then`/
+  local `$ref`, matched to exactly what these two schemas use, not a
+  general-purpose engine) plus the one whole-set business rule no
+  per-record schema keyword can express: the seven bindings/locks must be
+  exactly the seven canonical keys, each exactly once (`_check_exact_key_set`).
+  `tests/tasks/test_ftf_r001.py` (13 checks, 16 individual `check()`
+  assertions) proves: the two frozen schemas' `componentKey` enums stay in
+  lockstep with the shared `CANONICAL_COMPONENT_KEYS` constant and each
+  other; a genuinely correct binding/lock document passes with zero
+  errors; and all four of the task's own `negative_acceptance` clauses are
+  rejected — (1) missing component, (2) an invented component key
+  substituted for a canonical one, (3) an invented always-on HTTP endpoint
+  on Axolotl and separately on Inspect AI, (4) a second release approval
+  authority record and separately a vendor component (`mlflow`) claiming
+  authority, (5) a mutable `latest` `package_version` and separately a
+  mutable `latest` `image_digest`.
+  Law 1 evidence (two independent real fault injections, both reverted):
+  (a) temporarily replaced the whole-set key-check calls in
+  `scripts/architecture_lock.py` with `pass` — exactly the
+  missing/duplicate-component checks failed for real (3 failures);
+  restored byte-identical (`diff` confirmed empty against a pre-edit
+  copy), re-ran clean. (b) temporarily removed the Axolotl/Inspect-AI
+  worker-package `allOf` rule from the shipped `architecture.schema.json`
+  itself — exactly the two invented-endpoint checks failed for real;
+  restored byte-identical, re-ran clean. Additionally confirmed as a
+  structural fact (not a fixture): `component_bindings` is schema-pinned
+  to exactly 7 items, so a *missing* component always also trips item
+  count, but a *duplicate* substituted for a missing key keeps the count
+  at 7 with every individual binding still schema-valid — schema-only
+  validation genuinely passes that fixture, while the real validator
+  (schema + whole-set check) rejects it, confirming the business-rule
+  check is load-bearing rather than a decorative re-assertion of what the
+  schema already guarantees.
+  Caught and fixed real `ruff` E501 line-length violations (9 across the
+  new module and test file) before they reached CI.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (architecture/schema freeze, no live
+  product-runtime caller yet, same rationale as FTF-0002/0003/H001).
+Re-ran the full existing gate after all changes (first installing
+`pnpm install --frozen-lockfile` — this fresh container had no
+`node_modules`, unrelated to this change, same environment note as prior
+shifts, confirmed by re-running the TS/lint/typecheck-dependent tests
+before and after install): `uv run ruff check`/`format --check`/`mypy`
+clean; `pnpm run lint`/`typecheck`/`format:check` clean; all 8 existing
+task negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py`
+through `test_ftf_h001.py`, now joined by `test_ftf_r001.py`) still pass
+unmodified — no already-certified task's own implementation file was
+touched, only additive schemas/docs/tooling, avoiding any Law 15
+requalification question; `uv run pytest tests/unit` (3 passed) and
+`pnpm exec vitest run` (2 passed) both clean, 0 skipped either side.
+Wired `python3 tests/tasks/test_ftf_r001.py` into `.github/workflows/
+ci.yml`'s `gate` job, right after FTF-H001's step (YAML-validated with
+`yaml.safe_load`).
+Committed as `f9c82e910cde344a08b910c5b059e85c25b59adf` (implementation)
+and `42c1adf` (hash-fixup — same two-commit pattern as FTF-0006/FTF-H001,
+since a commit can't embed its own hash) on branch
+`claude/wizardly-fermat-1r7ubn`. Updated `docs/spec-matrix.yaml`
+(FTF-R001: IMPLEMENTED/L1-PROVEN/PROVISIONAL, evidence_hash=f9c82e9...),
+`spec/verification-map.json` (real, currently re-executable entry —
+`verify_task.py --task FTF-R001 --stage task` confirmed `PASS` live
+against it), `docs/certifications/queue.md` (full entry), `QUEUE.md`
+(Active cleared, Provisional entry added, Provisional 0→1). Certified
+count unchanged at 7/300 — PROVISIONAL is not certified. Per Law 4, did
+not self-certify. Opened PR #47
+(`[relay] FTF-R001: Freeze seven-component architecture, ownership and
+version-lock schemas`) against `main`, subscribed to its PR activity —
+not merging without confirming CI green first.
+
+STEP 4: stopping here for this shift's active work — FTF-R001 is fully
+L1-PROVEN and PROVISIONAL, PR #47 open, CI in flight. This session
+remains subscribed to PR #47 and will merge on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not
+a second self-certification, per Law 4. The 2026-09-16 FTF-0102
+new-runtime-dependency owner ask remains open and untouched (still the
+correct stopping point per the prior shift's note, until the owner
+answers it). Once FTF-R001 certifies, FTF-R002 (deps FTF-R001, FTF-H003,
+FTF-H006 — the latter two not yet started) or another spec-matrix sweep
+for further dependency-ready items become the next candidates.
+
+Certified: 7/300 (unchanged). Product-true: 0 (unchanged).
 
 ## 2026-09-16 — FTF-0102 blocked: new-runtime-dependency owner ask (not started)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
