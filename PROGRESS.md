@@ -1,6 +1,37 @@
 # PROGRESS — Sovra
 Updated: 2026-09-16T04:00:00Z
 
+## 2026-09-16 — FTF-0003 independently certified (Control plane, CERTIFY mode)
+Scheduled control-plane certifier shift. Read docs/certifications/queue.md — one pending item,
+FTF-0003 (PR #26, merged as e2c2dae96142c95a78005fd7528df6ac7e3e5dfc). Session-ID comparison
+first, per docs/CONTROL_PLANE_MODES.md's explicit requirement: both PR #26 commits (d4482de,
+678285f) carry `Claude-Session: .../session_01DY5FK4nK2VLrUMKHwNQQU2`; this session is
+`session_018gZRsspGdmcTmtxkqRDE59` — no overlap, independent per Law 4.
+Verified for real in a fresh `git worktree` checked out at the actual merge commit, not taken on
+the PR description's word:
+- Confirmed CLAUDE.md.sha256 matches `sha256sum CLAUDE.md` — no drift.
+- Fresh `uv sync` and `pnpm install --frozen-lockfile` succeeded from clean state.
+- Ran the real CI commands myself: `uv run pytest tests/unit` (3 passed), `pnpm exec vitest run`
+  (2 passed), `scripts/check_test_harness.py` against both JUnit reports (exit 0, clean), and
+  `tests/tasks/test_ftf_0003.py` (all checks passed).
+- Fetched GitHub Actions run 35083644711 directly via the API: `pull_request` event, head_sha
+  `678285f` (PR #26's actual merged head), conclusion `success` — genuine run.
+- Performed three of my own fault injections (not the producer's claimed evidence): an empty
+  pytest dir, a `pytest.mark.skip` fixture, and a Vitest `test.only` fixture — each independently
+  made `check_test_harness.py` exit 1 with the expected message; reverted, tree confirmed clean.
+- `product_truth_check.py --fail-on-unwired`: `0/0 product-true`, exit 0 — legitimate since
+  FTF-0003's `proving_symbol` is empty (test-harness tooling, no live product-runtime path).
+- Re-ran the full pre-existing gate (ruff/mypy/eslint/prettier/tsc) — all still clean, confirming
+  no regression; confirmed `tests/test_ftf_0001_monorepo_layout.py` and `tests/tasks/test_ftf_0002.py`
+  are untouched by this PR's diff.
+- Pulled the real contract via `tools/r1_handoff.py packet FTF-0003` and checked delivered work
+  against its actual acceptance/negative_acceptance clauses — both met; `verification_commands`
+  still don't exist, expected per the FTF-0002 precedent (gated behind FTF-H001 bootstrap).
+`docs/spec-matrix.yaml`: FTF-0003 → `certification_state=CERTIFIED`, `proof_state=L2-CERTIFIED`,
+`evidence_hash=e2c2dae` (merge commit). `docs/certifications/ledger.md`: full signed entry with
+session-ID comparison stated explicitly. `QUEUE.md`: FTF-0003 moved to Done, Certified bumped to
+3/300, Provisional cleared. Not promoted — L4 gate is release-only and hasn't run.
+
 ## 2026-09-16 — FTF-0003 implemented (Provisional, awaiting L2 certification)
 Done at the user's direct live instruction ("Go then next task"), not the autonomous relay's
 normal cadence. Real DoD resolved via `tools/r1_handoff.py packet FTF-0003`. Commit
