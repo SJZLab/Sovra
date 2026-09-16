@@ -1,5 +1,71 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T18:05:00Z
+Updated: 2026-09-16T19:10:00Z
+
+## 2026-09-16 — FTF-0102 blocked: new-runtime-dependency owner ask (not started)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+`cognee-cli` still not on PATH — text-search fallback active (unchanged).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main` — local
+branch tip matched `origin/main` exactly at `f886028` (includes PR #45's
+FTF-H001 certification merge), `list_pull_requests` state=open returned
+empty, `BLOCKER.md` held only resolved history. QUEUE.md Active/
+Provisional both empty, 7/300 certified.
+
+STEP 1: `docs/spec-matrix.yaml` shows FTF-0101's own `deps` include
+FTF-0102 (not yet done) — so FTF-0101 is not actually dependency-ready
+despite QUEUE.md's summary "Queue" ordering listing it first. FTF-0102's
+own deps (FTF-0004, FTF-0005, FTF-H001) are all CERTIFIED, making it the
+real frontier item. Pulled its real DoD via `python tools/r1_handoff.py
+packet FTF-0102 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (not improvised).
+
+STEP 2 (P only — stopped before any E): the resolved contract's
+`database_changes` field reads "Own forward Alembic migration for this
+resource; tenant/composite constraints/RLS ... Serialize migration
+chain," and its negative_acceptance requires cross-tenant parent IDs and
+missing tenant context to fail real DB constraints/RLS. Checked this
+repo's actual dependency surface before assuming feasibility:
+`apps/api/pyproject.toml` has an empty `dependencies` list; root
+`pyproject.toml`'s only deps are the ruff/mypy/pytest dev group — zero
+Postgres client, ORM, or migration tooling exists anywhere in this repo
+today. Confirmed the master architecture table
+(`FINE_TUNING_FACTORY_RELEASE_1.md` line 291, the document's own labeled
+"binding architecture") names "FastAPI + SQLAlchemy/Alembic +
+PostgreSQL" for this exact layer.
+
+Weighed whether that table entry is a standing pre-approval to install
+these packages, against this repo's own established precedent: FTF-0004,
+FTF-0005, and FTF-0006 each explicitly declined to add FastAPI/pydantic —
+named in that *same* table row — specifically citing CLAUDE.md's "new
+runtime deps" ask-first hard stop as governing regardless of prior
+architecture naming, and disclosed the resulting scope limits as
+follow-ups rather than improvising a framework into existence. Treating
+FTF-0102 differently (silently installing SQLAlchemy/Alembic/a Postgres
+driver because this table row happens to also name a migration tool)
+would break that precedent inconsistently. Also considered and rejected
+a stdlib/CLI-only workaround (e.g., raw SQL files executed via a `psql`
+subprocess against FTF-0004's docker-local-stack Postgres instead of
+Alembic): technically avoids a new *Python* package, but silently
+substitutes for the contract's explicit, specific "Alembic" naming —
+that is improvising the DoD, not executing it, which CLAUDE.md's "Relay
+is execution-only" section forbids just as much as an unclear DoD would.
+
+Decision: this is a genuine ask-first item (new runtime dependencies),
+not a DoD-clarity gap and not something to route around. Recorded three
+concrete options for the owner (approve the named stack as-is; approve a
+disclosed stdlib/CLI substitute; or specify something else) in
+`QUEUE.md`'s "Owner actions — current" block, dated 2026-09-16, alongside
+the still-open 2026-09-15 trigger-tooling ask (owner asks live in one
+place only, per CLAUDE.md — did not remove or touch that unresolved
+entry). Added FTF-0102 to `QUEUE.md`'s `## Blocked` section and updated
+the Status line (`Blocked: 1`). No code written, no dependency installed,
+FTF-0102 not claimed as Active/Provisional. Per STEP 4(e), stopping this
+shift here.
+
+Certified: 7/300 (unchanged). Product-true: 0 (unchanged). Next shift:
+do not re-litigate this decision from scratch — check whether the owner
+answered the 2026-09-16 FTF-0102 ask in QUEUE.md first; if still
+unanswered, this remains the correct stopping point.
 
 ## 2026-09-16 — FTF-H001 (PR #43) — Control plane certification CERTIFIED
 Independent certifier session (session_01AmkjgSrjZzfKJXAYH7f8Hp — does not
