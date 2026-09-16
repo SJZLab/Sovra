@@ -1,5 +1,38 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T10:45:00Z
+Updated: 2026-09-16T11:10:00Z
+
+## 2026-09-16 — FTF-0005 CERTIFIED (fix independently re-reviewed)
+Independent Control-plane session `session_01WqPEZmJdJyFH7tk2cbakWP`
+reviewed PR #30 (the scoped repr-redaction fix from the entry below).
+Session-ID check: both PR #30 commits carry
+`Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY` — the producer
+session, distinct from this reviewing session and from the prior
+reviewer (`session_01WjQKEb87DwDx51YLNRxT6o`) — independent, not
+self-certification.
+Re-read the diff (one line: `_redact_url()` now applied to
+`litellm_gateway_url` in `__repr__`, plus one new test case). Checked out
+the actual PR head commit (`65824c5`) into a fresh git worktree, ran
+`uv sync` fresh, then `tests/tasks/test_ftf_0005.py` — 10/10 pass. Own
+fault injection: reverted the fix in the worktree, re-ran the test —
+exactly 1 check failed for real with the expected message, reproducing
+the original certifier's finding from first principles; restored from a
+pre-edit copy (`diff` empty), re-ran clean. Confirmed the real GitHub
+Actions `gate` check on PR #30's actual head SHA: run 35087235376,
+conclusion `success`. `product_truth_check.py --fail-on-unwired`:
+legitimately `0/0` (`proving_symbol: ''`, no live caller yet — unchanged
+from the original FTF-0005 evidence). Pulled the real contract via
+`tools/r1_handoff.py packet FTF-0005` — negative_acceptance ("sensitive
+values absent from errors") is now genuinely met for the field the prior
+review found unmet. No regression to FTF-0001/0002/0003's certified
+evidence or to the other 8 originally-proven FTF-0005 checks (untouched
+by this PR).
+PR #30 (already merged by the repo owner, merge commit
+`5f5a34d803a76e3261c8cc860bd5f21cd8290424`) reviewed and certified.
+`docs/spec-matrix.yaml`: FTF-0005 now `certification_state: CERTIFIED`,
+`proof_state: L2-CERTIFIED`, `evidence_hash: 5f5a34d...`. Ledger entry
+appended (docs/certifications/ledger.md). QUEUE.md: Active/Provisional
+cleared, FTF-0005 moved to Done, Certified count 3→4. Not yet PROMOTED —
+L4 gate is release-only and hasn't run.
 
 ## 2026-09-16 — FTF-0005 repr secret-redaction defect fixed (still Provisional)
 An independent Control-plane session (`session_01WjQKEb87DwDx51YLNRxT6o`,
