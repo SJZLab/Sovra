@@ -221,3 +221,70 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   same no-proving-symbol rationale as FTF-0002/0003).
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+### Control plane review — 2026-09-16 — NOT CERTIFIED (defect found)
+- **PR:** https://github.com/SJZLab/Sovra/pull/28 (`relay/ftf-0005-configuration-system`
+  → `main`), head `ea80d36dfb9ba25933825df7c914e090b63ea534`.
+- **Session-ID check:** both PR commits (`b782a2c`, `ea80d36`) carry
+  `Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY`; this reviewing
+  session's ID does not match — independent, not self-certification.
+- **CI verified for real:** GitHub Actions run
+  https://github.com/SJZLab/Sovra/actions/runs/35085894198, job `gate`,
+  tied to the actual head SHA `ea80d36` (confirmed via `actions_get`, not a
+  stale/older commit), conclusion `success`.
+- **Own re-run:** `python3 tests/tasks/test_ftf_0005.py` — all 9 checks
+  pass, matching the PR's claim. `product_truth_check.py --fail-on-unwired`
+  — `0/0 product-true`, legitimate (proving_symbol is `''` in
+  spec-matrix.yaml, no live caller yet).
+- **Defect — real, reproduced independently, not in the producer's own
+  fault-injection set:** `Settings.__repr__`
+  (`apps/api/app/config/configuration_system.py:204-216`) redacts
+  `database_url` via `_redact_url(...)` (line 209) but does **not** redact
+  `litellm_gateway_url` — line 210 interpolates the raw field
+  (`f"litellm_gateway_url={self.litellm_gateway_url!r}, "`) with no
+  redaction call at all. `_validate_url` (line 88) never rejects userinfo
+  in a URL, so a *valid, accepted* gateway URL carrying embedded
+  credentials (e.g. `https://svc:hunter2@litellm.internal.example`, which
+  passes every acceptance check for any environment including production)
+  has its password echoed verbatim by `repr(settings)`. Reproduced live
+  this session:
+  ```
+  >>> repr(Settings.from_env({..., "SOVRA_LITELLM_GATEWAY_URL":
+        "https://svc:hunter2@litellm.internal.example", ...}))
+  "Settings(..., litellm_gateway_url='https://svc:hunter2@litellm.internal.example', ...)"
+  >>> "hunter2" in repr(settings)
+  True
+  ```
+  This directly contradicts this same queue entry's own negative_acceptance
+  claim above ("a URL password in a rejected gateway URL... never appear...
+  in Settings' own `__repr__`") — the claim only exercised a *rejected*
+  gateway URL (which never reaches a constructed `Settings`, so testing its
+  repr proves nothing), never an *accepted* one, which is the actual risk
+  surface and is unredacted. `tests/tasks/test_ftf_0005.py`'s
+  `test_sensitive_values_absent_from_errors_and_repr` (lines 186-211) has
+  no case for an accepted gateway URL with embedded credentials against
+  `repr(settings)` — this is a real gap in the delivered evidence, not a
+  flaky or environmental failure.
+  This module's own docstring (lines 7-10) states "no message this module
+  raises embeds a raw secret or a URL's embedded password," and its
+  `__repr__` comment (line 205) states "Secret-shaped fields and URL
+  userinfo never appear in logs/tracebacks" — the shipped code does not
+  meet its own stated contract for this field, and this is exactly the
+  secret-redaction property CLAUDE.md and
+  `docs/implementation/task-packets/FTF-0005.md`'s security line call for.
+- **Conclusion — per CERTIFY step 3 ("confirm the test genuinely fails when
+  the feature is broken"):** the feature (secret redaction in `__repr__`)
+  is itself broken for one of its two URL fields, and the delivered test
+  suite does not catch it. Not merging. `certification_state` stays
+  `PROVISIONAL` (not downgraded further — the acceptance criteria and the
+  other eight checks are sound; this is a scoped fix, not a redo).
+  **Fix needed:** redact `litellm_gateway_url` in `__repr__` the same way
+  `database_url` already is (`_redact_url(self.litellm_gateway_url)`), and
+  add a `test_sensitive_values_absent_from_errors_and_repr` case that
+  constructs a valid `Settings` with an *accepted* gateway URL carrying
+  embedded userinfo and asserts the password is absent from
+  `repr(settings)` — mirroring the existing database_url case so this
+  exact regression cannot reappear silently. Re-submit for certification
+  once fixed; no other part of this PR needs rework.
+- **Validated-by:** session https://claude.ai/code/session_01WjQKEb87DwDx51YLNRxT6o
+  (independent — see session-ID check above), 2026-09-16.
