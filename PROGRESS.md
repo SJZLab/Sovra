@@ -13,6 +13,13 @@ active (unchanged from every prior shift).
 QUEUE.md Active was empty, 6/300 certified, 0 provisional. QUEUE.md's own
 "Queue (ordered by dependency)" section names FTF-0101…0106 next.
 
+PR: https://github.com/SJZLab/Sovra/pull/43 (`claude/wizardly-fermat-43jlvy`
+→ `main`). Commits: `6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3`
+(implementation) and `d4301b4` (tracking-doc hash fixup — same two-commit
+pattern as FTF-0006's `91eeff1`+`7d5834f`, since a commit can't embed its
+own hash). Subscribed to PR #43's activity; not merging without confirming
+CI green first.
+
 STEP 1: pulled FTF-0101's real DoD via `tools/r1_handoff.py packet
 FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md` before claiming it — its
 real `dependencies` are `FTF-0004, FTF-0005, FTF-0102` (not just FTF-0004/
@@ -103,8 +110,7 @@ two-commit pattern as FTF-0006's `91eeff1`+`7d5834f`, since a commit can't
 embed its own hash), `docs/certifications/queue.md` (full entry),
 `QUEUE.md` (Active cleared, Provisional entry added, bumped Provisional
 0→1). Certified count unchanged at 6/300 — PROVISIONAL is not certified.
-Per Law 4, did not self-certify. PR to be opened against `main`; not
-merging without confirming CI green first.
+Per Law 4, did not self-certify. Opened PR #43 against `main`.
 STEP 4(a): stopping here — FTF-H001 is fully L1-PROVEN, awaiting Control
 plane L2 certification (this session is the relay, not the certifier) and
 eventually the L4 gate. Once FTF-H001 certifies, FTF-0102 (Organization/

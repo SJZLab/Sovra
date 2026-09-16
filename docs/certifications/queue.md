@@ -664,9 +664,12 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   self-certified — awaiting Control plane L2 review per Law 4.
 
 ## 2026-09-16 — FTF-H001 — Executable specification and gate bootstrap
-- **PR:** to be opened against `main` from `claude/wizardly-fermat-43jlvy`.
-- **Commit:** implementation commit (hash-fixup commit follows, same
-  two-commit pattern as FTF-0006's `91eeff1` + `7d5834f`).
+- **PR:** https://github.com/SJZLab/Sovra/pull/43 (`claude/wizardly-fermat-43jlvy`
+  → `main`).
+- **Commit:** `6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3` (implementation),
+  `d4301b4` (tracking-doc hash fixup — same two-commit pattern as
+  FTF-0006's `91eeff1` + `7d5834f`, since a commit can't embed its own
+  hash).
 - **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
   `python tools/r1_handoff.py packet FTF-H001 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
   Dependencies FTF-0001/FTF-0002/FTF-0003 all `CERTIFIED` — unblocked.
