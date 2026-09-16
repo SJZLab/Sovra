@@ -1,10 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by Control plane (certification)
+Updated: 2026-09-16 by relay (FTF-R001 implementation)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 7/300 · Provisional: 0 · Blocked: 1 (FTF-0102, new-runtime-dep
-owner ask, see below)
+Certified: 7/300 · Provisional: 1 (FTF-R001) · Blocked: 1 (FTF-0102,
+new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006 and FTF-H001 all have no
 proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI tooling,
@@ -26,9 +26,12 @@ CERTIFIED without counting toward product-true).
   resolved without evidence of the watchdog trigger and the 08:30/19:30
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
-- 2026-09-16: FTF-0102 (Organization/workspace schema) is the next real
-  dependency-ready item (deps FTF-0004/FTF-0005/FTF-H001 all CERTIFIED;
-  FTF-0101 is blocked behind FTF-0102 itself, not ready). Its own resolved
+- 2026-09-16: FTF-0102 (Organization/workspace schema) is dependency-ready
+  (deps FTF-0004/FTF-0005/FTF-H001 all CERTIFIED; FTF-0101 is blocked
+  behind FTF-0102 itself, not ready) but blocked on this ask, not on
+  readiness. This shift instead picked up FTF-R001, a separate
+  dependency-ready item (deps FTF-0001/FTF-H001, unrelated to this ask) —
+  see "Provisional" below; this ask still stands unchanged. Its own resolved
   task contract (`tools/r1_handoff.py packet FTF-0102`) requires "Own
   forward Alembic migration for this resource; tenant/composite
   constraints/RLS" and a negative-acceptance clause proven against real
@@ -60,11 +63,20 @@ CERTIFIED without counting toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-H001 certified; next dependency-ready item is FTF-0101 or
-FTF-0102, see Queue below.)
+(empty — FTF-R001 implemented and PROVISIONAL this shift; not starting a
+second item on top of an uncertified one, same discipline as every prior
+FTF-000X/H001 handoff. FTF-0101/FTF-0102 remain blocked, see "Owner
+actions" and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-R001 — Freeze seven-component architecture, ownership and
+  version-lock schemas. Implemented this shift (deps FTF-0001/FTF-H001
+  both CERTIFIED — a real, separate dependency-ready item found by
+  checking docs/spec-matrix.yaml directly, distinct from the blocked
+  FTF-0101/FTF-0102 pair). Commits `f9c82e910cde344a08b910c5b059e85c25b59adf`
+  (implementation) + `42c1adf` (hash-fixup). Full entry:
+  docs/certifications/queue.md. Not self-certified — awaiting Control
+  plane L2 review.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

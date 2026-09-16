@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/schemas/component-lock.schema.json",
+  "title": "Sovra Factory ComponentVersionLock freeze (FTF-R001)",
+  "description": "Frozen contract for pinned component/package/image versions (Section 77.5: 'Exact versions are installation inputs resolved by the qualification task, not latest tags or fictional example hashes'). A ComponentVersionLockSet must lock exactly the seven canonical component keys, exactly once each. No entry may carry a mutable tag such as 'latest', 'main', 'master' or 'HEAD' for its package_version, and image_digest/configuration_digest must be a real content digest, not a mutable tag (Section 84.7: 'mutable dashboard tags ... are not release proof').",
+  "$defs": {
+    "componentKey": {
+      "type": "string",
+      "enum": ["axolotl", "inspect_ai", "mlflow", "vllm", "temporal", "litellm", "argilla"]
+    },
+    "componentVersionLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component_key",
+        "package_version",
+        "image_digest",
+        "dependencies",
+        "configuration_digest",
+        "supported_api_versions",
+        "source_license_evidence",
+        "qualification_status"
+      ],
+      "properties": {
+        "component_key": { "$ref": "#/$defs/componentKey" },
+        "package_version": {
+          "type": "string",
+          "description": "An exact pinned semantic version. Mutable tags (latest/main/master/HEAD) never match this pattern.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([\\-+][0-9A-Za-z.\\-]+)?$"
+        },
+        "image_digest": {
+          "type": "string",
+          "description": "A real content-addressed digest, not a mutable tag.",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "dependencies": { "type": "array", "items": { "type": "string" } },
+        "configuration_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "supported_api_versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "source_license_evidence": { "type": "string", "minLength": 1 },
+        "qualification_status": {
+          "type": "string",
+          "enum": ["pending", "qualified", "rejected"]
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["component_version_locks"],
+  "properties": {
+    "component_version_locks": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/componentVersionLock" }
+    }
+  }
+}

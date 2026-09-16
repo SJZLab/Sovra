@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/schemas/architecture.schema.json",
+  "title": "Sovra Factory reuse architecture freeze (FTF-R001)",
+  "description": "Frozen contract for the seven reused components named in FINE_TUNING_FACTORY_RELEASE_1.md Section 77.1: Axolotl, Inspect AI, MLflow, vLLM, Temporal, the existing LiteLLM gateway and Argilla. A ComponentBindingSet must bind exactly these seven component keys, exactly once each -- no missing, extra or substituted key. Axolotl and Inspect AI are worker-executed software, not assumed always-on HTTP services (Section 77.1), so their binding may never declare an approved_endpoint. Exactly one ReleaseApprovalAuthority may exist and it must belong to the Factory approval envelope, never a vendor component (Section 77.4: 'no competing authority'; 'a manual registry tag or model alias edit cannot authorize release').",
+  "$defs": {
+    "componentKey": {
+      "type": "string",
+      "enum": ["axolotl", "inspect_ai", "mlflow", "vllm", "temporal", "litellm", "argilla"]
+    },
+    "deploymentMode": {
+      "type": "string",
+      "enum": ["internal_service", "worker_package", "existing_gateway"]
+    },
+    "componentBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component_key",
+        "security_zone_scope",
+        "project_scope",
+        "deployment_mode",
+        "approved_endpoint",
+        "secret_reference",
+        "network_policy_identity",
+        "health_result",
+        "compatibility_lock_reference"
+      ],
+      "properties": {
+        "component_key": { "$ref": "#/$defs/componentKey" },
+        "security_zone_scope": { "type": "string", "minLength": 1 },
+        "project_scope": { "type": ["string", "null"] },
+        "deployment_mode": { "$ref": "#/$defs/deploymentMode" },
+        "approved_endpoint": { "type": ["string", "null"] },
+        "secret_reference": { "type": ["string", "null"] },
+        "network_policy_identity": { "type": "string", "minLength": 1 },
+        "health_result": { "type": "string", "enum": ["healthy", "unhealthy", "unknown"] },
+        "compatibility_lock_reference": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "description": "Section 77.1: Axolotl and Inspect AI are worker-executed software, not assumed always-on HTTP services. Worker packages have no invented API URL (Section 77.5).",
+          "if": {
+            "properties": { "component_key": { "enum": ["axolotl", "inspect_ai"] } },
+            "required": ["component_key"]
+          },
+          "then": {
+            "properties": {
+              "deployment_mode": { "const": "worker_package" },
+              "approved_endpoint": { "type": "null" }
+            }
+          }
+        },
+        {
+          "description": "Section 4/77.3: the existing LiteLLM gateway is reused as-is, never replaced by a newly deployed internal service.",
+          "if": {
+            "properties": { "component_key": { "const": "litellm" } },
+            "required": ["component_key"]
+          },
+          "then": {
+            "properties": { "deployment_mode": { "const": "existing_gateway" } }
+          }
+        }
+      ]
+    },
+    "releaseApprovalAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority_id", "component_key"],
+      "properties": {
+        "authority_id": { "type": "string", "const": "factory_approval_envelope" },
+        "component_key": {
+          "type": "null",
+          "description": "Always null. A vendor component (e.g. mlflow) can never hold release approval authority -- Section 77.4: user-editable tags are not acceptance evidence."
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["component_bindings", "release_approval_authorities"],
+  "properties": {
+    "component_bindings": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/componentBinding" }
+    },
+    "release_approval_authorities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/releaseApprovalAuthority" }
+    }
+  }
+}
