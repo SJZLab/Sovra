@@ -319,6 +319,103 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   session with no session-ID overlap with
   `session_012mAtoqKYzA7PiXbkGkD7rY` per Law 4.
 
+## 2026-09-16 — FTF-0004 — Docker local stack
+- **Commit:** bc603a6 (branch `claude/wizardly-fermat-3mh1pd`)
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0004 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+- **Environment finding before implementation:** this session's interactive
+  dev sandbox has a working Docker daemon (`dockerd` starts cleanly, root
+  access confirmed) but **no container-registry egress** —
+  `docker pull hello-world` failed with a 403 from the session's own
+  enforced proxy fetching `production.cloudfront.docker.com`
+  (`/root/.ccr/README.md`: "the destination host is not allowed by your
+  organization's egress policy for this session... do not retry or route
+  around it"). Docker Hub's *metadata* API (`hub.docker.com/v2/...`) is
+  reachable, so exact image digests were verified to exist without
+  needing a blob pull. Per this task's own `resource_gate`
+  ("unavailable required evidence is BLOCKED_EXTERNAL, never skipped")
+  this session's own sandbox cannot produce the real container-boot
+  evidence directly — the live user directed routing it through
+  `.github/workflows/ci.yml` on GitHub Actions' hosted runner instead
+  (real registry egress there), which is exactly the documented route
+  this session's own operating instructions name for external-resource
+  constraints, not a workaround.
+- **Delivered:**
+  - `infra/docker/docker-compose.yml`: `postgres` (`postgres:16-alpine`,
+    digest-pinned), `temporal` (`temporalio/auto-setup:1.24.2`,
+    digest-pinned, backed by the same Postgres via
+    `POSTGRES_SEEDS=postgres`), `s3` (`chrislusf/seaweedfs:3.71`,
+    digest-pinned — the reuse-architecture's qualified S3-compatible
+    fixture per Section 77.3, satisfying this task's own acceptance
+    clause against "an automatic new archived-MinIO install"), and `api`
+    (a stdlib-only Python health-bootstrap process, digest-pinned base
+    image). One documented boot command:
+    `docker compose -f infra/docker/docker-compose.yml up -d`.
+  - `apps/api/app/config/docker_local_stack.py`: `StackConfig`/
+    `check_tcp_reachable`/`check_stack_readiness`/`is_ready` and a
+    `GET /health` stdlib `http.server` endpoint (200 when every
+    dependency's TCP port is reachable, 503 otherwise). No third-party
+    runtime dependency added — FastAPI/SQLAlchemy/Temporal-SDK/boto3
+    remain the frozen target stack for actual request handlers
+    (Section 4); adding any of them now solely to host a health check
+    would itself be a new-runtime-dependency ask-first item under
+    CLAUDE.md (same reasoning FTF-0005 used to avoid pydantic).
+  - **`web` deliberately excluded from this stack** — `apps/web` has no
+    server-side runtime at all yet (no Next.js/React installed); adding
+    either now would itself be a new-runtime-dep ask-first item. Documented
+    in the compose file's own header comment as a follow-up for whichever
+    task first builds the real web app, not silently invented here or
+    faked with a placeholder.
+  - `scripts/verify_docker_local_stack.py`: boots the stack for real, polls
+    `/health` for genuine readiness, writes a marker row to Postgres, stops
+    the `postgres` container, asserts `/health` flips to 503/unhealthy
+    (both the aggregate `ready` flag and the `postgres` entry specifically),
+    restarts it, asserts recovery, then asserts the marker row survived —
+    proving the negative_acceptance clause ("test restart/persistent state
+    instead of canned readiness") against the real containers, not a
+    fixture.
+  - `.github/workflows/ci.yml`: new `docker-local-stack-integration` job
+    (separate from `gate`, `ubuntu-latest`) running
+    `python3 scripts/verify_docker_local_stack.py` — this is where the
+    real container-boot + negative-acceptance evidence is produced, since
+    GitHub Actions' hosted runner has real registry egress. Also added
+    `tests/tasks/test_ftf_0004.py` as a step in the existing `gate` job.
+- **Test:** `tests/tasks/test_ftf_0004.py` — 9 checks, runnable in this
+  sandbox with no Docker/network dependency: uses real local TCP listeners
+  (bind/close) to prove `check_tcp_reachable`/`check_stack_readiness`/
+  `is_ready` and the `/health` HTTP handler are genuine, non-canned checks.
+- **Evidence — shown able to fail (Law 1):** real fault injection against
+  the tracked module — temporarily replaced `check_tcp_reachable` with a
+  hardcoded `ReadinessResult(..., True, "canned healthy...")`, re-ran
+  `tests/tasks/test_ftf_0004.py`: 4 of 9 checks failed for real (the
+  unreachable-port case, the live open/close flip, the mixed-stack
+  not-ready case, and the detail-message assertion — the one check that
+  happened to still pass, "healthy while open", is a true positive the
+  canned stub also satisfies by coincidence, expected and consistent).
+  Restored the file byte-identical from a pre-edit copy (`diff` confirmed
+  empty), re-ran clean (9/9 pass).
+- **Regression check:** `uv run ruff check .` / `uv run ruff format
+  --check .` / `uv run mypy .` clean; `uv run pytest tests/unit` (3
+  passed); `tests/tasks/test_ftf_0002.py`, `test_ftf_0003.py`,
+  `test_ftf_0005.py`, and `tests/test_ftf_0001_monorepo_layout.py` all
+  still pass unmodified — no regression to certified evidence.
+  `pnpm run lint`/`typecheck`/`format:check` and `pnpm exec vitest run`
+  (2 passed) clean — no TypeScript files touched by this change.
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true`
+  (no proving_symbol yet — no live caller wires this into a running
+  service, same rationale as FTF-0002/0003/0005). `docker compose -f
+  infra/docker/docker-compose.yml config` parses cleanly (validated
+  locally without pulling any image).
+- **CI:** YAML-validated (`yaml.safe_load`); real run status (both the
+  `gate` job's new test step and the new `docker-local-stack-integration`
+  job actually booting the stack) to be confirmed on the opened PR before
+  merge — this is where FTF-0004's real container-integration and
+  negative-acceptance evidence will actually be produced.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4, which
+  should specifically confirm the `docker-local-stack-integration` CI job
+  passed for real (not merely that it exists) before certifying.
+
 ### Control plane review — 2026-09-16 — NOT CERTIFIED (not in a certifiable state)
 - **PR:** https://github.com/SJZLab/Sovra/pull/35 (`claude/wizardly-fermat-3mh1pd`
   → `main`), head `330be28db5e60ab2999c47f6d91a60fc03044ee4`. Item: FTF-0004
@@ -378,3 +475,93 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   before requesting certification again.
 - **Validated-by:** session https://claude.ai/code/session_01JwgxJqEYCMhQVzVk2bXdvT
   (independent — see session-ID check above), 2026-09-16.
+
+## 2026-09-16 — FTF-0004 — Structural blockers fixed, resubmitted
+- **PR:** https://github.com/SJZLab/Sovra/pull/35 (same PR — not a
+  duplicate, per the review above's own instruction).
+- **Fix for Blocker 1 (not mergeable):** ran a real `git fetch origin
+  main` (`fe954e0`, which itself carries the review commit `2dfdecb`
+  above) followed by a real `git merge origin/main --no-edit` — not
+  another content copy. This produced genuine conflict markers in
+  exactly the four tracking docs both branches had touched
+  (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`,
+  `docs/spec-matrix.yaml`) and zero conflicts anywhere in code —
+  independently confirming the reviewer's own diagnosis that this was a
+  tracking-doc-only divergence. Resolved each by keeping both sides'
+  substantive content (this branch's FTF-0004 entries plus `main`'s real
+  FTF-0005-certification and this NOT-CERTIFIED-review history, in
+  chronological order) rather than discarding either.
+- **Fix for Blocker 2 (CI never ran):** a natural consequence of pushing
+  the merge commit — CI now runs on a real, mergeable head for the first
+  time on this PR, including the new `docker-local-stack-integration`
+  job.
+- **Regression check on the merge itself:** re-ran the full gate after
+  resolving conflicts, before pushing — `uv run ruff check`/`format
+  --check`/`mypy` clean; `uv run pytest tests/unit` (3 passed);
+  `tests/tasks/test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_0004.py`/
+  `test_ftf_0005.py` and `tests/test_ftf_0001_monorepo_layout.py` all
+  pass; `pnpm run lint`/`typecheck`/`format:check` and `pnpm exec vitest
+  run` clean; `product_truth_check.py --fail-on-unwired` stays `0/0`.
+  No regression introduced by the merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL
+  (unchanged — the delivered code is unchanged; only the branch's
+  relationship to `main` was fixed). Not self-certified — awaiting
+  Control plane to confirm `mergeable_state` is now clean and that CI,
+  especially `docker-local-stack-integration`, actually ran to completion
+  on the new merge commit before re-reviewing.
+
+## 2026-09-16 — FTF-0004 — Real CI failure found and fixed on the merge commit
+- **Commit:** c595897 (branch `claude/wizardly-fermat-3mh1pd`), on top of
+  the merge commit `c9ab1c9` above.
+- **What happened:** the merge fix above correctly made the PR mergeable
+  and triggered CI for the first time. `docker-local-stack-integration`
+  **failed for real** (GitHub Actions run 35095359741, job
+  104791239843) — read via `get_job_logs`, not inferred from the red X:
+  the stack booted, the marker row was written, `docker compose stop
+  postgres` ran, then `poll_health(expect_ready=False)` timed out after
+  120s and the job errored with `TimeoutError: health endpoint never
+  reported ready=False (last error: HTTP Error 503: Service
+  Unavailable)` — even though the health endpoint's own log line
+  (`stack ready: {...}`) plus the 503 status in the error message prove
+  it was correctly reporting unhealthy the entire time.
+- **Root cause:** `urllib.request.urlopen()` raises `urllib.error.
+  HTTPError` for any non-2xx response *before* the caller ever reads the
+  response body — `poll_health`'s `except (urllib.error.URLError, ...)`
+  clause caught the 503 as an opaque connection failure (HTTPError is a
+  URLError subclass) and discarded it without ever parsing the very JSON
+  body (`{"ready": false, ...}`) the negative-acceptance test needed to
+  see, so it just kept retrying until the deadline. A real bug in the CI
+  verification script, not in `docker_local_stack.py`'s readiness logic
+  (already proven real by `tests/tasks/test_ftf_0004.py`), not a Docker/
+  network flake, and not the containers' fault.
+- **Fix:** `poll_health` now reads and parses the body from
+  `urllib.error.HTTPError` the same way as a normal 2xx response, then
+  checks the real `ready` field regardless of HTTP status code.
+- **Verified locally before pushing (no Docker needed to reproduce this
+  specific bug):** started the real stdlib health server
+  (`docker_local_stack.serve`) pointed at closed local sockets
+  (simulating every dependency being down, the same shape as a stopped
+  postgres container) and called the *fixed* `poll_health(expect_ready=
+  False, timeout_seconds=10)` against it — returned `ready: False`
+  correctly in under a second, exercising the exact `HTTPError`-on-503
+  code path the real CI traceback showed was broken. Also re-verified
+  the healthy (200) path is unaffected using the same harness with all
+  three local listeners open.
+- **Regression check:** `uv run ruff check`/`format --check`/`mypy`
+  clean; `tests/tasks/test_ftf_0004.py` (9/9, unaffected — it doesn't
+  exercise `verify_docker_local_stack.py`, only the readiness module
+  itself); `docker compose -f infra/docker/docker-compose.yml config`
+  parses cleanly.
+- **Real CI result after the fix (GitHub Actions run 35095834970):**
+  `gate` — `success`. `docker-local-stack-integration` — `success`,
+  confirmed via `get_check_runs` on the actual PR head SHA
+  (`c59589736fe1001b550601e40741336aacef0f12`) — the genuine
+  container-boot, restart, and marker-row-persistence evidence
+  FTF-0004's negative_acceptance clause requires.
+- **PR:** `mergeable_state: clean`; PR body's test-plan checklist updated
+  to reflect the real green run and the full history (structural
+  rejection → merge fix → real CI failure → real fix → green).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review, which should now
+  find a clean merge and a genuinely green `docker-local-stack-
+  integration` run (not merely its presence) before certifying.

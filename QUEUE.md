@@ -3,13 +3,14 @@ Updated: 2026-09-16 by relay
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 4/300 · Provisional: 0 · Blocked: 0
+Certified: 4/300 · Provisional: 1 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003 and FTF-0005 all have no proving_symbol; FTF-0001 is structural
 layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, and
 FTF-0005 is a configuration module with no live caller yet — none a
 live-wired product-runtime path, so all four are CERTIFIED without
-counting toward product-true).
+counting toward product-true). FTF-0004 (below) is PROVISIONAL, also with
+no proving_symbol yet.
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -23,27 +24,67 @@ counting toward product-true).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-FTF-0004 has implementation work already pushed to
-`claude/wizardly-fermat-3mh1pd` (PR #35), but per Control plane's
-2026-09-16 review (docs/certifications/queue.md, "Control plane review —
-2026-09-16 — NOT CERTIFIED (not in a certifiable state)") that PR is
-**not mergeable** (`mergeable_state: dirty` — real conflicts in
-`PROGRESS.md`/`QUEUE.md` only, not code, because the branch's own claimed
-rebase onto current `main` didn't actually happen: its merge-base
-predates PR #30/#32) and **CI has never run on it** (0 check runs).
-Next relay shift on FTF-0004: fetch and merge/rebase the actual current
-`main` into `claude/wizardly-fermat-3mh1pd`, resolve the two tracking-doc
-conflicts, push, and let the full CI suite (including the new
-`docker-local-stack-integration` job) actually run and go green before
-resubmitting for certification. Do not open a new/duplicate PR for this —
-fix and push to the existing branch/PR #35.
+(empty — FTF-0004's structural blockers from Control plane's 2026-09-16
+review are fixed and pushed; see Provisional below. Not picking up a
+second item on top of an uncertified one, same discipline as the
+FTF-0002→FTF-0003 handoff.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(none on `main` — FTF-0004's PROVISIONAL claim exists only inside
-unmerged PR #35's own branch copy of spec-matrix.yaml/this file; `main`'s
-own spec-matrix.yaml still correctly shows FTF-0004 as
-`certification_state: NONE` / `implementation_state: ABSENT` until that
-branch actually merges. See Active, above.)
+- FTF-0004 — Docker local stack. PR #35 (`claude/wizardly-fermat-3mh1pd`).
+  Control plane reviewed the original head (`330be28`) 2026-09-16 and did
+  NOT certify — not on the delivered code, but on structural grounds
+  (docs/certifications/queue.md, "Control plane review — 2026-09-16 —
+  NOT CERTIFIED (not in a certifiable state)"): the branch's own prior
+  "rebase" onto `main` had only copied file *content*, never run a real
+  `git merge`/`git rebase`, so its actual merge-base with `main` was
+  stale (`9de083b`, predating PR #30/#32) — `mergeable_state: dirty` with
+  real conflicts in `PROGRESS.md`/`QUEUE.md` (tracking docs only, not
+  code) — and 0 CI check runs had been recorded at review time.
+  **Fixed:** ran a real `git merge origin/main --no-edit` against the
+  actual current `main`, resolved the resulting conflicts (confirmed
+  confined to the four tracking docs both sides had touched — no code
+  conflicts, confirming the reviewer's diagnosis), re-ran the full gate
+  to confirm the merge itself introduced no regression, and pushed the
+  merge commit to the same branch/PR #35 — not a duplicate PR, per the
+  reviewer's own instruction.
+  Substantive delivery (unchanged since the original submission): real
+  Postgres/Temporal/SeaweedFS (S3-compatible, per Section 77.3's
+  qualified fixture — not MinIO) stack via
+  `infra/docker/docker-compose.yml`, all images digest-pinned. A
+  stdlib-only health-bootstrap (`apps/api/app/config/
+  docker_local_stack.py`) serves `GET /health`, genuinely TCP-probing
+  each dependency — no new runtime dependency added (FastAPI et al. stay
+  the frozen target stack for actual request handlers). `web` is
+  deliberately excluded — `apps/web` has no server-side runtime yet and
+  adding one now would itself be a new-runtime-dep ask-first item;
+  documented in the compose file as a follow-up for whichever task first
+  builds it. This session's interactive dev sandbox has no
+  container-registry egress (confirmed: `dockerd` starts, but
+  `docker pull` gets a 403 from the session's enforced proxy fetching
+  Docker Hub's CDN) — the real container-boot + negative-acceptance
+  (restart/persistence) evidence runs in CI instead, where GitHub
+  Actions' hosted runner has real registry egress
+  (`scripts/verify_docker_local_stack.py`, wired into
+  `.github/workflows/ci.yml`'s new `docker-local-stack-integration` job).
+  `tests/tasks/test_ftf_0004.py` (9 checks, no Docker needed) proves the
+  readiness-check logic itself is real via local TCP listeners; verified
+  by fault injection (canned-healthy stub made 4/9 checks fail for real,
+  reverted clean).
+  **CI ran and found a real bug, then went green:** on the merge commit,
+  `docker-local-stack-integration` failed for real — after stopping
+  postgres, `poll_health` timed out instead of recognizing the health
+  endpoint's genuine 503 `{"ready": false, ...}` response, because
+  `urllib.request.urlopen()` raises `HTTPError` for non-2xx statuses
+  before the body is read and the polling loop was discarding that body.
+  Fixed (`c595897`) by reading the body from `HTTPError` too; verified
+  locally against closed sockets before pushing. Re-ran CI on the fix
+  (GitHub Actions run 35095834970): `gate` and
+  `docker-local-stack-integration` both `success` — the real
+  container-boot, restart, and marker-row-persistence evidence.
+  `mergeable_state: clean`.
+  proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review, which should now
+  find a clean merge and a genuinely green integration run.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

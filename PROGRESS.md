@@ -1,5 +1,169 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T11:10:00Z
+Updated: 2026-09-16T12:40:00Z
+
+## 2026-09-16 — FTF-0004 (PR #35): CI green for real, awaiting L2 review
+After the merge-base fix (below), CI ran on PR #35 for the first time.
+`docker-local-stack-integration` **failed for real** on that first run
+(35095359741): booted the real stack fine, but after `docker compose stop
+postgres`, `poll_health(expect_ready=False)` timed out after 120s even
+though the health endpoint was genuinely returning 503 with
+`{"ready": false, ...}` throughout — confirmed by reading the actual job
+log (`get_job_logs`), not inferred from the red X. Root cause:
+`urllib.request.urlopen()` raises `HTTPError` for any non-2xx status
+before the response body is read, so `poll_health`'s exception handler
+was discarding the 503's real JSON body as an opaque connection failure
+and looping until the deadline — a genuine bug in the verify script, not
+a flake, not the containers' fault, and not the redaction/config code
+FTF-0004 actually delivers.
+Fixed (`c595897`): read the body from `HTTPError` the same way as a
+normal response, then check the real `ready` field regardless of HTTP
+status. Verified the exact failure mode locally first, without Docker —
+pointed the stdlib health server at closed sockets (simulating a stopped
+dependency) and confirmed the old code would spin for the full timeout
+while the new code returns `ready=False` correctly in under a second;
+also re-verified the healthy (200) path is unaffected. Re-ran the full
+local gate (ruff/mypy, `tests/tasks/test_ftf_0004.py`, `docker compose
+... config`) clean before pushing.
+Pushed; CI re-ran on the real merge commit + fix
+(35095834970): **both `gate` and `docker-local-stack-integration`
+completed with conclusion `success`** — confirmed via `get_check_runs`,
+not assumed from a lack of a wake event. This is the actual container
+boot, restart, and persistence evidence FTF-0004's negative_acceptance
+clause requires, produced on GitHub Actions' hosted runner exactly as
+planned since this sandbox has no registry egress. Updated the PR body's
+test-plan checklist to reflect the real green run and to record this
+whole history (original NOT-CERTIFIED-for-structural-reasons finding →
+merge fix → real CI failure → real fix → green) for the next
+reviewer. `mergeable_state: clean`.
+Still PROVISIONAL — not self-certified (Law 4). Awaiting Control plane
+L2 re-review, which should now find a clean merge and a real green
+`docker-local-stack-integration` run to check.
+
+## 2026-09-16 — FTF-0004 (PR #35): merge-base fixed, resubmitted
+Control plane reviewed PR #35 and did NOT certify it — not on the
+delivered code, but on structural grounds (`docs/certifications/
+queue.md`, "Control plane review — 2026-09-16 — NOT CERTIFIED (not in a
+certifiable state)"): `mergeable_state: dirty`, because the branch's
+prior tracking-doc "rebase" (commit `330be28`) only copied file *content*
+from `main` at the time — it never ran a real `git merge`/`git rebase`,
+so the branch's actual merge-base with `main` stayed at `9de083b`,
+predating PR #30/#32 (the FTF-0005 fix + certification that had already
+landed). Real conflict markers resulted in `PROGRESS.md`/`QUEUE.md`
+against the true current `main`. Separately, 0 CI check runs had been
+recorded on the PR at review time.
+Fix: `git fetch origin main` (now `fe954e0`, which itself carries commit
+`2dfdecb` — Control plane's own NOT-CERTIFIED finding, written directly
+to `main`), then a real `git merge origin/main --no-edit`. This produced
+the expected conflicts in exactly the four docs both branches had
+touched (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`,
+`docs/spec-matrix.yaml`) and none in code — confirming the reviewer's
+diagnosis that this was a tracking-doc-only conflict, not a substantive
+one. Resolved each by keeping both histories (this branch's FTF-0004
+entries plus `main`'s real FTF-0005-certification and NOT-CERTIFIED-
+review entries), verified the merge commit's parents include both the
+old branch tip and the real `main` tip, then re-ran the full gate
+(`uv run ruff`/`mypy`, `uv run pytest tests/unit`,
+`tests/tasks/test_ftf_0002.py`/`0003`/`0004`/`0005`,
+`tests/test_ftf_0001_monorepo_layout.py`, `pnpm run lint`/`typecheck`/
+`format:check`, `pnpm exec vitest run`, `product_truth_check.py
+--fail-on-unwired`) before pushing, to confirm the merge itself
+introduced no regression. Pushed the merge commit to the same branch/PR
+#35 — not opening a duplicate, per the reviewer's own instruction.
+`docs/spec-matrix.yaml`'s FTF-0004 entry now correctly reflects
+`certification_state: PROVISIONAL` on top of `main`'s real FTF-0005
+CERTIFIED state (4/300), not a stale copy. Still not self-certified —
+awaiting Control plane to actually see CI run to completion on the new
+merge commit and re-review.
+
+## 2026-09-16 — FTF-0004 implemented (Provisional, awaiting L2 certification)
+Live user session (direct instruction: "GO", following an "assess then"
+step asking whether FTF-0004 is tractable in this sandbox). Read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md, cross-checked against
+`git fetch origin main` (unchanged at `4ea6784` — FTF-0005 CERTIFIED,
+4/300, nothing else pending). QUEUE.md's own dependency order named
+FTF-0004 as the next queued item; deps (FTF-0001/0003/0005) all
+CERTIFIED. Real DoD resolved via `tools/r1_handoff.py packet FTF-0004`.
+
+**Feasibility check first (STEP 1, before claiming):** confirmed this
+session's interactive dev sandbox has a working Docker daemon
+(`sudo dockerd` starts cleanly) but no container-registry egress —
+`docker pull hello-world` got a 403 from the session's own enforced
+proxy on `production.cloudfront.docker.com` (`/root/.ccr/README.md`:
+a 403 means the destination isn't allowed by org egress policy, "do not
+retry or route around it"). Initially assessed this as `BLOCKED_EXTERNAL`
+per the task's own resource_gate clause. The live user pushed back: this
+session's own operating instructions already name the documented route
+for exactly this constraint — route external proof through CI Actions
+workflows, which have real registry egress. Correct call — proceeded on
+that basis rather than blocking.
+
+STEP 2 (PEV):
+- P: read the task packet in full. `files` lists only
+  `apps/api/app/config/docker_local_stack.py` and its test — not a
+  main.py or web app — confirming FTF-0004's real scope is
+  bootstrap+health (`api_contract`: "Service bootstrap/configuration/
+  health, no public job API changes"), not the full product API/UI.
+  Checked `apps/api`/`apps/web` on disk: neither has a real server-side
+  runtime yet (no FastAPI, no Next.js/React installed) — building either
+  now would be a new-runtime-dependency ask-first item under CLAUDE.md
+  (same reasoning FTF-0005 used to avoid pydantic). Decided: use only
+  the stdlib for the `api` health-bootstrap process, and deliberately
+  exclude `web` from this task's compose stack rather than fake a
+  placeholder for a service that doesn't exist — documented as a
+  follow-up for whichever task first builds the real web app.
+- E: verified exact image tags exist via Docker Hub's *metadata* API
+  (`hub.docker.com/v2/...`, reachable even though blob/CDN pulls are
+  blocked) and pinned all three service images by digest: `postgres:
+  16-alpine`, `temporalio/auto-setup:1.24.2` (backed by the same
+  Postgres), `chrislusf/seaweedfs:3.71` as the S3-compatible service —
+  the reuse-architecture's qualified fixture (Section 77.3), directly
+  satisfying this task's own acceptance clause against "an automatic new
+  archived-MinIO install". Wrote `infra/docker/docker-compose.yml`,
+  `apps/api/app/config/docker_local_stack.py` (TCP-probe readiness +
+  stdlib `http.server` `/health` endpoint), `scripts/
+  verify_docker_local_stack.py` (real boot, poll-to-ready, stop postgres,
+  assert unhealthy, restart, assert recovery + a marker row's
+  persistence — the negative_acceptance clause), and
+  `tests/tasks/test_ftf_0004.py` (9 checks using real local TCP
+  listeners this process controls — runnable with no Docker at all).
+  Law 1 evidence: temporarily replaced `check_tcp_reachable` with a
+  canned "always healthy" stub, re-ran the test — 4 of 9 checks failed
+  for real (unreachable-port case, live open/close flip, mixed-stack
+  not-ready case, detail-message assertion); restored byte-identical
+  from a pre-edit copy (`diff` confirmed empty), re-ran clean (9/9).
+  Wired `tests/tasks/test_ftf_0004.py` into the existing `gate` CI job
+  and added a new `docker-local-stack-integration` job running
+  `scripts/verify_docker_local_stack.py` on GitHub Actions' hosted
+  runner — where the real container-boot and negative-acceptance
+  evidence will actually be produced.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0
+  product-true` — legitimate, no proving_symbol yet (no live caller,
+  same rationale as FTF-0002/0003/0005). `docker compose -f
+  infra/docker/docker-compose.yml config` parses cleanly (validated
+  locally without pulling any image — full boot validated in CI).
+Re-ran the full existing gate after all changes: `uv run ruff
+check`/`format --check`/`mypy` clean; `uv run pytest tests/unit`
+(3 passed); `tests/tasks/test_ftf_0002.py`, `test_ftf_0003.py`,
+`test_ftf_0005.py`, and `tests/test_ftf_0001_monorepo_layout.py` all
+still pass unmodified — no regression. `pnpm run lint`/`typecheck`/
+`format:check` and `pnpm exec vitest run` (2 passed) also clean (no
+TypeScript files touched).
+Committed as `bc603a6` on branch `claude/wizardly-fermat-3mh1pd` (also
+carries the generated `docs/implementation/task-packets/FTF-0006.md`
+from the feasibility check done before pivoting back to FTF-0004 — no
+FTF-0006 work claimed). Updated `docs/spec-matrix.yaml` (FTF-0004:
+IMPLEMENTED/L1-PROVEN/PROVISIONAL, evidence_hash=bc603a6),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, bumped Provisional to 1). Certified count
+unchanged at 4/300 — PROVISIONAL is not certified. Per Law 4, did not
+self-certify. PR to be opened against `main`; not merging without
+confirming CI green first — Control plane review should specifically
+confirm the `docker-local-stack-integration` job passed for real (not
+merely that it exists) before certifying.
+STEP 4(a): stopping here on this item — FTF-0004 is fully L1-PROVEN,
+awaiting Control plane L2 certification and the real CI integration run.
+Next candidate once FTF-0004 certifies: FTF-0006 (observability, task
+packet already pulled) or FTF-0101+ (identity/tenancy/RBAC/audit).
 
 ## 2026-09-16 — FTF-0005 CERTIFIED (fix independently re-reviewed)
 Independent Control-plane session `session_01WqPEZmJdJyFH7tk2cbakWP`

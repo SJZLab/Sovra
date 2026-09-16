@@ -68,6 +68,8 @@ jobs:
         run: python3 tests/tasks/test_ftf_0003.py
       - name: FTF-0005 negative-test proof (configuration system catches real defects)
         run: python3 tests/tasks/test_ftf_0005.py
+      - name: FTF-0004 negative-test proof (readiness checks catch real defects)
+        run: python3 tests/tasks/test_ftf_0004.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -78,3 +80,16 @@ jobs:
       #   run: |
       #     pip install cognee --quiet
       #     cognee-cli remember .
+
+  docker-local-stack-integration:
+    # FTF-0004: real Postgres/Temporal/SeaweedFS (S3-compatible) integration
+    # + negative-acceptance (restart/persistence) evidence. Runs on GitHub
+    # Actions' hosted runner because it has real container-registry egress;
+    # this repo's interactive dev sandbox does not (Docker Hub's CDN is
+    # blocked by that session's egress policy — see
+    # docs/certifications/queue.md for FTF-0004's full repro).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot the real local stack and prove restart/persistence
+        run: python3 scripts/verify_docker_local_stack.py

@@ -1,0 +1,95 @@
+# FTF-0004 — Docker local stack.
+#
+# Boots the real infra a local Sovra dev environment needs: PostgreSQL,
+# self-hosted Temporal (backed by the same Postgres), and an S3-compatible
+# object store via SeaweedFS (the reuse-architecture's qualified fixture —
+# see FINE_TUNING_FACTORY_RELEASE_1.md Section 77.3 — not an ad hoc MinIO
+# install). `api` is a stdlib-only health-bootstrap process
+# (apps/api/app/config/docker_local_stack.py) that really TCP-probes each
+# dependency; it is not the product API (that has no runtime dependencies
+# approved yet — FastAPI is the frozen target per Section 4, added when a
+# task actually builds request handlers, not just to host a health check).
+#
+# `web` is deliberately not part of this stack yet: apps/web has no
+# server-side runtime at all (no Next.js/React installed — adding either
+# is a new-runtime-dependency, an ask-first item per CLAUDE.md, not
+# something this task invents). Tracked as a follow-up for whichever task
+# first builds the real web app.
+#
+# One documented command boots everything:
+#   docker compose -f infra/docker/docker-compose.yml up -d
+# Real integration + negative-acceptance evidence: scripts/verify_docker_local_stack.py
+# (run in CI — this repo's interactive dev sandbox has no Docker-registry
+# egress; see docs/certifications/queue.md for FTF-0004).
+
+name: sovra-local-stack
+
+services:
+  postgres:
+    image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64)
+    environment:
+      POSTGRES_USER: sovra
+      POSTGRES_PASSWORD: sovra_local_dev_only
+      POSTGRES_DB: sovra_stack
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sovra -d sovra_stack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup@sha256:1ac8202b1d9143028ef8bf57a93dc9bbc61742ddffc4ea193a77be689a84f8bc # 1.24.2 (amd64)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: sovra
+      POSTGRES_PWD: sovra_local_dev_only
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+
+  s3:
+    image: chrislusf/seaweedfs@sha256:2829e52cd2f653cfb900cbbbc72f4c3fda0e8ab785429a80514090cdd73dec8c # 3.71 (amd64)
+    command: server -dir=/data -s3 -s3.port=8333
+    ports:
+      - "8333:8333"
+    volumes:
+      - s3_data:/data
+
+  api:
+    image: python@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72 # python:3.11-slim (amd64)
+    working_dir: /app
+    volumes:
+      - ../../apps/api:/app/apps/api:ro
+    command:
+      [
+        "python3",
+        "-m",
+        "app.config.docker_local_stack",
+        "--serve",
+      ]
+    environment:
+      PYTHONPATH: /app/apps/api
+      SOVRA_STACK_POSTGRES_HOST: postgres
+      SOVRA_STACK_POSTGRES_PORT: "5432"
+      SOVRA_STACK_TEMPORAL_HOST: temporal
+      SOVRA_STACK_TEMPORAL_PORT: "7233"
+      SOVRA_STACK_S3_HOST: s3
+      SOVRA_STACK_S3_PORT: "8333"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - temporal
+      - s3
+
+volumes:
+  postgres_data:
+  s3_data:
