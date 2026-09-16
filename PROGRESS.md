@@ -1,5 +1,25 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T00:00:00Z
+Updated: 2026-09-16T02:00:00Z
+
+## 2026-09-16 — Relay shift: no workable item, FTF-0002 still awaiting independent L2 cert
+STEP 0: `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` — no drift. `cognee-cli` still not on
+PATH — text-search fallback active (unchanged from every prior shift).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md; cross-checked against live
+repo state rather than trusting the docs alone (`git fetch origin main` — local branch tip
+`41f1493` matches `origin/main` exactly, so nothing has landed since the last shift wrote these
+files).
+STEP 1: QUEUE.md Active is empty. FTF-0002 (PR #23, commit `41f1493`) is merged into `main` and
+CI-green (verified via GitHub Actions run 35070915230 on the PR's head commit, conclusion
+`success`) but remains `certification_state: PROVISIONAL` in `docs/spec-matrix.yaml` — no
+Control-plane L2 certification has landed (no ledger.md entry for it, no open PRs of any kind
+on the repo). QUEUE.md's own Active note says FTF-0003 should not start until FTF-0002 is
+independently certified, to avoid stacking a second provisional item on an uncertified one.
+This session was invoked as the relay, not Control plane; per Law 4 (producer never certifies
+own work) and the relay/certifier role split in CLAUDE.md, it does not self-certify FTF-0002 —
+that requires a separate control-plane session.
+No source, spec-matrix, or certification-queue changes this shift — nothing was actionable.
+Stopping per STEP 4(a): FTF-0002 is fully L1-PROVEN, awaiting Control plane certification and
+(eventually) the L4 gate.
 
 ## 2026-09-16 — FTF-0002 implemented (Provisional, awaiting L2 certification)
 Done at the user's direct live instruction ("Go then FTF-0002 it's"), not the autonomous
