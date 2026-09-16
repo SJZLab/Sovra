@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "note": "FTF-H001. Only lists tasks with real merged evidence. The structural task/dependency/scenario graph lives in spec/tasks.json (the frozen spec ledger); this file resolves REAL, currently re-executable verification commands and expected evidence for tasks that have them. An absent entry means NOT_STARTED — scripts/verify_task.py reports BLOCKED for it, never a fabricated PASS. 'commit' is the task's evidence_hash as recorded in docs/spec-matrix.yaml at the time this entry was written; scripts/validate_spec.py rejects any entry whose commit does not resolve in this repository (stale_commit) or that claims a skipped test (skipped_test).",
+  "tasks": {
+    "FTF-0001": {
+      "commit": "7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561",
+      "commands": [["python3", "tests/test_ftf_0001_monorepo_layout.py"]],
+      "expected_output_contains": "FTF-0001 monorepo layout: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local"
+    },
+    "FTF-0002": {
+      "commit": "41f1493bca4f70aa74ab61516d1a22ee197daf79",
+      "commands": [["python3", "tests/tasks/test_ftf_0002.py"]],
+      "expected_output_contains": "FTF-0002 formatting/lint/type checks: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local"
+    },
+    "FTF-0003": {
+      "commit": "e2c2dae96142c95a78005fd7528df6ac7e3e5dfc",
+      "commands": [["python3", "tests/tasks/test_ftf_0003.py"]],
+      "expected_output_contains": "FTF-0003 test harnesses: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local"
+    },
+    "FTF-0004": {
+      "commit": "a477e678b785d3248bdc985c91586b148411b4fe",
+      "commands": [["python3", "tests/tasks/test_ftf_0004.py"]],
+      "expected_output_contains": "FTF-0004 docker local stack: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "This entry covers the local, no-Docker readiness-logic evidence only. The real container-boot/negative-acceptance evidence runs in the docker-local-stack-integration CI job, which needs registry egress this sandbox does not have — same disclosed scope as FTF-0004's own certification."
+    },
+    "FTF-0005": {
+      "commit": "5f5a34d803a76e3261c8cc860bd5f21cd8290424",
+      "commands": [["python3", "tests/tasks/test_ftf_0005.py"]],
+      "expected_output_contains": "FTF-0005 configuration system: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local"
+    },
+    "FTF-0006": {
+      "commit": "268186bd5e70032a6c563796910059ab2684b684",
+      "commands": [["python3", "tests/tasks/test_ftf_0006.py"]],
+      "expected_output_contains": "FTF-0006 observability foundation: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local"
+    }
+  }
+}

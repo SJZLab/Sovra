@@ -662,3 +662,161 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   same as every other FTF task in this repo.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-16 — FTF-H001 — Executable specification and gate bootstrap
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-43jlvy`.
+- **Commit:** implementation commit (hash-fixup commit follows, same
+  two-commit pattern as FTF-0006's `91eeff1` + `7d5834f`).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-H001 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-0001/FTF-0002/FTF-0003 all `CERTIFIED` — unblocked.
+- **Why this task, not FTF-0101:** QUEUE.md's own "Queue (ordered by
+  dependency)" section lists FTF-0101…0106 next, but FTF-0101's real
+  dependency graph (from its own task packet) is `FTF-0004, FTF-0005,
+  FTF-0102`, and FTF-0102 in turn depends on `FTF-0004, FTF-0005, FTF-H001`
+  — FTF-H001 itself was `certification_state: NONE` /
+  `implementation_state: ABSENT` in `docs/spec-matrix.yaml`, with its own
+  prerequisites (FTF-0001/0002/0003) all CERTIFIED. It, not FTF-0101, was
+  the actual dependency-ready frontier item. Confirmed via
+  `tools/r1_handoff.py packet` for all three IDs before picking one, not
+  assumed from QUEUE.md's summary ordering alone.
+- **Scope finding before implementation:** this task's own
+  `verification_commands` (`python scripts/validate_spec.py --strict`,
+  `python scripts/verify_task.py --task FTF-H001 --stage task`) reference
+  scripts that do not exist yet — FTF-H001 is precisely the task that
+  creates them, matching Section 75.1's own bootstrap note ("implement/
+  bootstrap its actual commands in FTF-H001; until then FTF-0001/0002/0003
+  use their direct pinned commands"). The task's `files` list also names
+  `packages/contracts/openapi/18-interface.yaml` and
+  `jsonschema/18-domain.schema.json`; neither is required by this task's
+  actual acceptance/negative_acceptance clauses (both concern the
+  validator/verifier tooling and the task/evidence ledger only), and no
+  real API endpoint exists yet to back an OpenAPI contract — inventing an
+  empty, homeless interface stub would risk a placeholder under Law 11.
+  Deliberately not created; disclosed as a follow-up in
+  `docs/spec-matrix.yaml`'s notes, same precedent as FTF-0004's `web`
+  exclusion.
+- **Delivered:**
+  - `scripts/spec_verification.py`: shared parser/verifier module.
+    `load_tasks()` parses `spec/tasks.json` (the frozen 300-task ledger
+    FTF-0001's own bootstrap produced) into a dependency graph;
+    `check_structural()` runs Kahn's-algorithm cycle detection restricted
+    to edges whose target actually exists (so a `missing_task` defect
+    doesn't also mask a real cycle) and checks every
+    `qualification_scenarios` reference against
+    `spec/qualification-inventory.json`'s real 43-scenario set.
+    `check_evidence()` validates `spec/verification-map.json` — for every
+    task claiming merged evidence, its `commit` must resolve as a real git
+    object in this repository (`git cat-file -e <hash>^{commit}`) and it
+    must not record any skipped test.
+  - `spec/verification-map.json`: the new, real "executable specification"
+    — maps each of the 6 currently-CERTIFIED task IDs to its actual,
+    currently re-executable command (`python3 tests/tasks/test_ftf_000X.py`
+    or `tests/test_ftf_0001_monorepo_layout.py`, exactly as CI runs them),
+    the real merge-commit `evidence_hash` recorded in
+    `docs/spec-matrix.yaml`, and the literal success string each script
+    prints on a clean run. A task absent from this file (294 of 300, all
+    still `NOT_STARTED`) has no entry — `verify_task.py` reports it
+    `BLOCKED`, never a fabricated `PASS`.
+  - `scripts/validate_spec.py --strict`: CLI wrapping `validate()` — the
+    schema-validated, nonzero-exit structural + evidence validator this
+    task's contract requires.
+  - `scripts/verify_task.py --task <ID> --stage task`: CLI wrapping
+    `verify_task()` — resolves the real command(s) for one task from
+    `spec/verification-map.json` and actually runs them against this
+    checkout (no shell string interpolation — every command is stored and
+    executed as an argv list). Rejects an unknown `--stage` (only `task` is
+    currently defined; release-wide checking is `verify_release.py`'s
+    separate, Tier-3 job). A task with no map entry is `BLOCKED`.
+  - `scripts/verify_release.py`: whole-release gate — iterates every
+    required task in `spec/tasks.json`, requires both a live-passing
+    `verify_task()` result AND `certification_state: CERTIFIED` in
+    `docs/spec-matrix.yaml`. Tier 3 / release-only per CLAUDE.md ("ship-gate
+    = release only; relay never dispatches it") — built, not run as a
+    per-task gate. Live run against the real repo today correctly reports
+    `6/300 required task(s) have live-passing, CERTIFIED evidence` /
+    `NOT READY` — no inflation.
+- **Test:** `tests/tasks/test_ftf_h001.py` — 13 check functions.
+- **Evidence — shown able to fail (Law 1), covering every fixture kind this
+  task's own acceptance clause names:**
+  1. A valid 3-task fixture (`FTF-A <- FTF-B <- FTF-C`, one known scenario
+     each) produces zero defects.
+  2. `missing_task` — a dependency on an unknown task ID is rejected.
+  3. `duplicate_id` — the same task ID appearing twice is rejected (caught
+     in `load_tasks()` itself, since a dict can't hold two same-keyed
+     fixtures long enough to compare downstream).
+  4. `cyclic_dependency` — `FTF-A -> FTF-C -> FTF-B -> FTF-A` is rejected.
+  5. `missing_scenario` — a reference to an unknown scenario ID (`Q99`) is
+     rejected.
+  6. `skipped_test` — a verification-map entry recording
+     `expected_skipped: 1` is rejected.
+  7. `stale_commit` — a verification-map entry whose `commit` does not
+     resolve in this repository is rejected.
+  8. Negative_acceptance: `verify_task("FTF-DOES-NOT-EXIST", "task")`
+     returns `BLOCKED`, never `PASS` — proving "absent... evidence must
+     report blocked/fail rather than pass."
+  9. An unknown `--stage` (`"release"`) is rejected (`FAIL`), not silently
+     accepted.
+  10. **Not fabricated, proven live:** the real, shipped
+      `spec/verification-map.json` entry for FTF-0002 is re-run for real
+      through the actual CLI (`python3 scripts/verify_task.py --task
+      FTF-0002 --stage task`) against this exact checkout and genuinely
+      passes — not just re-read as trusted text.
+  11. The real `python3 scripts/validate_spec.py --strict` CLI is clean
+      against the real, shipped ledger.
+  12. **Real fault injection against the shipped map file itself (not just
+      a fixture):** temporarily corrupted the real
+      `spec/verification-map.json`'s `FTF-0002.commit` to `"f"*40` —
+      `validate_spec.py --strict` genuinely failed with
+      `stale_commit: FTF-0002` in its output; restored byte-identical
+      (`MAP_FILE.read_text() == original` asserted directly, not just
+      `git diff`), re-ran clean.
+  13. **A second, independent fault injection:** temporarily corrupted
+      FTF-0002's `expected_output_contains` marker to a string that can
+      never appear — `verify_task.py` genuinely failed even though the
+      underlying `test_ftf_0002.py` command still exits 0, proving the
+      marker check is real, not decorative; restored byte-identical,
+      re-ran clean.
+  14. Additionally (outside the fixture set, module-level Law 1 evidence):
+      temporarily deleted the `stale_commit` check block from
+      `scripts/spec_verification.py` itself — this made `ruff check .`
+      genuinely fail on the resulting unused-variable warning, which then
+      cascaded into a real `FAIL` on FTF-0002's own live re-verification
+      (since its mapped command is `ruff check .`'s own umbrella script) —
+      confirming the whole gate catches a broken verifier end-to-end, not
+      only its own unit fixtures. Restored via file copy, `diff` confirmed
+      empty, re-ran clean.
+- **Acceptance clause 2** ("No full release claim until all mapped
+  scenarios and exact-revision evidence pass") is enforced structurally by
+  `verify_release.py` requiring both live-passing evidence and
+  `certification_state: CERTIFIED` for every required task — verified this
+  is not just written but actually true today (6/300, NOT READY, no
+  inflation).
+- **Regression check:** `uv run ruff check .` / `uv run ruff format
+  --check .` / `uv run mypy .` clean; `pnpm run lint` / `format:check` /
+  `typecheck` clean; all 7 existing task negative-test-proof scripts
+  (`test_ftf_0001_monorepo_layout.py` through `test_ftf_0006.py`, now
+  joined by `test_ftf_h001.py`) still pass unmodified; `uv run pytest
+  tests/unit` (3 passed) and `pnpm exec vitest run` (2 passed) both clean
+  with 0 skipped either side (`check_test_harness.py` confirms);
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, `proving_symbol` deliberately empty (this is CI/gate
+  tooling, not a live product-runtime path, same rationale as
+  FTF-0002/0003). No already-certified task's own implementation file was
+  modified — only additive tooling, avoiding any Law 15 requalification
+  question for FTF-0001–0006's existing certified evidence.
+- **CI:** wired two new steps into the existing `gate` job in
+  `.github/workflows/ci.yml`, right after FTF-0006's step:
+  `python3 scripts/validate_spec.py --strict` and `python3
+  tests/tasks/test_ftf_h001.py`; YAML-validated (`yaml.safe_load`). Real
+  run status to be confirmed on the opened PR before merge.
+- **Not touched:** the existing FTF-0002–0006 CI steps still call their own
+  test scripts directly (`python3 tests/tasks/test_ftf_000X.py`), not
+  rerouted through `verify_task.py` — rerouting already-certified tasks'
+  own gate invocation through new tooling would be a source/manifest
+  change to their certified evidence requiring Law 15 requalification,
+  out of this task's scope. `spec/verification-map.json` records their
+  real commands as a parallel, additive index for the new verifier, not a
+  replacement for their own CI steps.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.

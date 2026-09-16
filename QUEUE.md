@@ -3,7 +3,7 @@ Updated: 2026-09-16 by Control plane (certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 6/300 · Provisional: 0 · Blocked: 0
+Certified: 6/300 · Provisional: 1 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005 and FTF-0006 all have no proving_symbol;
 FTF-0001 is structural layout, FTF-0002 is CI tooling, FTF-0003 is
@@ -11,7 +11,9 @@ test-harness tooling, FTF-0004 is local-stack bootstrap/health tooling,
 FTF-0005 is a configuration module with no live caller yet, and FTF-0006
 is an observability seam with no live FastAPI app or Temporal workflow to
 instrument yet — none a live-wired product-runtime path, so all six are
-CERTIFIED without counting toward product-true).
+CERTIFIED without counting toward product-true). FTF-H001 (PROVISIONAL)
+is likewise CI/gate tooling with no proving_symbol — will not count toward
+product-true once certified either.
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -25,11 +27,33 @@ CERTIFIED without counting toward product-true).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-0006 is now CERTIFIED, see Done below. Next candidate per
-dependency order: FTF-0101+.)
+(empty — FTF-H001 is now L1-PROVEN/PROVISIONAL, see Provisional below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-H001 — Executable specification and gate bootstrap. Real DoD pulled
+  via `tools/r1_handoff.py packet FTF-H001`. Deps FTF-0001/0002/0003 all
+  CERTIFIED. Not FTF-0101 (QUEUE.md's own listed next item) — FTF-0101 and
+  its own dependency FTF-0102 both transitively require FTF-H001, which
+  was itself still `NONE`/`ABSENT`; confirmed via `r1_handoff.py packet`
+  for all three IDs, not assumed from this file's summary ordering.
+  Delivered `scripts/validate_spec.py` / `scripts/verify_task.py` /
+  `scripts/verify_release.py` + `spec/verification-map.json` (real,
+  currently re-executable commands for the 6 CERTIFIED tasks; a task
+  absent from the map is BLOCKED, never a fabricated PASS).
+  `tests/tasks/test_ftf_h001.py` (13 checks) proves all six of the task's
+  own named fixture kinds (missing task, cyclic dependency, duplicate ID,
+  missing scenario, skipped test, stale commit) are rejected, a valid
+  fixture passes, `verify_task` on an absent task is BLOCKED (not PASS),
+  an unknown `--stage` is rejected, the real FTF-0002 map entry re-passes
+  live through the actual CLI, and two independent fault injections
+  against the real shipped `spec/verification-map.json` file itself (a
+  corrupted commit, a corrupted success marker) both genuinely fail then
+  restore byte-identical. `packages/contracts/openapi/18-interface.yaml`
+  / `jsonschema/18-domain.schema.json` (named in the task's `files`)
+  deliberately not created — not required by acceptance/negative_acceptance,
+  no real endpoint exists yet to back them; disclosed follow-up in
+  `docs/spec-matrix.yaml`'s notes. Full entry: `docs/certifications/queue.md`.
+  Not self-certified — awaiting Control plane L2 review per Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

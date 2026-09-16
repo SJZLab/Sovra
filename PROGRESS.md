@@ -1,5 +1,117 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T15:05:00Z
+Updated: 2026-09-16T17:40:00Z
+
+## 2026-09-16 — FTF-H001 implemented (Provisional, awaiting L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main` (local
+branch tip matched `origin/main` exactly at `b453126`), `list_pull_requests`
+state=open returned empty, `BLOCKER.md` held only resolved history.
+STEP 0.2: `cognee-cli doctor` — command not found, text-search fallback
+active (unchanged from every prior shift).
+QUEUE.md Active was empty, 6/300 certified, 0 provisional. QUEUE.md's own
+"Queue (ordered by dependency)" section names FTF-0101…0106 next.
+
+STEP 1: pulled FTF-0101's real DoD via `tools/r1_handoff.py packet
+FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md` before claiming it — its
+real `dependencies` are `FTF-0004, FTF-0005, FTF-0102` (not just FTF-0004/
+0005 as QUEUE.md's summary ordering might suggest), and `contract_owner`
+is `FTF-0102`. Pulled FTF-0102's packet next — its `dependencies` are
+`FTF-0004, FTF-0005, FTF-H001`. Checked `docs/spec-matrix.yaml`: FTF-H001
+was `certification_state: NONE` / `implementation_state: ABSENT`, with its
+own deps (FTF-0001/0002/0003) all CERTIFIED — it, not FTF-0101, was the
+real dependency-ready frontier item. Picked FTF-H001. Real DoD resolved
+via `tools/r1_handoff.py packet FTF-H001 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (not improvised).
+
+STEP 2 (PEV):
+- P: read the task packet. This task's own `verification_commands`
+  (`python scripts/validate_spec.py --strict`, `python scripts/verify_task.py
+  --task FTF-H001 --stage task`) name scripts that don't exist yet —
+  FTF-H001 is the task that creates them, matching Section 75.1's own
+  bootstrap note. Its `files` list also names two `packages/contracts/`
+  stub paths; neither is required by its actual acceptance/
+  negative_acceptance clauses and no real API endpoint exists yet to back
+  an OpenAPI contract — decided not to invent a homeless placeholder
+  (Law 11), disclosed as a follow-up instead, same precedent as FTF-0004's
+  `web` exclusion.
+- E: implemented `scripts/spec_verification.py` (shared parser/verifier:
+  `load_tasks()`/`check_structural()` validate spec/tasks.json's 300-task
+  dependency/scenario graph against spec/qualification-inventory.json;
+  `check_evidence()` validates spec/verification-map.json's recorded
+  evidence — commit reachability via real `git cat-file -e`, zero
+  tolerance for a recorded skipped test), `spec/verification-map.json`
+  (real, currently re-executable commands + real merge-commit hashes for
+  the 6 CERTIFIED tasks, pulled from docs/spec-matrix.yaml and verified
+  against `git cat-file` directly, not copied blind), `scripts/
+  validate_spec.py --strict`, `scripts/verify_task.py --task <ID> --stage
+  task` (BLOCKED for any task absent from the map — never a fabricated
+  PASS; rejects an unknown `--stage`), and `scripts/verify_release.py`
+  (Tier-3/release-only whole-release gate, built but not dispatched by the
+  relay per CLAUDE.md).
+  Law 1 evidence (`tests/tasks/test_ftf_h001.py`, 13 checks): all six of
+  the task's own named fixture kinds (missing_task, cyclic_dependency,
+  duplicate_id, missing_scenario, skipped_test, stale_commit) proven
+  rejected against constructed fixtures; a valid fixture proven to pass;
+  negative_acceptance proven (`verify_task` on an unknown task ID returns
+  BLOCKED, never PASS; an unknown stage returns FAIL); the real shipped
+  FTF-0002 map entry proven not fabricated by re-running it live through
+  the actual CLI against this checkout; two independent real fault
+  injections against the live `spec/verification-map.json` file itself
+  (corrupted commit hash, corrupted success marker) each shown to make the
+  real CLI fail for the right reason, then restored byte-identical
+  (`MAP_FILE.read_text() == original` asserted directly). Additionally,
+  outside the formal fixture set: temporarily deleted the `stale_commit`
+  check block from `scripts/spec_verification.py` itself — this cascaded
+  into a genuine `ruff check .` failure, which in turn made FTF-0002's own
+  live re-verification fail for real (since its mapped command *is*
+  `ruff check .`'s own umbrella script) — confirming the gate catches a
+  broken verifier end-to-end; restored via file copy, `diff` confirmed
+  empty, re-ran clean.
+  Caught and fixed two real lint/type findings before they reached CI: one
+  `ruff` E501 line-length violation in `spec_verification.py`, and one
+  `mypy` unused-`type: ignore` finding on `load_map()`'s return type
+  (fixed with an explicit local annotation instead).
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no proving_symbol (this is CI/gate tooling, not a live
+  product-runtime path, same rationale as FTF-0002/0003). `verify_release.py`
+  itself run live against the real repo: correctly reports `6/300 required
+  task(s) have live-passing, CERTIFIED evidence` / `NOT READY` — no
+  inflation, matches the real known state exactly.
+Re-ran the full existing gate after all changes: `uv run ruff
+check`/`format --check`/`mypy` clean; `pnpm run lint`/`format:check`/
+`typecheck` clean; all 7 existing task negative-test-proof scripts
+(`test_ftf_0001_monorepo_layout.py` through `test_ftf_0006.py`, now joined
+by `test_ftf_h001.py`) still pass unmodified — no already-certified task's
+own implementation file was touched, only additive tooling, avoiding any
+Law 15 requalification question; `uv run pytest tests/unit` (3 passed) and
+`pnpm exec vitest run` (2 passed) both clean, 0 skipped either side
+(`check_test_harness.py` confirms).
+Wired `python3 scripts/validate_spec.py --strict` and `python3
+tests/tasks/test_ftf_h001.py` into `.github/workflows/ci.yml`'s `gate`
+job, right after FTF-0006's step (YAML-validated with `yaml.safe_load`).
+Left the existing FTF-0002–0006 CI steps untouched — they still call
+their own test scripts directly rather than being rerouted through the
+new `verify_task.py`, avoiding a Law 15 requalification question for
+their already-certified evidence; `spec/verification-map.json` is an
+additive, parallel index for the new verifier, not a replacement for
+their own CI steps.
+Updated `docs/spec-matrix.yaml` (FTF-H001: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` left blank pending a hash-fixup commit — same
+two-commit pattern as FTF-0006's `91eeff1`+`7d5834f`, since a commit can't
+embed its own hash), `docs/certifications/queue.md` (full entry),
+`QUEUE.md` (Active cleared, Provisional entry added, bumped Provisional
+0→1). Certified count unchanged at 6/300 — PROVISIONAL is not certified.
+Per Law 4, did not self-certify. PR to be opened against `main`; not
+merging without confirming CI green first.
+STEP 4(a): stopping here — FTF-H001 is fully L1-PROVEN, awaiting Control
+plane L2 certification (this session is the relay, not the certifier) and
+eventually the L4 gate. Once FTF-H001 certifies, FTF-0102 (Organization/
+workspace schema) becomes the next dependency-ready item — it also
+requires a real local Postgres migration/RLS integration (FTF-0004's
+docker-local-stack), which this sandbox can run locally per FTF-0004's own
+precedent. FTF-0101 (OIDC login) remains blocked behind FTF-0102.
 
 ## 2026-09-16 — FTF-0006 independently certified (Control plane, CERTIFY mode)
 Scheduled control-plane certifier shift, triggered by the `pull_request.opened`
