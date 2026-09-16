@@ -2620,7 +2620,7 @@ FTF-H002:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Freeze release scope, compatibility and measured execution inputs
-  evidence_hash: ''
+  evidence_hash: 40b61d221238a25a2420cabc945d0d41d91b36e3
   implementation_state: IMPLEMENTED
   notes: kind=audit_hardening; requirements=AF-01, AF-02, AF-36; scenarios=Q12, Q34; deps=FTF-H001, FTF-0005;
     spec/release-scope.yaml generated (never hand-authored) from spec/qualification-inventory.json,
