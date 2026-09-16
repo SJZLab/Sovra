@@ -207,7 +207,7 @@ class Settings:
             "Settings("
             f"environment={self.environment.value!r}, "
             f"database_url={_redact_url(self.database_url)!r}, "
-            f"litellm_gateway_url={self.litellm_gateway_url!r}, "
+            f"litellm_gateway_url={_redact_url(self.litellm_gateway_url)!r}, "
             f"privacy_policy={self.privacy_policy.value!r}, "
             f"tls_verify={self.tls_verify!r}, "
             f"max_training_budget_usd={self.max_training_budget_usd!r}, "
