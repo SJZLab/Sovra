@@ -116,3 +116,88 @@ corrected 2026-09-15.
   fresh install, fresh test run, fresh fault injection, real CI on the
   actual merged head, and the delivered work matches the real contract's
   acceptance/negative_acceptance clauses. Certified L2-CERTIFIED.
+
+## FTF-0003 — Add test harnesses
+- Criterion ID: FTF-0003
+- PR: https://github.com/SJZLab/Sovra/pull/26
+- Merge commit: e2c2dae96142c95a78005fd7528df6ac7e3e5dfc
+- Validated-by: session https://claude.ai/code/session_018gZRsspGdmcTmtxkqRDE59
+  (session-ID comparison performed and recorded before this entry: both
+  commits on PR #26 — d4482de2cbcdda17000f059886c47b894b680830 and
+  678285f1a5d69b0453b3ed630da5603c740734c2 — carry
+  `Claude-Session: .../session_01DY5FK4nK2VLrUMKHwNQQU2`; this session's ID
+  does not match, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's word:
+  1. Read the full PR diff (19 files changed) and the CI workflow change —
+     confirmed no `continue-on-error`, no softened severity; the harness
+     is wired into `.github/workflows/ci.yml` as real required steps, not
+     appended after the gate.
+  2. Ran `uv sync` and `pnpm install --frozen-lockfile` from a clean git
+     worktree checked out at the actual merge commit (`e2c2dae`, not the
+     producer's branch or environment) — both succeeded fresh.
+  3. Ran the real CI commands myself: `uv run pytest tests/unit
+     --junitxml=... -ra` (3 passed) and `pnpm exec vitest run
+     --reporter=junit --outputFile=...` (2 passed), then
+     `scripts/check_test_harness.py` against both reports — exit 0,
+     "all reports clean". Then ran `tests/tasks/test_ftf_0003.py` itself —
+     "all checks passed".
+  4. Fetched GitHub Actions run 35083644711 directly via the Actions API
+     (not the PR body's claim): workflow `CI`, event `pull_request`,
+     head_sha `678285f1a5d69b0453b3ed630da5603c740734c2` (PR #26's actual
+     merged head), conclusion `success` — a genuine run, not a 0-job parse
+     failure.
+  5. Performed my own fault injection, independent of the PR's claimed
+     evidence, against the checked-out merge commit: (a) ran
+     `check_test_harness.py` against an empty pytest dir's JUnit
+     output — genuine "zero collected tests" failure, exit 1; (b) added a
+     real `pytest.mark.skip` fixture — genuine "skipped/focused test(s)"
+     failure, exit 1; (c) added a real Vitest `test.only` fixture — same
+     genuine failure, exit 1. All three reverted; working tree confirmed
+     clean afterward. This reproduces the negative_acceptance clause
+     first-hand rather than trusting the commit message's description of
+     it.
+  6. Ran `python3 scripts/product_truth_check.py --fail-on-unwired`:
+     `0/0 product-true`, exit 0 — legitimate per
+     CONTROL_PLANE_MODES.md CERTIFY step 4, since `docs/spec-matrix.yaml`'s
+     FTF-0003 entry has `proving_symbol: ''` (test-harness tooling, not a
+     live product-runtime path). Also ran `scripts/status.py` — consistent
+     pre-certification count (2/300).
+  7. Re-ran the full pre-existing gate (`ruff check`, `ruff format
+     --check`, `mypy`, `pnpm run lint`, `pnpm run format:check`, `pnpm run
+     typecheck`) on the checked-out merge commit — all still pass clean,
+     confirming FTF-0003 introduced no regression to FTF-0002's certified
+     evidence. Confirmed `tests/test_ftf_0001_monorepo_layout.py` and
+     `tests/tasks/test_ftf_0002.py` are untouched by this PR's diff
+     (absent from the 19 changed files) — no Law 15 requalification
+     question for either's existing certified evidence.
+  8. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0003 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+     delivered work against it, not just "tests pass": acceptance clause 1
+     ("harnesses collect real assertions and publish machine-readable
+     counts") — met, shown by the JUnit XML output above; acceptance
+     clause 2 ("independent review... recorded") — met by this entry;
+     negative_acceptance ("zero collected tests, focused .only or skipped
+     required test must fail validation; remove template sample tests")
+     — met, per item 5, and the two new `.test.ts` files plus
+     `test_product_truth_check_helpers.py` each test a real (if trivial)
+     existing constant/function, not template filler. The packet's
+     `verification_commands` (`scripts/validate_spec.py`,
+     `scripts/verify_task.py`) still don't exist in the checked-out tree
+     — expected and already established at FTF-0002's certification:
+     gated behind FTF-H001's verification-map bootstrap, not a new gap
+     introduced by this task. The packet's suggested single file
+     (`apps/api/app/config/add_test_harnesses.py`) was not created;
+     the packet's own text says initial file paths are not binding and
+     path refinement is allowed, and the delivered layout (harness
+     configs + a shared gate script + task-evidence test) is the coherent
+     structure for two-language test tooling, not a scattered
+     one-file-per-ticket approach the packet explicitly warns against.
+- Conclusion: L1 evidence holds up under independent re-verification on a
+  freshly checked-out copy of the actual merge commit — fresh install,
+  fresh test run, three independent fault injections (not the producer's),
+  real CI on the actual merged head, no regression to prior certified
+  evidence, and the delivered work matches the real contract's
+  acceptance/negative_acceptance clauses. Certified L2-CERTIFIED.

@@ -3,12 +3,12 @@ Updated: 2026-09-16 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 2/300 · Provisional: 1 (FTF-0003) · Blocked: 0
-Product-true (Law 16): 0 — must match certified (FTF-0001 and FTF-0002
-both have no proving_symbol; FTF-0001 is structural layout and FTF-0002 is
-CI tooling, neither a live-wired product-runtime path, so both are
-CERTIFIED without counting toward product-true; FTF-0003 similarly has no
-proving_symbol — test-harness tooling, not a live product-runtime path)
+Certified: 3/300 · Provisional: 0 · Blocked: 0
+Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002 and
+FTF-0003 all have no proving_symbol; FTF-0001 is structural layout,
+FTF-0002 is CI tooling, and FTF-0003 is test-harness tooling — none a
+live-wired product-runtime path, so all three are CERTIFIED without
+counting toward product-true)
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -22,19 +22,12 @@ proving_symbol — test-harness tooling, not a live product-runtime path)
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-Nothing active — FTF-0003 implemented this shift (see Provisional below),
-at the user's direct live instruction ("Go then next task"), not the
-autonomous relay's normal cadence. Next candidates once FTF-0003 is
-independently L2-certified: FTF-0005 (config) → FTF-0004 (docker local
-stack) per the dependency order below — don't stack a further provisional
-item on top of an uncertified one.
+Nothing active — FTF-0003 is now independently L2-certified (this shift).
+Next candidates: FTF-0005 (config) → FTF-0004 (docker local stack) per the
+dependency order below.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0003 — Add test harnesses. Commit
-  d4482de2cbcdda17000f059886c47b894b680830. Real DoD resolved via
-  `python tools/r1_handoff.py packet FTF-0003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
-  Full evidence in docs/certifications/queue.md. Not self-certified per
-  Law 4 — awaiting independent review.
+Nothing pending.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -87,3 +80,21 @@ not merely because the task looked title-only elsewhere.
       acceptance/negative_acceptance contract pulled via
       `tools/r1_handoff.py packet FTF-0002`. Not yet PROMOTED — L4 gate is
       release-only and hasn't run.
+- [x] FTF-0003 — Add test harnesses. CERTIFIED 2026-09-16 (control-plane
+      L2, session_018gZRsspGdmcTmtxkqRDE59 — session-ID compared against
+      both PR #26 commits' session_01DY5FK4nK2VLrUMKHwNQQU2, no overlap).
+      PR: https://github.com/SJZLab/Sovra/pull/26, merge commit
+      e2c2dae96142c95a78005fd7528df6ac7e3e5dfc. Ledger:
+      docs/certifications/ledger.md. Independently re-verified in a fresh
+      git worktree at the actual merge commit: fresh `uv sync`/`pnpm
+      install`, fresh runs of the real CI test commands (pytest + Vitest +
+      `check_test_harness.py` + `tests/tasks/test_ftf_0003.py`), three
+      independent fault injections (empty pytest dir, a `pytest.mark.skip`
+      fixture, a Vitest `test.only` fixture — each shown to fail the gate
+      for real), the real GitHub Actions run on the actual merged PR head,
+      and the delivered work checked against FTF-0003's real
+      acceptance/negative_acceptance contract pulled via
+      `tools/r1_handoff.py packet FTF-0003`. Confirmed no regression to
+      FTF-0001/0002's certified evidence (both files untouched by this
+      PR's diff). Not yet PROMOTED — L4 gate is release-only and hasn't
+      run.
