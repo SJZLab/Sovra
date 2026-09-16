@@ -2603,7 +2603,7 @@ FTF-H001:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Executable specification and gate bootstrap
-  evidence_hash: ''
+  evidence_hash: 6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3
   implementation_state: IMPLEMENTED
   notes: kind=audit_hardening; requirements=AF-31, AF-35; scenarios=Q26, Q33, Q34; deps=FTF-0001, FTF-0002,
     FTF-0003; scripts/validate_spec.py + scripts/verify_task.py + scripts/verify_release.py resolve

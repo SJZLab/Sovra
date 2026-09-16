@@ -50,6 +50,15 @@
       "expected_skipped": 0,
       "timeout_seconds": 300,
       "resource_profile": "local"
+    },
+    "FTF-H001": {
+      "commit": "6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3",
+      "commands": [["python3", "tests/tasks/test_ftf_h001.py"]],
+      "expected_output_contains": "FTF-H001 executable specification/gate bootstrap: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Self-referential entry added in the hash-fixup commit, once the implementation commit above already existed in history — a commit cannot embed its own hash, so this entry could not be added in the same commit it points to. Same two-commit pattern as the evidence_hash fixup in docs/spec-matrix.yaml."
     }
   }
 }
