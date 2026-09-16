@@ -1,5 +1,66 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T12:45:00Z
+Updated: 2026-09-16T13:10:00Z
+
+## 2026-09-16 — FTF-0004 independently certified (Control plane, CERTIFY mode)
+Scheduled control-plane certifier shift. Read docs/certifications/queue.md
+— one pending item: FTF-0004 (PR #35, merged as
+`a477e678b785d3248bdc985c91586b148411b4fe`), confirmed the sole
+`PROVISIONAL` entry in `docs/spec-matrix.yaml` (FTF-0001/0002/0003/0005
+all already `CERTIFIED`). Session-ID comparison first, per
+docs/CONTROL_PLANE_MODES.md's explicit requirement: all seven commits on
+PR #35 carry `Claude-Session: .../session_01NV9ZvW9ptNnx8RzFWUoZQi`; this
+session is `session_0164zgaFH5z6hqEmpCyD1mLE` — no overlap, independent
+per Law 4.
+Verified for real rather than trusting the PR/queue description:
+- Read the full delivered diff on the checked-out merge commit
+  (`infra/docker/docker-compose.yml`, `apps/api/app/config/
+  docker_local_stack.py`, `scripts/verify_docker_local_stack.py`,
+  `tests/tasks/test_ftf_0004.py`, the `docker-local-stack-integration` CI
+  job) — digest-pinned images, SeaweedFS confirmed as the master spec's
+  own qualified S3-compatible fixture (§77.3/S32), stdlib-only health
+  check, no `continue-on-error`, no canned-healthy fallback path.
+- Ran `tests/tasks/test_ftf_0004.py` myself: 9/9 pass.
+- Performed my own fault injection: replaced `check_tcp_reachable` with a
+  hardcoded "canned healthy" `ReadinessResult` in the tracked module —
+  4/9 checks failed for real with the expected messages; restored via
+  `git checkout --`, `git diff` confirmed empty, re-ran clean (9/9).
+- Fetched GitHub Actions run 35096166703 directly via the API: `gate` and
+  `docker-local-stack-integration` both conclusion `success` on the
+  actual PR head SHA (`63b13ce`, confirmed via `pull_request_read
+  get_commits`, not a stale claim). Read the integration job's full log
+  directly (`get_job_logs`) rather than trusting the green check: real
+  stack boot, marker row written, `docker compose stop postgres`,
+  readiness genuinely flipping to `{'ready': False, ...}` (real DNS
+  failure once the container stopped), restart, recovery, and the marker
+  row confirmed to survive — the exact negative_acceptance evidence
+  FTF-0004 requires.
+- `product_truth_check.py --fail-on-unwired`: `0/0 product-true`,
+  legitimate since FTF-0004's `proving_symbol` is empty (no live caller
+  yet, same rationale as FTF-0002/0003/0005). `CLAUDE.md.sha256` matches
+  `sha256sum CLAUDE.md` — no drift.
+- Pulled the real contract via `tools/r1_handoff.py packet FTF-0004
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked delivered work
+  against its actual acceptance/negative_acceptance clauses: acceptance
+  clause 1 (boot command + health probes) is met for
+  API/Postgres/Temporal/S3; `web` is independently confirmed to have no
+  server-side runtime on disk at all (only a trivial `src/index.ts`
+  constant) — a disclosed, reasoned scope limitation (inventing a
+  placeholder web server would violate Law 11; adding a real one now
+  would be an out-of-scope new-runtime-dependency ask-first item), not a
+  hidden gap, and is tracked as a follow-up. Acceptance clause 3
+  (qualified SeaweedFS, not MinIO) and the negative_acceptance clause are
+  both met per the fault injection and CI log evidence above.
+Certified: `docs/spec-matrix.yaml` (FTF-0004: `certification_state=
+CERTIFIED`, `proof_state=L2-CERTIFIED`, `evidence_hash=a477e678...` the
+merge commit), `docs/certifications/ledger.md` (full entry with
+session-ID comparison stated explicitly), `QUEUE.md` (FTF-0004 moved to
+Done, Certified 4→5/300, Provisional cleared to 0). Not promoted — L4
+gate is release-only and hasn't run. Certified: 5/300 · Product-true: 0
+(unchanged — FTF-0004 has no proving_symbol, doesn't count either way).
+Did not act on PR #37 (an unrelated, separately-opened docs-only
+PROGRESS.md trim from a different relay shift) — out of scope for this
+CERTIFY-mode pass; docs/certifications/queue.md had no pending item tied
+to it.
 
 ## 2026-09-16 — FTF-0004 (PR #35) merged to main as PROVISIONAL
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:

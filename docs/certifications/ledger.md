@@ -277,3 +277,105 @@ corrected 2026-09-15.
   the real contract's negative_acceptance clause with no regression to
   the rest of FTF-0005 or to prior certified evidence. Certified
   L2-CERTIFIED.
+
+## FTF-0004 — Docker local stack
+- Criterion ID: FTF-0004
+- PR: https://github.com/SJZLab/Sovra/pull/35
+- Merge commit: a477e678b785d3248bdc985c91586b148411b4fe
+- Validated-by: session https://claude.ai/code/session_0164zgaFH5z6hqEmpCyD1mLE
+  (session-ID comparison performed and recorded before this entry: all
+  seven commits on PR #35 — 5fefe0a, f2c8a2c, 3aaab6f, bc603a6, 330be28,
+  c9ab1c9, c595897, 63b13ce — carry
+  `Claude-Session: .../session_01NV9ZvW9ptNnx8RzFWUoZQi`; this session's
+  ID does not match, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's word:
+  1. Confirmed `docs/spec-matrix.yaml` on `main` already showed
+     FTF-0001/0002/0003/0005 all `CERTIFIED`/`L2-CERTIFIED` and FTF-0004
+     as the sole `PROVISIONAL`/`L1-PROVEN` entry — the one real pending
+     item, matching `docs/certifications/queue.md`'s bottom entry ("Real
+     CI failure found and fixed on the merge commit").
+  2. Read the full delivered diff on the checked-out merge commit:
+     `infra/docker/docker-compose.yml` (postgres:16-alpine,
+     temporalio/auto-setup:1.24.2, chrislusf/seaweedfs:3.71, all pinned
+     by digest — SeaweedFS confirmed as the master spec's own qualified
+     S3-compatible fixture, `FINE_TUNING_FACTORY_RELEASE_1.md` §77.3/S32
+     and `docs/architecture/REFERENCE_REPOSITORIES.md`, not an invented
+     substitute), `apps/api/app/config/docker_local_stack.py` (stdlib-only
+     TCP-probe readiness + `/health` handler, no new runtime dependency),
+     `scripts/verify_docker_local_stack.py`, `tests/tasks/test_ftf_0004.py`,
+     and the `.github/workflows/ci.yml` `docker-local-stack-integration`
+     job. No `continue-on-error`, no canned-healthy fallback path.
+  3. Ran `tests/tasks/test_ftf_0004.py` myself on the checked-out merge
+     commit: 9/9 checks pass.
+  4. Performed my own fault injection, independent of the producer's
+     claimed evidence: replaced `check_tcp_reachable` with a hardcoded
+     `ReadinessResult(..., True, "canned healthy (fault injection)")` in
+     the tracked module, re-ran the test — 4 of 9 checks failed for real
+     (`the healthy detail names the actual host/port checked`, `a port
+     nothing listens on is reported unhealthy`, `readiness flips to
+     unhealthy the instant the socket is closed`, `any dependency
+     unreachable -> stack is not ready`), reproducing the negative-
+     acceptance property from first principles. Restored via `git
+     checkout --`, `git diff` confirmed empty, re-ran clean (9/9).
+  5. Fetched GitHub Actions run 35096166703 directly via the Actions API
+     (not the PR body's claim): workflow `CI`, event `pull_request`,
+     head_sha `63b13cec9a58822290e678231069427370678855` (PR #35's actual
+     final head, confirmed via `pull_request_read get_commits`), both
+     `gate` and `docker-local-stack-integration` jobs conclusion
+     `success`. Read `docker-local-stack-integration`'s full job log
+     directly (`get_job_logs`), not inferred from the green check: it
+     shows the real sequence — stack booted, `stack ready: {...}` with
+     all three services healthy, a marker row inserted into Postgres,
+     `docker compose stop postgres`, readiness genuinely flipping to
+     `{'ready': False, ...}` (real DNS-resolution failure once the
+     container stopped, not a canned response), `docker compose start
+     postgres`, recovery to `{'ready': True, ...}`, and the marker row
+     confirmed to have survived the restart — the exact
+     negative_acceptance evidence (restart/persistent state, not canned
+     readiness) FTF-0004 requires.
+  6. Ran `python3 scripts/product_truth_check.py --fail-on-unwired`:
+     `0/0 product-true`, exit 0 — legitimate per CONTROL_PLANE_MODES.md
+     CERTIFY step 4, since `docs/spec-matrix.yaml`'s FTF-0004 entry has
+     `proving_symbol: ''` (no live caller wires this into a running
+     product service yet — same rationale already established for
+     FTF-0002/0003/0005).
+  7. Verified `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` — no
+     drift.
+  8. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0004 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+     delivered work against its actual acceptance/negative_acceptance
+     clauses, not just "tests pass": acceptance clause 1 ("one documented
+     command boots real API/web/Postgres/Temporal/S3-compatible services
+     and health probes pass") is met for API/Postgres/Temporal/S3 via
+     `docker compose -f infra/docker/docker-compose.yml up -d`, confirmed
+     against the real CI log above; `web` is the one component not
+     booted — verified independently that `apps/web` genuinely has no
+     server-side runtime on disk (only a trivial `src/index.ts` constant,
+     `README.md`, `package.json`, `tsconfig.json` — no Next.js/React
+     installed), so there is nothing real to boot, and inventing a
+     placeholder web server to satisfy the clause literally would itself
+     violate Law 11 (no placeholder routes) while adding the real
+     Next.js runtime now would be a new-runtime-dependency ask-first item
+     under CLAUDE.md, out of FTF-0004's own scope and dependency set
+     (FTF-0001/0003/0005, none of which build the web app). This is a
+     disclosed, reasoned scope limitation — documented in the compose
+     file's own header, `docs/spec-matrix.yaml`'s notes, and this queue
+     history, not a silently dropped requirement — and is accepted as
+     meeting the clause's intent given the current, honestly-represented
+     state of the repo; tracked as a required follow-up for whichever
+     task first builds the real web app. Acceptance clause 3 (qualified
+     SeaweedFS fixture, not an automatic MinIO install) is met, per item
+     2. Negative_acceptance ("unhealthy DB/storage/Temporal prevents
+     readiness; test restart/persistent state instead of canned
+     readiness") is met, per items 4 and 5 (both a synthetic fault
+     injection and the real container restart/persistence evidence).
+- Conclusion: the L1 evidence holds up under independent re-verification
+  — fresh fault injection, the actual CI job log read directly (not just
+  its green status), `product_truth_check.py`'s 0/0 confirmed legitimate,
+  and the delivered work matches the real contract's acceptance/
+  negative_acceptance clauses, with the one disclosed scope limitation
+  (`web` excluded) being a sound, transparent engineering call rather
+  than a hidden gap. Certified L2-CERTIFIED.
