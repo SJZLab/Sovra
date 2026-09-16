@@ -1,0 +1,53 @@
+# FTF-R001 -- frozen deployment-profile contract.
+# Source: FINE_TUNING_FACTORY_RELEASE_1.md Section 79.2 (Supported placement
+# profiles) and Section 79.5 (Profiles do not silently skip mandatory product
+# scope). This file is a shared read contract (Section 84.3) -- the four
+# `profiles` entries and their `placement`/`permitted_claim` text are the
+# binding text from Section 79.2, not paraphrased summaries; refining wording
+# requires the same contract-lock discipline as any other shared contract.
+schema_version: 1
+
+profiles:
+  INTERNAL_COMPACT:
+    placement: >-
+      Several isolated CPU services on shared infrastructure; GPU training
+      and inference may time-share under exclusive leases in non-live
+      qualification
+    permitted_claim: >-
+      Internal pilot/functional qualification only until its availability
+      and load targets are actually passed; no automatic HA claim
+  INTERNAL_PRODUCTION:
+    placement: >-
+      CPU services independently replicated where required; durable
+      replicated stores; distinct capacity/quotas for training and live
+      inference
+    permitted_claim: >-
+      Production only for the measured topology and declared SLOs; reusing
+      existing organization services is encouraged
+  AIR_GAPPED:
+    placement: >-
+      A disconnected boundary applied to a compact or production placement,
+      with every required artifact and service available internally
+    permitted_claim: >-
+      Air-gap qualified only after the offline lifecycle and
+      attempted-egress evidence passes
+  CONNECTED_MANAGED:
+    placement: >-
+      Seven Factory components may still be internal; explicitly approved
+      external model/training/repository services are reachable by
+      selected workers
+    permitted_claim: >-
+      Connected/managed capability only, never air-gapped
+
+# Section 79.5's own worked examples of assertion-level profile
+# applicability: each qualification-inventory scenario ID maps to the
+# distinct variant(s) it must actually pass under. An internal-only variant
+# never substitutes for a required positive connected-evidence variant in a
+# full-product release (Section 79.5, last paragraph).
+assertion_applicability:
+  Q12:
+    - connected_real_customization
+    - airgap_external_customization_denied
+  Q03:
+    - connected_private_github_snapshot
+    - airgap_internal_or_offline_snapshot

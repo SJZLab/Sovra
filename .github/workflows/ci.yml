@@ -84,6 +84,8 @@ jobs:
         run: python3 scripts/validate_spec.py --strict
       - name: FTF-H001 negative-test proof (gate bootstrap catches real defects)
         run: python3 tests/tasks/test_ftf_h001.py
+      - name: FTF-R001 negative-test proof (reuse architecture/version-lock schemas catch real defects)
+        run: python3 tests/tasks/test_ftf_r001.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

@@ -2996,16 +2996,25 @@ FTF-H036:
   proving_symbol: ''
   proving_test: ''
 FTF-R001:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Freeze seven-component architecture, ownership and version-lock schemas
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=reuse_architecture; requirements=CAP-19, CAP-20, CAP-21; scenarios=Q35, Q43; deps=FTF-0001,
-    FTF-H001
-  proof_state: UNPROVEN
+    FTF-H001; frozen packages/component-contracts/architecture.schema.json (ComponentBinding +
+    ReleaseApprovalAuthority, exactly the seven canonical component keys, Axolotl/Inspect AI
+    structurally barred from an always-on endpoint, exactly one Factory-owned release approval
+    authority) and spec/component-lock.schema.json (ComponentVersionLock, no mutable
+    latest/main/master/HEAD tag); scripts/architecture_lock.py is a bounded validator matched to
+    only the JSON Schema keywords those two files use, not a general-purpose engine; ExternalRunBinding
+    and packages/integrations/{mlflow,argilla,litellm}/ deliberately not created — no live component
+    run or adapter exists yet to back them, same disclosed-scope pattern as FTF-H001's contract-stub
+    exclusion; no proving_symbol (architecture/schema freeze, no live product-runtime caller yet, same
+    rationale as FTF-0002/0003/H001)
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_r001.py
 FTF-R002:
   certification_state: NONE
   criticality: MUST
