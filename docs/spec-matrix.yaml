@@ -2999,7 +2999,7 @@ FTF-R001:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Freeze seven-component architecture, ownership and version-lock schemas
-  evidence_hash: ''
+  evidence_hash: f9c82e910cde344a08b910c5b059e85c25b59adf
   implementation_state: IMPLEMENTED
   notes: kind=reuse_architecture; requirements=CAP-19, CAP-20, CAP-21; scenarios=Q35, Q43; deps=FTF-0001,
     FTF-H001; frozen packages/component-contracts/architecture.schema.json (ComponentBinding +

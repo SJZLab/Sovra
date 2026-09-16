@@ -59,6 +59,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Self-referential entry added in the hash-fixup commit, once the implementation commit above already existed in history — a commit cannot embed its own hash, so this entry could not be added in the same commit it points to. Same two-commit pattern as the evidence_hash fixup in docs/spec-matrix.yaml."
+    },
+    "FTF-R001": {
+      "commit": "f9c82e910cde344a08b910c5b059e85c25b59adf",
+      "commands": [["python3", "tests/tasks/test_ftf_r001.py"]],
+      "expected_output_contains": "FTF-R001 reuse architecture / version-lock schema freeze: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0006/FTF-H001 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
     }
   }
 }
