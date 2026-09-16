@@ -318,3 +318,63 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   PR #28, so it cannot certify its own fix; awaiting a fresh Control-plane
   session with no session-ID overlap with
   `session_012mAtoqKYzA7PiXbkGkD7rY` per Law 4.
+
+### Control plane review — 2026-09-16 — NOT CERTIFIED (not in a certifiable state)
+- **PR:** https://github.com/SJZLab/Sovra/pull/35 (`claude/wizardly-fermat-3mh1pd`
+  → `main`), head `330be28db5e60ab2999c47f6d91a60fc03044ee4`. Item: FTF-0004
+  (Docker local stack), submitted as PROVISIONAL/L1-PROVEN.
+- **Session-ID check:** all 5 commits on PR #35 (`5fefe0a`, `f2c8a2c`,
+  `3aaab6f`, `bc603a6`, `330be28`) carry
+  `Claude-Session: .../session_01NV9ZvW9ptNnx8RzFWUoZQi`; this reviewing
+  session's ID does not match — independent, not self-certification. (Not
+  that it matters here — this rejection is on structural grounds below,
+  not a content defect.)
+- **Blocker 1 — not mergeable:** `pull_request_read` reports
+  `mergeable_state: "dirty"` (a real, verified GitHub-computed conflict,
+  not a guess). Reproduced independently via `git merge-tree` against the
+  actual current `main` (`4ea6784`): genuine conflict markers in both
+  `PROGRESS.md` and `QUEUE.md` — this branch's tracking commit
+  (`330be28`, "Rebased QUEUE.md/PROGRESS.md onto main's current state...")
+  claims to be rebased onto main's post-FTF-0005-certification state, but
+  its merge-base with the actual current `main` is `9de083b`, an older
+  point in history predating both PR #30 (FTF-0005 fix merge, `5f5a34d`)
+  and PR #32 (FTF-0005 certification, `4d34e9a`) — the claimed rebase did
+  not happen against real, current `main`, only against a stale local
+  copy. There is therefore no clean merge commit of this work onto `main`
+  to certify against.
+- **Blocker 2 — CI never ran:** `pull_request_read` method `get_check_runs`
+  on PR #35 returns `total_count: 0` — zero check runs recorded, not a
+  failure and not a stale/self-reported claim of success. The PR's own
+  body flags the `docker-local-stack-integration` job as the one that
+  "actually" produces this task's real container-boot and
+  negative-acceptance evidence (this sandbox has no registry egress) and
+  explicitly asks Control plane to "confirm this job passed for real
+  before certifying" — it has not run at all, so per CERTIFY step 3
+  ("re-check CI actually ran and passed on the real merged commit — not a
+  stale or self-reported claim") there is nothing to re-check yet, for
+  either the `gate` job or the new integration job.
+- **Conclusion:** both blockers are structural, precede any evaluation of
+  the delivered code's correctness, and are independently reproducible
+  (GitHub's own `mergeable_state` field, GitHub's own check-runs count,
+  and a local `git merge-tree` against the real current `main`) rather
+  than inferred. Not evaluating the diff's substance further — a
+  content-level review would be premature while the PR can't merge
+  cleanly and has no CI evidence at all. Not merging, not certifying.
+  Note this repo's own `docs/certifications/queue.md` and `spec-matrix.yaml`
+  on `main` do not yet carry an FTF-0004 PROVISIONAL entry at all — the
+  "2026-09-16 — FTF-0004 — Docker local stack" evidence writeup and
+  `proof_state=L1-PROVEN` / `certification_state=PROVISIONAL` claim exist
+  only inside PR #35's own branch copy of these files (not yet merged),
+  per commit `330be28` on that branch. `certification_state` for FTF-0004
+  stays `PROVISIONAL` as that branch itself already states — not
+  downgraded further, since nothing found here contradicts that L1
+  evidence, which was produced independently of and is re-checkable
+  regardless of `main`'s tip.
+  **Action needed before resubmitting:** rebase/merge the actual current
+  `main` (`4ea6784` or later) into `claude/wizardly-fermat-3mh1pd`,
+  resolve the `PROGRESS.md`/`QUEUE.md` conflicts (both are pure
+  tracking-doc conflicts, not code), push, and let CI actually run to
+  completion — including the `docker-local-stack-integration` job —
+  before requesting certification again.
+- **Validated-by:** session https://claude.ai/code/session_01JwgxJqEYCMhQVzVk2bXdvT
+  (independent — see session-ID check above), 2026-09-16.
