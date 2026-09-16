@@ -1,16 +1,18 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by Control plane (certification)
+Updated: 2026-09-16 by relay (FTF-0006 submitted)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 5/300 · Provisional: 0 · Blocked: 0
+Certified: 5/300 · Provisional: 1 (FTF-0006) · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004 and FTF-0005 all have no proving_symbol; FTF-0001 is
 structural layout, FTF-0002 is CI tooling, FTF-0003 is test-harness
 tooling, FTF-0004 is local-stack bootstrap/health tooling, and FTF-0005
 is a configuration module with no live caller yet — none a live-wired
 product-runtime path, so all five are CERTIFIED without counting toward
-product-true).
+product-true). FTF-0006 (Provisional, not yet certified) also has no
+proving_symbol yet for the same reason — no live FastAPI app or Temporal
+workflow exists to wire it into.
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -24,11 +26,13 @@ product-true).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-0004 is now CERTIFIED, see Done below. Next candidate per
-dependency order: FTF-0006, or FTF-0101+.)
+(empty — FTF-0006 submitted as PROVISIONAL below, not picking up a second
+item on top of an uncertified one, same discipline as prior handoffs.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-0006 — Observability foundation. Submitted 2026-09-16 by the relay
+  (scheduled shift). Full evidence: docs/certifications/queue.md. Not
+  self-certified — awaiting a separate Control-plane session per Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
