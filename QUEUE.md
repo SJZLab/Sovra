@@ -1,19 +1,20 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by relay (FTF-R001 implementation)
+Updated: 2026-09-16 by Control plane (certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 7/300 · Provisional: 1 (FTF-R001) · Blocked: 1 (FTF-0102,
+Certified: 8/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004, FTF-0005, FTF-0006 and FTF-H001 all have no
+FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001 and FTF-R001 all have no
 proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI tooling,
 FTF-0003 is test-harness tooling, FTF-0004 is local-stack bootstrap/health
 tooling, FTF-0005 is a configuration module with no live caller yet,
 FTF-0006 is an observability seam with no live FastAPI app or Temporal
-workflow to instrument yet, and FTF-H001 is the spec/gate verifier tooling
-itself — none a live-wired product-runtime path, so all seven are
-CERTIFIED without counting toward product-true).
+workflow to instrument yet, FTF-H001 is the spec/gate verifier tooling
+itself, and FTF-R001 is an architecture/version-lock schema freeze with no
+live product-runtime caller yet — none a live-wired product-runtime path,
+so all eight are CERTIFIED without counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -63,20 +64,11 @@ CERTIFIED without counting toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-R001 implemented and PROVISIONAL this shift; not starting a
-second item on top of an uncertified one, same discipline as every prior
-FTF-000X/H001 handoff. FTF-0101/FTF-0102 remain blocked, see "Owner
-actions" and "Blocked" below.)
+(empty — FTF-R001 CERTIFIED this shift. FTF-0101/FTF-0102 remain blocked,
+see "Owner actions" and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-R001 — Freeze seven-component architecture, ownership and
-  version-lock schemas. Implemented this shift (deps FTF-0001/FTF-H001
-  both CERTIFIED — a real, separate dependency-ready item found by
-  checking docs/spec-matrix.yaml directly, distinct from the blocked
-  FTF-0101/FTF-0102 pair). Commits `f9c82e910cde344a08b910c5b059e85c25b59adf`
-  (implementation) + `42c1adf` (hash-fixup). Full entry:
-  docs/certifications/queue.md. Not self-certified — awaiting Control
-  plane L2 review.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -131,6 +123,28 @@ actions" and "Blocked" below.)
   real, restored byte-identical. Delivered work checked against
   FTF-H001's real acceptance/negative_acceptance clauses via
   `tools/r1_handoff.py packet FTF-H001`. Full entry:
+  docs/certifications/ledger.md.
+- FTF-R001 — Freeze seven-component architecture, ownership and
+  version-lock schemas. CERTIFIED 2026-09-16, PR #47 (merge commit
+  `2e3e1af0b81789da4a21e68bd536c3baae9f2ac2`). Independently re-verified
+  in a fresh git worktree at the real merged tip: real toolchain
+  installed (`uv sync`, `pnpm install`) and both of the task's own
+  `verification_commands` genuinely re-run (`validate_spec.py --strict`,
+  `verify_task.py --task FTF-R001 --stage task`), full 8-task regression
+  set clean, `product_truth_check.py` confirmed legitimately 0/0 (no
+  proving_symbol — architecture/schema freeze, no live product-runtime
+  caller yet), `verify_release.py` confirmed non-inflated (`7/300`/
+  `NOT READY` before this certification), and two own fault injections
+  (widened the mutable-tag pattern; loosened the release-authority
+  maxItems/type constraint — both distinct from the producer's own two,
+  which targeted the whole-set key check and the worker-package `allOf`
+  rule) each let the corresponding negative_acceptance case through with
+  zero errors, restored byte-identical, re-ran clean. Delivered work
+  checked against FTF-R001's real acceptance/negative_acceptance clauses
+  via `tools/r1_handoff.py packet FTF-R001`; the undelivered
+  `ExternalRunBinding` schema is a disclosed scope deferral matching
+  existing certified precedent (FTF-0004's `web` exclusion, FTF-H001's
+  contract-stub exclusion), not a hidden gap. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

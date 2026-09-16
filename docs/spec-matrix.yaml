@@ -2996,7 +2996,7 @@ FTF-H036:
   proving_symbol: ''
   proving_test: ''
 FTF-R001:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Freeze seven-component architecture, ownership and version-lock schemas
   evidence_hash: f9c82e910cde344a08b910c5b059e85c25b59adf
@@ -3011,8 +3011,9 @@ FTF-R001:
     and packages/integrations/{mlflow,argilla,litellm}/ deliberately not created — no live component
     run or adapter exists yet to back them, same disclosed-scope pattern as FTF-H001's contract-stub
     exclusion; no proving_symbol (architecture/schema freeze, no live product-runtime caller yet, same
-    rationale as FTF-0002/0003/H001)
-  proof_state: L1-PROVEN
+    rationale as FTF-0002/0003/H001); independently re-certified 2026-09-16, PR47, merge commit
+    2e3e1af0b81789da4a21e68bd536c3baae9f2ac2 — see docs/certifications/ledger.md
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r001.py
 FTF-R002:

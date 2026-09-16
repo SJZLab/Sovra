@@ -616,3 +616,141 @@ corrected 2026-09-15.
   legitimate and non-inflated, and the delivered work matches the real
   task-packet contract's acceptance/negative_acceptance clauses item by
   item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-R001 — Freeze seven-component architecture, ownership and version-lock schemas
+- Criterion ID: FTF-R001
+- PR: https://github.com/SJZLab/Sovra/pull/47 (`claude/wizardly-fermat-1r7ubn`
+  → `main`), merged as `2e3e1af0b81789da4a21e68bd536c3baae9f2ac2`.
+- Merge commit: f9c82e910cde344a08b910c5b059e85c25b59adf (implementation;
+  `evidence_hash` recorded in `docs/spec-matrix.yaml`)
+- Validated-by: session https://claude.ai/code/session_01MrAN34weU7YzSCe6khm4H4
+  (session-ID comparison performed and recorded before this entry: all 4
+  commits on PR #47 — f9c82e9, 42c1adf, 20ddc53, 924f698 — carry
+  `Claude-Session: .../session_014i1TTcqPb3qynFFHsBfkvo`; this session's ID
+  does not match, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's or queue.md entry's word:
+  1. Confirmed `docs/spec-matrix.yaml` on `main` showed FTF-0001–FTF-0006
+     and FTF-H001 all `CERTIFIED`/`L2-CERTIFIED` and FTF-R001 as the sole
+     `PROVISIONAL`/`L1-PROVEN` entry before this certification, matching
+     `docs/certifications/queue.md`'s bottom entry.
+  2. Confirmed `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` on the
+     merged tree — no drift.
+  3. Confirmed via GitHub's own data (not the PR body's claim) that PR
+     #47's `get_check_runs` reports both `gate` and
+     `docker-local-stack-integration` `completed`/`success`, tied to the
+     PR's actual head SHA `924f69853155855a22e7cc3406561447fc4154b3` — the
+     CI run did not exist yet at the time this session first read the PR
+     (`status: queued`); subscribed to PR activity and waited for the real
+     `check_suite.completed` webhook event rather than assuming success.
+     `mergeable_state: clean` confirmed directly from GitHub before merging.
+  4. Merged PR #47 myself (green CI, clean merge state, L1-PROVEN evidence
+     already on record — permitted under CLAUDE.md's "Do without asking:
+     merge on green + L1 doc (PROVISIONAL)"), then re-verified against the
+     real merged tip in a fresh `git worktree add --detach`, not the PR
+     branch — `git diff` of the merge commit against the PR's CI-verified
+     head is empty (tree-identical), confirming the merge did not alter the
+     reviewed content.
+  5. Read the full delivered diff directly (13 files, +1602/-17, matching
+     the PR's own stat): `packages/component-contracts/architecture.schema.json`,
+     `spec/component-lock.schema.json`, `spec/deployment-profiles.yaml`,
+     `docs/architecture/reuse-ownership.md`, `scripts/architecture_lock.py`,
+     `tests/tasks/test_ftf_r001.py`. Confirmed the whole-set business rule
+     (exactly seven canonical keys, no missing/duplicate/substituted) lives
+     in `scripts/architecture_lock.py`, not only in JSON Schema
+     `minItems`/`maxItems`, and that the Axolotl/Inspect-AI worker-package
+     bar and the mutable-tag rejection are real schema constraints
+     (`allOf`/`if`/`then` and a semver-only `pattern`), not decorative.
+  6. Set up the real toolchain (`uv sync`, `pnpm install` — neither was
+     present in the fresh checkout) and re-ran every command for real:
+     `python3 scripts/validate_spec.py --strict` → clean; `python3
+     scripts/verify_task.py --task FTF-R001 --stage task` → `PASS` (this
+     task's own two `verification_commands` from its real contract).
+  7. Ran the full regression set clean on the merged tree: `ruff check .`
+     / `ruff format --check .` / `mypy .` / `pytest tests/unit` (3 passed)
+     / `pnpm run lint` / `pnpm run typecheck` / `pnpm run format:check` /
+     `pnpm exec vitest run` (2 passed), and all 8 task negative-test-proof
+     scripts (`test_ftf_0001_monorepo_layout.py` through the new
+     `test_ftf_r001.py`) each print their own `all checks passed` line.
+  8. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-R001 entry has `proving_symbol: ''` — architecture/schema freeze,
+     no live product-runtime caller yet, same disclosed rationale already
+     established for FTF-0002/0003/H001.
+  9. `verify_release.py` run live on the merged tree (before this
+     certification) correctly reported `7/300 required task(s) have
+     live-passing, CERTIFIED evidence` / `NOT READY`, with FTF-R001 itself
+     listed under `FAILED` because its own `certification_state` was still
+     `PROVISIONAL` at that point — proving the release gate is not inflated.
+  10. **Real fault injections against the tracked modules, none reused
+      verbatim from the producer's own two (which disabled the whole-set
+      key-check function body and removed the Axolotl/Inspect-AI `allOf`
+      rule from the schema):**
+      - Widened `spec/component-lock.schema.json`'s `package_version`
+        `pattern` to `.*` — a lock entry pinned to the mutable tag
+        `"latest"` then passed `validate_component_lock_document` with
+        zero errors, proving the real semver-only pattern (not a fixture
+        assumption) is what rejects mutable tags in
+        `test_mutable_latest_package_version_rejected`.
+      - Removed `release_approval_authorities`' `maxItems: 1` cap and
+        loosened `releaseApprovalAuthority.component_key`'s `type` to
+        allow a string — a document with two release-approval-authority
+        records, one naming `mlflow` as a vendor authority, then passed
+        with zero errors, proving the real schema constraints (not the
+        test fixtures alone) are what reject a duplicate/vendor-claimed
+        release authority.
+      Both edits restored byte-identical from pre-edit copies (`diff`
+      confirmed empty), re-ran `tests/tasks/test_ftf_r001.py` clean
+      (`all checks passed`) after each restore.
+  11. Pulled the real contract via `python tools/r1_handoff.py packet
+      FTF-R001 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+      delivered work against its actual acceptance/negative_acceptance
+      clauses, not just "tests pass": acceptance clause 1 ("exactly seven
+      selected component keys ... pin all runtime dependencies before
+      qualification") is met by the seven-key enum plus whole-set rule
+      (item 5, item 10) and `component-lock.schema.json`'s pinned-version/
+      digest requirements (item 10). Acceptance clause 2 ("Define
+      ComponentBinding/VersionLock/ExternalRunBinding and ownership") is
+      met for `ComponentBinding`/`ComponentVersionLock` by the two frozen,
+      machine-validated schemas; `ExternalRunBinding` is documented in
+      `docs/architecture/reuse-ownership.md` with the exact field set from
+      `FINE_TUNING_FACTORY_RELEASE_1.md` Section 77.5 but has no frozen
+      JSON Schema, disclosed as deferred because no live component run
+      exists yet to bind — checked this against the same, already-certified
+      precedent (FTF-0004's `web` exclusion, FTF-H001's undelivered
+      `packages/contracts/` stub paths) rather than accepting the analogy
+      on the producer's word alone; the task's own `negative_acceptance`
+      clause does not name `ExternalRunBinding`, so no test gap results.
+      "UI calls internal Factory API ... not separate dashboards" is
+      recorded in `reuse-ownership.md`'s Section 77.6 summary — no UI code
+      exists yet in this repo to contradict it. Negative_acceptance
+      ("Reject missing/extra substituted component, invented always-on
+      Axolotl/Inspect HTTP endpoint, duplicate registry approval authority
+      and mutable latest-version release lock") — all four cases have a
+      real test (`test_missing_component_rejected`,
+      `test_extra_substituted_component_rejected`,
+      `test_duplicate_component_rejected`,
+      `test_invented_axolotl_http_endpoint_rejected`,
+      `test_invented_inspect_ai_http_endpoint_rejected`,
+      `test_second_release_approval_authority_rejected`,
+      `test_vendor_component_claiming_release_authority_rejected`,
+      `test_mutable_latest_package_version_rejected`,
+      `test_mutable_latest_image_digest_rejected`) and item 10's
+      independent fault injections directly confirm the underlying schema
+      constraints — not the fixtures alone — are what does the rejecting
+      for the mutable-tag and duplicate/vendor-authority cases.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head (waited for the actual
+  webhook rather than assuming), the merge commit is tree-identical to the
+  CI-verified head, the real toolchain installed and both verification
+  commands genuinely re-run, two fresh fault injections (distinct from the
+  producer's own) confirming the mutable-tag and duplicate/vendor-authority
+  rejections are schema-enforced rather than fixture-assumed,
+  `product_truth_check.py`'s 0/0 and `verify_release.py`'s `7/300`/
+  `NOT READY` both confirmed legitimate and non-inflated, and the delivered
+  work matches the real task-packet contract's acceptance/negative_acceptance
+  clauses item by item, including an explicit check that the disclosed
+  `ExternalRunBinding` scope deferral follows existing certified precedent
+  rather than being taken on trust. No open defect. Certified L2-CERTIFIED.
