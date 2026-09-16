@@ -1,5 +1,32 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T17:40:00Z
+Updated: 2026-09-16T17:55:00Z
+
+## 2026-09-16 — FTF-H001 (PR #43): real CI failure found and fixed
+PR activity subscription woke this session with a `check_run.completed`
+failure on the `gate` job (run 35125855659, head `d4301b4`, since
+superseded by later tracking-doc-only pushes). Confirmed against the PR's
+actual current head (`3bd23c9` at the time) via `pull_request_read`
+before acting, then `get_workflow_job` on the failed run showed the new
+"FTF-H001 executable specification validator" step failing for real, not
+a flake.
+Root cause, reproduced locally before fixing (not assumed): GitHub's
+`actions/checkout@v4` defaults to `fetch-depth: 1` (a shallow clone — only
+the tip commit, no history). `scripts/spec_verification.py`'s
+`git_commit_exists()` calls `git cat-file -e <hash>^{commit}`, which needs
+the commit object to actually exist locally — in a shallow clone, none of
+the historical evidence commits (FTF-0001 through FTF-0006, all real,
+merged commits on `main`) are present as objects, so `validate_spec.py`
+spuriously rejected all 7 entries as `stale_commit`. This sandbox's own
+dev clone has full history, which is why the bug was invisible locally.
+Reproduced with a real `git clone --depth 1` of this exact branch: same 7
+false `stale_commit` failures. Fix: added `fetch-depth: 0` to the `gate`
+job's `actions/checkout@v4` step. Verified the fix on the same shallow
+clone via `git fetch --unshallow` + re-run — clean. Re-ran the full local
+gate after the fix (ruff/mypy, `validate_spec.py --strict`,
+`test_ftf_h001.py`) — clean.
+Pushed as `86ed2bc`. This is a real defect in this PR's own new CI wiring,
+not a base-branch or infra flake — fixed and pushed per the drive-to-green
+discipline, not deferred or commented around.
 
 ## 2026-09-16 — FTF-H001 implemented (Provisional, awaiting L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
