@@ -13,11 +13,21 @@ CERTIFIED without counting toward product-true)
   create the 2h relay / watchdog triggers. See CLAUDE.md "Setup gaps".
   Owner must create them (or grant a control-plane session trigger
   tooling and re-run Groundwork S1.7/S1.8).
+- 2026-09-16: Relay has nothing left it's authorized to pick up. FTF-0001
+  is done (CERTIFIED) and SOURCE_ROOTS is re-derived, so FTF-0002 is
+  dependency-unblocked, but per `docs/architecture/CRITERION_MAPPING.md`
+  "Known gap", FTF-0001 was the only item with enough detail to execute
+  without the source spec's "Section 85" acceptance/negative-acceptance/
+  verification content — which still hasn't been supplied for any other
+  task. See BLOCKER.md "No Active item has a full DoD contract" for the
+  three route options. Needs control plane or owner to either supply
+  Section 85 content or hand-write a scoped DoD for the next item.
 
 ## Active (relay works this)
-Nothing active — FTF-0001 merged and certified (see Done below). Next
-unblocked item is FTF-0002 (lint/type checks) once SOURCE_ROOTS is
-re-derived from the real layout landed by FTF-0001.
+Nothing active — FTF-0001 merged and certified (see Done below). FTF-0002
+is dependency-unblocked (SOURCE_ROOTS re-derived in `dd60cef`) but has no
+full DoD contract yet — see "Owner actions" above and BLOCKER.md. Relay is
+stopped, not working an item, until that's resolved.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
