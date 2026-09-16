@@ -13,6 +13,17 @@ CERTIFIED without counting toward product-true)
   create the 2h relay / watchdog triggers. See CLAUDE.md "Setup gaps".
   Owner must create them (or grant a control-plane session trigger
   tooling and re-run Groundwork S1.7/S1.8).
+- 2026-09-16: No item past FTF-0001 has a usable DoD. Per
+  docs/architecture/CRITERION_MAPPING.md "Known gap", every task's real
+  acceptance/negative-acceptance/verification contract lives in "Section
+  85" of a source specification not supplied to this scaffold; FTF-0001
+  was explicitly the one exception. This has silently blocked all relay
+  progress since FTF-0001 merged (PRs #3–#14 were all FTF-0001
+  self-correction, none touched FTF-0002+) without ever being logged here.
+  See BLOCKER.md for full detail and three route options (supply Section
+  85; have control plane author FTF-0002's DoD directly and hand it to the
+  relay as a decided item; or formally scope Release 1 down). Owner/control
+  plane must pick a route before the relay can pick up any new item.
 
 ## Active (relay works this)
 Nothing active — FTF-0001 merged and certified (see Done below). Next
