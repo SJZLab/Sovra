@@ -1,5 +1,32 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T17:55:00Z
+Updated: 2026-09-16T17:10:00Z
+
+## 2026-09-16 — FTF-H001 (PR #43) merged to main as PROVISIONAL
+Same relay shift as the FTF-H001 implementation entries below. PR
+activity subscription confirmed `gate` and `docker-local-stack-integration`
+both `completed`/`success` on the PR's actual current head SHA (`ca53fe5`,
+confirmed via `pull_request_read get_check_runs` and cross-checked against
+`pull_request_read get` — not a stale/earlier-commit claim; the two prior
+`check_run.completed` failure events for `d4301b4`/`de41d12`/`3bd23c9`
+were correctly recognized as superseded-commit failures, already
+root-caused and fixed in the shallow-clone entry above). `mergeable_state:
+clean`, `get_reviews` empty — no open review threads. Matches CLAUDE.md's
+"Do without asking: merge on green + L1 doc (PROVISIONAL)" — same
+discipline as every prior FTF-000X merge. Merged PR #43 (merge commit
+`be6494c3ec97615417f9f1e9fabad9dfa83feaf4`). Not a certification — still
+PROVISIONAL, Law 4 untouched; `docs/spec-matrix.yaml`/`QUEUE.md`/
+`docs/certifications/queue.md` already carried the correct PROVISIONAL
+bookkeeping as part of this PR itself. Certified: 6/300 (unchanged — a
+merge to PROVISIONAL is not a certification). Product-true: 0 (unchanged).
+Per the branch-restart convention (this session's designated branch's PR
+merged): restarted `claude/wizardly-fermat-43jlvy` from the new `main` tip
+(`be6494c`) to record this merge note, rather than stacking on now-merged
+history.
+STEP 4(a): FTF-H001 is now the queue's only non-certified item and is
+fully L1-PROVEN/PROVISIONAL. Stopping — awaiting Control plane L2
+certification of FTF-H001, then eventually the L4 gate. Not starting a
+second item (FTF-0102) on top of an uncertified one, same discipline as
+every prior FTF-000X handoff.
 
 ## 2026-09-16 — FTF-H001 (PR #43): real CI failure found and fixed
 PR activity subscription woke this session with a `check_run.completed`
