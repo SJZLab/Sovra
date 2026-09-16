@@ -64,11 +64,39 @@ so all eight are CERTIFIED without counting toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-R001 CERTIFIED this shift. FTF-0101/FTF-0102 remain blocked,
-see "Owner actions" and "Blocked" below.)
+FTF-H002 has implementation work already pushed to
+`claude/wizardly-fermat-brui19` (PR #49), but per Control plane's
+2026-09-16 review (docs/certifications/queue.md, "Control plane
+certification review — FTF-H002 (PR #49) — NOT CERTIFIED") the `gate`
+CI job **genuinely failed** on the actual PR head
+(`3d235b4f484ad724b4252bd2aef7088181a14218`,
+run https://github.com/SJZLab/Sovra/actions/runs/35160635403): GitHub-hosted
+`ubuntu-latest` runners ship `kubectl` preinstalled, so
+`check_kubernetes_cni()` genuinely returns `AVAILABLE` on the real
+runner, not `BLOCKED_EXTERNAL` as `tests/tasks/test_ftf_h002.py`'s
+`test_kubernetes_cni_check_reflects_real_path_state` hard-assumes for its
+first (unisolated) assertion — unlike its own positive-branch case a few
+lines below, and unlike `test_git_cli_check_reflects_real_path_state`,
+which correctly isolates *both* branches with a real empty-PATH temp
+directory. The implementation and task contract themselves were
+independently re-verified and hold (own fault injection against
+`check_managed_provider_bedrock` reproduced cleanly; `validate_spec.py
+--strict` and `verify_task.py --task FTF-H002 --stage task` both pass;
+`product_truth_check.py` 0/0 confirmed legitimate) — this is a test-
+isolation bug only. Next relay shift on FTF-H002: rewrite that first
+assertion in `test_kubernetes_cni_check_reflects_real_path_state` to run
+`check_kubernetes_cni()` against a real empty-PATH temp directory (same
+pattern already used for `check_git_cli`'s negative branch and for this
+same test's own positive branch), push to the existing branch/PR #49
+(do not open a duplicate), confirm the real `gate` job goes green on the
+actual head, then resubmit for certification.
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+(none on `main` — FTF-H002's PROVISIONAL claim exists only inside
+unmerged PR #49's own branch copy of spec-matrix.yaml/this file; `main`'s
+own spec-matrix.yaml still correctly shows FTF-H002 as
+`certification_state: NONE` / `implementation_state: ABSENT` until that
+branch actually merges. See Active, above.)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

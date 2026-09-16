@@ -935,3 +935,80 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   self-certified — awaiting Control plane L2 review per Law 4. PR to be
   opened against `main` this same shift; not merging without confirming CI
   green first.
+
+## 2026-09-16 — Control plane certification review — FTF-H002 (PR #49) — NOT CERTIFIED
+- **Session-ID independence check:** this reviewing session is
+  `session_01BNcWR4me2X2YrMtsW6uqfV`. Every commit on PR #49
+  (`3f5e618`, `40b61d2`, `af2b0fa`, `3d235b4`) carries
+  `Claude-Session: https://claude.ai/code/session_01KcK5jpotjXCpjrQj8qMPVp` —
+  a different session. Independent reviewer confirmed (Law 4).
+- **Diff re-read:** `apps/api/app/services/environment_preflight.py`,
+  `scripts/release_scope_lock.py` + `spec/release-scope.yaml`,
+  `scripts/generate_compatibility_lock.py` + `spec/compatibility-lock.json`,
+  `docs/operations/budget-forecast.md`, `tests/tasks/test_ftf_h002.py` — all
+  read directly against PR #49 head `3d235b4f484ad724b4252bd2aef7088181a14218`.
+  Matches the queue entry's description; no unrelated files touched.
+- **CI (real, re-checked on the actual PR head, not self-reported):**
+  GitHub Actions run https://github.com/SJZLab/Sovra/actions/runs/35160635403
+  on head `3d235b4` — `docker-local-stack-integration` succeeded, but the
+  `gate` job **FAILED** at the `python3 tests/tasks/test_ftf_h002.py` step:
+  `FAIL [FTF-H002] no kubectl is installed in this environment, so
+  check_kubernetes_cni reports BLOCKED_EXTERNAL for real (not because it
+  was told to)`. Root cause: GitHub-hosted `ubuntu-latest` runners ship
+  `kubectl` preinstalled in the standard tool cache, so on the real CI
+  runner `check_kubernetes_cni()` genuinely returns `AVAILABLE`, not
+  `BLOCKED_EXTERNAL`. `test_kubernetes_cni_check_reflects_real_path_state`'s
+  first assertion (`tests/tasks/test_ftf_h002.py` lines 158-165) calls
+  `check_kubernetes_cni()` against the ambient, uncontrolled `PATH` and
+  hard-assumes the negative branch, unlike its own positive-branch case
+  a few lines below (and unlike `test_git_cli_check_reflects_real_path_state`,
+  which correctly isolates *both* branches with a real empty-PATH temp
+  directory). This is a genuine environment-dependent test bug, not a
+  flake or an infra hiccup — it reproduced deterministically on this exact
+  commit's only CI run so far. (Local runs in the relay's own sandbox pass
+  because that sandbox happens to have no `kubectl` on `PATH` — that's the
+  gap between "producer's own local run" and "real CI," exactly what this
+  review step exists to catch.)
+- **Fault-injection re-verification (independent, not the PR's own
+  self-contained subprocess test):** confirmed `test_ftf_h002.py` genuinely
+  fails when the feature is broken by an independent injection distinct
+  from the one already in the test suite — reverted
+  `check_managed_provider_bedrock`'s credential-present branch to report
+  `AVAILABLE` from credential presence alone; re-ran
+  `tests/tasks/test_ftf_h002.py` locally → 1 failure, exactly on that
+  assertion; reverted the file back (`git diff` clean afterward). Confirms
+  the test suite is load-bearing, independent of the CI failure above.
+- **product_truth_check.py:** re-ran `--fail-on-unwired` → `0/0
+  product-true`. Legitimate: `docs/spec-matrix.yaml`'s `FTF-H002` entry
+  carries `proving_symbol: ''` (no live product-runtime caller claimed —
+  this is a preflight/release-scope-freeze layer, same disclosed pattern
+  as FTF-0002/0003/H001/R001), so 0/0 is a valid pass here, not a gap being
+  waved through.
+- **Task contract re-check:** `python tools/r1_handoff.py packet FTF-H002
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md` resolved against
+  `docs/implementation/task-packets/FTF-H002.md` (committed in this PR).
+  `acceptance`/`negative_acceptance` clauses verified against the delivered
+  code: unknown prices/unavailable managed capabilities/stale LiteLLM
+  routes/absent runtime integration are all genuinely disclosed as
+  `BLOCKED_EXTERNAL` with real owner/next_action (not fabricated); no
+  model ID/rate invented anywhere in `budget-forecast.md`; preflight reads
+  `SOVRA_LITELLM_GATEWAY_URL` directly rather than through
+  `Settings.from_env()`, matching "implement preflight independently of
+  final qualification to avoid a dependency cycle." Also ran the packet's
+  own `verification_commands` directly: `python scripts/validate_spec.py
+  --strict` → clean; `python scripts/verify_task.py --task FTF-H002 --stage
+  task` → `PASS` against evidence commit `40b61d2`. These clauses hold —
+  the block below is on CI, not on the contract.
+- **Verdict: certification withheld — do NOT merge PR #49.** This is a
+  real, reproducible CI failure on the actual PR head, not a stale claim
+  and not a flake (Law 1 requires evidence bound to the real commit; a red
+  `gate` run is exactly what blocks a Law-1-compliant certification). Not
+  an owner-decision item — this is a code/test bug for the relay to fix, so
+  it is not added to QUEUE.md "Owner actions." See QUEUE.md "Provisional"
+  for the routed fix instruction.
+- **State:** proof_state stays L1-PROVEN, certification_state stays
+  PROVISIONAL (not downgraded — the implementation and contract hold; only
+  the test's environment assumption is wrong). `docs/spec-matrix.yaml` left
+  unchanged. No ledger.md entry (nothing certified).
+- **Validated-by:** session https://claude.ai/code/session_01BNcWR4me2X2YrMtsW6uqfV
+  (independent — see session-ID check above), 2026-09-16.
