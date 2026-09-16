@@ -288,3 +288,33 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   once fixed; no other part of this PR needs rework.
 - **Validated-by:** session https://claude.ai/code/session_01WjQKEb87DwDx51YLNRxT6o
   (independent — see session-ID check above), 2026-09-16.
+
+## 2026-09-16 — FTF-0005 — Fix for repr secret-redaction defect (re-submitted)
+- **Commit:** 9f2dcbc, on branch `relay/ftf-0005-fix-repr-redaction`
+  (produced by `session_012mAtoqKYzA7PiXbkGkD7rY` — the same producer
+  session as the original PR #28; this is the fix, not a certification).
+- **Fixes exactly what the review above found:** `_redact_url()` is now
+  applied to `litellm_gateway_url` in `Settings.__repr__`
+  (`apps/api/app/config/configuration_system.py`), matching how
+  `database_url` was already handled. No other line changed.
+- **Test:** `tests/tasks/test_ftf_0005.py`'s
+  `test_sensitive_values_absent_from_errors_and_repr` gained a case that
+  constructs a valid `Settings` with an *accepted* gateway URL carrying
+  embedded userinfo (`https://svc:gw-s3cr3t@litellm.internal.example`)
+  and asserts the password is absent from `repr(settings)`.
+- **Evidence — shown able to fail (Law 1), reproducing the certifier's
+  exact finding:** reverted the fix locally (raw
+  `f"litellm_gateway_url={self.litellm_gateway_url!r}, "` restored),
+  re-ran `tests/tasks/test_ftf_0005.py` — the new check failed for real
+  (`an accepted gateway URL's embedded password never appears in
+  Settings' repr`), the other 9 checks stayed green; restored the fix
+  from a pre-edit copy, `diff` confirmed empty, re-ran clean (10/10
+  pass).
+- **Regression check:** `ruff check .` / `ruff format --check .` /
+  `mypy .` clean; `pytest tests/unit` (3 passed, unchanged). No other
+  part of FTF-0005 was touched, per the review's own scoping.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL
+  (unchanged). Not self-certified — this is the same producer session as
+  PR #28, so it cannot certify its own fix; awaiting a fresh Control-plane
+  session with no session-ID overlap with
+  `session_012mAtoqKYzA7PiXbkGkD7rY` per Law 4.

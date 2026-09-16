@@ -24,36 +24,27 @@ into a running service).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-FTF-0005 — Control plane reviewed PR #28 (head `ea80d36`) 2026-09-16 and did
-NOT certify: found a real, independently-reproduced defect, not a flake —
-`Settings.__repr__` in `apps/api/app/config/configuration_system.py:204-216`
-redacts `database_url` (line 209, via `_redact_url`) but not
-`litellm_gateway_url` (line 210 interpolates the raw field with no
-redaction). Since `_validate_url` never rejects userinfo, a *valid,
-accepted* gateway URL with an embedded password (any environment,
-including production) has that password echoed verbatim by
-`repr(settings)` — contradicts this task's own negative_acceptance claim
-and the module's own docstring/comment. Full repro and required fix:
-docs/certifications/queue.md "Control plane review — 2026-09-16 — NOT
-CERTIFIED (defect found)". Fix needed: apply `_redact_url` to
-`litellm_gateway_url` in `__repr__` the same as `database_url`, and add a
-test case (accepted gateway URL with embedded credentials → asserted
-absent from `repr(settings)`) alongside the existing
-`test_sensitive_values_absent_from_errors_and_repr` so this can't silently
-regress. No other part of FTF-0005 needs rework — the other 8 checks and
-the CI wiring are sound. Push the fix to the same PR/branch
-(`relay/ftf-0005-configuration-system`) and re-append to
-docs/certifications/queue.md for re-review. Not picking up a second item on
-top of this uncertified one, same discipline as the FTF-0002→FTF-0003
-handoff.
+Nothing active — the FTF-0005 repr-redaction defect (found by Control
+plane review of PR #28, see docs/certifications/queue.md) was fixed this
+shift: commit 9f2dcbc on branch `relay/ftf-0005-fix-repr-redaction`,
+`litellm_gateway_url` now redacted via `_redact_url` in `Settings.__repr__`
+the same as `database_url`, plus a new test case that reproduces the
+original finding against the pre-fix code (fails without the fix, passes
+with it) before being committed. Same producer session as PR #28 — not
+self-certified, still PROVISIONAL, awaiting a separate Control-plane
+session for re-review. Next candidate once FTF-0005 certifies: FTF-0004
+(docker local stack).
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0005 — Configuration system. Commit b782a2c (implementation), on
-  branch `relay/ftf-0005-configuration-system`, PR #28. Reviewed
-  2026-09-16, NOT certified — see "Active" above and
-  docs/certifications/queue.md for the defect and required fix.
-  proof_state=L1-PROVEN, certification_state=PROVISIONAL (unchanged — the
-  defect is scoped, not a redo). Not self-certified.
+- FTF-0005 — Configuration system. Commit 9f2dcbc (fix; implementation was
+  b782a2c/PR #28, ea80d36), on branch `relay/ftf-0005-fix-repr-redaction`.
+  PR #28 was reviewed 2026-09-16 and NOT certified — see
+  docs/certifications/queue.md for the original defect (repr didn't
+  redact `litellm_gateway_url`'s embedded userinfo) and this shift's fix.
+  proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting a fresh Control-plane session (no overlap with
+  session_012mAtoqKYzA7PiXbkGkD7rY, which produced both PR #28 and this
+  fix) per Law 4.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

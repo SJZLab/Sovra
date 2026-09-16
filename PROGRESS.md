@@ -1,5 +1,37 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T07:00:00Z
+Updated: 2026-09-16T10:45:00Z
+
+## 2026-09-16 — FTF-0005 repr secret-redaction defect fixed (still Provisional)
+An independent Control-plane session (`session_01WjQKEb87DwDx51YLNRxT6o`,
+PR #29, session-ID confirmed distinct from this one) reviewed PR #28 and
+did NOT certify: real defect found by fault injection, not a flake —
+`Settings.__repr__` redacted `database_url`'s embedded userinfo via
+`_redact_url()` but not `litellm_gateway_url`'s, so an accepted gateway
+URL with an embedded password (any environment, including production) had
+that password echoed verbatim by `repr(settings)` — the delivered test
+suite never exercised an *accepted* gateway URL with credentials against
+`repr()`, only a *rejected* one. Full finding: PR #29 /
+docs/certifications/queue.md.
+This is the producer session (`session_012mAtoqKYzA7PiXbkGkD7rY`) picking
+up the queued fix — legitimate relay work (fixing a reported defect), not
+self-certification; the eventual re-certification still requires a
+separate session per Law 4.
+Fix: applied `_redact_url()` to `litellm_gateway_url` in `__repr__`,
+matching `database_url` — one line. Added the missing test case to
+`test_sensitive_values_absent_from_errors_and_repr` (accepted gateway URL
+with embedded credentials → asserted absent from `repr(settings)`). Law 1
+evidence: reverted the fix locally, re-ran the test — the new check
+failed for real, reproducing the certifier's exact finding; restored from
+a pre-edit copy (`diff` empty), re-ran clean (10/10 pass). Re-ran
+ruff/mypy/pytest — all clean, no regression.
+Committed as `9f2dcbc` on branch `relay/ftf-0005-fix-repr-redaction`
+(fresh branch off `main`, since the original `relay/ftf-0005-...` branch
+was already merged via PR #28 — same convention as this repo's other
+merged-PR follow-ups). Updated `docs/spec-matrix.yaml` (evidence_hash=
+9f2dcbc), `docs/certifications/queue.md` (re-submission entry),
+`QUEUE.md` (Active cleared, Provisional entry updated). Certification
+state stays PROVISIONAL — not self-certified. PR to be opened against
+`main`.
 
 ## 2026-09-16 — FTF-0005 implemented (Provisional, awaiting L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
