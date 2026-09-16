@@ -3,10 +3,11 @@ Updated: 2026-09-16 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 1/300 · Provisional: 0 · Blocked: 0
+Certified: 1/300 · Provisional: 1 (FTF-0002) · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001 has no
 proving_symbol; it is structural layout, not a live-wired path, so it is
-CERTIFIED without counting toward product-true)
+CERTIFIED without counting toward product-true; FTF-0002 similarly has
+no proving_symbol — CI tooling, not a live product-runtime code path)
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -20,12 +21,18 @@ CERTIFIED without counting toward product-true)
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-FTF-0002 (Add formatting/lint/type checks) — dependency FTF-0001 satisfied
-and certified. Real DoD resolved via
-`python tools/r1_handoff.py packet FTF-0002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
-→ `docs/implementation/task-packets/FTF-0002.md`. Not claimed/worked this
-shift per the sharing session's explicit instruction (doc/tooling PR only,
-let the relay pick it up on its normal next fire).
+Nothing active — FTF-0002 implemented this shift (see Provisional below),
+at the user's direct live instruction, not the autonomous relay's normal
+cadence. Next candidate is FTF-0003 (test harnesses) once FTF-0002 is
+independently L2-certified — deps should build on certified work, not
+stack a second provisional criterion on top of an uncertified one.
+
+## Provisional (awaiting Control plane L2 certification)
+- FTF-0002 — Add formatting/lint/type checks. Commit
+  e3f0c1a981db04bd5d16078f5fd72fcebfc866c7. Real DoD resolved via
+  `python tools/r1_handoff.py packet FTF-0002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Full evidence in docs/certifications/queue.md. Not self-certified per
+  Law 4 — awaiting independent review.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
