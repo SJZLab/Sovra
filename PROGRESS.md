@@ -1,5 +1,57 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T12:40:00Z
+Updated: 2026-09-16T12:45:00Z
+
+## 2026-09-16 — FTF-0004 (PR #35) merged to main as PROVISIONAL
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state — local branch tip matched
+`origin/main` (`fe954e0`) exactly.
+STEP 1: QUEUE.md Active named PR #35 (FTF-0004) as the item to pick up —
+but by the time this shift checked GitHub directly, that work was already
+done: a prior producer session (`session_01NV9ZvW9ptNnx8RzFWUoZQi`) had
+already merged current `main` into the branch, resolved the tracking-doc
+conflicts, and fixed a real `docker-local-stack-integration` CI failure
+(a `urllib.error.HTTPError`-swallows-503-body bug in
+`verify_docker_local_stack.py`'s `poll_health`, unrelated to
+`docker_local_stack.py`'s readiness logic) — all documented in
+`docs/certifications/queue.md` and the PR body/branch tracking docs
+before this shift ever looked at it.
+Independently verified rather than trusting the PR body's claims: pulled
+PR #35 via GitHub MCP — `mergeable_state: "clean"` (not the prior
+`"dirty"`), `get_check_runs` on the actual head SHA
+(`63b13cec9a58822290e678231069427370678855`) showed both `gate` and
+`docker-local-stack-integration` `completed`/`success`, timestamps
+consistent with that exact head. Read the diff's substantive new files
+directly from GitHub (not just the PR description): `infra/docker/
+docker-compose.yml` (all three real images digest-pinned; the local
+Postgres password is clearly dev-only, not a real secret),
+`apps/api/app/config/docker_local_stack.py` (stdlib-only TCP readiness
+checks, no new runtime dependency), and the updated `.github/workflows/
+ci.yml` — nothing scope-creeping past FTF-0004, no secrets, no unpinned
+images.
+This matches CLAUDE.md's "Do without asking" authorization ("merge on
+green + L1 doc (PROVISIONAL)"): merged PR #35 (merge commit `a477e678`),
+same discipline as prior relay shifts merging FTF-0002/0003/0005 once CI
+was independently confirmed green on the real head. Not a certification —
+still PROVISIONAL, Law 4 untouched; Control plane still needs to do the
+L2 review docs/certifications/queue.md's most recent entry explicitly
+asks for.
+`main`'s spec-matrix.yaml/QUEUE.md/docs/certifications/queue.md already
+carried the correct PROVISIONAL bookkeeping as part of PR #35 itself
+(written by the producer session before this shift merged it) — verified
+post-merge that all three landed as expected on `main`, no further doc
+edits needed there.
+STEP 4(a): FTF-0004 is now the queue's only non-certified item and is
+fully L1-PROVEN/PROVISIONAL — per QUEUE.md's own stated discipline ("not
+picking up a second item on top of an uncertified one, same discipline as
+the FTF-0002→FTF-0003 handoff"), did not start FTF-0006 or any other
+queue item this shift. Confirmed no other open PRs exist
+(`list_pull_requests` state=open → empty) and no owner-ask items changed.
+Stopping: awaiting Control plane L2 certification of FTF-0004, then
+(eventually) the L4 gate. Certified: 4/300 (unchanged this shift — a
+merge to PROVISIONAL is not a certification). Product-true: 0
+(unchanged).
 
 ## 2026-09-16 — FTF-0004 (PR #35): CI green for real, awaiting L2 review
 After the merge-base fix (below), CI ran on PR #35 for the first time.
