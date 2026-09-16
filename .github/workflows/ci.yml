@@ -5,6 +5,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # FTF-H001's validate_spec.py resolves every certified task's
+          # evidence commit via `git cat-file -e` — actions/checkout's
+          # default shallow clone (depth 1) only fetches the tip commit,
+          # so every older evidence commit would spuriously read as
+          # stale_commit. Full history is required for that check to mean
+          # anything.
+          fetch-depth: 0
       - name: Verify CLAUDE.md.sha256
         run: |
           if [ ! -f CLAUDE.md ]; then
