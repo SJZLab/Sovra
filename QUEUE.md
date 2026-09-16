@@ -1,5 +1,5 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-15 by control-plane
+Updated: 2026-09-16 by relay
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -9,10 +9,27 @@ proving_symbol; it is structural layout, not a live-wired path, so it is
 CERTIFIED without counting toward product-true)
 
 ## Owner actions — current
-- 2026-09-15: One setup gap remains — no trigger tooling available to
-  create the 2h relay / watchdog triggers. See CLAUDE.md "Setup gaps".
-  Owner must create them (or grant a control-plane session trigger
-  tooling and re-run Groundwork S1.7/S1.8).
+- 2026-09-15: One setup gap remains — no *durable* trigger tooling
+  available to create the 2h relay / watchdog triggers. See CLAUDE.md
+  "Setup gaps". Owner must create them (or grant a control-plane session
+  trigger tooling and re-run Groundwork S1.7/S1.8). Checked 2026-09-16:
+  this session has session-scoped `CronCreate` tooling, but those jobs are
+  in-memory and auto-expire after 7 days — they cannot provide the
+  persistent cross-session cadence this needs, so the gap stays open
+  rather than being declared resolved on tooling that can't actually
+  deliver it (see BLOCKER.md).
+- 2026-09-16: Every remaining QUEUE.md item past FTF-0001 (starting with
+  FTF-0002) lacks the full acceptance/negative-acceptance/verification
+  contract ("Section 85" per docs/TASK_INDEX.md and
+  docs/architecture/CRITERION_MAPPING.md "Known gap") a relay shift needs
+  to execute it without improvising the DoD. This is not a new problem —
+  CRITERION_MAPPING.md has said so since the initial scaffold — but it is
+  now the actual blocker on forward progress since FTF-0001 is the only
+  task completed. Owner/control-plane must either supply Section 85
+  content (at minimum for FTF-0002) or write a fully-specified DoD
+  directly into this file's "Active" section. See BLOCKER.md for full
+  detail and route options. Relay will not improvise a DoD in the
+  meantime.
 
 ## Active (relay works this)
 Nothing active — FTF-0001 merged and certified (see Done below). Next
