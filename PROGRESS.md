@@ -1,5 +1,36 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T03:00:00Z
+Updated: 2026-09-16T04:00:00Z
+
+## 2026-09-16 — FTF-0003 implemented (Provisional, awaiting L2 certification)
+Done at the user's direct live instruction ("Go then next task"), not the autonomous relay's
+normal cadence. Real DoD resolved via `tools/r1_handoff.py packet FTF-0003`. Commit
+d4482de2cbcdda17000f059886c47b894b680830. Summary:
+- Real pytest unit-test harness (Python, `tests/unit`) and real Vitest unit-test harness
+  (TypeScript, `apps/web/src` + `packages/shared/src`), each collecting genuine assertions and
+  publishing machine-readable JUnit XML counts.
+- `scripts/check_test_harness.py`: parses the JUnit output and fails on zero collected tests or
+  any skipped test — verified empirically that both pytest and Vitest report a `.only`-deselected
+  test as "skipped," so this one check covers explicit skips and focused `.only` alike for both
+  languages, satisfying FTF-0003's negative_acceptance clause without a separate grep-based scan.
+- Law 1 evidence (tests/tasks/test_ftf_0003.py): real fault injection in scratch fixtures —
+  empty pytest dir (pytest exits 5), empty Vitest root (exits 1), a `pytest.mark.skip` fixture,
+  and a Vitest `.only` fixture — each shown to make the gate script fail for real, with clean
+  equivalents shown to pass; plus a repo-wide clean run of the actual delivered harness.
+- Caught two real bugs before they reached CI, not assumed away: `pnpm run test -- --reporter=
+  junit ...` silently mis-forwards pnpm's `--` separator and never writes the JUnit file (fixed
+  by calling `pnpm exec vitest run` directly in CI); `mypy .` genuinely failed with a dual-module-
+  name error once a new test imported `scripts.product_truth_check` (fixed via
+  `scripts/__init__.py`, re-verified clean).
+- Deliberately left `tests/test_ftf_0001_monorepo_layout.py` and `tests/tasks/test_ftf_0002.py`
+  (both already independently L2-certified) out of pytest's `testpaths` rather than editing them
+  to fit pytest's assertion model — avoids any Law 15 requalification question for their existing
+  certified evidence. Re-ran both directly afterward: unchanged, still pass.
+- Re-ran the full existing gate suite (ruff/mypy/eslint/prettier/tsc + FTF-0001/0002 proofs)
+  after all changes: still clean.
+Updated docs/spec-matrix.yaml (FTF-0003: IMPLEMENTED/L1-PROVEN/PROVISIONAL, evidence_hash=
+d4482de2...), docs/certifications/queue.md (full entry), QUEUE.md (moved to Provisional, cleared
+Active). Certified count unchanged at 2/300 — PROVISIONAL is not certified. PR to be opened
+against main; not merging without confirming CI green first.
 
 ## 2026-09-16 — FTF-0002 independently certified (Control plane, CERTIFY mode)
 A separate session (this one) picked up docs/CONTROL_PLANE_MODES.md's CERTIFY procedure at the

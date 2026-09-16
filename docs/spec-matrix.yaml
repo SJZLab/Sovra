@@ -22,15 +22,15 @@ FTF-0002:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0002.py
 FTF-0003:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Add test harnesses
-  evidence_hash: ''
-  implementation_state: ABSENT
+  evidence_hash: d4482de2cbcdda17000f059886c47b894b680830
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-20, AF-31, AF-35; scenarios=Q01, Q26; deps=FTF-0001, FTF-0002
-  proof_state: UNPROVEN
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0003.py
 FTF-0004:
   certification_state: NONE
   criticality: MUST

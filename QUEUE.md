@@ -3,11 +3,12 @@ Updated: 2026-09-16 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 2/300 · Provisional: 0 · Blocked: 0
+Certified: 2/300 · Provisional: 1 (FTF-0003) · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001 and FTF-0002
 both have no proving_symbol; FTF-0001 is structural layout and FTF-0002 is
 CI tooling, neither a live-wired product-runtime path, so both are
-CERTIFIED without counting toward product-true)
+CERTIFIED without counting toward product-true; FTF-0003 similarly has no
+proving_symbol — test-harness tooling, not a live product-runtime path)
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -21,14 +22,19 @@ CERTIFIED without counting toward product-true)
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-Nothing active. FTF-0002 is now independently L2-certified (see Done
-below) — FTF-0003 (test harnesses) is the next unblocked candidate per
-dependency order; the relay resolves its real DoD via
-`python tools/r1_handoff.py packet FTF-0003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
-before claiming it.
+Nothing active — FTF-0003 implemented this shift (see Provisional below),
+at the user's direct live instruction ("Go then next task"), not the
+autonomous relay's normal cadence. Next candidates once FTF-0003 is
+independently L2-certified: FTF-0005 (config) → FTF-0004 (docker local
+stack) per the dependency order below — don't stack a further provisional
+item on top of an uncertified one.
 
 ## Provisional (awaiting Control plane L2 certification)
-Nothing provisional.
+- FTF-0003 — Add test harnesses. Commit
+  d4482de2cbcdda17000f059886c47b894b680830. Real DoD resolved via
+  `python tools/r1_handoff.py packet FTF-0003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Full evidence in docs/certifications/queue.md. Not self-certified per
+  Law 4 — awaiting independent review.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
