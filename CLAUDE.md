@@ -6,25 +6,35 @@ Read first: docs/CONTROL_PLANE_MODES.md → FINE_TUNING_FACTORY_RELEASE_1.md (Re
   SPEC.md → docs/spec-matrix.yaml → docs/architecture/ → docs/certifications/ → docs/adr/
 
 OPERATING MODE FLAGS:
-BRANCH_PROTECTION: instruction-tier (not probed — no git connector this session)
-  — not machine-enforced, so this is a hard instruction, not a suggestion:
-  every session opens a PR against main and never pushes directly to main,
-  even though nothing currently stops it. (2026-09-15: two unrelated sessions
-  each pushed a scaffold commit straight to origin, one landing as a new
-  `main` with an unearned "gap resolved" status claim — see
+BRANCH_PROTECTION: instruction-tier — no confirmed GitHub branch-protection
+  ruleset on `main` (no branch-protection API access from any session so far
+  to probe it directly), so this remains a hard instruction, not a machine
+  guarantee: every session opens a PR against main and never pushes directly
+  to main, even though nothing currently stops it. (2026-09-15: two unrelated
+  sessions each pushed a scaffold commit straight to origin, one landing as a
+  new `main` with an unearned "gap resolved" status claim — see
   docs/certifications/watchdog-findings.md. This line exists to close that.)
 CONTAINMENT: none (GATED_MANUALLY: true)
 DEPLOY_TARGET: Railway
-CI_PROVIDER: GitHub Actions (assumed — not probed)
-GIT_CONNECTOR: none — certification requires a Code session with repo access
-GIT_WRITE: none — relay cannot push from this control-plane session; owner must
-  create the relay trigger from a Code CLI session with git credentials (see
-  "Setup gaps" below)
+CI_PROVIDER: GitHub Actions (confirmed — .github/workflows/ci.yml runs a
+  `gate` job on every PR; see docs/certifications/ledger.md and PR #15's CI
+  run for real examples)
+GIT_CONNECTOR: connected — repeatedly confirmed across multiple Code CLI
+  sessions (branch/commit/push/open-PR/merge all exercised for real, most
+  recently merging PR #15 on 2026-09-16). Originally "none" only described
+  the control-plane scaffold-generation session, which has no repo access
+  by design; that distinction still holds — see PR #7 for the original
+  resolution and Setup gaps below for what's still actually open.
+GIT_WRITE: connected for Code CLI / relay sessions (this is how every commit
+  in this repo's history landed). Still none for a bare control-plane
+  session with no git-host connector attached — that session proposes and
+  designs, a Code CLI session executes and pushes.
 DEPLOY_CONNECTOR: connected (Railway MCP available to control plane)
 CERTIFIER: Control plane (autonomous — CERTIFY mode)
-SOURCE_ROOTS: TBD — repo is fresh; first real value comes from FTF-0001
-  (Initialize monorepo). Do not treat any guessed list as authoritative until
-  that task merges and S1.1 is re-run against the actual layout.
+SOURCE_ROOTS: apps/web, apps/api, workers/training, workers/evaluation,
+  workers/data, workers/deploy, packages/shared — filled from FTF-0001's
+  real layout (PR #10, dd60cef); see scripts/product_truth_check.py for the
+  authoritative list actually used by the gate.
 REPO_VISIBILITY: private (owner-confirmed)
 CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   sha256sum of this file, one line, no prefix) — do not hardcode a hash value
@@ -34,19 +44,25 @@ CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   of carrying a stale pinned value that goes wrong on every future edit.
 
 ## Setup gaps (declared, not silently worked around)
-- No GitHub/git-host MCP connector was available to the control-plane session
-  that generated this scaffold — repo could not be probed (branch protection,
-  CI provider, existing files) and these files could not be pushed directly.
-  The owner must commit this scaffold to SJZLab/Sovra manually, or connect a
-  git-host connector to a control-plane session and re-run S1.1's probe.
-- No `create_trigger`/`fire_trigger` tooling was available to this session —
-  the relay trigger (2h cadence) and watchdog trigger (2h+4h offset 40min)
-  described in S0.3/S1.7/S1.8 have NOT been created. The owner (or a
-  control-plane session with trigger tooling) must create them once the repo
-  is live. Daily report: 08:30 and 19:30 Asia/Riyadh.
-- SOURCE_ROOTS is a placeholder. product_truth_check.py fails closed the
-  moment any spec-matrix criterion gets a proving_symbol without a filled
-  SOURCE_ROOTS — this is intentional, not a bug to silence.
+- RESOLVED (PR #7, 2026-09-15): a Code CLI session with a real git-host
+  connector can branch/commit/push/open-PR/merge against SJZLab/Sovra — see
+  GIT_CONNECTOR/GIT_WRITE above for the current, evidence-based state. A
+  bare control-plane session without that connector still cannot push;
+  that's an intentional separation of proposer/executor roles, not a gap.
+- STILL OPEN — no `create_trigger`/`fire_trigger` tooling has been confirmed
+  available to any session. Scheduled relay shifts are demonstrably firing
+  (this file's own edits are evidence something is scheduling them), but
+  no session has independently confirmed the watchdog trigger and the
+  08:30/19:30 Asia/Riyadh report cadence are actually configured as
+  designed in S0.3/S1.7/S1.8, rather than assumed. Owner: please confirm
+  what's actually configured, or grant a control-plane session trigger
+  tooling and re-run Groundwork S1.7/S1.8. Tracked in QUEUE.md "Owner
+  actions — current."
+- RESOLVED (PR #10, 2026-09-15/16): SOURCE_ROOTS is filled in
+  scripts/product_truth_check.py from FTF-0001's real layout — see
+  SOURCE_ROOTS above. product_truth_check.py still fails closed if any
+  future spec-matrix criterion gets a proving_symbol without a filled
+  SOURCE_ROOTS; that fail-closed behavior is intentional and unchanged.
 
 ## Laws
 0. Never start from zero unless earned in writing. Never break legal terms.
