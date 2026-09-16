@@ -155,3 +155,69 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   (if currently trivial) exported constant, not a template placeholder.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-16 — FTF-0005 — Configuration system
+- **PR:** (see QUEUE.md — opened against `main` from `relay/ftf-0005-configuration-system`)
+- **Commit:** b782a2c (implementation)
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0005 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+- **Delivered:** a stdlib-only, fail-fast typed settings loader
+  (`apps/api/app/config/configuration_system.py`, `Settings.from_env()`).
+  No third-party runtime dependency was added — CLAUDE.md's "new runtime
+  deps" item is an ask-first hard stop, so validation uses only
+  `dataclasses`/`enum`/`decimal`/`urllib.parse`/`re`:
+  - `database_url` / `litellm_gateway_url`: parsed and scheme/host-checked
+    (`postgresql[+driver]://` for the DB; `https://` for the LiteLLM
+    gateway in production, `http://` permitted only outside production).
+  - `environment` / `privacy_policy`: real `Environment`/`PrivacyPolicy`
+    enums, rejecting any value outside their members.
+  - `max_training_budget_usd`: a positive `Decimal`, rejecting
+    zero/negative/non-numeric input.
+  - `litellm_api_key_secret_ref` / `database_password_secret_ref`: must be
+    a secret-reference URI (`vault://`, `openbao://`, `secret://`),
+    rejecting a raw inline credential pasted in by mistake.
+- **Test:** `tests/tasks/test_ftf_0005.py` — 9 check functions covering
+  both the acceptance and negative_acceptance criteria, run against an
+  isolated env dict (never this process's real environment variables).
+- **Evidence — shown able to fail (Law 1):**
+  1. Every acceptance case (missing var, malformed/wrong-scheme URL,
+     unknown enum value, non-positive/non-numeric budget, inline
+     non-reference secret) is asserted to raise `ConfigurationError`, with
+     a parallel clean case asserted to construct `Settings` successfully.
+  2. Real fault injection against the tracked module (not just fixtures):
+     temporarily removed the production/`tls_verify=false` rejection from
+     `_validate_tls_verify` in `apps/api/app/config/configuration_system.py`
+     and re-ran `tests/tasks/test_ftf_0005.py` — 2 checks failed for real
+     (`SOVRA_TLS_VERIFY=false in production raises`,
+     `the production/tls_verify rejection names the actual rule`);
+     reverted via a byte-identical restore from a pre-edit copy, confirmed
+     `diff` empty, re-ran clean (all 9 checks pass again).
+- **Negative_acceptance — proven, not assumed:**
+  - No development fallback credential: omitting either secret-ref env var
+    raises `ConfigurationError`; there is no default value anywhere in the
+    module for a credential-shaped field.
+  - No production `tls_verify=false`: accepted outside production, raises
+    when `SOVRA_ENVIRONMENT=production` — proven by the fault injection
+    above.
+  - Sensitive values absent from errors: a database URL's embedded
+    password, a URL password in a rejected gateway URL, and inline
+    secret-ref values never appear in a raised message or in `Settings`'
+    own `__repr__` (each redacted to scheme/host or a length-only
+    fingerprint) — asserted directly in
+    `test_sensitive_values_absent_from_errors_and_repr` and
+    `test_invalid_secret_ref_rejected`.
+- **CI:** wired `python3 tests/tasks/test_ftf_0005.py` into
+  `.github/workflows/ci.yml` alongside the existing FTF-0002/0003 evidence
+  steps; YAML-validated (`yaml.safe_load`). Real run status to be confirmed
+  on the opened PR before merge.
+- **Regression check:** `ruff check .` / `ruff format --check .` / `mypy .`
+  clean; `pytest tests/unit` (3 passed, unchanged);
+  `tests/tasks/test_ftf_0002.py`, `tests/tasks/test_ftf_0003.py`, and
+  `tests/test_ftf_0001_monorepo_layout.py` all still pass unmodified (ran
+  `pnpm install` first — this fresh container had no `node_modules`,
+  unrelated to this change). `product_truth_check.py --fail-on-unwired`
+  stays `0/0 product-true`, legitimate since no live caller wires this
+  module into a running service yet (no `apps/api/app/main.py` exists —
+  same no-proving-symbol rationale as FTF-0002/0003).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
