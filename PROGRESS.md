@@ -1,5 +1,36 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T02:00:00Z
+Updated: 2026-09-16T03:00:00Z
+
+## 2026-09-16 — FTF-0002 independently certified (Control plane, CERTIFY mode)
+A separate session (this one) picked up docs/CONTROL_PLANE_MODES.md's CERTIFY procedure at the
+user's direct live instruction ("Go with the certification process"). Session-ID comparison
+first, per that doc's explicit requirement: both PR #23 commits (e3f0c1a, 6928d14) carry
+`Claude-Session: .../session_01NuAjwmK5rwuxefyo5L7zgy`; this session is
+`session_01DY5FK4nK2VLrUMKHwNQQU2` — no overlap, independent per Law 4.
+Verified for real rather than trusting the PR description:
+- Read the full diff and every changed config file (pyproject.toml, eslint.config.mjs,
+  tsconfig*.json, ci.yml) — no continue-on-error, no softened severity; the one exclusion
+  (tools/r1_handoff.py, from ruff+mypy) is documented and non-production.
+- Ran `uv sync` and `pnpm install` fresh (not reusing the producer's environment) — both
+  succeeded, confirming the pre-existing `hatchling` build-defect fix holds.
+- Ran `tests/tasks/test_ftf_0002.py` myself: 6/6 pass.
+- Fetched GitHub Actions run 35070915230 directly: `pull_request` event, head_sha matches PR
+  #23's actual merged head (confirmed via `pull_request_read`), conclusion `success`.
+- Performed my own fault injection: appended `import os` to the real `scripts/status.py`, ran
+  unmodified `ruff check .` — real failure (F401+E402, exit 1); reverted, re-ran clean (exit 0).
+- `product_truth_check.py --fail-on-unwired`: `0/0 product-true`, legitimate since FTF-0002's
+  `proving_symbol` is empty (CI tooling, not a live product path).
+- Pulled the real contract via `tools/r1_handoff.py packet FTF-0002` and checked delivered work
+  against its actual acceptance/negative_acceptance clauses, not just "tests pass" — both met.
+Certified: docs/spec-matrix.yaml (FTF-0002: certification_state=CERTIFIED, proof_state=
+L2-CERTIFIED, evidence_hash=41f1493 the merge commit), docs/certifications/ledger.md (full
+entry with session-ID comparison stated explicitly), QUEUE.md (moved FTF-0002 to Done, bumped
+Certified to 2/300, cleared Provisional, noted FTF-0003 now unblocked for the relay). Not
+promoted — L4 gate is release-only and hasn't run. Certified: 2/300 · Product-true: 0
+(unchanged — FTF-0002 has no proving_symbol, doesn't count either way).
+Did not act on this session's other two pending items (trigger-tooling durability
+confirmation, FTF-0001 test-hardening/watchdog-finding question) — out of scope for this
+CERTIFY-mode pass; left for a future OPERATE/UNBLOCK-mode check-in or explicit owner direction.
 
 ## 2026-09-16 — Relay shift: no workable item, FTF-0002 still awaiting independent L2 cert
 STEP 0: `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` — no drift. `cognee-cli` still not on

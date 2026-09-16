@@ -12,13 +12,13 @@ FTF-0001:
   proving_symbol: ''
   proving_test: tests/test_ftf_0001_monorepo_layout.py
 FTF-0002:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Add formatting/lint/type checks
-  evidence_hash: e3f0c1a981db04bd5d16078f5fd72fcebfc866c7
+  evidence_hash: 41f1493bca4f70aa74ab61516d1a22ee197daf79
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-31, AF-35; scenarios=Q01, Q26; deps=FTF-0001
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0002.py
 FTF-0003:

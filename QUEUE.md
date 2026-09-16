@@ -3,11 +3,11 @@ Updated: 2026-09-16 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 1/300 · Provisional: 1 (FTF-0002) · Blocked: 0
-Product-true (Law 16): 0 — must match certified (FTF-0001 has no
-proving_symbol; it is structural layout, not a live-wired path, so it is
-CERTIFIED without counting toward product-true; FTF-0002 similarly has
-no proving_symbol — CI tooling, not a live product-runtime code path)
+Certified: 2/300 · Provisional: 0 · Blocked: 0
+Product-true (Law 16): 0 — must match certified (FTF-0001 and FTF-0002
+both have no proving_symbol; FTF-0001 is structural layout and FTF-0002 is
+CI tooling, neither a live-wired product-runtime path, so both are
+CERTIFIED without counting toward product-true)
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -21,18 +21,14 @@ no proving_symbol — CI tooling, not a live product-runtime code path)
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-Nothing active — FTF-0002 implemented this shift (see Provisional below),
-at the user's direct live instruction, not the autonomous relay's normal
-cadence. Next candidate is FTF-0003 (test harnesses) once FTF-0002 is
-independently L2-certified — deps should build on certified work, not
-stack a second provisional criterion on top of an uncertified one.
+Nothing active. FTF-0002 is now independently L2-certified (see Done
+below) — FTF-0003 (test harnesses) is the next unblocked candidate per
+dependency order; the relay resolves its real DoD via
+`python tools/r1_handoff.py packet FTF-0003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+before claiming it.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0002 — Add formatting/lint/type checks. Commit
-  e3f0c1a981db04bd5d16078f5fd72fcebfc866c7. Real DoD resolved via
-  `python tools/r1_handoff.py packet FTF-0002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
-  Full evidence in docs/certifications/queue.md. Not self-certified per
-  Law 4 — awaiting independent review.
+Nothing provisional.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -72,3 +68,16 @@ not merely because the task looked title-only elsewhere.
       docs/certifications/ledger.md for both entries. Count below was
       never inflated by this — it stayed 1/300 before and after, since
       the correction and re-certification landed together.
+- [x] FTF-0002 — Add formatting/lint/type checks. CERTIFIED 2026-09-16
+      (control-plane L2, session_01DY5FK4nK2VLrUMKHwNQQU2 — session-ID
+      compared against both PR #23 commits' session_01NuAjwmK5rwuxefyo5L7zgy,
+      no overlap). PR: https://github.com/SJZLab/Sovra/pull/23, merge
+      commit 41f1493bca4f70aa74ab61516d1a22ee197daf79. Ledger:
+      docs/certifications/ledger.md. Independently re-verified: fresh
+      `uv sync`/`pnpm install`, fresh run of `tests/tasks/test_ftf_0002.py`
+      (6/6 pass), a real fault injection (not just re-reading the
+      producer's claim), the real GitHub Actions run on the actual merged
+      PR head, and the delivered work checked against FTF-0002's real
+      acceptance/negative_acceptance contract pulled via
+      `tools/r1_handoff.py packet FTF-0002`. Not yet PROMOTED — L4 gate is
+      release-only and hasn't run.
