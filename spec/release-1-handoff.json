@@ -1,0 +1,6 @@
+{
+  "source_plan_sha256": "5d3c183ff11b85718d5a3bbb08188868c455464202bb4898f6ddde66013eb664",
+  "binding_body_sha256": "5aef5a85aec800ce281da3d65c7d1c2d1f5fc83ec5062160078e7f270e06f61c",
+  "embedded_helper_sha256": "0944bba296099a24fad4ac72c8d709920ec92297b9deca2fd3ccb716c8524df7",
+  "runtime_status": "NOT_TESTED"
+}

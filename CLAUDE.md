@@ -1,5 +1,9 @@
 # CLAUDE.md — how to work on Sovra (Model Factory)
-Read first: docs/CONTROL_PLANE_MODES.md → SPEC.md → docs/spec-matrix.yaml → docs/architecture/ → docs/certifications/ → docs/adr/
+Read first: docs/CONTROL_PLANE_MODES.md → FINE_TUNING_FACTORY_RELEASE_1.md (Release 1 master
+  spec — supersedes SPEC.md/ARCHITECTURE.md/REFERENCE_REPOSITORIES.md/TASK_INDEX.md on any
+  conflict, per its own Authority/§84.1) → tools/r1_handoff.py (resolves one task's real DoD:
+  `python tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md`) →
+  SPEC.md → docs/spec-matrix.yaml → docs/architecture/ → docs/certifications/ → docs/adr/
 
 OPERATING MODE FLAGS:
 BRANCH_PROTECTION: instruction-tier (not probed — no git connector this session)

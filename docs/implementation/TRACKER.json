@@ -1,0 +1,2108 @@
+{
+  "release": "1.0",
+  "source_plan_sha256": "5d3c183ff11b85718d5a3bbb08188868c455464202bb4898f6ddde66013eb664",
+  "implementation_status": "NOT_STARTED",
+  "qualification_status": "NOT_TESTED",
+  "tasks": {
+    "FTF-0001": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0002": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0003": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0004": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0005": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0006": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0101": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0102": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0103": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0104": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0105": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0106": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0201": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0202": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0203": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0204": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0205": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0206": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0207": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0208": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0209": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0210": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0211": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0212": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0213": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0214": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0215": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0301": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0302": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0303": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0304": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0305": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0306": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0307": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0308": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0309": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0310": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0401": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0402": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0403": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0404": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0405": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0406": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0407": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0408": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A01": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A02": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A03": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A04": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A05": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A06": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A07": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A08": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A09": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A10": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A11": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A12": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A13": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A14": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A15": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A16": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A17": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A18": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A19": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A20": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A21": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A22": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A23": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A24": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A25": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A26": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A27": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A28": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A29": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A30": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A31": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A32": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A33": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A34": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-04A35": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0500": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0500A": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0500B": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0500C": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0500D": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0501": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0502": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0503": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0504": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0505": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0506": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0507": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0508": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0509": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0510": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0511": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0512": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0513": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0514": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0515": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0516": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0517": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0518": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0519": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0520": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0601": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0602": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0603": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0604": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0605": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0606": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0607": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0608": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0609": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0610": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0611": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0612": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0613": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0614": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0615": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0616": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0617": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0618": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0619": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0701": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0702": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0703": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0704": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0705": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0706": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0707": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0708": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0709": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0710": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0711": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0712": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0713": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0714": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0715": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0716": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0717": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0718": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0719": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0801": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0802": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0803": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0804": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0805": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0806": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0807": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0808": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0809": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0810": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0901": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0902": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0903": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0904": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0905": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0906": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0907": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0908": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-0909": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1001": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1002": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1003": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1004": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1005": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1006": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1007": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1008": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1009": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1101": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1102": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1103": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1104": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1105": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1106": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1107": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1108": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1201": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1202": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1203": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1204": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1205": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1206": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1301": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1302": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1303": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1304": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1305": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1306": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1307": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1308": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1309": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1310": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1401": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1402": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1403": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1404": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1405": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1406": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1407": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1408": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1501": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1502": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1503": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1504": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1505": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1506": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1507": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1508": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1509": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1510": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1601": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1602": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1603": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1604": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1605": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1606": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1701": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1702": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1703": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1704": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1705": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1706": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1707": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1708": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1709": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1710": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1711": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1712": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1713": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1714": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1715": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1801": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1802": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1803": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1804": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1805": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1806": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1807": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1808": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1809": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1810": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1811": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-1812": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H001": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H002": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H003": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H004": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H005": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H006": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H007": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H008": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H009": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H010": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H011": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H012": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H013": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H014": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H015": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H016": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H017": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H018": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H019": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H020": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H021": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H022": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H023": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H024": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H025": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H026": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H027": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H028": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H029": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H030": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H031": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H032": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H033": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H034": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H035": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-H036": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R001": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R002": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R003": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R004": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R005": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R006": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R007": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R008": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R009": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R010": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R011": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R012": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R013": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R014": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R015": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R016": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R017": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    },
+    "FTF-R018": {
+      "status": "NOT_STARTED",
+      "commits": [],
+      "evidence": [],
+      "independent_review": null,
+      "blockers": []
+    }
+  }
+}
