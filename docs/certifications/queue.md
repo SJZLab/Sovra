@@ -565,3 +565,99 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   self-certified — awaiting Control plane L2 review, which should now
   find a clean merge and a genuinely green `docker-local-stack-
   integration` run (not merely its presence) before certifying.
+
+## 2026-09-16 — FTF-0006 — Observability foundation
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-6dwdsp`.
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0006 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-0001/FTF-0004/FTF-0005 all `CERTIFIED` — unblocked.
+- **Scope finding before implementation:** `apps/api` still has no
+  `main.py` (no FastAPI app wired) and no `services/workflow-worker`
+  exists (no Temporal workflow/activity code) — there is no live product
+  API route or workflow to instrument yet. Building either now, solely to
+  host an observability demo, would itself be a new-scope/new-runtime-dep
+  ask-first item under CLAUDE.md. Followed the same precedent FTF-0004
+  used for `apps/web`: build the real seam and prove it against a genuine
+  local integration (a real stdlib HTTP server bound to a real socket,
+  hit with a real HTTP request over the wire), and disclose the
+  workflow-side gap as a follow-up rather than inventing a placeholder
+  workflow.
+- **Delivered:** `apps/api/app/config/observability_foundation.py` —
+  stdlib-only (`dataclasses`/`enum`/`uuid`/`time`/`json`/`re`/`threading`,
+  no third-party dependency added, same reasoning FTF-0004/0005 used to
+  avoid FastAPI/pydantic/Prometheus/OpenTelemetry for this foundation
+  layer):
+  - `StructuredEvent`: a frozen dataclass with a fixed field set
+    (`event`, `correlation_id`, `identity`, `status`, `duration_ms`,
+    `timestamp_utc`, `cost_usd`) — no field capable of holding a raw
+    prompt/source/token/signed URL exists at all; an unexpected keyword
+    raises `TypeError` at construction (structural, not filtered).
+  - `event`/`identity` are validated against a short safe-identifier
+    pattern (`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`) — rejects prose with
+    spaces/newlines, URLs with query strings (`?`, `&`, `=`, `/` are not
+    in the allowed charset), and anything over 128 characters. Documented
+    honestly as a format boundary, not a secret scanner: it cannot detect
+    an arbitrary short opaque token shaped like a legitimate slug ID —
+    the structural guarantee against a credential leaking is that no
+    field is meant to hold one in the first place.
+  - `MetricsRegistry`: in-memory numeric counters/duration sums, rejects
+    any label outside a caller-predeclared finite set — cardinality is
+    bounded by construction, proven quantitatively (50 requests with 50
+    distinct correlation IDs still produce exactly 1 observed label).
+  - `InstrumentedRequest`: a context manager wrapping one real
+    request/activity — issues a correlation ID, times the handler,
+    records a numeric duration keyed only by a bounded status label, and
+    emits exactly one `StructuredEvent`. Never swallows an exception
+    raised inside the `with` block (`__exit__` returns `None`).
+- **Test:** `tests/tasks/test_ftf_0006.py` — 10 check functions.
+- **Evidence — shown able to fail (Law 1):**
+  1. Acceptance clause 1 ("one actual request crosses API/workflow
+     instrumentation with correlation and numeric metrics"):
+     `test_one_real_http_request_crosses_instrumentation` binds a real
+     stdlib `ThreadingHTTPServer` to a real local socket, whose handler
+     wraps the response in `InstrumentedRequest`, then issues a genuine
+     HTTP GET over the wire via `http.client` (not an in-process function
+     call) — asserts the response carries a correlation-ID header, the
+     emitted `StructuredEvent`'s correlation ID matches the real request's,
+     the recorded duration is numeric, and the numeric metric count is
+     exactly 1 for that one real request.
+  2. Negative_acceptance ("cardinality remains bounded"), proven
+     quantitatively: `test_cardinality_stays_bounded_across_many_distinct_correlation_ids`
+     issues 50 real, distinct correlation IDs through `InstrumentedRequest`
+     and asserts `MetricsRegistry.cardinality()` stays at 1 (only the "ok"
+     label was ever used) — correlation IDs are never themselves used as
+     metric labels.
+  3. Negative_acceptance ("never appear in logs/spans"): separate checks
+     prove (a) an unexpected keyword (`raw_prompt=...`) is rejected with
+     `TypeError` at construction — the schema structurally has no field
+     for it; (b) prose/newlines/signed-URL querystrings/oversized blobs
+     passed as `identity` are rejected with `ValueError`, with a clean
+     short identity still constructing successfully (a real boundary, not
+     a blanket rejection).
+  4. Real fault injection against the tracked module itself (not just
+     fixtures): temporarily removed `MetricsRegistry.record`'s bounded-
+     label check — re-ran the test suite, exactly the cardinality-bound
+     check failed for real (`a label outside the predeclared bounded set
+     is rejected`); restored the file byte-identical from a pre-edit copy
+     (`diff` confirmed empty), re-ran clean (all 10 checks pass).
+- **Regression check:** `uv run ruff check .` / `uv run ruff format
+  --check .` / `uv run mypy .` clean; `uv run pytest tests/unit` (3
+  passed); `tests/tasks/test_ftf_0002.py`, `test_ftf_0003.py`,
+  `test_ftf_0004.py`, `test_ftf_0005.py`, and
+  `tests/test_ftf_0001_monorepo_layout.py` all still pass unmodified — no
+  regression to certified evidence. `pnpm run lint`/`typecheck`/
+  `format:check` and `pnpm exec vitest run` (2 passed) clean — no
+  TypeScript files touched. `product_truth_check.py --fail-on-unwired`
+  stays `0/0 product-true` — legitimate, no proving_symbol yet (no live
+  caller wires this into a running API/workflow, same rationale as
+  FTF-0002/0003/0004/0005).
+- **CI:** wired `python3 tests/tasks/test_ftf_0006.py` into the existing
+  `gate` job in `.github/workflows/ci.yml`, right after the FTF-0004 step;
+  YAML-validated (`yaml.safe_load`). Real run status to be confirmed on
+  the opened PR before merge.
+- **Acceptance clause 2** ("independent review, exact merged commit, real
+  relevant integration and negative-test evidence recorded") is satisfied
+  by this queue entry plus the standard PR/CI/Control-plane-review flow,
+  same as every other FTF task in this repo.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
