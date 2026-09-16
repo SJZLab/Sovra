@@ -662,3 +662,55 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   same as every other FTF task in this repo.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+### Control plane review — 2026-09-16 — CERTIFIED
+- **PR:** https://github.com/SJZLab/Sovra/pull/39 (`claude/wizardly-fermat-6dwdsp`
+  → `main`), merge commit `268186bd5e70032a6c563796910059ab2684b684`.
+- **Session-ID check:** all three PR commits (`91eeff1`, `7d5834f`,
+  `0970fa8`) carry `Claude-Session: .../session_01GvzemvrJeMmGiZsAAPK5m1`;
+  this reviewing session's ID (`session_01QPhpMGcPNZJXq3DMYkNFtJ`) does
+  not match — independent, not self-certification.
+- **Diff re-read; merged code confirmed byte-identical to the diff:**
+  `git diff origin/main -- apps/api/app/config/observability_foundation.py
+  tests/tasks/test_ftf_0006.py` empty on the checked-out tree.
+- **CI verified for real:** `list_workflow_jobs` on run `35112030663`
+  (not the PR body's claim) — both `gate` and
+  `docker-local-stack-integration` `conclusion: success`, `head_sha`
+  `0970fa8eb4b80635cd919f929d74f1ac49884325` (the PR's actual final head,
+  confirmed via `get_commits`), including the discrete "FTF-0006
+  negative-test proof (observability foundation catches real defects)"
+  step (`gate` step 20, `success`).
+  `python3 tests/tasks/test_ftf_0006.py` re-run directly: 10/10 pass.
+- **Real fault injection, twice:** (a) reproduced the producer's own
+  claim — removed `MetricsRegistry.record`'s bounded-label rejection —
+  exactly 1 check failed (`a label outside the predeclared bounded set is
+  rejected`); (b) an independent injection outside the producer's set —
+  disabled `_validate_identifier`'s `_SAFE_IDENTIFIER.match` check —
+  exactly 1 check failed (`free-form content ... cannot pass as
+  identity`). Both restored byte-identical (`diff` confirmed empty),
+  re-ran clean (10/10) after each.
+- **product_truth_check.py:** `--fail-on-unwired` → `0/0 product-true`,
+  legitimate — `docs/spec-matrix.yaml`'s FTF-0006 entry has
+  `proving_symbol: ''` and no live FastAPI app or Temporal workflow exists
+  yet to wire this seam into (independently confirmed: `apps/api` has no
+  `main.py`, no `services/workflow-worker` exists).
+- **Real contract pulled and checked:** `python tools/r1_handoff.py
+  packet FTF-0006 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  clause 1 ("one actual request crosses API/workflow instrumentation with
+  correlation and numeric metrics") met via the real stdlib
+  `ThreadingHTTPServer`/real-socket/real-`http.client`-request test, a
+  disclosed scope limitation consistent with FTF-0004's own precedent for
+  `apps/web`, not a hidden gap; acceptance clause 2 (independent review,
+  exact merged commit, real evidence recorded) met by this entry;
+  negative_acceptance (content-free events, bounded cardinality) met per
+  the fault injections above plus the quantitative 50-correlation-ID/1-label
+  cardinality test.
+- **Regression check:** `uv run ruff check .` / `format --check .` /
+  `mypy .` clean; `uv run pytest tests/unit` (3 passed, unchanged). No
+  regression to FTF-0001/0002/0003/0004/0005's certified evidence.
+- **Conclusion:** the L1 evidence holds up under independent
+  re-verification. Certified L2-CERTIFIED. `docs/spec-matrix.yaml`,
+  `docs/certifications/ledger.md`, `QUEUE.md`, and `PROGRESS.md` updated
+  accordingly.
+- **Validated-by:** session https://claude.ai/code/session_01QPhpMGcPNZJXq3DMYkNFtJ
+  (independent — see session-ID check above), 2026-09-16.

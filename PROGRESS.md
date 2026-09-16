@@ -1,5 +1,71 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T14:57:00Z
+Updated: 2026-09-16T15:15:00Z
+
+## 2026-09-16 — FTF-0006 independently certified (Control plane, CERTIFY mode)
+Scheduled control-plane certifier shift, triggered by PR #40's
+`pull_request.opened` webhook (a doc-only PROGRESS.md follow-up recording
+PR #39's merge — not itself a certification item; left untouched, out of
+scope for this shift per "never touch anything outside certification").
+Checked `docs/certifications/queue.md`: one PROVISIONAL item pending,
+FTF-0006 — Observability foundation, merged to `main` via PR #39 (merge
+commit `268186bd5e70032a6c563796910059ab2684b684`).
+Session-ID check: all three PR #39 commits carry
+`Claude-Session: .../session_01GvzemvrJeMmGiZsAAPK5m1`; this session
+(`session_01QPhpMGcPNZJXq3DMYkNFtJ`) does not match — independent.
+Re-read the full diff; confirmed the merged tree is byte-identical to it.
+Fetched the real GitHub Actions job list for the PR's actual final head
+SHA (`0970fa8`) directly via the API — `gate` and
+`docker-local-stack-integration` both `success`, including the discrete
+FTF-0006 negative-test-proof step. Re-ran `tests/tasks/test_ftf_0006.py`
+myself (10/10 pass). Performed two independent fault injections: the
+producer's own claimed one (removing `MetricsRegistry.record`'s
+bounded-label rejection) and one of my own choosing outside the
+producer's set (disabling `_validate_identifier`'s format check) — both
+correctly reddened exactly one check each, both restored byte-identical.
+Confirmed `product_truth_check.py --fail-on-unwired` stays `0/0
+product-true`, legitimate (no proving_symbol, no live FastAPI/Temporal
+caller yet). Pulled the real contract via `python tools/r1_handoff.py
+packet FTF-0006 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed
+both acceptance clauses and the negative_acceptance clause are genuinely
+met, not just "tests pass". Regression check (`ruff`/`mypy`/`pytest
+tests/unit`) clean — no regression to FTF-0001/0002/0003/0004/0005's
+certified evidence.
+Certified L2-CERTIFIED. Updated `docs/spec-matrix.yaml` (FTF-0006:
+CERTIFIED/L2-CERTIFIED, evidence_hash=268186b), appended
+`docs/certifications/ledger.md` and `docs/certifications/queue.md` with
+full evidence and this session's ID, moved FTF-0006 from Provisional to
+Done in `QUEUE.md` and bumped Certified to 6/300, Provisional to 0.
+Per this shift's own scope limits, did not pick up any new task work or
+touch PR #40.
+
+## 2026-09-16 — FTF-0006 (PR #39) merged to main as PROVISIONAL
+Same relay shift as the FTF-0006 implementation entry below. Subscribed to
+PR #39's activity after opening it; CI (`gate` and
+`docker-local-stack-integration`) both completed `success` on the PR's
+actual final head SHA (`0970fa8eb4b80635cd919f929d74f1ac49884325`,
+confirmed via `get_check_runs`, not a stale/self-reported claim — an
+earlier `check_suite.completed` event for a prior commit on this same
+branch, `7d5834f`, was correctly recognized as stale and not acted on).
+`mergeable_state: clean`, no open review threads, no other configured
+checks (this repo has no Claude Approvals check). Matches CLAUDE.md's
+"Do without asking: merge on green + L1 doc (PROVISIONAL)" — same
+discipline as the prior FTF-0002/0003/0004/0005 merges. Merged PR #39
+(merge commit `268186bd5e70032a6c563796910059ab2684b684`). Not a
+certification — still PROVISIONAL, Law 4 untouched; `docs/spec-
+matrix.yaml`/`QUEUE.md`/`docs/certifications/queue.md` already carried
+the correct PROVISIONAL bookkeeping as part of PR #39 itself, verified
+post-merge that all three landed on `main` as expected — no further doc
+edits needed there. Certified: 5/300 (unchanged — a merge to PROVISIONAL
+is not a certification). Product-true: 0 (unchanged).
+Per the branch-restart convention (this session's designated branch's PR
+merged): restarted `claude/wizardly-fermat-6dwdsp` from the new `main`
+tip to record this merge note, rather than stacking on now-merged
+history.
+STEP 4(a): FTF-0006 is now the queue's only non-certified item and is
+fully L1-PROVEN/PROVISIONAL. Stopping — awaiting Control plane L2
+certification of FTF-0006, then eventually the L4 gate. Not starting a
+second item (FTF-0101+) on top of an uncertified one, same discipline as
+every prior FTF-000x handoff.
 
 ## 2026-09-16 — FTF-0006 implemented (Provisional, PR #39 opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:

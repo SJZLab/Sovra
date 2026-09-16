@@ -379,3 +379,99 @@ corrected 2026-09-15.
   negative_acceptance clauses, with the one disclosed scope limitation
   (`web` excluded) being a sound, transparent engineering call rather
   than a hidden gap. Certified L2-CERTIFIED.
+
+## FTF-0006 — Observability foundation
+- Criterion ID: FTF-0006
+- PR: https://github.com/SJZLab/Sovra/pull/39
+- Merge commit: 268186bd5e70032a6c563796910059ab2684b684
+- Validated-by: session https://claude.ai/code/session_01QPhpMGcPNZJXq3DMYkNFtJ
+  (session-ID comparison performed and recorded before this entry: all
+  three commits on PR #39 — 91eeff152e11dd0bdc17c4dded1e69e9d0b7fbed,
+  7d5834f5d78b14eb6079d4dbdd6464a25e32bb0c, and
+  0970fa8eb4b80635cd919f929d74f1ac49884325 — carry
+  `Claude-Session: .../session_01GvzemvrJeMmGiZsAAPK5m1`; this session's ID
+  does not match, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's word:
+  1. Read the full PR diff (`get_diff`) — one new stdlib-only module
+     (`apps/api/app/config/observability_foundation.py`: frozen-dataclass
+     `StructuredEvent` with a fixed field set, a safe-identifier format
+     boundary on `event`/`identity`, a bounded-label `MetricsRegistry`,
+     and an `InstrumentedRequest` context manager), its test
+     (`tests/tasks/test_ftf_0006.py`, 10 checks), one new CI step wired
+     into the existing `gate` job, and tracking-doc updates. No
+     third-party runtime dependency added; no `continue-on-error` or
+     softened severity anywhere in the CI change.
+  2. Confirmed on the checked-out tree that `apps/api/app/config/
+     observability_foundation.py` and `tests/tasks/test_ftf_0006.py` are
+     byte-identical to the PR diff content (`git diff origin/main --`
+     empty for both paths) — the code actually on `main` is the code
+     reviewed.
+  3. Fetched the real GitHub Actions job list for PR #39 directly via the
+     Actions API (`list_workflow_jobs`, run 35112030663), not the PR's own
+     claim: both `gate` and `docker-local-stack-integration` completed
+     with conclusion `success`, `head_sha` `0970fa8eb4b80635cd919f929d74f1ac49884325`
+     (the PR's actual final head commit before the merge, confirmed via
+     `get_commits`), including a discrete "FTF-0006 negative-test proof
+     (observability foundation catches real defects)" step (`gate` step
+     20) that itself passed — not a stale or self-reported claim, and not
+     tied to an older/different commit.
+  4. Ran `tests/tasks/test_ftf_0006.py` myself on the merged code: 10/10
+     checks pass ("all checks passed").
+  5. Performed two independent fault injections, not just the producer's
+     claimed one: (a) reproduced the producer's own claim — removed
+     `MetricsRegistry.record`'s bounded-label rejection — re-ran: exactly
+     1 check failed for real (`a label outside the predeclared bounded set
+     is rejected`), matching the producer's exact claim; (b) an
+     independent injection of my own choosing, outside the producer's
+     fault-injection set — disabled `_validate_identifier`'s format check
+     (`if not _SAFE_IDENTIFIER.match(value):` → `if False:`) — re-ran:
+     exactly 1 check failed for real (`free-form content ... cannot pass
+     as identity`), proving the identity content-exclusion boundary is
+     also genuinely load-bearing, not merely a documentation claim. Both
+     times restored the file byte-identical from a pre-edit copy (`diff`
+     confirmed empty), re-ran clean (10/10) after each restore.
+  6. Ran `uv run ruff check .` / `uv run ruff format --check .` /
+     `uv run mypy .` — all clean; `uv run pytest tests/unit` — 3 passed,
+     unchanged. No regression to prior certified evidence.
+  7. Ran `python3 scripts/product_truth_check.py --fail-on-unwired`:
+     `0/0 product-true`, exit 0 — legitimate per CONTROL_PLANE_MODES.md
+     CERTIFY step 4, since `docs/spec-matrix.yaml`'s FTF-0006 entry has
+     `proving_symbol: ''` (no live FastAPI app or Temporal workflow exists
+     yet to wire this seam into — same rationale already established for
+     FTF-0002/0003/0004/0005).
+  8. Verified `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` on
+     `origin/main` — no drift; CI's own "Verify CLAUDE.md.sha256" step
+     also passed on the real run above.
+  9. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0006 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+     delivered work against its actual acceptance/negative_acceptance
+     clauses, not just "tests pass": acceptance clause 1 ("one actual
+     request crosses API/workflow instrumentation with correlation and
+     numeric metrics") is met — no live FastAPI app or Temporal workflow
+     exists yet (`apps/api` has no `main.py`, no `services/workflow-worker`
+     exists, independently confirmed), so the clause is proven via a real
+     stdlib `ThreadingHTTPServer` bound to a real socket, hit with a
+     genuine `http.client` request over the wire — a disclosed, reasoned
+     scope limitation consistent with the precedent FTF-0004 used for
+     `apps/web`, not a hidden gap. Acceptance clause 2 ("independent
+     review, exact merged commit, real relevant integration and
+     negative-test evidence recorded") is met by this entry.
+     Negative_acceptance ("training prompts, raw source, tokens and
+     signed URLs never appear in logs/spans; cardinality remains bounded")
+     is met: `StructuredEvent`'s fixed field set structurally cannot hold
+     free-form content (item 5b, plus the unexpected-keyword `TypeError`
+     case), and cardinality is proven bounded quantitatively (50 distinct
+     correlation IDs → 1 observed metric label, correlation IDs never
+     themselves used as labels).
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  the merged code matches the reviewed diff exactly, CI is real and green
+  on the actual PR head, two independent fault injections (one
+  reproducing the producer's claim, one of my own choosing) both correctly
+  redden the suite, `product_truth_check.py`'s 0/0 is legitimate, and the
+  delivered work matches the real contract's acceptance/negative_acceptance
+  clauses with the one disclosed scope limitation (no live API/workflow to
+  instrument yet) being a sound, transparent engineering call. Certified
+  L2-CERTIFIED.

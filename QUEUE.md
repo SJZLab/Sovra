@@ -1,18 +1,17 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by relay (FTF-0006 submitted)
+Updated: 2026-09-16 by Control plane (certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 5/300 · Provisional: 1 (FTF-0006) · Blocked: 0
+Certified: 6/300 · Provisional: 0 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004 and FTF-0005 all have no proving_symbol; FTF-0001 is
-structural layout, FTF-0002 is CI tooling, FTF-0003 is test-harness
-tooling, FTF-0004 is local-stack bootstrap/health tooling, and FTF-0005
-is a configuration module with no live caller yet — none a live-wired
-product-runtime path, so all five are CERTIFIED without counting toward
-product-true). FTF-0006 (Provisional, not yet certified) also has no
-proving_symbol yet for the same reason — no live FastAPI app or Temporal
-workflow exists to wire it into.
+FTF-0003, FTF-0004, FTF-0005 and FTF-0006 all have no proving_symbol;
+FTF-0001 is structural layout, FTF-0002 is CI tooling, FTF-0003 is
+test-harness tooling, FTF-0004 is local-stack bootstrap/health tooling,
+FTF-0005 is a configuration module with no live caller yet, and FTF-0006
+is an observability seam with no live FastAPI app or Temporal workflow to
+wire into yet — none a live-wired product-runtime path, so all six are
+CERTIFIED without counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -26,13 +25,11 @@ workflow exists to wire it into.
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-0006 submitted as PROVISIONAL below, not picking up a second
-item on top of an uncertified one, same discipline as prior handoffs.)
+(empty — FTF-0006 is now CERTIFIED, see Done below. Next candidate per
+dependency order: FTF-0101+.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0006 — Observability foundation. Submitted 2026-09-16 by the relay
-  (scheduled shift). Full evidence: docs/certifications/queue.md. Not
-  self-certified — awaiting a separate Control-plane session per Law 4.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -54,13 +51,25 @@ item on top of an uncertified one, same discipline as prior handoffs.)
   as a follow-up for whichever task first builds the real web app. Full
   entry: docs/certifications/ledger.md.
 - FTF-0005 — Configuration system. CERTIFIED (docs/certifications/ledger.md).
+- FTF-0006 — Observability foundation. CERTIFIED 2026-09-16, PR #39 (merge
+  commit `268186bd5e70032a6c563796910059ab2684b684`). Independently
+  re-verified: merged code confirmed byte-identical to the reviewed diff,
+  real CI (`gate` + `docker-local-stack-integration`) green on the PR's
+  actual final head SHA, two independent fault injections (the producer's
+  own bounded-label removal, plus an independent identity-format-check
+  disablement of my own choosing) both correctly reddened the suite,
+  `product_truth_check.py` 0/0 confirmed legitimate (no proving_symbol
+  yet — no live FastAPI app/Temporal workflow to wire into), and the
+  delivered work checked against FTF-0006's real acceptance/
+  negative_acceptance clauses via `tools/r1_handoff.py packet FTF-0006`.
+  Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
 `docs/spec-matrix.yaml` (proof-state per record). Do not re-copy the table
 here — two copies drift. Read order for early work:
 1. FTF-0001 → FTF-0002 → FTF-0003 (bootstrap, lint/type, test harness)
-2. FTF-0005 (config) → FTF-0004 (docker local stack) → FTF-0006 (observability)
+2. FTF-0005 (config) → FTF-0004 (docker local stack) → FTF-0006 (observability) — all three CERTIFIED
 3. FTF-0101…0106 (identity/tenancy/RBAC/audit — CAP-01)
 4. FTF-R001/R002 (freeze seven-component architecture + authenticated bindings —
    do this early; every reuse_architecture and most audit_hardening tasks depend
@@ -143,4 +152,26 @@ not merely because the task looked title-only elsewhere.
       negative_acceptance contract pulled via `tools/r1_handoff.py packet
       FTF-0005`. Confirmed no regression to FTF-0001/0002/0003's certified
       evidence or to the other 8 originally-proven FTF-0005 checks. Not yet
+      PROMOTED — L4 gate is release-only and hasn't run.
+- [x] FTF-0006 — Observability foundation. CERTIFIED 2026-09-16
+      (control-plane L2, session_01QPhpMGcPNZJXq3DMYkNFtJ — session-ID
+      compared against all three PR #39 commits'
+      session_01GvzemvrJeMmGiZsAAPK5m1, no overlap). PR:
+      https://github.com/SJZLab/Sovra/pull/39, merge commit
+      268186bd5e70032a6c563796910059ab2684b684. Ledger:
+      docs/certifications/ledger.md. Independently re-verified: confirmed
+      the merged code is byte-identical to the reviewed PR diff, fresh run
+      of `tests/tasks/test_ftf_0006.py` (10/10 pass), two independent
+      fault injections (the producer's own bounded-label removal, plus an
+      independent identity-format-check disablement of my own choosing —
+      both correctly reddened the suite and were restored byte-identical),
+      the real GitHub Actions job list fetched directly for the PR's
+      actual final head SHA (both `gate` and
+      `docker-local-stack-integration` green, including the discrete
+      FTF-0006 negative-test-proof step), `product_truth_check.py`
+      confirmed legitimately 0/0 (`proving_symbol: ''`, no live
+      FastAPI/Temporal caller yet), and the delivered work checked against
+      FTF-0006's real acceptance/negative_acceptance contract pulled via
+      `tools/r1_handoff.py packet FTF-0006`. Confirmed no regression to
+      FTF-0001/0002/0003/0004/0005's certified evidence. Not yet
       PROMOTED — L4 gate is release-only and hasn't run.
