@@ -288,3 +288,49 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   once fixed; no other part of this PR needs rework.
 - **Validated-by:** session https://claude.ai/code/session_01WjQKEb87DwDx51YLNRxT6o
   (independent — see session-ID check above), 2026-09-16.
+
+## 2026-09-16 — FTF-0005 — Fix applied for control-plane-rejected defect
+- **Commit:** 5fefe0a (branch `claude/wizardly-fermat-3mh1pd`, on top of
+  `main`'s `9de083b`, which already carries the review-rejection commit
+  `c9dec0a`).
+- **Scope:** exactly the fix the control plane review above specified —
+  nothing else in FTF-0005 touched.
+- **Fix:** `Settings.__repr__` (`apps/api/app/config/configuration_system.py`)
+  now applies `_redact_url(self.litellm_gateway_url)` instead of
+  interpolating the raw field, mirroring the existing `database_url`
+  handling on the line above it.
+- **Test:** added a case to
+  `tests/tasks/test_ftf_0005.py::test_sensitive_values_absent_from_errors_and_repr` —
+  constructs a valid `Settings` from an *accepted* gateway URL carrying
+  embedded userinfo (`https://svc:hunter2@litellm.internal.example`,
+  a valid scheme so it isn't rejected) and asserts the password is absent
+  from `repr(settings)`. This exercises the actual risk surface the
+  original suite missed (the existing case only tried a *rejected* URL,
+  which never reaches a constructed `Settings`).
+- **Evidence — shown able to fail (Law 1):** ran the new test case against
+  the unfixed code first — failed for real
+  (`FAIL [FTF-0005] an accepted gateway URL's embedded password never
+  appears in Settings' repr`). Applied the one-line fix, re-ran — all 10
+  checks in `tests/tasks/test_ftf_0005.py` pass, including the new case.
+- **Regression check:** ran the full existing gate via the pinned CI
+  toolchain (`uv sync` then `uv run ruff check .` / `uv run ruff format
+  --check .` / `uv run mypy .` — all clean; a stray system-wide `ruff`/
+  `mypy` install on this sandbox reported unrelated pre-existing findings
+  — UP042 str+Enum inheritance, missing PyYAML stubs — confirmed via `git
+  stash` to be present identically on unmodified `main`, i.e. a local
+  toolchain-version artifact, not a regression from this change; the
+  actual CI-pinned versions via `uv run` are clean). `uv run pytest
+  tests/unit` (3 passed), `tests/tasks/test_ftf_0002.py`,
+  `tests/tasks/test_ftf_0003.py`, and `tests/test_ftf_0001_monorepo_layout.py`
+  all still pass unmodified. `product_truth_check.py --fail-on-unwired`
+  stays `0/0 product-true` (unchanged — no proving_symbol yet, no live
+  caller). `scripts/status.py` reports `3/300 certified · 0 product-true`
+  (unchanged — this is a fix to an existing PROVISIONAL item, not a new
+  certification).
+- **CI:** `tests/tasks/test_ftf_0005.py` was already wired into
+  `.github/workflows/ci.yml` by the original implementation — no workflow
+  change needed for this fix.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL
+  (unchanged — this is the scoped fix the review asked for, not a new
+  item). Not self-certified — awaiting Control plane L2 re-review per
+  Law 4. PR to be opened against `main` from `claude/wizardly-fermat-3mh1pd`.

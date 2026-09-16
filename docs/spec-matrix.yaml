@@ -45,9 +45,9 @@ FTF-0005:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Configuration system
-  evidence_hash: b782a2c
+  evidence_hash: 5fefe0a
   implementation_state: IMPLEMENTED
-  notes: kind=retained_feature; requirements=AF-01, AF-02, AF-10, AF-36; scenarios=Q01, Q26; deps=FTF-0001
+  notes: kind=retained_feature; requirements=AF-01, AF-02, AF-10, AF-36; scenarios=Q01, Q26; deps=FTF-0001; fixes repr secret-redaction defect found in control-plane review of b782a2c (PR #28) — litellm_gateway_url now redacted same as database_url
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0005.py

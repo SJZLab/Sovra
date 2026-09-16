@@ -24,36 +24,29 @@ into a running service).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-FTF-0005 — Control plane reviewed PR #28 (head `ea80d36`) 2026-09-16 and did
-NOT certify: found a real, independently-reproduced defect, not a flake —
-`Settings.__repr__` in `apps/api/app/config/configuration_system.py:204-216`
-redacts `database_url` (line 209, via `_redact_url`) but not
-`litellm_gateway_url` (line 210 interpolates the raw field with no
-redaction). Since `_validate_url` never rejects userinfo, a *valid,
-accepted* gateway URL with an embedded password (any environment,
-including production) has that password echoed verbatim by
-`repr(settings)` — contradicts this task's own negative_acceptance claim
-and the module's own docstring/comment. Full repro and required fix:
-docs/certifications/queue.md "Control plane review — 2026-09-16 — NOT
-CERTIFIED (defect found)". Fix needed: apply `_redact_url` to
-`litellm_gateway_url` in `__repr__` the same as `database_url`, and add a
-test case (accepted gateway URL with embedded credentials → asserted
-absent from `repr(settings)`) alongside the existing
-`test_sensitive_values_absent_from_errors_and_repr` so this can't silently
-regress. No other part of FTF-0005 needs rework — the other 8 checks and
-the CI wiring are sound. Push the fix to the same PR/branch
-(`relay/ftf-0005-configuration-system`) and re-append to
-docs/certifications/queue.md for re-review. Not picking up a second item on
-top of this uncertified one, same discipline as the FTF-0002→FTF-0003
-handoff.
+(empty — FTF-0005's fix is pushed and awaiting Control plane re-review; see
+Provisional below. Not picking up a second item on top of an uncertified
+one, same discipline as the FTF-0002→FTF-0003 handoff.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0005 — Configuration system. Commit b782a2c (implementation), on
-  branch `relay/ftf-0005-configuration-system`, PR #28. Reviewed
-  2026-09-16, NOT certified — see "Active" above and
-  docs/certifications/queue.md for the defect and required fix.
-  proof_state=L1-PROVEN, certification_state=PROVISIONAL (unchanged — the
-  defect is scoped, not a redo). Not self-certified.
+- FTF-0005 — Configuration system. PR #28 (head `ea80d36`) was reviewed
+  2026-09-16 and NOT certified — found `Settings.__repr__` echoed an
+  *accepted* gateway URL's embedded password verbatim (only `database_url`
+  was redacted, not `litellm_gateway_url`). Fix pushed: commit `5fefe0a` on
+  branch `claude/wizardly-fermat-3mh1pd` (on top of `main`'s `9de083b`,
+  which already carries the review-rejection tracking commit `c9dec0a`) —
+  `litellm_gateway_url` now redacted the same as `database_url`, plus a new
+  test case (accepted gateway URL with embedded credentials, asserted
+  absent from `repr(settings)`) in
+  `tests/tasks/test_ftf_0005.py::test_sensitive_values_absent_from_errors_and_repr`.
+  Reproduced the defect for real first (new test failed against unfixed
+  code), then confirmed fixed (all 10 checks pass). Full regression suite
+  re-run clean via the pinned CI toolchain (`uv run ruff`/`mypy`, `uv run
+  pytest tests/unit`, FTF-0001/0002/0003 evidence unmodified and passing).
+  Full detail: docs/certifications/queue.md "2026-09-16 — FTF-0005 — Fix
+  applied for control-plane-rejected defect". proof_state=L1-PROVEN,
+  certification_state=PROVISIONAL (unchanged — this is the scoped fix, not
+  a redo). Not self-certified — PR to be opened against `main`.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

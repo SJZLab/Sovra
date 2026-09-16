@@ -1,5 +1,81 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T07:00:00Z
+Updated: 2026-09-16T10:00:00Z
+
+## 2026-09-16 — FTF-0005 defect fixed (Provisional, awaiting L2 re-review)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+`cognee-cli` still not on PATH — text-search fallback active (unchanged).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state rather than trusting the docs alone
+— `git fetch origin main`: local branch tip already matched `origin/main`
+(`9de083b`) exactly, confirming the files describe current reality: PR #28
+was merged (`bebb21f`), then Control plane reviewed it, rejected
+certification for a real defect, and recorded that rejection in a
+follow-up commit (`c9dec0a`, via PR #29) — but the actual code defect was
+still unfixed on `main`. Confirmed this directly by reading
+`configuration_system.py` off `origin/main`: `litellm_gateway_url` was
+still interpolated raw into `__repr__` with no `_redact_url` call.
+STEP 1: QUEUE.md Active named exactly one unblocked, fully-specified item
+— the FTF-0005 repr-redaction fix Control plane's review scoped precisely
+(file, line, required change, required test case). Not improvising a DoD;
+the review comment in docs/certifications/queue.md already resolved it as
+concretely as `r1_handoff.py packet` would for a fresh task. Did not pick
+up a second item on top of this uncertified one, per QUEUE.md's own
+stated discipline.
+STEP 2 (PEV, not mixed):
+- P: read `apps/api/app/config/configuration_system.py` in full and the
+  existing `tests/tasks/test_ftf_0005.py` suite; confirmed the review's
+  diagnosis — `database_url` passes through `_redact_url` at line 209,
+  `litellm_gateway_url` does not at line 210 — and that `_validate_url`
+  indeed accepts userinfo in a gateway URL for any environment (it only
+  checks scheme + host presence), so an accepted URL with an embedded
+  password really does reach a constructed `Settings` unredacted.
+- E: added exactly the test case the review specified — a valid `Settings`
+  built from an accepted `https://svc:hunter2@litellm.internal.example`
+  gateway URL, asserting `"hunter2" not in repr(settings)` — to
+  `test_sensitive_values_absent_from_errors_and_repr`. Ran it against the
+  unfixed code first: failed for real (`FAIL [FTF-0005] an accepted
+  gateway URL's embedded password never appears in Settings' repr`),
+  reproducing the review's finding independently rather than taking it on
+  faith. Applied the one-line fix — `_redact_url(self.litellm_gateway_url)`
+  in place of the raw field — mirroring the `database_url` line directly
+  above it. Re-ran: all 10 checks in `tests/tasks/test_ftf_0005.py` pass.
+- V: ran `product_truth_check.py --fail-on-unwired` — still `0/0
+  product-true`, unchanged and legitimate (still no proving_symbol / live
+  caller). Not a TRACKER case (this fix doesn't touch wiring).
+Caught one real environment pitfall, not a code regression: this
+sandbox's global `ruff`/`mypy` (installed outside the project's `uv`
+environment) reported unrelated pre-existing findings (`UP042` on the
+`str`+`Enum` classes, missing PyYAML stubs). Verified via `git stash` that
+these are present identically on unmodified `main` — a local
+toolchain-version artifact (global ruff 0.15.8/mypy 1.19.1 vs. the
+project's pinned ruff 0.6.9/mypy 1.11.2 installed by `uv sync`), not
+something this change introduced. Re-ran with the actual CI-pinned
+toolchain (`uv sync` then `uv run ruff check .` / `uv run ruff format
+--check .` / `uv run mypy .`) — all clean, matching what
+`.github/workflows/ci.yml` actually invokes.
+Re-ran the full existing gate after the fix: `uv run pytest tests/unit`
+(3 passed), `tests/tasks/test_ftf_0002.py`, `tests/tasks/test_ftf_0003.py`,
+and `tests/test_ftf_0001_monorepo_layout.py` all still pass unmodified —
+no regression to any already-certified evidence.
+`tests/tasks/test_ftf_0005.py` was already wired into
+`.github/workflows/ci.yml` by the original implementation — no CI change
+needed for this fix.
+Committed as `5fefe0a` on branch `claude/wizardly-fermat-3mh1pd` (built on
+top of `main`'s `9de083b`). Updated `docs/spec-matrix.yaml` (FTF-0005:
+evidence_hash → `5fefe0a`, notes record the fix), `docs/certifications/
+queue.md` (new dated entry with full repro-then-fix evidence), `QUEUE.md`
+(Active cleared, Provisional entry updated with the fix and cross-
+reference). Certified count unchanged at 3/300 — this is a fix to an
+existing PROVISIONAL item, not a new certification; per Law 4, did not
+self-certify. PR to be opened against `main`; not merging without
+confirming CI green first.
+STEP 4(a): stopping here — FTF-0005 is fully L1-PROVEN with the specific
+defect fixed and re-verified, awaiting Control plane L2 re-review (this
+session is the relay, not the certifier) and eventually the L4 gate. Next
+relay shift's top candidate: FTF-0004 once FTF-0005 certifies, or
+FTF-0006/FTF-0101+ if FTF-0004 needs a real Docker/GPU resource this
+sandbox doesn't have — to be assessed then, not assumed now.
 
 ## 2026-09-16 — FTF-0005 implemented (Provisional, awaiting L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
