@@ -823,3 +823,115 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   replacement for their own CI steps.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-16 — FTF-R001 — Freeze seven-component architecture, ownership and version-lock schemas
+- **Branch:** `claude/wizardly-fermat-1r7ubn` → `main` (no PR opened yet this
+  shift; see relay note below).
+- **Commits:** `f9c82e910cde344a08b910c5b059e85c25b59adf` (implementation),
+  `42c1adf` (hash-fixup — evidence_hash + verification-map.json entry, same
+  two-commit pattern as FTF-0006/FTF-H001, a commit can't embed its own hash).
+- **Dependency check (real DoD, not improvised):** `tools/r1_handoff.py
+  packet FTF-R001 --plan FINE_TUNING_FACTORY_RELEASE_1.md` resolved before
+  claiming. Dependencies `FTF-0001`, `FTF-H001` both already CERTIFIED —
+  confirmed dependency-ready (QUEUE.md's own "Owner actions" block only
+  named FTF-0101/FTF-0102 as the frontier; FTF-0101 is actually blocked
+  behind FTF-0102, and FTF-0102 itself is blocked on a genuine
+  new-runtime-dependency owner ask — FTF-R001's own deps do not touch either
+  of those, so it is a real, separate dependency-ready item this shift
+  found by checking `docs/spec-matrix.yaml` directly rather than only
+  QUEUE.md's summary).
+- **Delivered:**
+  - `packages/component-contracts/architecture.schema.json` — freezes
+    `ComponentBinding` (exactly the seven canonical component keys; Axolotl/
+    Inspect AI structurally barred from an always-on HTTP endpoint since
+    they are worker-executed software, not assumed always-on HTTP services
+    per Section 77.1; LiteLLM pinned to `existing_gateway`) and
+    `ReleaseApprovalAuthority` (capped to exactly one Factory-owned entry,
+    never a vendor component, per Section 77.4's "no competing authority").
+  - `spec/component-lock.schema.json` — freezes `ComponentVersionLock`;
+    rejects any `package_version`/`image_digest` that is a mutable tag
+    (`latest`/`main`/`master`/`HEAD`) rather than a real pinned
+    version/content digest.
+  - `spec/deployment-profiles.yaml` — the four Section 79.2 placement
+    profiles (`INTERNAL_COMPACT`, `INTERNAL_PRODUCTION`, `AIR_GAPPED`,
+    `CONNECTED_MANAGED`) verbatim, plus the Section 79.5
+    assertion-applicability worked example (Q12, Q03).
+  - `docs/architecture/reuse-ownership.md` — ComponentBinding/VersionLock/
+    ExternalRunBinding ownership, the Section 77.3 responsibility table, and
+    the Section 77.6 "UI calls the Factory API, never a vendor dashboard"
+    rule.
+  - `scripts/architecture_lock.py` — a bounded JSON Schema validator matched
+    to only the keywords the two frozen schemas use (`type`, `enum`,
+    `const`, `pattern`, `minLength`, `required`, `properties`,
+    `additionalProperties`, `items`, `minItems`/`maxItems`, `allOf`/`if`/
+    `then`, local `$ref`), plus the one whole-set business rule no
+    per-record schema keyword can express: the seven bindings/locks must be
+    exactly the seven canonical keys, each exactly once.
+  - Not created: `ExternalRunBinding` and
+    `packages/integrations/{mlflow,argilla,litellm}/` — no live component
+    run or adapter exists yet to back them; same disclosed-scope-limitation
+    pattern as FTF-H001's undelivered `packages/contracts/` stub paths and
+    FTF-0004's `web` exclusion.
+- **Test:** `tests/tasks/test_ftf_r001.py` — 13 checks (16 individual
+  `check()` assertions across them). Proves the schemas
+  enumerate exactly the seven canonical keys and stay in lockstep with each
+  other; a genuinely correct binding/lock document passes with zero errors;
+  and all four of the task's own `negative_acceptance` cases are rejected:
+  (1) missing component, (2) an invented component key substituted for a
+  canonical one (both the whole-set check and the schema's own `enum`
+  independently reject it), (3) an invented always-on HTTP endpoint on
+  Axolotl and on Inspect AI (two separate cases), (4) a second release
+  approval authority record and a vendor component (`mlflow`) claiming
+  authority (two separate cases for "duplicate registry approval
+  authority"), (5) a mutable `latest` `package_version` and a mutable
+  `latest` `image_digest` (two separate cases for "mutable latest-version
+  release lock").
+- **Law 1 evidence (real fault injections, not fixture-only):**
+  1. Temporarily replaced the whole-set key-check calls in
+     `scripts/architecture_lock.py` with `pass` (business rule disabled) —
+     re-ran the suite: exactly the missing/duplicate-component checks
+     failed for real (3 failures, the ones that rule alone catches);
+     restored byte-identical (`diff` confirmed empty against a pre-edit
+     copy), re-ran clean (all 13 checks passed).
+  2. Temporarily removed the Axolotl/Inspect-AI worker-package `allOf` rule
+     from the shipped `architecture.schema.json` itself — re-ran the suite:
+     exactly the two invented-endpoint checks failed for real; restored
+     byte-identical, re-ran clean.
+  3. Additionally confirmed (not a fixture, a structural fact about the
+     schemas): `component_bindings` is schema-pinned to exactly 7 items, so
+     a *missing* component always also trips item count — but a duplicate
+     substituted for a missing key keeps the count at 7 with every
+     individual binding still schema-valid, so schema-only validation
+     (`validate_instance` with no whole-set check) genuinely passes that
+     fixture (`test_law1_evidence_key_set_check_catches_what_schema_alone_cannot`),
+     while the real validator (schema + whole-set check) rejects it —
+     confirming the extra business-rule check is load-bearing, not
+     decorative re-assertion of what the schema already guarantees.
+- **Regression check:** `uv run ruff check .` / `ruff format --check .` /
+  `mypy .` clean; `pnpm run lint` / `typecheck` / `format:check` clean;
+  all 8 existing task negative-test-proof scripts
+  (`test_ftf_0001_monorepo_layout.py` through `test_ftf_h001.py`, now joined
+  by `test_ftf_r001.py`) still pass unmodified; `uv run pytest tests/unit`
+  (3 passed) and `pnpm exec vitest run` (2 passed) both clean, 0 skipped;
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, `proving_symbol` deliberately empty (architecture/schema
+  freeze, no live product-runtime caller yet, same rationale as
+  FTF-0002/0003/H001). No already-certified task's own implementation file
+  was touched — only additive schemas/docs/tooling, avoiding any Law 15
+  requalification question for FTF-0001–0006/H001's existing certified
+  evidence.
+- **Real verifier re-run (not just local test):** `python3
+  scripts/validate_spec.py --strict` clean; `python3 scripts/verify_task.py
+  --task FTF-R001 --stage task` → `PASS` against the real shipped
+  `spec/verification-map.json` entry, genuinely re-executed against this
+  exact checkout, not re-read as trusted text. Negative_acceptance of the
+  verifier itself reconfirmed unchanged: an unknown task ID still returns
+  `BLOCKED`, an unknown stage still returns `FAIL`.
+- **CI:** wired `python3 tests/tasks/test_ftf_r001.py` into the existing
+  `gate` job in `.github/workflows/ci.yml`, right after FTF-H001's step;
+  YAML-validated (`yaml.safe_load`). Real run status to be confirmed on the
+  opened PR before merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4. PR to be
+  opened against `main` this same shift; not merging without confirming CI
+  green first.
