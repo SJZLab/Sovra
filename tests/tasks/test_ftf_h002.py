@@ -156,11 +156,23 @@ def test_git_cli_check_reflects_real_path_state():
 
 
 def test_kubernetes_cni_check_reflects_real_path_state():
-    blocked = check_kubernetes_cni()
+    # Real negative branch: a PATH with no kubectl binary on it at all (a
+    # fresh empty temp directory), not a mock of shutil.which. Unlike git,
+    # kubectl's presence varies by environment (e.g. it ships preinstalled
+    # on GitHub Actions' ubuntu-latest runner but not in this sandbox), so
+    # the negative branch must be constructed explicitly rather than relying
+    # on whatever happens to be ambient in the environment running this test.
+    with tempfile.TemporaryDirectory() as empty_path_dir:
+        original_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = empty_path_dir
+        try:
+            blocked = check_kubernetes_cni()
+        finally:
+            os.environ["PATH"] = original_path
     check(
         "FTF-H002",
-        "no kubectl is installed in this environment, so check_kubernetes_cni reports "
-        "BLOCKED_EXTERNAL for real (not because it was told to)",
+        "with kubectl absent from PATH, check_kubernetes_cni reports BLOCKED_EXTERNAL for "
+        "real (not because it was told to)",
         blocked.status is PreflightStatus.BLOCKED_EXTERNAL,
     )
 
