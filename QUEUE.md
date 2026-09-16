@@ -1,18 +1,17 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by relay (FTF-0006 submitted)
+Updated: 2026-09-16 by Control plane (certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 5/300 · Provisional: 1 (FTF-0006) · Blocked: 0
+Certified: 6/300 · Provisional: 0 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004 and FTF-0005 all have no proving_symbol; FTF-0001 is
-structural layout, FTF-0002 is CI tooling, FTF-0003 is test-harness
-tooling, FTF-0004 is local-stack bootstrap/health tooling, and FTF-0005
-is a configuration module with no live caller yet — none a live-wired
-product-runtime path, so all five are CERTIFIED without counting toward
-product-true). FTF-0006 (Provisional, not yet certified) also has no
-proving_symbol yet for the same reason — no live FastAPI app or Temporal
-workflow exists to wire it into.
+FTF-0003, FTF-0004, FTF-0005 and FTF-0006 all have no proving_symbol;
+FTF-0001 is structural layout, FTF-0002 is CI tooling, FTF-0003 is
+test-harness tooling, FTF-0004 is local-stack bootstrap/health tooling,
+FTF-0005 is a configuration module with no live caller yet, and FTF-0006
+is an observability seam with no live FastAPI app or Temporal workflow to
+instrument yet — none a live-wired product-runtime path, so all six are
+CERTIFIED without counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -26,13 +25,11 @@ workflow exists to wire it into.
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-0006 submitted as PROVISIONAL below, not picking up a second
-item on top of an uncertified one, same discipline as prior handoffs.)
+(empty — FTF-0006 is now CERTIFIED, see Done below. Next candidate per
+dependency order: FTF-0101+.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0006 — Observability foundation. Submitted 2026-09-16 by the relay
-  (scheduled shift). Full evidence: docs/certifications/queue.md. Not
-  self-certified — awaiting a separate Control-plane session per Law 4.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -54,6 +51,22 @@ item on top of an uncertified one, same discipline as prior handoffs.)
   as a follow-up for whichever task first builds the real web app. Full
   entry: docs/certifications/ledger.md.
 - FTF-0005 — Configuration system. CERTIFIED (docs/certifications/ledger.md).
+- FTF-0006 — Observability foundation. CERTIFIED 2026-09-16, PR #39
+  (merge commit `268186bd5e70032a6c563796910059ab2684b684`). Independently
+  re-verified in a fresh git worktree at the PR's actual final head: own
+  fault injection (broke the `identity` safe-identifier regex — the
+  content-exclusion check failed for real, distinct from the producer's
+  own bounded-label fault injection), the real `gate` job log read
+  directly (not inferred from the green check), `product_truth_check.py`
+  confirmed legitimately 0/0 (no proving_symbol yet), and the delivered
+  work checked against FTF-0006's real acceptance/negative_acceptance
+  clauses via `tools/r1_handoff.py packet FTF-0006`. One residual gap
+  disclosed, not hidden: the `identity` format boundary cannot
+  distinguish a legitimate slug-style ID from an opaque token of the
+  same shape — inert today (no live caller exists), tracked in
+  `docs/spec-matrix.yaml`'s notes as a required follow-up for whichever
+  task first wires a real caller into this seam. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -144,3 +157,28 @@ not merely because the task looked title-only elsewhere.
       FTF-0005`. Confirmed no regression to FTF-0001/0002/0003's certified
       evidence or to the other 8 originally-proven FTF-0005 checks. Not yet
       PROMOTED — L4 gate is release-only and hasn't run.
+- [x] FTF-0006 — Observability foundation. CERTIFIED 2026-09-16
+      (control-plane L2, session_01LPY7Wy6ASA6BiQnvu9eyvF — session-ID
+      compared against PR #39's commits' session_01GvzemvrJeMmGiZsAAPK5m1,
+      no overlap). PR: https://github.com/SJZLab/Sovra/pull/39, merge
+      commit 268186bd5e70032a6c563796910059ab2684b684. Ledger:
+      docs/certifications/ledger.md. Independently re-verified in a fresh
+      git worktree at the PR's actual final head (`0970fa8`, confirmed
+      live via `pull_request_read`): fresh `uv sync`/`pnpm install`, fresh
+      run of `tests/tasks/test_ftf_0006.py` (10/10 pass), an independent
+      fault injection distinct from the producer's own (broke the
+      `identity` safe-identifier regex instead of the bounded-label
+      check — exactly the content-exclusion check failed for real;
+      restored byte-identical, re-ran clean), the real GitHub Actions
+      `gate` job log read directly on the actual final head SHA,
+      `product_truth_check.py` confirmed legitimately 0/0
+      (`proving_symbol: ''`, no live caller yet), and the delivered work
+      checked against FTF-0006's real acceptance/negative_acceptance
+      contract pulled via `tools/r1_handoff.py packet FTF-0006`.
+      Confirmed no regression to FTF-0001/0002/0003/0004/0005's certified
+      evidence. One residual gap disclosed rather than hidden: the
+      `identity` field's format boundary cannot distinguish a legitimate
+      slug-style ID from an opaque token of the same shape — inert today
+      since no live caller exists, tracked as a required follow-up in
+      `docs/spec-matrix.yaml`'s notes. Not yet PROMOTED — L4 gate is
+      release-only and hasn't run.

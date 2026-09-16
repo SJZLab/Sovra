@@ -52,13 +52,13 @@ FTF-0005:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0005.py
 FTF-0006:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Observability foundation
-  evidence_hash: 91eeff152e11dd0bdc17c4dded1e69e9d0b7fbed
+  evidence_hash: 268186bd5e70032a6c563796910059ab2684b684
   implementation_state: IMPLEMENTED
-  notes: kind=retained_feature; requirements=CAP-01; scenarios=Q01, Q26; deps=FTF-0001, FTF-0004, FTF-0005; stdlib-only structured-event/metrics seam (no Prometheus/OpenTelemetry dep added — new-runtime-dep ask-first item); no live FastAPI app or Temporal workflow exists yet to instrument, so "one actual request crosses instrumentation" is proven via a real stdlib HTTP server over a real local socket, same pattern FTF-0004 used; workflow-side instrumentation deliberately deferred to whichever task first builds services/workflow-worker
-  proof_state: L1-PROVEN
+  notes: kind=retained_feature; requirements=CAP-01; scenarios=Q01, Q26; deps=FTF-0001, FTF-0004, FTF-0005; stdlib-only structured-event/metrics seam (no Prometheus/OpenTelemetry dep added — new-runtime-dep ask-first item); no live FastAPI app or Temporal workflow exists yet to instrument, so "one actual request crosses instrumentation" is proven via a real stdlib HTTP server over a real local socket, same pattern FTF-0004 used; workflow-side instrumentation deliberately deferred to whichever task first builds services/workflow-worker; disclosed residual gap — the identity safe-identifier format boundary cannot distinguish a legitimate short slug ID from an opaque token, so an actively-misused identity field could still carry one; no live caller exists yet to exploit this, tracked as a required check for whichever task first wires a real caller
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0006.py
 FTF-0101:

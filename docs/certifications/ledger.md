@@ -379,3 +379,110 @@ corrected 2026-09-15.
   negative_acceptance clauses, with the one disclosed scope limitation
   (`web` excluded) being a sound, transparent engineering call rather
   than a hidden gap. Certified L2-CERTIFIED.
+
+## FTF-0006 — Observability foundation
+- Criterion ID: FTF-0006
+- PR: https://github.com/SJZLab/Sovra/pull/39
+- Merge commit: 268186bd5e70032a6c563796910059ab2684b684
+- Validated-by: session https://claude.ai/code/session_01LPY7Wy6ASA6BiQnvu9eyvF
+  (session-ID comparison performed and recorded before this entry: both
+  commits on PR #39 — 91eeff1, 7d5834f — plus the PR's own head commit
+  0970fa8 all carry `Claude-Session: .../session_01GvzemvrJeMmGiZsAAPK5m1`;
+  this session's ID does not match, so this is an independent
+  certification, not self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's word:
+  1. Confirmed `docs/spec-matrix.yaml` on `main` showed
+     FTF-0001/0002/0003/0004/0005 all `CERTIFIED`/`L2-CERTIFIED` and
+     FTF-0006 as the sole `PROVISIONAL`/`L1-PROVEN` entry — matching
+     `docs/certifications/queue.md`'s bottom entry.
+  2. Read the full delivered diff: `apps/api/app/config/
+     observability_foundation.py` (stdlib-only `StructuredEvent`/
+     `MetricsRegistry`/`InstrumentedRequest`, no new runtime dependency),
+     `tests/tasks/test_ftf_0006.py`, and the `.github/workflows/ci.yml`
+     `gate`-job wiring.
+  3. Checked out the PR's actual head commit (`0970fa8`, confirmed via
+     `pull_request_read get_commits`/`get` against the live PR, not an
+     older SHA) into an isolated git worktree; ran `tests/tasks/
+     test_ftf_0006.py` myself — 10/10 pass.
+  4. Performed my own fault injection, independent of the producer's
+     claimed evidence (which targeted `MetricsRegistry.record`'s
+     bounded-label check): replaced `_SAFE_IDENTIFIER`'s regex with an
+     unrestricted `.*` pattern in the tracked module, re-ran the test
+     suite — exactly 1 check failed for real (`free-form content
+     (prose/newlines/signed-URL querystrings/oversized blobs) cannot
+     pass as identity`), reproducing the negative-acceptance content-
+     exclusion property from first principles. Restored the file
+     byte-identical from a pre-edit copy (`diff` confirmed empty),
+     re-ran clean (10/10).
+  5. Ran the full regression suite myself in the same worktree (fresh
+     `uv sync`/`pnpm install --frozen-lockfile`): `ruff check`/`ruff
+     format --check`/`mypy` clean; `pytest tests/unit` (3 passed);
+     `tests/tasks/test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_0004.py`/
+     `test_ftf_0005.py` and `tests/test_ftf_0001_monorepo_layout.py` all
+     pass unmodified; `pnpm run lint`/`typecheck`/`format:check` and
+     `pnpm exec vitest run` (2 passed) clean — no regression to prior
+     certified evidence.
+  6. Ran `product_truth_check.py --fail-on-unwired` myself: `0/0
+     product-true`, exit 0 — legitimate per CONTROL_PLANE_MODES.md
+     CERTIFY step 4, since `docs/spec-matrix.yaml`'s FTF-0006 entry has
+     `proving_symbol: ''` (no live caller wires this into a running
+     product service yet — same rationale already established for
+     FTF-0002/0003/0004/0005).
+  7. Fetched GitHub Actions run 35112030663 directly via the Actions API
+     (not the PR body's claim): event `pull_request`, `head_sha`
+     `0970fa8eb4b80635cd919f929d74f1ac49884325` (confirmed as the PR's
+     actual final head), both `gate` and `docker-local-stack-integration`
+     jobs conclusion `success`. Read the `gate` job's full log directly
+     (`get_job_logs`): shows the real sequence — `FTF-0006 observability
+     foundation: all checks passed` followed by `Product-truth: 0/0
+     product-true` and `Status: 5/300 certified · 0 product-true` (the
+     pre-certification count, as expected on that commit), not inferred
+     from the green check alone.
+  8. Verified `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` — no
+     drift.
+  9. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0006 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+     delivered work against its actual acceptance/negative_acceptance
+     clauses: acceptance clause 1 ("one actual request crosses
+     API/workflow instrumentation with correlation and numeric metrics")
+     is met by `test_one_real_http_request_crosses_instrumentation` — a
+     real `ThreadingHTTPServer` bound to a real socket, hit via
+     `http.client` over the wire (not an in-process call), whose response
+     carries a correlation-ID header matching the emitted `StructuredEvent`,
+     with a numeric duration and a metric count of exactly 1 recorded.
+     Negative_acceptance ("training prompts, raw source, tokens and signed
+     URLs never appear in logs/spans; cardinality remains bounded") is met
+     for its concrete, tested failure modes: `StructuredEvent`'s fixed
+     field set structurally has no field for raw content (an unexpected
+     keyword raises `TypeError` at construction — reproduced independently
+     in item 4's spirit); prose, newlines, signed-URL querystrings and
+     oversized blobs passed as `identity` are rejected (proven by my own
+     fault injection above); cardinality is proven bounded quantitatively
+     (50 distinct correlation IDs -> 1 observed metric label, correlation
+     IDs never themselves used as labels).
+     **Disclosed residual gap, not a hidden defect:** the safe-identifier
+     format boundary on `identity` cannot distinguish a legitimate short
+     slug-style ID from an opaque token of the same shape — the module's
+     own docstring, the validator's error message, and the test file's
+     own comment all state this explicitly rather than claiming full
+     token exclusion. This differs from the FTF-0005 PR #28 defect (an
+     *accepted*, in-scope field — a valid gateway URL with embedded
+     credentials — silently unredacted in `repr()`, contradicting that
+     module's own stated contract): here `identity` is not designed to
+     carry credentials at all, no live caller exists yet to pass one
+     through it, and the limitation is honestly scoped down rather than
+     falsely claimed as closed. Recorded as a required follow-up in
+     `docs/spec-matrix.yaml`'s notes for whichever task first wires a
+     real caller into this seam, not accepted as silently closed.
+- Conclusion: the L1 evidence holds up under independent re-verification
+  — fresh fault injection targeting a different code path than the
+  producer's own, the actual CI job log read directly (not just its green
+  status) on the PR's real final head, `product_truth_check.py`'s 0/0
+  confirmed legitimate, and the delivered work matches the real
+  contract's acceptance/negative_acceptance clauses for every failure
+  mode they concretely test, with one disclosed residual gap (opaque
+  tokens shaped like slug IDs) that is honest, scoped, and inert while no
+  live caller exists — tracked as a follow-up rather than a blocker.
+  Certified L2-CERTIFIED.
