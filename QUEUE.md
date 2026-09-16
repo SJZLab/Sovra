@@ -3,14 +3,14 @@ Updated: 2026-09-16 by relay
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 3/300 · Provisional: 1 · Blocked: 0
-Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002 and
-FTF-0003 all have no proving_symbol; FTF-0001 is structural layout,
-FTF-0002 is CI tooling, and FTF-0003 is test-harness tooling — none a
-live-wired product-runtime path, so all three are CERTIFIED without
-counting toward product-true). FTF-0005 (below) is PROVISIONAL, also with
-no proving_symbol yet (no live caller — apps/api has no main.py wiring it
-into a running service).
+Certified: 4/300 · Provisional: 1 · Blocked: 0
+Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
+FTF-0003 and FTF-0005 all have no proving_symbol; FTF-0001 is structural
+layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, and
+FTF-0005 is a configuration module with no live caller yet — none a
+live-wired product-runtime path, so all four are CERTIFIED without
+counting toward product-true). FTF-0004 (below) is PROVISIONAL, also with
+no proving_symbol yet.
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -24,29 +24,42 @@ into a running service).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-0005's fix is pushed and awaiting Control plane re-review; see
-Provisional below. Not picking up a second item on top of an uncertified
-one, same discipline as the FTF-0002→FTF-0003 handoff.)
+(empty — FTF-0004 is implemented and pushed, awaiting Control plane
+L2 review; see Provisional below. Not picking up a second item on top of
+an uncertified one, same discipline as the FTF-0002→FTF-0003 handoff.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0005 — Configuration system. PR #28 (head `ea80d36`) was reviewed
-  2026-09-16 and NOT certified — found `Settings.__repr__` echoed an
-  *accepted* gateway URL's embedded password verbatim (only `database_url`
-  was redacted, not `litellm_gateway_url`). Fix pushed: commit `5fefe0a` on
-  branch `claude/wizardly-fermat-3mh1pd` (on top of `main`'s `9de083b`,
-  which already carries the review-rejection tracking commit `c9dec0a`) —
-  `litellm_gateway_url` now redacted the same as `database_url`, plus a new
-  test case (accepted gateway URL with embedded credentials, asserted
-  absent from `repr(settings)`) in
-  `tests/tasks/test_ftf_0005.py::test_sensitive_values_absent_from_errors_and_repr`.
-  Reproduced the defect for real first (new test failed against unfixed
-  code), then confirmed fixed (all 10 checks pass). Full regression suite
-  re-run clean via the pinned CI toolchain (`uv run ruff`/`mypy`, `uv run
-  pytest tests/unit`, FTF-0001/0002/0003 evidence unmodified and passing).
-  Full detail: docs/certifications/queue.md "2026-09-16 — FTF-0005 — Fix
-  applied for control-plane-rejected defect". proof_state=L1-PROVEN,
-  certification_state=PROVISIONAL (unchanged — this is the scoped fix, not
-  a redo). Not self-certified — PR to be opened against `main`.
+- FTF-0004 — Docker local stack. Commit `bc603a6` on branch
+  `claude/wizardly-fermat-3mh1pd`. Real Postgres/Temporal/SeaweedFS
+  (S3-compatible, per Section 77.3's qualified fixture — not MinIO)
+  stack via `infra/docker/docker-compose.yml`, all images digest-pinned.
+  A stdlib-only health-bootstrap (`apps/api/app/config/
+  docker_local_stack.py`) serves `GET /health`, genuinely TCP-probing
+  each dependency — no new runtime dependency added (FastAPI et al. stay
+  the frozen target stack for actual request handlers). `web` is
+  deliberately excluded — `apps/web` has no server-side runtime yet and
+  adding one now would itself be a new-runtime-dep ask-first item;
+  documented in the compose file as a follow-up for whichever task first
+  builds it. This session's interactive dev sandbox has no
+  container-registry egress (confirmed: `dockerd` starts, but
+  `docker pull` gets a 403 from the session's enforced proxy fetching
+  Docker Hub's CDN) — per the live user's direction, the real
+  container-boot + negative-acceptance (restart/persistence) evidence
+  instead runs in CI, where GitHub Actions' hosted runner has real
+  registry egress (`scripts/verify_docker_local_stack.py`, wired into
+  `.github/workflows/ci.yml`'s new `docker-local-stack-integration` job).
+  `tests/tasks/test_ftf_0004.py` (9 checks, no Docker needed) proves the
+  readiness-check logic itself is real via local TCP listeners; verified
+  by fault injection (canned-healthy stub made 4/9 checks fail for real,
+  reverted clean). Full regression suite re-run clean
+  (`uv run ruff`/`mypy`, pytest, pnpm lint/typecheck/vitest,
+  FTF-0001/0002/0003/0005 evidence unmodified). Full detail:
+  docs/certifications/queue.md "2026-09-16 — FTF-0004 — Docker local
+  stack". proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — PR to be opened against `main`. Control plane review
+  should specifically confirm the `docker-local-stack-integration` CI
+  job passed for real before certifying.
+(none)
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -117,3 +130,23 @@ not merely because the task looked title-only elsewhere.
       FTF-0001/0002's certified evidence (both files untouched by this
       PR's diff). Not yet PROMOTED — L4 gate is release-only and hasn't
       run.
+- [x] FTF-0005 — Configuration system. CERTIFIED 2026-09-16 (control-plane
+      L2, session_01WqPEZmJdJyFH7tk2cbakWP — session-ID compared against
+      PR #30's commits' session_012mAtoqKYzA7PiXbkGkD7rY, no overlap).
+      PR #28 (initial delivery) was reviewed 2026-09-16 and NOT certified —
+      a real repr secret-redaction defect on `litellm_gateway_url` (see
+      docs/certifications/queue.md). PR:
+      https://github.com/SJZLab/Sovra/pull/30 (scoped fix), merge commit
+      5f5a34d803a76e3261c8cc860bd5f21cd8290424. Ledger:
+      docs/certifications/ledger.md. Independently re-verified in a fresh
+      git worktree at the actual PR head commit: fresh `uv sync`, fresh run
+      of `tests/tasks/test_ftf_0005.py` (10/10 pass), an independent fault
+      injection reverting the fix (exactly 1 check failed for real,
+      reproducing the original finding; restored clean), the real GitHub
+      Actions run on the actual PR head SHA, `product_truth_check.py`
+      confirmed legitimately 0/0 (`proving_symbol: ''`, no live caller
+      yet), and the delivered fix checked against FTF-0005's real
+      negative_acceptance contract pulled via `tools/r1_handoff.py packet
+      FTF-0005`. Confirmed no regression to FTF-0001/0002/0003's certified
+      evidence or to the other 8 originally-proven FTF-0005 checks. Not yet
+      PROMOTED — L4 gate is release-only and hasn't run.

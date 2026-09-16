@@ -1,81 +1,160 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T10:00:00Z
+Updated: 2026-09-16T12:00:00Z
 
-## 2026-09-16 — FTF-0005 defect fixed (Provisional, awaiting L2 re-review)
-Autonomous relay shift (scheduled firing, no live user present). STEP 0:
-`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
-`cognee-cli` still not on PATH — text-search fallback active (unchanged).
-STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
-cross-checked against live repo state rather than trusting the docs alone
-— `git fetch origin main`: local branch tip already matched `origin/main`
-(`9de083b`) exactly, confirming the files describe current reality: PR #28
-was merged (`bebb21f`), then Control plane reviewed it, rejected
-certification for a real defect, and recorded that rejection in a
-follow-up commit (`c9dec0a`, via PR #29) — but the actual code defect was
-still unfixed on `main`. Confirmed this directly by reading
-`configuration_system.py` off `origin/main`: `litellm_gateway_url` was
-still interpolated raw into `__repr__` with no `_redact_url` call.
-STEP 1: QUEUE.md Active named exactly one unblocked, fully-specified item
-— the FTF-0005 repr-redaction fix Control plane's review scoped precisely
-(file, line, required change, required test case). Not improvising a DoD;
-the review comment in docs/certifications/queue.md already resolved it as
-concretely as `r1_handoff.py packet` would for a fresh task. Did not pick
-up a second item on top of this uncertified one, per QUEUE.md's own
-stated discipline.
-STEP 2 (PEV, not mixed):
-- P: read `apps/api/app/config/configuration_system.py` in full and the
-  existing `tests/tasks/test_ftf_0005.py` suite; confirmed the review's
-  diagnosis — `database_url` passes through `_redact_url` at line 209,
-  `litellm_gateway_url` does not at line 210 — and that `_validate_url`
-  indeed accepts userinfo in a gateway URL for any environment (it only
-  checks scheme + host presence), so an accepted URL with an embedded
-  password really does reach a constructed `Settings` unredacted.
-- E: added exactly the test case the review specified — a valid `Settings`
-  built from an accepted `https://svc:hunter2@litellm.internal.example`
-  gateway URL, asserting `"hunter2" not in repr(settings)` — to
-  `test_sensitive_values_absent_from_errors_and_repr`. Ran it against the
-  unfixed code first: failed for real (`FAIL [FTF-0005] an accepted
-  gateway URL's embedded password never appears in Settings' repr`),
-  reproducing the review's finding independently rather than taking it on
-  faith. Applied the one-line fix — `_redact_url(self.litellm_gateway_url)`
-  in place of the raw field — mirroring the `database_url` line directly
-  above it. Re-ran: all 10 checks in `tests/tasks/test_ftf_0005.py` pass.
-- V: ran `product_truth_check.py --fail-on-unwired` — still `0/0
-  product-true`, unchanged and legitimate (still no proving_symbol / live
-  caller). Not a TRACKER case (this fix doesn't touch wiring).
-Caught one real environment pitfall, not a code regression: this
-sandbox's global `ruff`/`mypy` (installed outside the project's `uv`
-environment) reported unrelated pre-existing findings (`UP042` on the
-`str`+`Enum` classes, missing PyYAML stubs). Verified via `git stash` that
-these are present identically on unmodified `main` — a local
-toolchain-version artifact (global ruff 0.15.8/mypy 1.19.1 vs. the
-project's pinned ruff 0.6.9/mypy 1.11.2 installed by `uv sync`), not
-something this change introduced. Re-ran with the actual CI-pinned
-toolchain (`uv sync` then `uv run ruff check .` / `uv run ruff format
---check .` / `uv run mypy .`) — all clean, matching what
-`.github/workflows/ci.yml` actually invokes.
-Re-ran the full existing gate after the fix: `uv run pytest tests/unit`
-(3 passed), `tests/tasks/test_ftf_0002.py`, `tests/tasks/test_ftf_0003.py`,
-and `tests/test_ftf_0001_monorepo_layout.py` all still pass unmodified —
-no regression to any already-certified evidence.
-`tests/tasks/test_ftf_0005.py` was already wired into
-`.github/workflows/ci.yml` by the original implementation — no CI change
-needed for this fix.
-Committed as `5fefe0a` on branch `claude/wizardly-fermat-3mh1pd` (built on
-top of `main`'s `9de083b`). Updated `docs/spec-matrix.yaml` (FTF-0005:
-evidence_hash → `5fefe0a`, notes record the fix), `docs/certifications/
-queue.md` (new dated entry with full repro-then-fix evidence), `QUEUE.md`
-(Active cleared, Provisional entry updated with the fix and cross-
-reference). Certified count unchanged at 3/300 — this is a fix to an
-existing PROVISIONAL item, not a new certification; per Law 4, did not
+## 2026-09-16 — FTF-0004 implemented (Provisional, awaiting L2 certification)
+Live user session (direct instruction: "GO", following an "assess then"
+step asking whether FTF-0004 is tractable in this sandbox). Read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md, cross-checked against
+`git fetch origin main` (unchanged at `4ea6784` — FTF-0005 CERTIFIED,
+4/300, nothing else pending). QUEUE.md's own dependency order named
+FTF-0004 as the next queued item; deps (FTF-0001/0003/0005) all
+CERTIFIED. Real DoD resolved via `tools/r1_handoff.py packet FTF-0004`.
+
+**Feasibility check first (STEP 1, before claiming):** confirmed this
+session's interactive dev sandbox has a working Docker daemon
+(`sudo dockerd` starts cleanly) but no container-registry egress —
+`docker pull hello-world` got a 403 from the session's own enforced
+proxy on `production.cloudfront.docker.com` (`/root/.ccr/README.md`:
+a 403 means the destination isn't allowed by org egress policy, "do not
+retry or route around it"). Initially assessed this as `BLOCKED_EXTERNAL`
+per the task's own resource_gate clause. The live user pushed back: this
+session's own operating instructions already name the documented route
+for exactly this constraint — route external proof through CI Actions
+workflows, which have real registry egress. Correct call — proceeded on
+that basis rather than blocking.
+
+STEP 2 (PEV):
+- P: read the task packet in full. `files` lists only
+  `apps/api/app/config/docker_local_stack.py` and its test — not a
+  main.py or web app — confirming FTF-0004's real scope is
+  bootstrap+health (`api_contract`: "Service bootstrap/configuration/
+  health, no public job API changes"), not the full product API/UI.
+  Checked `apps/api`/`apps/web` on disk: neither has a real server-side
+  runtime yet (no FastAPI, no Next.js/React installed) — building either
+  now would be a new-runtime-dependency ask-first item under CLAUDE.md
+  (same reasoning FTF-0005 used to avoid pydantic). Decided: use only
+  the stdlib for the `api` health-bootstrap process, and deliberately
+  exclude `web` from this task's compose stack rather than fake a
+  placeholder for a service that doesn't exist — documented as a
+  follow-up for whichever task first builds the real web app.
+- E: verified exact image tags exist via Docker Hub's *metadata* API
+  (`hub.docker.com/v2/...`, reachable even though blob/CDN pulls are
+  blocked) and pinned all three service images by digest: `postgres:
+  16-alpine`, `temporalio/auto-setup:1.24.2` (backed by the same
+  Postgres), `chrislusf/seaweedfs:3.71` as the S3-compatible service —
+  the reuse-architecture's qualified fixture (Section 77.3), directly
+  satisfying this task's own acceptance clause against "an automatic new
+  archived-MinIO install". Wrote `infra/docker/docker-compose.yml`,
+  `apps/api/app/config/docker_local_stack.py` (TCP-probe readiness +
+  stdlib `http.server` `/health` endpoint), `scripts/
+  verify_docker_local_stack.py` (real boot, poll-to-ready, stop postgres,
+  assert unhealthy, restart, assert recovery + a marker row's
+  persistence — the negative_acceptance clause), and
+  `tests/tasks/test_ftf_0004.py` (9 checks using real local TCP
+  listeners this process controls — runnable with no Docker at all).
+  Law 1 evidence: temporarily replaced `check_tcp_reachable` with a
+  canned "always healthy" stub, re-ran the test — 4 of 9 checks failed
+  for real (unreachable-port case, live open/close flip, mixed-stack
+  not-ready case, detail-message assertion); restored byte-identical
+  from a pre-edit copy (`diff` confirmed empty), re-ran clean (9/9).
+  Wired `tests/tasks/test_ftf_0004.py` into the existing `gate` CI job
+  and added a new `docker-local-stack-integration` job running
+  `scripts/verify_docker_local_stack.py` on GitHub Actions' hosted
+  runner — where the real container-boot and negative-acceptance
+  evidence will actually be produced.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0
+  product-true` — legitimate, no proving_symbol yet (no live caller,
+  same rationale as FTF-0002/0003/0005). `docker compose -f
+  infra/docker/docker-compose.yml config` parses cleanly (validated
+  locally without pulling any image — full boot validated in CI).
+Re-ran the full existing gate after all changes: `uv run ruff
+check`/`format --check`/`mypy` clean; `uv run pytest tests/unit`
+(3 passed); `tests/tasks/test_ftf_0002.py`, `test_ftf_0003.py`,
+`test_ftf_0005.py`, and `tests/test_ftf_0001_monorepo_layout.py` all
+still pass unmodified — no regression. `pnpm run lint`/`typecheck`/
+`format:check` and `pnpm exec vitest run` (2 passed) also clean (no
+TypeScript files touched).
+Committed as `bc603a6` on branch `claude/wizardly-fermat-3mh1pd` (also
+carries the generated `docs/implementation/task-packets/FTF-0006.md`
+from the feasibility check done before pivoting back to FTF-0004 — no
+FTF-0006 work claimed). Updated `docs/spec-matrix.yaml` (FTF-0004:
+IMPLEMENTED/L1-PROVEN/PROVISIONAL, evidence_hash=bc603a6),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, bumped Provisional to 1). Certified count
+unchanged at 4/300 — PROVISIONAL is not certified. Per Law 4, did not
 self-certify. PR to be opened against `main`; not merging without
-confirming CI green first.
-STEP 4(a): stopping here — FTF-0005 is fully L1-PROVEN with the specific
-defect fixed and re-verified, awaiting Control plane L2 re-review (this
-session is the relay, not the certifier) and eventually the L4 gate. Next
-relay shift's top candidate: FTF-0004 once FTF-0005 certifies, or
-FTF-0006/FTF-0101+ if FTF-0004 needs a real Docker/GPU resource this
-sandbox doesn't have — to be assessed then, not assumed now.
+confirming CI green first — Control plane review should specifically
+confirm the `docker-local-stack-integration` job passed for real (not
+merely that it exists) before certifying.
+STEP 4(a): stopping here on this item — FTF-0004 is fully L1-PROVEN,
+awaiting Control plane L2 certification and the real CI integration run.
+Next candidate once FTF-0004 certifies: FTF-0006 (observability, task
+packet already pulled) or FTF-0101+ (identity/tenancy/RBAC/audit).
+
+## 2026-09-16 — FTF-0005 CERTIFIED (fix independently re-reviewed)
+Independent Control-plane session `session_01WqPEZmJdJyFH7tk2cbakWP`
+reviewed PR #30 (the scoped repr-redaction fix from the entry below).
+Session-ID check: both PR #30 commits carry
+`Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY` — the producer
+session, distinct from this reviewing session and from the prior
+reviewer (`session_01WjQKEb87DwDx51YLNRxT6o`) — independent, not
+self-certification.
+Re-read the diff (one line: `_redact_url()` now applied to
+`litellm_gateway_url` in `__repr__`, plus one new test case). Checked out
+the actual PR head commit (`65824c5`) into a fresh git worktree, ran
+`uv sync` fresh, then `tests/tasks/test_ftf_0005.py` — 10/10 pass. Own
+fault injection: reverted the fix in the worktree, re-ran the test —
+exactly 1 check failed for real with the expected message, reproducing
+the original certifier's finding from first principles; restored from a
+pre-edit copy (`diff` empty), re-ran clean. Confirmed the real GitHub
+Actions `gate` check on PR #30's actual head SHA: run 35087235376,
+conclusion `success`. `product_truth_check.py --fail-on-unwired`:
+legitimately `0/0` (`proving_symbol: ''`, no live caller yet — unchanged
+from the original FTF-0005 evidence). Pulled the real contract via
+`tools/r1_handoff.py packet FTF-0005` — negative_acceptance ("sensitive
+values absent from errors") is now genuinely met for the field the prior
+review found unmet. No regression to FTF-0001/0002/0003's certified
+evidence or to the other 8 originally-proven FTF-0005 checks (untouched
+by this PR).
+PR #30 (already merged by the repo owner, merge commit
+`5f5a34d803a76e3261c8cc860bd5f21cd8290424`) reviewed and certified.
+`docs/spec-matrix.yaml`: FTF-0005 now `certification_state: CERTIFIED`,
+`proof_state: L2-CERTIFIED`, `evidence_hash: 5f5a34d...`. Ledger entry
+appended (docs/certifications/ledger.md). QUEUE.md: Active/Provisional
+cleared, FTF-0005 moved to Done, Certified count 3→4. Not yet PROMOTED —
+L4 gate is release-only and hasn't run.
+
+## 2026-09-16 — FTF-0005 repr secret-redaction defect fixed (still Provisional)
+An independent Control-plane session (`session_01WjQKEb87DwDx51YLNRxT6o`,
+PR #29, session-ID confirmed distinct from this one) reviewed PR #28 and
+did NOT certify: real defect found by fault injection, not a flake —
+`Settings.__repr__` redacted `database_url`'s embedded userinfo via
+`_redact_url()` but not `litellm_gateway_url`'s, so an accepted gateway
+URL with an embedded password (any environment, including production) had
+that password echoed verbatim by `repr(settings)` — the delivered test
+suite never exercised an *accepted* gateway URL with credentials against
+`repr()`, only a *rejected* one. Full finding: PR #29 /
+docs/certifications/queue.md.
+This is the producer session (`session_012mAtoqKYzA7PiXbkGkD7rY`) picking
+up the queued fix — legitimate relay work (fixing a reported defect), not
+self-certification; the eventual re-certification still requires a
+separate session per Law 4.
+Fix: applied `_redact_url()` to `litellm_gateway_url` in `__repr__`,
+matching `database_url` — one line. Added the missing test case to
+`test_sensitive_values_absent_from_errors_and_repr` (accepted gateway URL
+with embedded credentials → asserted absent from `repr(settings)`). Law 1
+evidence: reverted the fix locally, re-ran the test — the new check
+failed for real, reproducing the certifier's exact finding; restored from
+a pre-edit copy (`diff` empty), re-ran clean (10/10 pass). Re-ran
+ruff/mypy/pytest — all clean, no regression.
+Committed as `9f2dcbc` on branch `relay/ftf-0005-fix-repr-redaction`
+(fresh branch off `main`, since the original `relay/ftf-0005-...` branch
+was already merged via PR #28 — same convention as this repo's other
+merged-PR follow-ups). Updated `docs/spec-matrix.yaml` (evidence_hash=
+9f2dcbc), `docs/certifications/queue.md` (re-submission entry),
+`QUEUE.md` (Active cleared, Provisional entry updated). Certification
+state stays PROVISIONAL — not self-certified. PR to be opened against
+`main`.
 
 ## 2026-09-16 — FTF-0005 implemented (Provisional, awaiting L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:

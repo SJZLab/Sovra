@@ -32,15 +32,15 @@ FTF-0003:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0003.py
 FTF-0004:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Docker local stack
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-01; scenarios=Q01, Q26; deps=FTF-0001, FTF-0003, FTF-0005
-  proof_state: UNPROVEN
+  evidence_hash: bc603a6
+  implementation_state: IMPLEMENTED
+  notes: kind=retained_feature; requirements=CAP-01; scenarios=Q01, Q26; deps=FTF-0001, FTF-0003, FTF-0005; web deliberately excluded (no runtime yet, adding one is a new-runtime-dep ask-first item); real integration/negative-acceptance evidence runs in CI (docker-local-stack-integration job) since this sandbox has no container-registry egress
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0004.py
 FTF-0005:
   certification_state: PROVISIONAL
   criticality: MUST
