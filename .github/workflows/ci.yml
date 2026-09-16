@@ -86,6 +86,10 @@ jobs:
         run: python3 tests/tasks/test_ftf_h001.py
       - name: FTF-R001 negative-test proof (reuse architecture/version-lock schemas catch real defects)
         run: python3 tests/tasks/test_ftf_r001.py
+      - name: FTF-H002 release-scope lock validation
+        run: python3 scripts/release_scope_lock.py
+      - name: FTF-H002 negative-test proof (release scope/compatibility/preflight catch real defects)
+        run: python3 tests/tasks/test_ftf_h002.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

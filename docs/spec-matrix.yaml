@@ -2617,15 +2617,27 @@ FTF-H001:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h001.py
 FTF-H002:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Freeze release scope, compatibility and measured execution inputs
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-01, AF-02, AF-36; scenarios=Q12, Q34; deps=FTF-H001, FTF-0005
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: kind=audit_hardening; requirements=AF-01, AF-02, AF-36; scenarios=Q12, Q34; deps=FTF-H001, FTF-0005;
+    spec/release-scope.yaml generated (never hand-authored) from spec/qualification-inventory.json,
+    the frozen single source of truth, with a whole-set validator (scripts/release_scope_lock.py)
+    rejecting a removed/downgraded CAP ID or a cut implementation_tasks/qualification_scenarios set;
+    apps/api/app/services/environment_preflight.py is a stdlib-only, real (no fabricated verdict)
+    preflight for GPU driver, Kubernetes CNI (kubectl-presence proxy, disclosed), LiteLLM gateway
+    reachability, managed-provider (Bedrock) credential presence and coding-provider billing access,
+    every BLOCKED_EXTERNAL result structurally requiring a real owner/next_action; spec/compatibility-lock.json
+    is a live-regenerated snapshot of that preflight (BLOCKED_EXTERNAL today -- no GPU/Kubernetes/LiteLLM
+    gateway/validated Bedrock access exists in this sandbox); docs/operations/budget-forecast.md discloses
+    the coding-provider billing gap as BLOCKED_EXTERNAL rather than inventing a rate, per this task's own
+    negative_acceptance; Bedrock/boto3 real account validation and a live LiteLLM/Kubernetes/GPU environment
+    remain disclosed follow-ups pending real infrastructure access, same pattern as FTF-0004's `web` exclusion
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h002.py
 FTF-H003:
   certification_state: NONE
   criticality: MUST

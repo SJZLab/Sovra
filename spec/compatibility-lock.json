@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "overall_status": "BLOCKED_EXTERNAL",
+  "checks": [
+    {
+      "key": "python_runtime",
+      "status": "AVAILABLE",
+      "detail": "3.11.15",
+      "owner": null,
+      "next_action": null
+    },
+    {
+      "key": "git_cli",
+      "status": "AVAILABLE",
+      "detail": "git version 2.43.0",
+      "owner": null,
+      "next_action": null
+    },
+    {
+      "key": "gpu_driver",
+      "status": "BLOCKED_EXTERNAL",
+      "detail": "/proc/driver/nvidia/version not present -- no NVIDIA GPU/driver detected",
+      "owner": "infrastructure owner",
+      "next_action": "provision a real NVIDIA GPU worker (Section 4/CAP-09) before claiming local LoRA/QLoRA training integration"
+    },
+    {
+      "key": "kubernetes_cni",
+      "status": "BLOCKED_EXTERNAL",
+      "detail": "kubectl is not on PATH -- no Kubernetes access to verify CNI enforcement",
+      "owner": "infrastructure owner",
+      "next_action": "provision a Kubernetes cluster with an enforcing CNI and grant this environment kubectl access, then re-run this check against a real cluster (kubectl client presence alone does not prove CNI enforcement)"
+    },
+    {
+      "key": "litellm_gateway",
+      "status": "BLOCKED_EXTERNAL",
+      "detail": "SOVRA_LITELLM_GATEWAY_URL is not set",
+      "owner": "platform operator",
+      "next_action": "bind the organization's existing LiteLLM gateway base URL (Section 77.3)"
+    },
+    {
+      "key": "managed_provider_bedrock",
+      "status": "BLOCKED_EXTERNAL",
+      "detail": "AWS credential env var present, but account/region/model access is unvalidated",
+      "owner": "owner",
+      "next_action": "approve adding the AWS SDK (boto3) as a new runtime dependency, then call the real ListFoundationModels/account APIs before any Bedrock capability claim (Section 21)"
+    },
+    {
+      "key": "coding_provider_billing",
+      "status": "BLOCKED_EXTERNAL",
+      "detail": "no coding-provider billing/usage API is reachable from this execution environment",
+      "owner": "owner (budget authorizer)",
+      "next_action": "supply a real billed-usage export for a measured task/date range so docs/operations/budget-forecast.md can be reforecast from real units (Section 64.4)"
+    }
+  ]
+}

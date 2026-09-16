@@ -1,0 +1,381 @@
+schema_version: 1
+source: spec/qualification-inventory.json (frozen by FTF-H001 bootstrap)
+capabilities:
+- id: CAP-01
+  title: Standalone private UI/API, enterprise identity, tenancy, audit
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Two-organization real OIDC/RBAC journey
+  implementation_tasks:
+  - FTF-0004
+  - FTF-H003
+  - FTF-H033
+  - FTF-H029
+  qualification_scenarios:
+  - Q01
+  - Q07
+  - Q08
+  - Q24
+  - Q26
+  - Q27
+  - Q30
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-02
+  title: Organization LiteLLM discovery, inference, scoped registration
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Real gateway + distinct keys + revocation/fallback tests
+  implementation_tasks:
+  - FTF-H004
+  - FTF-H005
+  - FTF-1204
+  qualification_scenarios:
+  - Q02
+  - Q21
+  - Q22
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-03
+  title: Read-only private GitHub and local repository connectors
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Real private repo and local commit/snapshot
+  implementation_tasks:
+  - FTF-04A31
+  - FTF-04A32
+  - FTF-H007
+  qualification_scenarios:
+  - Q03
+  - Q04
+  - Q05
+  - Q06
+  - Q25
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-04
+  title: Python and JS/TS static discovery; explicit manual correction
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Multiple-agent monorepo + unresolved custom framework
+  implementation_tasks:
+  - FTF-04A09
+  - FTF-04A10
+  - FTF-04A35
+  qualification_scenarios:
+  - Q03
+  - Q04
+  - Q05
+  - Q06
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-05
+  title: Actual target runtime, mandate and manifests
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Runnable agent + isolated real tool services + drift
+  implementation_tasks:
+  - FTF-H008
+  - FTF-H009
+  - FTF-H026
+  qualification_scenarios:
+  - Q05
+  - Q06
+  - Q16
+  - Q22
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-06
+  title: 'Already-tuned models: endpoint, weights, adapter and continuation'
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Each distinct path with honest lineage and permissions
+  implementation_tasks:
+  - FTF-H010
+  qualification_scenarios:
+  - Q07
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-07
+  title: Upload JSONL/JSON/CSV/XLSX, S3-compatible, PostgreSQL, REST/trace data sources
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Mapping, authorization, immutable snapshot and interruption
+  implementation_tasks:
+  - FTF-H011
+  - FTF-H012
+  - FTF-0502
+  - FTF-0503
+  - FTF-0504
+  - FTF-0505
+  qualification_scenarios:
+  - Q08
+  - Q09
+  - Q31
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-08
+  title: Four-way data-purpose isolation and source lifecycle
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Negative access/leakage/deletion tests
+  implementation_tasks:
+  - FTF-H013
+  - FTF-H020
+  qualification_scenarios:
+  - Q17
+  - Q31
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-09
+  title: Real local NVIDIA LoRA/QLoRA and private Kubernetes workers
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Both provision/train/recover/serve paths
+  implementation_tasks:
+  - FTF-H014
+  - FTF-H015
+  - FTF-0803
+  - FTF-0804
+  - FTF-0716
+  qualification_scenarios:
+  - Q10
+  - Q11
+  - Q13
+  - Q14
+  - Q15
+  - Q25
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-10
+  title: One managed customization provider
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Bedrock real supported model customization, invocation, cleanup
+  implementation_tasks:
+  - FTF-H036
+  qualification_scenarios:
+  - Q12
+  - Q21
+  - Q32
+  - Q34
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-11
+  title: Deterministic/agent/judge evaluation and sealed final qualification
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Complete scenarios, statistics and judge audit
+  implementation_tasks:
+  - FTF-H020
+  - FTF-H021
+  - FTF-H022
+  qualification_scenarios:
+  - Q16
+  - Q17
+  - Q18
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-12
+  title: Registry, private vLLM, target-product/LiteLLM adoption
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Signed artifacts, route identity, session canary/rollback
+  implementation_tasks:
+  - FTF-H024
+  - FTF-H025
+  - FTF-H026
+  qualification_scenarios:
+  - Q05
+  - Q06
+  - Q20
+  - Q21
+  - Q22
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-13
+  title: Cheapest tested passing selection and billing reconciliation
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Real alternatives, all costs and uncertainties
+  implementation_tasks:
+  - FTF-H018
+  - FTF-H019
+  - FTF-H023
+  qualification_scenarios:
+  - Q15
+  - Q19
+  - Q32
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-14
+  title: Strict private security boundary
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Full data-path/egress/CI/tenant tests
+  implementation_tasks:
+  - FTF-H003
+  - FTF-H006
+  - FTF-H007
+  - FTF-H027
+  qualification_scenarios:
+  - Q01
+  - Q03
+  - Q04
+  - Q23
+  - Q24
+  - Q25
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-15
+  title: Availability, scale, upgrades, recovery, backups and operator readiness
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Defined workloads, 24h soak, RPO/RTO, incident exercises
+  implementation_tasks:
+  - FTF-H031
+  - FTF-H032
+  - FTF-H033
+  qualification_scenarios:
+  - Q01
+  - Q28
+  - Q29
+  - Q30
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-16
+  title: Full UI journeys and accessibility
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Real backend Playwright + manual assistive-technology checks
+  implementation_tasks:
+  - FTF-H029
+  - FTF-H030
+  qualification_scenarios:
+  - Q07
+  - Q08
+  - Q27
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-17
+  title: Safe parallel implementation and protected CI
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Task/DAG/lease evidence + failing-gate tests
+  implementation_tasks:
+  - FTF-H001
+  - FTF-H028
+  - FTF-H034
+  qualification_scenarios:
+  - Q26
+  - Q33
+  - Q34
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-18
+  title: At least one independently qualified fine-tuned output
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: New weights, real final evaluation, real LiteLLM-routed use
+  implementation_tasks:
+  - FTF-H035
+  - FTF-H036
+  qualification_scenarios:
+  - Q10
+  - Q12
+  - Q21
+  - Q32
+  - Q34
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-19
+  title: Seven selected reused components integrated internally
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Actual composed operation, version identity, recovery and tracking/review
+    integrity
+  implementation_tasks:
+  - FTF-R001
+  - FTF-R002
+  - FTF-R003
+  - FTF-R004
+  - FTF-R005
+  - FTF-R006
+  - FTF-R008
+  - FTF-R010
+  - FTF-R013
+  - FTF-R017
+  - FTF-R018
+  qualification_scenarios:
+  - Q35
+  - Q38
+  - Q40
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-20
+  title: Fully internal runtime and disconnected lifecycle profile
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: Offline clean install/lifecycle, complete dependencies, forbidden
+    external calls and honest profile status
+  implementation_tasks:
+  - FTF-R001
+  - FTF-R008
+  - FTF-R009
+  - FTF-R010
+  - FTF-R011
+  - FTF-R013
+  - FTF-R017
+  - FTF-R018
+  qualification_scenarios:
+  - Q37
+  - Q39
+  - Q43
+  required: true
+  status: NOT_IMPLEMENTED
+- id: CAP-21
+  title: Unified Factory governance and SDLC-controlled selected executor
+  owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+  supported_version_profile: NOT_YET_RESOLVED (Section 64.3 onboarding gate not yet
+    run)
+  minimum_evidence: No vendor-dashboard bypass, independent authorization and qualified
+    safe selected coding executor
+  implementation_tasks:
+  - FTF-R001
+  - FTF-R002
+  - FTF-R005
+  - FTF-R006
+  - FTF-R007
+  - FTF-R011
+  - FTF-R012
+  - FTF-R014
+  - FTF-R015
+  - FTF-R016
+  - FTF-R018
+  qualification_scenarios:
+  - Q36
+  - Q38
+  - Q41
+  - Q42
+  required: true
+  status: NOT_IMPLEMENTED
