@@ -568,6 +568,7 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
 
 ## 2026-09-16 — FTF-0006 — Observability foundation
 - **PR:** to be opened against `main` from `claude/wizardly-fermat-6dwdsp`.
+- **Commit:** 91eeff152e11dd0bdc17c4dded1e69e9d0b7fbed (implementation)
 - **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
   `python tools/r1_handoff.py packet FTF-0006 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
   Dependencies FTF-0001/FTF-0004/FTF-0005 all `CERTIFIED` — unblocked.

@@ -55,7 +55,7 @@ FTF-0006:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Observability foundation
-  evidence_hash: PENDING_COMMIT
+  evidence_hash: 91eeff152e11dd0bdc17c4dded1e69e9d0b7fbed
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-01; scenarios=Q01, Q26; deps=FTF-0001, FTF-0004, FTF-0005; stdlib-only structured-event/metrics seam (no Prometheus/OpenTelemetry dep added — new-runtime-dep ask-first item); no live FastAPI app or Temporal workflow exists yet to instrument, so "one actual request crosses instrumentation" is proven via a real stdlib HTTP server over a real local socket, same pattern FTF-0004 used; workflow-side instrumentation deliberately deferred to whichever task first builds services/workflow-worker
   proof_state: L1-PROVEN
