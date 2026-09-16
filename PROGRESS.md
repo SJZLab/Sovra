@@ -61,6 +61,35 @@ Next candidate per dependency order (QUEUE.md "Queue" section):
 FTF-0101+ (identity/tenancy/RBAC/audit, CAP-01) — not this session's job;
 CERTIFY mode does not propose or start new work.
 
+## 2026-09-16 — FTF-0006 (PR #39) merged to main as PROVISIONAL
+Same relay shift as the FTF-0006 implementation entry below. Subscribed to
+PR #39's activity after opening it; CI (`gate` and
+`docker-local-stack-integration`) both completed `success` on the PR's
+actual final head SHA (`0970fa8eb4b80635cd919f929d74f1ac49884325`,
+confirmed via `get_check_runs`, not a stale/self-reported claim — an
+earlier `check_suite.completed` event for a prior commit on this same
+branch, `7d5834f`, was correctly recognized as stale and not acted on).
+`mergeable_state: clean`, no open review threads, no other configured
+checks (this repo has no Claude Approvals check). Matches CLAUDE.md's
+"Do without asking: merge on green + L1 doc (PROVISIONAL)" — same
+discipline as the prior FTF-0002/0003/0004/0005 merges. Merged PR #39
+(merge commit `268186bd5e70032a6c563796910059ab2684b684`). Not a
+certification — still PROVISIONAL, Law 4 untouched; `docs/spec-
+matrix.yaml`/`QUEUE.md`/`docs/certifications/queue.md` already carried
+the correct PROVISIONAL bookkeeping as part of PR #39 itself, verified
+post-merge that all three landed on `main` as expected — no further doc
+edits needed there. Certified: 5/300 (unchanged — a merge to PROVISIONAL
+is not a certification). Product-true: 0 (unchanged).
+Per the branch-restart convention (this session's designated branch's PR
+merged): restarted `claude/wizardly-fermat-6dwdsp` from the new `main`
+tip to record this merge note, rather than stacking on now-merged
+history.
+STEP 4(a): FTF-0006 is now the queue's only non-certified item and is
+fully L1-PROVEN/PROVISIONAL. Stopping — awaiting Control plane L2
+certification of FTF-0006, then eventually the L4 gate. Not starting a
+second item (FTF-0101+) on top of an uncertified one, same discipline as
+every prior FTF-000x handoff.
+
 ## 2026-09-16 — FTF-0006 implemented (Provisional, PR #39 opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
 `sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
