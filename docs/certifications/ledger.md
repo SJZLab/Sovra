@@ -201,3 +201,79 @@ corrected 2026-09-15.
   real CI on the actual merged head, no regression to prior certified
   evidence, and the delivered work matches the real contract's
   acceptance/negative_acceptance clauses. Certified L2-CERTIFIED.
+
+## FTF-0005 — Configuration system
+- Criterion ID: FTF-0005
+- PR: https://github.com/SJZLab/Sovra/pull/30 (fix for the defect found in
+  PR #28's review, see PR #29 / docs/certifications/queue.md "Control
+  plane review — 2026-09-16 — NOT CERTIFIED (defect found)")
+- Merge commit: 5f5a34d803a76e3261c8cc860bd5f21cd8290424
+- Validated-by: session https://claude.ai/code/session_01WqPEZmJdJyFH7tk2cbakWP
+  (session-ID comparison performed and recorded before this entry: both
+  commits on PR #30 — 9f2dcbca6866871bf17edf68ea02fed7b61748ad and
+  65824c56879b80e012f19c4b4f9b9e8b0098f5fe — carry
+  `Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY`, the same
+  producer session that authored PR #28; this session's ID does not
+  match either that session or the prior reviewing session
+  `session_01WjQKEb87DwDx51YLNRxT6o` that rejected PR #28, so this is an
+  independent certification, not self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's word:
+  1. Re-read the full PR #30 diff (6 files) — confirmed the change is
+     exactly the scoped fix the prior rejection called for:
+     `_redact_url()` now applied to `litellm_gateway_url` in
+     `Settings.__repr__` (`apps/api/app/config/configuration_system.py`),
+     matching how `database_url` was already handled, plus one new test
+     case. No other line of the original FTF-0005 delivery was touched.
+  2. Checked out the actual PR head commit
+     (`65824c56879b80e012f19c4b4f9b9e8b0098f5fe`, which became the second
+     parent of merge commit `5f5a34d`) into a fresh git worktree — not the
+     producer's branch or environment — and ran `uv sync` fresh, then
+     `python3 tests/tasks/test_ftf_0005.py`: 10/10 checks pass.
+  3. Performed my own fault injection, independent of the PR's claimed
+     evidence: reverted the one-line fix in the checked-out worktree
+     (restored the raw, unredacted `litellm_gateway_url` interpolation),
+     re-ran `tests/tasks/test_ftf_0005.py` — exactly 1 check failed for
+     real, with the expected message ("an accepted gateway URL's embedded
+     password never appears in Settings' repr"), reproducing the original
+     certifier's exact finding from first principles rather than trusting
+     the commit message's description of it. Restored the fix from a
+     pre-edit copy, `diff` confirmed empty, re-ran clean (10/10 pass
+     again).
+  4. Re-ran the full pre-existing regression set on the same worktree:
+     `ruff check .` / `ruff format --check .` / `mypy .` all clean;
+     `pytest tests/unit` — 3 passed, unchanged. No regression to prior
+     certified evidence (FTF-0001/0002/0003 are untouched by this diff).
+  5. Fetched GitHub Actions check runs directly via the API for PR #30's
+     actual head SHA (`65824c5`, matching `list_pull_requests`' reported
+     head, not a stale or self-reported claim): job `gate`,
+     run https://github.com/SJZLab/Sovra/actions/runs/35087235376,
+     conclusion `success`, completed 2026-09-16T10:52:22Z.
+  6. Ran `python3 scripts/product_truth_check.py --fail-on-unwired`:
+     `0/0 product-true`, exit 0 — legitimate per CONTROL_PLANE_MODES.md
+     CERTIFY step 4, since `docs/spec-matrix.yaml`'s FTF-0005 entry has
+     `proving_symbol: ''` (no live caller wires this module into a running
+     service yet — no `apps/api/app/main.py` exists, same rationale
+     already established and unchanged from the original FTF-0005
+     evidence).
+  7. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0005 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and re-checked the
+     delivered work against it: negative_acceptance ("No development
+     fallback credentials or production tls_verify=false; sensitive
+     values absent from errors") is now genuinely met for the field the
+     prior review found unmet — an *accepted* gateway URL's embedded
+     password is confirmed absent from `repr(settings)`, per item 3
+     above, closing the exact gap the original evidence only tested in
+     its *rejected*-URL form. The other 8 original checks (acceptance
+     clause 1: typed rejection of missing/invalid URLs, policy enum,
+     budget, secret refs; no other negative_acceptance regression) were
+     not touched by this PR and remain as independently established in
+     this same session's prior review of PR #28 (which did not dispute
+     them).
+- Conclusion: the scoped defect from the prior rejection is fixed, proven
+  by independent fault injection (not the producer's own test run), CI is
+  real and green on the actual merged head, and the delivered fix matches
+  the real contract's negative_acceptance clause with no regression to
+  the rest of FTF-0005 or to prior certified evidence. Certified
+  L2-CERTIFIED.
