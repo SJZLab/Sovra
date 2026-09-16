@@ -33,10 +33,35 @@ jobs:
           python-version: '3.12'
       - name: Install gate deps
         run: pip install pyyaml --quiet
-      # PLACEHOLDER — FTF-0001/0002/0003 (monorepo init, lint/format/type checks,
-      # test harnesses) define the real stack commands here. Zero E2E in Tier 1.
-      - name: Typecheck + lint + unit
-        run: 'echo "TODO: fill once FTF-0001/0002/0003 land (monorepo + lint/type + test harness)"'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dev dependencies
+        run: uv sync
+      - name: Install JS/TS dev dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Python lint + format + type check (FTF-0002)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy .
+      - name: TypeScript lint + format + type check (FTF-0002)
+        run: |
+          pnpm run lint
+          pnpm run format:check
+          pnpm run typecheck
+      - name: FTF-0002 negative-test proof (checks catch real defects)
+        run: python3 tests/tasks/test_ftf_0002.py
+      # PLACEHOLDER — FTF-0003 (test harnesses) defines the real unit-test
+      # command here (pytest / Playwright). Zero E2E in Tier 1.
+      - name: Unit tests
+        run: 'echo "TODO: fill once FTF-0003 lands (test harness)"'
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

@@ -1,6 +1,32 @@
 # PROGRESS — Sovra
 Updated: 2026-09-16T00:00:00Z
 
+## 2026-09-16 — FTF-0002 implemented (Provisional, awaiting L2 certification)
+Done at the user's direct live instruction ("Go then FTF-0002 it's"), not the autonomous
+relay's normal cadence — explicitly not self-certified (Law 4). Full evidence in
+docs/certifications/queue.md; commit e3f0c1a981db04bd5d16078f5fd72fcebfc866c7. Summary:
+- Real Python (ruff + mypy, `uv sync`) and TypeScript (eslint + prettier + tsc, `pnpm install`)
+  checks, wired into `.github/workflows/ci.yml`, replacing the FTF-0001/2/3 combined placeholder
+  (left a correctly-scoped FTF-0003 placeholder for the unit-test step).
+- Law 1 evidence: tests/tasks/test_ftf_0002.py proves each tool catches a real injected defect
+  and passes clean equivalents; separately, manually injected `import os` into the real
+  scripts/status.py, watched `ruff check .` fail for real (E402+F401), reverted, watched it pass.
+- Fixed a pre-existing FTF-0001 defect blocking this task: `uv sync` failed outright (hatchling
+  wheel build declared with no source dir in any workspace member) — added `[tool.uv] package =
+  false` everywhere needed.
+- Kept `tools/r1_handoff.py` byte-identical to the master spec's own Section 86 (excluded from
+  ruff/mypy via top-level `extend-exclude`, not a per-file lint-only ignore — an earlier pass
+  with `ruff format .` briefly reformatted it before that exclusion was in place; reverted via
+  `git checkout --`, confirmed zero diff before committing).
+- Scoped `prettier --check` to actual TS/JS/config globs after `prettier --check .` matched 178
+  unrelated files (CLAUDE.md, spec-matrix.yaml, every doc) — not this task's scope.
+- Added minimal real entry files (`apps/web/src/index.ts`, `packages/shared/src/index.ts`) since
+  `tsc --build` needs actual inputs and FTF-0001 left those dirs as README+manifest only.
+Updated docs/spec-matrix.yaml (FTF-0002: IMPLEMENTED/L1-PROVEN/PROVISIONAL,
+evidence_hash=e3f0c1a9...), docs/certifications/queue.md (full entry), QUEUE.md (moved to
+Provisional, cleared Active). Certified count unchanged at 1/300 — PROVISIONAL is not
+certified. PR opened against main; not merging without confirming CI green first.
+
 ## 2026-09-16 — Section 85 gap resolved
 Owner supplied `FINE_TUNING_FACTORY_RELEASE_1.md` (Release 1 master spec, root of repo) and
 `tools/r1_handoff.py` (its own Section 86 helper) via PR #15's branch

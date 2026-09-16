@@ -3,6 +3,7 @@ node_modules/
 dist/
 build/
 .pnpm-store/
+*.tsbuildinfo
 
 # Python
 __pycache__/

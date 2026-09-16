@@ -5,6 +5,9 @@ description = "Sovra deployment controller (vLLM/LiteLLM-backed)"
 requires-python = ">=3.11"
 dependencies = []
 
+[tool.uv]
+package = false
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

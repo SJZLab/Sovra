@@ -42,3 +42,57 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   finding on unverified "gap resolved" claims. Setup gap #2 (2h relay /
   watchdog trigger tooling) is unaffected — this session has no
   create_trigger/fire_trigger tooling.
+
+## 2026-09-16 — FTF-0002 — Add formatting/lint/type checks
+- **PR:** (see QUEUE.md — opened against `main` from `claude/blissful-goodall-wzvd2d`)
+- **Commit:** e3f0c1a981db04bd5d16078f5fd72fcebfc866c7
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0002` (see
+  docs/architecture/CRITERION_MAPPING.md "Known gap — RESOLVED" and this
+  session's earlier PRs #15/#22).
+- **Delivered:** real Python formatter/linter/type-checker (ruff + mypy,
+  installed via `uv sync`, config in root `pyproject.toml`) and real
+  TypeScript formatter/linter/type-checker (prettier + eslint + tsc,
+  installed via `pnpm install`, config in `eslint.config.mjs` /
+  `.prettierrc.json` / `tsconfig*.json`), wired into
+  `.github/workflows/ci.yml`.
+- **Test:** tests/tasks/test_ftf_0002.py — 6 checks (ruff check, ruff
+  format, mypy, eslint, tsc each proven against a deliberately broken
+  fixture + its clean equivalent, plus a repo-wide "commands CI actually
+  runs" check).
+- **Evidence — shown able to fail (Law 1):**
+  1. Fixture-level: each of ruff/mypy/eslint/tsc run against an in-repo
+     temp fixture with a real injected defect (unused import, `int =
+     "str"`, unused var, `number = "str"`) — nonzero exit + expected
+     diagnostic code asserted (F401, `assignment`, `no-unused-vars`,
+     `TS2322`), then re-run clean — exit 0. Fixtures are written inside
+     the repo tree, not system `/tmp` — confirmed empirically that
+     ESLint's flat-config base path silently ignores files under `/tmp`,
+     which would have made the eslint check pass for the wrong reason.
+  2. Repo-wide: appended `import os` to the real, tracked
+     `scripts/status.py`, ran the unmodified `ruff check .` — real
+     failure (`E402` + `F401` at `scripts/status.py:68`). Reverted,
+     re-ran — clean. Both outputs observed directly, not simulated.
+- **Pre-existing defect fixed to unblock this task:** `uv sync` failed
+  outright — root and all 5 workspace-member `pyproject.toml` files
+  declared a hatchling wheel build with no source directory to build,
+  meaning FTF-0001's "fresh clone install succeeds" acceptance was
+  apparently never verified for the Python side. Added `[tool.uv]
+  package = false` to mark these workspace-only until real source lands.
+- **Byte-fidelity preserved:** `tools/r1_handoff.py` is excluded from
+  both ruff (lint + format, via top-level `extend-exclude`) and mypy —
+  confirmed via `git diff` showing zero delta, after an intermediate
+  `ruff format .` pass briefly reformatted it and was reverted before
+  committing. It stays byte-for-byte identical to the master spec's own
+  Section 86.
+- **Scope discipline:** `format:check` targets explicit TS/JS/config
+  globs, not `prettier --check .` — the latter matched 178 files
+  including `CLAUDE.md` and every doc/spec file in the repo, which is
+  not this task's scope. `apps/web/src/index.ts` and
+  `packages/shared/src/index.ts` are the minimal real entry files
+  `tsc --build` needs to have inputs (trivial name-constant exports, not
+  feature code) — FTF-0001 left these dirs as README+manifest only.
+- **CI:** YAML-validated (`yaml.safe_load`); real run status to be
+  confirmed on the opened PR before merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
