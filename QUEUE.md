@@ -24,16 +24,34 @@ no proving_symbol yet.
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-0004 is implemented and pushed, awaiting Control plane
-L2 review; see Provisional below. Not picking up a second item on top of
-an uncertified one, same discipline as the FTF-0002→FTF-0003 handoff.)
+(empty — FTF-0004's structural blockers from Control plane's 2026-09-16
+review are fixed and pushed; see Provisional below. Not picking up a
+second item on top of an uncertified one, same discipline as the
+FTF-0002→FTF-0003 handoff.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0004 — Docker local stack. Commit `bc603a6` on branch
-  `claude/wizardly-fermat-3mh1pd`. Real Postgres/Temporal/SeaweedFS
-  (S3-compatible, per Section 77.3's qualified fixture — not MinIO)
-  stack via `infra/docker/docker-compose.yml`, all images digest-pinned.
-  A stdlib-only health-bootstrap (`apps/api/app/config/
+- FTF-0004 — Docker local stack. PR #35 (`claude/wizardly-fermat-3mh1pd`).
+  Control plane reviewed the original head (`330be28`) 2026-09-16 and did
+  NOT certify — not on the delivered code, but on structural grounds
+  (docs/certifications/queue.md, "Control plane review — 2026-09-16 —
+  NOT CERTIFIED (not in a certifiable state)"): the branch's own prior
+  "rebase" onto `main` had only copied file *content*, never run a real
+  `git merge`/`git rebase`, so its actual merge-base with `main` was
+  stale (`9de083b`, predating PR #30/#32) — `mergeable_state: dirty` with
+  real conflicts in `PROGRESS.md`/`QUEUE.md` (tracking docs only, not
+  code) — and 0 CI check runs had been recorded at review time.
+  **Fixed:** ran a real `git merge origin/main --no-edit` against the
+  actual current `main`, resolved the resulting conflicts (confirmed
+  confined to the four tracking docs both sides had touched — no code
+  conflicts, confirming the reviewer's diagnosis), re-ran the full gate
+  to confirm the merge itself introduced no regression, and pushed the
+  merge commit to the same branch/PR #35 — not a duplicate PR, per the
+  reviewer's own instruction.
+  Substantive delivery (unchanged since the original submission): real
+  Postgres/Temporal/SeaweedFS (S3-compatible, per Section 77.3's
+  qualified fixture — not MinIO) stack via
+  `infra/docker/docker-compose.yml`, all images digest-pinned. A
+  stdlib-only health-bootstrap (`apps/api/app/config/
   docker_local_stack.py`) serves `GET /health`, genuinely TCP-probing
   each dependency — no new runtime dependency added (FastAPI et al. stay
   the frozen target stack for actual request handlers). `web` is
@@ -43,23 +61,20 @@ an uncertified one, same discipline as the FTF-0002→FTF-0003 handoff.)
   builds it. This session's interactive dev sandbox has no
   container-registry egress (confirmed: `dockerd` starts, but
   `docker pull` gets a 403 from the session's enforced proxy fetching
-  Docker Hub's CDN) — per the live user's direction, the real
-  container-boot + negative-acceptance (restart/persistence) evidence
-  instead runs in CI, where GitHub Actions' hosted runner has real
-  registry egress (`scripts/verify_docker_local_stack.py`, wired into
+  Docker Hub's CDN) — the real container-boot + negative-acceptance
+  (restart/persistence) evidence runs in CI instead, where GitHub
+  Actions' hosted runner has real registry egress
+  (`scripts/verify_docker_local_stack.py`, wired into
   `.github/workflows/ci.yml`'s new `docker-local-stack-integration` job).
   `tests/tasks/test_ftf_0004.py` (9 checks, no Docker needed) proves the
   readiness-check logic itself is real via local TCP listeners; verified
   by fault injection (canned-healthy stub made 4/9 checks fail for real,
-  reverted clean). Full regression suite re-run clean
-  (`uv run ruff`/`mypy`, pytest, pnpm lint/typecheck/vitest,
-  FTF-0001/0002/0003/0005 evidence unmodified). Full detail:
-  docs/certifications/queue.md "2026-09-16 — FTF-0004 — Docker local
-  stack". proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
-  self-certified — PR to be opened against `main`. Control plane review
-  should specifically confirm the `docker-local-stack-integration` CI
-  job passed for real before certifying.
-(none)
+  reverted clean).
+  proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified. Control plane re-review should confirm the merge is
+  now clean (`mergeable_state`) and that CI — especially the
+  `docker-local-stack-integration` job — actually ran to completion on
+  the new merge commit before certifying.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

@@ -1,5 +1,41 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T12:00:00Z
+Updated: 2026-09-16T12:30:00Z
+
+## 2026-09-16 — FTF-0004 (PR #35): merge-base fixed, resubmitted
+Control plane reviewed PR #35 and did NOT certify it — not on the
+delivered code, but on structural grounds (`docs/certifications/
+queue.md`, "Control plane review — 2026-09-16 — NOT CERTIFIED (not in a
+certifiable state)"): `mergeable_state: dirty`, because the branch's
+prior tracking-doc "rebase" (commit `330be28`) only copied file *content*
+from `main` at the time — it never ran a real `git merge`/`git rebase`,
+so the branch's actual merge-base with `main` stayed at `9de083b`,
+predating PR #30/#32 (the FTF-0005 fix + certification that had already
+landed). Real conflict markers resulted in `PROGRESS.md`/`QUEUE.md`
+against the true current `main`. Separately, 0 CI check runs had been
+recorded on the PR at review time.
+Fix: `git fetch origin main` (now `fe954e0`, which itself carries commit
+`2dfdecb` — Control plane's own NOT-CERTIFIED finding, written directly
+to `main`), then a real `git merge origin/main --no-edit`. This produced
+the expected conflicts in exactly the four docs both branches had
+touched (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`,
+`docs/spec-matrix.yaml`) and none in code — confirming the reviewer's
+diagnosis that this was a tracking-doc-only conflict, not a substantive
+one. Resolved each by keeping both histories (this branch's FTF-0004
+entries plus `main`'s real FTF-0005-certification and NOT-CERTIFIED-
+review entries), verified the merge commit's parents include both the
+old branch tip and the real `main` tip, then re-ran the full gate
+(`uv run ruff`/`mypy`, `uv run pytest tests/unit`,
+`tests/tasks/test_ftf_0002.py`/`0003`/`0004`/`0005`,
+`tests/test_ftf_0001_monorepo_layout.py`, `pnpm run lint`/`typecheck`/
+`format:check`, `pnpm exec vitest run`, `product_truth_check.py
+--fail-on-unwired`) before pushing, to confirm the merge itself
+introduced no regression. Pushed the merge commit to the same branch/PR
+#35 — not opening a duplicate, per the reviewer's own instruction.
+`docs/spec-matrix.yaml`'s FTF-0004 entry now correctly reflects
+`certification_state: PROVISIONAL` on top of `main`'s real FTF-0005
+CERTIFIED state (4/300), not a stale copy. Still not self-certified —
+awaiting Control plane to actually see CI run to completion on the new
+merge commit and re-review.
 
 ## 2026-09-16 — FTF-0004 implemented (Provisional, awaiting L2 certification)
 Live user session (direct instruction: "GO", following an "assess then"

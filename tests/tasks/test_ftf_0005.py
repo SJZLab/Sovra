@@ -192,6 +192,15 @@ def test_sensitive_values_absent_from_errors_and_repr():
         "a database URL's embedded password never appears in Settings' repr",
         password not in repr(settings),
     )
+    gateway_password = "gw-s3cr3t"
+    settings_with_gateway_creds = Settings.from_env(
+        env(SOVRA_LITELLM_GATEWAY_URL=f"https://svc:{gateway_password}@litellm.internal.example")
+    )
+    check(
+        "FTF-0005",
+        "an accepted gateway URL's embedded password never appears in Settings' repr",
+        gateway_password not in repr(settings_with_gateway_creds),
+    )
     check(
         "FTF-0005",
         "a secret ref's own value never appears in Settings' repr",
@@ -208,17 +217,6 @@ def test_sensitive_values_absent_from_errors_and_repr():
         "FTF-0005",
         "an embedded URL password never appears in a raised validation error",
         message is not None and "hunter2" not in message,
-    )
-    # An *accepted* gateway URL (valid scheme, still carries userinfo) is the
-    # real risk surface — it reaches a constructed Settings, unlike the
-    # rejected case above, so its repr must redact the password too.
-    accepted_settings = Settings.from_env(
-        env(SOVRA_LITELLM_GATEWAY_URL="https://svc:hunter2@litellm.internal.example")
-    )
-    check(
-        "FTF-0005",
-        "an accepted gateway URL's embedded password never appears in Settings' repr",
-        "hunter2" not in repr(accepted_settings),
     )
 
 
