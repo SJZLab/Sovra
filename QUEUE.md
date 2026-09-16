@@ -70,11 +70,21 @@ FTF-0002→FTF-0003 handoff.)
   readiness-check logic itself is real via local TCP listeners; verified
   by fault injection (canned-healthy stub made 4/9 checks fail for real,
   reverted clean).
+  **CI ran and found a real bug, then went green:** on the merge commit,
+  `docker-local-stack-integration` failed for real — after stopping
+  postgres, `poll_health` timed out instead of recognizing the health
+  endpoint's genuine 503 `{"ready": false, ...}` response, because
+  `urllib.request.urlopen()` raises `HTTPError` for non-2xx statuses
+  before the body is read and the polling loop was discarding that body.
+  Fixed (`c595897`) by reading the body from `HTTPError` too; verified
+  locally against closed sockets before pushing. Re-ran CI on the fix
+  (GitHub Actions run 35095834970): `gate` and
+  `docker-local-stack-integration` both `success` — the real
+  container-boot, restart, and marker-row-persistence evidence.
+  `mergeable_state: clean`.
   proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
-  self-certified. Control plane re-review should confirm the merge is
-  now clean (`mergeable_state`) and that CI — especially the
-  `docker-local-stack-integration` job — actually ran to completion on
-  the new merge commit before certifying.
+  self-certified — awaiting Control plane L2 review, which should now
+  find a clean merge and a genuinely green integration run.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

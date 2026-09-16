@@ -509,3 +509,59 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   Control plane to confirm `mergeable_state` is now clean and that CI,
   especially `docker-local-stack-integration`, actually ran to completion
   on the new merge commit before re-reviewing.
+
+## 2026-09-16 — FTF-0004 — Real CI failure found and fixed on the merge commit
+- **Commit:** c595897 (branch `claude/wizardly-fermat-3mh1pd`), on top of
+  the merge commit `c9ab1c9` above.
+- **What happened:** the merge fix above correctly made the PR mergeable
+  and triggered CI for the first time. `docker-local-stack-integration`
+  **failed for real** (GitHub Actions run 35095359741, job
+  104791239843) — read via `get_job_logs`, not inferred from the red X:
+  the stack booted, the marker row was written, `docker compose stop
+  postgres` ran, then `poll_health(expect_ready=False)` timed out after
+  120s and the job errored with `TimeoutError: health endpoint never
+  reported ready=False (last error: HTTP Error 503: Service
+  Unavailable)` — even though the health endpoint's own log line
+  (`stack ready: {...}`) plus the 503 status in the error message prove
+  it was correctly reporting unhealthy the entire time.
+- **Root cause:** `urllib.request.urlopen()` raises `urllib.error.
+  HTTPError` for any non-2xx response *before* the caller ever reads the
+  response body — `poll_health`'s `except (urllib.error.URLError, ...)`
+  clause caught the 503 as an opaque connection failure (HTTPError is a
+  URLError subclass) and discarded it without ever parsing the very JSON
+  body (`{"ready": false, ...}`) the negative-acceptance test needed to
+  see, so it just kept retrying until the deadline. A real bug in the CI
+  verification script, not in `docker_local_stack.py`'s readiness logic
+  (already proven real by `tests/tasks/test_ftf_0004.py`), not a Docker/
+  network flake, and not the containers' fault.
+- **Fix:** `poll_health` now reads and parses the body from
+  `urllib.error.HTTPError` the same way as a normal 2xx response, then
+  checks the real `ready` field regardless of HTTP status code.
+- **Verified locally before pushing (no Docker needed to reproduce this
+  specific bug):** started the real stdlib health server
+  (`docker_local_stack.serve`) pointed at closed local sockets
+  (simulating every dependency being down, the same shape as a stopped
+  postgres container) and called the *fixed* `poll_health(expect_ready=
+  False, timeout_seconds=10)` against it — returned `ready: False`
+  correctly in under a second, exercising the exact `HTTPError`-on-503
+  code path the real CI traceback showed was broken. Also re-verified
+  the healthy (200) path is unaffected using the same harness with all
+  three local listeners open.
+- **Regression check:** `uv run ruff check`/`format --check`/`mypy`
+  clean; `tests/tasks/test_ftf_0004.py` (9/9, unaffected — it doesn't
+  exercise `verify_docker_local_stack.py`, only the readiness module
+  itself); `docker compose -f infra/docker/docker-compose.yml config`
+  parses cleanly.
+- **Real CI result after the fix (GitHub Actions run 35095834970):**
+  `gate` — `success`. `docker-local-stack-integration` — `success`,
+  confirmed via `get_check_runs` on the actual PR head SHA
+  (`c59589736fe1001b550601e40741336aacef0f12`) — the genuine
+  container-boot, restart, and marker-row-persistence evidence
+  FTF-0004's negative_acceptance clause requires.
+- **PR:** `mergeable_state: clean`; PR body's test-plan checklist updated
+  to reflect the real green run and the full history (structural
+  rejection → merge fix → real CI failure → real fix → green).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review, which should now
+  find a clean merge and a genuinely green `docker-local-stack-
+  integration` run (not merely its presence) before certifying.

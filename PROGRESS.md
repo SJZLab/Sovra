@@ -1,5 +1,43 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T12:30:00Z
+Updated: 2026-09-16T12:40:00Z
+
+## 2026-09-16 — FTF-0004 (PR #35): CI green for real, awaiting L2 review
+After the merge-base fix (below), CI ran on PR #35 for the first time.
+`docker-local-stack-integration` **failed for real** on that first run
+(35095359741): booted the real stack fine, but after `docker compose stop
+postgres`, `poll_health(expect_ready=False)` timed out after 120s even
+though the health endpoint was genuinely returning 503 with
+`{"ready": false, ...}` throughout — confirmed by reading the actual job
+log (`get_job_logs`), not inferred from the red X. Root cause:
+`urllib.request.urlopen()` raises `HTTPError` for any non-2xx status
+before the response body is read, so `poll_health`'s exception handler
+was discarding the 503's real JSON body as an opaque connection failure
+and looping until the deadline — a genuine bug in the verify script, not
+a flake, not the containers' fault, and not the redaction/config code
+FTF-0004 actually delivers.
+Fixed (`c595897`): read the body from `HTTPError` the same way as a
+normal response, then check the real `ready` field regardless of HTTP
+status. Verified the exact failure mode locally first, without Docker —
+pointed the stdlib health server at closed sockets (simulating a stopped
+dependency) and confirmed the old code would spin for the full timeout
+while the new code returns `ready=False` correctly in under a second;
+also re-verified the healthy (200) path is unaffected. Re-ran the full
+local gate (ruff/mypy, `tests/tasks/test_ftf_0004.py`, `docker compose
+... config`) clean before pushing.
+Pushed; CI re-ran on the real merge commit + fix
+(35095834970): **both `gate` and `docker-local-stack-integration`
+completed with conclusion `success`** — confirmed via `get_check_runs`,
+not assumed from a lack of a wake event. This is the actual container
+boot, restart, and persistence evidence FTF-0004's negative_acceptance
+clause requires, produced on GitHub Actions' hosted runner exactly as
+planned since this sandbox has no registry egress. Updated the PR body's
+test-plan checklist to reflect the real green run and to record this
+whole history (original NOT-CERTIFIED-for-structural-reasons finding →
+merge fix → real CI failure → real fix → green) for the next
+reviewer. `mergeable_state: clean`.
+Still PROVISIONAL — not self-certified (Law 4). Awaiting Control plane
+L2 re-review, which should now find a clean merge and a real green
+`docker-local-stack-integration` run to check.
 
 ## 2026-09-16 — FTF-0004 (PR #35): merge-base fixed, resubmitted
 Control plane reviewed PR #35 and did NOT certify it — not on the
