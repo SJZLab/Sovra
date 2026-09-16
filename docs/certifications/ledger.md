@@ -201,3 +201,89 @@ corrected 2026-09-15.
   real CI on the actual merged head, no regression to prior certified
   evidence, and the delivered work matches the real contract's
   acceptance/negative_acceptance clauses. Certified L2-CERTIFIED.
+
+## FTF-0005 — Configuration system (repr secret-redaction fix, re-review)
+- Criterion ID: FTF-0005
+- PR: https://github.com/SJZLab/Sovra/pull/30
+- Merge commit: 5f5a34d803a76e3261c8cc860bd5f21cd8290424
+- Validated-by: session https://claude.ai/code/session_01QkKmTi2Lb9kQTCcjGFwpQQ
+  (session-ID comparison performed and recorded before this entry: both
+  commits on PR #30 — 9f2dcbca6866871bf17edf68ea02fed7b61748ad and
+  65824c56879b80e012f19c4b4f9b9e8b0098f5fe — carry
+  `Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY`, the same
+  producer session as the original PR #28; this session's ID does not
+  match either, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-16
+- Background: an earlier independent Control-plane session
+  (`session_01WjQKEb87DwDx51YLNRxT6o`, PR #29) reviewed the original
+  FTF-0005 delivery (PR #28) and did NOT certify it — `Settings.__repr__`
+  redacted `database_url`'s embedded userinfo via `_redact_url()` but
+  interpolated `litellm_gateway_url` raw, so an *accepted* gateway URL
+  with embedded credentials (valid in any environment including
+  production) had its password echoed verbatim by `repr(settings)`. That
+  finding is recorded in `docs/certifications/queue.md` and stayed
+  PROVISIONAL, not downgraded further, per that review's own scoping. PR
+  #30 is the producer's scoped fix for exactly that defect.
+- Evidence independently re-verified this session, not taken on the PR
+  description's word:
+  1. Read the actual diff (`git show 9f2dcbc -- apps/api/app/config/configuration_system.py`):
+     exactly one line changed — `litellm_gateway_url` now passes through
+     `_redact_url()` in `__repr__`, mirroring the existing `database_url`
+     line immediately above it. No other file's production code touched.
+  2. Fetched GitHub Actions run 35087235376 directly via the Actions API:
+     workflow `CI`, event `pull_request`, head_sha
+     `65824c56879b80e012f19c4b4f9b9e8b0098f5fe` (confirmed via
+     `pull_request_read` to be PR #30's actual merged head), conclusion
+     `success` — a genuine run tied to the real merged commit, not a
+     stale or self-reported claim.
+  3. Ran `tests/tasks/test_ftf_0005.py` on a fresh checkout of the actual
+     merge commit (`5f5a34d`): all 10 checks pass.
+  4. Performed my own fault injection, independent of the PR's claimed
+     evidence: reverted the redaction on the checked-out merge commit
+     (restored `f"litellm_gateway_url={self.litellm_gateway_url!r}, "`
+     with no `_redact_url()` call) and re-ran the test — genuine failure,
+     exactly the defect PR #29 originally found:
+     `FAIL [FTF-0005] an accepted gateway URL's embedded password never
+     appears in Settings' repr`. Restored the fix from a pre-edit backup
+     copy, confirmed `git diff` empty (byte-identical), re-ran clean
+     (10/10 pass again). This reproduces both the original defect and the
+     fix's effectiveness first-hand rather than trusting the commit
+     message's description of it.
+  5. Ran `python3 scripts/product_truth_check.py --fail-on-unwired`:
+     `0/0 product-true`, exit 0 — legitimate per
+     CONTROL_PLANE_MODES.md CERTIFY step 4, since `docs/spec-matrix.yaml`'s
+     FTF-0005 entry has `proving_symbol: ''` (no live caller yet — no
+     `apps/api/app/main.py` wires this module into a running service;
+     unchanged from the original PR #28 review).
+  6. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0005 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+     fix against it, not just "tests pass": negative_acceptance ("No
+     development fallback credentials or production tls_verify=false;
+     sensitive values absent from errors") — the `__repr__` leak this fix
+     closes is exactly the "sensitive values absent" surface the original
+     delivery's own docstring and `__repr__` comment already claimed to
+     meet but did not for this one field; now genuinely met, confirmed by
+     item 4 above. The other acceptance clause ("Typed settings reject
+     missing/invalid URLs, policy enum, budget and secret refs") and the
+     remaining nine checks in `tests/tasks/test_ftf_0005.py` were
+     unchanged by this scoped fix and were already independently
+     evaluated during the PR #28/#29 review cycle — not re-litigated
+     here, per that review's own scoping note that "this is a scoped fix,
+     not a redo."
+  7. CLAUDE.md integrity: `sha256sum CLAUDE.md` matches the committed
+     `CLAUDE.md.sha256` — no drift.
+- Conclusion: the fix is minimal, exactly matches what the prior
+  independent review specified, is proven by a fault injection that
+  reproduces the original defect and shows the fix closes it, and CI ran
+  for real on the actual merged head. Certified L2-CERTIFIED.
+- Note for next Control-plane/relay session: a separate, later branch
+  (`claude/wizardly-fermat-3mh1pd`, opened as PR #31 after PR #30 had
+  already merged) contains an independent, functionally identical fix for
+  the same defect, produced by a different producer session
+  (`session_01NV9ZvW9ptNnx8RzFWUoZQi`) that was apparently unaware PR #30
+  had already landed. PR #31 is now stale/duplicate and shows
+  `mergeable_state: dirty` against current `main` — this certification
+  entry is not touching or closing it (out of scope for CERTIFY mode);
+  flagging only so it isn't mistaken for still-open work on an
+  uncertified defect.

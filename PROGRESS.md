@@ -1,5 +1,57 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T10:45:00Z
+Updated: 2026-09-16T11:10:00Z
+
+## 2026-09-16 — FTF-0005 independently certified (Control plane, CERTIFY mode)
+Scheduled control-plane certifier shift (triggered by PR #31's
+`pull_request.opened` webhook; per CLAUDE.md's certifier scope this shift's
+job is docs/certifications/queue.md, not the triggering PR specifically —
+see the PR #31 note below). Read docs/certifications/queue.md — one
+pending item, FTF-0005's repr-redaction fix (PR #30, merged as
+`5f5a34d803a76e3261c8cc860bd5f21cd8290424`). Session-ID comparison first,
+per docs/CONTROL_PLANE_MODES.md's explicit requirement: both PR #30
+commits (`9f2dcbc`, `65824c5`) carry
+`Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY` — the same
+producer session as the original PR #28; this session is
+`session_01QkKmTi2Lb9kQTCcjGFwpQQ` — no overlap, independent per Law 4.
+Verified for real, not taken on the PR description's word:
+- Read the actual diff (`git show 9f2dcbc`) — exactly one line changed:
+  `litellm_gateway_url` now passes through `_redact_url()` in
+  `Settings.__repr__`, mirroring the existing `database_url` line.
+- Fetched GitHub Actions run 35087235376 directly via the API:
+  `pull_request` event, head_sha `65824c5` (PR #30's actual merged head,
+  confirmed via `pull_request_read`), conclusion `success` — genuine run.
+- Ran `tests/tasks/test_ftf_0005.py` on a fresh checkout of the actual
+  merge commit — all 10 checks pass.
+- Performed my own fault injection: reverted the redaction on the
+  checked-out merge commit, re-ran the test — genuine failure
+  reproducing the exact original defect PR #29 found (`an accepted
+  gateway URL's embedded password never appears in Settings' repr`);
+  restored from a pre-edit backup, `git diff` confirmed empty, re-ran
+  clean (10/10 pass).
+- `product_truth_check.py --fail-on-unwired`: `0/0 product-true`, exit
+  0 — legitimate, `proving_symbol` still empty (no live caller yet).
+- Pulled the real contract via `tools/r1_handoff.py packet FTF-0005` and
+  checked the fix against its negative_acceptance clause ("sensitive
+  values absent from errors") — met, confirmed by the fault injection
+  above; the rest of the acceptance contract was already evaluated during
+  the PR #28/#29 review cycle and is unchanged by this scoped fix.
+- CLAUDE.md integrity: `sha256sum CLAUDE.md` matches `CLAUDE.md.sha256` —
+  no drift.
+`docs/spec-matrix.yaml`: FTF-0005 → `certification_state=CERTIFIED`,
+`proof_state=L2-CERTIFIED`, `evidence_hash=5f5a34d803a76e3261c8cc860bd5f21cd8290424`
+(merge commit). `docs/certifications/ledger.md`: full signed entry with
+session-ID comparison stated explicitly. `QUEUE.md`: FTF-0005 moved to
+Done, Certified bumped to 4/300, Provisional cleared.
+**PR #31 note:** the webhook that triggered this shift was PR #31
+(`claude/wizardly-fermat-3mh1pd`), opened *after* PR #30 had already
+merged. PR #31 turns out to be an independent, functionally identical fix
+for the same defect from a producer session that was apparently unaware
+PR #30 had landed — it is now stale/duplicate (`mergeable_state: dirty`
+against current `main`) and superseded by the certification above. Left
+untouched (closing/reworking it is outside CERTIFY mode's scope); flagged
+in QUEUE.md and the ledger entry for the next relay/control-plane session
+to close as superseded. Not yet PROMOTED — L4 gate is release-only and
+hasn't run.
 
 ## 2026-09-16 — FTF-0005 repr secret-redaction defect fixed (still Provisional)
 An independent Control-plane session (`session_01WjQKEb87DwDx51YLNRxT6o`,

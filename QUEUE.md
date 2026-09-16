@@ -1,16 +1,15 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by relay
+Updated: 2026-09-16 by control-plane (certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 3/300 · Provisional: 1 · Blocked: 0
-Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002 and
-FTF-0003 all have no proving_symbol; FTF-0001 is structural layout,
-FTF-0002 is CI tooling, and FTF-0003 is test-harness tooling — none a
-live-wired product-runtime path, so all three are CERTIFIED without
-counting toward product-true). FTF-0005 (below) is PROVISIONAL, also with
-no proving_symbol yet (no live caller — apps/api has no main.py wiring it
-into a running service).
+Certified: 4/300 · Provisional: 0 · Blocked: 0
+Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
+FTF-0003 and FTF-0005 all have no proving_symbol; FTF-0001 is structural
+layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, and
+FTF-0005 is a config-loading module with no live caller yet — none a
+live-wired product-runtime path, so all four are CERTIFIED without
+counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -24,27 +23,23 @@ into a running service).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-Nothing active — the FTF-0005 repr-redaction defect (found by Control
-plane review of PR #28, see docs/certifications/queue.md) was fixed this
-shift: commit 9f2dcbc on branch `relay/ftf-0005-fix-repr-redaction`,
-`litellm_gateway_url` now redacted via `_redact_url` in `Settings.__repr__`
-the same as `database_url`, plus a new test case that reproduces the
-original finding against the pre-fix code (fails without the fix, passes
-with it) before being committed. Same producer session as PR #28 — not
-self-certified, still PROVISIONAL, awaiting a separate Control-plane
-session for re-review. Next candidate once FTF-0005 certifies: FTF-0004
-(docker local stack).
+Nothing active. FTF-0005 (config) CERTIFIED this shift — see Done below.
+Next candidate: FTF-0004 (docker local stack).
+
+Note for next relay/control-plane session: a separate, later branch
+`claude/wizardly-fermat-3mh1pd` (opened as PR #31 after the certified fix
+in PR #30 had already merged) contains an independent, functionally
+identical fix for the same repr-redaction defect, produced by a producer
+session that was apparently unaware PR #30 had already landed. PR #31 is
+now stale/duplicate — `mergeable_state: dirty` against current `main` —
+and is superseded by the certified PR #30. Not closed by this
+certification shift (out of scope for CERTIFY mode); the next session
+that touches relay work should close it as superseded rather than try to
+merge or rework it. See docs/certifications/ledger.md's FTF-0005 entry
+for the full comparison.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0005 — Configuration system. Commit 9f2dcbc (fix; implementation was
-  b782a2c/PR #28, ea80d36), on branch `relay/ftf-0005-fix-repr-redaction`.
-  PR #28 was reviewed 2026-09-16 and NOT certified — see
-  docs/certifications/queue.md for the original defect (repr didn't
-  redact `litellm_gateway_url`'s embedded userinfo) and this shift's fix.
-  proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
-  self-certified — awaiting a fresh Control-plane session (no overlap with
-  session_012mAtoqKYzA7PiXbkGkD7rY, which produced both PR #28 and this
-  fix) per Law 4.
+Nothing pending.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -115,3 +110,22 @@ not merely because the task looked title-only elsewhere.
       FTF-0001/0002's certified evidence (both files untouched by this
       PR's diff). Not yet PROMOTED — L4 gate is release-only and hasn't
       run.
+- [x] FTF-0005 — Configuration system. CERTIFIED 2026-09-16 (control-plane
+      L2, session_01QkKmTi2Lb9kQTCcjGFwpQQ — session-ID compared against
+      both PR #30 commits' session_012mAtoqKYzA7PiXbkGkD7rY, no overlap;
+      that session is also the original PR #28 producer). PR:
+      https://github.com/SJZLab/Sovra/pull/30, merge commit
+      5f5a34d803a76e3261c8cc860bd5f21cd8290424. Ledger:
+      docs/certifications/ledger.md. This is the re-review of a scoped fix
+      for a real defect an earlier independent Control-plane session
+      (PR #29) found and did not certify: `Settings.__repr__` redacted
+      `database_url` but not `litellm_gateway_url`, leaking an accepted
+      gateway URL's embedded password verbatim. Independently re-verified:
+      read the actual one-line diff, fetched the real GitHub Actions run
+      tied to the actual merged head (conclusion `success`), ran
+      `tests/tasks/test_ftf_0005.py` fresh (10/10 pass), and performed a
+      fault injection reverting the redaction on the checked-out merge
+      commit — reproduced the exact original defect, then confirmed the
+      fix closes it. `product_truth_check.py --fail-on-unwired` stays
+      `0/0` (legitimate, no proving_symbol/live caller yet). Not yet
+      PROMOTED — L4 gate is release-only and hasn't run.
