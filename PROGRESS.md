@@ -1,5 +1,95 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T13:10:00Z
+Updated: 2026-09-16T14:57:00Z
+
+## 2026-09-16 — FTF-0006 implemented (Provisional, PR #39 opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state (`git fetch origin main`: local
+branch tip matched `origin/main` exactly at `e5b3871`, no open PRs,
+BLOCKER.md held only resolved history). QUEUE.md Active was empty with
+FTF-0006 named as the next candidate (deps FTF-0001/0004/0005 all
+CERTIFIED).
+STEP 1: picked FTF-0006 — Observability foundation. Real DoD resolved via
+`python tools/r1_handoff.py packet FTF-0006 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (not improvised).
+STEP 2 (PEV):
+- P: read the task packet. `files` lists only
+  `apps/api/app/config/observability_foundation.py` and its test.
+  Confirmed `apps/api` still has no `main.py` (no FastAPI app) and no
+  `services/workflow-worker` exists (no Temporal workflow code) — no live
+  API route or workflow to instrument yet. Building either now solely to
+  host an observability demo would be a new-scope/new-runtime-dep
+  ask-first item. Decided to follow FTF-0004's precedent: build the real
+  seam stdlib-only, prove it against a genuine local integration (a real
+  socket, a real HTTP request over the wire), and disclose the
+  workflow-side gap as a documented follow-up rather than inventing a
+  placeholder workflow.
+- E: implemented `StructuredEvent` (frozen dataclass with a fixed field
+  set — structurally no field can hold a raw prompt/source/token/signed
+  URL; unexpected keywords raise `TypeError`), safe-identifier format
+  validation on `event`/`identity` (blocks prose/newlines/URL
+  querystrings/oversized blobs — documented honestly as a format
+  boundary, not a secret scanner, since an opaque token shaped like a
+  legitimate slug ID is not distinguishable by format alone),
+  `MetricsRegistry` (rejects any label outside a predeclared finite set —
+  bounded cardinality by construction), and `InstrumentedRequest` (context
+  manager: correlation ID + timing + one emitted event per real
+  request, never swallows an exception). `tests/tasks/test_ftf_0006.py`
+  (10 checks) proves acceptance clause 1 via a real `ThreadingHTTPServer`
+  on a real socket hit with a genuine `http.client` request (not an
+  in-process call), proves "cardinality remains bounded" quantitatively
+  (50 distinct correlation IDs → 1 observed metric label), and proves the
+  negative_acceptance content-exclusion cases.
+  Law 1 evidence: temporarily removed `MetricsRegistry.record`'s
+  bounded-label check, re-ran the suite — exactly the cardinality-bound
+  check failed for real; restored byte-identical (`diff` confirmed
+  empty), re-ran clean (10/10).
+  Caught and fixed one real design gap before finalizing: an initial
+  negative-acceptance test case (a token-shaped alnum+hyphen string
+  passed as `identity`) was expected to be rejected but the safe-
+  identifier regex accepted it — that's a genuine, honest limitation
+  (format validation cannot distinguish a legitimate short slug ID from
+  an opaque token), not something to paper over. Rewrote the test to
+  assert only what the design actually guarantees (structural field
+  absence + rejection of prose/newlines/URL querystrings/oversized
+  blobs) and documented the limitation in both the module docstring and
+  the test's own comment.
+  Also fixed two real lint/type findings before they reached CI: 4 `ruff`
+  E501 line-length violations, and a `mypy` `exit-return` error on
+  `InstrumentedRequest.__exit__` (changed its return type from `bool` to
+  `None` so it can never be read as swallowing an exception).
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true`
+  — legitimate, no proving_symbol yet (no live caller, same rationale as
+  FTF-0002/0003/0004/0005).
+Re-ran the full existing gate after all changes: `uv run ruff
+check`/`format --check`/`mypy` clean; `uv run pytest tests/unit` (3
+passed); `tests/tasks/test_ftf_0002.py`/`test_ftf_0003.py`/
+`test_ftf_0004.py`/`test_ftf_0005.py` and
+`tests/test_ftf_0001_monorepo_layout.py` all still pass unmodified (ran
+`pnpm install --frozen-lockfile` first — this fresh container had no
+`node_modules`, unrelated to this change, same environment note as prior
+shifts); `pnpm run lint`/`typecheck`/`format:check` and `pnpm exec vitest
+run` (2 passed) also clean.
+Wired `python3 tests/tasks/test_ftf_0006.py` into `.github/workflows/
+ci.yml`'s `gate` job (YAML-validated with `yaml.safe_load`).
+Committed as `91eeff1` (implementation) and `7d5834f` (tracking-doc hash
+fixup) on branch `claude/wizardly-fermat-6dwdsp`. Updated
+`docs/spec-matrix.yaml` (FTF-0006: IMPLEMENTED/L1-PROVEN/PROVISIONAL,
+evidence_hash=91eeff1), `docs/certifications/queue.md` (full entry),
+`QUEUE.md` (Active cleared, Provisional entry added, bumped Provisional
+to 1). Certified count unchanged at 5/300 — PROVISIONAL is not
+certified. Per Law 4, did not self-certify. Opened PR #39
+(`[relay] FTF-0006: Observability foundation`) against `main`, subscribed
+to its PR activity — not merging without confirming CI green first.
+STEP 4: stopping here for this shift's active work — FTF-0006 is fully
+L1-PROVEN and PROVISIONAL, PR open, CI in flight. This session remains
+subscribed to PR #39 and will merge on green (per CLAUDE.md's "Do without
+asking: merge on green + L1 doc (PROVISIONAL)") without further owner
+input, then continue awaiting Control plane L2 certification — not a
+second self-certification, per Law 4. Next candidate once FTF-0006
+certifies: FTF-0101+ (identity/tenancy/RBAC/audit, CAP-01) per QUEUE.md's
+own dependency order.
 
 ## 2026-09-16 — FTF-0004 independently certified (Control plane, CERTIFY mode)
 Scheduled control-plane certifier shift. Read docs/certifications/queue.md
