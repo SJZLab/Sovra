@@ -1,5 +1,5 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-15 by control-plane
+Updated: 2026-09-16 by control-plane
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -19,10 +19,6 @@ CERTIFIED without counting toward product-true)
   resolved without evidence of the watchdog trigger and the 08:30/19:30
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
-- 2026-09-15: RESOLVED 2026-09-16 — see docs/architecture/CRITERION_MAPPING.md
-  "Known gap — RESOLVED". Removed per "remove the ask the moment the owner
-  responds."
-
 ## Active (relay works this)
 FTF-0002 (Add formatting/lint/type checks) — dependency FTF-0001 satisfied
 and certified. Real DoD resolved via
