@@ -66,6 +66,8 @@ jobs:
         run: python3 scripts/check_test_harness.py --junit reports/pytest-junit.xml --junit reports/vitest-junit.xml
       - name: FTF-0003 negative-test proof (harness catches real defects)
         run: python3 tests/tasks/test_ftf_0003.py
+      - name: FTF-0005 negative-test proof (configuration system catches real defects)
+        run: python3 tests/tasks/test_ftf_0005.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

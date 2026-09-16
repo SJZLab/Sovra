@@ -1,5 +1,73 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T04:00:00Z
+Updated: 2026-09-16T07:00:00Z
+
+## 2026-09-16 — FTF-0005 implemented (Provisional, awaiting L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+`cognee-cli` still not on PATH — text-search fallback active (unchanged).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state — `git fetch origin main`: local
+branch tip `135b3ac` matched `origin/main` exactly, `BLOCKER.md` held only
+resolved history, no open PRs. QUEUE.md Active was empty with FTF-0005
+(config) named as the next candidate ahead of FTF-0004 (docker local
+stack, which itself depends on FTF-0005).
+STEP 1: picked FTF-0005 — Configuration system (deps: FTF-0001, already
+CERTIFIED). Real DoD resolved via `python tools/r1_handoff.py packet
+FTF-0005 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (not improvised).
+STEP 2 (PEV): implemented a stdlib-only, fail-fast typed settings loader
+(`apps/api/app/config/configuration_system.py`, `Settings.from_env()`) —
+deliberately avoided adding a third-party runtime dependency (e.g.
+pydantic) since CLAUDE.md lists "new runtime deps" as an ask-first hard
+stop; validation uses only `dataclasses`/`enum`/`decimal`/`urllib.parse`/
+`re`. Covers the acceptance criterion (typed settings reject
+missing/invalid URLs, policy enum, budget and secret refs before a
+`Settings` object — i.e. before serving — can be constructed) and the
+negative_acceptance criterion (no development fallback credential, no
+production `tls_verify=false`, no sensitive value in an error or in
+`Settings`' own `__repr__`).
+Law 1 evidence: `tests/tasks/test_ftf_0005.py` (9 checks) asserts each bad
+case raises and each clean case constructs; additionally performed a real
+fault injection against the tracked module itself (not just a fixture) —
+temporarily removed the production/`tls_verify=false` rejection from
+`_validate_tls_verify`, re-ran the test, watched 2 checks fail for real
+(`SOVRA_TLS_VERIFY=false in production raises`, `the production/tls_verify
+rejection names the actual rule`), then restored the file from a pre-edit
+copy, confirmed `diff` empty, re-ran clean (9/9 pass).
+Caught and fixed two real defects before they reached CI: `ruff check`
+flagged UP037 (quoted type annotations under `from __future__ import
+annotations`); `mypy .` failed with 12 real errors (enum-generic typing
+via a plain `type` annotation, `dict` vs `Mapping[str, str]` argument
+mismatch) — fixed with a `TypeVar` bound to `Enum` and `Mapping[str, str]`
+parameter types, re-verified `mypy .` clean afterward.
+Environment note (not a regression): this fresh container had no
+`node_modules` — running `tests/tasks/test_ftf_0002.py`/`test_ftf_0003.py`
+before `pnpm install` showed TS/lint/vitest failures unrelated to this
+change; ran `pnpm install --frozen-lockfile`, both scripts then passed
+clean, confirming no regression to FTF-0002/0003's certified evidence.
+Re-ran the full existing gate after all changes: `ruff check .` / `ruff
+format --check .` / `mypy .` clean, `pytest tests/unit` (3 passed),
+`tests/test_ftf_0001_monorepo_layout.py` clean, `product_truth_check.py
+--fail-on-unwired` still `0/0` (FTF-0005's `proving_symbol` deliberately
+left empty — no live caller yet, `apps/api` has no `main.py`; same
+rationale as FTF-0002/0003), `scripts/status.py` reports `3/300 certified
+· 0 product-true` (unchanged — FTF-0005 is PROVISIONAL, not counted until
+certified).
+Wired `python3 tests/tasks/test_ftf_0005.py` into
+`.github/workflows/ci.yml` (YAML-validated with `yaml.safe_load`).
+Committed implementation as `b782a2c` on branch
+`relay/ftf-0005-configuration-system`. Updated `docs/spec-matrix.yaml`
+(FTF-0005: IMPLEMENTED/L1-PROVEN/PROVISIONAL, evidence_hash=b782a2c),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (moved to
+Provisional, cleared Active, bumped Provisional to 1). Certified count
+unchanged at 3/300 — PROVISIONAL is not certified. Per Law 4, did not
+self-certify. PR to be opened against `main`; not merging without
+confirming CI green first.
+STEP 4(a): stopping here — FTF-0005 is fully L1-PROVEN, awaiting Control
+plane L2 certification (this session is the relay, not the certifier) and
+eventually the L4 gate. Next relay shift's top candidate stays FTF-0004
+once FTF-0005 certifies, or FTF-0006/FTF-0101+ if FTF-0004 needs a real
+Docker/GPU resource this sandbox doesn't have — to be assessed then, not
+assumed now.
 
 ## 2026-09-16 — FTF-0003 independently certified (Control plane, CERTIFY mode)
 Scheduled control-plane certifier shift. Read docs/certifications/queue.md — one pending item,

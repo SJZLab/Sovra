@@ -1,14 +1,16 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by control-plane
+Updated: 2026-09-16 by relay
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 3/300 · Provisional: 0 · Blocked: 0
+Certified: 3/300 · Provisional: 1 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002 and
 FTF-0003 all have no proving_symbol; FTF-0001 is structural layout,
 FTF-0002 is CI tooling, and FTF-0003 is test-harness tooling — none a
 live-wired product-runtime path, so all three are CERTIFIED without
-counting toward product-true)
+counting toward product-true). FTF-0005 (below) is PROVISIONAL, also with
+no proving_symbol yet (no live caller — apps/api has no main.py wiring it
+into a running service).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -22,12 +24,18 @@ counting toward product-true)
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-Nothing active — FTF-0003 is now independently L2-certified (this shift).
-Next candidates: FTF-0005 (config) → FTF-0004 (docker local stack) per the
-dependency order below.
+Nothing active — FTF-0005 was claimed and implemented this shift (below,
+now Provisional). Not picking up a second item on top of an uncertified
+one, same discipline as the FTF-0002→FTF-0003 handoff. Next candidate once
+FTF-0005 is independently certified: FTF-0004 (docker local stack, deps
+FTF-0001/0003/0005 — all satisfied once FTF-0005 certifies).
 
 ## Provisional (awaiting Control plane L2 certification)
-Nothing pending.
+- FTF-0005 — Configuration system. Commit b782a2c (implementation), on
+  branch `relay/ftf-0005-configuration-system`. Full evidence:
+  docs/certifications/queue.md. proof_state=L1-PROVEN,
+  certification_state=PROVISIONAL. Not self-certified — awaiting Control
+  plane L2 review per Law 4. PR to be opened against main.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
