@@ -5,6 +5,9 @@ description = "Sovra Factory API + policy"
 requires-python = ">=3.11"
 dependencies = []
 
+[tool.uv]
+package = false
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

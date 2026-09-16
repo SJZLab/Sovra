@@ -1,0 +1,8 @@
+.venv/
+node_modules/
+dist/
+.next/
+docs/implementation/task-packets/
+spec/RELEASE_1.md
+FINE_TUNING_FACTORY_RELEASE_1.md
+pnpm-lock.yaml
