@@ -1,0 +1,76 @@
+{
+  "document_version": "Release 1.0",
+  "runtime_components": [
+    {
+      "key": "axolotl",
+      "form": "worker_package",
+      "role": "training",
+      "required": true
+    },
+    {
+      "key": "inspect_ai",
+      "form": "worker_package",
+      "role": "evaluation",
+      "required": true
+    },
+    {
+      "key": "mlflow",
+      "form": "internal_service",
+      "role": "tracking_registry",
+      "required": true
+    },
+    {
+      "key": "vllm",
+      "form": "internal_service",
+      "role": "model_serving",
+      "required": true
+    },
+    {
+      "key": "temporal",
+      "form": "internal_service",
+      "role": "durable_workflows",
+      "required": true
+    },
+    {
+      "key": "litellm",
+      "form": "existing_gateway",
+      "role": "organization_model_access",
+      "required": true
+    },
+    {
+      "key": "argilla",
+      "form": "internal_service",
+      "role": "dataset_review",
+      "required": true
+    }
+  ],
+  "physical_server_count": "SIZED_AND_QUALIFIED_NOT_FIXED_AT_SEVEN",
+  "normal_user_interface": "factory_ui_only",
+  "normal_user_vendor_credentials": false,
+  "coordination": [
+    "authenticated_internal_apis",
+    "controlled_worker_jobs"
+  ],
+  "implementation_plane": {
+    "default_backend": "existing_approved_executor",
+    "optional_backends": [
+      "openhands_sdk"
+    ],
+    "product_runtime_requires_openhands": false,
+    "external_skill_bundle_required": false,
+    "execution_control_profile": "R1_EMBEDDED",
+    "embedded_control_section": "84",
+    "optional_existing_skill_policy": "Preserve authentic installed skill unchanged; claim exact conformance only with its actual evidence.",
+    "default_agents": 4,
+    "maximum_agents": 6,
+    "independent_validation_required": true
+  },
+  "deployment_profiles": [
+    "INTERNAL_COMPACT",
+    "INTERNAL_PRODUCTION",
+    "AIR_GAPPED",
+    "CONNECTED_MANAGED"
+  ],
+  "full_product_preserves_connected_scope": true,
+  "qualification_status": "NOT_TESTED"
+}

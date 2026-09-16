@@ -1,0 +1,703 @@
+{
+  "scenarios": [
+    {
+      "id": "Q01",
+      "title": "Fresh install/auth/tenancy",
+      "assertion": "Real stack healthy; separate organization access denied",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q02",
+      "title": "LiteLLM discovery/enrichment/revocation",
+      "assertion": "Metadata grants no access; revoked/stale key cannot execute",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q03",
+      "title": "Private GitHub/local snapshots",
+      "assertion": "Exact content; traversal/permission/truncation fail closed",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q04",
+      "title": "Multi-agent selection and mandate",
+      "assertion": "Explicit agent selection, provenance, desired/observed/enforced distinction",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q05",
+      "title": "Actual target runtime and parity",
+      "assertion": "Actual target invocation and real disposable tool services; no reconstructed product",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q06",
+      "title": "Source/runtime/gateway drift",
+      "assertion": "Prior approvals cannot authorize a changed compatibility tuple",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q07",
+      "title": "Existing fine-tuned model import",
+      "assertion": "Endpoint-only evaluate path and weights/adapter continuation with honest lineage",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q08",
+      "title": "Dataset mapping and parser validation",
+      "assertion": "Explicit field/group/purpose mapping; invalid/poison/PII/leakage cases blocked",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q09",
+      "title": "Real data-source connectors",
+      "assertion": "Actual S3/PostgreSQL/REST/trace extraction with stable snapshots and source authorization",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q10",
+      "title": "LoRA/QLoRA/local GPU",
+      "assertion": "Real gradients/weights/save/reload, qualified output",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q11",
+      "title": "Private Kubernetes job",
+      "assertion": "Real isolated worker, quota/termination/network tests",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q12",
+      "title": "Managed customization",
+      "assertion": "Real supported Bedrock train/invoke/delete; denied in strict privacy",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q13",
+      "title": "Checkpoint/fencing/cancel",
+      "assertion": "Killed worker resumes; stale worker/partial artifact rejected",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q14",
+      "title": "Outbox/ambiguous submission",
+      "assertion": "No lost admission or duplicate paid logical job",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q15",
+      "title": "Budget/concurrency/reconciliation",
+      "assertion": "No oversubscribed reservations; pending charges and orphan cleanup tracked",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q16",
+      "title": "Deterministic/agent evaluation",
+      "assertion": "Actual independent business/tool outcome and complete accounting",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q17",
+      "title": "Final seal/statistics",
+      "assertion": "Frozen candidate; no adaptive final reuse; sample/CI gates work",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q18",
+      "title": "Judge calibration/manipulation",
+      "assertion": "Qualified private/approved judge, independent audit, no injected instructions",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q19",
+      "title": "Realistic cost selection",
+      "assertion": "Existing/base/tuned development alternatives, fully allocated cost",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q20",
+      "title": "Model serving/security/parity",
+      "assertion": "Correct artifact/template/parser; forbidden admin endpoints blocked",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q21",
+      "title": "Product/LiteLLM adoption",
+      "assertion": "Actual selected product uses expected route, no unrelated alias overwritten",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q22",
+      "title": "Session canary/rollback",
+      "assertion": "Whole-session affinity; forced failure restores verified safe route",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q23",
+      "title": "Full privacy boundary",
+      "assertion": "CNI/destination/history/log/browser tests, no unsupported guarantee",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q24",
+      "title": "End-to-end tenant isolation",
+      "assertion": "API/DB/worker/storage/cache/route cross-tenant denial",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q25",
+      "title": "Repository/artifact/SSRF attack surface",
+      "assertion": "No untrusted execution, arbitrary network or checkpoint deserialization",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q26",
+      "title": "CI/signatures/evidence gate negatives",
+      "assertion": "Missing/failed/stale reports cannot pass; protected gate verified",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q27",
+      "title": "Full UI branches/accessibility",
+      "assertion": "Actual interactions/deep links/refresh/blocked states, no fake metrics",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q28",
+      "title": "Performance/scale/soak",
+      "assertion": "Every declared Section49 workload, raw results and stable resources",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q29",
+      "title": "Backup/restore",
+      "assertion": "Measured RPO/RTO, keys/data/lineage recovered, no duplicate effects",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q30",
+      "title": "Upgrade/rotation/incident",
+      "assertion": "N-1->N, active workflow compatibility, real alert/acknowledgement",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q31",
+      "title": "Data rights/revocation/deletion",
+      "assertion": "Descendants blocked and backups honor tombstones; model impact disclosed",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q32",
+      "title": "Reference final model",
+      "assertion": "At least one true qualified fine-tune callable through real target/LiteLLM",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q33",
+      "title": "Parallel implementation",
+      "assertion": "Disjoint claims/leases/worktrees, integrated CI and independent reviews",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q34",
+      "title": "Full release closeout",
+      "assertion": "All CAP/scenarios/task evidence, no open release blockers, no owned orphan spend",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q35",
+      "title": "Seven-component composed reference journey",
+      "assertion": "Real Argilla/Axolotl/Inspect/MLflow/vLLM/Temporal/LiteLLM operation and exact component/product lineage Inspect bridge generation settings, route parity and provider-side tool destinations are explicitly verified.",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q36",
+      "title": "One UI without native dashboard dependence",
+      "assertion": "Real ordinary journeys through Factory UI; no vendor admin credentials or required YAML/Python",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q37",
+      "title": "Offline clean install and lifecycle",
+      "assertion": "Clean disconnected install/train/eval/scale/restart/upgrade/restore from complete approved bundle",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q38",
+      "title": "Cross-component authority and synchronization",
+      "assertion": "Forged vendor tags/responses cannot approve; outages/replays preserve correct evidence and identity",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q39",
+      "title": "Internal boundary and runtime independence",
+      "assertion": "Actual routing/telemetry denial; no Factory runtime dependency on OpenHands",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q40",
+      "title": "Composed recovery and lifecycle",
+      "assertion": "Restore component metadata/annotations/artifacts/grants and upgrades without unsafe lineage or duplicate effects",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q41",
+      "title": "Selected existing executor and embedded R1 controls",
+      "assertion": "Actual selected executor, R1_EMBEDDED digest and separate validation; file-only path works with no external skill or optional agent platform. Additional skill/OpenHands conformance is claimed only with actual optional selection and evidence.",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q42",
+      "title": "Safe concurrent implementation",
+      "assertion": "Real isolated overlap, write/lease fencing, bounded spend and independent integrated CI",
+      "required": true,
+      "status": "NOT_TESTED"
+    },
+    {
+      "id": "Q43",
+      "title": "Full-product/profile release matrix",
+      "assertion": "Original/new scope retained; profile-only evidence cannot pass full release; positive and denial assertions distinguished",
+      "required": true,
+      "status": "NOT_TESTED"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "CAP-01",
+      "title": "Standalone private UI/API, enterprise identity, tenancy, audit",
+      "minimum_evidence": "Two-organization real OIDC/RBAC journey",
+      "implementation_tasks": [
+        "FTF-0004",
+        "FTF-H003",
+        "FTF-H033",
+        "FTF-H029"
+      ],
+      "qualification_scenarios": [
+        "Q01",
+        "Q07",
+        "Q08",
+        "Q24",
+        "Q26",
+        "Q27",
+        "Q30"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-02",
+      "title": "Organization LiteLLM discovery, inference, scoped registration",
+      "minimum_evidence": "Real gateway + distinct keys + revocation/fallback tests",
+      "implementation_tasks": [
+        "FTF-H004",
+        "FTF-H005",
+        "FTF-1204"
+      ],
+      "qualification_scenarios": [
+        "Q02",
+        "Q21",
+        "Q22"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-03",
+      "title": "Read-only private GitHub and local repository connectors",
+      "minimum_evidence": "Real private repo and local commit/snapshot",
+      "implementation_tasks": [
+        "FTF-04A31",
+        "FTF-04A32",
+        "FTF-H007"
+      ],
+      "qualification_scenarios": [
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06",
+        "Q25"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-04",
+      "title": "Python and JS/TS static discovery; explicit manual correction",
+      "minimum_evidence": "Multiple-agent monorepo + unresolved custom framework",
+      "implementation_tasks": [
+        "FTF-04A09",
+        "FTF-04A10",
+        "FTF-04A35"
+      ],
+      "qualification_scenarios": [
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-05",
+      "title": "Actual target runtime, mandate and manifests",
+      "minimum_evidence": "Runnable agent + isolated real tool services + drift",
+      "implementation_tasks": [
+        "FTF-H008",
+        "FTF-H009",
+        "FTF-H026"
+      ],
+      "qualification_scenarios": [
+        "Q05",
+        "Q06",
+        "Q16",
+        "Q22"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-06",
+      "title": "Already-tuned models: endpoint, weights, adapter and continuation",
+      "minimum_evidence": "Each distinct path with honest lineage and permissions",
+      "implementation_tasks": [
+        "FTF-H010"
+      ],
+      "qualification_scenarios": [
+        "Q07"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-07",
+      "title": "Upload JSONL/JSON/CSV/XLSX, S3-compatible, PostgreSQL, REST/trace data sources",
+      "minimum_evidence": "Mapping, authorization, immutable snapshot and interruption",
+      "implementation_tasks": [
+        "FTF-H011",
+        "FTF-H012",
+        "FTF-0502",
+        "FTF-0503",
+        "FTF-0504",
+        "FTF-0505"
+      ],
+      "qualification_scenarios": [
+        "Q08",
+        "Q09",
+        "Q31"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-08",
+      "title": "Four-way data-purpose isolation and source lifecycle",
+      "minimum_evidence": "Negative access/leakage/deletion tests",
+      "implementation_tasks": [
+        "FTF-H013",
+        "FTF-H020"
+      ],
+      "qualification_scenarios": [
+        "Q17",
+        "Q31"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-09",
+      "title": "Real local NVIDIA LoRA/QLoRA and private Kubernetes workers",
+      "minimum_evidence": "Both provision/train/recover/serve paths",
+      "implementation_tasks": [
+        "FTF-H014",
+        "FTF-H015",
+        "FTF-0803",
+        "FTF-0804",
+        "FTF-0716"
+      ],
+      "qualification_scenarios": [
+        "Q10",
+        "Q11",
+        "Q13",
+        "Q14",
+        "Q15",
+        "Q25"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-10",
+      "title": "One managed customization provider",
+      "minimum_evidence": "Bedrock real supported model customization, invocation, cleanup",
+      "implementation_tasks": [
+        "FTF-H036"
+      ],
+      "qualification_scenarios": [
+        "Q12",
+        "Q21",
+        "Q32",
+        "Q34"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-11",
+      "title": "Deterministic/agent/judge evaluation and sealed final qualification",
+      "minimum_evidence": "Complete scenarios, statistics and judge audit",
+      "implementation_tasks": [
+        "FTF-H020",
+        "FTF-H021",
+        "FTF-H022"
+      ],
+      "qualification_scenarios": [
+        "Q16",
+        "Q17",
+        "Q18"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-12",
+      "title": "Registry, private vLLM, target-product/LiteLLM adoption",
+      "minimum_evidence": "Signed artifacts, route identity, session canary/rollback",
+      "implementation_tasks": [
+        "FTF-H024",
+        "FTF-H025",
+        "FTF-H026"
+      ],
+      "qualification_scenarios": [
+        "Q05",
+        "Q06",
+        "Q20",
+        "Q21",
+        "Q22"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-13",
+      "title": "Cheapest tested passing selection and billing reconciliation",
+      "minimum_evidence": "Real alternatives, all costs and uncertainties",
+      "implementation_tasks": [
+        "FTF-H018",
+        "FTF-H019",
+        "FTF-H023"
+      ],
+      "qualification_scenarios": [
+        "Q15",
+        "Q19",
+        "Q32"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-14",
+      "title": "Strict private security boundary",
+      "minimum_evidence": "Full data-path/egress/CI/tenant tests",
+      "implementation_tasks": [
+        "FTF-H003",
+        "FTF-H006",
+        "FTF-H007",
+        "FTF-H027"
+      ],
+      "qualification_scenarios": [
+        "Q01",
+        "Q03",
+        "Q04",
+        "Q23",
+        "Q24",
+        "Q25"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-15",
+      "title": "Availability, scale, upgrades, recovery, backups and operator readiness",
+      "minimum_evidence": "Defined workloads, 24h soak, RPO/RTO, incident exercises",
+      "implementation_tasks": [
+        "FTF-H031",
+        "FTF-H032",
+        "FTF-H033"
+      ],
+      "qualification_scenarios": [
+        "Q01",
+        "Q28",
+        "Q29",
+        "Q30"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-16",
+      "title": "Full UI journeys and accessibility",
+      "minimum_evidence": "Real backend Playwright + manual assistive-technology checks",
+      "implementation_tasks": [
+        "FTF-H029",
+        "FTF-H030"
+      ],
+      "qualification_scenarios": [
+        "Q07",
+        "Q08",
+        "Q27"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-17",
+      "title": "Safe parallel implementation and protected CI",
+      "minimum_evidence": "Task/DAG/lease evidence + failing-gate tests",
+      "implementation_tasks": [
+        "FTF-H001",
+        "FTF-H028",
+        "FTF-H034"
+      ],
+      "qualification_scenarios": [
+        "Q26",
+        "Q33",
+        "Q34"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-18",
+      "title": "At least one independently qualified fine-tuned output",
+      "minimum_evidence": "New weights, real final evaluation, real LiteLLM-routed use",
+      "implementation_tasks": [
+        "FTF-H035",
+        "FTF-H036"
+      ],
+      "qualification_scenarios": [
+        "Q10",
+        "Q12",
+        "Q21",
+        "Q32",
+        "Q34"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-19",
+      "title": "Seven selected reused components integrated internally",
+      "minimum_evidence": "Actual composed operation, version identity, recovery and tracking/review integrity",
+      "implementation_tasks": [
+        "FTF-R001",
+        "FTF-R002",
+        "FTF-R003",
+        "FTF-R004",
+        "FTF-R005",
+        "FTF-R006",
+        "FTF-R008",
+        "FTF-R010",
+        "FTF-R013",
+        "FTF-R017",
+        "FTF-R018"
+      ],
+      "qualification_scenarios": [
+        "Q35",
+        "Q38",
+        "Q40"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-20",
+      "title": "Fully internal runtime and disconnected lifecycle profile",
+      "minimum_evidence": "Offline clean install/lifecycle, complete dependencies, forbidden external calls and honest profile status",
+      "implementation_tasks": [
+        "FTF-R001",
+        "FTF-R008",
+        "FTF-R009",
+        "FTF-R010",
+        "FTF-R011",
+        "FTF-R013",
+        "FTF-R017",
+        "FTF-R018"
+      ],
+      "qualification_scenarios": [
+        "Q37",
+        "Q39",
+        "Q43"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    },
+    {
+      "id": "CAP-21",
+      "title": "Unified Factory governance and SDLC-controlled selected executor",
+      "minimum_evidence": "No vendor-dashboard bypass, independent authorization and qualified safe selected coding executor",
+      "implementation_tasks": [
+        "FTF-R001",
+        "FTF-R002",
+        "FTF-R005",
+        "FTF-R006",
+        "FTF-R007",
+        "FTF-R011",
+        "FTF-R012",
+        "FTF-R014",
+        "FTF-R015",
+        "FTF-R016",
+        "FTF-R018"
+      ],
+      "qualification_scenarios": [
+        "Q36",
+        "Q38",
+        "Q41",
+        "Q42"
+      ],
+      "required": true,
+      "status": "NOT_IMPLEMENTED"
+    }
+  ]
+}
