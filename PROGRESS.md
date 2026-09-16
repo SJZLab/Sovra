@@ -1,5 +1,44 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T21:02:23Z
+Updated: 2026-09-16T21:10:00Z
+
+## 2026-09-16 — FTF-R001 (PR #47) — Control plane certification CERTIFIED
+Independent certifier session (session_01MrAN34weU7YzSCe6khm4H4 — does not
+match PR #47's producer session_014i1TTcqPb3qynFFHsBfkvo, confirmed before
+starting). Triggered by the `pull_request.opened` webhook for PR #47;
+checked `docs/certifications/queue.md` and found FTF-R001 the only
+PROVISIONAL item (FTF-0001–0006 and FTF-H001 all already `CERTIFIED` in
+`docs/spec-matrix.yaml`). CI was still `queued` on first read — subscribed
+to PR activity and waited for the real `check_suite.completed` webhook
+event rather than assuming green. Once CI genuinely completed
+(`gate`/`docker-local-stack-integration` both `success` on the PR's actual
+head `924f6985`, `mergeable_state: clean`), merged PR #47 myself (permitted
+under CLAUDE.md's "Do without asking: merge on green + L1 doc
+(PROVISIONAL)" — no other session was doing it), then performed the full
+independent re-verification against the real merged tip in a fresh
+`git worktree`: real `uv sync`/`pnpm install`, both `verification_commands`
+genuinely re-run, full 8-task regression clean, `product_truth_check.py`
+0/0 confirmed legitimate (no `proving_symbol`), `verify_release.py`
+confirmed non-inflated (`7/300`/`NOT READY` before this certification), two
+own fault injections distinct from the producer's own two (widened the
+mutable-tag `pattern`; loosened the release-authority `maxItems`/`type`
+guard — each let the corresponding negative_acceptance case through with
+zero errors until restored), and the real task-packet contract
+(`tools/r1_handoff.py packet FTF-R001`) checked clause by clause, including
+verifying the undisclosed-schema `ExternalRunBinding` gap matches existing
+certified precedent (FTF-0004's `web` exclusion, FTF-H001's contract-stub
+exclusion) rather than accepting the analogy on the producer's word alone.
+Full evidence trail in `docs/certifications/ledger.md`. Set
+`docs/spec-matrix.yaml` FTF-R001 to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED`. Moved FTF-R001 from Provisional to Done in
+`QUEUE.md`; Certified count now 8/300, Provisional 0. Product-true stays 0
+(FTF-R001 has no proving_symbol — architecture/schema freeze, no live
+product-runtime caller yet). Next dependency-ready item per
+`tools/r1_handoff.py packet`: none currently unblocked besides the
+FTF-0101/FTF-0102 pair, both still blocked on the open new-runtime-
+dependency owner ask (see QUEUE.md "Owner actions") — not claimed by this
+certifier session, since certification is this session's entire job (per
+CLAUDE.md "Relay is execution-only" / this session's own CERTIFY-only
+mandate).
 
 ## 2026-09-16T21:02:23Z — FTF-R001 implemented (Provisional, PR #47 opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
