@@ -96,3 +96,62 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   confirmed on the opened PR before merge.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-16 — FTF-0003 — Add test harnesses
+- **PR:** (see QUEUE.md — opened against `main` from `claude/blissful-goodall-ugtklt`)
+- **Commit:** d4482de2cbcdda17000f059886c47b894b680830
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+- **Delivered:** real pytest unit-test harness (Python, scoped to
+  `tests/unit`) and real Vitest unit-test harness (TypeScript, scoped to
+  `apps/web/src` and `packages/shared/src`), each collecting genuine
+  assertions and publishing machine-readable JUnit XML counts; a gate
+  script (`scripts/check_test_harness.py`) enforcing the negative_acceptance
+  clause ("Zero collected tests, focused .only or skipped required test
+  must fail validation"), wired into `.github/workflows/ci.yml` in place of
+  the FTF-0003 TODO placeholder.
+- **Test:** `tests/tasks/test_ftf_0003.py` — 4 fixture-based checks plus a
+  repo-wide clean-run check.
+- **Evidence — shown able to fail (Law 1):**
+  1. Empirically verified (not assumed) pytest's and Vitest's own behavior
+     first: an empty pytest target exits 5 with `tests="0"` in its JUnit
+     XML; an empty Vitest root exits 1 the same way; a `pytest.mark.skip`
+     fixture and a Vitest `.only` fixture both exit 0 on their own (neither
+     runner treats a skip/focus as a failure by itself) but both report the
+     skipped/deselected test's count in JUnit's `skipped` attribute —
+     confirmed by reading the actual generated XML for each case in a
+     scratch directory before writing the gate script.
+  2. `tests/tasks/test_ftf_0003.py` reproduces all four cases as real
+     subprocess calls against in-repo fixtures (not `/tmp`, same rationale
+     as FTF-0002): zero-collected pytest, skipped pytest test, zero-collected
+     Vitest, focused-`.only` Vitest — each shown to make
+     `scripts/check_test_harness.py` exit nonzero with the right message,
+     each with a clean equivalent shown to exit 0.
+  3. Repo-wide: the real `pytest tests/unit`, `vitest run`, and
+     `check_test_harness.py` commands CI invokes are re-run against the
+     actual delivered tests, confirmed clean (3 pytest tests, 2 Vitest
+     tests, 0 skipped either side).
+- **Bugs caught before reaching CI (not assumed away):**
+  1. `pnpm run test -- --reporter=junit --outputFile=...` silently
+     mis-forwards a stray `--` through pnpm's script wrapper and never
+     writes the JUnit file at all — caught by actually running it and
+     checking for the output file, not by trusting the command would work.
+     Fixed by having CI call `pnpm exec vitest run ...` directly.
+  2. `mypy .` failed for real ("Source file found twice under different
+     module names: `product_truth_check` and `scripts.product_truth_check`")
+     once `tests/unit/test_product_truth_check_helpers.py` imported
+     `scripts.product_truth_check` — fixed with `scripts/__init__.py`,
+     re-ran `mypy .` clean afterward.
+- **Certified evidence left untouched:** `tests/test_ftf_0001_monorepo_layout.py`
+  and `tests/tasks/test_ftf_0002.py` (both already independently
+  L2-certified) are deliberately excluded from pytest's `testpaths`
+  (scoped to `tests/unit` only) rather than modified to fit pytest's
+  assertion model — avoids any Law 15 requalification question for their
+  existing certified evidence. Both were re-run directly after this
+  change and still pass exactly as before.
+- **Negative_acceptance — "remove template sample tests":** no scaffolding
+  boilerplate test files were introduced; `pnpm add -Dw vitest` added no
+  default sample test, and the two new `.test.ts` files each test a real
+  (if currently trivial) exported constant, not a template placeholder.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.

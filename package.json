@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "Sovra (Model Factory) — JS/TS workspace root",
+  "type": "module",
   "workspaces": [
     "apps/web",
     "packages/shared"
@@ -11,13 +12,15 @@
   "scripts": {
     "lint": "eslint .",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,cjs}\" \"apps/web/package.json\" \"packages/shared/package.json\" \"package.json\"",
-    "typecheck": "tsc --build --pretty false"
+    "typecheck": "tsc --build --pretty false",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^9.11.1",
     "eslint": "^9.11.1",
     "prettier": "^3.3.3",
     "typescript": "^5.6.2",
-    "typescript-eslint": "^8.7.0"
+    "typescript-eslint": "^8.7.0",
+    "vitest": "^5.0.1"
   }
 }

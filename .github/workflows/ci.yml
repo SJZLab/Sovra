@@ -58,10 +58,14 @@ jobs:
           pnpm run typecheck
       - name: FTF-0002 negative-test proof (checks catch real defects)
         run: python3 tests/tasks/test_ftf_0002.py
-      # PLACEHOLDER — FTF-0003 (test harnesses) defines the real unit-test
-      # command here (pytest / Playwright). Zero E2E in Tier 1.
-      - name: Unit tests
-        run: 'echo "TODO: fill once FTF-0003 lands (test harness)"'
+      - name: Python unit tests (FTF-0003)
+        run: uv run pytest tests/unit --junitxml=reports/pytest-junit.xml -ra
+      - name: TypeScript unit tests (FTF-0003)
+        run: pnpm exec vitest run --reporter=junit --outputFile=reports/vitest-junit.xml
+      - name: FTF-0003 negative-acceptance gate (zero-tests / skipped / focused)
+        run: python3 scripts/check_test_harness.py --junit reports/pytest-junit.xml --junit reports/vitest-junit.xml
+      - name: FTF-0003 negative-test proof (harness catches real defects)
+        run: python3 tests/tasks/test_ftf_0003.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
