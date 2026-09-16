@@ -46,16 +46,25 @@ def psql(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
 
 
 def poll_health(expect_ready: bool, timeout_seconds: float = 120.0) -> dict:
+    """`urlopen` raises `HTTPError` for the 503 the health endpoint returns
+    when unhealthy — that response still carries the real JSON body (the
+    whole point of this poll), so it must be read from the exception too,
+    not treated as an opaque connection failure."""
     deadline = time.monotonic() + timeout_seconds
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(HEALTH_URL, timeout=3) as resp:  # noqa: S310
                 body = json.loads(resp.read())
-                if body["ready"] == expect_ready:
-                    return body
+        except urllib.error.HTTPError as exc:
+            body = json.loads(exc.read())
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             last_error = exc
+            time.sleep(2)
+            continue
+        if body["ready"] == expect_ready:
+            return body
+        last_error = RuntimeError(f"unexpected body: {body}")
         time.sleep(2)
     raise TimeoutError(
         f"health endpoint never reported ready={expect_ready} (last error: {last_error})"
