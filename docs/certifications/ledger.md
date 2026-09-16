@@ -201,3 +201,86 @@ corrected 2026-09-15.
   real CI on the actual merged head, no regression to prior certified
   evidence, and the delivered work matches the real contract's
   acceptance/negative_acceptance clauses. Certified L2-CERTIFIED.
+
+## FTF-0005 — Configuration system (repr secret-redaction fix, re-certification)
+- Criterion ID: FTF-0005
+- PR: https://github.com/SJZLab/Sovra/pull/30 (`relay/ftf-0005-fix-repr-redaction`
+  → `main`)
+- Merge commit: 5f5a34d803a76e3261c8cc860bd5f21cd8290424
+- Validated-by: session https://claude.ai/code/session_016Y23GYB47qB8ExZNhH16Wn
+  (session-ID comparison performed and recorded before this entry: both
+  commits on PR #30 — 9f2dcbca6866871bf17edf68ea02fed7b61748ad and
+  65824c56879b80e012f19c4b4f9b9e8b0098f5fe — carry
+  `Claude-Session: .../session_012mAtoqKYzA7PiXbkGkD7rY`; this session's ID
+  does not match, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-16
+- Background: PR #28 (original FTF-0005 implementation) was reviewed and
+  NOT certified (PR #29, session_01WjQKEb87DwDx51YLNRxT6o) — a real,
+  independently-reproduced defect: `Settings.__repr__` redacted
+  `database_url`'s embedded userinfo via `_redact_url()` but not
+  `litellm_gateway_url`'s, so an accepted gateway URL with embedded
+  credentials had its password echoed verbatim by `repr(settings)`. PR #30
+  is the producer's fix for exactly that finding.
+- Evidence independently re-verified this session, not taken on the PR's
+  own word:
+  1. Session-ID check performed first, before any other step (see above) —
+     independent of the producer session that authored both PR #28 and
+     this fix.
+  2. Read the full PR diff (`pull_request_read get_diff`): the only
+     production-code change is one line —
+     `apps/api/app/config/configuration_system.py:210` now applies
+     `_redact_url()` to `litellm_gateway_url` in `__repr__`, exactly
+     matching how `database_url` was already handled; plus one new test
+     case in `test_sensitive_values_absent_from_errors_and_repr`
+     (`tests/tasks/test_ftf_0005.py`) constructing a valid `Settings` with
+     an accepted gateway URL carrying embedded credentials and asserting
+     the password is absent from `repr(settings)`. Scope matches exactly
+     what PR #29's review required — no unrelated changes.
+  3. Fetched GitHub Actions run 35087235376 directly via the Actions API
+     (not the PR body's claim): workflow `CI`, event `pull_request`,
+     head_sha `65824c56879b80e012f19c4b4f9b9e8b0098f5fe` (confirmed via
+     `pull_request_read` to be PR #30's actual head), conclusion
+     `success` — a genuine run, not a 0-job parse failure.
+  4. Performed my own fault injection on the checked-out PR head, not the
+     producer's claimed evidence: programmatically reverted the fix
+     (`litellm_gateway_url={self.litellm_gateway_url!r}` restored, raw/
+     unredacted) and re-ran `tests/tasks/test_ftf_0005.py` — genuine
+     failure, exactly the new check (`an accepted gateway URL's embedded
+     password never appears in Settings' repr`), the other 9 checks
+     stayed green. Restored the fix from a pre-edit copy, `diff` confirmed
+     byte-identical, re-ran — clean (10/10 pass). This independently
+     reproduces the exact defect PR #29 found and confirms the fix closes
+     it.
+  5. Ran `python3 scripts/product_truth_check.py --fail-on-unwired`:
+     `0/0 product-true`, exit 0 — legitimate per CONTROL_PLANE_MODES.md
+     CERTIFY step 4, since `docs/spec-matrix.yaml`'s FTF-0005 entry has
+     `proving_symbol: ''` (no live caller wires this module into a running
+     service yet — no `apps/api/app/main.py` exists, same rationale
+     already established for FTF-0002/0003/the original FTF-0005 review).
+  6. Ran `ruff check .` / `ruff format --check .` / `mypy .` locally:
+     found 2 pre-existing `UP042` findings and 4 pre-existing
+     format-diffs (including `configuration_system.py`, but at
+     lines 92-95, not the line this PR touches) plus 2 pre-existing mypy
+     `import-untyped` findings for `yaml`. Verified these are **not**
+     introduced by this PR: checked out `origin/main` (pre-PR #30) into
+     the same working tree and re-ran the identical commands — identical
+     findings, identical files, identical line numbers. Pre-existing,
+     out of scope for this fix, not a certification blocker; the real
+     gate is CI (`gate` job), confirmed green above on the actual head.
+  7. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-0005 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (resolved to
+     `docs/implementation/task-packets/FTF-0005.md`) and checked the fix
+     against it: negative_acceptance ("sensitive values absent from
+     errors") together with the module's own docstring/`__repr__` comment
+     ("Secret-shaped fields and URL userinfo never appear in
+     logs/tracebacks") is exactly the property this fix restores for the
+     `litellm_gateway_url` field — met.
+  8. Merged PR #30 myself (`merge_pull_request`, `expectedHeadSha` pinned
+     to the verified head) once all of the above held up — merge commit
+     `5f5a34d803a76e3261c8cc860bd5f21cd8290424`.
+- Conclusion: the reported repr secret-redaction defect is genuinely
+  fixed — independently reproduced both the original failure (fix
+  reverted) and the passing fix, real CI green on the actual head, no
+  regression, contract clauses met. `certification_state` moved from
+  `PROVISIONAL` to `CERTIFIED`, `proof_state` to `L2-CERTIFIED`.

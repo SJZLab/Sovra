@@ -1,5 +1,25 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T10:45:00Z
+Updated: 2026-09-16T11:05:00Z
+
+## 2026-09-16 — FTF-0005 CERTIFIED (repr secret-redaction fix)
+Independent Control-plane certification (`session_016Y23GYB47qB8ExZNhH16Wn`,
+triggered by PR #30's `pull_request.opened` webhook). Session-ID checked
+against both PR #30 commits (`session_012mAtoqKYzA7PiXbkGkD7rY`) — no
+overlap, independent. Re-read the diff (one production-code line plus one
+new test case), fetched the real GitHub Actions run tied to the exact PR
+head SHA (`success`), independently reproduced the original repr defect
+via fault injection (reverted the fix locally, the new check failed for
+real; restored it, byte-identical, 10/10 pass), confirmed
+`product_truth_check.py`'s `0/0` is legitimate (no proving_symbol yet),
+confirmed a handful of pre-existing local lint/mypy findings are on
+`main` already and unrelated to this diff, and checked the fix against
+FTF-0005's real contract (`tools/r1_handoff.py packet FTF-0005`).
+Merged PR #30 (merge commit `5f5a34d803a76e3261c8cc860bd5f21cd8290424`),
+set `docs/spec-matrix.yaml` FTF-0005 to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, appended
+`docs/certifications/ledger.md`, updated `QUEUE.md` (Certified 3→4,
+Provisional 1→0, Done section). Full evidence trail in
+`docs/certifications/ledger.md`.
 
 ## 2026-09-16 — FTF-0005 repr secret-redaction defect fixed (still Provisional)
 An independent Control-plane session (`session_01WjQKEb87DwDx51YLNRxT6o`,
