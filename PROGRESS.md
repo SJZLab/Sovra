@@ -1,4 +1,24 @@
 # PROGRESS — Sovra
+Updated: 2026-09-16T00:00:00Z
+
+## 2026-09-16 — Section 85 gap resolved
+Owner supplied `FINE_TUNING_FACTORY_RELEASE_1.md` (Release 1 master spec, root of repo) and
+`tools/r1_handoff.py` (its own Section 86 helper) via PR #15's branch
+(`claude/blissful-goodall-wzvd2d`). Verified before trusting: read the helper in full (stdlib-
+only, no network/subprocess/eval/exec, safe writes); confirmed the committed spec file's
+`sha256sum` matches the tool's own reported `source_sha256`
+(`5d3c183ff11b85718d5a3bbb08188868c455464202bb4898f6ddde66013eb664`); ran `validate --self-test`
+(PASS, 300/300 tasks, 43 scenarios, 21 capabilities, acyclic, 16/16 negative fixtures rejected);
+ran `bootstrap` and inspected every file it wrote (plain JSON/Markdown only, nothing executable,
+all NOT_STARTED); ran `packet FTF-0002` and confirmed it's a genuine per-task DoD, not a
+placeholder. Updated `docs/architecture/CRITERION_MAPPING.md`, `CLAUDE.md` (Read-first + re-
+pinned hash), `QUEUE.md` (relay now resolves DoDs via the tool) and `BLOCKER.md` (resolved,
+history kept). Did not claim or work FTF-0002 itself — doc/tooling only, per instruction; the
+relay picks this queue up on its normal next fire. Certified: 1/300 · Product-true: 0
+(unchanged this shift).
+
+## Prior entries
+
 Updated: 2026-09-15T00:00:00Z · Shift: this entry supersedes stale "Shift 1"
 text below — several shifts ran between the last time this file was
 written and now without updating it (see git log for the real record;

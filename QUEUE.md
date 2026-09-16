@@ -19,22 +19,17 @@ CERTIFIED without counting toward product-true)
   resolved without evidence of the watchdog trigger and the 08:30/19:30
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
-- 2026-09-15: Relay is blocked past FTF-0001 — every next-queued item
-  (FTF-0002 first, per dependency order below) needs its full Section 85
-  acceptance/negative-acceptance/verification contract
-  (`docs/TASK_INDEX.md` "Execution interpretation"), which has never been
-  supplied to this repo (confirmed: `docs/TASK_INDEX.md` and
-  `docs/architecture/CRITERION_MAPPING.md` unchanged since the initial
-  scaffold commit `f9c2ccd`). Owner or control plane must either supply
-  real per-task contracts, or write a decided, sliced DoD directly into
-  this file's "Active" section for one task (per CLAUDE.md "Relay is
-  execution-only"), before the relay can pick up any further item without
-  improvising. See BLOCKER.md for full detail.
+- 2026-09-15: RESOLVED 2026-09-16 — see docs/architecture/CRITERION_MAPPING.md
+  "Known gap — RESOLVED". Removed per "remove the ask the moment the owner
+  responds."
 
 ## Active (relay works this)
-Nothing active — FTF-0001 merged and certified (see Done below). Next
-unblocked item is FTF-0002 (lint/type checks) once SOURCE_ROOTS is
-re-derived from the real layout landed by FTF-0001.
+FTF-0002 (Add formatting/lint/type checks) — dependency FTF-0001 satisfied
+and certified. Real DoD resolved via
+`python tools/r1_handoff.py packet FTF-0002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+→ `docs/implementation/task-packets/FTF-0002.md`. Not claimed/worked this
+shift per the sharing session's explicit instruction (doc/tooling PR only,
+let the relay pick it up on its normal next fire).
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -48,10 +43,15 @@ here — two copies drift. Read order for early work:
    on it transitively)
 5. FTF-H001/H002 (release-scope freeze) before anything claims DONE
 
-Most task rows cite a `requirements` (CAP-##/AF-##) and `scenarios` (Q##) pair
-whose full acceptance contract lives outside this scaffold (see
-docs/architecture/CRITERION_MAPPING.md "Known gap"). Relay: if a picked item's
-full contract isn't available to you, write BLOCKER.md — do not improvise.
+Every task's real acceptance/negative-acceptance/verification-command contract
+now lives in `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolvable on demand. Relay:
+before claiming any task, run
+`python tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+to get its real DoD — read the generated
+`docs/implementation/task-packets/<task-id>.md`, not just the title in
+`docs/TASK_INDEX.md`. Write BLOCKER.md only if that command itself fails
+(unknown task ID, hash-mismatch on a tampered/edited plan file, or similar) —
+not merely because the task looked title-only elsewhere.
 
 ## Blocked
 

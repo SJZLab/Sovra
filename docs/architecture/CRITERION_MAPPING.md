@@ -28,7 +28,37 @@ time). CAP-19/20/21 (the seven-component reuse architecture and runtime-profile 
 map onto the 18 `FTF-R0##` rows; every other CAP maps onto the `FTF-0###` / `FTF-04A##` /
 `FTF-H0##` rows that cite it.
 
-## Known gap
+## Known gap — RESOLVED 2026-09-16
+
+The gap described below (Section 85 content never supplied) is closed. The owner supplied
+`FINE_TUNING_FACTORY_RELEASE_1.md` — the single-file Release 1 master specification, root of
+the repo — plus `tools/r1_handoff.py`, a stdlib-only helper extracted from the master doc's own
+Section 86. Together they resolve this structurally for all 300 tasks, not just FTF-0001:
+
+- `FINE_TUNING_FACTORY_RELEASE_1.md` §85 is the canonical embedded task ledger: every FTF-####
+  row's real `acceptance`, `negative_acceptance`, `verification_commands`, `files`,
+  `dependencies` and binding section text — the exact content `docs/TASK_INDEX.md` pointed at
+  and that was missing from this repo since scaffold.
+- `tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md` resolves one
+  task's full contract on demand into `docs/implementation/task-packets/<task-id>.md` — verified
+  end to end for FTF-0002 (2026-09-16): real acceptance/negative-acceptance/verification detail,
+  not a placeholder. `validate --self-test` passes on the committed file (300/300 tasks, 43
+  scenarios, 21 capabilities, dependency graph acyclic, 16/16 negative structural cases
+  correctly rejected); `bootstrap` writes only plain JSON/Markdown spec/control files, verified
+  by direct inspection, nothing executable and no claim of completion.
+- Per this master doc's own Authority/Section 84.1, it supersedes `SPEC.md`,
+  `docs/architecture/ARCHITECTURE.md`, `docs/architecture/REFERENCE_REPOSITORIES.md` and
+  `docs/TASK_INDEX.md` as far as any conflict goes — those four were excerpts of this single
+  source. This mapping doc (task ID scheme, CAP-##/FTF-#### relationship) remains accurate and
+  is not itself superseded; it should be read alongside the master spec, not replaced by it.
+
+The relay's instruction is updated accordingly (see QUEUE.md): run
+`python tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md` to get a
+task's real DoD before claiming it; write BLOCKER.md only if that command itself fails (unknown
+task ID, hash-mismatch on a tampered plan file, or similar) — not merely because the task looked
+title-only in `docs/TASK_INDEX.md`.
+
+### Original gap (superseded, kept for history)
 
 The task index gives dependency graph, requirements, and scenario tags per task — not the
 acceptance/negative-acceptance/verification-command detail Groundwork's DoD needs per item
