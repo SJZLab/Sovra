@@ -1,5 +1,65 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T15:00:00Z
+Updated: 2026-09-16T15:05:00Z
+
+## 2026-09-16 — FTF-0006 independently certified (Control plane, CERTIFY mode)
+Scheduled control-plane certifier shift, triggered by the `pull_request.opened`
+webhook for PR #39. Read `docs/certifications/queue.md`: one pending item,
+FTF-0006 (Observability foundation), matching the just-opened PR. Session-ID
+check: PR #39's commits (91eeff1, 7d5834f, and its final head 0970fa8) all
+carry `Claude-Session: .../session_01GvzemvrJeMmGiZsAAPK5m1` — this session
+(`session_01LPY7Wy6ASA6BiQnvu9eyvF`) does not match, independent certifier.
+
+Re-read the full diff. Checked out the PR's actual final head (`0970fa8` —
+one commit ahead of what the PR body originally reported, confirmed live via
+`pull_request_read`) into an isolated git worktree and independently: ran
+`tests/tasks/test_ftf_0006.py` (10/10 pass); performed my own fault
+injection distinct from the producer's own (broke the `identity`
+safe-identifier regex rather than the bounded-label check — the
+content-exclusion check failed for real, restored byte-identical, re-ran
+clean); ran the full regression suite fresh (`uv sync`, `pnpm install
+--frozen-lockfile`: ruff/mypy/pytest/eslint/tsc/vitest all clean, no
+regression to FTF-0001–0005's certified evidence); ran
+`product_truth_check.py --fail-on-unwired` myself (`0/0`, legitimate —
+`proving_symbol: ''`); verified `CLAUDE.md.sha256` matches (no drift);
+fetched GitHub Actions run 35112030663 directly via the API (not the PR's
+own claim) — both `gate` and `docker-local-stack-integration` jobs
+`success` on the confirmed real final head SHA, and read the `gate` job's
+log directly, showing the genuine test execution and a real `0/0
+product-true` line. Pulled FTF-0006's real contract via
+`python tools/r1_handoff.py packet FTF-0006 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and checked delivered work against its
+actual acceptance/negative_acceptance clauses (see ledger entry for detail).
+
+Found one disclosed (not hidden) residual gap: the `identity` field's
+safe-identifier format boundary cannot distinguish a legitimate slug-style
+ID from an opaque token of the same shape. Unlike the FTF-0005 PR #28
+defect (an in-scope, accepted field silently violating the module's own
+stated redaction contract), this module never claims to close that case —
+its own docstring, validator error message, and test comment all disclose
+the limitation honestly, and no live caller exists yet to exploit it. Not
+a blocker: recorded as a required follow-up in `docs/spec-matrix.yaml`'s
+notes for whichever task first wires a real caller into this seam.
+
+The PR had already been merged on green by the relay (squash commit
+`268186bd5e70032a6c563796910059ab2684b684` on `main`) per CLAUDE.md's
+"Do without asking: merge on green + L1 doc (PROVISIONAL)" — this
+session did not merge it, only certified the already-merged evidence.
+Certified: updated `docs/spec-matrix.yaml` (FTF-0006:
+certification_state=CERTIFIED, proof_state=L2-CERTIFIED,
+evidence_hash=268186b, notes carry the disclosed residual-gap follow-up),
+appended a signed `docs/certifications/ledger.md` entry, updated
+`QUEUE.md` (Provisional -> Done, Certified bumped 5 -> 6, Provisional
+count 1 -> 0) and this file. Per Law 4, this is independent certification,
+not self-certification — this session authored none of PR #39's commits
+and did not merge it.
+
+Docs/certifications/queue.md's own tracking entries are historical
+evidence for the PROVISIONAL submission and are left as-is (append-only
+history), same convention as every prior certified item in that file.
+
+Next candidate per dependency order (QUEUE.md "Queue" section):
+FTF-0101+ (identity/tenancy/RBAC/audit, CAP-01) — not this session's job;
+CERTIFY mode does not propose or start new work.
 
 ## 2026-09-16 — FTF-0006 (PR #39) merged to main as PROVISIONAL
 Same relay shift as the FTF-0006 implementation entry below. Subscribed to
