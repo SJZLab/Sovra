@@ -23,12 +23,27 @@ counting toward product-true).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-Nothing active — FTF-0005 was independently certified 2026-09-16 (see
-"Done" below and docs/certifications/ledger.md). Next queued item per the
-dependency order below is FTF-0004.
+FTF-0004 has implementation work already pushed to
+`claude/wizardly-fermat-3mh1pd` (PR #35), but per Control plane's
+2026-09-16 review (docs/certifications/queue.md, "Control plane review —
+2026-09-16 — NOT CERTIFIED (not in a certifiable state)") that PR is
+**not mergeable** (`mergeable_state: dirty` — real conflicts in
+`PROGRESS.md`/`QUEUE.md` only, not code, because the branch's own claimed
+rebase onto current `main` didn't actually happen: its merge-base
+predates PR #30/#32) and **CI has never run on it** (0 check runs).
+Next relay shift on FTF-0004: fetch and merge/rebase the actual current
+`main` into `claude/wizardly-fermat-3mh1pd`, resolve the two tracking-doc
+conflicts, push, and let the full CI suite (including the new
+`docker-local-stack-integration` job) actually run and go green before
+resubmitting for certification. Do not open a new/duplicate PR for this —
+fix and push to the existing branch/PR #35.
 
 ## Provisional (awaiting Control plane L2 certification)
-(none)
+(none on `main` — FTF-0004's PROVISIONAL claim exists only inside
+unmerged PR #35's own branch copy of spec-matrix.yaml/this file; `main`'s
+own spec-matrix.yaml still correctly shows FTF-0004 as
+`certification_state: NONE` / `implementation_state: ABSENT` until that
+branch actually merges. See Active, above.)
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
