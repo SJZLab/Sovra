@@ -2600,16 +2600,22 @@ FTF-1812:
   proving_symbol: ''
   proving_test: ''
 FTF-H001:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Executable specification and gate bootstrap
-  evidence_hash: ''
-  implementation_state: ABSENT
+  evidence_hash: 6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3
+  implementation_state: IMPLEMENTED
   notes: kind=audit_hardening; requirements=AF-31, AF-35; scenarios=Q26, Q33, Q34; deps=FTF-0001, FTF-0002,
-    FTF-0003
-  proof_state: UNPROVEN
+    FTF-0003; scripts/validate_spec.py + scripts/verify_task.py + scripts/verify_release.py resolve
+    spec/verification-map.json for real, currently re-executable per-task commands; a task absent
+    from the map is BLOCKED, never a fabricated pass; packages/contracts/openapi/18-interface.yaml
+    and jsonschema/18-domain.schema.json (listed in the task packet's `files`) deliberately not
+    created — no acceptance/negative_acceptance clause requires them and no real endpoint exists
+    yet to back them, same disclosed-scope-limitation precedent as FTF-0004's `web` exclusion;
+    tracked as a follow-up for whichever task first needs a real API contract at that path
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h001.py
 FTF-H002:
   certification_state: NONE
   criticality: MUST

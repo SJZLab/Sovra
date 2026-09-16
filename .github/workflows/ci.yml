@@ -5,6 +5,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # FTF-H001's validate_spec.py resolves every certified task's
+          # evidence commit via `git cat-file -e` — actions/checkout's
+          # default shallow clone (depth 1) only fetches the tip commit,
+          # so every older evidence commit would spuriously read as
+          # stale_commit. Full history is required for that check to mean
+          # anything.
+          fetch-depth: 0
       - name: Verify CLAUDE.md.sha256
         run: |
           if [ ! -f CLAUDE.md ]; then
@@ -72,6 +80,10 @@ jobs:
         run: python3 tests/tasks/test_ftf_0004.py
       - name: FTF-0006 negative-test proof (observability foundation catches real defects)
         run: python3 tests/tasks/test_ftf_0006.py
+      - name: FTF-H001 executable specification validator
+        run: python3 scripts/validate_spec.py --strict
+      - name: FTF-H001 negative-test proof (gate bootstrap catches real defects)
+        run: python3 tests/tasks/test_ftf_h001.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
