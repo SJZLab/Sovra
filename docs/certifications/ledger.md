@@ -486,3 +486,133 @@ corrected 2026-09-15.
   tokens shaped like slug IDs) that is honest, scoped, and inert while no
   live caller exists — tracked as a follow-up rather than a blocker.
   Certified L2-CERTIFIED.
+
+## FTF-H001 — Executable specification and gate bootstrap
+- Criterion ID: FTF-H001
+- PR: https://github.com/SJZLab/Sovra/pull/43 (`claude/wizardly-fermat-43jlvy`
+  → `main`), merged as `be6494c3ec97615417f9f1e9fabad9dfa83feaf4`. The
+  follow-up PR #44 on the same branch touched only `PROGRESS.md` (a
+  tracking-doc note recording PR #43's PROVISIONAL merge) — confirmed via
+  `git diff be6494c 37e68bb --stat`, no code or spec-matrix/queue change,
+  so it does not affect this certification.
+- Merge commit: 6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3 (implementation;
+  `evidence_hash` recorded in `docs/spec-matrix.yaml`)
+- Validated-by: session https://claude.ai/code/session_01AmkjgSrjZzfKJXAYH7f8Hp
+  (session-ID comparison performed and recorded before this entry: all 6
+  commits on PR #43 — 6a1abc0, d4301b4, de41d12, 3bd23c9, 86ed2bc, ca53fe5
+  — carry `Claude-Session: .../session_01FJDW152aaaSm3uNPj9NCXH`; this
+  session's ID does not match, so this is an independent certification,
+  not self-certification)
+- Date: 2026-09-16
+- Evidence independently re-verified this session, not taken on the PR
+  description's or queue.md entry's word:
+  1. Confirmed `docs/spec-matrix.yaml` on `main` showed
+     FTF-0001–FTF-0006 all `CERTIFIED`/`L2-CERTIFIED` and FTF-H001 as the
+     sole `PROVISIONAL`/`L1-PROVEN` entry, matching
+     `docs/certifications/queue.md`'s bottom entry and `ledger.md`'s own
+     last prior entry (FTF-0006).
+  2. Confirmed `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md` on the
+     merged tree — no drift.
+  3. Confirmed via GitHub's own data (not the PR body's claim) that PR
+     #43's actual final head is `ca53fe5801f7f78ea42445aea1b6431c90d1754f`
+     and that `pull_request_read get_check_runs` reports both `gate` and
+     `docker-local-stack-integration` `completed`/`success` tied to that
+     exact head SHA. Confirmed `git diff be6494c ca53fe5 --stat` is empty
+     — the merge commit on `main` is tree-identical to the CI-verified PR
+     head, not a manual re-edit.
+  4. Read the full delivered diff directly from a clean worktree checkout
+     of the merged `main` tip (`git worktree add --detach`, not trusting
+     the PR body's own description): `scripts/spec_verification.py`
+     (`load_tasks`/`check_structural`/`check_evidence`/`validate`/
+     `verify_task`), `scripts/validate_spec.py`, `scripts/verify_task.py`,
+     `scripts/verify_release.py`, `spec/verification-map.json`, and
+     `tests/tasks/test_ftf_h001.py`. All subprocess calls use argv lists
+     (`shell=False`), no shell-injection surface; an unmapped task or
+     unknown `--stage` returns `BLOCKED`/`FAIL` structurally, never a
+     fabricated `PASS`.
+  5. Set up the real toolchain (`uv sync`, `pnpm install` — neither was
+     present in the fresh checkout) and re-ran every command for real:
+     `python3 scripts/validate_spec.py --strict` → clean; `python3
+     scripts/verify_task.py --task FTF-H001 --stage task` → `PASS` (this
+     task's own two `verification_commands` from its real contract, both
+     genuinely re-run, not assumed). Before installing `pnpm`'s
+     dependencies this same command genuinely `FAIL`ed for a mundane
+     reason (missing `node_modules`, not a code defect) — confirmed by
+     running `tests/tasks/test_ftf_0002.py` directly and seeing the same
+     eslint/tsc failures, then re-confirming clean after `pnpm install`;
+     recorded here as evidence the re-verification was live, not
+     rubber-stamped.
+  6. Ran the full regression set clean on the merged tree: `ruff check .`
+     / `mypy .` / `pytest tests/unit` (3 passed) / `pnpm run lint` /
+     `pnpm run typecheck`, and all 7 task negative-test-proof scripts
+     (`test_ftf_0001_monorepo_layout.py` through `test_ftf_0006.py`, plus
+     the new `test_ftf_h001.py`) each print their own `all checks passed`
+     line.
+  7. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-H001 entry has `proving_symbol: ''` — this is CI/gate tooling,
+     not a live product-runtime path, same disclosed rationale already
+     established for FTF-0002/0003.
+  8. `verify_release.py` run live on the merged tree (before this
+     certification) correctly reported `6/300 required task(s) have
+     live-passing, CERTIFIED evidence` / `NOT READY`, with FTF-H001 itself
+     listed under `FAILED` because its own `certification_state` was
+     still `PROVISIONAL` at that point — proving the release gate is not
+     inflated and correctly requires both live-passing evidence and a
+     real `CERTIFIED` state, not just one or the other.
+  9. **Real fault injection against the tracked module, targeting a
+     different code path than either of the producer's own two fault
+     injections (which corrupted `commit` and `expected_output_contains`
+     in the shipped map file):** disabled the Kahn's-algorithm
+     cycle-detection result in `scripts/spec_verification.py`'s
+     `check_structural` (`if False and seen != len(nodes):`) — re-ran
+     `tests/tasks/test_ftf_h001.py`: exactly the expected check failed
+     for real (`cyclic_dependency fixture (A -> C -> B -> A) is
+     rejected`), all others stayed green. Restored the file
+     byte-identical from a pre-edit copy, confirmed via `diff`, re-ran
+     clean (all checks pass again).
+  10. Pulled the real contract via `python tools/r1_handoff.py packet
+      FTF-H001 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+      delivered work against its actual acceptance/negative_acceptance
+      clauses, not just "tests pass": acceptance clause 1 ("every invalid
+      fixture fails" across missing task/cyclic dependency/duplicate
+      ID/missing scenario/skipped test/stale commit) is met by
+      `test_missing_task_fixture_rejected` /
+      `test_cyclic_dependency_fixture_rejected` /
+      `test_duplicate_id_fixture_rejected` /
+      `test_missing_scenario_fixture_rejected` /
+      `test_skipped_test_fixture_rejected` /
+      `test_stale_commit_fixture_rejected`, each independently reproduced
+      by item 9's fault-injection method in spirit (item 9 itself
+      exercises the cyclic case directly). Acceptance clause 2 ("no full
+      release claim until all mapped scenarios and exact-revision
+      evidence pass") is enforced structurally by `verify_release.py`,
+      confirmed live and unstated in item 8. Acceptance clause 3
+      ("independently protected real verifier inputs... prove the
+      bootstrapped tracker has no fabricated completion evidence") is met
+      by `test_real_certified_task_reverifies_live` (the real FTF-0002
+      map entry re-verified live through the actual CLI against this
+      checkout, not fabricated) and the `stale_commit`/`skipped_test`
+      checks operating against the real shipped map file. Negative
+      acceptance ("zero selected tests or absent external credentials
+      must report blocked/fail rather than pass; preserve original task
+      IDs and expected test counts") is met by
+      `test_negative_acceptance_blocked_not_fabricated_pass`
+      (`verify_task("FTF-DOES-NOT-EXIST", "task")` → `BLOCKED`, never
+      `PASS`) and `test_unknown_stage_rejected`.
+  11. Scope check: `packages/contracts/openapi/18-interface.yaml` and
+      `jsonschema/18-domain.schema.json`, named in the task packet's
+      `files`, are not required by any acceptance/negative_acceptance
+      clause above and no real endpoint exists yet to back them — the
+      queue entry's disclosed exclusion is accurate, not a hidden gap.
+- Conclusion: the L1 evidence holds up under independent re-verification
+  — a fresh fault injection targeting a different code path than the
+  producer's own, the actual CI check-runs and merge-tree identity
+  confirmed via GitHub's own data (not the PR's self-report), the real
+  toolchain installed and every verification command genuinely re-run
+  (catching and resolving one mundane missing-dependency failure along
+  the way, not silently working around it), `product_truth_check.py`'s
+  0/0 and `verify_release.py`'s `6/300`/`NOT READY` both confirmed
+  legitimate and non-inflated, and the delivered work matches the real
+  task-packet contract's acceptance/negative_acceptance clauses item by
+  item. No open defect. Certified L2-CERTIFIED.

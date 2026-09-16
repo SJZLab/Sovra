@@ -2600,7 +2600,7 @@ FTF-1812:
   proving_symbol: ''
   proving_test: ''
 FTF-H001:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Executable specification and gate bootstrap
   evidence_hash: 6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3
@@ -2613,7 +2613,7 @@ FTF-H001:
     created — no acceptance/negative_acceptance clause requires them and no real endpoint exists
     yet to back them, same disclosed-scope-limitation precedent as FTF-0004's `web` exclusion;
     tracked as a follow-up for whichever task first needs a real API contract at that path
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h001.py
 FTF-H002:

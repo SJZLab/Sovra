@@ -1,5 +1,30 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T17:10:00Z
+Updated: 2026-09-16T18:05:00Z
+
+## 2026-09-16 — FTF-H001 (PR #43) — Control plane certification CERTIFIED
+Independent certifier session (session_01AmkjgSrjZzfKJXAYH7f8Hp — does not
+match PR #43's producer session_01FJDW152aaaSm3uNPj9NCXH, confirmed before
+starting). Re-checked `docs/certifications/queue.md` and found FTF-H001 the
+only PROVISIONAL item; confirmed PR #44 on the same branch was a
+`PROGRESS.md`-only tracking note (`git diff be6494c 37e68bb --stat`), no
+code/spec-matrix/queue change, so it does not affect this review. Full
+independent re-verification (fresh worktree at `main`'s merged tip, real
+`uv sync`/`pnpm install`, both `verification_commands` genuinely re-run,
+7-task regression clean, `product_truth_check.py` 0/0 confirmed
+legitimate, `verify_release.py` confirmed non-inflated, an own fault
+injection against `check_structural`'s cycle detection distinct from the
+producer's two, and the real task-packet contract checked clause by
+clause) recorded in `docs/certifications/ledger.md`. Set
+`docs/spec-matrix.yaml` FTF-H001 to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED`. Moved FTF-H001 from Provisional to Done in
+`QUEUE.md`; Certified count now 7/300, Provisional 0. Product-true stays
+0 (FTF-H001 has no proving_symbol — CI/gate tooling, not a live
+product-runtime path). Next dependency-ready item per
+`tools/r1_handoff.py packet`: FTF-0101 or FTF-0102 (both now unblocked —
+FTF-H001 was FTF-0102's last outstanding dependency) — not claimed by
+this certifier session, since certification is this session's entire
+job (per CLAUDE.md "Relay is execution-only" / this session's own
+CERTIFY-only mandate).
 
 ## 2026-09-16 — FTF-H001 (PR #43) merged to main as PROVISIONAL
 Same relay shift as the FTF-H001 implementation entries below. PR
