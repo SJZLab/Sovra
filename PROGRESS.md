@@ -111,13 +111,17 @@ embed its own hash), `docs/certifications/queue.md` (full entry),
 `QUEUE.md` (Active cleared, Provisional entry added, bumped Provisional
 0→1). Certified count unchanged at 6/300 — PROVISIONAL is not certified.
 Per Law 4, did not self-certify. Opened PR #43 against `main`.
-STEP 4(a): stopping here — FTF-H001 is fully L1-PROVEN, awaiting Control
-plane L2 certification (this session is the relay, not the certifier) and
-eventually the L4 gate. Once FTF-H001 certifies, FTF-0102 (Organization/
-workspace schema) becomes the next dependency-ready item — it also
-requires a real local Postgres migration/RLS integration (FTF-0004's
-docker-local-stack), which this sandbox can run locally per FTF-0004's own
-precedent. FTF-0101 (OIDC login) remains blocked behind FTF-0102.
+STEP 4: stopping here for this shift's active work — FTF-H001 is fully
+L1-PROVEN and PROVISIONAL, PR #43 open, CI in flight. This session
+remains subscribed to PR #43 and will merge on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not
+a second self-certification, per Law 4. Once FTF-H001 certifies, FTF-0102
+(Organization/workspace schema) becomes the next dependency-ready item —
+it also requires a real local Postgres migration/RLS integration
+(FTF-0004's docker-local-stack), which this sandbox can run locally per
+FTF-0004's own precedent. FTF-0101 (OIDC login) remains blocked behind
+FTF-0102.
 
 ## 2026-09-16 — FTF-0006 independently certified (Control plane, CERTIFY mode)
 Scheduled control-plane certifier shift, triggered by the `pull_request.opened`
