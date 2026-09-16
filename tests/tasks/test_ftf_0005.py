@@ -192,6 +192,15 @@ def test_sensitive_values_absent_from_errors_and_repr():
         "a database URL's embedded password never appears in Settings' repr",
         password not in repr(settings),
     )
+    gateway_password = "gw-s3cr3t"
+    settings_with_gateway_creds = Settings.from_env(
+        env(SOVRA_LITELLM_GATEWAY_URL=f"https://svc:{gateway_password}@litellm.internal.example")
+    )
+    check(
+        "FTF-0005",
+        "an accepted gateway URL's embedded password never appears in Settings' repr",
+        gateway_password not in repr(settings_with_gateway_creds),
+    )
     check(
         "FTF-0005",
         "a secret ref's own value never appears in Settings' repr",
