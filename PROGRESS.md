@@ -1,5 +1,53 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T04:45:00Z
+Updated: 2026-09-17T05:30:00Z
+
+## 2026-09-17 — Control plane: FTF-H028 CERTIFIED (PR #55 independently verified)
+Autonomous certifier shift, triggered by the PR #55 `opened` webhook. Read
+`docs/certifications/queue.md`: FTF-H028 was the only PROVISIONAL item.
+Session-ID comparison performed before touching anything: all four commits
+on PR #55 (`d502c89`, `183321c`, `813ede7`, `2040620`) carry
+`Claude-Session: .../session_01D4UBNWAuJwWHKpfHwSuV7U`; this session is
+`session_01W88XoZiR5AQjN9kiCQfCbB` — no overlap, independent per Law 4.
+
+At the time of the webhook, PR #55's CI (`gate` and
+`docker-local-stack-integration`) was still `in_progress` — waited for it
+to complete rather than certifying against an unfinished run. Both jobs
+completed `success` on the PR's real head (`2040620`, run 35176632687)
+before certification proceeded. The PR was merged in the interim (by
+`samerzakaria`, human) as commit `1de330d`; `git diff 2040620..1de330d`
+confirmed empty, so the CI-verified head and the merged tree are identical.
+
+Independent re-verification performed (full detail in
+`docs/certifications/ledger.md`'s new FTF-H028 entry): read the diff
+directly; re-ran `tests/tasks/test_ftf_h028.py` (33/33 pass) and the full
+10-task regression set (`ruff`/`mypy`/`eslint`/`tsc` clean, `pytest`/
+`vitest` clean); re-ran `validate_spec.py --strict` and `verify_task.py
+--task FTF-H028 --stage task` (`PASS`); confirmed `verify_release.py`
+non-inflated (`9/300`/`FAILED (1): ['FTF-H028']`/`NOT READY` before this
+edit, `10/300` after); confirmed `product_truth_check.py` stays `0/0`
+legitimately (no `proving_symbol` — CI/gate-tooling layer); independently
+reproduced the live branch-protection 403 finding with this session's own
+`GITHUB_TOKEN`; ran an own fault injection distinct from the producer's two
+(flipped `check_branch_protection`'s 403/404 branch to `PASS` — the test
+suite caught it with exactly 1 failure, restored byte-identical, re-ran
+clean); confirmed the two open items from the prior FTF-H002 review cycle's
+note (stale-SHA vs. missing discrimination; no `BLOCKED_EXTERNAL`-as-`PASS`
+in the composition) directly against the delivered code and tests; pulled
+the real contract via `tools/r1_handoff.py packet FTF-H028` and checked the
+delivered work against its actual acceptance/negative_acceptance clauses.
+
+No defect found. Updated `docs/spec-matrix.yaml` (FTF-H028:
+`certification_state: CERTIFIED`, `proof_state: L2-CERTIFIED`,
+`evidence_hash` kept as the implementation commit `d502c89`, matching the
+existing convention for every prior FTF-H00X/FTF-R00X entry), appended the
+ledger entry, moved FTF-H028 from QUEUE.md "Provisional" to "Done" and
+bumped Certified to 10/300, Provisional to 0.
+
+Certified: 10/300. Provisional: 0. Product-true: 0 (unchanged — FTF-H028
+has no `proving_symbol`, same disclosed rationale as every other
+certified task so far). The 2026-09-16 FTF-0102 new-runtime-dependency
+owner ask and the 2026-09-15 trigger-tooling ask remain open and untouched
+— out of scope for this certification-only shift.
 
 ## 2026-09-17 — FTF-H028 (PR #55) merged to main as PROVISIONAL
 Same relay shift as the FTF-H028 implementation entry below. PR activity
