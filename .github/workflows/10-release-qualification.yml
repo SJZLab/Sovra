@@ -1,0 +1,51 @@
+name: 10 Release Qualification
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Exact release-candidate commit SHA (defaults to the dispatched ref''s tip)'
+        required: false
+        type: string
+permissions:
+  contents: read
+  checks: read
+jobs:
+  release-qualification:
+    # FTF-H028: the protected final aggregator. Section 52: "The aggregator
+    # executes on predecessor failure as well as success" and "Required CI
+    # configuration and policy need an independent CODEOWNERS reviewer; the
+    # implementation agent cannot self-approve changes to gates" -- this
+    # file and scripts/release_evidence_gate.py are both owned in
+    # .github/CODEOWNERS. This is Tier 3 / release-only (CLAUDE.md: "L4
+    # gate passed before PROMOTE... relay never dispatches it") --
+    # workflow_dispatch only, never triggered by an ordinary PR.
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Resolve release SHA
+        id: sha
+        run: |
+          sha="${{ inputs.sha }}"
+          if [ -z "$sha" ]; then
+            sha="${{ github.sha }}"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Run the real, fail-closed release evidence gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/release_evidence_gate.py \
+            --owner "${{ github.repository_owner }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --sha "${{ steps.sha.outputs.sha }}" \
+            --branch main
+      - name: FTF-H028 negative-test proof (evidence gate catches real defects)
+        run: python3 tests/tasks/test_ftf_h028.py

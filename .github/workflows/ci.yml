@@ -90,6 +90,10 @@ jobs:
         run: python3 scripts/release_scope_lock.py
       - name: FTF-H002 negative-test proof (release scope/compatibility/preflight catch real defects)
         run: python3 tests/tasks/test_ftf_h002.py
+      - name: FTF-H028 negative-test proof (release evidence gate catches real defects)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 tests/tasks/test_ftf_h028.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

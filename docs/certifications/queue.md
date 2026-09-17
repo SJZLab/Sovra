@@ -1211,3 +1211,136 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   (unchanged). Not self-certified — this is a resubmission for
   independent Control plane L2 review per Law 4, not a certification by
   this session.
+
+## 2026-09-17 — FTF-H028 — Trusted CI and exact-revision release evidence gate
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-s54o5t`.
+- **Commits:** `d502c89a1733c0dbff054e07e556f1a74d244c3b` (implementation),
+  `183321c` (hash-fixup — same two-commit pattern as FTF-0006/FTF-H001/
+  FTF-R001/FTF-H002, since a commit can't embed its own hash).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-H028 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-0003/FTF-H001 both `CERTIFIED` — unblocked.
+- **Why this task:** `docs/spec-matrix.yaml` swept directly for any item
+  whose real `deps` were all CERTIFIED after FTF-H002 certified this same
+  shift — FTF-H028 (deps FTF-0003, FTF-H001) was dependency-ready and
+  matches QUEUE.md's own prior-shift note flagging it as the likely next
+  candidate.
+- **Scope finding before implementation:** this task's own acceptance
+  clause ("verify actual branch protection through real repository
+  settings") requires a real GitHub API read this session's credential
+  cannot make — confirmed live, not assumed: a direct GET against
+  `https://api.github.com/repos/SJZLab/Sovra/branches/main/protection`
+  returned a real HTTP 403 `"Resource not accessible by integration"`.
+  Section 52 itself names the correct handling: "Missing GitHub/GPU/
+  provider access is BLOCKED_EXTERNAL and blocks full release" — so the
+  branch-protection check is real (a genuine GET, real status-code
+  branching, real required-setting validation on a 200), but honestly
+  reports BLOCKED_EXTERNAL today rather than a fabricated PASS, following
+  the exact precedent FTF-H002's `check_managed_provider_bedrock` already
+  established for this repository. Release-manifest signing is likewise
+  BLOCKED_EXTERNAL — Section 73.1's `evidence/release/manifest.json` and
+  an approved signing service are not yet provisioned/built; disclosed as
+  a later task's deliverable rather than inventing a fake signer (Law 11).
+- **Delivered:**
+  - `scripts/release_evidence_gate.py` (path refinement beyond the task's
+    initial `files` list, disclosed in `docs/spec-matrix.yaml`'s notes —
+    same rationale `scripts/spec_verification.py` already backs
+    `scripts/verify_release.py`/`scripts/verify_task.py`): `GateResult`/
+    `GateStatus` (PASS/FAIL/BLOCKED_EXTERNAL) mirroring FTF-H002's
+    `PreflightResult` anti-fabrication guardrail (a BLOCKED_EXTERNAL result
+    structurally requires a non-empty owner/next_action). Five real checks:
+    `check_release_evidence_report` (every required check's real check-run
+    report must exist, match the exact release SHA, be `completed`, and
+    conclude `success` — missing/stale/incomplete/skipped/cancelled/
+    timed_out/neutral/failure all rejected); `check_branch_protection` (a
+    real GET against the branches/.../protection endpoint, with a 403/404
+    honestly reported BLOCKED_EXTERNAL, and a real 200 validated against
+    required review/required-status-check/no-force-push/no-deletion
+    settings); `check_release_manifest_signature` (an injectable verifier —
+    unsigned always fails, signed-with-no-configured-verifier is
+    BLOCKED_EXTERNAL, never a fabricated PASS from presence alone);
+    `check_required_workflows_have_no_forbidden_patterns` (a static regex
+    scan of `.github/workflows/*.yml` for `continue-on-error: true`,
+    `|| true`, a forced `; exit 0`, and test-focus markers — Section 52's
+    named forbidden patterns); `check_no_untrusted_pull_request_target_checkout`
+    (rejects a `pull_request_target`-triggered workflow that checks out
+    `github.event.pull_request.head`, correctly handling PyYAML's `on:` ->
+    boolean-`True` parsing quirk, confirmed empirically against the real
+    `ci.yml` before relying on it).
+  - `scripts/verify_release.py` wired to call the new gate behind an
+    opt-in `--include-evidence-gate` flag — every existing caller
+    (every prior shift/certifier invoking it with no flags) keeps its
+    exact previous behavior/exit-code contract unchanged.
+  - `.github/workflows/10-release-qualification.yml`: the real protected
+    aggregator (`workflow_dispatch`-only — Tier 3/release-only per
+    CLAUDE.md, the relay never dispatches it), `if: always()`, running the
+    real evidence-gate CLI against the resolved release SHA plus the
+    FTF-H028 negative-test-proof script.
+  - `.github/CODEOWNERS`: the real repository owner/sole collaborator
+    (`samerzakaria`, confirmed live via `get_me`/
+    `list_repository_collaborators` — role `admin`) assigned to every
+    protected gate path (`.github/workflows/`, this file itself, the
+    spec/gate/release-evidence verifiers, the release-scope/compatibility/
+    architecture locks, `CLAUDE.md`), per Section 84.6's "the
+    implementation agent cannot self-approve changes to gates."
+- **Test:** `tests/tasks/test_ftf_h028.py` — 33 checks.
+- **Evidence — shown able to fail (Law 1):**
+  1. Every check's real positive/negative branches proven via fixtures:
+     missing check, stale/mismatched head_sha, incomplete run, all seven
+     non-passing conclusions, a real PASS case (`check_release_evidence_report`);
+     no-token, 403/404, missing-settings, all-settings-enabled
+     (`check_branch_protection`); no-manifest, unsigned, signed-with-no-verifier,
+     valid vs. tampered signature via an injected verifier
+     (`check_release_manifest_signature`); each of the four forbidden
+     patterns individually, a clean fixture, and an empty-report-fails-closed
+     case (`check_required_workflows_have_no_forbidden_patterns`); an
+     untrusted `pull_request_target` fixture rejected and a safe one
+     accepted (`check_no_untrusted_pull_request_target_checkout`).
+  2. **Real, live evidence, not only a fixture:** a genuine network call
+     from inside the test to the real
+     `api.github.com/repos/SJZLab/Sovra/branches/main/protection` endpoint,
+     confirming this session's own credential is denied (403/404) today —
+     matching the module's own docstring finding, reproduced independently
+     inside the test rather than only asserted in prose.
+  3. **Two independent real fault injections**, both restored
+     byte-identical: (a) in-test, temporarily disabling
+     `FORBIDDEN_WORKFLOW_PATTERNS` on the live imported module and
+     confirming a real fixture that should be caught wrongly passes, then
+     restoring and re-confirming detection is back; (b) external to the
+     test file (run separately this shift, not embedded), disabling the
+     `stale_commit`/head_sha-mismatch branch in the tracked
+     `check_release_evidence_report` — the stale-head-sha test failed for
+     real, restored via `diff`-confirmed byte-identical copy, re-ran clean.
+  4. `overall_status`/`run_release_evidence_gate` composition proven:
+     BLOCKED_EXTERNAL when any check is blocked, FAIL when any check
+     fails, PASS only when every check passes; the real end-to-end call
+     with no token/manifest (this sandbox's exact real state) never
+     reports overall PASS.
+- **Regression check:** full local gate re-run clean — `uv run ruff
+  check`/`format --check`/`mypy .`; `pnpm run lint`/`format:check`/
+  `typecheck`; all 10 existing task negative-test-proof scripts
+  (`test_ftf_0001_monorepo_layout.py` through `test_ftf_h002.py`, now
+  joined by `test_ftf_h028.py`) pass unmodified — no already-certified
+  task's own implementation file was touched, only additive
+  modules/workflow/CODEOWNERS, avoiding any Law 15 requalification
+  question; `pytest tests/unit` (3 passed) and `vitest run` (2 passed)
+  clean, 0 skipped either side; `validate_spec.py --strict`,
+  `release_scope_lock.py`, both clean; `verify_task.py --task FTF-H028
+  --stage task` → `PASS` against evidence commit `d502c89`.
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (CI/gate tooling layer, no live
+  product-runtime caller, same rationale as every prior FTF-H00X/FTF-R00X
+  task). `status.py` → `9/300 certified · 0 product-true` (unchanged —
+  PROVISIONAL is not certified).
+- **CI:** wired `python3 tests/tasks/test_ftf_h028.py` into
+  `.github/workflows/ci.yml`'s existing `gate` job, right after the
+  FTF-H002 step (YAML-validated with `yaml.safe_load`). Real run status to
+  be confirmed on the opened PR before merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4, which
+  should specifically confirm: (a) the real 403 branch-protection finding
+  reproduces independently rather than being taken on this session's word,
+  (b) `check_release_evidence_report`'s stale-SHA rejection actually
+  distinguishes a report for the wrong commit (not merely "a report
+  exists"), and (c) no check silently treats BLOCKED_EXTERNAL as
+  equivalent to PASS anywhere in the composition.
