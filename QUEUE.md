@@ -1,6 +1,6 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-H002 CI-fix confirmed green, resubmitted
-via superseding PR)
+Updated: 2026-09-17 by relay (FTF-H002 CI-fix confirmed green, PR #51
+merged to main as PROVISIONAL, awaiting L2 certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -81,27 +81,26 @@ and "Blocked" below.)
   the same way `check_git_cli`'s negative branch and this same test's own
   positive branch already did: construct the negative case explicitly via
   a real empty-PATH temp directory instead of trusting whatever's ambient.
-  This shift re-confirmed the real GitHub Actions run on that exact commit
-  (run 35160854110): both `gate` and `docker-local-stack-integration`
-  completed `success`. PR #49 itself could not be merged directly —
-  GitHub's merge API reported genuine content conflicts against `main`'s
-  current tip (`QUEUE.md` and `docs/certifications/queue.md`, both edited
-  independently by main's 2026-09-16 NOT-CERTIFIED review commit), and
-  this session's own git-branch policy requires developing only on
+  PR #49 itself could not be merged directly — GitHub's merge API reported
+  genuine content conflicts against `main`'s tip (`QUEUE.md` and
+  `docs/certifications/queue.md`, both edited independently by main's
+  2026-09-16 NOT-CERTIFIED review commit), and this session's own
+  git-branch policy requires developing only on
   `claude/wizardly-fermat-w4h9ys`, not pushing directly to
   `claude/wizardly-fermat-brui19`. Resolution: merged `main` into a local
-  copy of `419f9cc` on `claude/wizardly-fermat-w4h9ys` (fast-forward on
-  every file except these two bookkeeping docs, resolved by keeping both
-  sides' history rather than dropping either), re-ran the full regression
-  set against the merged tree, and opened a new PR from that branch
-  carrying byte-identical code to `419f9cc` plus the conflict resolution.
-  PR #49 is being closed as superseded by that new PR (same commits,
-  same CI-green evidence, same task) — not a duplicate, a continuation
-  forced by the merge conflict and this session's branch constraint. See
-  the new PR and docs/certifications/queue.md for the full resubmission
-  entry. State: proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-  Not self-certified — awaiting independent Control plane L2 review per
-  Law 4.
+  copy of `419f9cc` on `claude/wizardly-fermat-w4h9ys`, resolved both
+  conflicts by keeping both sides' history, re-ran the full regression set
+  against the merged tree, and opened PR #51 carrying byte-identical code
+  to `419f9cc` plus the conflict resolution. PR #49 was closed as
+  superseded (comment posted explaining why). PR #51's real `gate` +
+  `docker-local-stack-integration` CI went green on its actual final head
+  (`c6985e0`, run 35168539940) and **merged into `main` as commit
+  `b0f8184`** this same shift. See docs/certifications/queue.md for the
+  full resubmission entry. State: proof_state=L1-PROVEN,
+  certification_state=PROVISIONAL. Not self-certified — merging is
+  authorized without asking per CLAUDE.md "Do without asking" ("merge on
+  green + L1 doc (PROVISIONAL)"); still awaiting independent Control
+  plane L2 review per Law 4 before it can count toward Certified.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
