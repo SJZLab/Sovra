@@ -3185,16 +3185,15 @@ FTF-R014:
   proving_symbol: ''
   proving_test: tests/implementation/test_r1_execution_binding.py
 FTF-R015:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Enforce isolated concurrent coding execution and independent integration
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q33, Q41, Q42; deps=FTF-R014,
-    FTF-H028
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q33, Q41, Q42; deps=FTF-R014, FTF-H028; builds tools/implementation/workspace_manager.py (isolated per-task filesystem workspace bound to FTF-H034's TaskClaimRegistry, nested-delegation denial), executor_adapter.py (permission-allowlisted real subprocess execution), and task_orchestrator.py (intra-wave dependency ordering, whole-wave budget ceiling, protected-gate write denial, independent-reviewer gate, deterministic merge-order integration with a real file-based integrated-CI check, CI-failure containment); this task's own scenario Q42 (overlapping execution) is proven via real OS threads synchronized on a threading.Barrier, each bound to its own isolated workspace -- same disclosed limitation as FTF-H034/FTF-R014, no live multi-agent dispatch harness exists in this sandbox to hand a task to a second, truly separate coding-host session/process
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/implementation/test_safe_parallel_executor.py
 FTF-R016:
   certification_state: NONE
   criticality: MUST
