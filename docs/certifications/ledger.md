@@ -1029,3 +1029,143 @@ corrected 2026-09-15.
   legitimate and non-inflated, and the delivered work matches the real
   task-packet contract's acceptance/negative_acceptance clauses item by
   item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-H034 — Safe parallel scheduler and task/evidence ownership
+- Criterion ID: FTF-H034
+- PR: https://github.com/SJZLab/Sovra/pull/59 (`claude/wizardly-fermat-twhvs6`
+  → `main`). Merged `2026-09-17` by `samerzakaria` (human) as merge commit
+  `adba85013f58712415e871ab258f4262bf1ae567` (parents `462de00` and the PR's
+  actual final head `37d7bcd`; `git diff 37d7bcd..adba850 --stat` is empty —
+  the merge commit's tree is identical to the CI-verified head, a clean
+  fast-forward-shaped merge, no conflict resolution to re-check).
+- Evidence commit: `7109100c9bfaff995a94203720e9161e095cb7bf` (implementation;
+  `7c70b77` is the same-PR hash-fixup commit; `evidence_hash` recorded in
+  `docs/spec-matrix.yaml` stays the implementation commit, matching the
+  existing convention for every prior FTF-H00X/FTF-R00X ledger entry).
+- Validated-by: session https://claude.ai/code/session_01MQ2sJTN1YfNinmEzqNt9id
+  (session-ID comparison performed and recorded before this entry: all
+  three commits on PR #59 — `7109100`, `7c70b77`, `37d7bcd` — carry
+  `Claude-Session: .../session_01Q9LvDK2pPXKCw9Q1VSSjpF`; the merge commit
+  `adba850` carries none (a human GitHub merge). This session's ID matches
+  neither — independent, not self-certification).
+- Date: 2026-09-17
+- Evidence independently re-verified this session:
+  1. Read the full diff directly (`git show --stat adba850`, 12 files
+     changed): `scripts/task_claim.py` (new, 346 lines — `TaskClaimRegistry`
+     with DAG-readiness-gated claims, expiring TTL claims, write-set/
+     named-lock exclusivity, bounded concurrency (default 4, hard ceiling
+     6), an independent GPU quota, deterministic merge order, stale-
+     verification invalidation, and an independent-review guard denying
+     claimant==certifier), `tests/tasks/test_ftf_h034.py` (new, 542 lines,
+     17 checks), `.github/workflows/ci.yml` (2-line addition wiring the new
+     test into the existing `gate` job), plus the disclosed `spec/tasks.json`/
+     `docs/implementation/TRACKER.json` backfill and tracking-doc updates.
+     No already-certified task's own implementation file was touched.
+  2. CI verified for real, on the actual PR head, not self-reported:
+     `pull_request_read get_check_runs` on PR #59 reports both `gate`
+     (run 35184262911, job 105082825586) and `docker-local-stack-integration`
+     (job 105082825703) `completed`/`success`, tied to PR #59's actual final
+     head `37d7bcdab9ea7cbcd44de89129a66467d9327fdf` (confirmed via
+     `pull_request_read get` — `head.sha` matches, `merged: true`).
+  3. Set up the real toolchain (`pip install pyyaml` into the `uv`-managed
+     venv via `uv pip install pyyaml` — matching CI's separate `pip install
+     pyyaml --quiet` step, the same undeclared-runtime-dep pattern already
+     used by FTF-H002/FTF-H028/`release_scope_lock.py`/`product_truth_check.py`/
+     `status.py`, not new to this PR; `pnpm install --frozen-lockfile`, absent
+     in the fresh checkout) and re-ran every command for real: `python3
+     tests/tasks/test_ftf_h034.py` → all 17 checks pass directly; `python3
+     scripts/validate_spec.py --strict` → clean; `python3 scripts/verify_task.py
+     --task FTF-H034 --stage task` → `PASS` against evidence commit
+     `7109100` (this task's own two `verification_commands`, both genuinely
+     re-run, not re-read as trusted text).
+  4. Ran the full regression set clean on the merged tree: `uv run ruff
+     check .` / `ruff format --check .` / `mypy .` clean (33 source files);
+     `pnpm run lint`/`format:check`/`typecheck` clean; all 11 task
+     negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py` through
+     `test_ftf_h028.py`, now joined by `test_ftf_h034.py`) each print their
+     own `all checks passed` line — the FTF-0002/0003/H001 failures seen
+     before installing `pnpm`'s dependencies were confirmed to be the same
+     mundane missing-`node_modules` cause every prior certification shift
+     has hit in a fresh checkout, not a regression from this change; `uv run
+     pytest tests/unit` (3 passed) and `pnpm exec vitest run` (2 passed)
+     clean, 0 skipped either side.
+  5. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-H034 entry has `proving_symbol: ''` — this is scheduler/tracking
+     tooling with no live product-runtime caller, same disclosed rationale
+     as every prior FTF-H00X/FTF-R00X task.
+  6. `verify_release.py` run live on the real committed tree, before this
+     certification's own `spec-matrix.yaml` edit: `10/300 required task(s)
+     have live-passing, CERTIFIED evidence` / `FAILED (1): ['FTF-H034']` /
+     `NOT READY` — FTF-H034 correctly listed `FAILED` because its
+     `certification_state` was still `PROVISIONAL` at that point even
+     though its own test genuinely passes live, proving the release gate
+     requires both live-passing evidence and a real `CERTIFIED` state, not
+     just one or the other; no inflation. After setting `certification_state:
+     CERTIFIED`, `verify_task` itself then failed live for a real, expected
+     reason: `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`
+     is a live self-check against the *current* real `docs/spec-matrix.yaml`
+     — with FTF-H034 now counted CERTIFIED, `spec/tasks.json`/`TRACKER.json`
+     no longer reflected FTF-H034 itself (only the prior 10). Re-ran
+     `sync_certified_status()` once more against the real repo files (as
+     the module's own docstring intends this to be re-run whenever the
+     certified set changes) — diff confirmed scoped to exactly FTF-H034's
+     own `status`/`evidence` fields in both files, nothing else touched.
+     After that, `verify_task` → `PASS` again and `verify_release.py`
+     reports `11/300`, `BLOCKED (not started): 289`, still `NOT READY` (as
+     expected — 289 tasks remain not started). This is exactly the dynamic,
+     load-bearing behavior the delivered test claims, not a static fixture:
+     it reacted live to this certification, not merely to the PR's own
+     content.
+  7. **Real fault injection against the tracked module, distinct from the
+     producer's own self-certification fault injection (which used a fresh
+     subprocess against `certifier == claimant`):** removed the
+     `SELF_CERTIFICATION_DENIED` guard block from `scripts/task_claim.py`
+     directly (confirmed the exact block was present beforehand and the
+     file genuinely changed) and re-ran `tests/tasks/test_ftf_h034.py` in
+     the same process — the suite crashed with an uncaught
+     `ClaimDenied: CLAIM_EXPIRED` at `test_self_certification_denied`'s
+     second `complete()` call: with the guard removed, the *first*
+     self-certified `complete("T-A", "alice", "alice")` succeeded and
+     consumed the claim, so the test's own follow-up independent-certifier
+     call then hit a claim that no longer existed — a real, different
+     failure mode than the producer's, confirming the guard is genuinely
+     load-bearing rather than the test being self-consistent only with the
+     producer's own injection. Restored the file byte-identical from a
+     pre-edit copy (`diff` confirmed empty), re-ran clean (all 17 checks
+     pass again).
+  8. Confirmed the `sync_certified_status()` diff on the merged PR itself
+     (`git diff 462de00..adba850 -- spec/tasks.json
+     docs/implementation/TRACKER.json`) is scoped to exactly the 10 tasks
+     `docs/spec-matrix.yaml` already showed CERTIFIED before this PR, and
+     only their `status`/`evidence` fields (`ready` stays `false`, no
+     claim/lease fabricated for any other task) — matching the PR's own
+     claim exactly.
+  9. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-H034 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+     delivered work against its actual acceptance/negative_acceptance
+     clauses: acceptance ("Attempt overlapping claims/dependent starts/
+     stale completion and deny; execute actual safe parallel wave, merge in
+     deterministic order and invalidate stale CI after integration change")
+     is met by the fixture-based denial tests plus the real 8-OS-thread
+     barrier-synchronized race (re-read directly — genuinely OS-scheduled
+     concurrency, not a simulated sequential loop) and the deterministic
+     `merge_order()`/`is_verification_stale()` methods; negative_acceptance
+     ("If runner lacks real subagent capability record orchestration
+     blocker, never fabricate workers") is met by the module's own
+     docstring and this repo's genuine absence of a live multi-agent
+     dispatch harness — no fabricated worker/subagent claim anywhere in the
+     delivered code or tests.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit is
+  tree-identical to the CI-verified head, the real toolchain installed and
+  both verification commands genuinely re-run, a fresh fault injection
+  (distinct from the producer's own) confirms the Law-4 self-certification
+  guard is code-enforced rather than fixture-assumed, the dynamic tracker-
+  reflection test reacted live and correctly to this very certification
+  (requiring one additional `sync_certified_status()` run, applied and
+  scoped-checked), `product_truth_check.py`'s `0/0` and `verify_release.py`'s
+  before/after counts both confirmed legitimate and non-inflated, and the
+  delivered work matches the real task-packet contract's acceptance/
+  negative_acceptance clauses item by item. No open defect. Certified
+  L2-CERTIFIED.

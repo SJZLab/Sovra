@@ -1976,9 +1976,11 @@
       "blockers": []
     },
     "FTF-H034": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "7109100c9bfaff995a94203720e9161e095cb7bf"
+      ],
       "independent_review": null,
       "blockers": []
     },

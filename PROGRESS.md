@@ -1,5 +1,63 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T05:05:30Z
+Updated: 2026-09-17T05:30:00Z
+
+## 2026-09-17 — FTF-H034 independently certified (Control plane, CERTIFY mode)
+Scheduled certifier shift (autonomous, no live user present), triggered by
+the PR #60 bookkeeping-commit webhook. Checked `docs/certifications/queue.md`
+per the standing CERTIFY procedure: found FTF-H034 (PR #59, merged) as the
+only PROVISIONAL, not-yet-certified item.
+
+Session-ID check: all three commits on PR #59 (`7109100`, `7c70b77`,
+`37d7bcd`) carry `Claude-Session: .../session_01Q9LvDK2pPXKCw9Q1VSSjpF`;
+this session's own ID (`session_01MQ2sJTN1YfNinmEzqNt9id`) matches
+neither — independent, not self-certification.
+
+Re-verified independently rather than trusting the PR's own claims: read
+the full diff (`git show --stat adba850`); confirmed CI genuinely ran and
+passed on the real PR head (`pull_request_read get_check_runs` on PR #59 —
+`gate` and `docker-local-stack-integration` both `success` on head
+`37d7bcd`, `merged: true`); installed the real toolchain fresh
+(`uv pip install pyyaml` — the same undeclared-runtime-dep pattern already
+used by FTF-H002/FTF-H028, not new here; `pnpm install --frozen-lockfile`)
+and re-ran `tests/tasks/test_ftf_h034.py` (17/17 pass), the full 11-task
+regression set, `validate_spec.py --strict`, `verify_task.py --task
+FTF-H034 --stage task` (`PASS`), and `product_truth_check.py
+--fail-on-unwired` (`0/0`, legitimate — no `proving_symbol`). Pulled the
+real task contract via `python tools/r1_handoff.py packet FTF-H034 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed the delivered
+`scripts/task_claim.py` meets both acceptance clauses and the
+negative_acceptance clause (no fabricated multi-worker claim; the "actual
+safe parallel wave" is a real 8-OS-thread barrier-synchronized race).
+
+Ran an independent real fault injection distinct from the producer's own
+(which used a fresh subprocess against `certifier == claimant`): removed
+the `SELF_CERTIFICATION_DENIED` guard block in-process and re-ran the test
+suite — it crashed with a different, real failure (`ClaimDenied:
+CLAIM_EXPIRED`) once the guard-less self-certification silently succeeded
+and consumed the claim, proving the guard is genuinely load-bearing.
+Restored the file byte-identical (`diff` confirmed empty), re-ran clean.
+
+Certifying triggered a real, dynamic side effect: setting
+`certification_state: CERTIFIED` made `verify_task` itself fail live,
+because `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`
+checks `spec/tasks.json`/`TRACKER.json` against the *current* certified
+set in `docs/spec-matrix.yaml` — with FTF-H034 now counted, those files no
+longer reflected FTF-H034 itself. Re-ran `sync_certified_status()` once
+more against the real repo files (diff-scope-checked to exactly FTF-H034's
+own `status`/`evidence` fields); `verify_task` then passed again and
+`verify_release.py` moved from `10/300`/`FAILED (1): ['FTF-H034']` to
+`11/300`, `BLOCKED (not started): 289`, still correctly `NOT READY`.
+
+**Certified:** `docs/spec-matrix.yaml` (FTF-H034: `certification_state=CERTIFIED`,
+`proof_state=L2-CERTIFIED`, `evidence_hash=7109100` unchanged), full ledger
+entry in `docs/certifications/ledger.md`, `QUEUE.md` moved FTF-H034 from
+Provisional to Done and updated Status counts. Certified: 11/300 (up from
+10/300). Product-true: 0 (unchanged — FTF-H034 has no `proving_symbol`,
+scheduler/tracking tooling with no live product-runtime caller).
+
+No other item in `docs/certifications/queue.md` was PROVISIONAL/uncertified
+this shift. Nothing else touched — no new task work, no design decisions,
+no queue reprioritization beyond this certification.
 
 ## 2026-09-17 — FTF-H034 (PR #59) merged to main as PROVISIONAL
 Same relay shift as the FTF-H034 implementation entry below. PR activity
