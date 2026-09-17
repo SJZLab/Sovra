@@ -1,5 +1,132 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T05:20:00Z
+Updated: 2026-09-17T07:00:00Z
+
+## 2026-09-17 — FTF-1810 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main`, local
+designated branch (`claude/wizardly-fermat-g3s0o0`) matched `origin/main`
+exactly at `384ac10` (PR #61's FTF-H034 certification merge) before any
+edit. `list_pull_requests` state=open returned empty. `BLOCKER.md` held
+only resolved history. QUEUE.md Active/Provisional both empty, 11/300
+certified, Blocked: 1 (FTF-0102, unchanged open owner ask).
+
+STEP 1: FTF-0101/FTF-0102 remain blocked on the standing new-runtime-dep
+owner ask (unchanged, not re-litigated). Swept `docs/spec-matrix.yaml`
+directly for any non-certified task whose real `notes: deps=` are all
+CERTIFIED (certified set: FTF-0001–0006, FTF-H001, FTF-R001, FTF-H002,
+FTF-H028, FTF-H034): found FTF-1810 (deps FTF-H001, FTF-H028), FTF-R011
+(deps FTF-R001, FTF-H001, FTF-H002), FTF-R017 (deps FTF-R001, FTF-0004),
+and FTF-R014 (deps FTF-R001, FTF-H034 — newly ready now that H034
+certified). Picked FTF-1810: it was this shift's own prior-session flagged
+next candidate once FTF-H028 certified, its scope (release-qualification
+aggregator tooling) needs no new runtime dependency, and — unlike
+FTF-R011, already deferred once for touching `spec/deployment-profiles.yaml`
+territory FTF-H002 delivered — its `files` (`docs/operations/
+releasequalificationworkflow.py`, `tests/tasks/test_ftf_1810.py`) don't
+overlap any already-certified task's evidence. Real DoD resolved via
+`tools/r1_handoff.py packet FTF-1810 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+(not improvised).
+
+STEP 2 (PEV):
+- P: read the task packet. Its acceptance clause ("run the authoritative
+  Q01-Q43 expected-scenario aggregator on exact release; bind result to
+  current scope/hash/image/profile") does not require actually executing
+  Section 54's full 47-step E2E qualification program this shift — no
+  product exists yet to run it against (`spec/qualification-inventory.json`'s
+  43 scenarios are all `NOT_TESTED`, every CAP in `spec/release-scope.yaml`
+  has `supported_version_profile: NOT_YET_RESOLVED`, no
+  `07-container-build.yml` exists to produce an image digest). Matches this
+  repo's established resource_gate precedent (FTF-H002/FTF-H028): build the
+  real, fail-closed binder/aggregator and let it honestly report
+  BLOCKED_EXTERNAL/FAIL against today's actual state, never a fabricated
+  PASS — a resource_gate to build around, not a DoD-clarity gap.
+- E: implemented `docs/operations/releasequalificationworkflow.py`:
+  `ReleaseBinding` (real sha256 of `spec/release-scope.yaml` as
+  `scope_digest`, real `git rev-parse HEAD` as `commit_sha`,
+  `image_digest`/`deployment_profile` structurally `None` — never a
+  placeholder — when that real input doesn't exist yet).
+  `evaluate_scenario_evidence` checks one scenario's per-release evidence
+  (a new `spec/qualification-evidence.json` ledger, absent/empty today)
+  against Section 73.4/52's exact named rejection list, in order: missing,
+  skipped, incomplete (missing `evidence_id`/`commit`/`exit_code`), stale
+  (commit mismatch against the release binding), nonzero `exit_code`,
+  unsigned, a present-but-unverifiable signature (`BLOCKED_EXTERNAL` — no
+  configured trusted verifier, same anti-fabrication discipline as
+  FTF-H028's `check_release_manifest_signature`), and tampered (verifier
+  rejects it) — only a genuinely verified, exact-revision-bound, signed
+  entry reaches `PASS`. `run_release_qualification_workflow` additionally
+  gates the whole run on a real image digest and a real resolved
+  deployment profile. Reused `scripts/release_evidence_gate.py`'s
+  `GateResult`/`GateStatus` (including its owner/next_action
+  anti-fabrication guardrail) rather than reimplementing it.
+  `tests/tasks/test_ftf_1810.py` (16 checks) proves every rejection reason
+  via real fixtures, the real repo-state assertion (43 real scenarios all
+  honestly `missing` today, both bindings `BLOCKED_EXTERNAL`), and a real
+  fault injection (removed the `skipped`-check block; the fixture wrongly
+  passed; restored byte-identical, re-ran clean). Performed a second,
+  independent ad hoc fault injection this shift (removed the `stale`-commit
+  check block, distinct from the committed one) — exactly 1 test failed for
+  real, restored byte-identical from a `/tmp` backup (`diff` confirmed
+  empty), re-ran clean (16/16). Caught zero lint/type defects on first full
+  run after `ruff format`.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (release-qualification aggregator tooling
+  itself, no live product-runtime caller, same rationale as every prior
+  FTF-H00X/FTF-R00X task).
+Re-ran the full existing gate after all changes (`pnpm install
+--frozen-lockfile` first — fresh container, no `node_modules`, same
+environment note as every prior shift): `uv run ruff check`/`format
+--check`/`mypy .` clean; `pnpm run lint`/`format:check`/`typecheck` clean;
+all 12 existing task negative-test-proof scripts
+(`test_ftf_0001_monorepo_layout.py` through `test_ftf_h034.py`, now joined
+by `test_ftf_1810.py`) pass unmodified — no already-certified task's own
+implementation file was touched, only additive files plus FTF-1810's own
+`docs/spec-matrix.yaml`/`spec/verification-map.json` entries, avoiding any
+Law 15 requalification question; `uv run pytest tests/unit` (3 passed) and
+`pnpm exec vitest run` (2 passed) clean, 0 skipped either side.
+`validate_spec.py --strict` clean; `verify_task.py --task FTF-1810 --stage
+task` → `PASS` against evidence commit
+`e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a`. `verify_release.py` correctly
+non-inflated: `11/300`/`FAILED (1): ['FTF-1810']`/`NOT READY`.
+Wired `python3 tests/tasks/test_ftf_1810.py` into `.github/workflows/
+ci.yml`'s `gate` job, right after the FTF-H034 step, and the real
+`docs/operations/releasequalificationworkflow.py` itself plus its own
+negative-test-proof step into `.github/workflows/10-release-qualification.yml`
+(the same Tier 3, `workflow_dispatch`-only aggregator FTF-H028's own step
+already runs in — never triggered by an ordinary PR, never dispatched by
+the relay); YAML-validated (`yaml.safe_load`). Disclosed in the queue entry
+that this new aggregator step will genuinely fail on a real dispatch today
+(every scenario missing, image/profile BLOCKED_EXTERNAL) — the correct,
+honest state for a release-only gate with no qualified product yet, not a
+defect.
+Updated `docs/spec-matrix.yaml` (FTF-1810: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` filled in the hash-fixup commit — same
+two-commit pattern as every prior FTF-H00X/FTF-R00X task),
+`spec/verification-map.json` (real, currently re-executable entry, added
+by direct minimal edit rather than a full `json.dump` re-serialization —
+confirmed via `git diff` that this touched only the new FTF-1810 entry and
+reformatted no existing certified entry), `docs/certifications/queue.md`
+(full entry), `QUEUE.md` (Provisional 0→1, entry added). Certified count
+unchanged at 11/300 — PROVISIONAL is not certified. Per Law 4, did not
+self-certify.
+
+STEP 4: stopping here for this shift's active work — FTF-1810 is fully
+L1-PROVEN and PROVISIONAL, PR to be opened against `main` and this session
+will subscribe to its activity, merging on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not a
+self-certification, per Law 4. The 2026-09-16 FTF-0102
+new-runtime-dependency owner ask and the 2026-09-15 trigger-tooling ask
+remain open and untouched. Once FTF-1810 certifies, FTF-R011, FTF-R017, or
+FTF-R014 (all found dependency-ready this shift) become the next
+candidates — FTF-R011 specifically still carries the deferred Law 15
+question noted in an earlier shift, worth resolving explicitly before
+picking it rather than re-deferring silently again.
+
+Certified: 11/300 (unchanged). Provisional: 1 (FTF-1810, PR to be opened,
+CI to be confirmed). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-H034 CERTIFIED (PR #59 independently verified)
 Autonomous certifier shift, triggered by the PR #59 `opened` webhook. Read

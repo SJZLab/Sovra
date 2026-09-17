@@ -1,9 +1,9 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-H034 CERTIFIED, PR #59 independently verified)
+Updated: 2026-09-17 by relay (FTF-1810 implemented, PR to be opened, awaiting CI + L2 certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 11/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
+Certified: 11/300 · Provisional: 1 (FTF-1810) · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
@@ -74,7 +74,19 @@ product-true).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty — FTF-H034 CERTIFIED this shift, see "Done" below.)
+- FTF-1810 — ReleaseQualificationWorkflow. Implemented this shift
+  (`docs/operations/releasequalificationworkflow.py` + `tests/tasks/
+  test_ftf_1810.py`). Binds the real Q01-Q43 aggregator to the release's
+  scope/hash/image/profile; fails closed on missing/skipped/incomplete/
+  stale/unsigned/tampered scenario evidence. Run against the real current
+  repo it honestly reports NOT READY (image digest and deployment profile
+  both BLOCKED_EXTERNAL — no `07-container-build.yml` yet, Section 64.3
+  onboarding gate not run; every one of the 43 required scenarios missing
+  evidence, since no product exists yet). See
+  `docs/certifications/queue.md` for the full entry. PR to be opened
+  against `main`; will merge on green per CLAUDE.md's "Do without asking:
+  merge on green + L1 doc (PROVISIONAL)", then await independent Control
+  plane L2 certification (Law 4 — not self-certified).
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
