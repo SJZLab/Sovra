@@ -1,5 +1,5 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T01:00:00Z
+Updated: 2026-09-17T01:05:00Z
 
 ## 2026-09-17 — FTF-H002 CI fix confirmed green, resubmitted via superseding PR
 Autonomous relay shift (scheduled firing, no live user present).
@@ -61,15 +61,32 @@ not the later hash-fixup/test-fix commits), `product_truth_check.py
 `8/300 certified · 0 product-true` (unchanged — no inflation from this
 shift's own bookkeeping).
 
-Opened a new PR from `claude/wizardly-fermat-w4h9ys` carrying
+Opened PR #51 from `claude/wizardly-fermat-w4h9ys` carrying
 byte-identical code to `419f9cc` plus the conflict resolution, and
-closed PR #49 as superseded (same commits, same CI-green evidence, same
-task — the new PR exists only because of the merge conflict and this
-session's branch constraint). Updated QUEUE.md (moved FTF-H002 from
-"Active" to "Provisional" with the full resolution history) and
-appended a resubmission entry to `docs/certifications/queue.md` dated
-2026-09-17 documenting all of the above, for the next independent
-Control plane L2 review per Law 4. Not self-certified.
+closed PR #49 as superseded (comment posted explaining why, same
+commits, same CI-green evidence, same task — the new PR exists only
+because of the merge conflict and this session's branch constraint).
+Updated QUEUE.md (moved FTF-H002 from "Active" to "Provisional" with
+the full resolution history) and appended a resubmission entry to
+`docs/certifications/queue.md` dated 2026-09-17 documenting all of the
+above, for the next independent Control plane L2 review per Law 4. Not
+self-certified.
+
+Subscribed this session to PR #51's activity (`subscribe_pr_activity`)
+rather than blocking on a sleep/poll loop — GitHub Actions was still
+`in_progress` on both jobs (run `35168462460`) at the time this entry
+was written. Per "merge on green + L1 doc (PROVISIONAL)" (CLAUDE.md "Do
+without asking") and this repo's established pattern (producer merges
+its own PR once CI is genuinely green, independent Control plane
+certifies later), this session will merge PR #51 into `main` as soon as
+the real `gate` + `docker-local-stack-integration` check-suite event
+confirms green — not before. If that event has not arrived by the next
+scheduled relay fire, the next shift should check PR #51's real CI
+status directly (`pull_request_read` get_check_runs) before doing
+anything else with FTF-H002, rather than re-deriving this from scratch.
+
+Certified: 8/300 · Provisional: 1 (FTF-H002, PR #51, CI in progress) ·
+Product-true: 0 (unchanged this shift).
 
 ## 2026-09-17 — FTF-H002 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
