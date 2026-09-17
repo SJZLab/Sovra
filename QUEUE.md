@@ -71,13 +71,19 @@ FTF-0102 remain blocked, see "Owner actions" and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
 - FTF-H028 — Trusted CI and exact-revision release evidence gate.
-  proof_state=L1-PROVEN, certification_state=PROVISIONAL. Commits
-  `d502c89` (implementation) + `183321c` (hash-fixup) on
-  `claude/wizardly-fermat-s54o5t`. Real branch-protection read and
-  release-manifest signing are both disclosed BLOCKED_EXTERNAL (reproduced
-  live: a real 403 from `api.github.com/repos/SJZLab/Sovra/branches/main/protection`;
-  no signing service provisioned yet) — Section 52 explicitly allows this
-  ("Missing GitHub/GPU/provider access is BLOCKED_EXTERNAL and blocks full
+  proof_state=L1-PROVEN, certification_state=PROVISIONAL. PR #55
+  (https://github.com/SJZLab/Sovra/pull/55), commits `d502c89`
+  (implementation) + `183321c` (hash-fixup) on
+  `claude/wizardly-fermat-s54o5t`. CI (`gate` +
+  `docker-local-stack-integration`, run 35176601514) was genuinely
+  `in_progress` on the PR's real head as of this entry — subscribed to PR
+  activity, will merge on green per CLAUDE.md ("Do without asking: merge
+  on green + L1 doc (PROVISIONAL)"), not before. Real branch-protection
+  read and release-manifest signing are both disclosed BLOCKED_EXTERNAL
+  (reproduced live: a real 403 from
+  `api.github.com/repos/SJZLab/Sovra/branches/main/protection`; no signing
+  service provisioned yet) — Section 52 explicitly allows this ("Missing
+  GitHub/GPU/provider access is BLOCKED_EXTERNAL and blocks full
   release"), not a hidden gap. Full entry: `docs/certifications/queue.md`.
   Not self-certified — awaiting Control plane L2 review per Law 4.
 

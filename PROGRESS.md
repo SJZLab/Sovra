@@ -88,16 +88,27 @@ two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002),
 Provisional entry added, Provisional 0→1). Certified count unchanged at
 9/300 — PROVISIONAL is not certified. Per Law 4, did not self-certify.
 
-STEP 4: stopping here for this shift's active work — FTF-H028 is fully
-L1-PROVEN and PROVISIONAL, PR to be opened against `main` next and this
-session will subscribe to its activity, merging on green (per CLAUDE.md's
-"Do without asking: merge on green + L1 doc (PROVISIONAL)") without
-further owner input, then continue awaiting Control plane L2
-certification — not a second self-certification, per Law 4. The
-2026-09-16 FTF-0102 new-runtime-dependency owner ask and the 2026-09-15
-trigger-tooling ask remain open and untouched.
+Opened PR #55 (https://github.com/SJZLab/Sovra/pull/55,
+`[relay] FTF-H028: Trusted CI and exact-revision release evidence gate`)
+against `main` from `claude/wizardly-fermat-s54o5t`, subscribed to its
+activity. Confirmed real CI (`gate` + `docker-local-stack-integration`,
+run 35176601514) genuinely `in_progress` on the PR's actual head via
+`pull_request_read get_check_runs` — not yet green, not merging.
 
-Certified: 9/300 (unchanged). Product-true: 0 (unchanged).
+STEP 4: stopping here for this shift's active work — FTF-H028 is fully
+L1-PROVEN and PROVISIONAL, PR #55 open, CI in flight. This session
+remains subscribed to PR #55 and will merge on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not
+a second self-certification, per Law 4. The 2026-09-16 FTF-0102
+new-runtime-dependency owner ask and the 2026-09-15 trigger-tooling ask
+remain open and untouched. If real CI has not gone green by the next
+scheduled relay fire, the next shift should check PR #55's real CI status
+directly (`pull_request_read` get_check_runs) before doing anything else
+with FTF-H028, rather than re-deriving this from scratch.
+
+Certified: 9/300 (unchanged). Provisional: 1 (FTF-H028, PR #55, CI in
+progress). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane certification — FTF-H002 CERTIFIED (PR #51 verified)
 Scheduled CERTIFY routine (triggered by the `pull_request.opened` webhook
