@@ -884,3 +884,148 @@ corrected 2026-09-15.
   confirmed legitimate and non-inflated, and the delivered work matches the
   real task-packet contract's acceptance/negative_acceptance clauses item by
   item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-H028 — Trusted CI and exact-revision release evidence gate
+- Criterion ID: FTF-H028
+- PR: https://github.com/SJZLab/Sovra/pull/55 (`claude/wizardly-fermat-s54o5t`
+  → `main`). Merged `2026-09-17` by `samerzakaria` (human) as merge commit
+  `1de330d7cbf71ba36ad8a65565eae1645fbd1929` (parents `920d6ad` and the PR's
+  actual final head `2040620`; `git diff 2040620..1de330d --stat` is empty —
+  the merge commit's tree is identical to the CI-verified head, a clean
+  fast-forward-shaped merge, no conflict resolution to re-check).
+- Evidence commit: `d502c89a1733c0dbff054e07e556f1a74d244c3b` (implementation;
+  `183321c` is the same-PR hash-fixup commit; `evidence_hash` recorded in
+  `docs/spec-matrix.yaml` stays the implementation commit, matching the
+  existing convention for every prior FTF-H00X/FTF-R00X ledger entry).
+- Validated-by: session https://claude.ai/code/session_01W88XoZiR5AQjN9kiCQfCbB
+  (session-ID comparison performed and recorded before this entry: all four
+  commits on PR #55 — `d502c89`, `183321c`, `813ede7`, `2040620` — carry
+  `Claude-Session: .../session_01D4UBNWAuJwWHKpfHwSuV7U`; the merge commit
+  `1de330d` carries none (a human GitHub merge). This session's ID matches
+  neither — independent, not self-certification).
+- Date: 2026-09-17
+- Evidence independently re-verified this session:
+  1. Read the full diff directly (`git diff origin/main...813ede7 --stat` and
+     every changed file in full): `scripts/release_evidence_gate.py` (new,
+     528 lines — five real, fail-closed checks: `check_release_evidence_report`,
+     `check_branch_protection`, `check_release_manifest_signature`,
+     `check_required_workflows_have_no_forbidden_patterns`,
+     `check_no_untrusted_pull_request_target_checkout`), `scripts/verify_release.py`
+     (wired behind an opt-in `--include-evidence-gate` flag — confirmed the
+     existing no-flag call path is byte-unchanged in behavior),
+     `.github/workflows/10-release-qualification.yml` (new, `workflow_dispatch`-only),
+     `.github/CODEOWNERS` (new, assigns the real repository admin
+     `samerzakaria` to every protected gate path), `tests/tasks/test_ftf_h028.py`
+     (698 lines, 33 checks). No already-certified task's own implementation
+     file was touched.
+  2. CI verified for real, on the actual PR head, not self-reported:
+     `pull_request_read get_check_runs` on PR #55 reports both `gate`
+     (run 35176632687, job 105059674271) and `docker-local-stack-integration`
+     (job 105059674022) `completed`/`success`, tied to PR #55's actual head
+     `204062058bbdc19f269480df236190d17e3648f2` (confirmed via
+     `pull_request_read get` — `head.sha` matches; the check-runs query was
+     re-run after the PR closed/merged and still returned the same two
+     green runs against that exact SHA, not a stale in-progress snapshot —
+     both jobs were genuinely `in_progress` at the start of this review and
+     were re-polled to `completed`/`success` before this certification).
+  3. Set up the real toolchain (`pip install pyyaml` — matching CI's own
+     separate `pip install pyyaml --quiet` step ahead of `uv sync`, since
+     the task test scripts run under system `python3`, not `uv run`;
+     `uv sync`; `pnpm install --frozen-lockfile` — none present in the
+     fresh checkout) and re-ran every command for real: `python3
+     tests/tasks/test_ftf_h028.py` → all 33 checks pass directly; `python3
+     scripts/validate_spec.py --strict` → clean; `python3 scripts/verify_task.py
+     --task FTF-H028 --stage task` → `PASS` against evidence commit
+     `d502c89` (this task's own two `verification_commands`, both genuinely
+     re-run, not re-read as trusted text).
+  4. Ran the full regression set clean on the merged tree: `uv run ruff
+     check .` / `ruff format --check .` / `mypy .` clean (31 source files);
+     `pnpm run lint`/`format:check`/`typecheck` clean; all 10 task
+     negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py` through
+     `test_ftf_h002.py`, now joined by `test_ftf_h028.py`) each print their
+     own `all checks passed` line — the FTF-0002/0003/H001 failures seen
+     before installing `pnpm`'s dependencies were confirmed to be the same
+     mundane missing-`node_modules` cause every prior certification shift
+     has hit in a fresh checkout, not a regression from this change.
+  5. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-H028 entry has `proving_symbol: ''` — this is a CI/gate-tooling
+     layer (the release-evidence aggregator itself), not a live
+     product-runtime path, same disclosed rationale as every prior
+     FTF-H00X/FTF-R00X task.
+  6. `verify_release.py` run live on the real committed tree, before this
+     certification's own `spec-matrix.yaml` edit (confirmed via `git
+     stash`/`git stash pop` around the check, not by memory): `9/300
+     required task(s) have live-passing, CERTIFIED evidence` / `FAILED (1):
+     ['FTF-H028']` / `NOT READY` — FTF-H028 correctly listed `FAILED`
+     because its `certification_state` was still `PROVISIONAL` at that
+     point even though its own test genuinely passes live, proving the
+     release gate requires both live-passing evidence and a real
+     `CERTIFIED` state, not just one or the other; no inflation. After this
+     certification's edit, the same command reports `10/300`.
+  7. **Real fault injection against the tracked module, targeting a
+     different code path than the producer's own two fault injections
+     (which targeted `FORBIDDEN_WORKFLOW_PATTERNS` and the stale-commit
+     branch of `check_release_evidence_report`):** temporarily changed
+     `check_branch_protection`'s `403`/`404` branch to return
+     `GateStatus.PASS` instead of `GateStatus.BLOCKED_EXTERNAL` (simulating
+     a real defect class this gate exists to prevent — a permission denial
+     silently treated as a passing check). Re-ran `tests/tasks/test_ftf_h028.py`
+     directly: exactly 1 failure — `FAIL [FTF-H028] a 403 (permission
+     denial) reports BLOCKED_EXTERNAL, never a fabricated PASS or FAIL`.
+     Restored the file byte-identical from a pre-edit copy (`diff` confirmed
+     empty), re-ran clean (all 33 checks pass again) — confirms the test
+     suite is load-bearing against a real, independently chosen regression,
+     not merely self-consistent with the producer's own fault injections.
+  8. **Live branch-protection finding reproduced independently, not taken
+     on the PR's word:** issued a fresh, separate GET (not reusing
+     `release_evidence_gate.py`'s own code path — a standalone
+     `urllib.request` call written for this review) against
+     `https://api.github.com/repos/SJZLab/Sovra/branches/main/protection`
+     using this session's own `GITHUB_TOKEN` — got a real HTTP 403
+     `{"message":"Resource not accessible by integration", ...}`, matching
+     the module's docstring and the PR's own claim exactly.
+  9. Confirmed `check_release_evidence_report`'s stale-SHA rejection
+     actually distinguishes a report for the wrong commit from a missing
+     one (per the prior queue entry's own open item (b)): read
+     `test_release_evidence_report_stale_head_sha_fails` directly — it
+     constructs a check-run whose `head_sha` differs from the requested
+     release SHA and asserts `GateStatus.FAIL` with `"stale"` in the detail,
+     a separate code path and separate test from
+     `test_release_evidence_report_missing_check_fails`'s `"missing"` case.
+  10. Confirmed no check silently treats `BLOCKED_EXTERNAL` as equivalent to
+      `PASS` anywhere in the composition (per the prior queue entry's own
+      open item (c)): read `overall_status()` directly — `PASS` only when
+      every result is `PASS`, `FAIL` if any result is `FAIL` (checked before
+      `BLOCKED_EXTERNAL`), `BLOCKED_EXTERNAL` otherwise; `test_overall_status_is_blocked_when_any_check_is_blocked`,
+      `test_overall_status_is_fail_when_any_check_fails` and
+      `test_overall_status_pass_only_when_every_check_passes` all reconfirmed
+      passing directly.
+  11. Pulled the real contract via `python tools/r1_handoff.py packet
+      FTF-H028 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked the
+      delivered work against its actual acceptance/negative_acceptance
+      clauses: acceptance ("Missing/skipped/stale/matrix-omitted/unsigned/tampered
+      reports and untrusted PR workflow cannot pass; verify actual branch
+      protection through real repository settings") is met by the five real
+      checks above, each independently re-verified; negative_acceptance
+      ("No required continue-on-error or hidden retry success; invalid
+      release examples are negative tests, not weakened expected results")
+      is met by `check_required_workflows_have_no_forbidden_patterns`
+      (confirmed the real `.github/workflows/*.yml` files carry none of the
+      four forbidden patterns) and the fault-injection evidence above
+      showing the negative cases are genuinely enforced, not fixture-only.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit is
+  tree-identical to the CI-verified head, the real toolchain installed and
+  both verification commands genuinely re-run, a fresh fault injection
+  (distinct from the producer's own two) confirms the branch-protection
+  403-is-never-PASS guarantee is code-enforced rather than fixture-assumed,
+  the live 403 branch-protection finding was independently reproduced
+  (not taken on the PR's word), the two open items from the prior
+  submission cycle's own review note (stale-SHA discrimination and
+  BLOCKED_EXTERNAL-never-equals-PASS composition) were both directly
+  confirmed, `product_truth_check.py`'s `0/0` and `verify_release.py`'s
+  `9/300`/`FAILED (1)`/`NOT READY` (pre-certification) both confirmed
+  legitimate and non-inflated, and the delivered work matches the real
+  task-packet contract's acceptance/negative_acceptance clauses item by
+  item. No open defect. Certified L2-CERTIFIED.

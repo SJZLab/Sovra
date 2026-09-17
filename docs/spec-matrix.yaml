@@ -2909,7 +2909,7 @@ FTF-H027:
   proving_symbol: ''
   proving_test: ''
 FTF-H028:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Trusted CI and exact-revision release evidence gate
   evidence_hash: d502c89a1733c0dbff054e07e556f1a74d244c3b
@@ -2921,7 +2921,7 @@ FTF-H028:
     manifest signing is BLOCKED_EXTERNAL (no signing service provisioned, Section 73.1's
     evidence/release/manifest.json is a later task's deliverable); .github/workflows/10-release-qualification.yml
     is workflow_dispatch-only (Tier 3/release-only, relay never dispatches it per CLAUDE.md)
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h028.py
 FTF-H029:

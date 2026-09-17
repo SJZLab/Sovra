@@ -1,22 +1,24 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-H028 PR #55 merged, PROVISIONAL, awaiting L2)
+Updated: 2026-09-17 by Control plane (FTF-H028 CERTIFIED, PR #55 independently verified)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 9/300 · Provisional: 1 (FTF-H028) · Blocked: 1 (FTF-0102,
+Certified: 10/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001 and FTF-H002
-all have no proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI
-tooling, FTF-0003 is test-harness tooling, FTF-0004 is local-stack
-bootstrap/health tooling, FTF-0005 is a configuration module with no live
-caller yet, FTF-0006 is an observability seam with no live FastAPI app or
-Temporal workflow to instrument yet, FTF-H001 is the spec/gate verifier
-tooling itself, FTF-R001 is an architecture/version-lock schema freeze
-with no live product-runtime caller yet, and FTF-H002 is a preflight/
-release-scope-freeze layer with no live product-runtime caller yet — none
-a live-wired product-runtime path, so all nine are CERTIFIED without
-counting toward product-true).
+FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002 and
+FTF-H028 all have no proving_symbol; FTF-0001 is structural layout,
+FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004 is
+local-stack bootstrap/health tooling, FTF-0005 is a configuration module
+with no live caller yet, FTF-0006 is an observability seam with no live
+FastAPI app or Temporal workflow to instrument yet, FTF-H001 is the
+spec/gate verifier tooling itself, FTF-R001 is an architecture/version-lock
+schema freeze with no live product-runtime caller yet, FTF-H002 is a
+preflight/release-scope-freeze layer with no live product-runtime caller
+yet, and FTF-H028 is the release-evidence-gate/CI-aggregator tooling
+itself, `workflow_dispatch`-only and never run by the relay — none a
+live-wired product-runtime path, so all ten are CERTIFIED without counting
+toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -66,27 +68,11 @@ counting toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-H028 implemented this shift, PR to be opened. FTF-0101/
-FTF-0102 remain blocked, see "Owner actions" and "Blocked" below.)
+(empty — FTF-H028 CERTIFIED this shift. FTF-0101/FTF-0102 remain blocked,
+see "Owner actions" and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-H028 — Trusted CI and exact-revision release evidence gate.
-  proof_state=L1-PROVEN, certification_state=PROVISIONAL. PR #55
-  (https://github.com/SJZLab/Sovra/pull/55) merged to `main` as commit
-  `1de330d7cbf71ba36ad8a65565eae1645fbd1929` — real CI (`gate` +
-  `docker-local-stack-integration`, run 35176632687) confirmed
-  `completed`/`success` on the PR's actual final head (`2040620`, via
-  `pull_request_read get_check_runs`, not a stale/self-reported claim),
-  `mergeable_state: clean`, no open reviews. Commits `d502c89`
-  (implementation) + `183321c` (hash-fixup), merged from
-  `claude/wizardly-fermat-s54o5t`. Real branch-protection
-  read and release-manifest signing are both disclosed BLOCKED_EXTERNAL
-  (reproduced live: a real 403 from
-  `api.github.com/repos/SJZLab/Sovra/branches/main/protection`; no signing
-  service provisioned yet) — Section 52 explicitly allows this ("Missing
-  GitHub/GPU/provider access is BLOCKED_EXTERNAL and blocks full
-  release"), not a hidden gap. Full entry: `docs/certifications/queue.md`.
-  Not self-certified — awaiting Control plane L2 review per Law 4.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -189,6 +175,30 @@ FTF-0102 remain blocked, see "Owner actions" and "Blocked" below.)
   `budget-forecast.md`, preflight reads `SOVRA_LITELLM_GATEWAY_URL`
   directly rather than through FTF-0005's `Settings.from_env()`. Full
   entry: docs/certifications/ledger.md.
+- FTF-H028 — Trusted CI and exact-revision release evidence gate.
+  CERTIFIED 2026-09-17, PR #55 (merge commit
+  `1de330d7cbf71ba36ad8a65565eae1645fbd1929`). Independently re-verified:
+  real toolchain installed (`pip install pyyaml`, `uv sync`, `pnpm install
+  --frozen-lockfile`) and both of the task's own `verification_commands`
+  genuinely re-run (`validate_spec.py --strict`, `verify_task.py --task
+  FTF-H028 --stage task`), full 10-task regression set clean,
+  `product_truth_check.py` confirmed legitimately 0/0 (no proving_symbol —
+  CI/gate-tooling layer, `workflow_dispatch`-only), `verify_release.py`
+  confirmed non-inflated (`9/300`/`FAILED (1): ['FTF-H028']`/`NOT READY`
+  before this certification, `10/300` after), CI reconfirmed green on the
+  actual PR head (`2040620`, run 35176632687, both `gate` and
+  `docker-local-stack-integration`), the live branch-protection 403 finding
+  reproduced independently with this session's own token, and an own fault
+  injection (made `check_branch_protection`'s 403/404 branch return `PASS`
+  instead of `BLOCKED_EXTERNAL` — distinct from the producer's own two
+  fault injections) caught for real by the delivered test suite, restored
+  byte-identical, re-ran clean. Also confirmed the two open items left by
+  the prior FTF-H002 review cycle's own note (stale-SHA discrimination
+  distinct from "missing", and no check treating `BLOCKED_EXTERNAL` as
+  equivalent to `PASS` in the composition) directly against the delivered
+  code and tests. Delivered work checked against FTF-H028's real
+  acceptance/negative_acceptance clauses via `tools/r1_handoff.py packet
+  FTF-H028`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
