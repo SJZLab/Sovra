@@ -1,10 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-1810 independently certified,
-PR #63 merge commit `84b71cf`)
+Updated: 2026-09-17 by relay (FTF-R014 implemented, PR to be opened,
+awaiting CI + Control plane L2 certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 12/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
+Certified: 12/300 · Provisional: 1 (FTF-R014) · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
@@ -74,12 +74,43 @@ CERTIFIED without counting toward product-true).
   explicitly disclosed rather than hidden; (3) some other explicit stack
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
+- 2026-09-17: an open PR (#67, from a prior session on this account)
+  claims this ask was resolved in a live interactive session ("owner
+  approved option 1") and edits this file to remove it and unblock
+  FTF-0102. That PR is unmerged (`mergeable_state: dirty`, conflicts with
+  `main`'s later history) and carries no GitHub-visible corroboration
+  (no comment/review from the owner on the PR itself) — plausible (it
+  names the owner's real account email) but not independently verifiable
+  from this file's own source of truth. This shift (scheduled/automated,
+  no live user present) left this ask exactly as written above rather
+  than treating an unconfirmed prior claim as newly approved, per this
+  session's own operating rule that only live user input can confirm an
+  approval. Commented on PR #67 explaining this; did not merge it, did
+  not touch FTF-0102. Resolving this — by the owner confirming directly
+  (a PR comment would do it), or by Control plane's independent judgment
+  — is still open. See PR #67 for the full claim.
 ## Active (relay works this)
 (empty — FTF-0101/FTF-0102 remain blocked, see "Owner actions" and
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-R014 — Bind selected coding executor to the embedded Release 1
+  execution controls. Implemented this shift
+  (`tools/implementation/executor_contract.py`,
+  `spec/implementation-executor.schema.json`,
+  `docs/implementation/executor-decision.md`,
+  `tests/implementation/test_r1_execution_binding.py` — 24 checks, real
+  fault injection against the self-certification guard). Binds this
+  repo's real executor (Claude Code CLI, R1_EMBEDDED file-only profile)
+  to Section 84 via live sha256 digests of the real current
+  `spec/RELEASE_1.md`. Scope is this task's own Q33/Q41 (not Q42) —
+  Q33's real safe-parallel-wave evidence is FTF-H034's own OS-thread
+  proof, not re-claimed here; disclosed, not hidden. proof_state
+  L1-PROVEN, certification_state PROVISIONAL. PR to be opened against
+  `main`; this session will subscribe to its activity and merge on green
+  per CLAUDE.md's "Do without asking," then await independent Control
+  plane L2 certification (not self-certified, Law 4). Full entry:
+  `docs/certifications/queue.md`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
