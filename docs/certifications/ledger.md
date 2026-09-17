@@ -1179,3 +1179,125 @@ corrected 2026-09-15.
   confirmed legitimate and non-inflated, and the delivered work matches
   the real task-packet contract's acceptance/negative_acceptance clauses
   item by item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-1810 — ReleaseQualificationWorkflow
+- Criterion ID: FTF-1810
+- PR: https://github.com/SJZLab/Sovra/pull/63
+- Merge commit: 84b71cfc254ea1ff90441a11692f6d77260d7eb7 (PR head
+  e4ac93bfca3346b87c43ff2e0ca721cfa4f8758c; `git diff` between the two
+  confirmed empty — the merge commit is tree-identical to the CI-verified
+  head)
+- Validated-by: session https://claude.ai/code/session_01UbQN1CRhc9SQDCm3VoY6Vf
+  (session-ID comparison performed and recorded before this entry: all
+  three commits on PR #63 carry `Claude-Session:
+  .../session_0154rGkMQgbT7Q5x8dgGJVep`; this session's ID does not
+  match — independent, not self-certification)
+- Date: 2026-09-17
+- Evidence independently re-verified this session, not taken on the PR's
+  own word:
+  1. Read the full PR diff (10 files, 1807 insertions/11 deletions):
+     `docs/operations/releasequalificationworkflow.py` (new module),
+     `tests/tasks/test_ftf_1810.py` (new, 16 checks),
+     `docs/implementation/task-packets/FTF-1810.md` (new task packet),
+     CI wiring additions in `.github/workflows/ci.yml` (1 step) and
+     `.github/workflows/10-release-qualification.yml` (2 steps, Tier 3
+     `workflow_dispatch`-only, never triggered by an ordinary PR),
+     `docs/spec-matrix.yaml` and `spec/verification-map.json` entries, and
+     tracking-doc bookkeeping (`PROGRESS.md`/`QUEUE.md`/
+     `docs/certifications/queue.md`). Nothing beyond FTF-1810's own
+     declared scope; no existing certified task's implementation file
+     touched.
+  2. CI verified for real, on the actual PR head: this session subscribed
+     to PR #63's activity while both `gate` and
+     `docker-local-stack-integration` were still `in_progress`, waited for
+     the real completion event rather than certifying against an
+     unfinished run, then confirmed via `pull_request_read get_check_runs`
+     that both completed `success` on SHA `e4ac93b` (run 35192517673) —
+     not a stale/self-reported claim.
+  3. Own re-run of the delivered test suite: `python3 tests/tasks/
+     test_ftf_1810.py` — 16/16 pass, matching the PR's claim.
+  4. **Real fault injection performed independently, distinct from both
+     of the producer's own** (the committed `skipped`-check removal and
+     the ad hoc `stale`-check removal recorded in the queue entry):
+     removed the `incomplete`-evidence check block (the `missing_fields`
+     guard for `evidence_id`/`commit`/`exit_code`) from
+     `docs/operations/releasequalificationworkflow.py`'s
+     `evaluate_scenario_evidence` — re-ran the test suite: exactly 3
+     checks failed for real (`a scenario evidence entry missing
+     'evidence_id'/'commit'/'exit_code' is FAIL (incomplete)`), all other
+     13 checks stayed green; restored the file byte-identical from a
+     pre-edit copy (`diff` confirmed empty), re-ran clean (16/16).
+  5. **Not fabricated, proven against the real repo:** ran
+     `python3 docs/operations/releasequalificationworkflow.py` directly
+     (not just re-reading the PR's printed claim) — genuinely reports
+     `overall_status: FAIL`, `scenario_count: 45` (43 scenarios + 2
+     bindings), every one of the 43 required scenarios `missing`, and
+     both `release_image_binding`/`release_profile_binding`
+     `BLOCKED_EXTERNAL` — the honest current-repo state, matching the PR's
+     disclosure exactly.
+  6. `product_truth_check.py --fail-on-unwired` — `0/0 product-true`,
+     confirmed legitimate by reading `docs/spec-matrix.yaml`'s FTF-1810
+     entry directly: `proving_symbol: ''` (no live-wired caller claimed),
+     so `0/0` is the correct result, not an unearned pass.
+  7. Full regression set re-run with the actual pinned toolchain (not a
+     stray system-wide one): `uv sync` then `uv run ruff check .` /
+     `ruff format --check .` / `mypy .` clean; `pnpm install
+     --frozen-lockfile` then `pnpm run lint`/`typecheck`/`format:check`
+     and `pnpm exec vitest run` (2 passed) clean; `uv run pytest
+     tests/unit` (3 passed) clean; all 12 existing task
+     negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py`
+     through `test_ftf_h034.py`) pass unmodified — no regression to
+     already-certified evidence. Note: an initial pass using this
+     sandbox's stray system-wide `ruff` (0.15.8, not the project's pinned
+     `ruff>=0.6.9,<0.7`) surfaced 5 `UP042` findings in
+     `scripts/release_evidence_gate.py` and `apps/api/app/config/
+     configuration_system.py` — confirmed these pre-exist on `main` before
+     this PR (`git checkout <base-sha> -- .` reproduced the same 5
+     findings) and disappear entirely under the actual pinned `uv run
+     ruff` (0.6.9) — a sandbox-version artifact, not a real regression,
+     and not this PR's to fix regardless.
+  8. `python3 scripts/validate_spec.py --strict` clean;
+     `python3 scripts/verify_task.py --task FTF-1810 --stage task` ->
+     `PASS` against evidence commit `e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a`;
+     `python3 scripts/verify_release.py` confirmed non-inflated:
+     `11/300`/`FAILED (1): ['FTF-1810']`/`NOT READY` before this
+     certification's `docs/spec-matrix.yaml` edit, `12/300`/`NOT READY`
+     after (12/300 is correct — FTF-1810 alone was the remaining
+     PROVISIONAL item).
+  9. Confirmed FTF-1810's stated dependencies (FTF-H001, FTF-H028) are
+     both genuinely `certification_state: CERTIFIED` in the real, current
+     `docs/spec-matrix.yaml` — dependency-readiness was not assumed from
+     the PR body alone.
+  10. Delivered work checked against FTF-1810's real acceptance/
+      negative_acceptance clauses via `tools/r1_handoff.py packet
+      FTF-1810 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: "run the
+      authoritative Q01-Q43 aggregator on exact release; bind result to
+      current scope/hash/image/profile" — met by
+      `resolve_release_binding`/`run_release_qualification_workflow`
+      binding to the real `scope_digest`/`commit_sha` and honestly
+      `BLOCKED_EXTERNAL` image/profile fields; "missing/skipped/stale/
+      unsigned/tampered/incomplete scenario cannot authorize release" —
+      met and proven by fixture plus this session's own independent fault
+      injection (finding 4 above) against the `incomplete` branch
+      specifically, which the producer's own two fault injections did not
+      target.
+  11. After setting `certification_state: CERTIFIED`, re-ran
+      `scripts.task_claim.sync_certified_status()` against the real repo
+      files (the same tool FTF-H034 delivered and FTF-H034's own
+      certification used) — diff confirmed limited to exactly FTF-1810's
+      own `status`/`evidence` fields in `spec/tasks.json` and
+      `docs/implementation/TRACKER.json`, nothing else touched.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit is
+  tree-identical to the CI-verified head, the real pinned toolchain
+  installed and both verification commands genuinely re-run, a fresh
+  fault injection (distinct from either of the producer's own, targeting
+  the one named rejection reason neither of them exercised) confirms the
+  fail-closed evidence gate is code-enforced rather than fixture-assumed,
+  the real aggregator's `NOT READY`/all-scenarios-missing/both-bindings-
+  `BLOCKED_EXTERNAL` result was independently reproduced rather than
+  trusted from the PR body, `product_truth_check.py`'s `0/0` and
+  `verify_release.py`'s `11/300`→`12/300` non-inflated transition are both
+  confirmed legitimate, and the delivered work matches the real
+  task-packet contract's acceptance/negative_acceptance clauses item by
+  item. No open defect. Certified L2-CERTIFIED.
