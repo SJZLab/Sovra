@@ -1,5 +1,40 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T07:00:00Z
+Updated: 2026-09-17T07:03:00Z
+
+## 2026-09-17 — FTF-1810 (PR #63) merged to main as PROVISIONAL
+Same relay shift as the FTF-1810 implementation entry below. Subscribed to
+PR #63's activity on open; the `check_suite.completed` webhook event
+confirmed both `gate` and `docker-local-stack-integration` `completed`/
+`success` on the PR's actual head SHA (`e4ac93b`, confirmed via
+`pull_request_read get_check_runs`, not a stale/self-reported claim).
+`mergeable_state: clean`, `get_reviews`/`get_comments` both empty — no
+open review threads. Matches CLAUDE.md's "Do without asking: merge on
+green + L1 doc (PROVISIONAL)" — same discipline as every prior
+FTF-000X/FTF-H00X/FTF-R00X merge. Merged PR #63 (merge commit
+`84b71cfc254ea1ff90441a11692f6d77260d7eb7`). Not a certification — still
+PROVISIONAL, Law 4 untouched; `docs/spec-matrix.yaml`/`QUEUE.md`/
+`docs/certifications/queue.md` already carried the correct PROVISIONAL
+bookkeeping as part of this PR itself. Certified: 11/300 (unchanged — a
+merge to PROVISIONAL is not a certification). Product-true: 0 (unchanged).
+Unsubscribed this session from PR #63's activity (merged, nothing left to
+watch). Per the branch-restart convention (this session's designated
+branch's PR merged): restarted `claude/wizardly-fermat-g3s0o0` from the
+new `main` tip (`84b71cf`) to record this merge note, rather than
+stacking on now-merged history.
+
+STEP 4: no stop condition applies cleanly (not N/N proven — FTF-R011/
+FTF-R017/FTF-R014 remain dependency-ready and unclaimed; no true blocker;
+not stuck; no ask-first item newly raised) — this was simply the end of
+the concrete action available this shift (FTF-1810 driven from "PR open,
+CI in flight" to "green and merged, awaiting L2"). Not spending this
+shift's remaining effort starting a new task from scratch after already
+landing FTF-1810 — leaving the FTF-R011/FTF-R017/FTF-R014 sweep to the
+next shift, consistent with this repo's established one-task-per-shift
+pattern. The 2026-09-16 FTF-0102 new-runtime-dependency owner ask and the
+2026-09-15 trigger-tooling ask remain open and untouched.
+
+Certified: 11/300 (unchanged). Provisional: 1 (FTF-1810, PR #63, merged,
+awaiting L2). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-1810 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
