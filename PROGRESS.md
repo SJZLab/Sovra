@@ -68,6 +68,92 @@ per CERTIFY step 2 ("confirm CI actually ran... and its conclusion"),
 there is nothing to certify against yet. Left `certification_state:
 PROVISIONAL` unchanged, noted in QUEUE.md for the next check.
 
+
+## 2026-09-17 — FTF-R011 implemented (Provisional, PR #72 opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md/
+BLOCKER.md (all resolved history, no open blocker), cross-checked against
+live repo state via `git fetch origin` and `list_pull_requests`.
+STEP 0.2: `cognee-cli` not on PATH — text-search fallback, same as every
+prior shift.
+
+Two open PRs found: #71 (an independent Control-plane CERTIFY-mode review
++ fix for FTF-R015, session `session_01Wn6FwbAzgvmKf9AcqXKLbQ`, CI-green,
+not self-certifiable by that same session — left untouched, not this
+shift's role) and #67 (the still-unconfirmed FTF-0102 "owner approved
+option 1" claim — re-checked comments, still no owner corroboration,
+`mergeable_state` still not clean, left exactly as prior shifts recorded
+it).
+
+QUEUE.md Active was empty. Computed real dependency-ready NOT_STARTED work
+directly from `spec/tasks.json` (status/dependencies) rather than trusting
+any stale "ready" flag: FTF-0102 (blocked on the standing owner ask),
+FTF-R011 and FTF-R017 (both newly dependency-ready, neither previously
+claimed). Picked FTF-R011 (topological order 16, ahead of FTF-R017's 17).
+
+Pulled the real DoD via `tools/r1_handoff.py packet FTF-R011`. Before
+touching `spec/deployment-profiles.yaml` (created by FTF-R001, CERTIFIED),
+directly verified the Law 15 concern a prior shift's FTF-R015 entry had
+flagged and deferred: `grep`'d FTF-R001's entire certified evidence surface
+(`tests/tasks/test_ftf_r001.py`, `scripts/architecture_lock.py`) — zero
+references to that file. Extended only its `assertion_applicability`
+section (FTF-R001's own header comment called its two prior entries
+"worked examples", not a complete deliverable); left the `profiles:`
+section byte-identical. No requalification triggered — confirmed, not
+assumed.
+
+Delivered: `spec/deployment-profiles.yaml`'s `assertion_applicability`
+extended from 2 to all 43 required scenarios (owners projected from
+`spec/release-scope.yaml`, status enum excludes `N/A`); 5 scenarios
+(Q03/Q12 preserved from FTF-R001, Q26/Q37/Q39 newly classified — disclosed
+judgment, Q26 independently corroborated by this task's own resolved
+`qualification_scenarios`) split into distinct connected/air-gap
+assertions, the other 38 uniform. `scripts/validate_profile_scope.py`
+(generator/validator + `generate_expected_checks`/`assert_profile_qualified`/
+`assert_full_product_done`) and `tests/security/test_profile_scope.py` (15
+checks). Wired both into `.github/workflows/ci.yml`.
+
+Law 1 evidence: all four of FTF-R011's own negative_acceptance cases proven
+rejected (N/A status, air-gap denial substituting for a connected positive,
+external provider expected under air gap, dropping an old scenario ID),
+plus a real fault injection against the tracked validator module (removed
+the distinctness guard, confirmed the defect wrongly passes, restored
+byte-identical). Manually confirmed outside the test file too: reverting
+`spec/deployment-profiles.yaml` to its pre-FTF-R011 state makes both the
+validator and the test suite genuinely fail (43 `missing_scenario` errors /
+`TypeError`), not vacuously pass.
+
+Regression: `uv run ruff check/format/mypy` and `pnpm lint/format/typecheck`
+clean (after fresh `pnpm install --frozen-lockfile`); all 14 existing task
+test scripts (including `test_ftf_r001.py` specifically, per the Law 15
+check) pass unmodified; `uv run pytest tests/unit` (3 passed), `pnpm exec
+vitest run` (2 passed); `validate_spec.py --strict` clean; `verify_task.py
+--task FTF-R011 --stage task` → `PASS`; `verify_release.py` non-inflated
+(`13/300`, `FAILED (2): ['FTF-R011', 'FTF-R015']`, `NOT READY`);
+`product_truth_check.py --fail-on-unwired` stays `0/0` (no proving_symbol —
+release-matrix governance/validator layer, no live Factory product-runtime
+caller yet).
+
+Two-commit pattern: `18dd282` (implementation), `a3d7084` (hash-fixup:
+`docs/spec-matrix.yaml`/`spec/verification-map.json` pointing at
+`18dd282`). Third commit `6ac7686`: QUEUE.md/`docs/certifications/queue.md`
+PROVISIONAL bookkeeping. `certification_state: PROVISIONAL`,
+`proof_state: L1-PROVEN` — not self-certified (Law 4), awaiting Control
+plane L2 review.
+
+PR #72 opened against `main` (`[relay] FTF-R011: ...`); CI queued/running
+on the real PR head at shift-write time — not yet confirmed green, will be
+reconfirmed by whichever session picks this up next (relay or
+Control-plane). Certified count unchanged at 13/300 (PROVISIONAL never
+inflates it); Provisional now 2 (FTF-R011, FTF-R015).
+
+Stopping per STEP 4(a): this task is now fully L1-PROVEN pending CI
+confirmation and Control-plane L2 certification, which is outside the
+relay's own role (Law 4). Next shift: confirm PR #72's CI result and
+either continue with FTF-R017 (the other dependency-ready item found this
+shift) or pick up whatever Control-plane certification work is pending.
+
 ## 2026-09-17 — FTF-R015 implemented (Provisional, PR #70 opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
 `sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
