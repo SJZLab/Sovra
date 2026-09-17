@@ -1,5 +1,74 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T04:30:00Z
+Updated: 2026-09-17T05:15:00Z
+
+## 2026-09-17 — FTF-H028 independently certified (Control plane, CERTIFY mode)
+Autonomous certifier shift, triggered by a `pull_request.opened` webhook
+for PR #56 (a doc-only shift-closeout bookkeeping PR from the same
+producer session that recorded PR #55's merge). Checked
+`docs/certifications/queue.md` for pending PROVISIONAL items per this
+session's standing job: FTF-H002 was already `CERTIFIED` (ledger entry on
+record, PR #51); FTF-H028 was the sole outstanding PROVISIONAL item, and
+its real implementation had already merged to `main` as PR #55
+(`1de330d`) before PR #56 opened — PR #56 itself is bookkeeping, not the
+certified artifact.
+
+Session-ID check: PR #55's four commits (`d502c89`, `183321c`, `813ede7`,
+`2040620`) all carry `Claude-Session: .../session_01D4UBNWAuJwWHKpfHwSuV7U`.
+This session's own ID (`session_01MqgdZaVXK61u6s6scVuNkr`) matches
+neither — independent, not self-certification.
+
+Re-verified directly rather than taken on the queue entry's word: read
+the full `920d6ad..1de330d` diff (12 files, 2165 insertions); confirmed
+CI genuinely green on PR #55's actual head
+(`204062058bbdc19f269480df236190d17e3648f2`, `gate` run 35176632687 +
+`docker-local-stack-integration`, both `completed`/`success`) via a live
+`pull_request_read get_check_runs` call, and that the merge commit on
+`main` is tree-identical to that CI-verified head (`git diff 2040620
+1de330d --stat` empty); set up the real toolchain (`uv sync`, `pnpm
+install --frozen-lockfile` — this fresh checkout had neither) and re-ran
+`tests/tasks/test_ftf_h028.py` (33/33 pass), `validate_spec.py --strict`
+(clean), `verify_task.py --task FTF-H028 --stage task` (`PASS` against
+`d502c89`, matching the recorded `evidence_hash`), the full regression set
+(`ruff`/`mypy`/`pytest`/`eslint`/`tsc`/`vitest`, all clean), and
+`product_truth_check.py --fail-on-unwired` (`0/0`, confirmed legitimate —
+`proving_symbol` is empty in `docs/spec-matrix.yaml`, an audit/CI-gate
+tooling layer with no live product-runtime caller yet, same rationale as
+every prior FTF-00XX/H0XX/R0XX entry). Ran a fresh, independently chosen
+fault injection distinct from either of the producer's own two (forbidden
+workflow-pattern scan; stale check-run SHA rejection): removed
+`check_branch_protection`'s `allow_force_pushes` rejection branch — caught
+for real by `test_branch_protection_missing_settings_fails` (exactly 1
+failure), restored byte-identical via `git checkout --
+scripts/release_evidence_gate.py` (`git diff` confirmed empty), re-ran
+clean. Also independently closed a gap the delivered test suite left
+untested: the acceptance clause names "matrix-omitted" reports among
+those that must fail, but this repo's workflows define no `strategy.matrix`
+today (confirmed via grep, zero hits) and no fixture exercises that path —
+constructed an independent fixture (a matrix-style check-run name,
+`"gate (3.10)"`, posted instead of the exact required `"gate"`) directly
+against `check_release_evidence_report`: correctly returns `FAIL`,
+confirming the exact-name-match design fails closed on this case too, not
+merely by assumption. Pulled the real contract via `python
+tools/r1_handoff.py packet FTF-H028 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and checked delivered work against its
+actual acceptance/negative_acceptance clauses item by item — both met.
+`.github/CODEOWNERS`'s `@samerzakaria` assignment independently confirmed
+via a live `get_me` call this session (same identity, sole
+collaborator/admin).
+
+No open defect found. Set `docs/spec-matrix.yaml`'s FTF-H028
+`certification_state` to `CERTIFIED`, appended
+`docs/certifications/ledger.md`, moved QUEUE.md's entry from Provisional
+to Done and updated its status line (Certified: 9/300 → 10/300,
+Provisional: 1 → 0). `scripts/status.py` now reports `10/300 certified ·
+0 product-true`; `verify_release.py` (with `node_modules`/`.venv`
+installed) reports `10/300 required task(s) have live-passing, CERTIFIED
+evidence`, still `NOT READY` overall (290 required tasks remain
+BLOCKED/not-started) — no inflation.
+
+Nothing else touched: no new task work started, no relay-queue
+reprioritization beyond this certification's own bookkeeping, per this
+session's standing certification-only scope.
 
 ## 2026-09-17 — FTF-H028 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:

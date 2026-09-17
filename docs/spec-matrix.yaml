@@ -2909,7 +2909,7 @@ FTF-H027:
   proving_symbol: ''
   proving_test: ''
 FTF-H028:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Trusted CI and exact-revision release evidence gate
   evidence_hash: d502c89a1733c0dbff054e07e556f1a74d244c3b

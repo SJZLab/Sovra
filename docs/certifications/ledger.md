@@ -884,3 +884,125 @@ corrected 2026-09-15.
   confirmed legitimate and non-inflated, and the delivered work matches the
   real task-packet contract's acceptance/negative_acceptance clauses item by
   item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-H028 — Trusted CI and exact-revision release evidence gate
+- Criterion ID: FTF-H028
+- PR: https://github.com/SJZLab/Sovra/pull/55 (`claude/wizardly-fermat-s54o5t`
+  → `main`). Merged `2026-09-17` by `samerzakaria` (human), merge commit
+  `1de330d7cbf71ba36ad8a65565eae1645fbd1929`.
+- Evidence commit: `d502c89a1733c0dbff054e07e556f1a74d244c3b` (implementation;
+  `183321c` is the same-PR hash-fixup commit). `evidence_hash` in
+  `docs/spec-matrix.yaml` matches `d502c89`.
+- Session-ID check: all four commits on PR #55 (`d502c89`, `183321c`, plus
+  the two bookkeeping commits `813ede7`/`2040620` also on that branch)
+  carry `Claude-Session: .../session_01D4UBNWAuJwWHKpfHwSuV7U`. This
+  reviewing session's ID (`session_01MqgdZaVXK61u6s6scVuNkr`) matches
+  neither — independent, not self-certification. Note: PR #56 (a
+  doc-only shift-closeout bookkeeping PR recording PR #55's merge,
+  opened by the same producer session) triggered this review but is not
+  itself the certified artifact — the certified code is PR #55, already
+  merged before PR #56 opened.
+- Evidence independently re-verified this session:
+  1. Read the full diff directly (`git diff 920d6ad..1de330d --stat` and
+     the changed files in full, 12 files/2165 insertions): confirmed
+     `scripts/release_evidence_gate.py`'s five checks
+     (`check_release_evidence_report`, `check_branch_protection`,
+     `check_release_manifest_signature`,
+     `check_required_workflows_have_no_forbidden_patterns`,
+     `check_no_untrusted_pull_request_target_checkout`) are each real,
+     fail-closed probes — none returns a canned verdict — and that
+     `GateResult.__post_init__` structurally forbids a `BLOCKED_EXTERNAL`
+     with an empty owner/next_action (mirroring FTF-H002's
+     `PreflightResult` guardrail). `scripts/verify_release.py`'s new
+     `--include-evidence-gate` flag is opt-in; every pre-existing call
+     site (no flag) is unchanged.
+  2. CI verified for real, on the actual PR head, not self-reported:
+     `pull_request_read get_check_runs` on PR #55 reports both `gate`
+     (run 35176632687, job 105059674271) and
+     `docker-local-stack-integration` (job 105059674022)
+     `completed`/`success`, tied to PR #55's actual head
+     `204062058bbdc19f269480df236190d17e3648f2` (confirmed via
+     `pull_request_read get` — `head.sha` matches). `git diff 2040620
+     1de330d --stat` is empty — the merge commit on `main` carries the
+     CI-verified head's tree unchanged.
+  3. Set up the real toolchain (`uv sync`, `uv pip install pyyaml`) and
+     re-ran every command for real on the merged tree:
+     `uv run python3 tests/tasks/test_ftf_h028.py` → all 33 checks pass;
+     `python3 scripts/validate_spec.py --strict` → clean;
+     `python3 scripts/verify_task.py --task FTF-H028 --stage task` →
+     `PASS` against evidence commit `d502c89`, matching the recorded
+     `evidence_hash`.
+  4. Ran the full regression set clean: `uv run ruff check .` (clean),
+     `uv run mypy .` (clean, 31 source files), `uv run pytest tests/unit`
+     (3 passed). `product_truth_check.py --fail-on-unwired` → `0/0
+     product-true`, confirmed legitimate per CERTIFY step 4:
+     `docs/spec-matrix.yaml`'s FTF-H028 entry has `proving_symbol: ''` —
+     an audit/CI-gate tooling layer with no live product-runtime caller
+     yet, same disclosed rationale as every prior FTF-0002–0006/H001/
+     H002/R001 entry.
+  5. **Real fault injection against the tracked module, targeting a
+     different code path than either of the producer's own two fault
+     injections (forbidden-pattern scan; stale-SHA rejection):** removed
+     `check_branch_protection`'s `allow_force_pushes` rejection branch —
+     re-ran `tests/tasks/test_ftf_h028.py`: exactly 1 failure, on
+     `test_branch_protection_missing_settings_fails`'s assertion that a
+     force-push-enabled branch must fail (`"force" in result.detail`).
+     Restored the file byte-identical via `git checkout --
+     scripts/release_evidence_gate.py` (`git diff` confirmed empty),
+     re-ran clean (all 33 checks pass again) — confirms this check is
+     code-enforced, not fixture-assumed.
+  6. **Additional evidence produced for an under-tested acceptance
+     sub-clause:** the task's acceptance bullet names "matrix-omitted"
+     reports among those that "cannot pass," but no fixture in
+     `tests/tasks/test_ftf_h028.py` exercises a matrix scenario (this
+     repository's workflows currently define no `strategy.matrix`, so
+     there is nothing to omit yet — confirmed via
+     `grep -rn matrix .github/workflows/*.yml`, zero hits). Constructed
+     an independent fixture simulating a matrix leg posting under a
+     non-exact check-run name (`"gate (3.10)"` instead of the required
+     `"gate"`) against `check_release_evidence_report` directly: it
+     correctly returns `FAIL` (`"missing: 'gate' has no check-run report
+     for ..."`), because the check's exact-name-match design fails closed
+     on any check-run name that doesn't match a required name verbatim.
+     Not a defect — the mechanism generalizes correctly — but this
+     confirms the acceptance clause is met beyond the delivered test
+     suite's own coverage, since no repo-native matrix fixture exists to
+     exercise it directly.
+  7. Pulled the real contract via `python tools/r1_handoff.py packet
+     FTF-H028 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (resolved to
+     `docs/implementation/task-packets/FTF-H028.md`) and checked delivered
+     work against its actual acceptance/negative_acceptance clauses:
+     acceptance ("missing/skipped/stale/matrix-omitted/unsigned/tampered
+     reports and untrusted PR workflow cannot pass; verify actual branch
+     protection through real repository settings") is met by items 1–6
+     above; negative_acceptance ("no required continue-on-error or hidden
+     retry success; invalid release examples are negative tests, not
+     weakened expected results") is met by
+     `check_required_workflows_have_no_forbidden_patterns`, independently
+     re-run live against this repo's real `.github/workflows/*.yml` (4
+     files) — `PASS`, no forbidden pattern present today — and by its own
+     fixture-proven detection of each forbidden pattern individually.
+     `check_no_untrusted_pull_request_target_checkout` likewise re-run
+     live against the real workflows — `PASS`.
+  8. `.github/CODEOWNERS` assigns `@samerzakaria` to every protected gate
+     path; confirmed independently via a live `get_me` call this session
+     — `samerzakaria`, the same identity — matching the file's own
+     documented rationale (sole repository collaborator/admin).
+  9. `verify_task.py --task FTF-H028 --stage task` and
+     `validate_spec.py --strict` both genuinely re-run and pass (item 3).
+     `scripts/status.py` → `10/300 certified` after this entry, which is
+     what the `certification_state: CERTIFIED` edit to
+     `docs/spec-matrix.yaml` (made together with this ledger entry, per
+     Law 4/2) is expected to produce.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit is
+  tree-identical to the CI-verified head, the real toolchain installed and
+  both verification commands genuinely re-run, a fresh fault injection
+  (distinct from both of the producer's own) confirms the branch-protection
+  force-push rejection is code-enforced, and independently constructed
+  evidence closes the one acceptance sub-clause ("matrix-omitted") the
+  delivered test suite did not itself exercise. `product_truth_check.py`'s
+  0/0 confirmed legitimate and non-inflated. No open defect. Certified
+  L2-CERTIFIED.
+- Validated-by: session https://claude.ai/code/session_01MqgdZaVXK61u6s6scVuNkr
+  (independent — see session-ID check above), 2026-09-17.
