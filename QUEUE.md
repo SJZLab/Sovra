@@ -1,9 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — merged current `main`
-  into this branch to fix a real `mergeable_state: dirty` blocker that was
-  silently preventing CI from running on the last two pushes, same
-  structural issue FTF-0004 hit; added per-request debug instrumentation
-  to root-cause the 500/501 storage-semantics failures, see "Active" below)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — capacity fix confirmed
+  working (`01e88fb`); remaining 5/9 failures are a genuine SeaweedFS
+  3.71 version/capability gap, not a code bug — decision needed, see
+  "Active" below; merged current `main` into this branch again to fix a
+  second real `mergeable_state: dirty` recurrence, same structural issue
+  as before)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -123,12 +124,120 @@ that fix's own head still fails `storage-semantics-integration`, now with
 a different real error: `S3Error 500 InternalError` on 7/9 tests and
 `S3Error 501 NotImplemented` on the other 2
 (`test_retention_deletion`/`test_versioning`) — see
-`docs/certifications/queue.md`'s addendum for the exact run. Next relay
-shift on FTF-R017: root-cause the 500/501 responses (SigV4 request-shape
-bug in `storage_semantics_client.py` vs. a genuine SeaweedFS capability
-gap for retention/versioning headers), fix, push to the existing
-branch/PR #75, let `storage-semantics-integration` actually go green,
-then resubmit for certification. Do not open a new/duplicate PR for this.
+`docs/certifications/queue.md`'s addendum for the exact run.
+
+**Update, same day (this shift):** read the raw CI log for that run
+directly (job 105262713015, run 35239135374) rather than trusting the
+prior shift's own inference about which S3 operation fails inside each
+test — found that `tests/integration/test_storage_semantics.py`'s
+`main()` only catches `S3Error` at the whole-test-function level, so the
+exact operation (`CreateBucket` itself? the first write after it?
+`PutBucketVersioning` specifically?) has never actually been proven, only
+guessed by matching test names to their presumed first differentiating
+call. Reviewed `sign_request`'s canonical-request construction line by
+line against the AWS SigV4 spec — no structural defect found (payload
+hash, canonical headers/query, signing-key derivation all match the
+spec and are identical across every operation, including the one
+presumed to succeed) — and searched known SeaweedFS S3-gateway issues for
+this exact `InternalError`/`NotImplemented` wording (real GitHub issues
+exist for both, but for different underlying causes each time: capacity/
+volume-growth races, Content-MD5 digest mismatches funneled into a
+generic 500 before a later SeaweedFS fix, path-conflict cases) — none
+conclusively matches this fixture without knowing which real request
+fails. Rather than push another speculative "fix" and spend a second CI
+round-trip guessing wrong again, added real instrumentation instead:
+`S3Client` gained an opt-in `debug` flag (default `False`, zero behavior
+change for any other caller — verified by re-running this task's own
+non-Docker unit test, `tests/tasks/test_ftf_r017.py`, plus the full
+15-script existing regression set, pytest, and vitest, all clean) that
+prints each request's shape (method/canonical-URI/query-key-names/
+header-names/body-length) before it executes and the real response
+status/code/message after — never credentials, the Authorization header,
+or signature material. Wired to `True` only in the integration test's own
+client construction. Pushed as commit `a43dff9` to the same branch/PR #75
+(not a new PR).
+
+**Update, same shift (CI had actually never run at all):** re-checking
+`get_check_runs` after the `a43dff9` push kept returning `total_count: 0`
+— not a delay. `pull_request_read.get` showed why: `mergeable_state:
+"dirty"`, a real conflict against `main` caused by the Control-plane
+certifier session having pushed its review commits (`730d87d`/`b52f83c`)
+directly to `main` while this PR was open on an older base. This is the
+exact same structural failure FTF-0004 hit (see its own "not in a
+certifiable state" entry) — a `dirty` PR silently stops GitHub Actions
+from generating check runs for further pushes at all. Fixed the same way:
+merged current `main` into `claude/wizardly-fermat-ci7leb` (three
+tracking-doc-only conflicts, no code conflict, resolved chronologically;
+also caught and fixed two places where git's own merge silently kept a
+stale `Provisional: 1`/`## Provisional` entry that `main`'s own review had
+already correctly cleared — confirmed against `git show
+origin/main:QUEUE.md` directly). Re-ran the full regression suite clean,
+pushed the merge commit `a2b2123`. Confirmed: `mergeable_state` is now
+`clean` and a real CI run (35250917560) is genuinely `in_progress` on all
+three jobs, including `storage-semantics-integration` — the debug
+instrumentation will run for the first time on this run.
+
+Next relay shift (or this shift's continuation once CI lands): read the
+new run's per-request debug lines to see exactly which operation the
+first 500/501 hits, then fix that specific cause (a real client
+request-shape bug, or — if it turns out to be a genuine SeaweedFS
+capability gap for a specific operation like `PutBucketVersioning` —
+disclose that as a resource_gate/negative-acceptance-scope finding rather
+than inventing a workaround), push to the existing branch/PR #75, let
+`storage-semantics-integration` actually go green, then resubmit for
+certification. Do not open a new/duplicate PR for this.
+
+**Update, same shift — root cause found, not a client/signing bug:** the
+new run (35250917560) genuinely ran with the debug instrumentation and
+failed again, but this time with real evidence: `test_backup_and_restore`
+completed all 10 of its own S3 calls successfully (proving the SigV4
+client itself is not the defect), and the `s3` container's own boot log
+(captured by this task's own `a8decce` commit) shows SeaweedFS's real
+`"no free volumes left"`/`"Not enough data nodes found"` errors — its
+default per-volume size assumption (30000MB) made its master compute far
+too low a volume ceiling for the GitHub Actions runner's real free disk,
+against this suite's ~11 independently-isolated buckets (each its own
+SeaweedFS "collection", eagerly growing up to 7 volumes on first write).
+Verified the correct fix flag against SeaweedFS's real source
+(`weed/command/server.go`) rather than guessing: `-master.
+volumeSizeLimitMB=64` added to the `s3` service's `command:` in
+`infra/docker/docker-compose.yml`, pushed as commit `01e88fb`.
+
+**Update, same shift — capacity fix confirmed working; remaining
+failures are a genuine SeaweedFS 3.71 version/capability gap, not a code
+bug:** re-ran CI (run 35251840024) — zero volume-exhaustion errors across
+56 real volumes created; 4/9 tests now pass completely
+(`test_backup_and_restore`/`test_multipart`/`test_multipart_abort`/
+`test_identity`). The remaining 5 are real SeaweedFS responses, traced to
+specific causes via `WebFetch`/`WebSearch` against SeaweedFS's own real
+release notes and GitHub issues, not guessed: `test_versioning`/
+`test_retention_deletion` (`PutBucketVersioning` → `501`) because the
+pinned `3.71` image's own release notes have zero mention of versioning/
+object-lock/WORM, while release `3.94`'s notes explicitly introduce S3
+object versioning and locking as new — the feature did not exist yet in
+this pin. `test_immutable_publication` (a COMPLIANCE-retained `DELETE`
+wrongly succeeds) is the same root cause (Object Lock postdates `3.71`
+too), separately corroborated against a real, dated upstream defect
+(`seaweedfs/seaweedfs#8350`/`#11333`, fixed by `#11335`/`#11361`/
+`#11362`). `test_checksum` (corrupted-body rejection returns `500` not
+`400`) matches a real SeaweedFS PR title found earlier this shift ("fix:
+s3 return BadDigest") that replaced exactly this generic-500 behavior.
+`test_encryption` (SSE-C key not enforced on GET) is real but not yet
+corroborated against a specific named upstream issue.
+
+This is now a fixture-version-adequacy question, not a bug this shift can
+close by itself — deliberately not attempting a speculative image-digest
+bump (verifying the exact right digest needs Docker Hub metadata queries
+this shift didn't complete, and this sandbox still can't test it directly
+against live Docker). Full write-up and three concrete options (bump the
+pin to ≥3.94 with the Object Lock fix; disclose partial qualification —
+3/8 semantics proven, 5/8 `BLOCKED_EXTERNAL` against this pinned image;
+or use the owner-provisioned `maintained_organizational_s3` backend
+`storage-profile.yaml` already declares as an alternative) are in
+PROGRESS.md's matching entry. Not deciding unilaterally — this is a
+design/scope call, not decided execution. `certification_state` stays
+`PROVISIONAL`; `01e88fb`'s capacity fix stays regardless of how this
+resolves — it is unconditionally correct.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 
