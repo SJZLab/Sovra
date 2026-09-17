@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sovra.internal/spec/implementation-executor.schema.json",
+  "title": "ImplementationExecutorDecision / ExecutorReceipt",
+  "description": "FTF-R014 -- binds the selected coding executor to the embedded Release 1 execution controls (Section 77.5's ImplementationExecutorDecision entity, Section 84's R1_EMBEDDED / R1_EMBEDDED_PLUS_EXISTING_SKILL profiles). Build/implementation-tooling metadata only -- never a Factory production runtime contract, and no Factory service depends on this file at runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "executor_id",
+    "model_route",
+    "execution_control_profile",
+    "source_file_digest",
+    "embedded_section_digest",
+    "producer_identity",
+    "validator_identity",
+    "workspace_identity"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^FTF-[A-Z0-9]+$"
+    },
+    "executor_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_route": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution_control_profile": {
+      "type": "string",
+      "enum": ["R1_EMBEDDED", "R1_EMBEDDED_PLUS_EXISTING_SKILL"]
+    },
+    "source_file_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "embedded_section_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "external_skill": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["name", "version", "file_hash"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "file_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "producer_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "validator_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "changed_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "openhands_selected_and_run": {
+      "type": "boolean"
+    },
+    "openhands_qualification_claimed": {
+      "type": "boolean"
+    }
+  }
+}

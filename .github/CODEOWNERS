@@ -42,3 +42,8 @@
 # CLAUDE.md and its integrity hash.
 /CLAUDE.md @samerzakaria
 /CLAUDE.md.sha256 @samerzakaria
+
+# FTF-R014 — executor-binding gate (Section 84.6: "after approval their
+# hashes and scope are protected").
+/tools/implementation/executor_contract.py @samerzakaria
+/spec/implementation-executor.schema.json @samerzakaria

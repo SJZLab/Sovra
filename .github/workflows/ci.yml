@@ -98,6 +98,8 @@ jobs:
         run: python3 tests/tasks/test_ftf_h034.py
       - name: FTF-1810 negative-test proof (release qualification workflow catches real defects)
         run: python3 tests/tasks/test_ftf_1810.py
+      - name: FTF-R014 negative-test proof (executor binding catches real defects)
+        run: python3 tests/implementation/test_r1_execution_binding.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
