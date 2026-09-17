@@ -1,5 +1,90 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T17:35:00Z
+Updated: 2026-09-17T19:35:00Z
+
+## 2026-09-17T19:35:00Z — Scheduled relay shift: independently confirmed FTF-R017 (PR #75) is real CI-green; no code changes, stopping per STEP 4(a)
+STEP 0: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` exactly
+— no drift, no BLOCKER.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` as
+committed on `main` (local branch `claude/wizardly-fermat-rpet52` created
+fresh from `origin/main`, commit `63fecd9`, which is also `main`'s current
+real tip — no unmerged prior work on this branch to preserve). Those
+files' newest entries (this file's own `17:35:00Z` header, QUEUE.md's
+"decision needed" framing) describe FTF-R017/PR #75 as blocked on a
+three-way design/scope decision (bump the pinned SeaweedFS fixture,
+disclose partial qualification, or switch backends) that this shift's own
+role (relay, execution-only) should not decide unilaterally.
+STEP 0.2: `cognee-cli` not found on `PATH` — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: checked GitHub directly (not trusting the tracking docs' possibly-
+stale content) for real state on the two open PRs. Found PR #75 was
+updated at `2026-09-17T19:08:45Z` — after this session's own tracking
+docs were last written (`17:35:00Z`) — by other sessions continuing work
+on the *same* branch/PR (`claude/wizardly-fermat-ci7leb`, not this
+session's own designated branch, so this session did not and should not
+push there). Read those commits directly rather than assuming their own
+messages are accurate: `60c8182` bumped the pinned SeaweedFS fixture
+`3.71` → `3.99` (verified against Docker Hub's metadata API and the real
+`weed/s3api/*.go` source at that tag before changing anything — resolving
+option 1 of the three-way decision the prior shift left open, with real
+evidence rather than a guess); `deaedc8` then found and fixed a genuine
+`S3Client` response-header case-sensitivity bug (SeaweedFS's Go server
+Title-Cases most headers on the wire; the client's lowercase-only lookups
+silently missed `x-amz-version-id`/`x-amz-delete-marker` every time) and
+corrected one test's own wrong assertion (`test_encryption`'s wrong-SSE-C-
+key case: SeaweedFS's real, source-confirmed response is `403
+AccessDenied`, not the test's assumed `400`). Final commit `3526a0c`
+claims "real CI confirmed green."
+**Independently verified that claim, not taken on the commit message's
+word:** `pull_request_read` (`method: get`) on PR #75 shows
+`mergeable_state: "clean"` against `main`'s real current tip (`63fecd9` —
+same as this branch's own base, no merge conflict); `get_check_runs` on
+the actual head SHA `3526a0c` shows all three CI jobs (`gate`,
+`docker-local-stack-integration`, `storage-semantics-integration`)
+`completed`/`success` on run `35263130329` (completed `19:09:59Z`) — a
+real, fresh run tied to this exact head, not a stale or self-reported
+result. This means all 8 Section-80.4 storage semantics required by
+FTF-R017 are now genuinely proven against the correctly-versioned
+SeaweedFS fixture; the three-way decision the prior shift flagged is
+resolved (option 1, with real corroborating evidence) rather than still
+open.
+**Did not merge or certify PR #75 this shift.** This session was invoked
+as the relay, not Control plane — CLAUDE.md's `CERTIFIER: Control plane
+(autonomous)` operating flag and Law 4 ("producer never certifies own
+work") govern, and this repo's own real precedent (`docs/certifications/
+ledger.md`, every certified task so far) shows the merge-on-green-CI step
+and the L2 certification have always been performed together by an
+independent certifier session, not by the relay mid-execution. Left one
+comment on PR #75 recording this independent confirmation (session-ID
+disclosed, CI re-checked via GitHub's own data) so Control plane's next
+autonomous pass doesn't have to re-discover it from scratch.
+Checked PR #67 (FTF-0102 owner-approval claim) for any new activity since
+this session's own prior comment (`2026-09-17T08:51:52Z`) — none found;
+that ask stands unchanged in QUEUE.md "Owner actions — current."
+No other item in QUEUE.md was dependency-ready and unblocked this shift
+(FTF-0102 is the sole `Blocked` entry, unchanged).
+Updated `QUEUE.md` (moved FTF-R017 from "Active" to "Provisional",
+appended this shift's independent CI-green confirmation, updated the
+Status line) to reflect the real, GitHub-verified state rather than
+`main`'s stale copy. Did not touch `docs/spec-matrix.yaml` or
+`docs/certifications/queue.md` — those track the *merged* tree's state
+and PR #75's own certification-queue entry respectively; updating either
+before Control plane's independent review would risk conflicting with
+review work already recorded on the PR's own branch (its own `9d7bf82`/
+`a298598`/`ce14699` commits already carry the full narrative that will
+land on `main` when the PR merges).
+No source code changed this shift — read-only verification plus tracking-
+doc updates only.
+Certified: 15/300 (unchanged, `main`). Provisional (`main`'s own
+`spec-matrix.yaml`): 0 (unchanged — FTF-R017's PROVISIONAL entry still
+lives only on PR #75's branch). Product-true: 0 (unchanged).
+Stopping per STEP 4(a): FTF-R017 is fully L1-PROVEN with real,
+independently-confirmed CI evidence — awaiting Control plane L2
+certification and (eventually) the L4 gate. Next shift: if PR #75 is
+still unmerged, re-check for a Control-plane review; if it has merged/
+certified, re-derive the next dependency-ready item via
+`tools/r1_handoff.py` rather than assuming FTF-0102 is still the only
+candidate.
+
 
 ## 2026-09-17 — FTF-R017 (PR #75): capacity fix confirmed working; remaining failures are a genuine SeaweedFS 3.71 version/capability gap, not a code bug — stopping here, decision needed
 Continuation of this same relay shift, after the `-master.volumeSizeLimitMB=64`

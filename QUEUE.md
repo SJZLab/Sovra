@@ -1,13 +1,18 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — capacity fix confirmed
-  working (`01e88fb`); remaining 5/9 failures are a genuine SeaweedFS
-  3.71 version/capability gap, not a code bug — decision needed, see
-  "Active" below)
+Updated: 2026-09-17T19:35:00Z by relay (FTF-R017 / PR #75 — real CI now
+  independently confirmed green on the PR's actual head `3526a0c`
+  (all 3 jobs `completed`/`success`); L1-PROVEN, awaiting Control plane
+  L2 certification — see "Provisional" below. Not merged/certified by
+  this shift, per Law 4 / CERTIFIER=Control plane.)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 15/300 · Provisional: 0 · Blocked: 1 (FTF-0102, new-runtime-dep
-owner ask, see below)
+Certified: 15/300 (main; unchanged this shift — PR #75 unmerged) ·
+Provisional: 0 on `main`'s own `docs/spec-matrix.yaml` (FTF-R017's
+PROVISIONAL entry exists only on PR #75's branch until it merges — same
+disclosed pattern FTF-0004 hit) but functionally 1 (FTF-R017,
+L1-PROVEN, real CI green, ready for Control plane review) · Blocked: 1
+(FTF-0102, new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014 and FTF-R015 all have no
@@ -99,6 +104,15 @@ without counting toward product-true).
   (a PR comment would do it), or by Control plane's independent judgment
   — is still open. See PR #67 for the full claim.
 ## Active (relay works this)
+(empty — FTF-R017 moved to "## Provisional" below: real CI is now
+confirmed green on PR #75's actual head, independently verified this
+shift. No other item is dependency-ready this shift: FTF-0102 remains
+the sole Blocked item, unchanged since 2026-09-16, see "Owner actions —
+current" above — no new owner response found on PR #67 as of this
+shift's check (last comment on that PR is still this session's own
+2026-09-17T08:51:52Z note).)
+
+## Provisional (awaiting Control plane L2 certification)
 FTF-R017 (Qualify maintained internal storage and OSS dependency
 lifecycle) has implementation work already pushed to
 `claude/wizardly-fermat-ci7leb` (PR #75), but per Control plane's
@@ -239,8 +253,48 @@ resolves — it is unconditionally correct.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 
-## Provisional (awaiting Control plane L2 certification)
-(empty)
+**Update (continuation, same PR, later sessions on `claude/wizardly-
+fermat-ci7leb`) — resolved without needing the owner decision above:**
+subsequent commits on PR #75 (`60c8182`, `deaedc8`, and their bookkeeping
+follow-ups) took option 1 from the three above — bumped the pinned
+SeaweedFS fixture `3.71` → `3.99` (verified against Docker Hub's
+metadata API and `weed/s3api/*.go` at the `3.99` tag directly before
+changing anything, not guessed), which is real evidence versioning/
+object-lock/BadDigest handling all exist in that release. That bump
+alone did not fully clear CI; a genuine client defect was found and
+fixed on top of it — `S3Client._request` built its response-header
+dict preserving wire case, but SeaweedFS's Go `Header().Set(...)`
+canonicalizes most headers to Title-Case (confirmed against
+`s3api_object_handlers_delete.go`/`_put.go` source), so the client's
+lowercase `x-amz-version-id`/`x-amz-delete-marker` lookups silently
+missed every time — fixed by lowercasing response header keys once in
+`_request` (a correctness fix, not a workaround: HTTP header names are
+case-insensitive per RFC 7230 §3.2). Separately corrected one test's own
+wrong assertion (`test_encryption`'s wrong-SSE-C-key case expected `400`;
+SeaweedFS's real, source-confirmed behavior is `403 AccessDenied` for a
+key that doesn't match — an authorization failure, not a malformed
+request; the server was right, the test assertion was wrong).
+
+**This shift (2026-09-17, later) — independently confirmed CI is
+genuinely green on the real PR head, not just the producer's own commit
+message:** read PR #75's actual state directly via `pull_request_read`
+(not trusting `main`'s stale copies of these tracking files, which
+still only reflect the pre-3.99-bump NOT-CERTIFIED state) —
+`mergeable_state: "clean"` against the current `main` tip (`63fecd9`,
+this branch's own base, no merge needed), and `get_check_runs` on the
+real head `3526a0c` shows all three jobs (`gate`,
+`docker-local-stack-integration`, `storage-semantics-integration`)
+`completed`/`success` (run 35263130329, completed ~19:09:59Z). This
+means all 8 Section-80.4 storage semantics are now genuinely proven
+against the real, correctly-versioned SeaweedFS fixture. Left a PR
+comment recording this independent confirmation for Control plane's
+next pass. Per this session's role (scheduled **relay**, not Control
+plane) and this repo's own established pattern (every certified task's
+merge-on-green-CI and L2 certification have so far been performed
+together, by the certifier session, per Law 4 "producer never certifies
+own work" and the CERTIFIER=Control plane operating flag) — not merging
+or certifying PR #75 myself. FTF-R017 is L1-PROVEN with real, non-self-
+reported CI evidence; stopping here per this shift's own STEP 4(a).
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
