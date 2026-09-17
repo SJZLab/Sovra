@@ -1,5 +1,136 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T17:35:00Z
+Updated: 2026-09-17T18:55:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): pinned SeaweedFS fixture bumped 3.71 -> 3.99, real source-verified, waiting on CI
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md/
+BLOCKER.md (BLOCKER.md holds only resolved history, no open blocker);
+cross-checked against live repo state via `git fetch origin main`
+(designated branch `claude/wizardly-fermat-86pieo` matched `origin/main`
+exactly at `63fecd9`, which already carries the prior shift's PR #76
+bookkeeping merge — no divergence). STEP 0.2: `cognee-cli` not on PATH —
+text-search fallback active, same as every prior shift.
+
+Two open PRs: #75 (FTF-R017, flagged "Active" — the prior shift's own
+entry) and #67 (the still-unconfirmed FTF-0102 "owner approved option 1"
+claim, `mergeable_state` still not clean, no new owner corroboration —
+left exactly as prior shifts recorded it, not re-litigated).
+
+Picked up #75/FTF-R017 per QUEUE.md's own "Active" entry. The prior
+shift's entry framed the remaining 5/9 real SeaweedFS-response failures
+(versioning/object-lock/checksum/encryption) as a "design/scope call"
+needing owner or Control-plane judgment, and declined to attempt a
+speculative digest bump for lack of time to verify it. Re-read this
+task's own resolved contract (`tools/r1_handoff.py packet FTF-R017
+--plan FINE_TUNING_FACTORY_RELEASE_1.md`) before accepting that framing:
+the acceptance clause is "use maintained approved organizational S3 **or
+qualified SeaweedFS fixture**" — SeaweedFS is not one of CLAUDE.md's seven
+protected reused components (Axolotl/Inspect AI/MLflow/vLLM/Temporal/
+LiteLLM/Argilla), it's the qualified local stand-in for the architecture
+table's "maintained organization S3-compatible service" row, and
+correcting its pinned version is not a new runtime dependency, not a
+component swap/fork, and not any other CLAUDE.md ask-first category — a
+version-pin fix squarely inside this task's own `resource_gate` ("missing
+evidence blocks and cannot be skipped," which cuts the other way too: if
+the evidence isn't actually missing for external reasons, it isn't a
+resource-gate case). Concluded this was unfinished verification work from
+the same continuing effort, not a genuine owner decision point — did the
+verification instead of writing an owner ask.
+
+**Verification performed before touching anything (Law 1 — not asserted
+from memory or a single unreliable source):**
+- Docker Hub's metadata API (`hub.docker.com/v2/repositories/.../tags/...`,
+  no image pull needed — same no-pull method FTF-0004's own evidence
+  already established): confirmed `chrislusf/seaweedfs:3.99` is the
+  current newest numbered tag (`3.100`/`3.101`/`3.102` all `404`) with a
+  real `amd64` manifest digest
+  (`sha256:e09c776650619259a23627b5405644396e94ebac49c66d8b89024ebfd85581dc`).
+- A `WebFetch` against a specific upstream GitHub PR this shift tried
+  first (to corroborate the prior shift's own PROGRESS.md research on
+  `seaweedfs/seaweedfs#11361`) returned a summary describing a different,
+  unrelated vulnerability with a suspiciously current merge date —
+  inconsistent with the prior shift's own finding for the same PR number.
+  Treated as unreliable rather than trusted or silently ignored: switched
+  to reading the actual SeaweedFS source at the real `3.99` git tag
+  directly via `raw.githubusercontent.com` instead of any further
+  webpage-summary tool.
+- Fetched `weed/command/server.go` at the `3.99` tag: `-s3.config`,
+  `-s3.port`, `-master.volumeSizeLimitMB` (the exact three flags this
+  compose file's `command:` already uses) are all present, unchanged in
+  name and semantics from what 3.71 exposes — confirms this is a pure
+  version bump, not a command-line migration.
+- Fetched `weed/s3api/s3api_bucket_handlers.go` at the `3.99` tag: real,
+  implemented `PutBucketVersioningHandler`/`GetBucketVersioningHandler`
+  functions exist, including genuine object-lock/versioning-state
+  interaction (e.g. rejecting a versioning-suspend request while object
+  lock is enabled on the bucket) — this handler class does not exist at
+  all in the pinned 3.71 (matching the prior shift's own real `501
+  NotImplemented` CI evidence for `PutBucketVersioning`).
+- Fetched `weed/s3api/s3api_object_handlers_put.go` at the `3.99` tag:
+  confirmed a real `case errString == constants.ErrMsgBadDigest: return
+  s3err.ErrBadDigest` mapping exists — a corrupted-body upload gets the
+  correct `400 BadDigest`, not 3.71's generic `500 InternalError` (matching
+  the prior shift's own real CI evidence for `test_checksum`).
+- Did not independently re-verify the SSE-C/encryption-enforcement claim
+  in source before pushing (time-bounded, and the CI run itself will
+  prove or disprove it directly either way) — disclosed, not hidden.
+
+**Law 15 check:** grepped the whole repo for the old digest string and for
+any other file assuming a specific SeaweedFS version — only
+`infra/docker/docker-compose.yml` pins it. Re-confirmed FTF-0004's entire
+certified evidence surface (`tests/tasks/test_ftf_0004.py`,
+`scripts/verify_docker_local_stack.py`) only exercises TCP-level
+reachability, never image version or S3 semantics — this bump doesn't
+touch it, same conclusion the prior shift's own `volumeSizeLimitMB` fix
+already reached for this exact file.
+
+**Delivered:** `infra/docker/docker-compose.yml`'s `s3` service image
+bumped from the `3.71` digest to the verified `3.99` digest, with the
+verification trail above recorded in the file's own comment (not just in
+this doc) so the next reader doesn't have to re-derive it. No other file
+changed — no other file references the digest or assumes a version.
+
+**Regression (fresh, unshallowed worktree at the branch's real head,
+`60c8182`):** `uv run ruff check`/`format --check`/`mypy .` clean; `pnpm
+run lint`/`format:check`/`typecheck` clean (after `pnpm install
+--frozen-lockfile` — fresh worktree, no `node_modules`); all 16 existing
+task negative-test-proof scripts pass, including this task's own
+`tests/tasks/test_ftf_r017.py` (unaffected — it's Docker-independent SigV4
+math, not this compose file); `uv run pytest tests/unit` (3 passed);
+`pnpm exec vitest run` (2 passed); `scripts/validate_spec.py --strict`
+clean; `docker compose -f infra/docker/docker-compose.yml config` parses
+the new digest cleanly (no pull attempted or needed for this check). Three
+Python task-script false failures on the first pass
+(`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py`) were the same
+disclosed shallow-clone artifact prior shifts have repeatedly hit
+(`git fetch --unshallow` made all three pass clean) — not a real
+regression, confirmed by re-running clean afterward.
+
+Pushed as commit `60c8182` to the existing PR #75 branch
+(`claude/wizardly-fermat-ci7leb`) — not a new/duplicate PR.
+`pull_request_read.get` confirmed `mergeable_state: clean` on the new
+head. Subscribed to PR #75's activity.
+
+STEP 4: not a stop condition — this is a real, source-verified fix
+pushed for CI to confirm, not a design/scope decision needing the owner,
+and not a repeated failed guess (this is the first actual code change
+attempted for the version-gap finding; the prior shift only diagnosed and
+declined to act). Waiting on the subscribed PR activity event for this
+run's actual result: if `storage-semantics-integration` goes fully green,
+resubmit for certification; if any of the 5 previously-failing tests
+still fail for a *different* real reason (e.g. the un-verified SSE-C
+claim), diagnose that specifically next; if it fails for the *same*
+reason unchanged, treat this as this shift's first wrong guess (not yet a
+3x-stuck condition) and reassess rather than immediately trying a further
+speculative bump. `certification_state` for FTF-R017 remains
+`PROVISIONAL` (unchanged). FTF-0102 remains blocked on the standing owner
+ask; PR #67's claim remains unconfirmed and unactioned (no new
+corroboration this shift).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged — FTF-R017 is
+tracked only in "Active" pending a green CI run, same as every prior
+FTF-R017 entry). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-R017 (PR #75): capacity fix confirmed working; remaining failures are a genuine SeaweedFS 3.71 version/capability gap, not a code bug — stopping here, decision needed
 Continuation of this same relay shift, after the `-master.volumeSizeLimitMB=64`

@@ -1,10 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — capacity fix confirmed
-  working (`01e88fb`); remaining 5/9 failures are a genuine SeaweedFS
-  3.71 version/capability gap, not a code bug — decision needed, see
-  "Active" below; merged current `main` into this branch again to fix a
-  second real `mergeable_state: dirty` recurrence, same structural issue
-  as before)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — bumped the pinned
+  SeaweedFS fixture 3.71 -> 3.99, verified against real Docker Hub
+  metadata and real GitHub source at the 3.99 tag before pushing
+  (`60c8182`); waiting on this specific CI run to confirm whether it
+  actually clears the remaining 5/9 real-response failures, see
+  "Active" below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -238,6 +238,42 @@ PROGRESS.md's matching entry. Not deciding unilaterally — this is a
 design/scope call, not decided execution. `certification_state` stays
 `PROVISIONAL`; `01e88fb`'s capacity fix stays regardless of how this
 resolves — it is unconditionally correct.
+
+**Update, next shift — reconsidered option 1 is not actually an owner
+decision:** re-read this task's own resolved contract
+(`tools/r1_handoff.py packet FTF-R017`): the acceptance clause requires
+proving the real storage semantics against "an approved organizational S3
+or qualified SeaweedFS fixture" — SeaweedFS is not one of CLAUDE.md's
+seven protected reused components (Axolotl/Inspect AI/MLflow/vLLM/
+Temporal/LiteLLM/Argilla), it's the qualified stand-in for the "maintained
+organization S3-compatible service" row, and bumping its pinned version is
+neither a new runtime dependency, a component swap/fork, nor any other
+CLAUDE.md ask-first category — it's a version-pin correction within this
+task's own `resource_gate`. Did the verification the prior entry said it
+didn't have time for, without repeating a speculative guess: Docker Hub's
+metadata API (no pull, same no-pull method FTF-0004 already used) confirms
+`chrislusf/seaweedfs:3.99` is the newest numbered tag (3.100+ all 404);
+fetched `weed/command/server.go` at the real `3.99` git tag directly from
+GitHub raw content and confirmed `-s3.config`/`-s3.port`/
+`-master.volumeSizeLimitMB` are unchanged, so this is a pure version bump;
+fetched `weed/s3api/s3api_bucket_handlers.go` and
+`s3api_object_handlers_put.go` at `3.99` and confirmed directly in source
+(not from an unreliable web summary — a same-session `WebFetch` attempt on
+a specific upstream PR returned an inconsistent, oddly-dated summary not
+worth trusting, so this shift verified against the actual GitHub source
+tree instead) that `PutBucketVersioningHandler`/`GetBucketVersioningHandler`
+are real implemented handlers with real object-lock interaction, and a
+digest mismatch maps to `s3err.ErrBadDigest`, not a generic 500 — both
+genuinely absent/wrong in the pinned 3.71. Bumped the pin
+(`infra/docker/docker-compose.yml`, commit `60c8182` on the existing PR #75
+branch, not a new PR); full regression (fresh unshallowed worktree: ruff/
+format/mypy, eslint/prettier/tsc, all 16 existing task scripts including
+this task's own `test_ftf_r017.py`, pytest, vitest, `validate_spec.py
+--strict`, `docker compose config`) clean. Whether this actually clears
+the remaining 5/9 real-response failures is for the next CI run (GitHub
+Actions' hosted runner, real registry egress) to prove — not asserted
+here. If it does not fully clear them, options 2/3 above remain live for
+whoever picks this up next.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 
