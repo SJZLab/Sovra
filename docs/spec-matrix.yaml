@@ -2542,7 +2542,7 @@ FTF-1810:
   certification_state: PROVISIONAL
   criticality: MUST
   description: ReleaseQualificationWorkflow
-  evidence_hash: ''
+  evidence_hash: e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-02, AF-36; scenarios=Q30, Q34; deps=FTF-H001, FTF-H028;
     binds the real Q01-Q43 aggregator (spec/qualification-inventory.json) to the release's
