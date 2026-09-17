@@ -1,5 +1,103 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T02:00:00Z
+Updated: 2026-09-17T04:30:00Z
+
+## 2026-09-17 — FTF-H028 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main` — local
+designated branch had no remote counterpart yet (first push this session),
+restarted from `origin/main` at `920d6ad` (PR #54's merge, FTF-H002
+certification bookkeeping). `BLOCKER.md` held only resolved history.
+QUEUE.md Active/Provisional both empty, 9/300 certified, Blocked: 1
+(FTF-0102, unchanged open owner ask).
+
+STEP 1: FTF-0101/FTF-0102 remain blocked on the standing new-runtime-dep
+owner ask (unchanged, not re-litigated). The prior shift's own note flagged
+FTF-H028 (deps FTF-0003, FTF-H001, both CERTIFIED) as the likely next
+candidate once FTF-H002 certified — confirmed dependency-ready directly
+against `docs/spec-matrix.yaml` before claiming it. Real DoD resolved via
+`tools/r1_handoff.py packet FTF-H028 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+(not improvised).
+
+STEP 2 (PEV):
+- P: read the task packet. Its acceptance clause ("verify actual branch
+  protection through real repository settings") needs a real GitHub API
+  read — tested live before assuming infeasibility (not assumed from
+  CLAUDE.md's note alone): a direct GET against
+  `https://api.github.com/repos/SJZLab/Sovra/branches/main/protection`
+  returned a real HTTP 403 `"Resource not accessible by integration"`.
+  Section 52 itself names the correct handling for this
+  (`resource_gate`: "Missing GitHub/GPU/provider access is
+  BLOCKED_EXTERNAL and blocks full release") — a resource_gate to build
+  around honestly, not a DoD-clarity gap requiring BLOCKER.md.
+- E: implemented `scripts/release_evidence_gate.py` (`GateResult`/
+  `GateStatus` mirroring FTF-H002's `PreflightResult` anti-fabrication
+  guardrail — a BLOCKED_EXTERNAL result structurally requires a non-empty
+  owner/next_action): `check_release_evidence_report` (real check-run
+  report validity against the exact release SHA — missing/stale/
+  incomplete/non-success all rejected), `check_branch_protection` (a real
+  GET, 403/404 honestly BLOCKED_EXTERNAL, a real 200 validated against
+  required settings), `check_release_manifest_signature` (an injectable
+  verifier; unsigned always fails, signed-with-no-verifier is
+  BLOCKED_EXTERNAL — never a fabricated PASS from presence alone),
+  `check_required_workflows_have_no_forbidden_patterns` (Section 52's
+  named forbidden patterns: continue-on-error/||true/forced-exit-0/focus
+  markers), `check_no_untrusted_pull_request_target_checkout` (handles
+  PyYAML's `on:` -> boolean-`True` quirk, confirmed empirically first).
+  Wired into `scripts/verify_release.py` behind an opt-in
+  `--include-evidence-gate` flag so every existing caller's behavior is
+  unchanged. `.github/workflows/10-release-qualification.yml`: the real
+  protected aggregator (`workflow_dispatch`-only, Tier 3/release-only —
+  the relay never dispatches it). `.github/CODEOWNERS`: the real
+  repository owner (`samerzakaria`, confirmed live via `get_me`/
+  `list_repository_collaborators`) assigned to every protected gate path.
+  `tests/tasks/test_ftf_h028.py` (33 checks): every check's real
+  positive/negative branches via fixtures, plus a genuine live network
+  call confirming today's real branch-protection denial (not only a
+  fixture), plus two independent real fault injections (one in-test
+  against the live imported module, one external against the tracked
+  file's stale-SHA branch, run separately and restored byte-identical
+  with `diff` confirming empty) proving the checks are load-bearing.
+  Caught zero lint/type defects this shift (clean on first full run after
+  `ruff format`).
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no proving_symbol (CI/gate tooling layer, no live
+  product-runtime caller, same rationale as every prior FTF-H00X/FTF-R00X
+  task).
+Re-ran the full existing gate after all changes: `uv run ruff
+check`/`format --check`/`mypy .` clean; `pnpm run lint`/`format:check`/
+`typecheck` clean; all 10 existing task negative-test-proof scripts
+(`test_ftf_0001_monorepo_layout.py` through `test_ftf_h002.py`, now joined
+by `test_ftf_h028.py`) pass unmodified — no already-certified task's own
+implementation file was touched, only additive modules/workflow/
+CODEOWNERS, avoiding any Law 15 requalification question; `uv run pytest
+tests/unit` (3 passed) and `pnpm exec vitest run` (2 passed) clean, 0
+skipped either side. `validate_spec.py --strict` clean; `verify_task.py
+--task FTF-H028 --stage task` → `PASS` against evidence commit `d502c89`.
+Wired `python3 tests/tasks/test_ftf_h028.py` into `.github/workflows/
+ci.yml`'s `gate` job, right after the FTF-H002 step (YAML-validated with
+`yaml.safe_load`); the new `10-release-qualification.yml` file itself is
+`workflow_dispatch`-only, deliberately never triggered by an ordinary PR
+per CLAUDE.md's ship-gate rule.
+Updated `docs/spec-matrix.yaml` (FTF-H028: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` filled in the hash-fixup commit — same
+two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002),
+`spec/verification-map.json` (real, currently re-executable entry),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, Provisional 0→1). Certified count unchanged at
+9/300 — PROVISIONAL is not certified. Per Law 4, did not self-certify.
+
+STEP 4: stopping here for this shift's active work — FTF-H028 is fully
+L1-PROVEN and PROVISIONAL, PR to be opened against `main` next and this
+session will subscribe to its activity, merging on green (per CLAUDE.md's
+"Do without asking: merge on green + L1 doc (PROVISIONAL)") without
+further owner input, then continue awaiting Control plane L2
+certification — not a second self-certification, per Law 4. The
+2026-09-16 FTF-0102 new-runtime-dependency owner ask and the 2026-09-15
+trigger-tooling ask remain open and untouched.
+
+Certified: 9/300 (unchanged). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane certification — FTF-H002 CERTIFIED (PR #51 verified)
 Scheduled CERTIFY routine (triggered by the `pull_request.opened` webhook
