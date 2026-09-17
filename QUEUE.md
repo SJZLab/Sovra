@@ -1,6 +1,6 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-17 by Control plane (FTF-H002 independently certified,
-PR #51)
+PR #51 → PR #53)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -71,7 +71,8 @@ toward product-true).
 remain blocked, see "Owner actions" and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+(empty — FTF-H002 (PR #51) independently certified this shift, see "Done"
+below)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

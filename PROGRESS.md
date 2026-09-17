@@ -33,6 +33,44 @@ Provisional: 0). Full evidence trail: `docs/certifications/ledger.md`
 "FTF-H002 — Freeze release scope, compatibility and measured execution
 inputs".
 
+## 2026-09-17 — FTF-H002 PR #51 merged to main (PROVISIONAL) — shift closeout
+PR #51's real `gate` + `docker-local-stack-integration` CI went green on
+its actual final head (`c6985e0`, run 35168539940 — confirmed via
+`pull_request_read get_check_runs`, not self-reported), with no open
+reviews. Merged into `main` as commit `b0f8184` (`merge_pull_request`,
+`expectedHeadSha` pinned to `c6985e0` to guard against a stale head).
+Unsubscribed this session from PR #51's activity (merged, nothing left
+to watch). Updated `QUEUE.md`'s "Provisional" entry and this file to
+record the merge; `docs/certifications/queue.md`'s 2026-09-17
+resubmission entry (already merged in via #51) stands as written and
+needs no further edit — the certification decision itself is Control
+plane's to make independently, not this session's.
+
+Final state this shift: FTF-H002 is `proof_state=L1-PROVEN`,
+`certification_state=PROVISIONAL`, genuinely merged to `main` with green
+CI on its real final head. Not self-certified (Law 4) — the relay does
+not certify its own work; this is queued for the next independent
+Control plane L2 review. Certified: 8/300 (unchanged — merging does not
+certify) · Provisional: 1 (FTF-H002) · Product-true: 0 (unchanged).
+
+STEP 4: no stop condition applies cleanly (not N/N proven, no true
+blocker, not stuck, no ask-first item newly raised) — this was simply
+the end of the concrete action available this shift (FTF-H002 driven
+from "CI red, do-not-merge" to "green and merged, awaiting L2"). Per
+QUEUE.md, FTF-0101/FTF-0102 remain the only other queued item and both
+stay blocked on the standing owner ask (unchanged, not re-litigated this
+shift). Not spending this shift's remaining effort starting a new task
+from scratch after already landing FTF-H002 — leaving that to the next
+shift's own fresh `docs/spec-matrix.yaml` dependency sweep.
+
+Next shift: an earlier shift's sweep (see the 2026-09-17 "implemented"
+entry below) also found `FTF-H028` (deps `FTF-0003`, `FTF-H001`, both
+CERTIFIED) dependency-ready alongside FTF-H002. Worth checking first via
+`python tools/r1_handoff.py packet FTF-H028 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+for its real DoD before claiming it — not verified or started by this
+shift, just flagged as the likely next candidate given FTF-0101/0102
+stay blocked on the owner ask.
+
 ## 2026-09-17 — FTF-H002 CI fix confirmed green, resubmitted via superseding PR
 Autonomous relay shift (scheduled firing, no live user present).
 STEP 0: `sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no
