@@ -14,6 +14,7 @@ verify_task.py --stage task.
 Run: python3 scripts/verify_release.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,9 +22,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import yaml  # noqa: E402
 
+from scripts.release_evidence_gate import (  # noqa: E402
+    GateStatus,
+    overall_status,
+    run_release_evidence_gate,
+    to_report,
+)
 from scripts.spec_verification import REPO_ROOT, load_tasks, verify_task  # noqa: E402
 
 MATRIX_FILE = REPO_ROOT / "docs" / "spec-matrix.yaml"
+RELEASE_OWNER = "SJZLab"
+RELEASE_REPO = "Sovra"
+RELEASE_BRANCH = "main"
+
+
+def _current_commit_sha() -> str:
+    import subprocess
+
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip()
+
+
+def print_release_evidence_gate() -> bool:
+    """FTF-H028: run the real, fail-closed CI/branch-protection/signature
+    evidence gate against the current HEAD and print its report. Returns
+    True only when every check is a real PASS -- BLOCKED_EXTERNAL and FAIL
+    both count as not-ready, per Section 52's "Missing GitHub/GPU/provider
+    access is BLOCKED_EXTERNAL and blocks full release.\" """
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    results = run_release_evidence_gate(
+        owner=RELEASE_OWNER,
+        repo=RELEASE_REPO,
+        sha=_current_commit_sha(),
+        branch=RELEASE_BRANCH,
+        token=token,
+    )
+    report = to_report(results)
+    print("verify_release: release-evidence-gate:")
+    for check in report["checks"]:
+        detail = f" — {check['detail']}" if check["detail"] else ""
+        print(f"  {check['key']}: {check['status']}{detail}")
+    return overall_status(results) is GateStatus.PASS
 
 
 def main() -> int:
@@ -54,7 +95,18 @@ def main() -> int:
         print(f"  FAILED ({len(failed)}): {preview}{suffix}")
     print(f"  BLOCKED (not started): {len(blocked)}")
 
-    if len(ready) != len(required):
+    tasks_ready = len(ready) == len(required)
+
+    # Opt-in (FTF-H028): existing callers that invoke this script with no
+    # flags -- every prior shift and certifier -- keep their exact previous
+    # behavior/exit-code contract. --include-evidence-gate additionally
+    # requires the real CI/branch-protection/signature evidence gate to
+    # report PASS before the whole release can read READY.
+    evidence_gate_ready = True
+    if "--include-evidence-gate" in sys.argv[1:]:
+        evidence_gate_ready = print_release_evidence_gate()
+
+    if not tasks_ready or not evidence_gate_ready:
         print("verify_release: NOT READY — full release requires every required task ready")
         return 1
 

@@ -1,0 +1,44 @@
+# FTF-H028 — Trusted CI and exact-revision release evidence gate.
+#
+# Section 84.6: "Initial gates must be genuinely implemented before broad
+# fan-out; after approval their hashes and scope are protected... a
+# producer may propose fixes through review but cannot certify its own
+# modified gate or publish its own release evidence as trusted." Section
+# 52: "Required CI configuration and policy need an independent CODEOWNERS
+# reviewer; the implementation agent cannot self-approve changes to gates."
+#
+# This file assigns the real repository owner/administrator
+# (confirmed via a live `get_me`/`list_repository_collaborators` call --
+# the sole collaborator on SJZLab/Sovra, role admin) as the required
+# reviewer for every protected gate path. Enforcement of "require review
+# from Code Owners" is a real branch-protection setting this session
+# cannot read or set today (see scripts/release_evidence_gate.py's
+# check_branch_protection docstring for the reproduced 403 evidence) --
+# this file is the real, required input to that setting once the owner
+# configures it; its own existence does not itself claim the setting is
+# already enforced (Section 52: "actual repository settings verified at
+# qualification, not merely a workflow file in source").
+
+# Protected CI/gate workflows and this file itself.
+/.github/workflows/ @samerzakaria
+/.github/CODEOWNERS @samerzakaria
+
+# The executable specification/gate/release-evidence verifiers.
+/scripts/spec_verification.py @samerzakaria
+/scripts/validate_spec.py @samerzakaria
+/scripts/verify_task.py @samerzakaria
+/scripts/verify_release.py @samerzakaria
+/scripts/release_evidence_gate.py @samerzakaria
+
+# The frozen release-scope/compatibility/architecture locks and their
+# generators (FTF-H002/FTF-R001).
+/scripts/release_scope_lock.py @samerzakaria
+/scripts/generate_compatibility_lock.py @samerzakaria
+/scripts/architecture_lock.py @samerzakaria
+/spec/release-scope.yaml @samerzakaria
+/spec/component-lock.schema.json @samerzakaria
+/packages/component-contracts/ @samerzakaria
+
+# CLAUDE.md and its integrity hash.
+/CLAUDE.md @samerzakaria
+/CLAUDE.md.sha256 @samerzakaria

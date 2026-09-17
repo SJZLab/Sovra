@@ -2909,15 +2909,21 @@ FTF-H027:
   proving_symbol: ''
   proving_test: ''
 FTF-H028:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Trusted CI and exact-revision release evidence gate
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-20; scenarios=Q26; deps=FTF-0003, FTF-H001
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: kind=audit_hardening; requirements=AF-20; scenarios=Q26; deps=FTF-0003, FTF-H001; real
+    branch-protection read is BLOCKED_EXTERNAL today (this session's real GitHub credential gets
+    a real 403 "Resource not accessible by integration" from api.github.com/repos/SJZLab/Sovra/branches/main/protection
+    -- reproduced live, see scripts/release_evidence_gate.py's module docstring); release
+    manifest signing is BLOCKED_EXTERNAL (no signing service provisioned, Section 73.1's
+    evidence/release/manifest.json is a later task's deliverable); .github/workflows/10-release-qualification.yml
+    is workflow_dispatch-only (Tier 3/release-only, relay never dispatches it per CLAUDE.md)
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h028.py
 FTF-H029:
   certification_state: NONE
   criticality: MUST
