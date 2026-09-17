@@ -25,11 +25,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import os
 import pathlib
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -78,6 +81,35 @@ def _wait_for_tcp(host: str, port: int, timeout_seconds: float = 60.0) -> None:
             last_error = exc
             time.sleep(1.0)
     raise TimeoutError(f"S3 endpoint {host}:{port} never became reachable: {last_error}")
+
+
+def _wait_for_s3_http_ready(endpoint: S3Endpoint, timeout_seconds: float = 90.0) -> None:
+    """A real TCP connect can succeed before SeaweedFS's S3 gateway
+    goroutine is actually ready to serve requests (its `weed server`
+    process starts master/volume/filer/S3 in sequence) -- observed for
+    real in this task's own first CI run: every request failed with
+    `http.client.RemoteDisconnected` immediately after `docker compose up
+    -d` returned, even though the TCP port was already accepting
+    connections. This retries a real, unsigned HTTP GET until the server
+    returns an actual HTTP response (any status code, including an auth
+    error) instead of dropping the connection -- application-level
+    readiness, not just a TCP accept."""
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            urllib.request.urlopen(  # noqa: S310
+                urllib.request.Request(f"{endpoint.base_url}/", method="GET"), timeout=3.0
+            )
+            return
+        except urllib.error.HTTPError:
+            return  # a real HTTP response (even an error status) means the server is up
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+            last_error = exc
+            time.sleep(1.0)
+    raise TimeoutError(
+        f"S3 endpoint {endpoint.base_url} never returned a real HTTP response: {last_error}"
+    )
 
 
 def _load_endpoint_and_credentials() -> tuple[S3Endpoint, S3Credentials]:
@@ -386,6 +418,13 @@ def main() -> None:
         compose("up", "-d", "s3")
         booted_here = True
         _wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=90.0)
+
+    # A real TCP accept is not the same as the S3 gateway actually being
+    # ready to serve requests -- see _wait_for_s3_http_ready's own
+    # docstring for the real failure this caught in this task's own first
+    # CI run. Always wait for it, whether or not this process booted the
+    # fixture itself.
+    _wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
 
     client = S3Client(endpoint, credentials)
 
