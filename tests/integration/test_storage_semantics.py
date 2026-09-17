@@ -364,10 +364,19 @@ def test_encryption(client: S3Client) -> None:
             False,
         )
     except S3Error as exc:
+        # A *missing* SSE-C key is a well-formed-request error (400
+        # InvalidArgument -- asserted above); a *wrong* key is treated as an
+        # authorization failure, not a bad request -- confirmed directly
+        # against SeaweedFS's own 3.99 source
+        # (weed/s3api/s3api_object_handlers.go: a customer-key MD5 mismatch
+        # raises s3err.ErrAccessDenied, whose weed/s3api/s3err/
+        # s3api_errors.go entry maps to HTTPStatusCode: http.StatusForbidden)
+        # -- 403, matching AWS S3's own documented SSE-C contract that a
+        # non-matching customer key returns AccessDenied, not a 400.
         check(
             "FTF-R017",
             "encryption: GET with the wrong SSE-C key is rejected, not silently served",
-            exc.status_code == 400,
+            exc.status_code == 403,
         )
 
 

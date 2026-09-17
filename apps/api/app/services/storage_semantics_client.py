@@ -271,7 +271,21 @@ class S3Client:
                 response_body = resp.read()
                 if self._debug:
                     print(f"S3 response: {resp.status} (ok)", flush=True)
-                return resp.status, dict(resp.headers.items()), response_body
+                # HTTP header names are case-insensitive (RFC 7230 3.2), but
+                # `resp.headers.items()` preserves the exact case the server
+                # sent. SeaweedFS's Go S3 gateway sends most headers through
+                # `Header().Set(...)`, which canonicalizes to Title-Case on
+                # the wire (e.g. "x-amz-version-id" -> "X-Amz-Version-Id"),
+                # while a couple (ETag) are written directly into the header
+                # map and sent verbatim. A plain-dict, exact-case lookup
+                # silently misses the canonicalized ones -- lowercase every
+                # key here once so every caller can look up a stable,
+                # case-insensitive key instead of guessing wire casing.
+                return (
+                    resp.status,
+                    {name.lower(): value for name, value in resp.headers.items()},
+                    response_body,
+                )
         except urllib.error.HTTPError as exc:
             response_body = exc.read()
             code = "Unknown"
@@ -346,7 +360,7 @@ class S3Client:
         headers.update(retention_headers or {})
         status, response_headers, _ = self._request("PUT", bucket, key, headers=headers, body=body)
         return {
-            "etag": response_headers.get("ETag", "").strip('"'),
+            "etag": response_headers.get("etag", "").strip('"'),
             "version_id": response_headers.get("x-amz-version-id", ""),
             "status": str(status),
         }
@@ -416,7 +430,7 @@ class S3Client:
             query={"partNumber": str(part_number), "uploadId": upload_id},
             body=body,
         )
-        return headers.get("ETag", "").strip('"')
+        return headers.get("etag", "").strip('"')
 
     def complete_multipart_upload(
         self, bucket: str, key: str, upload_id: str, parts: list[tuple[int, str]]
