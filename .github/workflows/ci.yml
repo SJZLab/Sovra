@@ -100,6 +100,8 @@ jobs:
         run: python3 tests/tasks/test_ftf_1810.py
       - name: FTF-R014 negative-test proof (executor binding catches real defects)
         run: python3 tests/implementation/test_r1_execution_binding.py
+      - name: FTF-R015 negative-test proof (isolated concurrent execution catches real defects)
+        run: python3 tests/implementation/test_safe_parallel_executor.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

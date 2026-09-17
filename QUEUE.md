@@ -1,10 +1,9 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-R014 independently certified,
-PR #68)
+Updated: 2026-09-17 by relay (FTF-R015 implemented, PR to be opened)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 13/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
+Certified: 13/300 · Provisional: 1 (FTF-R015) · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
@@ -27,7 +26,10 @@ bindings BLOCKED_EXTERNAL), `workflow_dispatch`-only and never run by the
 relay, and FTF-R014 is build/implementation tooling binding the selected
 coding executor to Section 84's controls, with no Factory production
 service importing it — none a live-wired product-runtime path, so all
-thirteen are CERTIFIED without counting toward product-true).
+thirteen are CERTIFIED without counting toward product-true; FTF-R015
+(PROVISIONAL, not yet counted in Certified) is the same kind of
+build/implementation tooling — no proving_symbol, no Factory production
+service imports it either).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -96,7 +98,9 @@ thirteen are CERTIFIED without counting toward product-true).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-R015 — Enforce isolated concurrent coding execution and independent
+  integration. Implemented, PR to be opened against `main`. Full entry:
+  docs/certifications/queue.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
