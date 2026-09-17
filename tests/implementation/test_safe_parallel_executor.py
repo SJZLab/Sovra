@@ -48,6 +48,15 @@ Proves:
       check from the tracked `task_orchestrator.py` lets a fresh subprocess
       wrongly approve a protected-path write from an ordinary reviewer;
       restoring the file byte-identical rejects it again.
+  16. Commit evidence (acceptance clause 1's "record actual overlap,
+      leases, commits, tests..."): a task whose real command makes a real
+      git commit inside its isolated workspace has that commit's actual
+      SHA captured on its `ExecutionResult`, cross-checked against an
+      independently run `git rev-parse HEAD` against the same workspace --
+      not read back from the module's own claim. A task whose command
+      never touches git leaves `commit_sha` genuinely `None`, not a
+      fabricated value. The same real SHA is shown to propagate through a
+      full orchestrated wave's `execution_results`.
 
 Run directly: python3 tests/implementation/test_safe_parallel_executor.py
 """
@@ -500,6 +509,87 @@ def test_concurrency_limit_exceeded_for_wave_size():
     )
 
 
+def _real_git_commit_command() -> tuple[str, ...]:
+    # A single allowlisted "python3" command that shells out to git itself --
+    # WaveTask/execute_task only ever run one top-level command, so a
+    # multi-step init/config/commit sequence has to be one script, not
+    # several `git` prefix calls. What it does is still a real, unfabricated
+    # git history: init a repo, set a local identity so the commit doesn't
+    # depend on ambient git config, then one real commit.
+    script = (
+        "import subprocess\n"
+        "subprocess.run(['git', 'init', '-q'], check=True)\n"
+        "subprocess.run(['git', 'config', 'user.email', 'r015@test.local'], check=True)\n"
+        "subprocess.run(['git', 'config', 'user.name', 'R015 Test'], check=True)\n"
+        "subprocess.run(['git', 'config', 'commit.gpgsign', 'false'], check=True)\n"
+        "subprocess.run(['git', 'commit', '--allow-empty', '-m', 'r015 evidence'], check=True)\n"
+    )
+    return ("python3", "-c", script)
+
+
+def _independent_head(workspace_path: pathlib.Path) -> str | None:
+    """Reads the real HEAD of `workspace_path` directly, independent of
+    anything `executor_adapter` reports -- the cross-check that the
+    module's own `commit_sha` isn't just read back from its own claim."""
+    proc = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=workspace_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def test_real_commit_is_captured_and_propagates_through_a_wave():
+    registry = _fixture_registry()
+    wm = WorkspaceManager(registry)
+
+    # Direct executor_adapter use: a real git commit is captured...
+    ws = wm.open_workspace("R015-A", "agent-1", write_set={"a.py"})
+    result = execute_task("R015-A", ws.path, _real_git_commit_command())
+    independent_head = _independent_head(ws.path)
+    check(
+        "FTF-R015",
+        "a real git commit made by a task's own command is captured as commit_sha",
+        result.commit_sha is not None and independent_head is not None,
+    )
+    check(
+        "FTF-R015",
+        "the captured commit_sha matches an independently read git HEAD, "
+        "not just the module's own say-so",
+        result.commit_sha == independent_head,
+    )
+    wm.close_workspace("R015-A", "agent-1", "reviewer-1")
+
+    # ...and a task whose command never touches git genuinely has none.
+    ws_b = wm.open_workspace("R015-B", "agent-2", write_set={"b.py"})
+    result_b = execute_task("R015-B", ws_b.path, _marker_command("R015-B"))
+    check(
+        "FTF-R015",
+        "a task whose command never makes a commit leaves commit_sha "
+        "genuinely None, not a fabricated value",
+        result_b.commit_sha is None,
+    )
+    wm.close_workspace("R015-B", "agent-2", "reviewer-1")
+
+    # Propagates through a full orchestrated wave, not just direct adapter use.
+    registry2 = _fixture_registry()
+    wm2 = WorkspaceManager(registry2)
+    orch = TaskOrchestrator(registry2, wm2, max_concurrency=4, budget_usd=10.0)
+    wave_result = orch.run_wave(
+        [WaveTask("R015-A", "agent-1", _real_git_commit_command(), write_set={"a.py"})],
+        reviewer_identity="reviewer-1",
+    )
+    check(
+        "FTF-R015",
+        "the real commit SHA propagates through a full wave's execution_results, "
+        "not only direct executor_adapter use",
+        wave_result.execution_results["R015-A"].commit_sha is not None
+        and len(wave_result.execution_results["R015-A"].commit_sha) == 40,
+    )
+
+
 def test_fault_injection_protected_gate_check():
     """Real fault injection against the tracked module on disk: temporarily
     remove the protected-gate-write denial, run a fresh subprocess that
@@ -599,9 +689,10 @@ def main() -> int:
     test_reviewer_self_certification_denied_at_wave_level()
     test_whole_wave_budget_exceeded_denied()
     test_concurrency_limit_exceeded_for_wave_size()
+    test_real_commit_is_captured_and_propagates_through_a_wave()
     test_fault_injection_protected_gate_check()
 
-    total_checks = 32
+    total_checks = 36
     if FAILURES:
         print(f"{len(FAILURES)} check(s) failed out of {total_checks}:")
         for failure in FAILURES:

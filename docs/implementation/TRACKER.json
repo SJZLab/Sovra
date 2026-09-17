@@ -2103,9 +2103,11 @@
       "blockers": []
     },
     "FTF-R015": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "519bba0ecbabcf36276df1dda3265673a7c2b702"
+      ],
       "independent_review": null,
       "blockers": []
     },
