@@ -1,10 +1,14 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R015 implemented, PR to be opened)
+Updated: 2026-09-17 by relay (FTF-R011 implemented, PR to be opened)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 13/300 · Provisional: 1 (FTF-R015) · Blocked: 1 (FTF-0102,
-new-runtime-dep owner ask, see below)
+Certified: 13/300 · Provisional: 2 (FTF-R011, FTF-R015 — FTF-R015 also has
+an independent PR #71 open from a different session: a Control-plane
+CERTIFY-mode review found one unaddressed acceptance-clause element
+(commit-evidence capture), plus the same session's own fix; still
+PROVISIONAL pending a fresh certifying session per Law 4) · Blocked: 1
+(FTF-0102, new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810 and FTF-R014 all have no proving_symbol;
@@ -26,10 +30,11 @@ bindings BLOCKED_EXTERNAL), `workflow_dispatch`-only and never run by the
 relay, and FTF-R014 is build/implementation tooling binding the selected
 coding executor to Section 84's controls, with no Factory production
 service importing it — none a live-wired product-runtime path, so all
-thirteen are CERTIFIED without counting toward product-true; FTF-R015
-(PROVISIONAL, not yet counted in Certified) is the same kind of
-build/implementation tooling — no proving_symbol, no Factory production
-service imports it either).
+thirteen are CERTIFIED without counting toward product-true; FTF-R011 and
+FTF-R015 (both PROVISIONAL, not yet counted in Certified) are the same
+kind — FTF-R011 is a release-matrix governance/validator layer with no
+Factory production service importing it, FTF-R015 is build/implementation
+tooling — neither has a proving_symbol).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -98,9 +103,14 @@ service imports it either).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-R015 — Enforce isolated concurrent coding execution and independent
-  integration. Implemented, PR to be opened against `main`. Full entry:
+- FTF-R011 — Define immutable connected and air-gap assertion-level release
+  matrix. Implemented, PR to be opened against `main`. Full entry:
   docs/certifications/queue.md.
+- FTF-R015 — Enforce isolated concurrent coding execution and independent
+  integration. Implemented, PR #70 merged to `main`; PR #71 (a separate,
+  independent CERTIFY-mode review + fix from a different session) is open
+  against `main` and CI-green, still PROVISIONAL pending a fresh certifying
+  session. Full entry: docs/certifications/queue.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
