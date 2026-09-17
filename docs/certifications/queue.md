@@ -2288,3 +2288,25 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
 - **Validated-by:** session
   https://claude.ai/code/session_01EF89AyieNmjbMTcNSvVkNo (independent —
   see session-ID check above), 2026-09-17.
+
+**Addendum (same review session, same day):** the producer pushed a fix
+for the TCP-readiness race above (commit `fb0c2ac`, "wait for real S3
+HTTP readiness") independently and concurrently with this review, before
+this review's own commit landed on `main`. Re-checked CI on the new head
+for real: the TCP-readiness race is gone (the job now takes ~40s instead
+of failing within ~1s), but `storage-semantics-integration` still fails
+(run 35239135374, job 105262713015) — a different, real failure this
+time: `S3Error(500, 'InternalError', ...)` on 7 of 9 tests
+(`test_backup_and_restore`, `test_checksum`, `test_encryption`,
+`test_identity`, `test_immutable_publication`, `test_multipart`,
+`test_multipart_abort`) and `S3Error(501, 'NotImplemented', 'A header you
+provided implies functionality that is not implemented')` on the
+remaining 2 (`test_retention_deletion`, `test_versioning`). Not diagnosed
+further by this session — could be a real SigV4-client request-shape bug
+or a genuine SeaweedFS capability gap against the semantics this task
+claims (retention/versioning headers SeaweedFS's S3 gateway may not
+implement the way AWS does); either way this is the next relay shift's
+root cause to find, not this review's to guess at. `certification_state`
+stays `PROVISIONAL`, unchanged conclusion above (not merging, not
+certifying) — updating this entry only so the next shift doesn't waste a
+cycle re-fixing the already-fixed TCP race.

@@ -113,12 +113,19 @@ within ~1s of `docker compose up -d s3` returning (seen twice, two
 different low-level symptoms —`RemoteDisconnected` then
 `ConnectionResetError` — same race, not a flake). This is the same bug
 class FTF-0004's own `/health`-polling readiness check already exists to
-avoid. Next relay shift on FTF-R017: replace/precede `_wait_for_tcp`
-with a real HTTP-level readiness probe (retry a real S3 API call, e.g.
-bucket-existence/list, in a bounded loop) the same way
-`docker_local_stack.py` polls `/health`, push to the existing branch/PR
-#75, let `storage-semantics-integration` actually go green, then
-resubmit for certification. Do not open a new/duplicate PR for this.
+avoid.
+**Update, same day:** the producer already fixed the TCP-readiness race
+independently (commit `fb0c2ac`) — do not redo that fix. Re-running CI on
+that fix's own head still fails `storage-semantics-integration`, now with
+a different real error: `S3Error 500 InternalError` on 7/9 tests and
+`S3Error 501 NotImplemented` on the other 2
+(`test_retention_deletion`/`test_versioning`) — see
+`docs/certifications/queue.md`'s addendum for the exact run. Next relay
+shift on FTF-R017: root-cause the 500/501 responses (SigV4 request-shape
+bug in `storage_semantics_client.py` vs. a genuine SeaweedFS capability
+gap for retention/versioning headers), fix, push to the existing
+branch/PR #75, let `storage-semantics-integration` actually go green,
+then resubmit for certification. Do not open a new/duplicate PR for this.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 
