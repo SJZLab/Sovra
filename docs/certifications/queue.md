@@ -1751,3 +1751,175 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   task's own delivered work.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-17 — FTF-R015 — Enforce isolated concurrent coding execution and independent integration
+- **Commit:** `a1771c2c197cd2194cdb66d0963884182c180ee5` (implementation),
+  `87c931e` (hash-fixup bookkeeping — same two-commit pattern as
+  FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014,
+  since a commit can't embed its own hash).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-R015 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-R014, FTF-H028 both `CERTIFIED` — unblocked (FTF-R014
+  certified earlier this shift's own prior review cycle, making this task
+  newly dependency-ready).
+- **Why this task, not FTF-R011/FTF-R017 (both also dependency-ready):**
+  FTF-R011's own `files`/`shared_lock_required` list `spec/deployment-
+  profiles.yaml` directly, territory FTF-H002's already-certified evidence
+  delivered — editing it raises a Law 15 requalification question flagged
+  and deferred across multiple prior shifts, not re-litigated here.
+  FTF-R017 needs real Docker/SeaweedFS storage-semantics integration, a
+  heavier external-resource surface. FTF-R015's own `files`
+  (`tools/implementation/workspace_manager.py`, `executor_adapter.py`,
+  `task_orchestrator.py`, `tests/implementation/
+  test_safe_parallel_executor.py`) only *read* `spec/deployment-
+  profiles.yaml` as a shared contract (`shared_lock_required: []`, verified
+  directly from its own resolved packet) and touch no already-certified
+  task's own evidence files — the most self-contained of the three, same
+  reasoning that picked FTF-R014 over FTF-R011 in an earlier shift.
+- **Scope finding before implementation:** Section 84.5's own text is
+  explicit — "when the selected host cannot genuinely run parallel
+  workers, record `BLOCKED_EXTERNAL` for parallel qualification and
+  continue safe serial tasks as partial progress... do not fabricate
+  parallel transcripts." This sandbox has no live multi-agent dispatch
+  harness able to hand a task to a second, truly separate coding-host
+  session/process — the same disclosed limitation FTF-H034 and FTF-R014
+  already recorded. Q42's "overlapping execution of independent tasks" is
+  therefore proven at the level this sandbox can genuinely exercise: real
+  OS threads, each bound to its own isolated filesystem workspace and
+  registry claim, synchronized on a `threading.Barrier` so their command
+  executions provably overlap in wall time — not a fabricated claim that
+  distinct external agent processes ran. True separate-host-session
+  concurrency stays `BLOCKED_EXTERNAL`, disclosed here, not hidden.
+- **Delivered:**
+  - `tools/implementation/workspace_manager.py`: `WorkspaceManager` binds
+    one real, genuinely new (never reused/stale) filesystem directory per
+    task to one `scripts.task_claim.TaskClaimRegistry` claim — composition,
+    not reimplementation, of FTF-H034's already-certified dependency-
+    readiness/write-set/lock/TTL/concurrency/GPU-quota/non-self-
+    certification logic. Adds exactly what that registry never covered:
+    genuine per-task filesystem isolation and `NestedDelegationDenied`
+    (opening a workspace from inside another active workspace's own
+    execution context is refused structurally via a `threading.local`
+    depth counter, not merely discouraged).
+  - `tools/implementation/executor_adapter.py`: `execute_task` runs one
+    real command per task inside its isolated workspace via a genuine
+    `subprocess.run` call — real exit code/stdout/stderr/wall-clock
+    timestamps, never simulated. `PermissionBypassDenied` rejects any
+    command whose leading argv tokens aren't in a small explicit allowlist
+    (`python3`, `git`) before a subprocess is ever spawned — "confirmation
+    prompts are not security boundaries... test... direct-call paths"
+    (Section 81.3) enforced structurally.
+  - `tools/implementation/task_orchestrator.py`: `TaskOrchestrator.run_wave`
+    adds the orchestration surface neither module above covers: intra-wave
+    dependency ordering (a task listing an unfinished same-wave sibling as
+    a dependency is deferred, not run — "unmerged dependencies"), a
+    whole-wave budget ceiling (`BUDGET_EXCEEDED` — "whole-tree budgets"),
+    protected-gate write denial (reusing FTF-R014's real CODEOWNERS-
+    derived `load_protected_paths`; a task writing a protected path is
+    denied `PROTECTED_GATE_WRITE_DENIED` unless the wave's reviewer is the
+    real release authority — "producer writes to gate state"), a
+    wave-level independent-reviewer gate (`SELF_CERTIFICATION_DENIED` when
+    the reviewer is also one of the wave's own claimants, checked before
+    any thread starts — Law 4, generalized from FTF-R014's single-receipt
+    check to an entire wave), deterministic merge-order integration with a
+    real, file-based "integrated CI" check (each approved task's own
+    marker file — written by its real command — is copied into a shared
+    integration directory in the registry's real deterministic merge
+    order, then one more real subprocess verifies exactly the expected set
+    is present; a task whose command never ran or whose CI failed leaves
+    no marker and the integrated check genuinely fails for real, not by
+    in-memory bookkeeping assumption), and CI-failure containment (a task
+    whose own command exits nonzero is recorded `ci_failed` and never
+    added to `approved_for_downstream` — "advancement after failed CI" is
+    denied, while a genuinely passing sibling in the same wave still is).
+- **Test:** `tests/implementation/test_safe_parallel_executor.py` — 32
+  checks.
+- **Evidence — shown able to fail (Law 1):**
+  1. Acceptance clause 1 (real disjoint-task wave, isolated workspaces,
+     independent integrated merge gate): a real 3-task wave completes with
+     genuine wall-clock overlap (`threading.Barrier` forces simultaneous
+     start; each task's own recorded `[started_at, finished_at]` interval
+     is asserted to overlap every other's — `latest_start < earliest_finish`,
+     not a coin flip: each command sleeps 0.2s before writing its marker,
+     widening the overlap window past ordinary process-start jitter), all
+     three approved for downstream advancement, and the integrated CI step
+     genuinely passes.
+  2. Real workspace isolation (not assumed): two tasks opened directly
+     through `WorkspaceManager` get provably distinct directories; after
+     each runs its real marker-writing command, workspace A's directory is
+     asserted to contain only `R015-A.marker`, never `R015-B.marker`, and
+     vice versa; closing without `keep_dir` is asserted to actually remove
+     the directory from disk.
+  3. `WRITE_SET_CONFLICT` — two tasks whose write-sets overlap cannot both
+     open a workspace, reused directly from FTF-H034's registry.
+  4. `CLAIM_EXPIRED` — completing a claim after an injected fake clock
+     advances past its TTL is denied.
+  5. "Unmerged dependencies" — a task listing an unfinished same-wave
+     sibling as a dependency is deferred (not run), while the independent
+     sibling still completes normally in the same wave.
+  6. "Stale branch dependencies" — a real overlapping-completion sequence
+     (two claims whose write-sets overlap, completed in order, the same
+     mechanism FTF-H034's own registry already proves) marks the earlier
+     task's evidence stale; a subsequent wave attempt for that task ID is
+     rejected `STALE_DEPENDENCY` before its workspace ever opens.
+  7. "Producer writes to gate state" — a task writing a real CODEOWNERS-
+     protected path (`.github/workflows/ci.yml`) is denied
+     `PROTECTED_GATE_WRITE_DENIED` for an ordinary reviewer identity, and
+     the identical write is accepted (approved for downstream) when the
+     reviewer is the real CODEOWNERS release authority
+     (`owner:samerzakaria`).
+  8. "Direct-tool permission bypass" — a disallowed command (`bash -c
+     "echo hi"`) is denied both directly by the adapter and through a full
+     wave (`PERMISSION_BYPASS_DENIED`), never silently run.
+  9. "Advancement after failed CI" — a task whose command exits nonzero is
+     recorded `ci_failed` and excluded from `approved_for_downstream`,
+     while a genuinely passing sibling in the same wave is still approved,
+     and the integrated CI step still passes for the approved subset alone
+     (the failing task's own marker is correctly absent and correctly not
+     expected).
+  10. `NestedDelegationDenied` — opening a workspace from inside another
+      already-active workspace's execution context (via
+      `WorkspaceManager.active()`) is denied.
+  11. The orchestrator's constructor refuses a configured concurrency above
+      the hard ceiling of 6.
+  12. `SELF_CERTIFICATION_DENIED` at the wave level — a wave whose declared
+      reviewer is also one of its own claimants is denied before any
+      thread starts.
+  13. `BUDGET_EXCEEDED` — a wave whose total estimated cost exceeds its
+      configured budget is denied.
+  14. `CONCURRENCY_LIMIT_EXCEEDED` — a wave requesting more tasks than the
+      configured concurrency limit is denied before any thread starts.
+  15. **Real fault injection against the tracked module on disk:**
+      temporarily removed the protected-gate-write guard block from
+      `tools/implementation/task_orchestrator.py`, ran a fresh subprocess
+      that imports the edited file and runs a wave writing a protected
+      path from an ordinary reviewer — confirmed it wrongly gets approved;
+      restored the file byte-identical (`diff`-equivalent string
+      comparison asserted directly), re-ran the same subprocess probe —
+      correctly denied again.
+- **Regression check:** `uv run ruff check .`/`format --check .`/`mypy .`
+  clean; `pnpm run lint`/`format:check`/`typecheck` clean (after `pnpm
+  install --frozen-lockfile` — fresh container, no `node_modules`, same
+  environment note as every prior shift, plus `uv pip install pyyaml` —
+  `scripts/task_claim.py`'s existing PyYAML import isn't in this fresh
+  container's `.venv` by default); all 13 existing task negative-test-proof
+  scripts (`test_ftf_0001_monorepo_layout.py` through
+  `test_r1_execution_binding.py`) pass unmodified — no already-certified
+  task's own implementation file was touched, only additive files plus
+  FTF-R015's own `docs/spec-matrix.yaml`/`spec/verification-map.json`
+  entries, avoiding any Law 15 requalification question; `uv run pytest
+  tests/unit` (3 passed) and `pnpm exec vitest run` (2 passed) clean, 0
+  skipped either side. `validate_spec.py --strict` clean; `verify_task.py
+  --task FTF-R015 --stage task` → `PASS` against evidence commit
+  `a1771c2c197cd2194cdb66d0963884182c180ee5`. `verify_release.py` correctly
+  non-inflated: `13/300`/`FAILED (1): ['FTF-R015']`/`NOT READY`.
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (build/implementation tooling, no live
+  Factory product-runtime caller, same rationale as every prior FTF-H00X/
+  FTF-R00X task).
+- **CI:** wired `python3 tests/implementation/test_safe_parallel_executor.py`
+  into `.github/workflows/ci.yml`'s `gate` job, right after the FTF-R014
+  step; YAML-validated (`yaml.safe_load`). Real run status to be confirmed
+  on the opened PR before merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
