@@ -56,12 +56,53 @@ services:
       - "7233:7233"
 
   s3:
-    image: chrislusf/seaweedfs@sha256:2829e52cd2f653cfb900cbbbc72f4c3fda0e8ab785429a80514090cdd73dec8c # 3.71 (amd64)
+    image: chrislusf/seaweedfs@sha256:e09c776650619259a23627b5405644396e94ebac49c66d8b89024ebfd85581dc # 3.99 (amd64)
+    # FTF-R017: bumped from 3.71 -> 3.99 (digest verified via Docker Hub's
+    # metadata API, no pull needed -- same no-pull verification FTF-0004
+    # already established). 3.71 genuinely predates S3 object
+    # versioning/object-lock and returned a generic 500 instead of
+    # BadDigest for a corrupted upload -- confirmed against 3.71's own
+    # real GitHub Actions run (7/9 storage-semantics tests failing with
+    # real, non-signing SeaweedFS responses) and independently
+    # re-confirmed here by reading 3.99's actual source on GitHub before
+    # pushing, not by trusting a web summary: weed/s3api/
+    # s3api_bucket_handlers.go has a real PutBucketVersioningHandler/
+    # GetBucketVersioningHandler (with real object-lock/versioning-state
+    # interaction, e.g. rejecting a versioning-suspend while object lock
+    # is enabled) and weed/s3api/s3api_object_handlers_put.go maps a
+    # digest mismatch to s3err.ErrBadDigest, not a generic 500 -- both
+    # absent/wrong in 3.71. -s3.config/-s3.port/-master.volumeSizeLimitMB
+    # all still exist unchanged in 3.99's weed/command/server.go, so this
+    # is a pure version bump, not a command-line migration.
+    # -s3.config points at a real identity file (no "anonymous"
+    # entry) so the fixture actually enforces caller identity (Section
+    # 65.2) instead of SeaweedFS's own unconfigured default of accepting
+    # any access key -- see seaweedfs-s3-identity.json for the real
+    # credential and the negative-acceptance test it backs.
+    # -master.volumeSizeLimitMB=64: the CI run of tests/integration/
+    # test_storage_semantics.py failed for real with SeaweedFS's own
+    # "no free volumes left"/"Not enough data nodes found" errors, read
+    # directly from `docker compose logs s3` -- confirmed by tracing this
+    # container's real boot log, not assumed. Cause: SeaweedFS's default
+    # (30000MB) volume-size assumption makes its master auto-compute a
+    # very low max-volume ceiling for the GitHub Actions runner's actual
+    # free disk space, and each unique bucket this test creates is its own
+    # SeaweedFS "collection", which eagerly grows up to 7 volumes on first
+    # write -- the runner ran out of computed volume headroom after only
+    # 2 of this test's ~11 unique buckets. 64MB comfortably holds every
+    # object/part this test suite writes (its largest is a 5MB multipart
+    # part) while letting the master's own capacity math fit far more
+    # volumes in the same real disk space. -master.volumePreallocate is
+    # left at its own default (false) -- unrelated to this fix, and
+    # changing it would risk masking a real future capacity regression.
     command: server -dir=/data -s3 -s3.port=8333
+      -s3.config=/etc/seaweedfs/s3-identity.json
+      -master.volumeSizeLimitMB=64
     ports:
       - "8333:8333"
     volumes:
       - s3_data:/data
+      - ./seaweedfs-s3-identity.json:/etc/seaweedfs/s3-identity.json:ro
 
   api:
     image: python@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72 # python:3.11-slim (amd64)

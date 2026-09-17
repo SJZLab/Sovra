@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/schemas/component-maintenance.schema.json",
+  "title": "Sovra Factory ComponentMaintenance record set (FTF-R017)",
+  "description": "OSS lifecycle record for each of the seven canonical reuse components (Section 80.4: 'Every selected component and transitive dependency requires approved license/source notices, pinned versions/digests, vulnerability checks, upgrade/rollback tests, provenance and an identified maintainer/operator'). A ComponentMaintenanceSet must record exactly the seven canonical component keys, exactly once each -- the same whole-set discipline FTF-R001's component-lock.schema.json already established. `spdx_license_id` is restricted to a short allow-list of permissive licenses this Factory has actually reviewed; anything else (copyleft, source-available, proprietary) is a real rejection, not a value this schema accepts silently.",
+  "$defs": {
+    "componentKey": {
+      "type": "string",
+      "enum": ["axolotl", "inspect_ai", "mlflow", "vllm", "temporal", "litellm", "argilla"]
+    },
+    "approvedSpdxLicenseId": {
+      "type": "string",
+      "description": "Permissive licenses this Factory has actually reviewed and approved for reuse. Section 80.4 forbids a required feature depending on a paid SaaS service or enterprise-only feature without an explicit approved change -- an unreviewed or copyleft/enterprise license is never added here to make a record pass.",
+      "enum": ["Apache-2.0", "MIT"]
+    },
+    "supportModel": {
+      "type": "string",
+      "enum": ["community_oss_self_hosted", "existing_internal_deployment"]
+    },
+    "componentMaintenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component_key",
+        "owner",
+        "support_model",
+        "spdx_license_id",
+        "license_evidence_url",
+        "enterprise_or_proprietary_features_used",
+        "security_process",
+        "version_status",
+        "export_plan",
+        "restore_plan"
+      ],
+      "properties": {
+        "component_key": { "$ref": "#/$defs/componentKey" },
+        "owner": { "type": "string", "minLength": 1 },
+        "support_model": { "$ref": "#/$defs/supportModel" },
+        "spdx_license_id": { "$ref": "#/$defs/approvedSpdxLicenseId" },
+        "license_evidence_url": {
+          "type": "string",
+          "description": "The exact source this license claim was verified against -- never asserted from memory alone.",
+          "pattern": "^https://.+"
+        },
+        "enterprise_or_proprietary_features_used": {
+          "type": "boolean",
+          "const": false,
+          "description": "Structurally false: this Factory reuses each component's open-core/permissively-licensed surface only. Section 80.4 / CLAUDE.md's 'new runtime deps' and 'keyed external services' ask-first items require an explicit owner-approved change before any enterprise/proprietary feature could ever be adopted -- this schema cannot express that approval, so it never accepts `true`."
+        },
+        "security_process": { "type": "string", "minLength": 1 },
+        "version_status": { "type": "string", "minLength": 1 },
+        "export_plan": { "type": "string", "minLength": 1 },
+        "restore_plan": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["component_maintenance_records", "old_external_s3_compatibility"],
+  "properties": {
+    "component_maintenance_records": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/componentMaintenance" }
+    },
+    "old_external_s3_compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "no_silent_migration_statement"],
+      "properties": {
+        "policy": { "type": "string", "minLength": 1 },
+        "no_silent_migration_statement": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

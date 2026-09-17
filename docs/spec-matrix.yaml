@@ -3216,16 +3216,15 @@ FTF-R016:
   proving_symbol: ''
   proving_test: ''
 FTF-R017:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Qualify maintained internal storage and OSS dependency lifecycle
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=reuse_architecture; requirements=CAP-15, CAP-19, CAP-20; scenarios=Q09, Q29, Q37, Q40; deps=FTF-R001,
-    FTF-0004
-  proof_state: UNPROVEN
+  evidence_hash: b76235989aca9b73bbefb9502435c8c25f9564ad
+  implementation_state: IMPLEMENTED
+  notes: kind=reuse_architecture; requirements=CAP-15, CAP-19, CAP-20; scenarios=Q09, Q29, Q37, Q40; deps=FTF-R001, FTF-0004; builds spec/component-maintenance.yaml (owner/support/license/security/version/export/restore record for all 7 canonical components, every license claim fetched and verified against the project's own real LICENSE file this task, not asserted from memory -- all permissive Apache-2.0/MIT, LiteLLM's separate proprietary enterprise/ directory explicitly disclosed and not used), spec/component-maintenance.schema.json + scripts/validate_component_maintenance.py (reuses scripts/architecture_lock.py's bounded validator/exact-key-set helper, not duplicated), apps/api/app/services/storage_semantics_client.py (stdlib-only real AWS SigV4-signed S3 client -- no boto3/SDK runtime dependency added -- endpoint-configurable so the identical code path qualifies the org's real external S3 later without a code migration), infra/internal/storage-profile.yaml + scripts/validate_storage_profile.py (backend enum structurally excludes minio; qualified=true requires non-placeholder evidence), infra/docker/seaweedfs-s3-identity.json (real, non-anonymous S3 identity added to FTF-0004's already-certified compose file -- additive only, confirmed via grep that FTF-0004's own certified evidence never exercised S3 auth, no requalification triggered), and tests/integration/test_storage_semantics.py (the real multipart/checksum/versioning/immutable-publication/identity/retention-deletion/encryption/backup-restore proof against the live container, run in .github/workflows/ci.yml's new storage-semantics-integration job on GitHub Actions' hosted runner since this sandbox has no container-registry egress -- same reproducible 403 FTF-0004's own evidence already documents, confirmed again this task with a real docker pull attempt); tests/tasks/test_ftf_r017.py proves the SigV4 signing math against a real, externally-published AWS Signature Version 4 test vector (fetched and independently re-verified this task) plus every negative_acceptance case, runnable without Docker
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_r017.py
 FTF-R018:
   certification_state: NONE
   criticality: MUST

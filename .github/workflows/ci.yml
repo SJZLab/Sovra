@@ -106,6 +106,12 @@ jobs:
         run: python3 scripts/validate_profile_scope.py
       - name: FTF-R011 negative-test proof (connected/air-gap release matrix catches real defects)
         run: python3 tests/security/test_profile_scope.py
+      - name: FTF-R017 component-maintenance/OSS-lifecycle validation
+        run: python3 scripts/validate_component_maintenance.py
+      - name: FTF-R017 storage-profile validation
+        run: python3 scripts/validate_storage_profile.py
+      - name: FTF-R017 negative-test proof (storage/OSS-lifecycle qualification catches real defects)
+        run: python3 tests/tasks/test_ftf_r017.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -129,3 +135,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Boot the real local stack and prove restart/persistence
         run: python3 scripts/verify_docker_local_stack.py
+
+  storage-semantics-integration:
+    # FTF-R017: real multipart/checksum/versioning/immutable-publication/
+    # identity/retention-deletion/encryption/backup-restore evidence
+    # against the live SeaweedFS S3-API container. Runs on GitHub Actions'
+    # hosted runner because it has real container-registry egress; this
+    # repo's interactive dev sandbox does not (same reproducible 403
+    # FTF-0004's own evidence already documents).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Prove the real storage semantics against the live S3 fixture
+        run: python3 tests/integration/test_storage_semantics.py
