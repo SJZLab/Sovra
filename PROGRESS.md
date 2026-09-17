@@ -1,5 +1,5 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T15:10:00Z
+Updated: 2026-09-17T15:20:00Z
 
 ## 2026-09-17 — FTF-R017 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
@@ -118,6 +118,53 @@ or pick up whatever Control-plane certification work is pending.
 
 Certified: 15/300 (unchanged). Provisional: 1 (FTF-R017, PR to be opened,
 CI to be confirmed). Product-true: 0 (unchanged).
+
+## 2026-09-17 — Control plane: FTF-R017 (PR #75) NOT CERTIFIED — real CI failure on the PR's own new job
+Scheduled CERTIFY-mode session, triggered by PR #75's own
+`pull_request.opened` webhook. Swept `docs/certifications/queue.md` for
+anything PROVISIONAL: `main`'s own copy showed nothing pending (last
+action was FTF-R011 CERTIFIED), but PR #75 (not yet merged) carried a
+fresh FTF-R017 PROVISIONAL submission on its own branch
+(`claude/wizardly-fermat-ci7leb`), same "lives on the branch until
+merged" shape as the FTF-0004 precedent.
+
+Session-ID check first: all 4 PR commits carry
+`Claude-Session: .../session_016bZ7g5DPgSU8eYMTo8H5NY`; this session's ID
+(`session_01EF89AyieNmjbMTcNSvVkNo`) does not match — independent.
+
+Checked CI for real via `pull_request_read get_check_runs` +
+`get_job_logs` rather than trusting the PR body's self-reported
+checklist (which itself left CI as an open checkbox). The PR's new
+`storage-semantics-integration` job failed on its first head (`9d7bf82`,
+run 35238767213) with `RemoteDisconnected` on all 9 storage-semantics
+tests. The PR advanced to a new head (`42cae14`, a QUEUE.md-only
+bookkeeping commit — no test/implementation code changed) mid-review; the
+same job failed again on the new run (35238865287), this time with
+`ConnectionResetError(104, 'Connection reset by peer')` on all 9 tests —
+confirming it's a real, reproducible race rather than a one-off flake.
+
+Root cause read directly from the PR diff: `tests/integration/
+test_storage_semantics.py`'s `main()` only waits for the S3 fixture's TCP
+port to accept connections (`_wait_for_tcp`) before immediately issuing
+real S3 API calls — SeaweedFS's TCP listener opens before its S3 HTTP
+layer is actually ready to serve, so the tests race it and lose. This is
+the exact bug class FTF-0004's own `/health`-based (not bare-TCP)
+readiness polling already exists to avoid, including a prior CI-failure/
+fix cycle on this exact class of bug during FTF-0004's own review.
+
+Not evaluating the SigV4 client, component-maintenance ledger, or the
+Docker-independent `tests/tasks/test_ftf_r017.py` suite's content further
+— per CERTIFY step 3, CI hasn't actually passed on the PR's real head, so
+certification would be premature regardless of the rest of the diff.
+`certification_state` stays `PROVISIONAL` (not downgraded further — this
+is a scoped fix, not a redo). Full finding: `docs/certifications/
+queue.md`, "Control plane review — 2026-09-17 — NOT CERTIFIED (real CI
+failure on this PR's own new job)". `QUEUE.md`'s "Active" section flags
+the fix needed for the next relay shift (real HTTP-level readiness probe
+before running the storage-semantics assertions, pushed to the same PR
+#75 branch, not a new PR). Did not merge PR #75, did not touch anything
+outside certification (no code fix attempted, no other task work, no
+queue reprioritization).
 
 ## 2026-09-17 — Control plane: FTF-R011 CERTIFIED (PR #72 independently verified)
 Continuation of this same scheduled CERTIFY-mode session, after certifying

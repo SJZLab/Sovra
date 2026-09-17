@@ -2375,3 +2375,151 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   self-certified — awaiting Control plane L2 review per Law 4, which
   should specifically confirm the `storage-semantics-integration` CI job
   passed for real (not merely that it exists) before certifying.
+
+## 2026-09-17 — FTF-R017 — Qualify maintained internal storage and OSS
+  dependency lifecycle (relay submission, PR #75)
+- **PR:** https://github.com/SJZLab/Sovra/pull/75
+  (`claude/wizardly-fermat-ci7leb` → `main`). Note: this PROVISIONAL claim
+  exists only inside PR #75's own branch (`docs/certifications/queue.md`
+  entry, `docs/spec-matrix.yaml` state) — `main`'s own copies do not yet
+  carry an FTF-R017 entry, same as the FTF-0004 precedent
+  (2026-09-16, "not in a certifiable state").
+
+### Control plane review — 2026-09-17 — NOT CERTIFIED (real CI failure on this PR's own new job)
+- **Session-ID check:** all 4 PR commits (`b762359`, `6fd7801`, `9d7bf82`,
+  `42cae14`) carry `Claude-Session: .../session_016bZ7g5DPgSU8eYMTo8H5NY`;
+  this reviewing session's own ID
+  (`https://claude.ai/code/session_01EF89AyieNmjbMTcNSvVkNo`) does not
+  match — independent, not self-certification.
+- **CI checked for real, not self-reported:** `pull_request_read
+  get_check_runs` on the actual PR head. First head (`9d7bf82`, run
+  35238767213): `storage-semantics-integration` — `completed`/`failure`
+  (`gate` and `docker-local-stack-integration` still in progress at that
+  point). The PR then advanced to a new head (`42cae14`, a QUEUE.md-only
+  bookkeeping commit that touches no test/implementation code) which
+  triggered a fresh run (35238865287); `storage-semantics-integration`
+  failed again on this head too — same job, different (real) transient
+  error text, same root cause. Not a stale/self-reported claim: both
+  failures were read directly from `get_job_logs`.
+- **Failure, reproduced twice, not a flake:** `tests/integration/
+  test_storage_semantics.py`'s `main()` (lines ~1973-1983) calls
+  `_wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=3.0)`,
+  and on timeout runs `docker compose up -d s3` followed by
+  `_wait_for_tcp(..., timeout_seconds=90.0)` before immediately running
+  every `test_*` function against the live client. `_wait_for_tcp` only
+  proves the TCP port is accepting connections — it does not prove the
+  SeaweedFS S3 HTTP/API layer is actually ready to complete a full
+  request/response cycle. Run 35238767213 (head `9d7bf82`): all 9 tests
+  failed within ~0.3s of the port becoming reachable with
+  `RemoteDisconnected('Remote end closed connection without response')`.
+  Run 35238865287 (head `42cae14`, ~1 minute later): all 9 tests failed
+  again, this time with `ConnectionResetError(104, 'Connection reset by
+  peer')` — a different low-level symptom of the identical race (TCP
+  accepting before the HTTP server behind it is actually serving), not a
+  different bug and not infra flake (two independent runs, same shape,
+  same 9/9 failure count, both within a few seconds of the container
+  starting).
+- **This is exactly the bug class this repo already has certified
+  precedent for and should not have regressed on:** FTF-0004's own
+  `docker_local_stack.py`/`verify_docker_local_stack.py` (CERTIFIED
+  2026-09-16) deliberately polls the real `/health` HTTP endpoint — not
+  bare TCP — for exactly this reason, and that task's own CI-failure/fix
+  cycle (see the "Real CI failure found and fixed on the merge commit"
+  entry above) already discovered and fixed an equivalent readiness gap
+  once. `test_storage_semantics.py` reintroduces the weaker TCP-only
+  check for a new integration path instead of reusing that lesson.
+- **Conclusion — per CERTIFY step 3 ("re-check CI actually ran and passed
+  on the real merged commit — not a stale or self-reported claim"):** CI
+  has not passed on this PR's real head — the PR's own new
+  `storage-semantics-integration` job fails for real, reproducibly, on
+  every head pushed so far. Not merging, not certifying. Not evaluating
+  the SigV4 client, the component-maintenance ledger, or the negative-
+  acceptance test suite's content further — a content-level review would
+  be premature while the PR's own required integration evidence doesn't
+  exist yet. `certification_state` stays `PROVISIONAL` (not downgraded
+  further — the non-Docker-dependent `tests/tasks/test_ftf_r017.py`
+  evidence and the license/component-maintenance work are unaffected by
+  this finding; this is a scoped fix, not a redo).
+  **Fix needed:** replace (or precede) `_wait_for_tcp` with a real
+  HTTP-level readiness probe — e.g. retry a cheap, real S3 API call
+  (such as a `ListBuckets`/bucket-existence check via the already-built
+  `S3Client`) in a bounded loop until it succeeds or times out — the same
+  pattern `docker_local_stack.py`'s `/health` polling already
+  establishes, rather than trusting TCP acceptance alone. Push the fix to
+  this same PR #75 branch (`claude/wizardly-fermat-ci7leb`) and let
+  `storage-semantics-integration` actually go green before resubmitting;
+  do not open a duplicate PR.
+- **Validated-by:** session
+  https://claude.ai/code/session_01EF89AyieNmjbMTcNSvVkNo (independent —
+  see session-ID check above), 2026-09-17.
+
+**Addendum (same review session, same day):** the producer pushed a fix
+for the TCP-readiness race above (commit `fb0c2ac`, "wait for real S3
+HTTP readiness") independently and concurrently with this review, before
+this review's own commit landed on `main`. Re-checked CI on the new head
+for real: the TCP-readiness race is gone (the job now takes ~40s instead
+of failing within ~1s), but `storage-semantics-integration` still fails
+(run 35239135374, job 105262713015) — a different, real failure this
+time: `S3Error(500, 'InternalError', ...)` on 7 of 9 tests
+(`test_backup_and_restore`, `test_checksum`, `test_encryption`,
+`test_identity`, `test_immutable_publication`, `test_multipart`,
+`test_multipart_abort`) and `S3Error(501, 'NotImplemented', 'A header you
+provided implies functionality that is not implemented')` on the
+remaining 2 (`test_retention_deletion`, `test_versioning`). Not diagnosed
+further by this session — could be a real SigV4-client request-shape bug
+or a genuine SeaweedFS capability gap against the semantics this task
+claims (retention/versioning headers SeaweedFS's S3 gateway may not
+implement the way AWS does); either way this is the next relay shift's
+root cause to find, not this review's to guess at. `certification_state`
+stays `PROVISIONAL`, unchanged conclusion above (not merging, not
+certifying) — updating this entry only so the next shift doesn't waste a
+cycle re-fixing the already-fixed TCP race.
+
+## 2026-09-17 — FTF-R017 (PR #75) — merge-conflict fix + per-request debug instrumentation (not yet a resubmission)
+This shift found `pull_request_read.get` reporting `mergeable_state:
+dirty` on PR #75 (a real, GitHub-computed conflict against `main`, caused
+by the certifier session above having pushed its review/addendum commits
+directly to `main` while this PR was open) — and, as a direct consequence
+matching the FTF-0004 precedent exactly, `pull_request_read
+get_check_runs` returning `total_count: 0` on every commit pushed after
+that point (`a8decce`, and this shift's own first attempt): GitHub Actions
+silently never generated check runs for either push. Fixed the same way
+the FTF-0004 precedent did: fetched current `main`, merged it into
+`claude/wizardly-fermat-ci7leb`, resolved the conflicts (all three were
+pure tracking-doc conflicts — `PROGRESS.md`/`QUEUE.md`/this file — no code
+conflict; kept both sides' substantive content in chronological order).
+While resolving, caught and fixed two places where git's own 3-way merge
+had silently picked the wrong side without flagging a conflict: `QUEUE.md`
+had reverted `Provisional: 0` back to a stale `Provisional: 1 (FTF-R017,
+PR #75...)` and re-introduced a stale `## Provisional` list entry for
+FTF-R017 that `main`'s own certifier review had already correctly emptied
+out when reclassifying this into `## Active` — both confirmed against
+`git show origin/main:QUEUE.md` directly and fixed to match `main`'s real
+state, not assumed correct because the merge didn't complain.
+
+Separately (see this shift's own PROGRESS.md entry for the full
+reasoning): before knowing about the merge-conflict/CI-never-ran issue,
+reviewed the SigV4 signing implementation against the AWS spec (no defect
+found) and researched known SeaweedFS S3-gateway issues for this exact
+`InternalError`/`NotImplemented` wording (multiple plausible but
+unconfirmed causes). Concluded the real gap is that no CI log has ever
+shown which specific S3 operation inside each failing test actually
+triggers the 500/501 — `tests/integration/test_storage_semantics.py`'s
+`main()` only catches `S3Error` at the whole-test level. Added an opt-in
+`debug` flag to `S3Client` (default `False`, zero behavior change for any
+other caller) that prints each request's shape (method/canonical-URI/
+query-key-names/header-names/body-length) before it executes and the real
+response status/code/message after — never credentials, the
+`Authorization` header, or signature material. Wired to `True` only in
+the integration test's own client construction. Verified this task's own
+non-Docker unit test and the full 15-script existing regression set,
+pytest, and vitest all still pass unmodified.
+
+Pushed both fixes together as commit `a43dff9` (debug instrumentation,
+pushed before the mergeable_state issue was discovered) plus this merge
+commit, to the same PR #75 branch — not a new PR. `certification_state`
+stays `PROVISIONAL` (unchanged — still not certifiable; CI has not run
+successfully on any of these commits yet, since it never ran at all until
+this merge). Not a resubmission for certification yet — waiting for the
+now-unblocked CI to actually run and produce real per-request debug
+output before drawing or acting on any root-cause conclusion.
