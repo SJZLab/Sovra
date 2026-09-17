@@ -1344,3 +1344,159 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   distinguishes a report for the wrong commit (not merely "a report
   exists"), and (c) no check silently treats BLOCKED_EXTERNAL as
   equivalent to PASS anywhere in the composition.
+
+## 2026-09-17 — FTF-H034 — Safe parallel scheduler and task/evidence ownership
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-twhvs6`.
+- **Commit:** `7109100c9bfaff995a94203720e9161e095cb7bf` (implementation),
+  hash-fixup to follow once this commit exists in history (same two-commit
+  pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-H034 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-H001, FTF-H002 both `CERTIFIED` — unblocked.
+- **How this task was found:** `docs/spec-matrix.yaml`'s `deps=` field is
+  empty for every not-yet-started task (it only tracks proof-state, not
+  dependencies — the real dependency graph lives in `docs/TASK_INDEX.md`'s
+  table, per CLAUDE.md's own "Full 300-record dependency graph" note).
+  Swept `docs/TASK_INDEX.md` directly for any non-certified task whose
+  real `Dependencies` column is entirely CERTIFIED: found FTF-0102
+  (already blocked on the standing new-runtime-dep owner ask), FTF-1810,
+  FTF-H034, FTF-R011, and FTF-R017. Picked FTF-H034: unlike FTF-R011
+  (whose `files` include `spec/deployment-profiles.yaml`, a file
+  FTF-H002's own certified evidence already delivered — editing it would
+  raise a Law 15 requalification question) it only adds new files plus the
+  two never-actually-updated tracking JSON files (`spec/tasks.json`,
+  `docs/implementation/TRACKER.json`), avoiding any regression risk to
+  already-certified evidence.
+- **Scope finding before implementation:** this task's acceptance clause
+  asks to "execute actual safe parallel wave." This relay session has no
+  live multi-agent dispatch harness able to hand a task to a second, truly
+  separate worker process today. Checked this task's own
+  negative_acceptance before treating it as a blocker: "If runner lacks
+  real subagent capability record orchestration blocker, never fabricate
+  workers; plan steps requiring future services wait rather than fake
+  integration" — this is the same resource_gate-style honest-disclosure
+  pattern FTF-H002 used for GPU/Bedrock and FTF-0004 used for registry
+  egress, not a DoD-clarity gap. Built and evidenced the parallel-wave
+  proof at the level this sandbox can genuinely exercise instead: a real
+  8-OS-thread race against the registry's own locking (a `threading.Barrier`
+  forces genuinely simultaneous contention, not a fabricated sequential
+  loop), asserting exactly one thread wins and the registry's state stays
+  consistent afterward. Disclosed here rather than hidden.
+- **Delivered:** `scripts/task_claim.py` — `TaskClaimRegistry`:
+  - DAG readiness: a claim is denied (`DEPENDENCY_NOT_READY`) unless every
+    dependency is `CERTIFIED` in `docs/spec-matrix.yaml`.
+  - Overlapping claims: a task ID with an active claim cannot be claimed
+    again (`TASK_ALREADY_CLAIMED`).
+  - Expiring claims: every claim carries a real TTL; `complete()` on an
+    expired claim is denied (`CLAIM_EXPIRED`) rather than silently
+    accepted — "deny... stale completion."
+  - Write-set and named-lock exclusivity: two active claims whose
+    write-sets or named locks (e.g. a shared `root:quality-contract` or
+    migration-chain lock) overlap are mutually exclusive
+    (`WRITE_SET_CONFLICT` / `LOCK_CONFLICT`); released the moment the
+    holder completes.
+  - Bounded concurrency: the constructor refuses a configured limit above
+    the hard ceiling of 6; the default limit of 4 denies a 5th concurrent
+    claim (`CONCURRENCY_LIMIT_EXCEEDED`).
+  - A GPU quota independent of general concurrency
+    (`GPU_QUOTA_EXCEEDED`) — bookkeeping only, no real GPU exists in this
+    sandbox to exercise scheduling against, same disclosed limit
+    FTF-H002 used for its own GPU/Bedrock checks.
+  - Deterministic merge order: `merge_order()` sorts by real claim
+    creation time then task ID, independent of completion arrival order.
+  - Stale-verification invalidation: completing a claim marks any earlier
+    completion whose write-set overlaps it as stale — "invalidate stale CI
+    after integration change."
+  - Independent review: `complete()` structurally rejects a certifier
+    identical to the claim's own claimant (`SELF_CERTIFICATION_DENIED`) —
+    Law 4, the producer never certifies its own work.
+  - `sync_certified_status()`: fixes a disclosed, pre-existing gap —
+    `spec/tasks.json` and `docs/implementation/TRACKER.json` have carried
+    every task as `NOT_STARTED`/empty evidence since the original
+    bootstrap, contradicting their own header comments ("actual status,
+    claims/leases, commits..."). Ran it once against the real repo files:
+    both now genuinely show `status: CERTIFIED` and the real
+    `evidence_hash` for exactly the 10 tasks `docs/spec-matrix.yaml`
+    already shows CERTIFIED, and nothing else — no claim/lease fabricated
+    for any not-yet-certified task. Diff limited to the `status`/`evidence`
+    fields of those 10 entries (confirmed via `git diff`, using
+    `ensure_ascii=False` to avoid a spurious repo-wide non-ASCII escaping
+    diff from Python's default `json.dumps`).
+- **Test:** `tests/tasks/test_ftf_h034.py` — 17 check functions covering
+  every acceptance/negative_acceptance clause above via real fixtures.
+- **Evidence — shown able to fail (Law 1):**
+  1. Every acceptance/negative_acceptance branch above has a fixture-based
+     positive and negative case (dependency readiness, overlapping claims,
+     write-set/lock conflicts and their release on completion, the
+     concurrency ceiling and ValueError on a config above it, the GPU
+     quota being independent of general concurrency, stale completion
+     denial via a fake, controllable clock, self-certification denial,
+     claimant-mismatch denial, deterministic merge order fed completions
+     in randomized arrival order, and stale-verification invalidation on
+     an overlapping later completion).
+  2. **Real safe-parallel-wave proof:** 8 real OS threads
+     (`threading.Thread`) synchronized on a `threading.Barrier` so they
+     hit `registry.claim()` for the *same* task ID at genuinely the same
+     instant — asserted exactly 1 wins, the other 7 are denied
+     `TASK_ALREADY_CLAIMED` specifically (not some other/undefined
+     outcome), and the registry's own active-claim count is exactly 1
+     afterward. This is real, OS-scheduled concurrency, not a simulated
+     sequential loop.
+  3. **Real fault injection against the tracked module itself:** removed
+     the `certifier == claimant` guard block from `scripts/task_claim.py`,
+     confirmed the exact block was present beforehand and the file
+     genuinely changed, ran a **fresh subprocess** (new interpreter, so
+     the edited file is actually re-imported) attempting the same
+     self-certified completion — it succeeded for real
+     (`CONSTRUCTED_WITHOUT_RAISING`) where the unmodified guard rejects
+     it; restored byte-identical (`module_path.read_text() == original`
+     asserted directly), re-ran clean (all 17 checks pass again).
+  4. **Real fault injection performed independently by this shift outside
+     the committed test suite** (ad hoc, not part of the merged evidence,
+     recorded here for the record per Law 1): neutered the write-set/lock
+     overlap-check loop body in a working copy — `test_lock_conflict_denied`
+     failed for real (an uncaught `TASK_ALREADY_CLAIMED` exception
+     propagated, since the neutered check let a conflicting claim through
+     that the test's own control flow didn't expect); restored
+     byte-identical from a pre-edit copy, re-ran clean.
+  5. **Real, not fabricated, "actual status" fix:** before this task,
+     `spec/tasks.json` and `docs/implementation/TRACKER.json` genuinely
+     showed `"status": "NOT_STARTED"` for all 10 already-CERTIFIED tasks
+     (verified directly, not assumed) — after running
+     `sync_certified_status()` once against the real repo files, both
+     genuinely show `"status": "CERTIFIED"` with the real evidence hash,
+     confirmed both by direct file inspection and by
+     `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`.
+- **Regression check:** full local gate re-run clean — `uv sync`,
+  `pnpm install --frozen-lockfile` (fresh container, no `node_modules`,
+  same environment note as every prior shift); `uv run ruff
+  check`/`format --check`/`mypy .` clean; `pnpm run
+  lint`/`format:check`/`typecheck` clean; all 11 task
+  negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py` through
+  `test_ftf_h028.py`, now joined by `test_ftf_h034.py`) pass — no
+  already-certified task's own implementation file was touched beyond the
+  disclosed, additive `status`/`evidence` fields in `spec/tasks.json` and
+  `docs/implementation/TRACKER.json`; `uv run pytest tests/unit` (3
+  passed) and `pnpm exec vitest run` (2 passed) clean, 0 skipped either
+  side; `validate_spec.py --strict` clean; `verify_task.py --task
+  FTF-H034 --stage task` → `PASS` against evidence commit `7109100`;
+  `verify_release.py` correctly non-inflated (`10/300`, `FAILED (1):
+  ['FTF-H034']`, `NOT READY` — PROVISIONAL is not CERTIFIED);
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (scheduler/tracking tooling, no live
+  product-runtime caller, same rationale as every prior FTF-H00X/FTF-R00X
+  task).
+- **CI:** wired `python3 tests/tasks/test_ftf_h034.py` into
+  `.github/workflows/ci.yml`'s existing `gate` job, right after the
+  FTF-H028 step (YAML-validated with `yaml.safe_load`). Real run status to
+  be confirmed on the opened PR before merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4, which
+  should specifically confirm: (a) the 8-thread parallel-wave test is
+  actually exercising real OS-level concurrency and not a scheduling
+  fluke that happens to pass, (b) the `sync_certified_status` diff to
+  `spec/tasks.json`/`TRACKER.json` is limited to exactly the 10 already-
+  independently-certified tasks' `status`/`evidence` fields and nothing
+  else, and (c) the disclosed GPU-quota and no-live-subagent-harness
+  limitations match this task's own negative_acceptance rather than
+  quietly narrowing its scope.

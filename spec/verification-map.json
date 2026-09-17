@@ -86,6 +86,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
+    },
+    "FTF-H034": {
+      "commit": "7109100c9bfaff995a94203720e9161e095cb7bf",
+      "commands": [["python3", "tests/tasks/test_ftf_h034.py"]],
+      "expected_output_contains": "FTF-H034 safe parallel scheduler and task/evidence ownership: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
     }
   }
 }
