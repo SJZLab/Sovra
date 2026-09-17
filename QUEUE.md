@@ -1,10 +1,9 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — bumped the pinned
-  SeaweedFS fixture 3.71 -> 3.99, verified against real Docker Hub
-  metadata and real GitHub source at the 3.99 tag before pushing
-  (`60c8182`); waiting on this specific CI run to confirm whether it
-  actually clears the remaining 5/9 real-response failures, see
-  "Active" below)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — the `3.99` bump
+  (`60c8182`) confirmed `test_checksum` fully fixed; found and fixed a
+  real client header-casing bug plus a wrong SSE-C test assertion
+  (`deaedc8`), source-verified against SeaweedFS's own 3.99 Go source;
+  waiting on this specific CI run's real result, see "Active" below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -274,6 +273,51 @@ the remaining 5/9 real-response failures is for the next CI run (GitHub
 Actions' hosted runner, real registry egress) to prove — not asserted
 here. If it does not fully clear them, options 2/3 above remain live for
 whoever picks this up next.
+
+**Update, same shift — 3.99 confirmed `test_checksum` fixed; found and
+fixed a real client bug behind the rest, not a second SeaweedFS gap:** CI
+on `60c8182` (run 35261643931) showed `test_checksum` fully passing
+(real `400 BadDigest`), but 6 assertions across `test_versioning` (×2),
+`test_retention_deletion` (×1, plus a cascaded `404 NoSuchKey`),
+`test_immutable_publication` (×1) and `test_encryption` (×1) still
+failed. Traced each by hand against the run's real request/response log
+rather than assuming a second version gap: the container's own boot log
+showed the server genuinely sending `x-amz-version-id`, proving the
+defect was client-side. Read `storage_semantics_client.py`'s `_request`:
+`dict(resp.headers.items())` preserves the server's exact wire casing,
+but every caller looked up lowercase keys. Confirmed against SeaweedFS
+3.99's real Go source (not guessed): `s3api_object_handlers_put.go`/
+`s3api_object_handlers_delete.go` set `x-amz-version-id`/
+`x-amz-delete-marker` via `Header().Set(...)`, which Go canonicalizes to
+`X-Amz-Version-Id`/`X-Amz-Delete-Marker` on the wire — a lowercase
+lookup always missed, returning `""`/`"false"`. The same file's `ETag`
+header is written directly (`w.Header()["ETag"] = ...`, bypassing
+canonicalization), which is exactly why the ETag-only checks
+(`test_checksum`/`test_multipart`) already passed. An always-empty
+`version_id` explains every remaining failure: `get_object(...,
+version_id="")` silently fell back to an unversioned GET (both
+`test_versioning` failures, the `test_retention_deletion` 404 cascade),
+and `delete_object(..., version_id="")` sent no `versionId` at all, so
+`test_immutable_publication`'s DELETE inserted a delete marker instead of
+ever touching the actual COMPLIANCE-retained version. Fixed by
+lowercasing every response-header key once in `_request` (HTTP header
+names are case-insensitive per RFC 7230 §3.2) and updating the three
+now-mismatched `"ETag"` lookups to `"etag"`.
+
+Separately, `test_encryption`'s wrong-SSE-C-key case asserted
+`exc.status_code == 400` but SeaweedFS 3.99 genuinely (and, per its own
+source, deliberately) returns `403 AccessDenied` for a key-MD5 mismatch
+(`s3api_object_handlers.go`'s `ErrAccessDenied` path, `s3err/
+s3api_errors.go`'s own mapping to `http.StatusForbidden`) while a
+*missing* key correctly stays `400` — a wrong test assertion, not a
+server defect (matches AWS S3's own real SSE-C contract: a non-matching
+key is an authorization failure, not a malformed request). Corrected the
+assertion to `403` with the source citation inline rather than leaving a
+known-wrong expectation in place.
+
+Pushed as `deaedc8` on the same PR #75 branch; full regression (fresh
+worktree, `pnpm install --frozen-lockfile`) clean throughout. Whether
+this clears the run for real is for the next CI result to prove.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 

@@ -1,5 +1,108 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T18:55:00Z
+Updated: 2026-09-17T19:03:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): real client header-casing bug found and fixed, SSE-C test assertion corrected, waiting on CI
+Continuation of this same relay shift, after the `3.71 -> 3.99` bump
+(`60c8182`) triggered a real CI run (35261643931). Read the job log
+directly rather than assuming the bump either fully worked or fully
+failed: `test_checksum` now passes completely (the `BadDigest` fix
+confirmed live: `400 BadDigest` returned for a corrupted upload), but 5/9
+tests still failed, with 6 individual assertion failures: two in
+`test_versioning` (distinct version IDs / old version retrievable), one
+each in `test_retention_deletion` (delete-marker flag) and
+`test_immutable_publication` (COMPLIANCE delete not rejected), plus a
+cascaded `S3Error 404 NoSuchKey` inside `test_retention_deletion`, and one
+in `test_encryption` (wrong SSE-C key expected `400`, got `403`).
+
+Rather than treat these as a second SeaweedFS capability gap (the
+previous framing for the pre-bump failures), traced each failing
+assertion by hand against the run's own real request/response log before
+touching any code: the S3 container's boot log (captured by this task's
+own on-failure dump) showed `PutObjectHandler: set x-amz-version-id
+header to <real id>` for the `test_versioning` bucket — the header **is**
+being sent by the server — so a version-id-dependent assertion failing
+despite a genuine header being sent pointed at the client, not the
+server. Read `apps/api/app/services/storage_semantics_client.py`'s
+`_request`: it builds the response-header dict via
+`dict(resp.headers.items())`, which preserves the exact case the server
+sent, then every caller looks up lowercase keys
+(`"x-amz-version-id"`/`"x-amz-delete-marker"`). Confirmed the real cause
+directly against SeaweedFS 3.99's own Go source (not inferred from the
+symptom alone): `weed/s3api/s3api_object_handlers_put.go:172` and
+`weed/s3api/s3api_object_handlers_delete.go:92-93` set these headers via
+`Header().Set(...)`, which Go's `net/http` canonicalizes to Title-Case on
+the wire (`X-Amz-Version-Id`/`X-Amz-Delete-Marker`) — a lowercase-key
+lookup against the exact-case dict silently returns `""`/`"false"` every
+time. `s3api_object_handlers_put.go:378/380`, by contrast, writes
+`w.Header()["ETag"] = ...` directly, bypassing canonicalization and
+sending literal `"ETag"` — which is exactly why the ETag-only assertions
+(`test_checksum`, `test_multipart`) already passed while every
+version-id-dependent one failed. Traced the failure chain fully before
+fixing: an always-empty `version_id` made `get_object(...,
+version_id="")` (falsy) silently fall back to an unversioned GET instead
+of a versioned one (explaining both `test_versioning` failures and the
+`test_retention_deletion` 404 cascade — `get_object` fetched the
+already-deleted current key instead of the specific prior version), made
+`delete_object`'s `delete_marker` field always read its `"false"`
+default, and — most importantly — made `test_immutable_publication`'s
+`delete_object(..., version_id=result["version_id"])` send **no**
+`versionId` query parameter at all, so the DELETE inserted a new delete
+marker instead of ever touching the actual COMPLIANCE-retained version
+(explaining why the delete wrongly "succeeded").
+
+**Fix:** lowercase every response-header key once in `_request`
+(`{name.lower(): value for name, value in resp.headers.items()}`) — HTTP
+header names are case-insensitive per RFC 7230 §3.2, so this is a
+correctness fix to a client that was accidentally case-sensitive, not a
+workaround — and updated the three now-mismatched `"ETag"`-cased lookups
+to `"etag"`. Left `complete_multipart_upload`'s own `"ETag"` lookup
+untouched: that one reads a literal XML element tag name from a parsed
+response body, not an HTTP header, and is unaffected.
+
+Separately root-caused `test_encryption`'s remaining failure as a wrong
+test assertion, not a server defect: read
+`weed/s3api/s3api_object_handlers.go:709-733` directly — a *missing*
+SSE-C key raises `ErrSSECustomerKeyMissing` (400, already passing) while
+a *wrong* key's MD5 mismatch deliberately raises `ErrAccessDenied`;
+`weed/s3api/s3err/s3api_errors.go`'s own `errorCodeResponse` map confirms
+`ErrAccessDenied` -> `http.StatusForbidden` (403). This is SeaweedFS's
+real, intentional AWS-compatible behavior (a non-matching customer key is
+an authorization failure, not a malformed request), not a bug — updated
+the test's assertion from `exc.status_code == 400` to `== 403` with the
+source citation inline, rather than leaving a knowingly-wrong assertion
+in place or masking the server's correct behavior.
+
+**Regression (fresh worktree at the branch's real head, `deaedc8`):**
+`uv run ruff check`/`format --check`/`mypy .` clean; `pnpm run lint`/
+`format:check`/`typecheck` clean (`pnpm install --frozen-lockfile` run
+first); all 16 existing task negative-test-proof scripts pass, including
+this task's own `tests/tasks/test_ftf_r017.py` (Docker-independent,
+unaffected — it never exercises this header-casing code path); `uv run
+pytest tests/unit` (3 passed); `pnpm exec vitest run` (2 passed);
+`scripts/validate_spec.py --strict` clean; `docker compose -f
+infra/docker/docker-compose.yml config` parses cleanly. Same disclosed
+missing-`node_modules` artifact on the first pass for
+`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py`, resolved by
+`pnpm install --frozen-lockfile`, not a real regression.
+
+Pushed as commit `deaedc8` to the existing PR #75 branch — not a new PR.
+CI confirmed genuinely triggered on the new head (run 35262488236, all
+three jobs `in_progress` at push time).
+
+STEP 4: not a stop condition — this is a second, distinct, source-verified
+fix (a real client bug plus a wrong test assertion), not a repeat of the
+same failure, so not a 3x-stuck condition either. Waiting on this run's
+real result: if `storage-semantics-integration` goes fully green, this
+task is ready to resubmit for certification (all 8 Section-80.4 semantics
+proven against the qualified SeaweedFS fixture, no `BLOCKED_EXTERNAL`
+needed); if any assertion still fails, diagnose that specifically before
+touching anything further. `certification_state` for FTF-R017 remains
+`PROVISIONAL`. FTF-0102 remains blocked on the standing owner ask; PR
+#67's claim remains unconfirmed and unactioned (no new corroboration this
+shift).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
 
 ## 2026-09-17 — FTF-R017 (PR #75): pinned SeaweedFS fixture bumped 3.71 -> 3.99, real source-verified, waiting on CI
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
