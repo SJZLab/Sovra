@@ -426,7 +426,12 @@ def main() -> None:
     # fixture itself.
     _wait_for_s3_http_ready(endpoint, timeout_seconds=90.0)
 
-    client = S3Client(endpoint, credentials)
+    # debug=True: this task's own CI hit a real "9/9 fail with S3-level
+    # 500/501" result where every test's exception is caught generically at
+    # this loop (below), which alone cannot say which specific S3 operation
+    # inside a given test actually failed. See storage_semantics_client.py's
+    # own `debug` docstring for what this does and doesn't print.
+    client = S3Client(endpoint, credentials, debug=True)
 
     for name, fn in sorted(globals().items()):
         if not (name.startswith("test_") and callable(fn)):

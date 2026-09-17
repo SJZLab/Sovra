@@ -214,11 +214,26 @@ class S3Client:
     SDK (Section 84.4: "implement the smallest coherent change")."""
 
     def __init__(
-        self, endpoint: S3Endpoint, credentials: S3Credentials, timeout_seconds: float = 10.0
+        self,
+        endpoint: S3Endpoint,
+        credentials: S3Credentials,
+        timeout_seconds: float = 10.0,
+        *,
+        debug: bool = False,
     ) -> None:
         self._endpoint = endpoint
         self._credentials = credentials
         self._timeout = timeout_seconds
+        # FTF-R017 diagnosis aid only (default off): this task's CI hit a
+        # real, unexplained "9/9 fail with S3-level 500/501" result where
+        # every test's own exception is caught generically at the test-loop
+        # level (tests/integration/test_storage_semantics.py's `main()`),
+        # which cannot tell which specific S3 operation inside a given test
+        # actually failed. Never prints credentials/signature material --
+        # only the request shape (method/path/query-keys/header-names/body
+        # length) and the response status, which is exactly what's needed
+        # to pin an InternalError/NotImplemented to one real call.
+        self._debug = debug
 
     def _request(
         self,
@@ -231,6 +246,14 @@ class S3Client:
         body: bytes = b"",
     ) -> tuple[int, dict[str, str], bytes]:
         canonical_uri = f"/{bucket}/{key}" if key else f"/{bucket}"
+        if self._debug:
+            print(
+                f"S3 request: {method} {canonical_uri} "
+                f"query={sorted((query or {}).keys())} "
+                f"headers={sorted((headers or {}).keys())} "
+                f"body_len={len(body)}",
+                flush=True,
+            )
         signed = sign_request(
             method=method,
             endpoint=self._endpoint,
@@ -246,6 +269,8 @@ class S3Client:
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
                 response_body = resp.read()
+                if self._debug:
+                    print(f"S3 response: {resp.status} (ok)", flush=True)
                 return resp.status, dict(resp.headers.items()), response_body
         except urllib.error.HTTPError as exc:
             response_body = exc.read()
@@ -259,6 +284,8 @@ class S3Client:
                     message = parsed.get("Message", message)
             except ET.ParseError:
                 pass
+            if self._debug:
+                print(f"S3 response: {exc.code} {code} {message!r}", flush=True)
             raise S3Error(exc.code, code, message, message) from exc
 
     # -- Buckets ----------------------------------------------------------
