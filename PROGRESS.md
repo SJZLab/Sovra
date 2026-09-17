@@ -1,5 +1,44 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T09:10:00Z
+Updated: 2026-09-17T09:09:30Z
+
+## 2026-09-17 — FTF-R014 (PR #68) merged to main as PROVISIONAL
+Same relay shift as the FTF-R014 implementation entry below. Subscribed to
+PR #68's activity on open. A `check_suite.completed` webhook event for an
+earlier, superseded commit (`72acba7`, before this session's own
+PR-reference-update push) was correctly recognized as stale via a fresh
+`pull_request_read get_check_runs` call and not acted on. The next event,
+for the PR's actual final head (`cc9b7e2`), was confirmed for real: both
+`gate` and `docker-local-stack-integration` `completed`/`success` on that
+exact head (run 35203455799), `mergeable_state: clean`, `get_reviews`
+empty — no open review threads. Matches CLAUDE.md's "Do without asking:
+merge on green + L1 doc (PROVISIONAL)" — same discipline as every prior
+FTF-000X/FTF-H00X/FTF-R00X merge. Merged PR #68 (merge commit
+`222c665843da206929df50a3857f659a10ec5dd6`). Not a certification — still
+PROVISIONAL, Law 4 untouched; `docs/spec-matrix.yaml`/`QUEUE.md`/
+`docs/certifications/queue.md` already carried the correct PROVISIONAL
+bookkeeping as part of this PR itself. Certified: 12/300 (unchanged — a
+merge to PROVISIONAL is not a certification). Product-true: 0 (unchanged).
+Unsubscribed this session from PR #68's activity (merged, nothing left to
+watch). Per the branch-restart convention (this session's designated
+branch's PR merged): restarted `claude/wizardly-fermat-czj1h6` from the
+new `main` tip (`222c665`) to record this merge note, rather than
+stacking on now-merged history.
+
+STEP 4: no stop condition applies cleanly (not N/N proven — FTF-R011/
+FTF-R017 remain dependency-ready and unclaimed; no true blocker; not
+stuck; the PR #67 finding is an ask-first-adjacent flag already recorded,
+not a newly raised one this instant) — this was simply the end of the
+concrete action available this shift (FTF-R014 driven from "PR open, CI
+in flight" to "green and merged, awaiting L2"). Not spending this shift's
+remaining effort starting a new task from scratch after already landing
+FTF-R014 — leaving the FTF-R011/FTF-R017 sweep (FTF-R011 specifically
+still carrying the Law 15 additive-edit question worth resolving
+explicitly first) to the next shift, consistent with this repo's
+established one-task-per-shift pattern. FTF-0102 remains blocked on the
+standing owner ask; the PR #67 claim remains unconfirmed and unactioned.
+
+Certified: 12/300 (unchanged). Provisional: 1 (FTF-R014, PR #68, merged,
+awaiting L2). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-R014 implemented (Provisional, PR #68 opened, awaiting CI + L2 certification); PR #67 finding flagged
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:

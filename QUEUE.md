@@ -1,6 +1,6 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R014 implemented, PR #68 opened,
-CI in progress, awaiting Control plane L2 certification)
+Updated: 2026-09-17 by relay (FTF-R014 PR #68 merged to main,
+PROVISIONAL, awaiting Control plane L2)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -107,10 +107,11 @@ CERTIFIED without counting toward product-true).
   Q33's real safe-parallel-wave evidence is FTF-H034's own OS-thread
   proof, not re-claimed here; disclosed, not hidden. proof_state
   L1-PROVEN, certification_state PROVISIONAL. PR #68
-  (https://github.com/SJZLab/Sovra/pull/68) opened against `main`, CI
-  queued on the real head (run 35203392745); this session subscribed to
-  its activity and will merge on green per CLAUDE.md's "Do without
-  asking," then await independent Control plane L2 certification (not
+  (https://github.com/SJZLab/Sovra/pull/68) merged to `main` (merge commit
+  `222c665843da206929df50a3857f659a10ec5dd6`) after real green CI (`gate`
+  + `docker-local-stack-integration`, run 35203455799, on head `cc9b7e2`)
+  and no open review threads — per CLAUDE.md's "Do without asking," not a
+  certification. Awaiting independent Control plane L2 review (not
   self-certified, Law 4). Full entry: `docs/certifications/queue.md`.
 
 ## Done
