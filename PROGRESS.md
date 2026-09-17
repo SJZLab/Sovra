@@ -1,5 +1,36 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T07:03:00Z
+Updated: 2026-09-17T07:10:00Z
+
+## 2026-09-17 — Owner decision: FTF-0102 new-runtime-dependency ask resolved (option 1)
+Live interactive session (not a scheduled relay shift) — the owner
+(samer.zakaria@gmail.com, via the Claude Code CLI) responded directly to
+the 2026-09-16 QUEUE.md "Owner actions — current" ask re: FTF-0102's
+required Postgres client/ORM/migration runtime dependencies. Presented
+the three options recorded in QUEUE.md (add SQLAlchemy + Alembic +
+Postgres driver / a narrower stdlib+`psql`-subprocess alternative / some
+other explicit decision) with a recommendation; owner approved **option
+1** — add SQLAlchemy + Alembic + a Postgres driver (psycopg or asyncpg)
+as `apps/api`'s first runtime dependencies, matching the master
+architecture table (`FINE_TUNING_FACTORY_RELEASE_1.md`, "binding
+architecture", API/policy row) as written.
+
+Per CLAUDE.md's "Owner actions live in ONE place" rule ("Remove it the
+moment the owner responds... never leave resolved asks in item history"),
+removed the FTF-0102 ask from QUEUE.md's "Owner actions — current" block
+immediately, moved FTF-0102 out of `## Blocked` (both the summary list
+and the detailed `## Blocked` section), and recorded the decision in both
+places so it isn't lost. FTF-0102 is now dependency-ready and unblocked
+(deps FTF-0004/FTF-0005/FTF-H001 all CERTIFIED) — available for the next
+relay shift to claim and implement (add the three dependencies to
+`apps/api/pyproject.toml`, write the forward Alembic migration with
+tenant/composite constraints/RLS, prove the negative-acceptance clause
+against real DB constraints per `tools/r1_handoff.py packet FTF-0102`).
+Not implemented in this turn — this was a decision-recording turn only,
+no code written, no dependency installed yet. The 2026-09-15
+trigger-tooling owner ask remains open and untouched.
+
+Certified: 11/300 (unchanged). Provisional: 1 (FTF-1810, unchanged).
+Blocked: 0 (was 1). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-1810 (PR #63) merged to main as PROVISIONAL
 Same relay shift as the FTF-1810 implementation entry below. Subscribed to
