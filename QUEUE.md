@@ -1,7 +1,8 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — real root cause found:
-  SeaweedFS volume-capacity exhaustion, not a SigV4 bug; fix pushed as
-  `01e88fb`, waiting on CI, see "Active" below)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — capacity fix confirmed
+  working (`01e88fb`); remaining 5/9 failures are a genuine SeaweedFS
+  3.71 version/capability gap, not a code bug — decision needed, see
+  "Active" below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -198,14 +199,43 @@ SeaweedFS "collection", eagerly growing up to 7 volumes on first write).
 Verified the correct fix flag against SeaweedFS's real source
 (`weed/command/server.go`) rather than guessing: `-master.
 volumeSizeLimitMB=64` added to the `s3` service's `command:` in
-`infra/docker/docker-compose.yml`, pushed as commit `01e88fb`. The 2
-`501 NotImplemented` (`PutBucketVersioning`) responses are a distinct
-SeaweedFS code from the 500s and are not yet confirmed resolved by this
-fix — next shift/continuation: if all 9 tests pass, resubmit for
-certification; if the 500s clear but the 501s persist, diagnose that as
-its own separate, disclosed finding (capacity exhaustion vs. a genuine
-SeaweedFS versioning capability gap) rather than assuming this fix
-covers it too.
+`infra/docker/docker-compose.yml`, pushed as commit `01e88fb`.
+
+**Update, same shift — capacity fix confirmed working; remaining
+failures are a genuine SeaweedFS 3.71 version/capability gap, not a code
+bug:** re-ran CI (run 35251840024) — zero volume-exhaustion errors across
+56 real volumes created; 4/9 tests now pass completely
+(`test_backup_and_restore`/`test_multipart`/`test_multipart_abort`/
+`test_identity`). The remaining 5 are real SeaweedFS responses, traced to
+specific causes via `WebFetch`/`WebSearch` against SeaweedFS's own real
+release notes and GitHub issues, not guessed: `test_versioning`/
+`test_retention_deletion` (`PutBucketVersioning` → `501`) because the
+pinned `3.71` image's own release notes have zero mention of versioning/
+object-lock/WORM, while release `3.94`'s notes explicitly introduce S3
+object versioning and locking as new — the feature did not exist yet in
+this pin. `test_immutable_publication` (a COMPLIANCE-retained `DELETE`
+wrongly succeeds) is the same root cause (Object Lock postdates `3.71`
+too), separately corroborated against a real, dated upstream defect
+(`seaweedfs/seaweedfs#8350`/`#11333`, fixed by `#11335`/`#11361`/
+`#11362`). `test_checksum` (corrupted-body rejection returns `500` not
+`400`) matches a real SeaweedFS PR title found earlier this shift ("fix:
+s3 return BadDigest") that replaced exactly this generic-500 behavior.
+`test_encryption` (SSE-C key not enforced on GET) is real but not yet
+corroborated against a specific named upstream issue.
+
+This is now a fixture-version-adequacy question, not a bug this shift can
+close by itself — deliberately not attempting a speculative image-digest
+bump (verifying the exact right digest needs Docker Hub metadata queries
+this shift didn't complete, and this sandbox still can't test it directly
+against live Docker). Full write-up and three concrete options (bump the
+pin to ≥3.94 with the Object Lock fix; disclose partial qualification —
+3/8 semantics proven, 5/8 `BLOCKED_EXTERNAL` against this pinned image;
+or use the owner-provisioned `maintained_organizational_s3` backend
+`storage-profile.yaml` already declares as an alternative) are in
+PROGRESS.md's matching entry. Not deciding unilaterally — this is a
+design/scope call, not decided execution. `certification_state` stays
+`PROVISIONAL`; `01e88fb`'s capacity fix stays regardless of how this
+resolves — it is unconditionally correct.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 

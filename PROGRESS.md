@@ -1,5 +1,99 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T17:20:00Z
+Updated: 2026-09-17T17:35:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): capacity fix confirmed working; remaining failures are a genuine SeaweedFS 3.71 version/capability gap, not a code bug — stopping here, decision needed
+Continuation of this same relay shift, after the `-master.volumeSizeLimitMB=64`
+fix (commit `01e88fb`) triggered CI run 35251840024. Real result, read
+directly from the job log and the debug instrumentation (not inferred):
+the volume-exhaustion defect is fully fixed — the container log now shows
+56 real volumes created with zero `"no free volumes left"` errors,
+versus exhausting after only 12 before. 4 of 9 tests now pass completely
+end-to-end (`test_backup_and_restore`, `test_multipart`,
+`test_multipart_abort`, `test_identity`) where none did before this
+shift's fix.
+
+The remaining 5 failures are real, and this shift traced each to a
+specific, named SeaweedFS response — not a client/signing defect (the
+identical SigV4 code path is what made the 4 passing tests succeed):
+- `test_versioning`/`test_retention_deletion`: `PutBucketVersioning`
+  still returns `501 NotImplemented`. Root-caused with certainty, not
+  guessed: fetched SeaweedFS's own real release notes for the pinned
+  version (`3.71`, this repo's `infra/docker/docker-compose.yml` digest)
+  via `WebFetch` — zero mention of versioning/object-lock/WORM anywhere
+  in that release. Fetched release `3.94`'s own real notes — explicitly
+  "a major release adding support for S3 object versioning and locking
+  ... WORM support" and "Add object versioning" as a named new feature.
+  This is not a bug to fix in this repo's client or in SeaweedFS's
+  config — the pinned image genuinely predates this S3 API surface
+  existing at all.
+- `test_immutable_publication`: a COMPLIANCE-retained object's `DELETE`
+  succeeds when it should be rejected. Corroborated against a real,
+  dated upstream defect: `seaweedfs/seaweedfs#8350` ("Object Lock
+  COMPLIANCE mode does not enforce WORM (Delete still succeeds)") and its
+  follow-up `#11333`, with fixes in PRs `#11335`/`#11361`/`#11362` —
+  found via `WebSearch`, not assumed. Since Object Lock itself postdates
+  `3.71` (per the versioning finding above), this failure is really the
+  same "feature doesn't exist yet" root cause, not a distinct one.
+- `test_checksum`: an intentionally-corrupted `Content-MD5` upload is
+  rejected, but with `500 InternalError` instead of the expected `400`.
+  Matches a real, dated upstream fix found during this same shift's
+  earlier research (`seaweedfs/seaweedfs` PR "fix: s3 return BadDigest",
+  replacing exactly this generic-500 behavior with a proper `BadDigest`
+  response for a mismatched digest) — SeaweedFS does detect the mismatch
+  (it doesn't silently accept the corrupted body), it just reports it
+  with the wrong status code in this pinned version.
+- `test_encryption`: a `GET` without the SSE-C key, and a `GET` with the
+  wrong SSE-C key, both return `200` with data instead of being rejected
+  with `400` — SSE-C key enforcement is not active in this configuration.
+  Not yet corroborated against a specific named upstream issue (this
+  shift's research budget was spent confirming the two findings above
+  first); flagged as unconfirmed-cause, not asserted as identical to the
+  versioning gap.
+
+**This is now a fixture-adequacy/version-lock question, not a "root
+cause and fix" bug this shift can close by itself.** Deliberately did not
+attempt a speculative image-digest bump: verifying the *exact* newer
+digest that both exists for the right architecture and actually contains
+these fixes would need Docker Hub metadata queries this shift did not
+complete, and pushing an unverified guess risks exactly the kind of
+wasted CI round-trip this shift's own diagnostic work (the `debug` flag,
+the mergeable-state fix) was specifically about avoiding. Three concrete
+options for whoever continues this (next relay shift, or Control
+plane/owner judgment):
+1. Verify and bump `infra/docker/docker-compose.yml`'s pinned SeaweedFS
+   digest to a release at or after `3.94` (ideally one that also
+   includes the Object Lock enforcement fix, i.e. after
+   `seaweedfs/seaweedfs#11335`/`#11361`/`#11362` merged) — ideally also
+   confirms whether the `BadDigest`/SSE-C behaviors improve. Needs a real
+   digest verified against Docker Hub's metadata API (same no-pull
+   approach FTF-0004's own evidence already established), then a real CI
+   run to confirm, since this sandbox still has no container-registry
+   egress to test it directly.
+2. Disclose partial qualification: `multipart`/`identity`/
+   `backup_and_restore` (3 of 8 required Section 80.4 semantics) proven
+   against the current pinned fixture; `versioning`/`retention_deletion`/
+   `immutable_publication`/`checksum`/`encryption` (5 of 8) explicitly
+   `BLOCKED_EXTERNAL`/capability-gap against this specific pinned image
+   version, matching the same resource_gate discipline FTF-0004's own
+   registry-egress finding and FTF-1810's `BLOCKED_EXTERNAL` bindings
+   already established as legitimate, disclosed precedent — and let
+   Control plane/the owner judge whether that meets FTF-R017's bar as-is.
+3. Some other explicit decision (e.g. owner-provisioned
+   `maintained_organizational_s3` per `storage-profile.yaml`'s own
+   already-declared alternative backend, sidestepping the fixture
+   question entirely).
+
+Not attempting option 1 or 2 unilaterally this shift — this is a design/
+scope call bigger than the debugging work this shift was executing, and
+CLAUDE.md's relay role is explicit that decided, sliced execution is the
+mandate, not open-ended design judgment. `certification_state` for
+FTF-R017 stays `PROVISIONAL`; not resubmitting for certification with
+`storage-semantics-integration` still red. Left `01e88fb`'s real,
+verified volume-capacity fix in place (unconditionally correct
+regardless of how the fixture-version question resolves).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
 
 ## 2026-09-17 — FTF-R017 (PR #75): root cause found and fixed — real SeaweedFS volume-capacity exhaustion, not a SigV4 bug
 Continuation of this same relay shift, once CI genuinely ran with the
