@@ -1301,3 +1301,97 @@ corrected 2026-09-15.
   confirmed legitimate, and the delivered work matches the real
   task-packet contract's acceptance/negative_acceptance clauses item by
   item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-R014 — Bind selected coding executor to the embedded Release 1 execution controls
+- Criterion ID: FTF-R014
+- PR: https://github.com/SJZLab/Sovra/pull/68
+- Merge commit: 222c665843da206929df50a3857f659a10ec5dd6
+- Validated-by: session https://claude.ai/code/session_01HCxXhRFSdHhWo7aT21GWmH
+  (session-ID comparison performed and recorded before this entry: all four
+  PR #68 commits — fc18229, 5592d07, 72acba7, cc9b7e2 — carry
+  Claude-Session session_01WErQ4nvBQBFNgtrT5v2Tau; this reviewing session's
+  ID does not match — independent, not self-certification)
+- Date: 2026-09-17
+- Evidence:
+  1. CI reconfirmed green for real (not a self-reported claim) on the PR's
+     actual final head via `pull_request_read.get_check_runs`: `gate` and
+     `docker-local-stack-integration`, both `completed`/`success`, GitHub
+     Actions run 35203455799, head `cc9b7e20d8e530eaf2208d4756f5c3935e1774e9`.
+     `mergeable_state` was `clean` before merge.
+  2. Independent re-run in a fresh git worktree at the PR's actual head,
+     with full (unshallowed) history: `python3
+     tests/implementation/test_r1_execution_binding.py` — 24/24 checks
+     pass. `ruff check .`/`ruff format --check .`/`mypy .` clean; `pnpm run
+     lint`/`format:check`/`typecheck` clean; `uv run pytest tests/unit` (3
+     passed) and `pnpm exec vitest run` (2 passed) clean, 0 skipped either
+     side; all 12 existing task negative-test-proof scripts
+     (`test_ftf_0001_monorepo_layout.py` through `test_ftf_1810.py`) pass
+     unmodified — no regression to already-certified evidence.
+  3. Own real fault injection against the tracked module on disk (reproduced
+     independently, not just trusting the producer's own probe): removed
+     the `SELF_CERTIFICATION_DENIED` guard block from
+     `tools/implementation/executor_contract.py`, ran a fresh subprocess
+     that imports the edited file and validates a self-certified
+     `R1_EMBEDDED` receipt for task `FTF-R014` with live-computed matching
+     digests — it wrongly returned `PASS`; restored the file byte-identical
+     (`diff` confirmed empty against the pre-edit copy), re-ran the same
+     probe — correctly `FAIL`ed again with `SELF_CERTIFICATION_DENIED`.
+     (One transcription slip using an unrelated `task_id` that doesn't
+     match the schema's `^FTF-[A-Z0-9]+$` pattern briefly produced a
+     false `FAIL` for an unrelated reason — schema violation, not the
+     guard; corrected and reproduced clean once `task_id="FTF-R014"` was
+     used, confirming the schema's `task_id` pattern check is itself real
+     and independent of the self-certification guard.)
+  4. `python3 scripts/validate_spec.py --strict` clean;
+     `python3 scripts/verify_task.py --task FTF-R014 --stage task` ->
+     `PASS` against evidence commit `fc1822903741fae188b7b81767a7668b3ee9cc96`;
+     `python3 scripts/verify_release.py` confirmed non-inflated:
+     `12/300`/`FAILED (1): ['FTF-R014']`/`NOT READY` before this
+     certification's `docs/spec-matrix.yaml` edit, `13/300`/`NOT READY`
+     (no FAILED entries) after.
+     `python3 scripts/product_truth_check.py --fail-on-unwired` stays
+     `0/0 product-true` — legitimate, `proving_symbol` is empty
+     (build/implementation tooling, no Factory production service imports
+     `tools/implementation/executor_contract.py`, confirmed directly via
+     `grep` across `apps/`, `workers/`, `packages/`).
+  5. Delivered work checked against FTF-R014's real acceptance/
+     negative_acceptance clauses via `tools/r1_handoff.py packet FTF-R014
+     --plan FINE_TUNING_FACTORY_RELEASE_1.md`: all three acceptance clauses
+     (file-only `R1_EMBEDDED` binding via live Section-84/source-file
+     digests; `R1_EMBEDDED_PLUS_EXISTING_SKILL` preserving a real skill's
+     name/version/hash without fabricating conformance in the embedded-only
+     path; scoped receipts with separate producer/validator/release
+     authority and no Factory runtime dependency) and both
+     negative_acceptance clauses (reject missing/mismatched digest,
+     fabricated external-skill conformance, self-certification, producer
+     mutation of protected gates without the real CODEOWNERS release
+     authority, and claimed-without-run OpenHands qualification; a missing
+     optional external skill must not block `R1_EMBEDDED`) are each
+     covered by a distinct, real check in
+     `tests/implementation/test_r1_execution_binding.py`, independently
+     confirmed by reading the test file and the module under test line by
+     line, not merely trusting the PR's own description. `shared_lock_required`
+     is `[]` and `shared_contracts_read` (`packages/component-contracts/
+     architecture.schema.json`, `spec/deployment-profiles.yaml`) are
+     untouched by this PR's diff, confirmed via `git diff --stat`.
+  6. `.github/CODEOWNERS` correctly protects the two new gate files
+     (`tools/implementation/executor_contract.py`,
+     `spec/implementation-executor.schema.json`) under
+     `@samerzakaria`, matching `RELEASE_AUTHORITY_IDENTITY =
+     "owner:samerzakaria"` used in the code — read directly, not assumed.
+  7. After setting `certification_state: CERTIFIED`, re-ran
+     `scripts.task_claim.sync_certified_status()` against the real repo
+     files — diff confirmed limited to exactly FTF-R014's own
+     `status`/`evidence` fields in `spec/tasks.json` and
+     `docs/implementation/TRACKER.json`, nothing else touched.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit
+  (`222c665`) is the one GitHub actually merged from that exact head, the
+  real pinned toolchain and both verification commands genuinely re-run
+  clean, a fresh fault injection (reproducing, not just trusting, the
+  producer's own claim) confirms the self-certification guard is
+  code-enforced rather than fixture-assumed, `product_truth_check.py`'s
+  `0/0` and `verify_release.py`'s `12/300`→`13/300` non-inflated
+  transition are both confirmed legitimate, and the delivered work matches
+  the real task-packet contract's acceptance/negative_acceptance clauses
+  item by item. No open defect. Certified L2-CERTIFIED.

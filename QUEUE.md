@@ -1,31 +1,33 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R014 PR #68 merged to main,
-PROVISIONAL, awaiting Control plane L2)
+Updated: 2026-09-17 by Control plane (FTF-R014 independently certified,
+PR #68)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 12/300 · Provisional: 1 (FTF-R014) · Blocked: 1 (FTF-0102,
+Certified: 13/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
-FTF-H028, FTF-H034 and FTF-1810 all have no proving_symbol; FTF-0001 is
-structural layout, FTF-0002 is CI tooling, FTF-0003 is test-harness
-tooling, FTF-0004 is local-stack bootstrap/health tooling, FTF-0005 is a
-configuration module with no live caller yet, FTF-0006 is an observability
-seam with no live FastAPI app or Temporal workflow to instrument yet,
-FTF-H001 is the spec/gate verifier tooling itself, FTF-R001 is an
-architecture/version-lock schema freeze with no live product-runtime
+FTF-H028, FTF-H034, FTF-1810 and FTF-R014 all have no proving_symbol;
+FTF-0001 is structural layout, FTF-0002 is CI tooling, FTF-0003 is
+test-harness tooling, FTF-0004 is local-stack bootstrap/health tooling,
+FTF-0005 is a configuration module with no live caller yet, FTF-0006 is an
+observability seam with no live FastAPI app or Temporal workflow to
+instrument yet, FTF-H001 is the spec/gate verifier tooling itself, FTF-R001
+is an architecture/version-lock schema freeze with no live product-runtime
 caller yet, FTF-H002 is a preflight/release-scope-freeze layer with no
 live product-runtime caller yet, FTF-H028 is the release-evidence-gate/
 CI-aggregator tooling itself, `workflow_dispatch`-only and never run by
 the relay, FTF-H034 is the task-claim scheduler/tracker-sync tooling
 itself, with no live multi-agent dispatch harness wiring it into a
-running caller yet, and FTF-1810 is the release-qualification aggregator
+running caller yet, FTF-1810 is the release-qualification aggregator
 tooling itself — run against the real repo it honestly reports NOT READY
 (every one of the 43 required scenarios missing evidence, image/profile
 bindings BLOCKED_EXTERNAL), `workflow_dispatch`-only and never run by the
-relay — none a live-wired product-runtime path, so all twelve are
-CERTIFIED without counting toward product-true).
+relay, and FTF-R014 is build/implementation tooling binding the selected
+coding executor to Section 84's controls, with no Factory production
+service importing it — none a live-wired product-runtime path, so all
+thirteen are CERTIFIED without counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -94,25 +96,7 @@ CERTIFIED without counting toward product-true).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-R014 — Bind selected coding executor to the embedded Release 1
-  execution controls. Implemented this shift
-  (`tools/implementation/executor_contract.py`,
-  `spec/implementation-executor.schema.json`,
-  `docs/implementation/executor-decision.md`,
-  `tests/implementation/test_r1_execution_binding.py` — 24 checks, real
-  fault injection against the self-certification guard). Binds this
-  repo's real executor (Claude Code CLI, R1_EMBEDDED file-only profile)
-  to Section 84 via live sha256 digests of the real current
-  `spec/RELEASE_1.md`. Scope is this task's own Q33/Q41 (not Q42) —
-  Q33's real safe-parallel-wave evidence is FTF-H034's own OS-thread
-  proof, not re-claimed here; disclosed, not hidden. proof_state
-  L1-PROVEN, certification_state PROVISIONAL. PR #68
-  (https://github.com/SJZLab/Sovra/pull/68) merged to `main` (merge commit
-  `222c665843da206929df50a3857f659a10ec5dd6`) after real green CI (`gate`
-  + `docker-local-stack-integration`, run 35203455799, on head `cc9b7e2`)
-  and no open review threads — per CLAUDE.md's "Do without asking," not a
-  certification. Awaiting independent Control plane L2 review (not
-  self-certified, Law 4). Full entry: `docs/certifications/queue.md`.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -299,6 +283,35 @@ CERTIFIED without counting toward product-true).
   against FTF-1810's real acceptance/negative_acceptance clauses via
   `tools/r1_handoff.py packet FTF-1810 --plan
   FINE_TUNING_FACTORY_RELEASE_1.md`. Full entry:
+  docs/certifications/ledger.md.
+- FTF-R014 — Bind selected coding executor to the embedded Release 1
+  execution controls. CERTIFIED 2026-09-17, PR #68 (merge commit
+  `222c665843da206929df50a3857f659a10ec5dd6`). Independently re-verified
+  in a fresh, unshallowed git worktree at the PR's actual final head: CI
+  reconfirmed green on the real head (`cc9b7e2`, run 35203455799, both
+  `gate` and `docker-local-stack-integration`), all 24 of
+  `tests/implementation/test_r1_execution_binding.py`'s checks plus the
+  full 12-task existing regression set clean (`ruff`/`format`/`mypy`/
+  `eslint`/`tsc`/`prettier`/`vitest`/`pytest` all clean with the pinned
+  toolchain), `product_truth_check.py` confirmed legitimately 0/0 (no
+  proving_symbol — no Factory production service imports this module,
+  confirmed via `grep`), `validate_spec.py --strict` clean,
+  `verify_task.py --task FTF-R014 --stage task` -> `PASS`,
+  `verify_release.py` confirmed non-inflated (`12/300`/`FAILED (1):
+  ['FTF-R014']`/`NOT READY` before this certification, `13/300`/`NOT
+  READY`, no FAILED, after). Own fault injection against the tracked
+  module on disk (removed the `SELF_CERTIFICATION_DENIED` guard block,
+  reproducing the producer's own claim independently rather than trusting
+  it) confirmed a self-certified receipt wrongly `PASS`es with the guard
+  removed and is correctly rejected once restored byte-identical. Ran
+  `sync_certified_status()` after the `certification_state: CERTIFIED`
+  edit — diff limited to exactly FTF-R014's own `status`/`evidence`
+  fields in `spec/tasks.json`/`TRACKER.json`. Delivered work checked
+  against FTF-R014's real acceptance/negative_acceptance clauses via
+  `tools/r1_handoff.py packet FTF-R014 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`; `.github/CODEOWNERS` confirmed to
+  protect the two new gate files under the same release authority
+  (`owner:samerzakaria`) the code itself checks against. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

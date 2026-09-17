@@ -1,5 +1,88 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T09:09:30Z
+Updated: 2026-09-17T09:14:00Z
+
+## 2026-09-17 — Control plane: FTF-R014 CERTIFIED (PR #68 independently verified)
+Autonomous certifier shift, triggered by the PR #68 `pull_request.opened`
+webhook. Read `docs/certifications/queue.md`: FTF-R014 was the only
+PROVISIONAL item, confirmed against `docs/spec-matrix.yaml`
+(`certification_state: PROVISIONAL`, next entry FTF-R015 still `NONE`).
+Session-ID comparison performed before touching anything: all four commits
+on PR #68 (`fc18229`, `5592d07`, `72acba7`, `cc9b7e2`) carry
+`Claude-Session: .../session_01WErQ4nvBQBFNgtrT5v2Tau`; this session is
+`session_01HCxXhRFSdHhWo7aT21GWmH` — no overlap, independent per Law 4.
+
+At the time of the webhook's stated head (`72acba7`), CI was still
+`in_progress`; a fresh `pull_request_read.get` showed a newer commit
+(`cc9b7e2`) had already been pushed as the real PR head. Waited for that
+head's own CI run (35203455799) to complete rather than certifying against
+a stale or unfinished run — both `gate` and `docker-local-stack-integration`
+completed `success` on `cc9b7e2`, `mergeable_state` was `clean`, `get_reviews`/
+`get_review_comments`/`get_comments` all empty (no open review threads).
+
+Independent re-verification performed (full detail in
+`docs/certifications/ledger.md`'s new FTF-R014 entry): read
+`tools/implementation/executor_contract.py` and
+`tests/implementation/test_r1_execution_binding.py` directly, line by
+line, rather than trusting the PR description; checked out the branch into
+a fresh, unshallowed git worktree; re-ran `tests/implementation/
+test_r1_execution_binding.py` (24/24 pass) and the full 12-task existing
+regression set with the pinned toolchain (`uv run ruff check`/`format
+--check`/`mypy` clean; `pnpm run lint`/`typecheck`/`format:check` and
+`pnpm exec vitest run` clean after `pnpm install --frozen-lockfile`; `uv
+run pytest tests/unit` clean) — an initial pass against a shallow clone
+produced a false `stale_commit: FTF-0001` defect from `validate_spec.py`
+and a matching `test_ftf_h001.py` failure; diagnosed as a shallow-clone
+artifact (the referenced commit genuinely doesn't resolve in a depth-1
+checkout), confirmed by `git fetch --unshallow` making both pass cleanly,
+not a real regression; re-ran `validate_spec.py --strict` and
+`verify_task.py --task FTF-R014 --stage task` (`PASS`); confirmed
+`verify_release.py` non-inflated (`12/300`/`FAILED (1): ['FTF-R014']`/`NOT
+READY` before this edit, `13/300`/`NOT READY` with no FAILED entries
+after); confirmed `product_truth_check.py` stays `0/0` legitimately
+(`proving_symbol: ''` — confirmed via `grep` that no Factory production
+service imports `tools/implementation/executor_contract.py`); ran an own
+fault injection against the tracked module on disk — removed the
+`SELF_CERTIFICATION_DENIED` guard block, ran a fresh subprocess that
+imports the edited module and validates a self-certified `R1_EMBEDDED`
+receipt with live-matching digests, confirmed it wrongly `PASS`ed,
+restored the file byte-identical (`diff` confirmed empty), re-ran —
+correctly `FAIL`ed again. (One manual transcription slip using an
+unrelated `task_id` briefly produced a false `FAIL` for an unrelated
+schema-pattern reason before the guard-removal effect was isolated
+correctly — noted in the ledger entry for transparency, not hidden.)
+Pulled the real contract via `tools/r1_handoff.py packet FTF-R014 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and checked the delivered work against
+its actual acceptance/negative_acceptance clauses item by item; confirmed
+`.github/CODEOWNERS` protects the two new gate files under
+`owner:samerzakaria`, matching `RELEASE_AUTHORITY_IDENTITY` in the code.
+
+No defect found. PR #68 was still open at review time (`merged: false`,
+`mergeable_state: clean`, CI green) — merged it (merge commit
+`222c665843da206929df50a3857f659a10ec5dd6`) per CLAUDE.md's "Do without
+asking: merge on green + L1 doc (PROVISIONAL)", the same low-risk action
+this repo's relay sessions already take, since no prior session had done
+so yet. A concurrent relay shift (same producer session,
+`session_01WErQ4nvBQBFNgtrT5v2Tau`) independently recorded its own
+"merged to main" bookkeeping (PR #69, doc-only) around the same time;
+confirmed it touched no certification-relevant file (`docs/spec-matrix.yaml`
+untouched) before proceeding. Rebuilt the worktree at the new `main` tip
+(`72a9bb9`, containing merge commit `222c665`) and reconfirmed the full
+regression set green there before certifying. Updated
+`docs/spec-matrix.yaml` (FTF-R014: `certification_state: CERTIFIED`,
+`proof_state: L2-CERTIFIED`, `evidence_hash` kept as the implementation
+commit `fc18229`, matching the existing convention), re-ran
+`sync_certified_status()` afterward — diff confirmed limited to exactly
+FTF-R014's own `status`/`evidence` fields in `spec/tasks.json`/
+`docs/implementation/TRACKER.json` — appended the ledger entry, moved
+FTF-R014 from QUEUE.md "Provisional" to "Done" and bumped Certified to
+13/300, Provisional to 0.
+
+Certified: 13/300. Provisional: 0. Product-true: 0 (unchanged — FTF-R014
+has no `proving_symbol`, same disclosed rationale as every other certified
+task so far). The 2026-09-16 FTF-0102 new-runtime-dependency owner ask,
+the 2026-09-15 trigger-tooling ask, and the 2026-09-17 PR #67
+unconfirmed-approval finding all remain open and untouched — out of scope
+for this certification-only shift.
 
 ## 2026-09-17 — FTF-R014 (PR #68) merged to main as PROVISIONAL
 Same relay shift as the FTF-R014 implementation entry below. Subscribed to

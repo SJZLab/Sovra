@@ -3175,13 +3175,13 @@ FTF-R013:
   proving_symbol: ''
   proving_test: ''
 FTF-R014:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Bind selected coding executor to the embedded Release 1 execution controls
   evidence_hash: fc1822903741fae188b7b81767a7668b3ee9cc96
   implementation_state: IMPLEMENTED
   notes: kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q33, Q41; deps=FTF-R001, FTF-H034; binds this repo's real executor (Claude Code CLI, R1_EMBEDDED file-only profile, no installed external Agentic SDLC skill) to Section 84's embedded controls via live sha256 digests of spec/RELEASE_1.md and its real current Section 84 text -- never a pasted-once value; this task's own scenarios are Q33/Q41 only, not Q42 -- Q33's real safe-parallel-wave evidence is FTF-H034's own OS-thread proof, not re-claimed here; no live multi-agent dispatch harness exists in this sandbox to run a second, truly separate coding-executor process, disclosed rather than fabricated
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/implementation/test_r1_execution_binding.py
 FTF-R015:
