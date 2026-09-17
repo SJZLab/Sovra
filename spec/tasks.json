@@ -5,8 +5,10 @@
   "tasks": [
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -61,8 +63,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "41f1493bca4f70aa74ab61516d1a22ee197daf79"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -110,8 +114,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "e2c2dae96142c95a78005fd7528df6ac7e3e5dfc"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -161,8 +167,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "a477e678b785d3248bdc985c91586b148411b4fe"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -212,8 +220,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "5f5a34d803a76e3261c8cc860bd5f21cd8290424"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -261,8 +271,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "268186bd5e70032a6c563796910059ab2684b684"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -12478,8 +12490,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3"
+      ],
       "ready": false,
       "security": "Deny unapproved effects; signed/scoped identities; no raw dataset/source/secret content in logs, external telemetry or ordinary task evidence.",
       "observability": "Report state, dependency, rejection reason, usage/cleanup and stable correlation IDs; every required assertion points to immutable actual evidence.",
@@ -12536,8 +12550,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "40b61d221238a25a2420cabc945d0d41d91b36e3"
+      ],
       "ready": false,
       "security": "Deny unapproved effects; signed/scoped identities; no raw dataset/source/secret content in logs, external telemetry or ordinary task evidence.",
       "observability": "Report state, dependency, rejection reason, usage/cleanup and stable correlation IDs; every required assertion points to immutable actual evidence.",
@@ -13894,8 +13910,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "d502c89a1733c0dbff054e07e556f1a74d244c3b"
+      ],
       "ready": false,
       "security": "Deny unapproved effects; signed/scoped identities; no raw dataset/source/secret content in logs, external telemetry or ordinary task evidence.",
       "observability": "Report state, dependency, rejection reason, usage/cleanup and stable correlation IDs; every required assertion points to immutable actual evidence.",
@@ -14406,8 +14424,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "f9c82e910cde344a08b910c5b059e85c25b59adf"
+      ],
       "ready": false,
       "security": "Factory tenant/purpose and trust-boundary enforcement; no vendor admin or production release credentials in browsers/implementation agents; no raw/sealed data in general telemetry; no gate weakening.",
       "observability": "Actual request/job/component identity, approved profile/version digests, sync state, measured timing/cost, exact test counts and independently reviewed evidence; no invented success.",

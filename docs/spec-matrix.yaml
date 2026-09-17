@@ -2979,15 +2979,15 @@ FTF-H033:
   proving_symbol: ''
   proving_test: ''
 FTF-H034:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Safe parallel scheduler and task/evidence ownership
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-31, AF-34, AF-35; scenarios=Q33, Q34; deps=FTF-H001, FTF-H002
-  proof_state: UNPROVEN
+  evidence_hash: 7109100c9bfaff995a94203720e9161e095cb7bf
+  implementation_state: IMPLEMENTED
+  notes: kind=audit_hardening; requirements=AF-31, AF-34, AF-35; scenarios=Q33, Q34; deps=FTF-H001, FTF-H002; "actual safe parallel wave" proven via real OS-thread concurrency against the registry's own locking (no live multi-agent dispatch harness exists in this repo to hand a task to a second, truly separate worker process -- disclosed per this task's own negative_acceptance, not a fabricated multi-worker claim); sync_certified_status backfilled real CERTIFIED status/evidence into spec/tasks.json and docs/implementation/TRACKER.json for the 10 tasks already CERTIFIED in this file, fixing a disclosed gap in what those files' own header comments promise
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h034.py
 FTF-H035:
   certification_state: NONE
   criticality: MUST

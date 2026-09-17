@@ -1,9 +1,9 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-H028 CERTIFIED, PR #55 independently verified)
+Updated: 2026-09-17 by relay (FTF-H034 implemented, PROVISIONAL, PR to be opened)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 10/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
+Certified: 10/300 · Provisional: 1 (FTF-H034) · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002 and
@@ -68,11 +68,18 @@ toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-H028 CERTIFIED this shift. FTF-0101/FTF-0102 remain blocked,
-see "Owner actions" and "Blocked" below.)
+(empty — FTF-H034 implemented this shift, PROVISIONAL, PR to be opened.
+FTF-0101/FTF-0102 remain blocked, see "Owner actions" and "Blocked"
+below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-H034 — Safe parallel scheduler and task/evidence ownership.
+  Implementation commit `7109100c9bfaff995a94203720e9161e095cb7bf`.
+  Dependency-ready item found via a direct `docs/TASK_INDEX.md` sweep
+  (deps FTF-H001, FTF-H002, both CERTIFIED) — not from `docs/spec-matrix.yaml`'s
+  own `deps=` field, which is empty for every not-yet-started task (real
+  dependencies live only in `docs/TASK_INDEX.md`'s table; spec-matrix.yaml
+  tracks proof-state only). Full entry: `docs/certifications/queue.md`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
