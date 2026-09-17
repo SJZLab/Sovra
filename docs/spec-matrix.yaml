@@ -2912,7 +2912,7 @@ FTF-H028:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Trusted CI and exact-revision release evidence gate
-  evidence_hash: ''
+  evidence_hash: d502c89a1733c0dbff054e07e556f1a74d244c3b
   implementation_state: IMPLEMENTED
   notes: kind=audit_hardening; requirements=AF-20; scenarios=Q26; deps=FTF-0003, FTF-H001; real
     branch-protection read is BLOCKED_EXTERNAL today (this session's real GitHub credential gets
