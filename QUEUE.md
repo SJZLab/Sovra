@@ -99,8 +99,28 @@ service imports it either).
 
 ## Provisional (awaiting Control plane L2 certification)
 - FTF-R015 — Enforce isolated concurrent coding execution and independent
-  integration. Implemented, PR to be opened against `main`. Full entry:
-  docs/certifications/queue.md.
+  integration. PR #70, merged to `main` as PROVISIONAL (merge commit
+  `c055226b506df964fca67b5d3ca7b6e39d329a6c`). Control plane reviewed
+  2026-09-17 — NOT CERTIFIED first pass: the module's isolation/
+  permission/budget/CI-containment/merge-gate machinery was real and
+  independently reproduced, but its own resolved acceptance clause 1
+  names "leases, **commits**, tests" as evidence to record, and "commits"
+  had no corresponding code, test, or scope-disclosure anywhere in the
+  PR. Fixed same day on PR #71 (commit
+  `519bba0ecbabcf36276df1dda3265673a7c2b702`): `execute_task` now reads
+  the real `git rev-parse HEAD` of a task's workspace after its command
+  runs and records it as `ExecutionResult.commit_sha` (`None` when the
+  command never touches git); a new test proves a real `git commit` is
+  captured and cross-checked against an independently read HEAD, the
+  no-git case genuinely returns `None`, and the SHA propagates through a
+  full wave (32 -> 36 checks; shown able to fail via fault injection,
+  restored byte-identical). Full finding and fix: docs/certifications/
+  queue.md ("Control plane review — 2026-09-17 — NOT CERTIFIED" and the
+  "Fix for missing commit evidence (re-submitted)" entry right after it).
+  `certification_state` stays `PROVISIONAL` — this fix was produced by
+  the same session that wrote the review, so it cannot certify itself;
+  awaiting a fresh Control-plane session with no session-ID overlap with
+  `session_01Wn6FwbAzgvmKf9AcqXKLbQ` per Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

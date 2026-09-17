@@ -41,6 +41,7 @@ class ExecutionResult:
     duration_seconds: float
     started_at: float
     finished_at: float
+    commit_sha: str | None = None
 
     @property
     def ci_passed(self) -> bool:
@@ -49,6 +50,28 @@ class ExecutionResult:
 
 def _is_allowed(command: tuple[str, ...]) -> bool:
     return any(command[: len(prefix)] == prefix for prefix in ALLOWED_COMMAND_PREFIXES)
+
+
+def _read_commit_sha(workspace_path: Path) -> str | None:
+    """Real, non-fabricated commit evidence (acceptance clause 1's "record
+    actual overlap, leases, commits, tests..."): a `git rev-parse HEAD` read
+    against the task's own isolated workspace after its command ran. A task
+    whose command never made a real commit (no `.git`, or an empty repo)
+    genuinely has no commit to report -- this returns `None`, never a
+    fabricated hash."""
+    try:
+        proc = subprocess.run(
+            ("git", "rev-parse", "HEAD"),
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip()
 
 
 def execute_task(
@@ -83,4 +106,5 @@ def execute_task(
         duration_seconds=duration,
         started_at=started_at,
         finished_at=finished_at,
+        commit_sha=_read_commit_sha(workspace_path),
     )

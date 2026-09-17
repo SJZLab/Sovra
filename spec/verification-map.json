@@ -115,9 +115,9 @@
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
     },
     "FTF-R015": {
-      "commit": "a1771c2c197cd2194cdb66d0963884182c180ee5",
+      "commit": "519bba0ecbabcf36276df1dda3265673a7c2b702",
       "commands": [["python3", "tests/implementation/test_safe_parallel_executor.py"]],
-      "expected_output_contains": "All 32 checks passed.",
+      "expected_output_contains": "All 36 checks passed.",
       "expected_skipped": 0,
       "timeout_seconds": 300,
       "resource_profile": "local",
