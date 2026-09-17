@@ -122,6 +122,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
+    },
+    "FTF-R011": {
+      "commit": "18dd2823eff6171594fb53b6adf0beb953bada82",
+      "commands": [["python3", "tests/security/test_profile_scope.py"]],
+      "expected_output_contains": "FTF-R011 deployment-profile assertion-level release matrix: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014/FTF-R015 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
     }
   }
 }

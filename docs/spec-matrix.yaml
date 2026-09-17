@@ -3142,16 +3142,26 @@ FTF-R010:
   proving_symbol: ''
   proving_test: ''
 FTF-R011:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Define immutable connected and air-gap assertion-level release matrix
-  evidence_hash: ''
-  implementation_state: ABSENT
+  evidence_hash: 18dd2823eff6171594fb53b6adf0beb953bada82
+  implementation_state: IMPLEMENTED
   notes: kind=reuse_architecture; requirements=CAP-20, CAP-21; scenarios=Q12, Q26, Q43; deps=FTF-R001,
-    FTF-H001, FTF-H002
-  proof_state: UNPROVEN
+    FTF-H001, FTF-H002; extends spec/deployment-profiles.yaml's assertion_applicability (FTF-R001
+    stubbed only its own two worked examples, Q12/Q03) to all 43 required scenarios, each with an
+    owner projected from spec/release-scope.yaml and a status that can never be "N/A"; Q03/Q12
+    preserved byte-identical, Q26/Q37/Q39 newly classified as connected/airgap splits against
+    Section 52/79.3/79.4's own text (disclosed judgment — Q26's classification independently
+    corroborated by this task's own resolved qualification_scenarios list); scripts/validate_profile_scope.py
+    generates the preapproved per-profile expected-check manifest before execution and structurally
+    forbids an air-gap assertion from satisfying a connected requirement or a connected assertion
+    from ever appearing in AIR_GAPPED's expected list; full-product completion requires both halves
+    of every split scenario, never one profile's pass alone (Section 79.5's AIR_GAP_PROFILE_QUALIFIED
+    vs FULL_PRODUCT_DONE distinction)
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/security/test_profile_scope.py
 FTF-R012:
   certification_state: NONE
   criticality: MUST
