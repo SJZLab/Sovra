@@ -1,6 +1,6 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R014 implemented, PR to be opened,
-awaiting CI + Control plane L2 certification)
+Updated: 2026-09-17 by relay (FTF-R014 implemented, PR #68 opened,
+CI in progress, awaiting Control plane L2 certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -106,11 +106,12 @@ CERTIFIED without counting toward product-true).
   `spec/RELEASE_1.md`. Scope is this task's own Q33/Q41 (not Q42) —
   Q33's real safe-parallel-wave evidence is FTF-H034's own OS-thread
   proof, not re-claimed here; disclosed, not hidden. proof_state
-  L1-PROVEN, certification_state PROVISIONAL. PR to be opened against
-  `main`; this session will subscribe to its activity and merge on green
-  per CLAUDE.md's "Do without asking," then await independent Control
-  plane L2 certification (not self-certified, Law 4). Full entry:
-  `docs/certifications/queue.md`.
+  L1-PROVEN, certification_state PROVISIONAL. PR #68
+  (https://github.com/SJZLab/Sovra/pull/68) opened against `main`, CI
+  queued on the real head (run 35203392745); this session subscribed to
+  its activity and will merge on green per CLAUDE.md's "Do without
+  asking," then await independent Control plane L2 certification (not
+  self-certified, Law 4). Full entry: `docs/certifications/queue.md`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 Updated: 2026-09-17T09:10:00Z
 
-## 2026-09-17 — FTF-R014 implemented (Provisional, PR to be opened, awaiting CI + L2 certification); PR #67 finding flagged
+## 2026-09-17 — FTF-R014 implemented (Provisional, PR #68 opened, awaiting CI + L2 certification); PR #67 finding flagged
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
 `sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
 STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
@@ -134,19 +134,23 @@ Certified count unchanged at 12/300 — PROVISIONAL is not certified. Per
 Law 4, did not self-certify.
 
 STEP 4: stopping here for this shift's active work — FTF-R014 is fully
-L1-PROVEN and PROVISIONAL, PR to be opened against `main` and this session
-will subscribe to its activity, merging on green (per CLAUDE.md's "Do
-without asking: merge on green + L1 doc (PROVISIONAL)") without further
-owner input, then continue awaiting Control plane L2 certification — not a
-self-certification, per Law 4. The 2026-09-15 trigger-tooling ask remains
-open and untouched. FTF-0102 remains blocked on the standing owner ask
-(the PR #67 claim is flagged, not treated as resolving it). Once
-FTF-R014 certifies, FTF-R011 (with the Law 15 additive-edit question
-above worth resolving explicitly first) or FTF-R017 become the next
-candidates.
+L1-PROVEN and PROVISIONAL, PR #68
+(https://github.com/SJZLab/Sovra/pull/68) opened against `main` from
+`claude/wizardly-fermat-czj1h6`, subscribed to its activity. Confirmed
+real CI (`gate` + `docker-local-stack-integration`, run 35203392745)
+genuinely `queued` on the PR's actual head via `pull_request_read
+get_check_runs` — not yet green, not merging. This session will merge on
+green (per CLAUDE.md's "Do without asking: merge on green + L1 doc
+(PROVISIONAL)") without further owner input, then continue awaiting
+Control plane L2 certification — not a self-certification, per Law 4. The
+2026-09-15 trigger-tooling ask remains open and untouched. FTF-0102
+remains blocked on the standing owner ask (the PR #67 claim is flagged,
+not treated as resolving it). Once FTF-R014 certifies, FTF-R011 (with the
+Law 15 additive-edit question above worth resolving explicitly first) or
+FTF-R017 become the next candidates.
 
-Certified: 12/300 (unchanged). Provisional: 1 (FTF-R014, PR to be opened,
-CI to be confirmed). Product-true: 0 (unchanged).
+Certified: 12/300 (unchanged). Provisional: 1 (FTF-R014, PR #68, CI in
+progress). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-1810 CERTIFIED (PR #63 independently verified)
 Autonomous certifier shift, triggered by the PR #63 `opened` webhook. Read

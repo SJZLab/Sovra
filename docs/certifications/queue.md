@@ -1609,7 +1609,7 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   self-certified — awaiting Control plane L2 review per Law 4.
 
 ## 2026-09-17 — FTF-R014 — Bind selected coding executor to the embedded Release 1 execution controls
-- **PR:** to be opened against `main` from `claude/wizardly-fermat-czj1h6`.
+- **PR:** https://github.com/SJZLab/Sovra/pull/68 (`claude/wizardly-fermat-czj1h6` → `main`), CI queued on the real head (run 35203392745).
 - **Commits:** `fc1822903741fae188b7b81767a7668b3ee9cc96` (implementation),
   `5592d07` (hash-fixup — same two-commit pattern as every prior
   FTF-H00X/FTF-R00X/FTF-1810 task).
