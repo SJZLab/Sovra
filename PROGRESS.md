@@ -1,5 +1,120 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T05:30:00Z
+Updated: 2026-09-17T05:10:00Z
+
+## 2026-09-17 — FTF-H034 implemented (Provisional, PR #59 opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin`, local
+designated branch (`claude/wizardly-fermat-twhvs6`) matched `origin/main`
+exactly at `462de00` (PR #57's FTF-H028 certification merge) — no
+divergence. `BLOCKER.md` held only resolved history. QUEUE.md
+Active/Provisional both empty, 10/300 certified, Blocked: 1 (FTF-0102,
+unchanged open owner ask).
+
+STEP 1: FTF-0101/FTF-0102 remain blocked on the standing new-runtime-dep
+owner ask (unchanged, not re-litigated). `docs/spec-matrix.yaml`'s own
+`deps=` field is empty for every not-yet-started task — it tracks
+proof-state only, not real dependencies (those live in
+`docs/TASK_INDEX.md`'s table). Swept that table directly for any
+non-certified task whose real `Dependencies` column is entirely
+CERTIFIED (certified set: FTF-0001–0006, FTF-H001, FTF-H002, FTF-H028,
+FTF-R001): found FTF-0102 (already blocked), FTF-1810, FTF-H034, FTF-R011,
+FTF-R017. Picked FTF-H034 over FTF-R011 specifically because FTF-R011's
+own `files` list includes `spec/deployment-profiles.yaml`, which
+FTF-H002's already-certified evidence delivered — editing it would raise
+a Law 15 requalification question FTF-H034 doesn't. Real DoD resolved via
+`tools/r1_handoff.py packet FTF-H034 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+(not improvised).
+
+STEP 2 (PEV):
+- P: read the task packet. Its acceptance clause ("execute actual safe
+  parallel wave") needs genuine concurrent task execution; this session
+  has no live multi-agent dispatch harness to hand a task to a second,
+  truly separate worker process. Checked the task's own negative_acceptance
+  first ("If runner lacks real subagent capability record orchestration
+  blocker, never fabricate workers") — a resource_gate to build around
+  honestly (same pattern FTF-H002 used for GPU/Bedrock), not a DoD-clarity
+  gap.
+- E: implemented `scripts/task_claim.py` (`TaskClaimRegistry`): DAG
+  readiness (deny a claim unless every dependency is CERTIFIED in
+  `docs/spec-matrix.yaml`), overlapping-claim denial, TTL-based expiring
+  claims (stale completion denied), write-set/named-lock exclusivity
+  (released on completion), bounded concurrency (constructor rejects a
+  configured limit above the hard ceiling of 6; default 4 denies a 5th
+  concurrent claim), a GPU quota independent of general concurrency,
+  deterministic merge order (real claim-creation time, then task ID,
+  independent of completion arrival order), stale-verification
+  invalidation on an overlapping later completion, and an
+  independent-review guard (`SELF_CERTIFICATION_DENIED` when certifier ==
+  claimant — Law 4). The "safe parallel wave" clause is proven with 8 real
+  OS threads racing the same claim via a `threading.Barrier` (genuine
+  simultaneous contention, not a fabricated sequential loop) — exactly 1
+  wins, the registry's state stays consistent. `sync_certified_status()`
+  fixes a disclosed, pre-existing gap: `spec/tasks.json` and
+  `docs/implementation/TRACKER.json` had carried every task as
+  `NOT_STARTED`/empty evidence since bootstrap despite their own header
+  comments promising real status; ran it once against the real repo files
+  (using `ensure_ascii=False` to avoid a spurious repo-wide non-ASCII
+  escaping diff) — both now genuinely show `CERTIFIED` + the real evidence
+  hash for exactly the 10 already-independently-certified tasks, nothing
+  else. `tests/tasks/test_ftf_h034.py` (17 checks) proves every
+  acceptance/negative_acceptance clause via fixtures, the real 8-thread
+  race, and a real fault injection against the self-certification guard
+  (disabled it in the tracked file, confirmed a fresh subprocess can
+  complete a self-certified claim without rejection, restored
+  byte-identical, re-ran clean). Also performed an ad hoc second fault
+  injection (neutered the write-set/lock overlap loop) confirming
+  `test_lock_conflict_denied` fails for real; restored byte-identical.
+  Caught and fixed real `ruff` E501 line-length violations before they
+  reached CI.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (scheduler/tracking tooling, no live
+  product-runtime caller yet, same rationale as every prior FTF-H00X/
+  FTF-R00X task).
+Re-ran the full existing gate after all changes: `uv run ruff
+check`/`format --check`/`mypy .` clean; `pnpm run lint`/`format:check`/
+`typecheck` clean (after `pnpm install --frozen-lockfile` — fresh
+container, no `node_modules`, same environment note as every prior
+shift); all 11 existing task negative-test-proof scripts
+(`test_ftf_0001_monorepo_layout.py` through `test_ftf_h028.py`, now
+joined by `test_ftf_h034.py`) pass — no already-certified task's own
+implementation file was touched beyond the disclosed, additive
+`status`/`evidence` fields in `spec/tasks.json`/`TRACKER.json`, avoiding
+any other Law 15 requalification question; `uv run pytest tests/unit` (3
+passed) and `pnpm exec vitest run` (2 passed) clean, 0 skipped either
+side. `validate_spec.py --strict` clean; `verify_task.py --task
+FTF-H034 --stage task` → `PASS` against evidence commit `7109100`.
+Wired `python3 tests/tasks/test_ftf_h034.py` into `.github/workflows/
+ci.yml`'s `gate` job, right after the FTF-H028 step (YAML-validated with
+`yaml.safe_load`).
+Updated `docs/spec-matrix.yaml` (FTF-H034: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` filled in the hash-fixup commit — same
+two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028),
+`spec/verification-map.json` (real, currently re-executable entry),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, Provisional 0→1). Certified count unchanged at
+10/300 — PROVISIONAL is not certified. Per Law 4, did not self-certify.
+
+Opened PR #59 (https://github.com/SJZLab/Sovra/pull/59,
+`[relay] FTF-H034: Safe parallel scheduler and task/evidence ownership`)
+against `main` from `claude/wizardly-fermat-twhvs6`, subscribed to its
+activity.
+
+STEP 4: stopping here for this shift's active work — FTF-H034 is fully
+L1-PROVEN and PROVISIONAL, PR #59 open, CI to be confirmed. This session
+remains subscribed to PR #59 and will merge on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not
+a self-certification, per Law 4. The 2026-09-16 FTF-0102
+new-runtime-dependency owner ask and the 2026-09-15 trigger-tooling ask
+remain open and untouched. Once FTF-H034 certifies, FTF-1810/FTF-R011/
+FTF-R017 (also found dependency-ready this shift; FTF-R011 specifically
+noted above as deferred, not rejected, pending the Law 15 question) or
+another spec-matrix/TASK_INDEX sweep become the next candidates.
+
+Certified: 10/300 (unchanged). Provisional: 1 (FTF-H034, PR #59, CI to be
+confirmed). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-H028 CERTIFIED (PR #55 independently verified)
 Autonomous certifier shift, triggered by the PR #55 `opened` webhook. Read
