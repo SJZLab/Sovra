@@ -56,8 +56,25 @@ services:
       - "7233:7233"
 
   s3:
-    image: chrislusf/seaweedfs@sha256:2829e52cd2f653cfb900cbbbc72f4c3fda0e8ab785429a80514090cdd73dec8c # 3.71 (amd64)
-    # FTF-R017: -s3.config points at a real identity file (no "anonymous"
+    image: chrislusf/seaweedfs@sha256:e09c776650619259a23627b5405644396e94ebac49c66d8b89024ebfd85581dc # 3.99 (amd64)
+    # FTF-R017: bumped from 3.71 -> 3.99 (digest verified via Docker Hub's
+    # metadata API, no pull needed -- same no-pull verification FTF-0004
+    # already established). 3.71 genuinely predates S3 object
+    # versioning/object-lock and returned a generic 500 instead of
+    # BadDigest for a corrupted upload -- confirmed against 3.71's own
+    # real GitHub Actions run (7/9 storage-semantics tests failing with
+    # real, non-signing SeaweedFS responses) and independently
+    # re-confirmed here by reading 3.99's actual source on GitHub before
+    # pushing, not by trusting a web summary: weed/s3api/
+    # s3api_bucket_handlers.go has a real PutBucketVersioningHandler/
+    # GetBucketVersioningHandler (with real object-lock/versioning-state
+    # interaction, e.g. rejecting a versioning-suspend while object lock
+    # is enabled) and weed/s3api/s3api_object_handlers_put.go maps a
+    # digest mismatch to s3err.ErrBadDigest, not a generic 500 -- both
+    # absent/wrong in 3.71. -s3.config/-s3.port/-master.volumeSizeLimitMB
+    # all still exist unchanged in 3.99's weed/command/server.go, so this
+    # is a pure version bump, not a command-line migration.
+    # -s3.config points at a real identity file (no "anonymous"
     # entry) so the fixture actually enforces caller identity (Section
     # 65.2) instead of SeaweedFS's own unconfigured default of accepting
     # any access key -- see seaweedfs-s3-identity.json for the real
