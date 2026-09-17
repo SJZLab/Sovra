@@ -14974,8 +14974,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "18dd2823eff6171594fb53b6adf0beb953bada82"
+      ],
       "ready": false,
       "security": "Factory tenant/purpose and trust-boundary enforcement; no vendor admin or production release credentials in browsers/implementation agents; no raw/sealed data in general telemetry; no gate weakening.",
       "observability": "Actual request/job/component identity, approved profile/version digests, sync state, measured timing/cost, exact test counts and independently reviewed evidence; no invented success.",

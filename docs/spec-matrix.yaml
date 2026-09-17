@@ -3142,7 +3142,7 @@ FTF-R010:
   proving_symbol: ''
   proving_test: ''
 FTF-R011:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Define immutable connected and air-gap assertion-level release matrix
   evidence_hash: 18dd2823eff6171594fb53b6adf0beb953bada82
@@ -3159,7 +3159,7 @@ FTF-R011:
     from ever appearing in AIR_GAPPED's expected list; full-product completion requires both halves
     of every split scenario, never one profile's pass alone (Section 79.5's AIR_GAP_PROFILE_QUALIFIED
     vs FULL_PRODUCT_DONE distinction)
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/security/test_profile_scope.py
 FTF-R012:
