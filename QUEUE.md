@@ -1,7 +1,9 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — added per-request debug
-  instrumentation to root-cause the 500/501 storage-semantics failures,
-  pushed as `a43dff9`, waiting on CI, see "Active" below)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — fixed a real
+  `mergeable_state: dirty` blocker that was silently preventing CI from
+  running at all on the last few pushes, same structural issue FTF-0004
+  hit; per-request debug instrumentation now genuinely running in CI for
+  the first time, see "Active" below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -152,9 +154,27 @@ header-names/body-length) before it executes and the real response
 status/code/message after — never credentials, the Authorization header,
 or signature material. Wired to `True` only in the integration test's own
 client construction. Pushed as commit `a43dff9` to the same branch/PR #75
-(not a new PR). CI triggered on this new head; this shift is waiting for
-that run before drawing any further conclusion — not guessing again ahead
-of the evidence.
+(not a new PR).
+
+**Update, same shift (CI had actually never run at all):** re-checking
+`get_check_runs` after the `a43dff9` push kept returning `total_count: 0`
+— not a delay. `pull_request_read.get` showed why: `mergeable_state:
+"dirty"`, a real conflict against `main` caused by the Control-plane
+certifier session having pushed its review commits (`730d87d`/`b52f83c`)
+directly to `main` while this PR was open on an older base. This is the
+exact same structural failure FTF-0004 hit (see its own "not in a
+certifiable state" entry) — a `dirty` PR silently stops GitHub Actions
+from generating check runs for further pushes at all. Fixed the same way:
+merged current `main` into `claude/wizardly-fermat-ci7leb` (three
+tracking-doc-only conflicts, no code conflict, resolved chronologically;
+also caught and fixed two places where git's own merge silently kept a
+stale `Provisional: 1`/`## Provisional` entry that `main`'s own review had
+already correctly cleared — confirmed against `git show
+origin/main:QUEUE.md` directly). Re-ran the full regression suite clean,
+pushed the merge commit `a2b2123`. Confirmed: `mergeable_state` is now
+`clean` and a real CI run (35250917560) is genuinely `in_progress` on all
+three jobs, including `storage-semantics-integration` — the debug
+instrumentation will run for the first time on this run.
 
 Next relay shift (or this shift's continuation once CI lands): read the
 new run's per-request debug lines to see exactly which operation the

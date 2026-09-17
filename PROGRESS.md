@@ -1,5 +1,64 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T16:05:00Z
+Updated: 2026-09-17T17:10:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): found and fixed why CI silently never ran (mergeable_state: dirty), CI now genuinely running
+Continuation of this same relay shift, after pushing the debug-
+instrumentation commit (`a43dff9`) below. Re-checked PR #75's CI status to
+confirm the new head triggered a run — `pull_request_read
+get_check_runs` still returned `total_count: 0`, and stayed at 0 across a
+second check several minutes later. Rather than assume a webhook delay
+and wait indefinitely, read `pull_request_read.get` directly:
+`mergeable_state: "dirty"` — a real, GitHub-computed conflict against
+`main`, caused by the Control-plane certifier session (documented below)
+having pushed its review commits (`730d87d`, `b52f83c`) directly to
+`main` while PR #75 was still open on an older base. This is the exact
+same structural failure mode FTF-0004 hit during its own review cycle
+(`docs/certifications/queue.md`'s "not in a certifiable state" entry): a
+PR that goes `dirty` against a newer `main` stops GitHub Actions from
+generating check runs for further pushes at all, silently — not a queue
+delay, not a flake, and not something the debug commit itself broke.
+
+Fixed the same way that precedent did: fetched current `main`, merged it
+into `claude/wizardly-fermat-ci7leb` in the same worktree. All three
+conflicts were pure tracking-doc conflicts (`PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`) — no code conflict — resolved by keeping
+both sides' substantive content in chronological order. While resolving,
+caught two places where git's own 3-way merge had silently picked the
+stale side *without* flagging a conflict at all: `QUEUE.md`'s `## Status`
+line and its own `## Provisional` section had reverted to a stale
+`Provisional: 1 (FTF-R017...)` entry that `main`'s own certifier review
+had already correctly cleared when reclassifying this into `## Active` —
+caught by diffing the merged file against `git show origin/main:QUEUE.md`
+directly rather than trusting a clean `git merge` exit code, and fixed to
+match `main`'s real state.
+
+Re-ran the full regression suite on the merged state before pushing: `uv
+run ruff check`/`format --check`/`mypy .` clean; `pnpm run lint`/
+`format:check`/`typecheck` clean; all 16 task negative-test-proof scripts
+(the existing 15 plus this task's own `test_ftf_r017.py`) pass; `uv run
+pytest tests/unit` (3 passed), `pnpm exec vitest run` (2 passed),
+`scripts/validate_spec.py --strict` clean. No code was touched by this
+merge — tracking docs only.
+
+Pushed the merge commit (`a2b2123`) to the same PR #75 branch. Confirmed
+via `pull_request_read.get`: `mergeable_state` is now `clean`. Confirmed
+via `get_check_runs`: a real CI run (35250917560) is now genuinely
+`in_progress`/`queued` on all three jobs, including
+`storage-semantics-integration` — the debug instrumentation from
+`a43dff9` will run for the first time on this run. Recorded the
+mergeable-state finding and fix in `docs/certifications/queue.md` as its
+own entry (not mixed into either the producer's or the certifier's prior
+entries).
+
+STEP 4: still not a stop condition in the strict sense — waiting on the
+now-unblocked CI run's actual result (subscribed to PR #75's activity)
+before drawing or acting on any root-cause conclusion about the 500/501
+failures. This is the first CI run that will actually exercise the debug
+instrumentation, so there is nothing further to do until it completes.
+`certification_state` for FTF-R017 remains `PROVISIONAL` (unchanged).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
 
 ## 2026-09-17 — FTF-R017 (PR #75): per-request debug instrumentation added, root cause not yet confirmed, waiting on CI
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
