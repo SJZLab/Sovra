@@ -1,21 +1,22 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-H002 CI-fix confirmed green, PR #51
-merged to main as PROVISIONAL, awaiting L2 certification)
+Updated: 2026-09-17 by Control plane (certification)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 8/300 · Provisional: 1 (FTF-H002) · Blocked: 1 (FTF-0102,
+Certified: 9/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001 and FTF-R001 all have no
-proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI tooling,
-FTF-0003 is test-harness tooling, FTF-0004 is local-stack bootstrap/health
-tooling, FTF-0005 is a configuration module with no live caller yet,
-FTF-0006 is an observability seam with no live FastAPI app or Temporal
-workflow to instrument yet, FTF-H001 is the spec/gate verifier tooling
-itself, and FTF-R001 is an architecture/version-lock schema freeze with no
-live product-runtime caller yet — none a live-wired product-runtime path,
-so all eight are CERTIFIED without counting toward product-true).
+FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001 and FTF-H002
+all have no proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI
+tooling, FTF-0003 is test-harness tooling, FTF-0004 is local-stack
+bootstrap/health tooling, FTF-0005 is a configuration module with no live
+caller yet, FTF-0006 is an observability seam with no live FastAPI app or
+Temporal workflow to instrument yet, FTF-H001 is the spec/gate verifier
+tooling itself, FTF-R001 is an architecture/version-lock schema freeze
+with no live product-runtime caller yet, and FTF-H002 is a preflight/
+release-scope-freeze layer with no live product-runtime caller yet — none
+a live-wired product-runtime path, so all nine are CERTIFIED without
+counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -65,42 +66,11 @@ so all eight are CERTIFIED without counting toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-H002's CI fix confirmed green and resubmitted this shift, see
-"Provisional" below. FTF-0101/FTF-0102 remain blocked, see "Owner actions"
-and "Blocked" below.)
+(empty — FTF-H002 CERTIFIED this shift. FTF-0101/FTF-0102 remain blocked,
+see "Owner actions" and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-H002 — Freeze release scope, compatibility and measured execution
-  inputs. Original PR #49 (`claude/wizardly-fermat-brui19`) carried the
-  real `gate` CI failure Control plane found on 2026-09-16
-  (`check_kubernetes_cni()` genuinely returns `AVAILABLE` on GitHub-hosted
-  `ubuntu-latest`, which ships `kubectl` preinstalled, so
-  `test_kubernetes_cni_check_reflects_real_path_state`'s unisolated first
-  assertion was wrong there — a real environment-dependent test bug, not a
-  flake). A same-day follow-up commit on that branch (`419f9cc`) fixed it
-  the same way `check_git_cli`'s negative branch and this same test's own
-  positive branch already did: construct the negative case explicitly via
-  a real empty-PATH temp directory instead of trusting whatever's ambient.
-  PR #49 itself could not be merged directly — GitHub's merge API reported
-  genuine content conflicts against `main`'s tip (`QUEUE.md` and
-  `docs/certifications/queue.md`, both edited independently by main's
-  2026-09-16 NOT-CERTIFIED review commit), and this session's own
-  git-branch policy requires developing only on
-  `claude/wizardly-fermat-w4h9ys`, not pushing directly to
-  `claude/wizardly-fermat-brui19`. Resolution: merged `main` into a local
-  copy of `419f9cc` on `claude/wizardly-fermat-w4h9ys`, resolved both
-  conflicts by keeping both sides' history, re-ran the full regression set
-  against the merged tree, and opened PR #51 carrying byte-identical code
-  to `419f9cc` plus the conflict resolution. PR #49 was closed as
-  superseded (comment posted explaining why). PR #51's real `gate` +
-  `docker-local-stack-integration` CI went green on its actual final head
-  (`c6985e0`, run 35168539940) and **merged into `main` as commit
-  `b0f8184`** this same shift. See docs/certifications/queue.md for the
-  full resubmission entry. State: proof_state=L1-PROVEN,
-  certification_state=PROVISIONAL. Not self-certified — merging is
-  authorized without asking per CLAUDE.md "Do without asking" ("merge on
-  green + L1 doc (PROVISIONAL)"); still awaiting independent Control
-  plane L2 review per Law 4 before it can count toward Certified.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -178,6 +148,31 @@ and "Blocked" below.)
   existing certified precedent (FTF-0004's `web` exclusion, FTF-H001's
   contract-stub exclusion), not a hidden gap. Full entry:
   docs/certifications/ledger.md.
+- FTF-H002 — Freeze release scope, compatibility and measured execution
+  inputs. CERTIFIED 2026-09-17, PR #51 (merge commit
+  `b0f818498660fa0f376fdf1d2a0db42baac25e43`, superseding PR #49 which was
+  closed after a real `gate` CI failure — an unisolated `kubectl`-presence
+  assertion — was fixed in `419f9cc`). Independently re-verified: real
+  toolchain installed (`uv sync` + `pip install pyyaml`, `pnpm install
+  --frozen-lockfile`) and both of the task's own `verification_commands`
+  genuinely re-run (`validate_spec.py --strict`, `verify_task.py --task
+  FTF-H002 --stage task`), full 9-task regression set clean,
+  `product_truth_check.py` confirmed legitimately 0/0 (no proving_symbol —
+  preflight/release-scope-freeze layer, no live product-runtime caller
+  yet), `verify_release.py` confirmed non-inflated (`8/300`/`FAILED (1):
+  ['FTF-H002']`/`NOT READY` before this certification), CI reconfirmed
+  green on the actual PR head (`c6985e0`, run 35168539940, both `gate` and
+  `docker-local-stack-integration`), and an own fault injection (removed
+  `check_managed_provider_bedrock`'s "unvalidated access" rejection so
+  credential presence alone reports `AVAILABLE` — distinct from the
+  producer's own fault injection against `PreflightResult`'s owner/
+  next_action guard) caught for real by the delivered test suite, restored
+  byte-identical, re-ran clean. Delivered work checked against FTF-H002's
+  real acceptance/negative_acceptance clauses via `tools/r1_handoff.py
+  packet FTF-H002` — no fabricated model ID/rate anywhere in
+  `budget-forecast.md`, preflight reads `SOVRA_LITELLM_GATEWAY_URL`
+  directly rather than through FTF-0005's `Settings.from_env()`. Full
+  entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

@@ -1,5 +1,67 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T00:58:00Z
+Updated: 2026-09-17T02:00:00Z
+
+## 2026-09-17 — Control plane certification — FTF-H002 CERTIFIED (PR #51 verified)
+Scheduled CERTIFY routine (triggered by the `pull_request.opened` webhook
+for unrelated PR #52; per its own instructions, its whole job is checking
+`docs/certifications/queue.md` for anything PROVISIONAL, so it worked
+FTF-H002, not PR #52). Session-ID independence confirmed first: read every
+commit on PR #51 (`40b61d2`/`3f5e618`/`af2b0fa`/`3d235b4`/`419f9cc` carry
+`session_01KcK5jpotjXCpjrQj8qMPVp`; `1df4f83`/`55d3ba6`/`c6985e0` carry
+`session_01BNQGXo9Q8t1PFdEmxQZXHF`; merge commit `b0f8184` is a human
+GitHub merge, no session) — this session's ID
+(`session_01ED5D84zpb2djpogKY9fktw`) matches neither, independent per Law 4.
+
+Re-read the full diff directly (`environment_preflight.py`,
+`release_scope_lock.py`/`release-scope.yaml`,
+`generate_compatibility_lock.py`/`compatibility-lock.json`,
+`budget-forecast.md`, `test_ftf_h002.py`). Confirmed CI real and green on
+PR #51's actual head via `pull_request_read get_check_runs` (`gate` run
+35168539940/job 105034980267, `docker-local-stack-integration` job
+105034980058, both `success`, tied to head `c6985e0` per `pull_request_read
+get`), and that the merge commit `b0f8184` carries that head's tree
+unchanged. Installed the real toolchain (`uv sync`, `uv pip install
+pyyaml` — matching CI's separate `pip install pyyaml` step, `pnpm install
+--frozen-lockfile`) and re-ran both of the task's own
+`verification_commands` for real: `validate_spec.py --strict` clean;
+`verify_task.py --task FTF-H002 --stage task` → `PASS` against evidence
+commit `40b61d2`. Full 9-task regression set clean (`ruff check`/`mypy`/
+`pytest tests/unit` and all 9 `tests/tasks/test_ftf_*` + monorepo-layout
+scripts). `product_truth_check.py --fail-on-unwired` → `0/0`, confirmed
+legitimate (`proving_symbol: ''` in spec-matrix.yaml — no live
+product-runtime caller yet, same disclosed rationale as every prior
+foundation task). `verify_release.py` run before this certification's own
+edits correctly reported `8/300`/`FAILED (1): ['FTF-H002']`/`NOT READY` —
+non-inflated.
+
+Own real fault injection, distinct from the producer's (which targeted
+`PreflightResult`'s owner/next_action guard): removed
+`check_managed_provider_bedrock`'s "unvalidated account/region/model
+access" rejection so AWS-credential-env-var presence alone reports
+`AVAILABLE` — `tests/tasks/test_ftf_h002.py` caught it for real (1
+failure, exactly on
+`test_bedrock_check_never_claims_available_from_credential_presence_alone`),
+restored byte-identical (`diff` confirmed empty), re-ran clean (15/15).
+Pulled the real task contract via `tools/r1_handoff.py packet FTF-H002
+--plan FINE_TUNING_FACTORY_RELEASE_1.md` and checked delivered code
+against its actual acceptance/negative_acceptance clauses directly (not
+just "tests pass") — all hold, including confirming `check_litellm_gateway`
+reads `SOVRA_LITELLM_GATEWAY_URL` independently of FTF-0005's
+`Settings.from_env()` and that `budget-forecast.md` invents no dollar rate.
+
+Certified: set `docs/spec-matrix.yaml` FTF-H002 to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`; appended
+the full re-verification entry to `docs/certifications/ledger.md`; moved
+FTF-H002 from "Provisional" to "Done" in `QUEUE.md` (Certified: 9/300,
+Provisional: 0); recorded here. Full entry:
+`docs/certifications/ledger.md` ("FTF-H002 — Freeze release scope,
+compatibility and measured execution inputs").
+
+No other queue item pending certification this shift — FTF-0101/FTF-0102
+remain blocked on the standing new-runtime-dependency owner ask
+(unchanged, not re-litigated). No task-work started or advised; this
+session's scope was certification only, per its own operating
+instructions.
 
 ## 2026-09-17 — FTF-H002 PR #51 merged to main (PROVISIONAL) — shift closeout
 PR #51's real `gate` + `docker-local-stack-integration` CI went green on
