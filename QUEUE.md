@@ -1,35 +1,38 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R015 implemented, PR to be opened)
+Updated: 2026-09-17 by Control plane (FTF-R015 CERTIFIED)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 13/300 · Provisional: 1 (FTF-R015) · Blocked: 1 (FTF-0102,
-new-runtime-dep owner ask, see below)
+Certified: 14/300 · Provisional: 1 (FTF-R011, PR #72 open, CI in progress) ·
+Blocked: 1 (FTF-0102, new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
-FTF-H028, FTF-H034, FTF-1810 and FTF-R014 all have no proving_symbol;
-FTF-0001 is structural layout, FTF-0002 is CI tooling, FTF-0003 is
-test-harness tooling, FTF-0004 is local-stack bootstrap/health tooling,
-FTF-0005 is a configuration module with no live caller yet, FTF-0006 is an
-observability seam with no live FastAPI app or Temporal workflow to
-instrument yet, FTF-H001 is the spec/gate verifier tooling itself, FTF-R001
-is an architecture/version-lock schema freeze with no live product-runtime
-caller yet, FTF-H002 is a preflight/release-scope-freeze layer with no
-live product-runtime caller yet, FTF-H028 is the release-evidence-gate/
-CI-aggregator tooling itself, `workflow_dispatch`-only and never run by
-the relay, FTF-H034 is the task-claim scheduler/tracker-sync tooling
-itself, with no live multi-agent dispatch harness wiring it into a
-running caller yet, FTF-1810 is the release-qualification aggregator
-tooling itself — run against the real repo it honestly reports NOT READY
-(every one of the 43 required scenarios missing evidence, image/profile
-bindings BLOCKED_EXTERNAL), `workflow_dispatch`-only and never run by the
-relay, and FTF-R014 is build/implementation tooling binding the selected
-coding executor to Section 84's controls, with no Factory production
-service importing it — none a live-wired product-runtime path, so all
-thirteen are CERTIFIED without counting toward product-true; FTF-R015
-(PROVISIONAL, not yet counted in Certified) is the same kind of
-build/implementation tooling — no proving_symbol, no Factory production
-service imports it either).
+FTF-H028, FTF-H034, FTF-1810, FTF-R014 and FTF-R015 all have no
+proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI tooling,
+FTF-0003 is test-harness tooling, FTF-0004 is local-stack bootstrap/health
+tooling, FTF-0005 is a configuration module with no live caller yet,
+FTF-0006 is an observability seam with no live FastAPI app or Temporal
+workflow to instrument yet, FTF-H001 is the spec/gate verifier tooling
+itself, FTF-R001 is an architecture/version-lock schema freeze with no
+live product-runtime caller yet, FTF-H002 is a preflight/release-scope-
+freeze layer with no live product-runtime caller yet, FTF-H028 is the
+release-evidence-gate/CI-aggregator tooling itself, `workflow_dispatch`-only
+and never run by the relay, FTF-H034 is the task-claim scheduler/
+tracker-sync tooling itself, with no live multi-agent dispatch harness
+wiring it into a running caller yet, FTF-1810 is the release-qualification
+aggregator tooling itself — run against the real repo it honestly reports
+NOT READY (every one of the 43 required scenarios missing evidence,
+image/profile bindings BLOCKED_EXTERNAL), `workflow_dispatch`-only and
+never run by the relay, FTF-R014 is build/implementation tooling binding
+the selected coding executor to Section 84's controls, with no Factory
+production service importing it, and FTF-R015 is the safe-parallel-
+execution/orchestration tooling itself (workspace manager, executor
+adapter, task orchestrator), with no live multi-agent dispatch harness
+wiring it into a running caller yet — none a live-wired product-runtime
+path, so all fourteen are CERTIFIED without counting toward product-true;
+FTF-R011 (PROVISIONAL, not yet counted in Certified) is the same kind — a
+release-matrix governance/validator layer with no Factory production
+service importing it, no proving_symbol).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -98,29 +101,9 @@ service imports it either).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-R015 — Enforce isolated concurrent coding execution and independent
-  integration. PR #70, merged to `main` as PROVISIONAL (merge commit
-  `c055226b506df964fca67b5d3ca7b6e39d329a6c`). Control plane reviewed
-  2026-09-17 — NOT CERTIFIED first pass: the module's isolation/
-  permission/budget/CI-containment/merge-gate machinery was real and
-  independently reproduced, but its own resolved acceptance clause 1
-  names "leases, **commits**, tests" as evidence to record, and "commits"
-  had no corresponding code, test, or scope-disclosure anywhere in the
-  PR. Fixed same day on PR #71 (commit
-  `519bba0ecbabcf36276df1dda3265673a7c2b702`): `execute_task` now reads
-  the real `git rev-parse HEAD` of a task's workspace after its command
-  runs and records it as `ExecutionResult.commit_sha` (`None` when the
-  command never touches git); a new test proves a real `git commit` is
-  captured and cross-checked against an independently read HEAD, the
-  no-git case genuinely returns `None`, and the SHA propagates through a
-  full wave (32 -> 36 checks; shown able to fail via fault injection,
-  restored byte-identical). Full finding and fix: docs/certifications/
-  queue.md ("Control plane review — 2026-09-17 — NOT CERTIFIED" and the
-  "Fix for missing commit evidence (re-submitted)" entry right after it).
-  `certification_state` stays `PROVISIONAL` — this fix was produced by
-  the same session that wrote the review, so it cannot certify itself;
-  awaiting a fresh Control-plane session with no session-ID overlap with
-  `session_01Wn6FwbAzgvmKf9AcqXKLbQ` per Law 4.
+- FTF-R011 — Define immutable connected and air-gap assertion-level release
+  matrix. Implemented, PR #72 open against `main`, CI in progress. Full
+  entry: docs/certifications/queue.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -336,6 +319,39 @@ service imports it either).
   FINE_TUNING_FACTORY_RELEASE_1.md`; `.github/CODEOWNERS` confirmed to
   protect the two new gate files under the same release authority
   (`owner:samerzakaria`) the code itself checks against. Full entry:
+  docs/certifications/ledger.md.
+- FTF-R015 — Enforce isolated concurrent coding execution and independent
+  integration. CERTIFIED 2026-09-17, PR #71 (merge commit
+  `8f4a6fd25df3439dac166e324ecf9b4e0e7d8034`; fix/re-review of PR #70,
+  merged earlier to `main` as PROVISIONAL). Background: a prior
+  independent Control-plane session found FTF-R015's own resolved
+  acceptance clause 1 ("record actual overlap, leases, **commits**, tests
+  and an independent integrated merge gate") had no corresponding
+  commit-evidence code/test anywhere in PR #70 and did not certify (Law
+  1/Law 5); the same session then implemented the fix (`execute_task` now
+  captures a task's real `git rev-parse HEAD` as `ExecutionResult.
+  commit_sha`, `None` when no commit was made — never fabricated) and
+  opened PR #71 for a fresh certifying session. This session's
+  independent re-verification (session-ID clean against both PR #70's and
+  PR #71's commits): read the PR #71 diff directly; CI reconfirmed green
+  on the real head (`6a47f08`, both `gate` and
+  `docker-local-stack-integration`); own re-run in a fresh, unshallowed
+  worktree — all 36 `tests/implementation/test_safe_parallel_executor.py`
+  checks plus the full 15-script existing regression set clean
+  (`ruff`/`format`/`mypy`/`eslint`/`tsc`/`prettier`/`vitest`/`pytest`, all
+  with `pnpm install --frozen-lockfile` run first); an own fault injection
+  distinct from both prior sessions' (mutated `_read_commit_sha` to return
+  a fabricated SHA instead of `None` on failure) caught a real regression,
+  restored byte-identical; `tools/r1_handoff.py packet FTF-R015` confirmed
+  the fix closes exactly the identified gap, with every acceptance/
+  negative_acceptance clause mapped to a specific passing test;
+  `validate_spec.py --strict` clean, `verify_task.py --task FTF-R015
+  --stage task` -> `PASS`, `product_truth_check.py` legitimately `0/0`,
+  `verify_release.py` confirmed non-inflated (`13/300`/`FAILED (1):
+  ['FTF-R015']` before, `14/300`/`FAILED (1): ['FTF-R011']` after — the
+  remaining FAILED is the separate, still-PROVISIONAL FTF-R011, not this
+  task). Ran `sync_certified_status()` — diff limited to exactly
+  FTF-R015's own `status`/`evidence` fields. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

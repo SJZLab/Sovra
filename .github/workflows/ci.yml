@@ -102,6 +102,10 @@ jobs:
         run: python3 tests/implementation/test_r1_execution_binding.py
       - name: FTF-R015 negative-test proof (isolated concurrent execution catches real defects)
         run: python3 tests/implementation/test_safe_parallel_executor.py
+      - name: FTF-R011 deployment-profile assertion-level release matrix validation
+        run: python3 scripts/validate_profile_scope.py
+      - name: FTF-R011 negative-test proof (connected/air-gap release matrix catches real defects)
+        run: python3 tests/security/test_profile_scope.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

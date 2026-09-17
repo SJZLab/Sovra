@@ -2078,3 +2078,136 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   the reviewing session for PR #70's original submission, so it cannot
   certify its own fix; awaiting a fresh Control-plane session with no
   session-ID overlap with `session_01Wn6FwbAzgvmKf9AcqXKLbQ` per Law 4.
+
+## 2026-09-17 — FTF-R011 — Define immutable connected and air-gap assertion-level release matrix
+- **Commit:** `18dd2823eff6171594fb53b6adf0beb953bada82` (implementation),
+  `a3d7084` (hash-fixup bookkeeping — same two-commit pattern as
+  FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014/
+  FTF-R015, since a commit can't embed its own hash).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-R011 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-R001, FTF-H001, FTF-H002 all `CERTIFIED` — dependency-ready.
+- **Law 15 check (raised and deferred by a prior shift's FTF-R015 entry,
+  addressed here rather than re-deferred):** this task's own `files` list
+  edits `spec/deployment-profiles.yaml`, a file FTF-R001's task created.
+  Directly verified before touching it, not assumed: `tests/tasks/
+  test_ftf_r001.py` and `scripts/architecture_lock.py` (FTF-R001's entire
+  certified evidence surface) never import or read `spec/deployment-
+  profiles.yaml` — `grep` across both confirms zero references. FTF-R001's
+  own certified `docs/spec-matrix.yaml` notes describe its frozen evidence
+  as `packages/component-contracts/architecture.schema.json` and
+  `spec/component-lock.schema.json` only; `deployment-profiles.yaml`'s
+  `profiles:` section (the actual Section 79.2 binding text FTF-R001 wrote)
+  is left completely untouched here (`git diff` confirms byte-identical),
+  only the `assertion_applicability` section — explicitly FTF-R001's own
+  header comment called these "Section 79.5's own worked examples", i.e.
+  illustrative, not FTF-R001's complete certified deliverable — is
+  extended. No re-run of `test_ftf_r001.py` was skipped either:
+  it was re-run against the final state and still passes (see Regression
+  below). No Law 15 requalification is triggered.
+- **Delivered:**
+  - `spec/deployment-profiles.yaml`: `assertion_applicability` extended
+    from FTF-R001's original 2 worked-example entries (Q12, Q03 — kept
+    byte-identical) to all 43 required scenarios. Each entry carries an
+    `owner` (projected from `spec/release-scope.yaml`'s CAP ownership via
+    each CAP's `qualification_scenarios` list, never invented) and a
+    `status` restricted to `NOT_TESTED`/`PASS`/`FAIL`/`BLOCKED_EXTERNAL`
+    (no `N/A`). Five scenarios (Q03, Q12, Q26, Q37, Q39) are `kind: split`
+    with a genuinely distinct `connected_assertion` and `airgap_assertion`;
+    the other 38 are `kind: uniform` (their own qualification-inventory
+    text names no external/public dependency). Q26/Q37/Q39's split
+    classification is disclosed authored judgment (see
+    `scripts/validate_profile_scope.py`'s module docstring for the
+    reasoning against Section 52/79.3/79.4's own text) — independently
+    corroborated for Q26 by this task's own resolved
+    `qualification_scenarios: [Q12, Q26, Q43]`, which the packet supplied
+    without my having chosen it.
+  - `scripts/validate_profile_scope.py`: `generate_assertion_applicability`/
+    `validate_deployment_profiles` (whole-set completeness against the
+    frozen 43-scenario inventory, owner provenance cross-checked against
+    `release-scope.yaml`, split-name distinctness, status enum); Section
+    84.7 asks the manifest exist before execution, and it does —
+    `generate_expected_checks(profile)` is the preapproved per-profile
+    expected-check list, structurally unable to place a `connected_*`
+    assertion in `AIR_GAPPED`'s list or an `airgap_*` assertion in a
+    connected profile's list; `assert_profile_qualified`/
+    `assert_full_product_done` enforce that a split scenario's air-gap
+    result can never satisfy its connected-positive requirement and that
+    passing one profile's checks never registers as full-product done.
+- **Test:** `tests/security/test_profile_scope.py` — 15 checks (11
+  `check()` calls plus 4 embedded inside the fault-injection test).
+- **Evidence — shown able to fail (Law 1):**
+  1. Negative_acceptance #1 (`N/A` status): `test_na_status_is_rejected`
+     rejects it both in the frozen document and in a results-reporting
+     fixture where every other check genuinely passes.
+  2. Negative_acceptance #2 (air-gap denial substituting for the required
+     connected positive test): `test_airgap_denial_cannot_satisfy_connected_requirement`
+     — a real fixture where every split scenario's *airgap* assertion is
+     marked PASS and every connected assertion is left unrecorded; both
+     `assert_profile_qualified("INTERNAL_PRODUCTION", ...)` and
+     `assert_full_product_done(...)` correctly reject it.
+  3. Negative_acceptance #3 (external provider called from air gap):
+     `test_external_provider_never_expected_under_airgap` — structural
+     proof that `generate_expected_checks("AIR_GAPPED", ...)` never
+     contains any `connected_*` assertion, and no connected profile's
+     manifest ever contains an `airgap_*` assertion.
+  4. Negative_acceptance #4 (dropping an old ID): `test_dropping_an_old_id_is_rejected`
+     removes Q10 from a copy of the document — rejected as `missing_scenario`.
+  5. `test_worked_examples_preserved` — Q12/Q03's original FTF-R001 variant
+     names survive this task's extension byte-for-byte.
+  6. `test_profile_only_pass_is_not_full_product` — every `AIR_GAPPED`-
+     expected check passing qualifies that profile but still correctly
+     fails full-product completion (Section 79.5's
+     `AIR_GAP_PROFILE_QUALIFIED` vs `FULL_PRODUCT_DONE` distinction).
+  7. `test_genuinely_complete_results_pass_both_gates` — positive control:
+     when every assertion is genuinely recorded PASS, all four profiles
+     qualify and full-product completion passes with zero errors, proving
+     the negative tests above fail for the injected defect specifically,
+     not for everything.
+  8. `test_split_scenario_cannot_collapse_to_one_name` /
+     `test_missing_owner_is_rejected` / `test_dropping_a_profile_is_rejected`
+     — additional whole-set guard checks mirroring FTF-H002/R001's own
+     `release_scope_lock.py`/`architecture_lock.py` validator pattern.
+  9. **Real fault injection against the tracked module on disk:**
+     `test_fault_injection_against_tracked_module` temporarily removes the
+     connected/airgap distinctness guard block from
+     `scripts/validate_profile_scope.py`, imports the mutated module fresh,
+     confirms the Q12 collapsed-name defect wrongly passes validation with
+     the guard gone, restores the file byte-identical (asserted directly),
+     and confirms validation is clean again.
+  10. **Manually confirmed before committing, outside the test file too:**
+      reverted `spec/deployment-profiles.yaml` to `git show HEAD:...` (its
+      pre-FTF-R011 state, `assertion_applicability` holding only 2 of 43
+      required scenarios) — `scripts/validate_profile_scope.py` genuinely
+      fails with 43 `missing_scenario`/`must be a mapping` errors, and
+      `tests/security/test_profile_scope.py` genuinely raises a
+      `TypeError` (not a clean designed failure — the old format is a
+      bare list, not a mapping, which is itself further proof the checks
+      are load-bearing against real structural difference, not vacuous).
+      File restored to its FTF-R011 state before committing.
+- **Regression check:** `uv run ruff check .`/`format --check .`/`mypy .`
+  clean; `pnpm run lint`/`format:check`/`typecheck` clean (after `pnpm
+  install --frozen-lockfile` — fresh container, no `node_modules`); all 14
+  existing task negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py`
+  through `test_safe_parallel_executor.py`, including `test_ftf_r001.py`
+  specifically per the Law 15 check above) pass unmodified — no already-
+  certified task's own implementation file was touched, only additive
+  files plus `spec/deployment-profiles.yaml`'s `assertion_applicability`
+  extension and FTF-R011's own `docs/spec-matrix.yaml`/
+  `spec/verification-map.json` entries; `uv run pytest tests/unit` (3
+  passed) and `pnpm exec vitest run` (2 passed) clean, 0 skipped either
+  side. `validate_spec.py --strict` clean; `verify_task.py --task FTF-R011
+  --stage task` → `PASS` against evidence commit
+  `18dd2823eff6171594fb53b6adf0beb953bada82`. `verify_release.py` correctly
+  non-inflated: `13/300`/`FAILED (2): ['FTF-R011', 'FTF-R015']`/`NOT READY`.
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (release-matrix governance/validator
+  layer, no live Factory product-runtime caller, same rationale as every
+  prior FTF-H00X/FTF-R00X task).
+- **CI:** wired `scripts/validate_profile_scope.py` (validates the real
+  committed document) and `python3 tests/security/test_profile_scope.py`
+  into `.github/workflows/ci.yml`'s `gate` job, right after the FTF-R015
+  step; YAML-validated (`yaml.safe_load`). Real run status to be confirmed
+  on the opened PR before merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.

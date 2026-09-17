@@ -1395,3 +1395,123 @@ corrected 2026-09-15.
   transition are both confirmed legitimate, and the delivered work matches
   the real task-packet contract's acceptance/negative_acceptance clauses
   item by item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-R015 — Enforce isolated concurrent coding execution and independent integration
+- Criterion ID: FTF-R015
+- PR: https://github.com/SJZLab/Sovra/pull/71 (fix/re-review of PR #70,
+  `claude/sleepy-pasteur-c8ihmb` → `main`)
+- Merge commit: 8f4a6fd25df3439dac166e324ecf9b4e0e7d8034
+- Evidence commit (verification-map/spec-matrix pointer): `519bba0ecbabcf36276df1dda3265673a7c2b702`
+- Validated-by: session https://claude.ai/code/session_015y31yd94WYsU49RBaF4jXE
+  (session-ID comparison performed and recorded before this entry: all
+  three PR #71 commits — `1020089`, `519bba0`, `6a47f08` — carry
+  `Claude-Session: .../session_01Wn6FwbAzgvmKf9AcqXKLbQ`, and all four
+  original PR #70 commits carry `session_01C4Vvhh8pRi5yqZTmnFce6A`; this
+  certifying session's ID matches neither — independent, not
+  self-certification)
+- Date: 2026-09-17
+- Background: PR #70 (original FTF-R015 submission, isolation/permission/
+  budget/CI-containment/merge-gate machinery) was merged to `main` by the
+  owner as PROVISIONAL (merge commit `c055226`, merge ≠ certification, Law
+  4). A prior independent Control-plane session
+  (`session_01Wn6FwbAzgvmKf9AcqXKLbQ`) then reviewed it in CERTIFY mode and
+  found one unaddressed item in FTF-R015's own resolved acceptance clause 1
+  ("record actual overlap, leases, **commits**, tests and an independent
+  integrated merge gate") — no field, code path, or test anywhere captured
+  a task's real commit evidence, despite `executor_adapter.py` explicitly
+  allowlisting `git`. Per Law 1/Law 5, that session did not certify
+  (`certification_state` stayed `PROVISIONAL`) and recorded the exact gap
+  and fix options in `docs/certifications/queue.md`. The same session then
+  implemented the fix at the live user's direction and opened PR #71,
+  re-submitting for certification by a fresh session with no overlap —
+  which this entry is.
+- Evidence (this session's own independent re-verification, not the
+  producer's claim):
+  1. Session-ID check performed first, as above — no overlap with either
+     PR #70's or PR #71's commit authorship.
+  2. Read the PR #71 diff directly: `tools/implementation/executor_adapter.py`
+     gained one `_read_commit_sha(workspace_path)` helper (`git rev-parse
+     HEAD` against the task's isolated workspace, `None` on any non-zero
+     exit or subprocess error — never a fabricated hash) and one field
+     (`ExecutionResult.commit_sha`); `tests/implementation/
+     test_safe_parallel_executor.py` gained
+     `test_real_commit_is_captured_and_propagates_through_a_wave` (32 -> 36
+     checks), which drives a real `git init`/`commit --allow-empty`
+     sequence through `execute_task` and cross-checks the captured SHA
+     against an independently run `git rev-parse HEAD` in the same
+     workspace — not read back from the module's own claim — plus a
+     no-git case asserted `None` and propagation through a full
+     `TaskOrchestrator.run_wave`.
+  3. CI reconfirmed green for real (not self-reported) via
+     `pull_request_read.get_check_runs` on PR #71's actual head
+     `6a47f08e39da5212a435e9d5e935636f3df1be44`: both `gate` and
+     `docker-local-stack-integration`, `completed`/`success`.
+  4. Own re-run in a fresh git worktree (`origin/claude/sleepy-pasteur-c8ihmb`,
+     unshallowed): all 36 `tests/implementation/test_safe_parallel_executor.py`
+     checks pass; full 15-script existing regression set (`test_ftf_0001_
+     monorepo_layout.py` through `test_ftf_r001.py` and
+     `test_r1_execution_binding.py`) passes unmodified after `pnpm install
+     --frozen-lockfile` (fresh container, no `node_modules`); `uv run ruff
+     check .`/`format --check .`/`mypy .` clean; `pnpm run lint`/
+     `typecheck`/`format:check` and `pnpm exec vitest run` (2 passed)
+     clean; `uv run pytest tests/unit` (3 passed).
+  5. Own fault injection, distinct from both the original producer's
+     (protected-gate-write guard) and the prior reviewer's (`ci_failed`
+     bookkeeping): mutated `_read_commit_sha` to return a fabricated
+     40-hex-char SHA instead of `None` on a failed `git rev-parse` —
+     re-ran the suite, exactly 1 check failed for real (`a task whose
+     command never makes a commit leaves commit_sha genuinely None, not a
+     fabricated value`); restored the file byte-identical (`diff`
+     confirmed empty), re-ran clean (36/36) — proves the "never a
+     fabricated hash" property is code-enforced, not merely claimed.
+  6. `python tools/r1_handoff.py packet FTF-R015 --plan
+     FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled directly: acceptance
+     clause 1's exact text ("...record actual overlap, leases, commits,
+     tests and an independent integrated merge gate") confirmed verbatim;
+     the delivered fix closes precisely the "commits" gap the prior review
+     identified, with no other clause affected. Negative_acceptance
+     clauses (overlapping/expired claims, nested unbounded delegation,
+     producer writes to gate state, direct-tool permission bypass, stale
+     branch dependencies, advancement after failed CI, no fabricated
+     parallel pass) map one-to-one to `test_write_set_conflict_denied`,
+     `test_expired_lease_denied`, `test_nested_delegation_denied`,
+     `test_protected_gate_write_denied_without_authority`/
+     `test_protected_gate_write_accepted_from_real_authority`,
+     `test_permission_bypass_denied`, `test_stale_dependency_rejected`, and
+     `test_advancement_after_failed_ci_denied` respectively — each
+     independently re-run and confirmed passing above.
+  7. `validate_spec.py --strict` clean (after `git fetch --unshallow`; a
+     shallow clone falsely reports `stale_commit: FTF-0001` since the
+     pre-existing certified `7ab3f6f` doesn't resolve in a shallow
+     history — a local environment artifact, not a PR defect, disclosed
+     rather than silently worked around); `verify_task.py --task FTF-R015
+     --stage task` -> `PASS` against evidence commit `519bba0`;
+     `product_truth_check.py --fail-on-unwired` legitimately `0/0`
+     (`proving_symbol: ''` — build/implementation tooling, no Factory
+     production service imports it, confirmed by the same rationale as
+     FTF-R014/FTF-H034).
+  8. Merged PR #71 (`mergeable_state: clean`) as merge commit `8f4a6fd`.
+     Set `docs/spec-matrix.yaml` FTF-R015 to `certification_state:
+     CERTIFIED` / `proof_state: L2-CERTIFIED` (`evidence_hash` kept at the
+     real fix commit `519bba0`, matching `spec/verification-map.json`'s
+     own `commit` field, same convention as every prior certified task).
+     Re-ran `scripts.task_claim.sync_certified_status()` — diff confirmed
+     limited to exactly FTF-R015's own `status`/`evidence` fields in
+     `spec/tasks.json` and `docs/implementation/TRACKER.json`.
+  9. `verify_release.py` re-run after the above, in a fully installed
+     environment (`pnpm install --frozen-lockfile` run first — its absence
+     had transiently made FTF-0002/0003/H001 report FAILED for the same
+     missing-`node_modules` reason as item 4/7 above, not a real
+     regression): `14/300` required tasks CERTIFIED with live-passing
+     evidence, `FAILED (1): ['FTF-R011']` (correctly reported — FTF-R011 is
+     PROVISIONAL, a separate item, not yet certified; not this entry's
+     scope), non-inflated transition from the prior `13/300`.
+- Conclusion: the fix genuinely closes the exact gap the prior independent
+  review found — a real `git rev-parse HEAD` read, never a fabricated
+  hash on failure (proven by an independent fault injection distinct from
+  both prior sessions' own), cross-checked against an independently read
+  HEAD rather than the module's own say-so, and shown to propagate through
+  a full orchestrated wave. CI is green on the real merged head, the
+  acceptance/negative_acceptance clauses are met item by item against the
+  task's real resolved contract, and `verify_release.py`'s denominator
+  moved non-inflated. No open defect. Certified L2-CERTIFIED.
