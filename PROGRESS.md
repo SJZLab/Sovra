@@ -1,5 +1,38 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T04:30:00Z
+Updated: 2026-09-17T04:45:00Z
+
+## 2026-09-17 — FTF-H028 (PR #55) merged to main as PROVISIONAL
+Same relay shift as the FTF-H028 implementation entry below. PR activity
+subscription confirmed `gate` and `docker-local-stack-integration` both
+`completed`/`success` on the PR's actual current head SHA (`2040620`,
+confirmed via `pull_request_read get_check_runs` and cross-checked against
+`pull_request_read get` — not a stale/earlier-commit claim; an earlier
+`check_suite.completed` event for a superseded intermediate commit
+(`813ede7`, before this session's final bookkeeping push) was correctly
+recognized as stale and not acted on). `mergeable_state: clean`,
+`get_reviews` empty — no open review threads. Matches CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)" — same discipline
+as every prior FTF-000X/FTF-H00X merge. Merged PR #55 (merge commit
+`1de330d7cbf71ba36ad8a65565eae1645fbd1929`). Not a certification — still
+PROVISIONAL, Law 4 untouched; `docs/spec-matrix.yaml`/`QUEUE.md`/
+`docs/certifications/queue.md` already carried the correct PROVISIONAL
+bookkeeping as part of this PR itself. Certified: 9/300 (unchanged — a
+merge to PROVISIONAL is not a certification). Product-true: 0 (unchanged).
+Unsubscribed this session from PR #55's activity (merged, nothing left to
+watch). Per the branch-restart convention (this session's designated
+branch's PR merged): restarted `claude/wizardly-fermat-s54o5t` from the
+new `main` tip (`1de330d`) to record this merge note, rather than stacking
+on now-merged history.
+
+STEP 4(a): FTF-H028 is now the queue's only non-certified item and is
+fully L1-PROVEN/PROVISIONAL. Stopping — awaiting Control plane L2
+certification of FTF-H028, then eventually the L4 gate. Not starting a
+second item on top of an uncertified one, same discipline as every prior
+FTF-000X/FTF-H00X handoff. The 2026-09-16 FTF-0102 new-runtime-dependency
+owner ask and the 2026-09-15 trigger-tooling ask remain open and untouched.
+
+Certified: 9/300 (unchanged). Provisional: 1 (FTF-H028, PR #55, merged,
+awaiting L2). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-H028 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:

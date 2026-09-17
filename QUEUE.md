@@ -1,5 +1,5 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-H028 implemented, PR to be opened)
+Updated: 2026-09-17 by relay (FTF-H028 PR #55 merged, PROVISIONAL, awaiting L2)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -72,13 +72,14 @@ FTF-0102 remain blocked, see "Owner actions" and "Blocked" below.)
 ## Provisional (awaiting Control plane L2 certification)
 - FTF-H028 — Trusted CI and exact-revision release evidence gate.
   proof_state=L1-PROVEN, certification_state=PROVISIONAL. PR #55
-  (https://github.com/SJZLab/Sovra/pull/55), commits `d502c89`
-  (implementation) + `183321c` (hash-fixup) on
-  `claude/wizardly-fermat-s54o5t`. CI (`gate` +
-  `docker-local-stack-integration`, run 35176601514) was genuinely
-  `in_progress` on the PR's real head as of this entry — subscribed to PR
-  activity, will merge on green per CLAUDE.md ("Do without asking: merge
-  on green + L1 doc (PROVISIONAL)"), not before. Real branch-protection
+  (https://github.com/SJZLab/Sovra/pull/55) merged to `main` as commit
+  `1de330d7cbf71ba36ad8a65565eae1645fbd1929` — real CI (`gate` +
+  `docker-local-stack-integration`, run 35176632687) confirmed
+  `completed`/`success` on the PR's actual final head (`2040620`, via
+  `pull_request_read get_check_runs`, not a stale/self-reported claim),
+  `mergeable_state: clean`, no open reviews. Commits `d502c89`
+  (implementation) + `183321c` (hash-fixup), merged from
+  `claude/wizardly-fermat-s54o5t`. Real branch-protection
   read and release-manifest signing are both disclosed BLOCKED_EXTERNAL
   (reproduced live: a real 403 from
   `api.github.com/repos/SJZLab/Sovra/branches/main/protection`; no signing
