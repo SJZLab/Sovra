@@ -442,14 +442,20 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001
             FAILURES.append(f"FAIL [{name}] unexpected exception: {exc!r}")
 
-    if booted_here:
-        compose("stop", "s3", check_exit=False)
-
     if FAILURES:
         print(f"FTF-R017 storage semantics: {len(FAILURES)} failed")
         for failure in FAILURES:
             print(f"  {failure}")
+        print("-- s3 container logs (diagnosis, not a canned pass) --", flush=True)
+        logs = compose("logs", "--no-color", "s3", check_exit=False)
+        print(logs.stdout)
+        print(logs.stderr)
+        if booted_here:
+            compose("stop", "s3", check_exit=False)
         sys.exit(1)
+
+    if booted_here:
+        compose("stop", "s3", check_exit=False)
 
     print("FTF-R017 storage semantics: all checks passed")
     sys.exit(0)
