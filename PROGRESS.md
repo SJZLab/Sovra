@@ -1,5 +1,73 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T13:05:00Z
+Updated: 2026-09-17T13:15:00Z
+
+## 2026-09-17 — Control plane: FTF-R015 CERTIFIED (PR #71 independently verified)
+Scheduled autonomous CERTIFY-mode session (no live user present), triggered
+by a GitHub `pull_request.opened` webhook for PR #72 (FTF-R011); per this
+session's fixed mandate, swept `docs/certifications/queue.md`/
+`docs/spec-matrix.yaml` for every PROVISIONAL item rather than reviewing
+only the triggering PR. Found two: FTF-R011 (PR #72, CI still in
+progress — deferred, see below) and FTF-R015 (PR #71, CI green — worked
+this shift).
+
+FTF-R015 background: PR #70 (original submission) was merged to `main` by
+the owner as PROVISIONAL. An independent Control-plane session
+(`session_01Wn6FwbAzgvmKf9AcqXKLbQ`) then reviewed it, found FTF-R015's own
+resolved acceptance clause 1 ("record actual overlap, leases, **commits**,
+tests and an independent integrated merge gate") had no corresponding
+commit-evidence code or test anywhere in the delivered PR, and did not
+certify per Law 1/Law 5. The same session then implemented the fix
+(`execute_task` now captures a real `git rev-parse HEAD` as
+`ExecutionResult.commit_sha`, never a fabricated value) and opened PR #71
+for a fresh certifying session, since it could not certify its own fix.
+
+This session's independent re-verification (session-ID check first: no
+overlap with either PR #70's or PR #71's commit authorship): read the PR
+#71 diff directly; confirmed CI green for real via `get_check_runs` on the
+actual PR head (`6a47f08`, both `gate` and `docker-local-stack-integration`
+`completed`/`success`); re-ran the full suite in a fresh, unshallowed git
+worktree — all 36 `tests/implementation/test_safe_parallel_executor.py`
+checks plus the full 15-script existing regression set clean (after `pnpm
+install --frozen-lockfile`, `ruff`/`format`/`mypy`/`eslint`/`tsc`/
+`prettier`/`vitest`/`pytest` all clean); ran an own fault injection
+distinct from both prior sessions' (mutated the commit-SHA helper to
+return a fabricated hash instead of `None` on failure) — exactly 1 check
+failed for real, restored byte-identical, re-ran clean; pulled the real
+task contract via `tools/r1_handoff.py packet FTF-R015` and confirmed the
+fix closes precisely the identified gap with every acceptance/
+negative_acceptance clause mapped to a specific, independently re-run
+test; `validate_spec.py --strict` clean (after `git fetch --unshallow` —
+a shallow clone falsely reports a stale-commit defect, a local artifact,
+not a PR defect); `product_truth_check.py --fail-on-unwired` legitimately
+`0/0`.
+
+Merged PR #71 (`mergeable_state: clean`, merge commit `8f4a6fd`). Set
+`docs/spec-matrix.yaml` FTF-R015 to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED` (`evidence_hash` kept at the real fix commit
+`519bba0`, matching `spec/verification-map.json`'s own `commit` field,
+the same convention every prior certified task uses). Ran
+`scripts.task_claim.sync_certified_status()` — diff confirmed limited to
+exactly FTF-R015's own `status`/`evidence` fields in `spec/tasks.json` and
+`docs/implementation/TRACKER.json`. Appended the full evidence writeup to
+`docs/certifications/ledger.md`, moved FTF-R015 from QUEUE.md
+"Provisional" to "Done" (Certified: 13/300 -> 14/300), and updated
+PROGRESS.md (this entry). `verify_release.py` re-run after the edit,
+in a fully installed environment: `14/300` CERTIFIED, `FAILED (1):
+['FTF-R011']` (the separate, still-PROVISIONAL item below, not this one),
+non-inflated transition confirmed.
+
+Also resolved a real merge conflict in `QUEUE.md`/`docs/certifications/
+queue.md` while bringing this session's local branch up to date with
+`origin/main` (which had just gained PR #71's merge) — both sides'
+substantive content (the FTF-R011 PROVISIONAL bookkeeping and the FTF-R015
+review+fix history) preserved in chronological order, nothing dropped.
+
+FTF-R011 (PR #72) deferred this pass: CI (`gate` and
+`docker-local-stack-integration`) was still `in_progress` at review time —
+per CERTIFY step 2 ("confirm CI actually ran... and its conclusion"),
+there is nothing to certify against yet. Left `certification_state:
+PROVISIONAL` unchanged, noted in QUEUE.md for the next check.
+
 
 ## 2026-09-17 — FTF-R011 implemented (Provisional, PR #72 opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
