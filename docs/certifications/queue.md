@@ -2211,3 +2211,167 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   on the opened PR before merge.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-17 — FTF-R017 — Qualify maintained internal storage and OSS dependency lifecycle
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-ci7leb`.
+- **Commit:** `b76235989aca9b73bbefb9502435c8c25f9564ad` (implementation).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-R017 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-R001/FTF-0004 both `CERTIFIED` — unblocked.
+- **Why this task:** with `spec/tasks.json`'s real `dependencies` computed
+  directly against the certified set (15/300), only two items were
+  dependency-ready: FTF-0102 (blocked on the standing 2026-09-16
+  new-runtime-dependency owner ask, unchanged — see QUEUE.md "Owner
+  actions") and FTF-R017. FTF-R017 was the only claimable item this shift.
+- **Scope finding before implementation:** Section 80.4 names eight
+  storage semantics (multipart, checksum, versioning, immutable-
+  publication, identity, retention/deletion, encryption, backup and
+  restore) to qualify against either the organization's real S3 or the
+  SeaweedFS offline fixture. This repo's interactive dev sandbox has no
+  container-registry egress — reconfirmed this task with a real `docker
+  pull` against this exact pinned SeaweedFS digest (`chrislusf/seaweedfs@
+  sha256:2829e52c...`), the same reproducible 403 FTF-0004's own evidence
+  already documents. Followed FTF-0004's own established precedent: build
+  the real client/tests/CI wiring and let the live-container evidence run
+  for real on GitHub Actions' hosted runner, never fabricate a local pass.
+- **Delivered:**
+  - `spec/component-maintenance.yaml` + `spec/component-maintenance.schema.json`
+    + `scripts/validate_component_maintenance.py`: owner/support/license/
+    security/version/export/restore record for all seven canonical
+    components. Every license claim was fetched and verified against that
+    project's own real, current `LICENSE` file this task via `WebFetch`
+    (URLs recorded on each record as `license_evidence_url`) — not
+    asserted from memory. All seven are permissive (Apache-2.0 or MIT).
+    LiteLLM's separate proprietary `enterprise/` directory is explicitly
+    disclosed and never used. The schema's
+    `enterprise_or_proprietary_features_used` field is a structural
+    `const: false` — this schema cannot accept a `true` value at all,
+    satisfying the "unapproved license/enterprise dependency"
+    negative_acceptance clause by construction. The validator reuses
+    `scripts/architecture_lock.py`'s bounded JSON Schema validator and its
+    `_check_exact_key_set` whole-set helper directly (imported, not
+    duplicated) — the same exact-seven-canonical-keys discipline
+    `spec/component-lock.schema.json` (FTF-R001) already established.
+  - `apps/api/app/services/storage_semantics_client.py`: a real,
+    stdlib-only AWS Signature Version 4 request-signing S3 client
+    (`hashlib`/`hmac`/`urllib`/`datetime`/`base64` only — boto3/any S3 SDK
+    would be a new runtime dependency, an ask-first CLAUDE.md item, so this
+    implements the published SigV4 algorithm directly). `S3Endpoint`/
+    `S3Credentials` are plain constructor arguments, never a hardcoded
+    host, so the identical code path later qualifies the organization's
+    real external S3 endpoint without a code migration (this task's own
+    acceptance clause 2).
+  - `infra/docker/seaweedfs-s3-identity.json` (real, non-anonymous S3
+    identity — format verified against SeaweedFS's own
+    `docker/compose/s3.json` example) + a one-line addition to
+    `infra/docker/docker-compose.yml`'s already-certified `s3` service
+    (`-s3.config=...` + the read-only volume mount). **Law 15 check
+    performed before editing, not assumed:** `grep`'d
+    `scripts/verify_docker_local_stack.py`/`tests/tasks/test_ftf_0004.py`/
+    `apps/api/app/config/docker_local_stack.py` — FTF-0004's entire
+    certified evidence surface only ever exercises **TCP-level**
+    reachability on the S3 port, never S3 auth/API semantics; adding an S3
+    identity config is purely additive to a dimension FTF-0004 never
+    tested. No requalification triggered.
+  - `infra/internal/storage-profile.yaml` + `scripts/validate_storage_profile.py`:
+    declares the qualified backend (`seaweedfs_offline_fixture` today,
+    `maintained_organizational_s3` once the owner provisions one — `minio`
+    is not a value the schema/enum can select at all, satisfying "Reject
+    automatic archived-MinIO default" by construction) and the exact eight
+    Section-80.4 semantics. `qualified: true` structurally requires a
+    non-placeholder `evidence` value — a bare `NOT_YET_RUN`/empty string
+    cannot be hand-flipped to claim a result the container never produced
+    (the "unimplemented S3 feature accepted" negative_acceptance clause).
+  - `tests/integration/test_storage_semantics.py`: real, live-container
+    proof of all eight semantics (multipart create/upload-parts/complete
+    reconstructing exact bytes + abort never publishing a partial object;
+    Content-MD5 checksum enforcement, correct and corrupted; bucket
+    versioning with two independently retrievable versions;
+    Object-Lock COMPLIANCE retention genuinely rejecting an early delete;
+    an unconfigured access key genuinely rejected while the real
+    configured identity succeeds; a non-retained delete producing a real
+    delete marker with the prior version still recoverable; SSE-C
+    encryption genuinely inaccessible without the correct key; and a real
+    copy-out/delete/restore/hash-verify cycle). Boots
+    `infra/docker/docker-compose.yml`'s `s3` service the same way
+    `scripts/verify_docker_local_stack.py` boots the whole stack for
+    FTF-0004. Wired into a new `storage-semantics-integration` CI job
+    (GitHub Actions' hosted runner has real registry egress).
+  - `tests/tasks/test_ftf_r017.py` — runnable without Docker. Proves the
+    SigV4 signing math against a **real, externally-published AWS
+    Signature Version 4 test vector** (the "get-vanilla" case from
+    `github.com/mhart/aws4`, a mirror of AWS's own published test suite,
+    and `github.com/saibotsivad/aws-sig-v4-test-suite`'s `index.json` for
+    the config values) — fetched via `curl` (not the summarizing
+    `WebFetch` path, to avoid any paraphrase risk) and independently
+    re-verified live before being embedded: the canonical-request SHA-256
+    was recomputed with plain `hashlib` and shown to match the published
+    `.sts` file's third line byte-for-byte, and the tracked module's own
+    `_signing_key` was shown to reproduce the published `.authz` file's
+    exact signature (an initial attempt with a misremembered secret key
+    constant failed — refetched the suite's real `index.json` rather than
+    trusting memory, then matched). Also proves every negative_acceptance
+    case named in this task's own contract, plus a real fault injection
+    against the tracked `spec/component-maintenance.yaml` file on disk
+    (flips one real component's `enterprise_or_proprietary_features_used`
+    to `true`, confirms the real file on disk now fails validation,
+    restores byte-identical, confirms clean again).
+  - `docs/operations/component-lifecycle.md`: human-readable summary
+    pointing at the two machine-validated records as the actual source of
+    truth, restating no claim they don't already make.
+- **Test:** `tests/tasks/test_ftf_r017.py` — 19 test functions, 25 check()
+  assertions (SigV4 vector + structural/self-consistency +
+  negative_acceptance + fault injection). Live-container semantics: `tests/integration/
+  test_storage_semantics.py` — 8 real-container test functions, run in CI.
+- **Evidence — shown able to fail (Law 1):** every negative_acceptance
+  case this task's own contract names is proven rejected: a maintenance
+  record set missing a canonical component; a record claiming enterprise/
+  proprietary feature use; a record naming an unreviewed/copyleft license;
+  records missing `export_plan`/`restore_plan`; selecting `minio` as the
+  storage backend; dropping one of the eight required semantics;
+  `qualified: true` paired with placeholder evidence. Plus a real fault
+  injection against the tracked `spec/component-maintenance.yaml` file on
+  disk (not just an in-memory fixture) — described above.
+- **Regression:** `uv run ruff check .`/`format --check .`/`mypy .` clean;
+  `pnpm run lint`/`format:check`/`typecheck` clean (after `git fetch
+  --unshallow` + `pnpm install --frozen-lockfile` — fresh, shallow
+  container with no `node_modules`); all 15 existing task
+  negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py` through
+  `test_profile_scope.py`) pass unmodified — no already-certified task's
+  own implementation file was touched, only the additive
+  `infra/docker/docker-compose.yml` S3-identity line (Law 15-checked
+  above) plus FTF-R017's own `docs/spec-matrix.yaml`/
+  `spec/verification-map.json` entries; `uv run pytest tests/unit` (3
+  passed) and `pnpm exec vitest run` (2 passed) clean, 0 skipped either
+  side. `validate_spec.py --strict` clean; `verify_task.py --task
+  FTF-R017 --stage task` → `PASS` against evidence commit
+  `b76235989aca9b73bbefb9502435c8c25f9564ad`. `verify_release.py`
+  correctly non-inflated: `15/300`/`FAILED (1): ['FTF-R017']`/`NOT READY`.
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (OSS-lifecycle/storage-qualification
+  tooling, no Factory production service importing it yet, same rationale
+  as every prior FTF-H00X/FTF-R00X task).
+- **CI:** wired `scripts/validate_component_maintenance.py`,
+  `scripts/validate_storage_profile.py` and `python3 tests/tasks/
+  test_ftf_r017.py` into `.github/workflows/ci.yml`'s `gate` job, right
+  after the FTF-R011 step; added a new `storage-semantics-integration` job
+  running `tests/integration/test_storage_semantics.py` against the live
+  container (same registry-egress rationale as FTF-0004's
+  `docker-local-stack-integration` job). YAML-validated (`yaml.safe_load`).
+  Real run status (both the new `gate` steps and the new
+  `storage-semantics-integration` job actually booting the S3 container)
+  to be confirmed on the opened PR before merge.
+- **Disclosed, not hidden:** `infra/internal/storage-profile.yaml`'s eight
+  `required_semantics` entries stay honestly `qualified: false`/
+  `evidence: NOT_YET_RUN` in this commit — the real per-semantic result
+  only exists once the `storage-semantics-integration` CI job actually
+  runs against the live container; `scripts/validate_storage_profile.py`
+  structurally refuses to accept `qualified: true` without real evidence,
+  so this file cannot be hand-flipped ahead of that run. Exact pinned
+  component versions remain `NOT_YET_RESOLVED` for all seven components,
+  matching `spec/release-scope.yaml`'s own real state (Section 64.3
+  onboarding gate not yet run) — not fabricated ahead of that gate.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4, which
+  should specifically confirm the `storage-semantics-integration` CI job
+  passed for real (not merely that it exists) before certifying.

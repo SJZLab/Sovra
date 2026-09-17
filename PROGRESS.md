@@ -1,5 +1,123 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T13:25:00Z
+Updated: 2026-09-17T15:10:00Z
+
+## 2026-09-17 — FTF-R017 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main`, local
+designated branch (`claude/wizardly-fermat-ci7leb`) matched `origin/main`
+exactly at `f59bbf1` (the FTF-R011 certification commit) before any edit.
+`BLOCKER.md` held only resolved history. QUEUE.md Active/Provisional both
+empty, 15/300 certified, Blocked: 1 (FTF-0102, unchanged open owner ask).
+One open PR found (#67, the same unresolved FTF-0102 "owner approved
+option 1" claim prior shifts have already flagged) — re-checked its
+comments: still no owner-authored corroboration beyond this session's own
+prior flag comment; left exactly as-is, not re-litigated.
+
+STEP 1: computed real dependency-ready NOT_STARTED work directly from
+`spec/tasks.json` (status/dependencies against the real 15-item certified
+set), not trusted from QUEUE.md's summary. Only two items were
+dependency-ready: FTF-0102 (blocked on the standing owner ask) and
+FTF-R017. FTF-R017 was the only claimable item this shift.
+
+STEP 2 (PEV):
+- P: read the FTF-R017 task packet in full (`tools/r1_handoff.py packet
+  FTF-R017`), including Sections 4/48/65/77/79/80/84. Confirmed before
+  writing anything: this session's interactive sandbox has no
+  container-registry egress (a real `docker pull` against the exact
+  pinned SeaweedFS digest reproduced the same 403 FTF-0004's own evidence
+  already documents) — the real live-container storage-semantics evidence
+  runs in CI, matching FTF-0004's own established precedent, not a
+  DoD-clarity gap.
+- E: delivered `spec/component-maintenance.yaml` (owner/support/license/
+  security/version/export/restore for all seven canonical components —
+  every license claim fetched via `WebFetch`/`curl` against each
+  project's real, current `LICENSE` file this shift, not asserted from
+  memory; all seven permissive Apache-2.0/MIT; LiteLLM's separate
+  proprietary `enterprise/` directory disclosed and unused) +
+  `spec/component-maintenance.schema.json` (structurally rejects
+  `enterprise_or_proprietary_features_used: true` and any
+  non-allow-listed license) + `scripts/validate_component_maintenance.py`
+  (reuses `scripts/architecture_lock.py`'s bounded validator/exact-key-set
+  helper, not duplicated). `apps/api/app/services/storage_semantics_client.py`
+  — a real, stdlib-only AWS SigV4-signed S3 client (no boto3/SDK runtime
+  dependency), endpoint-configurable so the same code path later qualifies
+  the org's real external S3 without a migration.
+  `infra/internal/storage-profile.yaml` + `scripts/validate_storage_profile.py`
+  (backend enum structurally excludes `minio`; `qualified: true`
+  structurally requires non-placeholder evidence).
+  `infra/docker/seaweedfs-s3-identity.json` — a real, non-anonymous S3
+  identity added to FTF-0004's already-certified `docker-compose.yml`
+  (Law 15 check performed first: `grep`'d FTF-0004's entire certified
+  evidence surface — it only ever exercises TCP-level reachability on the
+  S3 port, never S3 auth; purely additive, no requalification triggered).
+  `tests/integration/test_storage_semantics.py` (real multipart/checksum/
+  versioning/immutable-publication/identity/retention-deletion/
+  encryption/backup-restore proof against the live container, wired into
+  a new `storage-semantics-integration` CI job) and
+  `tests/tasks/test_ftf_r017.py` (19 test functions / 25 check()
+  assertions, runnable without Docker: the SigV4 signing math proven
+  against a real, externally-published AWS Signature Version 4 test
+  vector fetched via `curl` and independently re-verified live — an
+  initial attempt with a misremembered secret-key constant failed;
+  refetched the suite's real `index.json` rather than trusting memory,
+  then matched — plus every negative_acceptance case and a real fault
+  injection against the tracked `spec/component-maintenance.yaml` file on
+  disk). `docs/operations/component-lifecycle.md` summarizes both records
+  without restating any claim they don't already make.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (OSS-lifecycle/storage-qualification
+  tooling, no Factory production service importing it yet, same rationale
+  as every prior FTF-H00X/FTF-R00X task).
+Re-ran the full existing gate after all changes (`git fetch --unshallow` +
+`pnpm install --frozen-lockfile` first — fresh, shallow container with no
+`node_modules`): `uv run ruff check`/`format --check`/`mypy` clean; `pnpm
+run lint`/`format:check`/`typecheck` and `pnpm exec vitest run` clean; all
+15 existing task negative-test-proof scripts pass unmodified — no
+already-certified task's own implementation file was touched, only the
+additive S3-identity line in `docker-compose.yml` (Law 15-checked above)
+plus FTF-R017's own `docs/spec-matrix.yaml`/`spec/verification-map.json`
+entries; `uv run pytest tests/unit` (3 passed) and `pnpm exec vitest run`
+(2 passed) clean, 0 skipped either side. `validate_spec.py --strict`
+clean; `verify_task.py --task FTF-R017 --stage task` → `PASS`;
+`verify_release.py` non-inflated (`15/300`, `FAILED (1): ['FTF-R017']`,
+`NOT READY`); `product_truth_check.py --fail-on-unwired` stays `0/0` (no
+proving_symbol — OSS-lifecycle/storage-qualification tooling, no live
+Factory product-runtime caller yet).
+
+Two-commit pattern: `b762359` (implementation), hash-fixup commit follows
+(`docs/spec-matrix.yaml`/`spec/verification-map.json` pointing at
+`b762359`). Third commit: QUEUE.md/`docs/certifications/queue.md`
+PROVISIONAL bookkeeping (this entry). `certification_state: PROVISIONAL`,
+`proof_state: L1-PROVEN` — not self-certified (Law 4), awaiting Control
+plane L2 review.
+
+Disclosed, not hidden: `infra/internal/storage-profile.yaml`'s eight
+`required_semantics` entries stay honestly `qualified: false`/
+`evidence: NOT_YET_RUN` — the real per-semantic result only exists once
+the `storage-semantics-integration` CI job actually runs against the live
+container. Exact pinned component versions remain `NOT_YET_RESOLVED` for
+all seven components, matching `spec/release-scope.yaml`'s own real state
+(Section 64.3 onboarding gate not yet run).
+
+PR to be opened against `main` (`[relay] FTF-R017: ...`); CI to be
+confirmed once opened — not yet confirmed green, will be reconfirmed by
+whichever session picks this up next (relay or Control-plane). Certified
+count unchanged at 15/300 (PROVISIONAL never inflates it); Provisional now
+1 (FTF-R017).
+
+STEP 4: stopping per STEP 4(a) — this task is now fully L1-PROVEN pending
+CI confirmation and Control-plane L2 certification, which is outside the
+relay's own role (Law 4). FTF-0102 remains blocked on the standing owner
+ask (unchanged); the PR #67 finding remains unresolved and unactioned (no
+new corroboration observed this shift). Next shift: confirm the opened
+PR's CI result (both the `gate` job's new steps and the new
+`storage-semantics-integration` job actually booting the S3 container),
+or pick up whatever Control-plane certification work is pending.
+
+Certified: 15/300 (unchanged). Provisional: 1 (FTF-R017, PR to be opened,
+CI to be confirmed). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-R011 CERTIFIED (PR #72 independently verified)
 Continuation of this same scheduled CERTIFY-mode session, after certifying

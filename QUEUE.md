@@ -1,10 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-R011 CERTIFIED)
+Updated: 2026-09-17 by relay (FTF-R017 implemented, Provisional)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 15/300 · Provisional: 0 · Blocked: 1 (FTF-0102, new-runtime-dep
-owner ask, see below)
+Certified: 15/300 · Provisional: 1 (FTF-R017, PR to be opened) · Blocked: 1
+(FTF-0102, new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014 and FTF-R015 all have no
@@ -100,7 +100,12 @@ without counting toward product-true).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty)
+- FTF-R017 — Qualify maintained internal storage and OSS dependency
+  lifecycle. Implementation commit `b76235989aca9b73bbefb9502435c8c25f9564ad`,
+  hash-fixup commit follows. proof_state=L1-PROVEN, certification_state=
+  PROVISIONAL. Not self-certified — awaiting Control plane L2 review per
+  Law 4. PR to be opened against `main`. Full entry:
+  docs/certifications/queue.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
