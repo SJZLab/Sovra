@@ -1,5 +1,5 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-1810 implemented, PR to be opened, awaiting CI + L2 certification)
+Updated: 2026-09-17 by relay (FTF-1810 PR #63 merged to main, PROVISIONAL, awaiting Control plane L2)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -83,10 +83,12 @@ product-true).
   both BLOCKED_EXTERNAL — no `07-container-build.yml` yet, Section 64.3
   onboarding gate not run; every one of the 43 required scenarios missing
   evidence, since no product exists yet). See
-  `docs/certifications/queue.md` for the full entry. PR to be opened
-  against `main`; will merge on green per CLAUDE.md's "Do without asking:
-  merge on green + L1 doc (PROVISIONAL)", then await independent Control
-  plane L2 certification (Law 4 — not self-certified).
+  `docs/certifications/queue.md` for the full entry. Merged to `main` via
+  PR #63 (merge commit `84b71cfc254ea1ff90441a11692f6d77260d7eb7`) —
+  real `gate` + `docker-local-stack-integration` CI confirmed `success` on
+  the PR's actual head (`e4ac93b`), `mergeable_state: clean`, no open
+  reviews/comments. Still PROVISIONAL — awaiting independent Control plane
+  L2 certification (Law 4 — not self-certified).
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
