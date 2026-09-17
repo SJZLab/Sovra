@@ -101,24 +101,26 @@ service imports it either).
 - FTF-R015 — Enforce isolated concurrent coding execution and independent
   integration. PR #70, merged to `main` as PROVISIONAL (merge commit
   `c055226b506df964fca67b5d3ca7b6e39d329a6c`). Control plane reviewed
-  2026-09-17 — **NOT CERTIFIED yet**: the module's isolation/permission/
-  budget/CI-containment/merge-gate machinery is real and independently
-  reproduced (own fault injection distinct from the producer's caught a
-  real regression, CI green on the real head, session-ID clean), but its
-  own resolved acceptance clause 1 names "leases, **commits**, tests" as
-  evidence to record, and "commits" has no corresponding code, test, or
-  scope-disclosure anywhere in this PR — `ExecutionResult`/`Claim`/
-  `CompletedClaim` carry no commit field, and `executor_adapter.py`'s
-  `git`-prefix allowlist entry is never exercised. Fix needed before
-  resubmitting: either capture the real commit SHA a task's executed
-  command produces (with a test that runs a real `git commit` through
-  `execute_task`/a wave and asserts it's captured), or explicitly disclose
-  in `docs/spec-matrix.yaml`'s FTF-R015 notes and the queue entry that
-  commit-producing tasks are out of this task's scope, the same way the
-  separate-host-session limitation is already disclosed. Full finding:
-  docs/certifications/queue.md ("Control plane review — 2026-09-17 — NOT
-  CERTIFIED"). `certification_state` stays `PROVISIONAL` (not downgraded
-  further).
+  2026-09-17 — NOT CERTIFIED first pass: the module's isolation/
+  permission/budget/CI-containment/merge-gate machinery was real and
+  independently reproduced, but its own resolved acceptance clause 1
+  names "leases, **commits**, tests" as evidence to record, and "commits"
+  had no corresponding code, test, or scope-disclosure anywhere in the
+  PR. Fixed same day on PR #71 (commit
+  `519bba0ecbabcf36276df1dda3265673a7c2b702`): `execute_task` now reads
+  the real `git rev-parse HEAD` of a task's workspace after its command
+  runs and records it as `ExecutionResult.commit_sha` (`None` when the
+  command never touches git); a new test proves a real `git commit` is
+  captured and cross-checked against an independently read HEAD, the
+  no-git case genuinely returns `None`, and the SHA propagates through a
+  full wave (32 -> 36 checks; shown able to fail via fault injection,
+  restored byte-identical). Full finding and fix: docs/certifications/
+  queue.md ("Control plane review — 2026-09-17 — NOT CERTIFIED" and the
+  "Fix for missing commit evidence (re-submitted)" entry right after it).
+  `certification_state` stays `PROVISIONAL` — this fix was produced by
+  the same session that wrote the review, so it cannot certify itself;
+  awaiting a fresh Control-plane session with no session-ID overlap with
+  `session_01Wn6FwbAzgvmKf9AcqXKLbQ` per Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

@@ -2029,3 +2029,52 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   rework.
 - **Validated-by:** session https://claude.ai/code/session_01Wn6FwbAzgvmKf9AcqXKLbQ
   (independent — see session-ID check above), 2026-09-17.
+
+## 2026-09-17 — FTF-R015 — Fix for missing commit evidence (re-submitted)
+- **Commit:** `519bba0ecbabcf36276df1dda3265673a7c2b702` (implementation),
+  on branch `claude/sleepy-pasteur-c8ihmb` (PR #71 — the same PR that
+  carries the NOT CERTIFIED review above; produced by
+  `session_01Wn6FwbAzgvmKf9AcqXKLbQ`, the same session that wrote that
+  review, at the live user's explicit direction to implement option (a)
+  from it — this is the fix, not a self-certification of the original
+  PR #70).
+- **Fixes exactly what the review above found:** `execute_task`
+  (`tools/implementation/executor_adapter.py`) now reads the real `git
+  rev-parse HEAD` of a task's isolated workspace after its command runs
+  and records it as `ExecutionResult.commit_sha`. A task whose command
+  never touches git gets `None`, never a fabricated hash. No other part
+  of FTF-R015 changed, per the review's own scoping.
+- **Test:** `tests/implementation/test_safe_parallel_executor.py` gained
+  `test_real_commit_is_captured_and_propagates_through_a_wave` (32 -> 36
+  checks): a task's command runs a real `git init`/config/`commit
+  --allow-empty` sequence; the resulting `commit_sha` is cross-checked
+  against an independently run `git rev-parse HEAD` against the same
+  workspace (not read back from the module's own claim); a
+  marker-only/no-git task is proven to get `None`; and the same real SHA
+  is shown to propagate through a full `TaskOrchestrator.run_wave`'s
+  `execution_results`, not just direct `executor_adapter` use.
+- **Evidence — shown able to fail (Law 1), reproducing the certifier's
+  exact finding:** temporarily hardcoded `commit_sha=None` in
+  `execute_task`, re-ran the suite — exactly the 3 new checks failed for
+  real (`a real git commit... is captured as commit_sha`, `the captured
+  commit_sha matches an independently read git HEAD...`, `the real commit
+  SHA propagates through a full wave's execution_results...`), the other
+  33 stayed green; restored the file byte-identical (`diff` confirmed
+  empty), re-ran clean (36/36).
+- **Regression check:** `uv run ruff check .`/`format --check .`/`mypy .`
+  clean; `pnpm run lint`/`typecheck`/`format:check` and `pnpm exec vitest
+  run` (2 passed) clean; the full 13-task existing regression set
+  (`test_ftf_0001_monorepo_layout.py` through
+  `test_r1_execution_binding.py`) passes unmodified; `uv run pytest
+  tests/unit` (3 passed). `validate_spec.py --strict` clean; `verify_task.py
+  --task FTF-R015 --stage task` → `PASS` against evidence commit
+  `519bba0ecbabcf36276df1dda3265673a7c2b702`; `verify_release.py` correctly
+  non-inflated (`13/300`, `FAILED (1): ['FTF-R015']`, `NOT READY`);
+  `product_truth_check.py --fail-on-unwired` stays `0/0` (unchanged
+  rationale — build/implementation tooling, no live product-runtime
+  caller).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL
+  (unchanged). Not self-certified — this is the same producer session as
+  the reviewing session for PR #70's original submission, so it cannot
+  certify its own fix; awaiting a fresh Control-plane session with no
+  session-ID overlap with `session_01Wn6FwbAzgvmKf9AcqXKLbQ` per Law 4.
