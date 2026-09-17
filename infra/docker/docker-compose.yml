@@ -62,7 +62,25 @@ services:
     # 65.2) instead of SeaweedFS's own unconfigured default of accepting
     # any access key -- see seaweedfs-s3-identity.json for the real
     # credential and the negative-acceptance test it backs.
-    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3-identity.json
+    # -master.volumeSizeLimitMB=64: the CI run of tests/integration/
+    # test_storage_semantics.py failed for real with SeaweedFS's own
+    # "no free volumes left"/"Not enough data nodes found" errors, read
+    # directly from `docker compose logs s3` -- confirmed by tracing this
+    # container's real boot log, not assumed. Cause: SeaweedFS's default
+    # (30000MB) volume-size assumption makes its master auto-compute a
+    # very low max-volume ceiling for the GitHub Actions runner's actual
+    # free disk space, and each unique bucket this test creates is its own
+    # SeaweedFS "collection", which eagerly grows up to 7 volumes on first
+    # write -- the runner ran out of computed volume headroom after only
+    # 2 of this test's ~11 unique buckets. 64MB comfortably holds every
+    # object/part this test suite writes (its largest is a 5MB multipart
+    # part) while letting the master's own capacity math fit far more
+    # volumes in the same real disk space. -master.volumePreallocate is
+    # left at its own default (false) -- unrelated to this fix, and
+    # changing it would risk masking a real future capacity regression.
+    command: server -dir=/data -s3 -s3.port=8333
+      -s3.config=/etc/seaweedfs/s3-identity.json
+      -master.volumeSizeLimitMB=64
     ports:
       - "8333:8333"
     volumes:
