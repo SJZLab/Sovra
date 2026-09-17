@@ -1500,3 +1500,110 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   else, and (c) the disclosed GPU-quota and no-live-subagent-harness
   limitations match this task's own negative_acceptance rather than
   quietly narrowing its scope.
+
+## 2026-09-17 — FTF-1810 — ReleaseQualificationWorkflow
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-g3s0o0`.
+- **Commit:** e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a (implementation),
+  1a98057 (hash-fixup — same two-commit pattern as FTF-0006/FTF-H001/
+  FTF-R001/FTF-H002/FTF-H028/FTF-H034).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-1810 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-H001, FTF-H028 both `CERTIFIED` — unblocked (FTF-R011,
+  FTF-R017, and FTF-R014 also became dependency-ready this shift once
+  FTF-H034 certified, per `docs/spec-matrix.yaml`'s own `notes: deps=`
+  field; FTF-1810 was picked as the prior shift's own flagged next
+  candidate and because its scope is bounded tooling, not a new
+  runtime dependency).
+- **Scope finding before implementation:** the task's acceptance clause
+  ("run the authoritative Q01-Q43 aggregator on exact release; bind result
+  to current scope/hash/image/profile") does not require this shift to
+  actually execute the 43 qualification scenarios (Section 54's full E2E
+  program) — no product exists yet to run them against. It requires
+  building the real, fail-closed binder/aggregator tooling itself, matching
+  this repo's established resource_gate precedent (FTF-H002/FTF-H028): a
+  real check that honestly reports BLOCKED_EXTERNAL/FAIL against today's
+  actual repo state is the correct evidence, not a fabricated PASS.
+- **Delivered:**
+  `docs/operations/releasequalificationworkflow.py` — `ReleaseBinding`
+  (scope_digest = sha256 of the real `spec/release-scope.yaml`, commit_sha
+  = real `git rev-parse HEAD`, image_digest/deployment_profile = `None`
+  when that real input doesn't exist yet, never a placeholder string).
+  `evaluate_scenario_evidence` checks one scenario's evidence against a
+  per-release ledger (`spec/qualification-evidence.json` — absent/empty
+  today) and fails closed on, in order: missing, skipped, incomplete
+  (missing `evidence_id`/`commit`/`exit_code`), stale (commit mismatch),
+  nonzero `exit_code`, unsigned (no signature), a present signature with no
+  configured verifier (`BLOCKED_EXTERNAL` — never a fabricated PASS from
+  presence alone, same discipline as FTF-H028's
+  `check_release_manifest_signature`), and tampered (verifier rejects the
+  signature) — only a genuinely verified, exact-revision-bound, signed
+  entry reaches `PASS`. `run_release_qualification_workflow` additionally
+  gates the whole run on a real image digest and a real resolved
+  deployment profile, both `BLOCKED_EXTERNAL` when absent. Reuses
+  `scripts/release_evidence_gate.py`'s `GateResult`/`GateStatus`
+  (including its `BLOCKED_EXTERNAL` requires-owner/next_action
+  anti-fabrication guardrail) rather than reimplementing it.
+  `tests/tasks/test_ftf_1810.py` (16 checks).
+- **Evidence — shown able to fail (Law 1):**
+  1. Every named rejection reason (missing/skipped/incomplete/stale/
+     nonzero-exit/unsigned/tampered) is proven via a real fixture, plus the
+     present-signature-no-verifier `BLOCKED_EXTERNAL` branch and the
+     genuinely-valid-evidence `PASS` branch.
+  2. Missing image digest / unresolved deployment profile each produce
+     their own real `BLOCKED_EXTERNAL` result, not a silent skip.
+  3. `overall_status` is proven to stay non-`PASS` while any required
+     scenario is missing, and to reach `PASS` only once every required
+     scenario in a 2-item fixture set is genuinely verified.
+  4. **Not fabricated, proven against the real repo:** `current_commit_sha()`
+     returns the real 40-character HEAD SHA; `load_required_scenarios()`
+     reads the real, shipped `spec/qualification-inventory.json` (43
+     required scenarios, confirmed by count, not assumed); running the real
+     aggregator against the real repo with no evidence ledger populated
+     reports `overall_status != PASS` and every one of the 43 real
+     scenarios `missing` — the honest state today.
+  5. **Real fault injection against the tracked module, committed in the
+     test:** removed the `skipped`-check block — the real skipped-scenario
+     fixture wrongly passed; restored byte-identical (`diff` confirmed
+     empty via direct read-back), re-ran clean.
+  6. **A second, independent fault injection performed ad hoc this shift
+     (not committed, per Law 1's "shown able to fail" — reproduced here for
+     the record):** removed the `stale`-commit check block entirely (distinct
+     from the committed injection, which targets `skipped`) — exactly 1 test
+     failed for real (`a scenario evidence entry bound to a different commit
+     than the release is FAIL (stale)`); restored byte-identical from a
+     pre-edit `/tmp` copy, `diff` confirmed empty, re-ran clean (16/16 pass).
+- **Regression check:** `uv run ruff check .` / `ruff format --check .` /
+  `mypy .` clean; `pnpm run lint`/`format:check`/`typecheck` clean (after
+  `pnpm install --frozen-lockfile` — fresh container, no `node_modules`,
+  same environment note as every prior shift); all 12 existing task
+  negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py` through
+  `test_ftf_h034.py`, now joined by `test_ftf_1810.py`) pass — no
+  already-certified task's own implementation file was touched beyond the
+  disclosed, additive `docs/spec-matrix.yaml`/`spec/verification-map.json`
+  entries for FTF-1810 itself, avoiding any Law 15 requalification
+  question; `uv run pytest tests/unit` (3 passed) and `pnpm exec vitest run`
+  (2 passed) clean, 0 skipped either side. `validate_spec.py --strict`
+  clean; `verify_task.py --task FTF-1810 --stage task` → `PASS` against
+  evidence commit `e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a`.
+  `verify_release.py` correctly non-inflated: `11/300`/`FAILED (1):
+  ['FTF-1810']`/`NOT READY` (FTF-1810 is PROVISIONAL, not yet CERTIFIED).
+  `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (release-qualification aggregator
+  tooling itself, no live product-runtime caller, same rationale as every
+  prior FTF-H00X/FTF-R00X task).
+- **CI:** wired `python3 tests/tasks/test_ftf_1810.py` into `.github/
+  workflows/ci.yml`'s `gate` job, right after the FTF-H034 step, and the
+  real `docs/operations/releasequalificationworkflow.py` itself (plus its
+  own negative-test-proof step) into `.github/workflows/
+  10-release-qualification.yml` — the same Tier 3, `workflow_dispatch`-only
+  protected aggregator FTF-H028's `release_evidence_gate.py` step already
+  runs in, never triggered by an ordinary PR and never dispatched by the
+  relay. YAML-validated (`yaml.safe_load`). Real run status to be confirmed
+  on the opened PR before merge. Note for Control plane: running this new
+  step on the real aggregator workflow will genuinely fail today (every
+  scenario missing, image/profile `BLOCKED_EXTERNAL`) — this is the correct,
+  honest behavior for a Tier-3 release-only aggregator with no qualified
+  product yet, not a defect to fix before certifying FTF-1810's own L1
+  evidence.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
