@@ -2211,3 +2211,80 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   on the opened PR before merge.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-17 — FTF-R017 — Qualify maintained internal storage and OSS
+  dependency lifecycle (relay submission, PR #75)
+- **PR:** https://github.com/SJZLab/Sovra/pull/75
+  (`claude/wizardly-fermat-ci7leb` → `main`). Note: this PROVISIONAL claim
+  exists only inside PR #75's own branch (`docs/certifications/queue.md`
+  entry, `docs/spec-matrix.yaml` state) — `main`'s own copies do not yet
+  carry an FTF-R017 entry, same as the FTF-0004 precedent
+  (2026-09-16, "not in a certifiable state").
+
+### Control plane review — 2026-09-17 — NOT CERTIFIED (real CI failure on this PR's own new job)
+- **Session-ID check:** all 4 PR commits (`b762359`, `6fd7801`, `9d7bf82`,
+  `42cae14`) carry `Claude-Session: .../session_016bZ7g5DPgSU8eYMTo8H5NY`;
+  this reviewing session's own ID
+  (`https://claude.ai/code/session_01EF89AyieNmjbMTcNSvVkNo`) does not
+  match — independent, not self-certification.
+- **CI checked for real, not self-reported:** `pull_request_read
+  get_check_runs` on the actual PR head. First head (`9d7bf82`, run
+  35238767213): `storage-semantics-integration` — `completed`/`failure`
+  (`gate` and `docker-local-stack-integration` still in progress at that
+  point). The PR then advanced to a new head (`42cae14`, a QUEUE.md-only
+  bookkeeping commit that touches no test/implementation code) which
+  triggered a fresh run (35238865287); `storage-semantics-integration`
+  failed again on this head too — same job, different (real) transient
+  error text, same root cause. Not a stale/self-reported claim: both
+  failures were read directly from `get_job_logs`.
+- **Failure, reproduced twice, not a flake:** `tests/integration/
+  test_storage_semantics.py`'s `main()` (lines ~1973-1983) calls
+  `_wait_for_tcp(endpoint.host, endpoint.port, timeout_seconds=3.0)`,
+  and on timeout runs `docker compose up -d s3` followed by
+  `_wait_for_tcp(..., timeout_seconds=90.0)` before immediately running
+  every `test_*` function against the live client. `_wait_for_tcp` only
+  proves the TCP port is accepting connections — it does not prove the
+  SeaweedFS S3 HTTP/API layer is actually ready to complete a full
+  request/response cycle. Run 35238767213 (head `9d7bf82`): all 9 tests
+  failed within ~0.3s of the port becoming reachable with
+  `RemoteDisconnected('Remote end closed connection without response')`.
+  Run 35238865287 (head `42cae14`, ~1 minute later): all 9 tests failed
+  again, this time with `ConnectionResetError(104, 'Connection reset by
+  peer')` — a different low-level symptom of the identical race (TCP
+  accepting before the HTTP server behind it is actually serving), not a
+  different bug and not infra flake (two independent runs, same shape,
+  same 9/9 failure count, both within a few seconds of the container
+  starting).
+- **This is exactly the bug class this repo already has certified
+  precedent for and should not have regressed on:** FTF-0004's own
+  `docker_local_stack.py`/`verify_docker_local_stack.py` (CERTIFIED
+  2026-09-16) deliberately polls the real `/health` HTTP endpoint — not
+  bare TCP — for exactly this reason, and that task's own CI-failure/fix
+  cycle (see the "Real CI failure found and fixed on the merge commit"
+  entry above) already discovered and fixed an equivalent readiness gap
+  once. `test_storage_semantics.py` reintroduces the weaker TCP-only
+  check for a new integration path instead of reusing that lesson.
+- **Conclusion — per CERTIFY step 3 ("re-check CI actually ran and passed
+  on the real merged commit — not a stale or self-reported claim"):** CI
+  has not passed on this PR's real head — the PR's own new
+  `storage-semantics-integration` job fails for real, reproducibly, on
+  every head pushed so far. Not merging, not certifying. Not evaluating
+  the SigV4 client, the component-maintenance ledger, or the negative-
+  acceptance test suite's content further — a content-level review would
+  be premature while the PR's own required integration evidence doesn't
+  exist yet. `certification_state` stays `PROVISIONAL` (not downgraded
+  further — the non-Docker-dependent `tests/tasks/test_ftf_r017.py`
+  evidence and the license/component-maintenance work are unaffected by
+  this finding; this is a scoped fix, not a redo).
+  **Fix needed:** replace (or precede) `_wait_for_tcp` with a real
+  HTTP-level readiness probe — e.g. retry a cheap, real S3 API call
+  (such as a `ListBuckets`/bucket-existence check via the already-built
+  `S3Client`) in a bounded loop until it succeeds or times out — the same
+  pattern `docker_local_stack.py`'s `/health` polling already
+  establishes, rather than trusting TCP acceptance alone. Push the fix to
+  this same PR #75 branch (`claude/wizardly-fermat-ci7leb`) and let
+  `storage-semantics-integration` actually go green before resubmitting;
+  do not open a duplicate PR.
+- **Validated-by:** session
+  https://claude.ai/code/session_01EF89AyieNmjbMTcNSvVkNo (independent —
+  see session-ID check above), 2026-09-17.

@@ -1,5 +1,6 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-R011 CERTIFIED)
+Updated: 2026-09-17 by Control plane (FTF-R017 / PR #75 reviewed, NOT
+  CERTIFIED — real CI failure on the PR's own new job, see below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -96,7 +97,29 @@ without counting toward product-true).
   (a PR comment would do it), or by Control plane's independent judgment
   — is still open. See PR #67 for the full claim.
 ## Active (relay works this)
-(empty — FTF-0101/FTF-0102 remain blocked, see "Owner actions" and
+FTF-R017 (Qualify maintained internal storage and OSS dependency
+lifecycle) has implementation work already pushed to
+`claude/wizardly-fermat-ci7leb` (PR #75), but per Control plane's
+2026-09-17 review (`docs/certifications/queue.md`, "Control plane review
+— 2026-09-17 — NOT CERTIFIED (real CI failure on this PR's own new
+job)") the PR's new `storage-semantics-integration` CI job fails for
+real, reproducibly, on every head pushed so far (`9d7bf82` and
+`42cae14`) — `tests/integration/test_storage_semantics.py`'s `main()`
+only waits for the S3 fixture's TCP port to accept connections
+(`_wait_for_tcp`) before immediately hitting it with real S3 API calls;
+SeaweedFS's TCP listener opens before its S3 HTTP layer is actually
+ready to serve, so every one of the 9 storage-semantics tests fails
+within ~1s of `docker compose up -d s3` returning (seen twice, two
+different low-level symptoms —`RemoteDisconnected` then
+`ConnectionResetError` — same race, not a flake). This is the same bug
+class FTF-0004's own `/health`-polling readiness check already exists to
+avoid. Next relay shift on FTF-R017: replace/precede `_wait_for_tcp`
+with a real HTTP-level readiness probe (retry a real S3 API call, e.g.
+bucket-existence/list, in a bounded loop) the same way
+`docker_local_stack.py` polls `/health`, push to the existing branch/PR
+#75, let `storage-semantics-integration` actually go green, then
+resubmit for certification. Do not open a new/duplicate PR for this.
+(FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
