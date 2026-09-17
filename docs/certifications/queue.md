@@ -936,6 +936,146 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   opened against `main` this same shift; not merging without confirming CI
   green first.
 
+## 2026-09-17 — FTF-H002 — Freeze release scope, compatibility and measured execution inputs
+- **Branch:** `claude/wizardly-fermat-brui19` → `main` (PR to be opened this shift).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-H002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies `FTF-H001`, `FTF-0005` both CERTIFIED — unblocked (found via a
+  direct `docs/spec-matrix.yaml` dependency sweep, same method the FTF-R001
+  shift used, since QUEUE.md's own "Owner actions" block only named the
+  blocked FTF-0101/FTF-0102 pair as the apparent frontier).
+- **Scope finding before implementation:** Section 64.3's onboarding gate asks
+  for real GPU/driver, Kubernetes CNI, LiteLLM gateway, managed-provider
+  (Bedrock) account and coding-provider billing evidence. None of these real
+  external resources exist in this sandbox (no GPU, no Kubernetes cluster, no
+  LiteLLM gateway bound, no validated AWS/Bedrock access, no coding-provider
+  billing API reachable). Section 64.3 itself names the correct response:
+  "Missing inputs use BLOCKED_EXTERNAL with owner and exact next action... The
+  developer can build contracts and isolated unit code while blocked, but
+  cannot mark real integration or full release PASS." Built the real preflight
+  and lock artifacts against that explicit contract rather than writing
+  BLOCKER.md — the DoD was not unclear (the resolved packet is exact), and
+  Section 64.3's own text is the same "build isolated unit code while blocked"
+  precedent FTF-0004 (registry egress) and FTF-0005/0006 (ask-first new
+  runtime deps) already established in this repo.
+- **Delivered:**
+  - `apps/api/app/services/environment_preflight.py` — stdlib-only (no new
+    runtime dependency). `PreflightResult.__post_init__` structurally forbids
+    constructing a `BLOCKED_EXTERNAL` result with an empty `owner`/
+    `next_action` — the anti-fabrication guardrail Section 64.3 requires ("do
+    not populate fabricated model IDs, URLs, credentials or prices").
+    Real, non-canned checks: `check_python_runtime` (real interpreter
+    version), `check_git_cli`/`check_kubernetes_cni` (real `shutil.which` +
+    subprocess version call, never a hardcoded verdict), `check_gpu_driver`
+    (real `/proc/driver/nvidia/version` filesystem check), `check_litellm_gateway`
+    (reuses FTF-0004's `check_tcp_reachable`/`ServiceEndpoint` for a real TCP
+    probe against whatever `SOVRA_LITELLM_GATEWAY_URL` names, deliberately
+    independent of FTF-0005's full `Settings.from_env()` per this task's own
+    negative_acceptance: "implement preflight independently of final
+    qualification to avoid a dependency cycle"), `check_managed_provider_bedrock`
+    (real AWS credential env-var presence check that still never reports
+    AVAILABLE from presence alone — validated account/model access needs the
+    AWS SDK, an unapproved new runtime dependency, so it stays BLOCKED_EXTERNAL
+    either way), `check_coding_provider_billing` (always BLOCKED_EXTERNAL —
+    no billing/usage API is reachable from this session).
+  - `scripts/release_scope_lock.py` + generated `spec/release-scope.yaml` —
+    Section 64.2's CAP-01..CAP-21 inventory. Never hand-authored: generated
+    from `spec/qualification-inventory.json` (the single source of truth
+    FTF-H001's bootstrap already froze), adding the `owner`/
+    `supported_version_profile` columns Section 64.2 also requires.
+    `validate_release_scope` is the whole-set business rule no YAML schema
+    keyword alone expresses: exactly the 21 canonical CAP IDs, each
+    `required: true` (never downgradable), each with its
+    `implementation_tasks`/`qualification_scenarios` matching the frozen
+    inventory exactly — rejecting a quietly cut required scope (this task's
+    own negative_acceptance).
+  - `scripts/generate_compatibility_lock.py` + generated
+    `spec/compatibility-lock.json` — a real, live-regenerated snapshot of
+    `run_preflight()` against this exact sandbox (`overall_status:
+    BLOCKED_EXTERNAL` today — no GPU/Kubernetes/LiteLLM gateway/validated
+    Bedrock access exists here), not a hand-typed or fabricated version table.
+  - `docs/operations/budget-forecast.md` — Section 64.4's real vertical-slice
+    forecast. Reports real, reproducible measurements from this repository's
+    own `git log` (8 certified tasks to date; commit count/elapsed span
+    reproducible on demand rather than pinned to a number that goes stale).
+    Explicitly discloses the coding-provider billing gap as
+    `BLOCKED_EXTERNAL` with a real owner/next action, and invents no
+    per-token/per-hour/per-task dollar rate anywhere in the document (this
+    task's own negative_acceptance: "Do not invent a model ID/rate").
+  - Not delivered (disclosed, not hidden): real validated Bedrock
+    account/model access (needs the AWS SDK — an ask-first new runtime
+    dependency), a real bound LiteLLM gateway, Kubernetes cluster, GPU worker,
+    or coding-provider billing export. Each is recorded as a required
+    `next_action` with a real `owner` in the preflight's own output, not
+    silently assumed away — same disclosed-scope-limitation pattern as
+    FTF-0004's `web` exclusion and FTF-R001's `ExternalRunBinding` deferral.
+- **Test:** `tests/tasks/test_ftf_h002.py` — 15 check functions.
+- **Evidence — shown able to fail (Law 1):**
+  1. `PreflightResult`'s owner/next_action guard is proven directly (a
+     `None` or blank owner raises `ValueError`; a well-formed result
+     constructs).
+  2. Every check's real/positive branch is proven with a genuine probe, not
+     a mock: `check_git_cli`/`check_kubernetes_cni` against a real empty-PATH
+     temp directory (negative) and a real, genuinely-executable fake
+     `kubectl` script on a real temp PATH entry that actually runs and whose
+     real stdout is parsed (positive); `check_litellm_gateway` against a real
+     bound-and-listening local socket (AVAILABLE) and that same socket after
+     it is closed (BLOCKED_EXTERNAL, proving "stale LiteLLM routes... are
+     explicit external blockers"); `check_gpu_driver` against this sandbox's
+     real absence of `/proc/driver/nvidia/version`.
+  3. `check_managed_provider_bedrock` proven to stay BLOCKED_EXTERNAL both
+     with no AWS credential env var and with one present but unvalidated —
+     two distinct detail messages, proving it never claims AVAILABLE from
+     credential presence alone (this task's acceptance clause: "unavailable
+     managed capabilities... are explicit external blockers").
+  4. `release_scope_lock.validate_release_scope` proven to reject a removed
+     CAP ID, a downgraded `required: false`, and a cut
+     `implementation_tasks` set — and the real committed
+     `spec/release-scope.yaml` passes it with zero errors.
+  5. The committed `spec/compatibility-lock.json` proven not stale: its
+     `overall_status` is asserted equal to a live re-run of `run_preflight()`
+     against this exact checkout.
+  6. `docs/operations/budget-forecast.md` proven to disclose
+     `BLOCKED_EXTERNAL` and to contain no fabricated `$<number>/hour|token|task`
+     pattern.
+  7. **Real fault injection against the tracked module itself (not a
+     fixture):** temporarily removed the `owner`/`next_action` guard block
+     from `apps/api/app/services/environment_preflight.py`, then ran a
+     genuinely fresh subprocess (a new Python interpreter, so the edited file
+     is actually re-imported rather than reusing this test process's
+     already-loaded class) attempting the same fabricated construction that
+     the guard rejects — the guard-disabled subprocess let it through for
+     real (`CONSTRUCTED_WITHOUT_RAISING`), confirming the guard is
+     load-bearing, not decorative; restored byte-identical
+     (`module_path.read_text() == original` asserted directly), re-ran clean.
+- **Regression check:** `uv run ruff check .` / `ruff format --check .` /
+  `mypy .` clean; `pnpm run lint` / `format:check` / `typecheck` clean; all 9
+  existing task negative-test-proof scripts
+  (`test_ftf_0001_monorepo_layout.py` through `test_ftf_r001.py`) still pass
+  unmodified (ran `pnpm install --frozen-lockfile` first — this fresh
+  container had no `node_modules`, unrelated to this change, same
+  environment note as every prior shift); `uv run pytest tests/unit` (3
+  passed) and `pnpm exec vitest run` (2 passed) both clean, 0 skipped either
+  side; `product_truth_check.py --fail-on-unwired` stays `0/0 product-true`
+  — legitimate, `proving_symbol` deliberately empty (this is a preflight/
+  release-scope-freeze layer, not a live product-runtime path wired to a
+  UI/API caller yet, same rationale as FTF-0002/0003/H001/R001). No
+  already-certified task's own implementation file was touched — only
+  additive modules/scripts/docs, avoiding any Law 15 requalification
+  question for FTF-0001–0006/H001/R001's existing certified evidence.
+  `python3 scripts/release_scope_lock.py` and
+  `python3 scripts/generate_compatibility_lock.py` both re-run clean against
+  the real committed artifacts.
+- **CI:** wired `python3 scripts/release_scope_lock.py` and `python3
+  tests/tasks/test_ftf_h002.py` into the existing `gate` job in
+  `.github/workflows/ci.yml`, right after FTF-R001's step; YAML-validated
+  (`yaml.safe_load`). Real run status to be confirmed on the opened PR before
+  merge.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4. PR to be
+  opened against `main` this same shift; not merging without confirming CI
+  green first.
+
 ## 2026-09-16 — Control plane certification review — FTF-H002 (PR #49) — NOT CERTIFIED
 - **Session-ID independence check:** this reviewing session is
   `session_01BNcWR4me2X2YrMtsW6uqfV`. Every commit on PR #49
@@ -1012,3 +1152,62 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   unchanged. No ledger.md entry (nothing certified).
 - **Validated-by:** session https://claude.ai/code/session_01BNcWR4me2X2YrMtsW6uqfV
   (independent — see session-ID check above), 2026-09-16.
+
+## 2026-09-17 — FTF-H002 — CI fix confirmed, resubmitted for certification (superseding PR)
+- **What changed since the NOT CERTIFIED review above:** a same-day
+  follow-up commit on `claude/wizardly-fermat-brui19` (`419f9cc`, authored
+  by the same producer session `session_01KcK5jpotjXCpjrQj8qMPVp` that
+  opened PR #49 — a test fix, not a self-certification, so Law 4 is not
+  implicated) rewrote
+  `test_kubernetes_cni_check_reflects_real_path_state`'s first assertion
+  to construct the negative branch explicitly via a real empty-PATH temp
+  directory, exactly the pattern the review above named as the fix and
+  the pattern `check_git_cli`'s negative branch and this same test's own
+  positive branch already used. No other file changed in that commit.
+- **This shift's independent re-check (session
+  https://claude.ai/code/session_01BNQGXo9Q8t1PFdEmxQZXHF):** read the
+  `419f9cc` diff directly (15 insertions, 3 deletions, one function
+  body); confirmed via GitHub Actions run
+  https://github.com/SJZLab/Sovra/actions/runs/35160854110 (queried live,
+  not self-reported) that both the `gate` job (run
+  105011005319) and `docker-local-stack-integration` job (run
+  105011005022) completed with `conclusion: success` on head `419f9cc`
+  — the exact commit this queue entry is bound to. No other change to
+  the implementation, task contract, or any already-certified task's
+  files since the NOT CERTIFIED review above (`git diff
+  3d235b4..419f9cc` touches only the one test file).
+- **Why this lands as a new PR instead of merging PR #49 directly:**
+  attempting the merge (`gh`/GitHub merge API against PR #49) returned a
+  real conflict — `main`'s tip had moved past PR #49's base to include
+  the NOT CERTIFIED review commit itself (`81ebb41`, merged via PR #50),
+  which edited the same two bookkeeping files (`QUEUE.md`,
+  `docs/certifications/queue.md`) that PR #49's own bookkeeping commit
+  (`3f5e618`) also touched — confirmed with a real trial merge
+  (`git merge --no-commit --no-ff`), not assumed. Separately, this
+  session's own git-branch policy requires developing only on
+  `claude/wizardly-fermat-w4h9ys` and forbids pushing to any other
+  branch, so pushing a conflict-resolution commit onto
+  `claude/wizardly-fermat-brui19` itself was not available either way.
+  Resolution: merged `main` into a local copy of `419f9cc` on
+  `claude/wizardly-fermat-w4h9ys`, resolving both conflicts by keeping
+  both sides' content (this file: kept both log entries in chronological
+  order, as above; `QUEUE.md`: kept the current true state). Every other
+  file in the merge was a clean fast-forward — byte-identical to
+  `419f9cc`'s own tree, confirmed via `git diff` against the pre-merge
+  tree touching only `QUEUE.md` and this file. Re-ran the full existing
+  regression set against the merged tree before opening the new PR:
+  `ruff check`/`format --check`/`mypy` clean; `pnpm run
+  lint`/`format:check`/`typecheck` clean; all 9 task
+  negative-test-proof scripts including `test_ftf_h002.py` (15 checks)
+  pass; `pytest tests/unit` (3 passed) and `vitest run` (2 passed) clean;
+  `product_truth_check.py --fail-on-unwired` stays `0/0` (unchanged,
+  `proving_symbol` still deliberately empty); `validate_spec.py --strict`
+  and `verify_task.py --task FTF-H002 --stage task` both pass.
+- **Disposition of PR #49:** closed as superseded by the new PR — same
+  commits' code (byte-identical), same CI-green evidence, same task; the
+  new PR exists only because of the merge conflict and this session's
+  branch constraint, not because of any change to the delivered work.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL
+  (unchanged). Not self-certified — this is a resubmission for
+  independent Control plane L2 review per Law 4, not a certification by
+  this session.

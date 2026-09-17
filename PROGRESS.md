@@ -1,5 +1,216 @@
 # PROGRESS — Sovra
-Updated: 2026-09-16T21:10:00Z
+Updated: 2026-09-17T01:05:00Z
+
+## 2026-09-17 — FTF-H002 CI fix confirmed green, resubmitted via superseding PR
+Autonomous relay shift (scheduled firing, no live user present).
+STEP 0: `sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no
+drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md. QUEUE.md
+Active named a single concrete next action on FTF-H002: rewrite
+`test_kubernetes_cni_check_reflects_real_path_state`'s unisolated first
+assertion to use a real empty-PATH temp directory (the fix Control
+plane's 2026-09-16 NOT-CERTIFIED review had pinpointed), push to the
+existing branch/PR #49, confirm `gate` goes green, then resubmit for
+certification.
+
+STEP 1/2 (P): fetched `origin/claude/wizardly-fermat-brui19` and found
+the fix already present and pushed — commit `419f9cc`, authored by the
+same producer session that opened PR #49 (`session_01KcK5jpotjXCpjrQj8qMPVp`),
+applying exactly the isolation pattern the review named. No new code
+needed from this shift; verified rather than re-did the work.
+
+STEP 2 (V): queried the real GitHub Actions run on that exact head
+(run 35160854110, not self-reported) — both `gate` and
+`docker-local-stack-integration` completed `success`. Confirmed no
+review requested changes and no other CI signal blocking.
+
+Attempted to merge PR #49 directly (`merge_pull_request`) — GitHub's
+merge API returned a genuine conflict (405, "Pull Request has merge
+conflicts"). Reproduced locally with a real trial merge
+(`git merge --no-commit --no-ff`), confirming it wasn't a stale-check
+false positive: `main`'s tip had picked up PR #50 (the NOT-CERTIFIED
+review commit `81ebb41`), which edited the same two bookkeeping files
+(`QUEUE.md`, `docs/certifications/queue.md`) PR #49's own bookkeeping
+commit (`3f5e618`) touched. Separately, this session's own git-branch
+policy requires developing only on `claude/wizardly-fermat-w4h9ys` and
+forbids pushing to any other branch — so pushing a resolution commit
+onto `claude/wizardly-fermat-brui19` itself was never an option, apart
+from the conflict.
+
+Resolution: merged `origin/main` into a local copy of `419f9cc` on
+`claude/wizardly-fermat-w4h9ys`. Every file besides the two bookkeeping
+docs merged as a clean fast-forward (confirmed via `git diff` against
+`419f9cc`'s own tree — zero difference outside `QUEUE.md` and
+`docs/certifications/queue.md`). Resolved both conflicts by keeping
+both sides' history (this file's chronological log entries; QUEUE.md's
+current true state) rather than dropping either side's record. Re-ran
+the full CI-equivalent regression against the merged tree before
+opening anything: `uv sync`, `pnpm install --frozen-lockfile`,
+`ruff check`/`format --check`/`mypy` clean, `pnpm run
+lint`/`format:check`/`typecheck` clean, all 9 task
+negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py` through
+`test_ftf_r001.py`, `test_ftf_h002.py` now genuinely passing with 15
+checks including the fixed kubectl-isolation assertion), `pytest
+tests/unit` (3 passed) and `vitest run` (2 passed) clean, `check_test_harness.py`
+clean (0 skipped both sides), `validate_spec.py --strict` clean,
+`verify_task.py --task FTF-H002 --stage task` → PASS against evidence
+commit `40b61d2` (same two-commit pattern as FTF-0006/H001/R001 — the
+evidence_hash intentionally still points at the implementation commit,
+not the later hash-fixup/test-fix commits), `product_truth_check.py
+--fail-on-unwired` → `0/0` (legitimate, unchanged), `status.py` →
+`8/300 certified · 0 product-true` (unchanged — no inflation from this
+shift's own bookkeeping).
+
+Opened PR #51 from `claude/wizardly-fermat-w4h9ys` carrying
+byte-identical code to `419f9cc` plus the conflict resolution, and
+closed PR #49 as superseded (comment posted explaining why, same
+commits, same CI-green evidence, same task — the new PR exists only
+because of the merge conflict and this session's branch constraint).
+Updated QUEUE.md (moved FTF-H002 from "Active" to "Provisional" with
+the full resolution history) and appended a resubmission entry to
+`docs/certifications/queue.md` dated 2026-09-17 documenting all of the
+above, for the next independent Control plane L2 review per Law 4. Not
+self-certified.
+
+Subscribed this session to PR #51's activity (`subscribe_pr_activity`)
+rather than blocking on a sleep/poll loop — GitHub Actions was still
+`in_progress` on both jobs (run `35168462460`) at the time this entry
+was written. Per "merge on green + L1 doc (PROVISIONAL)" (CLAUDE.md "Do
+without asking") and this repo's established pattern (producer merges
+its own PR once CI is genuinely green, independent Control plane
+certifies later), this session will merge PR #51 into `main` as soon as
+the real `gate` + `docker-local-stack-integration` check-suite event
+confirms green — not before. If that event has not arrived by the next
+scheduled relay fire, the next shift should check PR #51's real CI
+status directly (`pull_request_read` get_check_runs) before doing
+anything else with FTF-H002, rather than re-deriving this from scratch.
+
+Certified: 8/300 · Provisional: 1 (FTF-H002, PR #51, CI in progress) ·
+Product-true: 0 (unchanged this shift).
+
+## 2026-09-17 — FTF-H002 implemented (Provisional, PR to be opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+`cognee-cli doctor` — command not found, text-search fallback active
+(unchanged from every prior shift).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main` — local
+designated branch (`claude/wizardly-fermat-brui19`) already matched
+`origin/main` exactly at `9cbc1b3` (PR #48's FTF-R001 certification merge).
+`list_pull_requests` state=open returned empty. QUEUE.md Active/Provisional
+both empty, 8/300 certified, Blocked: 1 (FTF-0102, still-open new-runtime-dep
+owner ask, unanswered — left untouched per QUEUE.md's "owner actions live in
+one place" rule).
+
+STEP 1: FTF-0101/FTF-0102 remain blocked (FTF-0102 on the open owner ask;
+FTF-0101 behind FTF-0102). Rather than treating the queue as exhausted, swept
+`docs/spec-matrix.yaml` directly for any task whose real `deps=` are all
+CERTIFIED (same method the FTF-R001 shift used) — found two:
+`FTF-H002` (deps FTF-H001, FTF-0005) and `FTF-H028` (deps FTF-0003, FTF-H001).
+Picked FTF-H002: it matches QUEUE.md's own stated read order ("FTF-H001/H002
+(release-scope freeze) before anything claims DONE") and Section 84.2's own
+first-execution sequence ("Under FTF-H002, inspect available environment
+bindings and report real external prerequisites... Under FTF-R001, freeze
+the component/interface ownership"). Real DoD resolved via
+`tools/r1_handoff.py packet FTF-H002 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+(not improvised).
+
+STEP 2 (PEV):
+- P: read the task packet. Its `files` (`spec/release-scope.yaml`,
+  `spec/compatibility-lock.json`, `apps/api/app/services/environment_preflight.py`,
+  `docs/operations/budget-forecast.md`) and Section 64.2/64.3/64.4 ask for a
+  real environment-discovery gate: GPU/driver, Kubernetes CNI, LiteLLM
+  gateway, managed-provider (Bedrock) account, and coding-provider billing
+  evidence. None of these real external resources exist in this sandbox.
+  Checked Section 64.3 itself before treating this as a blocker: "Missing
+  inputs use BLOCKED_EXTERNAL with owner and exact next action... The
+  developer can build contracts and isolated unit code while blocked, but
+  cannot mark real integration or full release PASS." This is the same
+  documented precedent FTF-0004 (registry egress) and FTF-0005/0006
+  (ask-first new runtime deps) already used in this repo — a resource_gate
+  to work within, not a DoD-clarity gap requiring BLOCKER.md (the resolved
+  packet's contract was exact, not unclear).
+- E: implemented `apps/api/app/services/environment_preflight.py`
+  (stdlib-only; `PreflightResult.__post_init__` structurally forbids a
+  `BLOCKED_EXTERNAL` result with an empty `owner`/`next_action` — the
+  anti-fabrication guardrail; real, non-canned checks for Python/git/GPU
+  driver/Kubernetes CNI (kubectl-presence proxy, disclosed as narrower than
+  full cluster CNI enforcement)/LiteLLM gateway (reuses FTF-0004's
+  `check_tcp_reachable`, deliberately independent of FTF-0005's full
+  `Settings.from_env()` per this task's own negative_acceptance)/managed
+  Bedrock (real AWS credential env-var presence check that still never
+  reports AVAILABLE from presence alone, since validated account/model
+  access needs the unapproved AWS SDK)/coding-provider billing (always
+  BLOCKED_EXTERNAL — no billing API reachable from this session)),
+  `scripts/release_scope_lock.py` + generated `spec/release-scope.yaml`
+  (CAP-01..CAP-21, generated from the frozen `spec/qualification-inventory.json`
+  rather than hand-authored, with a whole-set validator rejecting a
+  removed/downgraded CAP or a cut implementation/qualification scope),
+  `scripts/generate_compatibility_lock.py` + generated
+  `spec/compatibility-lock.json` (a live-regenerated preflight snapshot,
+  `overall_status: BLOCKED_EXTERNAL` today, not a hand-typed table), and
+  `docs/operations/budget-forecast.md` (real `git log`-derived measurements;
+  discloses the coding-provider billing gap as BLOCKED_EXTERNAL and invents
+  no per-token/hour/task dollar rate, per this task's own negative_acceptance).
+  `tests/tasks/test_ftf_h002.py` (15 checks) proves the owner/next_action
+  guard, every check's real positive/negative branch via genuine
+  probes (a real empty-PATH temp dir, a real executable fake `kubectl` on a
+  real temp PATH entry, a real bound-then-closed local socket for the
+  LiteLLM check), that Bedrock never reports AVAILABLE from credential
+  presence alone, that the release-scope validator rejects all three
+  negative_acceptance-style mutations, that the committed compatibility-lock
+  matches a live re-run (not stale), and that the budget-forecast doc
+  discloses the gap without a fabricated rate.
+  Law 1 evidence: temporarily removed the owner/next_action guard block from
+  the tracked `environment_preflight.py`, then ran a genuinely fresh
+  subprocess (new interpreter, so the edited file is actually re-imported)
+  attempting the same fabricated construction — it succeeded for real
+  (`CONSTRUCTED_WITHOUT_RAISING`) where the unmodified guard rejects it;
+  restored byte-identical (`read_text() == original` asserted directly),
+  re-ran clean.
+  Caught and fixed real `ruff` E501 line-length violations (in both the new
+  module and the test file) and real `mypy` `call-overload` errors (untyped
+  `dict[str, object]` values in `release_scope_lock.py` tightened to
+  `dict[str, Any]`, matching `scripts/architecture_lock.py`'s existing
+  pattern) before they reached CI.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no proving_symbol (preflight/release-scope-freeze layer, no
+  live product-runtime caller yet, same rationale as FTF-0002/0003/H001/R001).
+Re-ran the full existing gate after all changes (first `pnpm install
+--frozen-lockfile` — this fresh container had no `node_modules`, unrelated to
+this change, same environment note as every prior shift): `uv run ruff
+check`/`format --check`/`mypy` clean; `pnpm run lint`/`typecheck`/
+`format:check` clean; all 9 existing task negative-test-proof scripts
+(`test_ftf_0001_monorepo_layout.py` through `test_ftf_r001.py`, now joined by
+`test_ftf_h002.py`) still pass unmodified — no already-certified task's own
+implementation file was touched, only additive modules/scripts/docs, avoiding
+any Law 15 requalification question; `uv run pytest tests/unit` (3 passed)
+and `pnpm exec vitest run` (2 passed) both clean, 0 skipped either side.
+Wired `python3 scripts/release_scope_lock.py` and `python3
+tests/tasks/test_ftf_h002.py` into `.github/workflows/ci.yml`'s `gate` job,
+right after FTF-R001's step (YAML-validated with `yaml.safe_load`).
+Did **not** add an FTF-H002 entry to `spec/verification-map.json` in this
+commit — following the same two-commit pattern as FTF-0006/FTF-H001/FTF-R001
+(a commit can't embed its own hash), that entry is added in the hash-fixup
+commit once this implementation commit's real hash is known.
+Updated `docs/spec-matrix.yaml` (FTF-H002: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` left blank pending the hash-fixup commit),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, Provisional 0→1). Certified count unchanged at
+8/300 — PROVISIONAL is not certified. Per Law 4, did not self-certify.
+
+STEP 4: stopping here for this shift's active work — FTF-H002 is fully
+L1-PROVEN and PROVISIONAL, PR to be opened against `main` and this session
+will subscribe to its activity, merging on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not a
+second self-certification, per Law 4. The 2026-09-16 FTF-0102
+new-runtime-dependency owner ask and the 2026-09-15 trigger-tooling ask
+remain open and untouched. Once FTF-H002 certifies, FTF-H028 (deps
+FTF-0003, FTF-H001, also already dependency-ready) or another spec-matrix
+sweep become the next candidates.
+
+Certified: 8/300 (unchanged). Product-true: 0 (unchanged).
 
 ## 2026-09-16 — FTF-R001 (PR #47) — Control plane certification CERTIFIED
 Independent certifier session (session_01MrAN34weU7YzSCe6khm4H4 — does not

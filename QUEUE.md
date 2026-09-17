@@ -1,9 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-16 by Control plane (certification)
+Updated: 2026-09-17 by relay (FTF-H002 CI-fix confirmed green, resubmitted
+via superseding PR)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 8/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
+Certified: 8/300 · Provisional: 1 (FTF-H002) · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001 and FTF-R001 all have no
@@ -64,39 +65,43 @@ so all eight are CERTIFIED without counting toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-FTF-H002 has implementation work already pushed to
-`claude/wizardly-fermat-brui19` (PR #49), but per Control plane's
-2026-09-16 review (docs/certifications/queue.md, "Control plane
-certification review — FTF-H002 (PR #49) — NOT CERTIFIED") the `gate`
-CI job **genuinely failed** on the actual PR head
-(`3d235b4f484ad724b4252bd2aef7088181a14218`,
-run https://github.com/SJZLab/Sovra/actions/runs/35160635403): GitHub-hosted
-`ubuntu-latest` runners ship `kubectl` preinstalled, so
-`check_kubernetes_cni()` genuinely returns `AVAILABLE` on the real
-runner, not `BLOCKED_EXTERNAL` as `tests/tasks/test_ftf_h002.py`'s
-`test_kubernetes_cni_check_reflects_real_path_state` hard-assumes for its
-first (unisolated) assertion — unlike its own positive-branch case a few
-lines below, and unlike `test_git_cli_check_reflects_real_path_state`,
-which correctly isolates *both* branches with a real empty-PATH temp
-directory. The implementation and task contract themselves were
-independently re-verified and hold (own fault injection against
-`check_managed_provider_bedrock` reproduced cleanly; `validate_spec.py
---strict` and `verify_task.py --task FTF-H002 --stage task` both pass;
-`product_truth_check.py` 0/0 confirmed legitimate) — this is a test-
-isolation bug only. Next relay shift on FTF-H002: rewrite that first
-assertion in `test_kubernetes_cni_check_reflects_real_path_state` to run
-`check_kubernetes_cni()` against a real empty-PATH temp directory (same
-pattern already used for `check_git_cli`'s negative branch and for this
-same test's own positive branch), push to the existing branch/PR #49
-(do not open a duplicate), confirm the real `gate` job goes green on the
-actual head, then resubmit for certification.
+(empty — FTF-H002's CI fix confirmed green and resubmitted this shift, see
+"Provisional" below. FTF-0101/FTF-0102 remain blocked, see "Owner actions"
+and "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(none on `main` — FTF-H002's PROVISIONAL claim exists only inside
-unmerged PR #49's own branch copy of spec-matrix.yaml/this file; `main`'s
-own spec-matrix.yaml still correctly shows FTF-H002 as
-`certification_state: NONE` / `implementation_state: ABSENT` until that
-branch actually merges. See Active, above.)
+- FTF-H002 — Freeze release scope, compatibility and measured execution
+  inputs. Original PR #49 (`claude/wizardly-fermat-brui19`) carried the
+  real `gate` CI failure Control plane found on 2026-09-16
+  (`check_kubernetes_cni()` genuinely returns `AVAILABLE` on GitHub-hosted
+  `ubuntu-latest`, which ships `kubectl` preinstalled, so
+  `test_kubernetes_cni_check_reflects_real_path_state`'s unisolated first
+  assertion was wrong there — a real environment-dependent test bug, not a
+  flake). A same-day follow-up commit on that branch (`419f9cc`) fixed it
+  the same way `check_git_cli`'s negative branch and this same test's own
+  positive branch already did: construct the negative case explicitly via
+  a real empty-PATH temp directory instead of trusting whatever's ambient.
+  This shift re-confirmed the real GitHub Actions run on that exact commit
+  (run 35160854110): both `gate` and `docker-local-stack-integration`
+  completed `success`. PR #49 itself could not be merged directly —
+  GitHub's merge API reported genuine content conflicts against `main`'s
+  current tip (`QUEUE.md` and `docs/certifications/queue.md`, both edited
+  independently by main's 2026-09-16 NOT-CERTIFIED review commit), and
+  this session's own git-branch policy requires developing only on
+  `claude/wizardly-fermat-w4h9ys`, not pushing directly to
+  `claude/wizardly-fermat-brui19`. Resolution: merged `main` into a local
+  copy of `419f9cc` on `claude/wizardly-fermat-w4h9ys` (fast-forward on
+  every file except these two bookkeeping docs, resolved by keeping both
+  sides' history rather than dropping either), re-ran the full regression
+  set against the merged tree, and opened a new PR from that branch
+  carrying byte-identical code to `419f9cc` plus the conflict resolution.
+  PR #49 is being closed as superseded by that new PR (same commits,
+  same CI-green evidence, same task) — not a duplicate, a continuation
+  forced by the merge conflict and this session's branch constraint. See
+  the new PR and docs/certifications/queue.md for the full resubmission
+  entry. State: proof_state=L1-PROVEN, certification_state=PROVISIONAL.
+  Not self-certified — awaiting independent Control plane L2 review per
+  Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
