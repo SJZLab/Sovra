@@ -1,5 +1,127 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T09:14:00Z
+Updated: 2026-09-17T11:02:00Z
+
+## 2026-09-17 — FTF-R015 implemented (Provisional, PR #70 opened, awaiting CI + L2 certification)
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin`, local designated
+branch (`claude/wizardly-fermat-dkivni`) matched `origin/main` exactly at
+`8d21b88` (FTF-R014's own certification commit) before any edit.
+`BLOCKER.md` held only resolved history. QUEUE.md Active/Provisional both
+empty, 13/300 certified, Blocked: 1 (FTF-0102, unchanged open owner ask).
+`list_pull_requests` (state=open) returned one open PR, #67 (the same
+unresolved FTF-0102 "owner approved option 1" claim flagged by prior
+shifts) — re-checked its comments/reviews: still no owner-authored
+comment/review corroborating the claim beyond the PR's own commit message,
+`mergeable_state` still not clean. Left exactly as-is per the same
+operating rule prior shifts already applied (no live user input this
+shift either) — not re-litigated, not re-flagged as a new finding since
+nothing changed since the last shift's note.
+
+STEP 1: swept `docs/TASK_INDEX.md`'s real `Dependencies` column directly
+against the certified set (FTF-0001–0006, FTF-H001, FTF-R001, FTF-H002,
+FTF-H028, FTF-H034, FTF-1810, FTF-R014 — 13 tasks): found FTF-0102
+(blocked, unchanged), FTF-R011, FTF-R017 (both flagged dependency-ready in
+prior shifts, deferred), and FTF-R015 (deps FTF-R014, FTF-H028 — newly
+dependency-ready now that FTF-R014 certified). Read all three real DoD
+packets via `tools/r1_handoff.py packet <id> --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` before picking. Picked FTF-R015:
+FTF-R011's own `files`/`shared_lock_required` still touch
+`spec/deployment-profiles.yaml` directly (FTF-H002's already-certified
+evidence), the same Law 15 concern deferred across multiple prior shifts;
+FTF-R017 still needs real Docker/SeaweedFS storage-semantics integration,
+a heavier external-resource surface. FTF-R015's own `files` only *read*
+`spec/deployment-profiles.yaml` as a shared contract
+(`shared_lock_required: []`, confirmed from its resolved packet) and touch
+no already-certified task's own evidence files — the most self-contained
+of the three, same reasoning that picked FTF-R014 over FTF-R011 in an
+earlier shift. Neither FTF-R011 nor FTF-R017 rejected, just left for a
+future shift.
+
+STEP 2 (PEV):
+- P: read the FTF-R015 task packet in full, including Sections 57A/70/81/
+  84. Its acceptance clause needs real disjoint-task execution in isolated
+  workspaces with an independent integrated merge gate, and Q42 needs
+  genuine overlapping execution of independent tasks. Section 84.5's own
+  text explicitly allows recording `BLOCKED_EXTERNAL` for parallel
+  qualification when the selected host cannot genuinely run separate
+  parallel workers, continuing safe serial/thread-level work as partial
+  progress rather than fabricating a parallel transcript — the same
+  resource-gate precedent FTF-H034/FTF-R014 already established for this
+  sandbox's lack of a live multi-agent dispatch harness. Not re-claiming
+  Q33 (already proven by FTF-H034) or Q41 (already proven by FTF-R014).
+- E: implemented `tools/implementation/workspace_manager.py`
+  (`WorkspaceManager`, real per-task isolated filesystem directories bound
+  to FTF-H034's `TaskClaimRegistry`, `NestedDelegationDenied`),
+  `tools/implementation/executor_adapter.py` (`execute_task`, real
+  `subprocess.run` per task with a small explicit command allowlist,
+  `PermissionBypassDenied`), and `tools/implementation/task_orchestrator.py`
+  (`TaskOrchestrator.run_wave`: intra-wave dependency ordering, whole-wave
+  budget ceiling, protected-gate write denial reusing FTF-R014's real
+  CODEOWNERS-derived protected-path list, wave-level
+  `SELF_CERTIFICATION_DENIED` reviewer gate, deterministic merge-order
+  integration with a real marker-file-based integrated-CI check, and
+  CI-failure containment). `tests/implementation/
+  test_safe_parallel_executor.py` (32 checks) proves every acceptance/
+  negative_acceptance clause, including a real 3-task
+  `threading.Barrier`-synchronized overlapping wave with genuinely
+  isolated workspaces, and a real fault injection against the tracked
+  module's own protected-gate-write guard (removed, confirmed a fresh
+  subprocess wrongly approves a protected-path write from an ordinary
+  reviewer; restored byte-identical, re-confirmed rejection). Environment
+  note: this fresh container's `.venv` needed `uv pip install pyyaml`
+  before `scripts/task_claim.py`'s existing PyYAML import would resolve —
+  same disclosed step every prior shift touching that module has taken.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (build/implementation tooling, no live
+  Factory product-runtime caller, same rationale as every prior FTF-H00X/
+  FTF-R00X task).
+Re-ran the full existing gate after all changes (`pnpm install
+--frozen-lockfile` first — fresh container, no `node_modules`): `uv run
+ruff check`/`format --check`/`mypy .` clean; `pnpm run lint`/
+`format:check`/`typecheck` and `pnpm exec vitest run` clean; all 13
+existing task negative-test-proof scripts
+(`test_ftf_0001_monorepo_layout.py` through `test_r1_execution_binding.py`)
+pass unmodified — no already-certified task's own implementation file was
+touched, only additive files plus FTF-R015's own `docs/spec-matrix.yaml`/
+`spec/verification-map.json` entries, avoiding any Law 15 requalification
+question; `uv run pytest tests/unit` (3 passed) and `pnpm exec vitest run`
+(2 passed) clean, 0 skipped either side. `validate_spec.py --strict`
+clean; `verify_task.py --task FTF-R015 --stage task` → `PASS` against
+evidence commit `a1771c2c197cd2194cdb66d0963884182c180ee5`.
+`verify_release.py` correctly non-inflated: `13/300`/`FAILED (1):
+['FTF-R015']`/`NOT READY`.
+Wired `python3 tests/implementation/test_safe_parallel_executor.py` into
+`.github/workflows/ci.yml`'s `gate` job, right after the FTF-R014 step
+(YAML-validated with `yaml.safe_load`).
+Updated `docs/spec-matrix.yaml` (FTF-R015: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` filled in the hash-fixup commit — same
+two-commit pattern as every prior FTF-H00X/FTF-R00X/FTF-1810/FTF-R014
+task), `spec/verification-map.json` (real, currently re-executable entry),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, Provisional 0→1). Certified count unchanged at
+13/300 — PROVISIONAL is not certified. Per Law 4, did not self-certify.
+
+Opened PR #70 (https://github.com/SJZLab/Sovra/pull/70,
+`[relay] FTF-R015: Isolated concurrent coding execution and independent
+integration`) against `main` from `claude/wizardly-fermat-dkivni`,
+subscribed to its activity.
+
+STEP 4: stopping here for this shift's active work — FTF-R015 is fully
+L1-PROVEN and PROVISIONAL, PR #70 open, CI to be confirmed. This session
+remains subscribed to PR #70 and will merge on green (per CLAUDE.md's "Do
+without asking: merge on green + L1 doc (PROVISIONAL)") without further
+owner input, then continue awaiting Control plane L2 certification — not a
+self-certification, per Law 4. The 2026-09-16 FTF-0102
+new-runtime-dependency owner ask and the 2026-09-15 trigger-tooling ask
+remain open and untouched; the PR #67 finding remains unresolved and
+unactioned (no new corroboration observed this shift). Once FTF-R015
+certifies, FTF-R011 (Law 15 question still worth resolving explicitly
+first) or FTF-R017 become the next candidates.
+
+Certified: 13/300 (unchanged). Provisional: 1 (FTF-R015, PR #70, CI to be
+confirmed). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-R014 CERTIFIED (PR #68 independently verified)
 Autonomous certifier shift, triggered by the PR #68 `pull_request.opened`
