@@ -49,3 +49,9 @@ jobs:
             --branch main
       - name: FTF-H028 negative-test proof (evidence gate catches real defects)
         run: python3 tests/tasks/test_ftf_h028.py
+      - name: Run the real ReleaseQualificationWorkflow (Q01-Q43 aggregator, exact-revision bound)
+        run: |
+          python3 docs/operations/releasequalificationworkflow.py \
+            --sha "${{ steps.sha.outputs.sha }}"
+      - name: FTF-1810 negative-test proof (release qualification workflow catches real defects)
+        run: python3 tests/tasks/test_ftf_1810.py

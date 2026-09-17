@@ -96,6 +96,8 @@ jobs:
         run: python3 tests/tasks/test_ftf_h028.py
       - name: FTF-H034 negative-test proof (safe parallel scheduler catches real defects)
         run: python3 tests/tasks/test_ftf_h034.py
+      - name: FTF-1810 negative-test proof (release qualification workflow catches real defects)
+        run: python3 tests/tasks/test_ftf_1810.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
