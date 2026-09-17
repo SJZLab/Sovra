@@ -1,5 +1,5 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-H034 implemented, PROVISIONAL, PR to be opened)
+Updated: 2026-09-17 by relay (FTF-H034 PR #59 merged to main, PROVISIONAL, awaiting Control plane L2)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -74,7 +74,13 @@ below.)
 
 ## Provisional (awaiting Control plane L2 certification)
 - FTF-H034 — Safe parallel scheduler and task/evidence ownership.
-  Implementation commit `7109100c9bfaff995a94203720e9161e095cb7bf`.
+  Implementation commit `7109100c9bfaff995a94203720e9161e095cb7bf`. PR #59
+  merged to `main` as `adba85013f58712415e871ab258f4262bf1ae567`
+  (`gate` + `docker-local-stack-integration` both `success` on the PR's
+  real head `37d7bcd`, `mergeable_state: clean`, no reviews/comments open
+  — merged per CLAUDE.md "Do without asking: merge on green + L1 doc
+  (PROVISIONAL)"). Still PROVISIONAL — awaiting independent Control plane
+  L2 certification per Law 4, not self-certified.
   Dependency-ready item found via a direct `docs/TASK_INDEX.md` sweep
   (deps FTF-H001, FTF-H002, both CERTIFIED) — not from `docs/spec-matrix.yaml`'s
   own `deps=` field, which is empty for every not-yet-started task (real
