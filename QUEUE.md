@@ -1,6 +1,7 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-R017 / PR #75 reviewed, NOT
-  CERTIFIED — real CI failure on the PR's own new job, see below)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — added per-request debug
+  instrumentation to root-cause the 500/501 storage-semantics failures,
+  pushed as `a43dff9`, waiting on CI, see "Active" below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -120,12 +121,50 @@ that fix's own head still fails `storage-semantics-integration`, now with
 a different real error: `S3Error 500 InternalError` on 7/9 tests and
 `S3Error 501 NotImplemented` on the other 2
 (`test_retention_deletion`/`test_versioning`) — see
-`docs/certifications/queue.md`'s addendum for the exact run. Next relay
-shift on FTF-R017: root-cause the 500/501 responses (SigV4 request-shape
-bug in `storage_semantics_client.py` vs. a genuine SeaweedFS capability
-gap for retention/versioning headers), fix, push to the existing
-branch/PR #75, let `storage-semantics-integration` actually go green,
-then resubmit for certification. Do not open a new/duplicate PR for this.
+`docs/certifications/queue.md`'s addendum for the exact run.
+
+**Update, same day (this shift):** read the raw CI log for that run
+directly (job 105262713015, run 35239135374) rather than trusting the
+prior shift's own inference about which S3 operation fails inside each
+test — found that `tests/integration/test_storage_semantics.py`'s
+`main()` only catches `S3Error` at the whole-test-function level, so the
+exact operation (`CreateBucket` itself? the first write after it?
+`PutBucketVersioning` specifically?) has never actually been proven, only
+guessed by matching test names to their presumed first differentiating
+call. Reviewed `sign_request`'s canonical-request construction line by
+line against the AWS SigV4 spec — no structural defect found (payload
+hash, canonical headers/query, signing-key derivation all match the
+spec and are identical across every operation, including the one
+presumed to succeed) — and searched known SeaweedFS S3-gateway issues for
+this exact `InternalError`/`NotImplemented` wording (real GitHub issues
+exist for both, but for different underlying causes each time: capacity/
+volume-growth races, Content-MD5 digest mismatches funneled into a
+generic 500 before a later SeaweedFS fix, path-conflict cases) — none
+conclusively matches this fixture without knowing which real request
+fails. Rather than push another speculative "fix" and spend a second CI
+round-trip guessing wrong again, added real instrumentation instead:
+`S3Client` gained an opt-in `debug` flag (default `False`, zero behavior
+change for any other caller — verified by re-running this task's own
+non-Docker unit test, `tests/tasks/test_ftf_r017.py`, plus the full
+15-script existing regression set, pytest, and vitest, all clean) that
+prints each request's shape (method/canonical-URI/query-key-names/
+header-names/body-length) before it executes and the real response
+status/code/message after — never credentials, the Authorization header,
+or signature material. Wired to `True` only in the integration test's own
+client construction. Pushed as commit `a43dff9` to the same branch/PR #75
+(not a new PR). CI triggered on this new head; this shift is waiting for
+that run before drawing any further conclusion — not guessing again ahead
+of the evidence.
+
+Next relay shift (or this shift's continuation once CI lands): read the
+new run's per-request debug lines to see exactly which operation the
+first 500/501 hits, then fix that specific cause (a real client
+request-shape bug, or — if it turns out to be a genuine SeaweedFS
+capability gap for a specific operation like `PutBucketVersioning` —
+disclose that as a resource_gate/negative-acceptance-scope finding rather
+than inventing a workaround), push to the existing branch/PR #75, let
+`storage-semantics-integration` actually go green, then resubmit for
+certification. Do not open a new/duplicate PR for this.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 

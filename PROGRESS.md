@@ -1,5 +1,111 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T15:20:00Z
+Updated: 2026-09-17T16:05:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): per-request debug instrumentation added, root cause not yet confirmed, waiting on CI
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md/
+BLOCKER.md (all resolved history, no open blocker), cross-checked against
+live repo state via `git fetch origin main` (local designated branch
+matched `origin/main` exactly at `b52f83c`, no divergence) and
+`list_pull_requests`.
+
+Two open PRs found: #75 (FTF-R017, flagged in QUEUE.md "Active" — a real,
+reproducible CI failure on `storage-semantics-integration`, not yet
+root-caused) and #67 (the still-unconfirmed FTF-0102 "owner approved
+option 1" claim). Re-checked #67's comments: still only this session's
+own prior-shift finding comment, no owner-authored corroboration, still
+`mergeable_state: dirty` — left exactly as-is, not re-litigated.
+
+Picked up #75/FTF-R017 per QUEUE.md's own explicit instruction ("Next
+relay shift on FTF-R017: root-cause the 500/501 responses... push to the
+existing branch/PR #75"). Read the actual CI job log for the most recent
+failing run directly (`get_job_logs`, job 105262713015, run 35239135374,
+head `fb0c2ac`) rather than trusting the prior shift's own PROGRESS.md
+inference about which specific S3 operation fails inside each test —
+found that claim ("500 InternalError on object-write operations
+PutObject/CreateMultipartUpload/UploadPart... 501 specifically on
+PutBucketVersioning") was not actually verifiable from the log itself:
+`tests/integration/test_storage_semantics.py`'s `main()` only catches
+`S3Error` at the whole-test-function level, so the log shows 9 test-level
+failures with status/code/message but never which real request inside
+each test triggered it — the prior shift's operation attribution was a
+plausible but unproven guess (matching test names to their presumed
+first differentiating call), not evidence per Law 1.
+
+Before writing any fix, reviewed `apps/api/app/services/
+storage_semantics_client.py`'s `sign_request` line by line against the
+published AWS SigV4 algorithm (canonical request, canonical headers/
+query-string construction, signing-key derivation, payload-hash
+computation and its reuse in both the signature and the transmitted
+body) — found no structural defect, and the exact same code path is used
+by every operation including `create_bucket` (presumed, not proven, to
+succeed). Searched known SeaweedFS S3-gateway GitHub issues for this
+task's exact error wording (`InternalError`/"please try again",
+`NotImplemented`/"a header you provided implies functionality") — found
+real issues with each message, but for several different underlying
+causes apiece (volume-growth capacity races, a Content-MD5 digest
+mismatch that a later SeaweedFS PR changed from a generic 500 to a
+specific `BadDigest`, filer path-conflict cases, and PutBucketTagging's
+own NotImplemented precedent) — none pinned down without knowing which
+real request in this fixture is the one failing. Concluded that pushing
+another single speculative fix (as the prior two commits on this PR each
+did) risks a third wrong guess and a third CI round-trip; the actual gap
+is observability, not a specific known bug to patch blind.
+
+**Delivered (diagnosis-only, no behavior change to any existing path):**
+`S3Client.__init__` gained an opt-in `debug: bool = False` keyword
+(default unchanged for every other caller). `_request` now prints, only
+when `debug=True`: the request shape (method, canonical URI, sorted query
+key names, sorted header names, body length) before executing, and the
+real response status on success or `(status, code, message)` on an
+`S3Error` after. Deliberately never prints credentials, the
+`Authorization` header, or any signature material — reviewed the diff
+specifically for this before pushing. Wired `debug=True` only into
+`tests/integration/test_storage_semantics.py`'s own client construction
+(the `wrong_client` used solely for the identity-rejection probe is left
+undebugged — not part of this mystery).
+
+**Regression check (fresh, unshallowed worktree at the PR's real head):**
+`uv sync`/`pnpm install --frozen-lockfile` (fresh container). `uv run
+ruff check`/`format --check` clean on both changed files; `uv run mypy`
+clean on the client module. This task's own non-Docker unit test
+(`tests/tasks/test_ftf_r017.py`, SigV4 signing math + every
+negative_acceptance case) — clean, unaffected (the debug flag defaults
+False and that test never sets it). Full existing regression set — all
+15 task scripts (`test_ftf_0001_monorepo_layout.py` through
+`test_safe_parallel_executor.py`/`test_profile_scope.py`) pass; two
+Python failures and one JS failure seen on the first pass
+(`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py`) were confirmed
+to be pre-existing environment artifacts of this fresh container/shallow
+clone (missing `node_modules` before `pnpm install`; `git fetch
+--unshallow` needed for `test_ftf_h001.py`'s real-commit-resolution
+check, same documented artifact prior shifts hit) — not caused by this
+change; re-ran clean after fixing the environment, confirming no
+regression. `uv run pytest tests/unit` (3 passed), `pnpm exec vitest run`
+(2 passed), `scripts/validate_spec.py --strict` clean.
+
+Pushed as commit `a43dff9` directly to the existing PR #75 branch
+(`claude/wizardly-fermat-ci7leb`) — not a new/duplicate PR, per QUEUE.md's
+own explicit instruction. Subscribed to PR #75's activity. CI triggered
+on the new head (confirmed a new workflow run started, superseding the
+three prior runs on `fb0c2ac`/`42cae14`/`9d7bf82`).
+
+STEP 4: not a stop condition in the usual sense (not N/N proven, no true
+blocker, not stuck — this is the first debug-instrumented push, not a
+third failed guess) but no further useful action is available until the
+new CI run's actual per-request debug output is readable — continuing to
+guess at the root cause without it would repeat exactly the mistake this
+shift diagnosed in the prior two commits. Waiting on the subscribed PR
+activity event for the new run's result before drawing or acting on any
+conclusion. `certification_state` for FTF-R017 remains `PROVISIONAL`
+(unchanged — still not certifiable, CI still not green). FTF-0102 remains
+blocked on the standing owner ask; PR #67's claim remains unconfirmed and
+unactioned (no new corroboration this shift).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged — FTF-R017 was
+never counted as Provisional in QUEUE.md's own tracker; it's tracked only
+in "Active" pending a green CI run). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-R017 (PR #75) NOT CERTIFIED — real CI failure on the PR's own new job
 Scheduled CERTIFY-mode session, triggered by PR #75's own
