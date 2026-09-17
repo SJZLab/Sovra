@@ -1,10 +1,10 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by Control plane (FTF-R015 CERTIFIED)
+Updated: 2026-09-17 by Control plane (FTF-R011 CERTIFIED)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 14/300 · Provisional: 1 (FTF-R011, PR #72 open, CI in progress) ·
-Blocked: 1 (FTF-0102, new-runtime-dep owner ask, see below)
+Certified: 15/300 · Provisional: 0 · Blocked: 1 (FTF-0102, new-runtime-dep
+owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014 and FTF-R015 all have no
@@ -28,11 +28,10 @@ the selected coding executor to Section 84's controls, with no Factory
 production service importing it, and FTF-R015 is the safe-parallel-
 execution/orchestration tooling itself (workspace manager, executor
 adapter, task orchestrator), with no live multi-agent dispatch harness
-wiring it into a running caller yet — none a live-wired product-runtime
-path, so all fourteen are CERTIFIED without counting toward product-true;
-FTF-R011 (PROVISIONAL, not yet counted in Certified) is the same kind — a
-release-matrix governance/validator layer with no Factory production
-service importing it, no proving_symbol).
+wiring it into a running caller yet, and FTF-R011 is a release-matrix
+governance/validator layer with no Factory production service importing
+it — none a live-wired product-runtime path, so all fifteen are CERTIFIED
+without counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -101,9 +100,7 @@ service importing it, no proving_symbol).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-R011 — Define immutable connected and air-gap assertion-level release
-  matrix. Implemented, PR #72 open against `main`, CI in progress. Full
-  entry: docs/certifications/queue.md.
+(empty)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -353,6 +350,36 @@ service importing it, no proving_symbol).
   task). Ran `sync_certified_status()` — diff limited to exactly
   FTF-R015's own `status`/`evidence` fields. Full entry:
   docs/certifications/ledger.md.
+- FTF-R011 — Define immutable connected and air-gap assertion-level release
+  matrix. CERTIFIED 2026-09-17, PR #72 (merge commit
+  `71501cb3692ac34ee71e52ba80c424a7e021c40e`). PR #72's `mergeable_state`
+  was `dirty` at review time (this session's own FTF-R015 certification
+  bookkeeping had just advanced `main` past PR #72's base) — fixed by
+  merging current `main` into the PR branch (only real conflict was
+  `PROGRESS.md`, resolved chronologically, nothing dropped) and re-pushing;
+  CI re-ran and passed on the new head (`6be8eab`, both `gate` and
+  `docker-local-stack-integration`) before merging. Independent
+  re-verification (session-ID clean against
+  `session_018Whdzxf76ttaAQnag7YY2E`): read
+  `scripts/validate_profile_scope.py`/`spec/deployment-profiles.yaml`/
+  `tests/security/test_profile_scope.py` directly; own re-run in a fresh,
+  unshallowed worktree — full 16-script existing regression set clean
+  (`ruff`/`format`/`mypy`/`eslint`/`tsc`/`prettier`/`vitest`/`pytest`, all
+  with `pnpm install --frozen-lockfile`); an own fault injection distinct
+  from the producer's own (widened `ALLOWED_STATUSES` to admit `"N/A"`)
+  caught exactly the 2 checks that should fail, restored byte-identical;
+  the Law 15 concern (editing `spec/deployment-profiles.yaml`, created by
+  certified FTF-R001) independently re-verified, not just trusted — `grep`
+  confirms FTF-R001's entire certified evidence surface never reads that
+  file, and `yaml.safe_load`-parsed `profiles:` mappings before/after are
+  equal; `tools/r1_handoff.py packet FTF-R011` confirmed both acceptance
+  clauses and all four negative_acceptance cases map to specific,
+  independently re-run tests; `validate_spec.py --strict` clean,
+  `verify_task.py --task FTF-R011 --stage task` -> `PASS`,
+  `product_truth_check.py` legitimately `0/0`, `verify_release.py`
+  confirmed non-inflated (`14/300` before, `15/300`/zero FAILED after).
+  Ran `sync_certified_status()` — diff limited to exactly FTF-R011's own
+  `status`/`evidence` fields. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

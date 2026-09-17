@@ -1,5 +1,73 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T13:15:00Z
+Updated: 2026-09-17T13:25:00Z
+
+## 2026-09-17 — Control plane: FTF-R011 CERTIFIED (PR #72 independently verified)
+Continuation of this same scheduled CERTIFY-mode session, after certifying
+FTF-R015 (see entry below). Re-swept `docs/certifications/queue.md`/
+`docs/spec-matrix.yaml` and found FTF-R011 (PR #72 — the PR whose
+`pull_request.opened` webhook triggered this session) was still
+PROVISIONAL, its CI now `completed`/`success` on both `gate` and
+`docker-local-stack-integration` (it had been `in_progress` at the start
+of this session, deferred until now).
+
+Session-ID check first: PR #72's two commits and its own bookkeeping
+commit all carry `Claude-Session: .../session_018Whdzxf76ttaAQnag7YY2E`;
+this session's ID does not match — independent.
+
+`pull_request_read.get` showed `mergeable_state: dirty` — a real conflict,
+caused by this same session's own prior FTF-R015 certification (PR #73)
+having advanced `main` past PR #72's base (`c055226`) while PR #72 was
+open. Fixed it directly: fetched a worktree for PR #72's branch, merged
+current `origin/main` in, resolved the one real conflict (`PROGRESS.md` —
+both branches had prepended a new top entry; resolved by chronological
+order, nothing dropped), confirmed `QUEUE.md`/`docs/certifications/
+queue.md`/`docs/spec-matrix.yaml`/`spec/verification-map.json` all
+auto-merged cleanly (FTF-R011's own edits there are additive, no overlap
+with FTF-R015's), re-ran the full regression suite (16 scripts including
+the merged-in 36-check `test_safe_parallel_executor.py`) clean, pushed,
+waited for CI to re-run on the new head (`6be8eab`) — green — then
+confirmed `mergeable_state: clean`.
+
+Independent re-verification of FTF-R011 itself: read
+`scripts/validate_profile_scope.py`/`spec/deployment-profiles.yaml`/
+`tests/security/test_profile_scope.py` directly (43-scenario whole-set
+completeness against the real `qualification-inventory.json`, owner
+provenance against `release-scope.yaml`, a status enum that structurally
+excludes `N/A`, split-scenario connected/airgap name distinctness,
+`generate_expected_checks` structurally unable to cross-contaminate
+connected/air-gap profiles); own re-run of the full regression suite in a
+fresh, unshallowed worktree — clean throughout (`ruff`/`format`/`mypy`/
+`eslint`/`tsc`/`prettier`/`vitest`/`pytest`); own fault injection distinct
+from the producer's own (widened `ALLOWED_STATUSES` to admit `"N/A"`) —
+exactly 2 checks failed for real, restored byte-identical, re-ran clean;
+independently re-verified the Law 15 concern this task's own PR body
+raised (editing `spec/deployment-profiles.yaml`, created by certified
+FTF-R001) rather than trusting the claim — `grep` across FTF-R001's entire
+certified evidence surface (`tests/tasks/test_ftf_r001.py`,
+`scripts/architecture_lock.py`) confirms zero references to that file, and
+`yaml.safe_load`-parsed `profiles:` mappings before/after this PR are
+structurally equal — no requalification triggered; pulled the real task
+contract via `tools/r1_handoff.py packet FTF-R011` and confirmed both
+acceptance clauses and all four negative_acceptance cases map to specific,
+independently re-run tests; `validate_spec.py --strict` clean,
+`verify_task.py --task FTF-R011 --stage task` -> `PASS`,
+`product_truth_check.py --fail-on-unwired` legitimately `0/0`.
+
+Merged PR #72 (merge commit `71501cb`). Set `docs/spec-matrix.yaml`
+FTF-R011 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` kept at the real implementation commit
+`18dd282`, matching `spec/verification-map.json`'s own `commit` field).
+Ran `scripts.task_claim.sync_certified_status()` — diff confirmed limited
+to exactly FTF-R011's own `status`/`evidence` fields. Appended the full
+evidence writeup to `docs/certifications/ledger.md`, moved FTF-R011 from
+QUEUE.md "Provisional" (now empty) to "Done" (Certified: 14/300 ->
+15/300), and updated PROGRESS.md (this entry). `verify_release.py`
+re-run after the edit: `15/300` required tasks CERTIFIED with
+live-passing evidence, zero FAILED, non-inflated.
+
+Both items found PROVISIONAL at the start of this scheduled session are
+now CERTIFIED. `docs/certifications/queue.md` has no PROVISIONAL entries
+left as of this shift.
 
 ## 2026-09-17 — Control plane: FTF-R015 CERTIFIED (PR #71 independently verified)
 Scheduled autonomous CERTIFY-mode session (no live user present), triggered

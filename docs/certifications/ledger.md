@@ -1515,3 +1515,112 @@ corrected 2026-09-15.
   acceptance/negative_acceptance clauses are met item by item against the
   task's real resolved contract, and `verify_release.py`'s denominator
   moved non-inflated. No open defect. Certified L2-CERTIFIED.
+
+## FTF-R011 — Define immutable connected and air-gap assertion-level release matrix
+- Criterion ID: FTF-R011
+- PR: https://github.com/SJZLab/Sovra/pull/72
+- Merge commit: 71501cb3692ac34ee71e52ba80c424a7e021c40e
+- Evidence commit (verification-map/spec-matrix pointer): `18dd2823eff6171594fb53b6adf0beb953bada82`
+- Validated-by: session https://claude.ai/code/session_015y31yd94WYsU49RBaF4jXE
+  (session-ID comparison performed and recorded before this entry: both PR
+  #72 commits — `18dd282`, `a3d7084` — and its bookkeeping commit
+  (`6ac7686`) carry `Claude-Session: .../session_018Whdzxf76ttaAQnag7YY2E`;
+  this certifying session's ID does not match — independent, not
+  self-certification)
+- Date: 2026-09-17
+- Background: this session's fixed CERTIFY-mode mandate is to sweep
+  `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every
+  PROVISIONAL item, not only the PR that triggered it (a
+  `pull_request.opened` webhook for this same PR, #72). Found two
+  PROVISIONAL items this pass: FTF-R015 (certified first, see the entry
+  above) and FTF-R011 (this entry). PR #72's `mergeable_state` was `dirty`
+  at review time because this session's own FTF-R015 certification
+  bookkeeping (PR #73) had just advanced `main` past PR #72's base — fixed
+  by merging current `main` into PR #72's branch (the only real conflict
+  was in `PROGRESS.md`, both branches having prepended a new entry;
+  resolved by chronological order, nothing dropped) and re-pushing; CI
+  re-ran and passed on the new head before merging.
+- Evidence:
+  1. Session-ID check performed first, as above.
+  2. Read `scripts/validate_profile_scope.py`,
+     `spec/deployment-profiles.yaml`, and
+     `tests/security/test_profile_scope.py` directly: the generator/
+     validator enforces whole-set completeness against the real 43-
+     scenario `qualification-inventory.json`, owner provenance against
+     `release-scope.yaml`, a `status` enum that structurally excludes
+     `N/A`, and split-scenario connected/airgap name distinctness;
+     `generate_expected_checks(profile)` cannot place a connected-only
+     assertion under `AIR_GAPPED` or an airgap assertion under a connected
+     profile; `assert_profile_qualified`/`assert_full_product_done`
+     correctly separate profile-qualified from full-product-done (a split
+     scenario's airgap result never satisfies its connected-positive
+     requirement).
+  3. CI reconfirmed green for real via `pull_request_read.get_check_runs`
+     on PR #72's actual final head (`6be8eab`, after the merge-conflict
+     fix): both `gate` and `docker-local-stack-integration`,
+     `completed`/`success`.
+  4. Own re-run in a fresh, unshallowed git worktree at the real head:
+     `tests/security/test_profile_scope.py` — all checks pass; full
+     16-script existing regression set (`test_ftf_0001_monorepo_layout.py`
+     through `test_safe_parallel_executor.py`, including
+     `test_ftf_r001.py` specifically for the Law 15 check below) passes
+     unmodified after `pnpm install --frozen-lockfile`; `ruff
+     check`/`format --check`/`mypy .` clean; `pnpm run
+     lint`/`typecheck`/`format:check` and `pnpm exec vitest run` (2
+     passed) clean; `uv run pytest tests/unit` (3 passed).
+  5. Own fault injection, distinct from the producer's own (which targeted
+     the connected/airgap distinctness guard): widened `ALLOWED_STATUSES`
+     to admit `"N/A"` — re-ran the suite, exactly 2 checks failed for real
+     (`a required scenario's status cannot be turned into 'N/A'`, `the
+     allowed result-status enum never contains 'N/A'`); restored the file
+     byte-identical (`diff` confirmed empty), re-ran clean.
+  6. Law 15 check independently re-verified, not just trusted from the PR
+     body: `grep` across `tests/tasks/test_ftf_r001.py` and
+     `scripts/architecture_lock.py` (FTF-R001's entire certified evidence
+     surface) confirms zero references to `spec/deployment-profiles.yaml`;
+     parsed both the pre-FTF-R011 (`git show
+     c055226:spec/deployment-profiles.yaml`) and current `profiles:`
+     mappings with `yaml.safe_load` and confirmed them equal — FTF-R001's
+     own frozen deliverable is untouched, only `assertion_applicability`
+     (FTF-R001's own two worked examples, disclosed as illustrative) was
+     extended. `test_ftf_r001.py` re-run clean above. No requalification
+     triggered.
+  7. `python tools/r1_handoff.py packet FTF-R011 --plan
+     FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled directly: acceptance
+     clause 1 ("Preserve all original/new capabilities and scenarios;
+     separate connected positive and airgap denial assertions with owners
+     and real environment evidence") and clause 2 ("Profile-qualified
+     status distinct from full product; expected checks generated from
+     preapproved scope before execution") both confirmed delivered.
+     negative_acceptance ("Cannot turn failure into N/A, use disconnected
+     denial instead of required full-product positive test, call external
+     provider from air gap or drop old IDs") maps one-to-one to
+     `test_na_status_is_rejected` (independently reproduced by item 5
+     above), `test_airgap_denial_cannot_satisfy_connected_requirement`,
+     `test_external_provider_never_expected_under_airgap`, and
+     `test_dropping_an_old_id_is_rejected` respectively — all re-run and
+     confirmed passing above.
+  8. `validate_spec.py --strict` clean; `verify_task.py --task FTF-R011
+     --stage task` -> `PASS` against evidence commit `18dd282`;
+     `product_truth_check.py --fail-on-unwired` legitimately `0/0`
+     (`proving_symbol: ''` — release-matrix governance/validator layer, no
+     Factory production service imports it).
+  9. Merged PR #72 (`mergeable_state: clean` after the merge-conflict fix)
+     as merge commit `71501cb`. Set `docs/spec-matrix.yaml` FTF-R011 to
+     `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+     (`evidence_hash` kept at the real implementation commit `18dd282`,
+     matching `spec/verification-map.json`'s own `commit` field). Re-ran
+     `scripts.task_claim.sync_certified_status()` — diff confirmed limited
+     to exactly FTF-R011's own `status`/`evidence` fields in
+     `spec/tasks.json` and `docs/implementation/TRACKER.json`.
+  10. `verify_release.py` re-run after the above: `15/300` required tasks
+      CERTIFIED with live-passing evidence, zero FAILED, non-inflated
+      transition from the prior `14/300`.
+- Conclusion: the delivered validator/matrix machinery is real and
+  independently reproduced — the fault injection (distinct from the
+  producer's own) confirms the "never N/A" guard is code-enforced, the
+  Law 15 concern raised and deferred by prior shifts is now resolved with
+  direct, independent verification (not merely restated), CI is green on
+  the real merged head, and the acceptance/negative_acceptance clauses are
+  met item by item against the task's real resolved contract. No open
+  defect. Certified L2-CERTIFIED.
