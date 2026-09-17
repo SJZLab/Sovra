@@ -1624,3 +1624,140 @@ corrected 2026-09-15.
   the real merged head, and the acceptance/negative_acceptance clauses are
   met item by item against the task's real resolved contract. No open
   defect. Certified L2-CERTIFIED.
+
+## FTF-R017 — Qualify maintained internal storage and OSS dependency lifecycle
+- Criterion ID: FTF-R017
+- PR: https://github.com/SJZLab/Sovra/pull/75
+- Merge commit: aacd74528ff39ef14b0efc42575fe987f27490d4
+- Validated-by: session https://claude.ai/code/session_0197LBwCiZ8a682Vpm9iBzr8
+  (session-ID comparison performed and recorded before this entry: all 16
+  commits on PR #75 — b762359, 6fd7801, 9d7bf82, 42cae14, fb0c2ac, a8decce,
+  a43dff9, a2b2123, 01e88fb, e691f6d, 60c8182, a298598, deaedc8, ce14699,
+  3526a0c, b6b3a68 — carry `Claude-Session:` URLs for
+  session_016bZ7g5DPgSU8eYMTo8H5NY, session_01Nzct85anuqYiaChHWrojc7,
+  session_01CuWKZ8HB6vaFGqxfYg8aVL and session_01YVhNTy4brYqAztqcSzWLrs;
+  none match this reviewing session's own ID, so this is an independent
+  certification, not self-certification.
+- Steps performed:
+  1. Read `docs/certifications/queue.md`'s full FTF-R017 history: an
+     earlier Control-plane pass on this same PR (2026-09-17) correctly
+     found real CI failures (TCP-vs-HTTP readiness race, then SeaweedFS
+     volume-capacity exhaustion, then a 3.71 version gap missing S3
+     object-lock/versioning/BadDigest support) and did NOT certify —
+     each was root-caused and fixed for real by later commits on the same
+     branch/PR (no duplicate PR opened), ending with a 3.71->3.99 fixture
+     bump and a real `S3Client` response-header case-sensitivity fix
+     (`deaedc8`).
+  2. Read the full delivered diff directly (`git diff origin/main...
+     origin/claude/wizardly-fermat-ci7leb`, 17 files, +2893/-155):
+     `apps/api/app/services/storage_semantics_client.py` (stdlib-only real
+     AWS SigV4 client, no boto3/SDK dependency added — verified: no new
+     entries in `apps/api/pyproject.toml`), `spec/component-maintenance.yaml`
+     + schema + validator, `infra/internal/storage-profile.yaml` +
+     validator, `infra/docker/seaweedfs-s3-identity.json`, and
+     `tests/integration/test_storage_semantics.py` /
+     `tests/tasks/test_ftf_r017.py`.
+  3. Re-checked CI for real on the PR's actual head, not a stale/
+     self-reported claim: `pull_request_read get_check_runs` on head
+     `3526a0c` showed all 3 jobs `completed`/`success` (run 35263130329);
+     read `storage-semantics-integration`'s own job log directly
+     (job 105343546295) — genuine per-request S3 traffic against a live
+     SeaweedFS 3.99 container (real 200/400 BadDigest/403 AccessDenied/404
+     NoSuchKey responses across all 9 test functions), ending
+     `FTF-R017 storage semantics: all checks passed`. This PR's base had
+     since advanced (PR #77 merged docs-only bookkeeping to `main`),
+     which made PR #75 `mergeable_state: dirty` again — the same
+     structural failure this repo's history already documents for
+     FTF-0004/FTF-R011. Fixed the same way: merged current `main` into
+     `claude/wizardly-fermat-ci7leb` (two tracking-doc-only conflicts —
+     `QUEUE.md`/`PROGRESS.md` — no code conflict; resolved by keeping
+     `main`'s fuller, already-reconciled history rather than the branch's
+     own condensed summary), pushed as merge commit `b6b3a68`, and
+     re-confirmed a fresh, real CI run on that exact commit
+     (run 35273905256, job 105379711235) — all 3 jobs `completed`/
+     `success` again, log re-read directly and again ends `FTF-R017
+     storage semantics: all checks passed` with genuine per-request S3
+     traffic (different bucket-name suffixes than the prior run, proving
+     it is not a cached/stale result).
+  4. Own fault injection, distinct from the producer's own: broke
+     `_signing_key`'s AWS4 key-derivation prefix (`"AWS4" + secret_key` ->
+     `secret_key`) and re-ran `tests/tasks/test_ftf_r017.py` — failed for
+     real (`FAIL [FTF-R017] the tracked module's own _signing_key produces
+     the real published AWS test-suite signature (get-vanilla, generic
+     'service')`), confirming the SigV4 signing math is genuinely
+     code-enforced, not a canned pass. Restored the file byte-identical
+     and re-ran clean.
+  5. `python tools/r1_handoff.py packet FTF-R017 --plan
+     FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled directly: acceptance
+     clause 1 ("Use maintained approved organizational S3 or qualified
+     SeaweedFS fixture; prove required storage semantics and offline
+     dependency/license inventory") is met by the real CI evidence above
+     plus `spec/component-maintenance.yaml`'s per-component owner/
+     support/license/security/version/export/restore records (all 7
+     components' licenses independently fetched from each project's real
+     `LICENSE` file, all permissive Apache-2.0/MIT, LiteLLM's separate
+     proprietary `enterprise/` directory disclosed and unused). Acceptance
+     clause 2 ("Record owner/support/version/security/export plan for
+     Argilla and each dependency; maintain compatible old external S3
+     source connection without silent migration") is met — Argilla's own
+     record includes owner/support/license/security/version/export/restore
+     plus its fixed self-hosted-only deployment note (no SaaS Argilla
+     option); `old_external_s3_compatibility` in the same file states the
+     no-silent-migration position, backed by the client's real
+     `S3Endpoint`/`S3Credentials` constructor-argument design (verified by
+     reading the file: never a hardcoded host). `negative_acceptance`
+     ("Reject automatic archived-MinIO default, unimplemented S3 feature
+     accepted, unapproved license/enterprise dependency, unsupported
+     Argilla deployment or missing export/restore") maps one-to-one to
+     `test_minio_backend_is_rejected`, `test_missing_semantic_is_rejected`
+     / `test_unevidenced_qualified_claim_is_rejected`,
+     `test_unapproved_license_is_rejected` /
+     `test_enterprise_or_proprietary_feature_use_is_rejected`,
+     `test_argilla_unsupported_deployment_note_is_present`, and
+     `test_missing_export_plan_is_rejected` /
+     `test_missing_restore_plan_is_rejected` respectively — all re-run and
+     confirmed passing (see step 6).
+  6. Full regression, fresh worktree at the real merged head:
+     `uv run ruff check`/`mypy .` clean (50 source files); `pnpm install`
+     + `pnpm run lint`/`typecheck`/`format:check` clean;
+     `python3 tests/tasks/test_ftf_r017.py` clean (19 test functions / 25
+     checks); `python3 scripts/validate_spec.py --strict` clean (task graph
+     and verification-map clean — a `stale_commit` defect seen on an
+     earlier, intermediate check of this same worktree was traced to this
+     review's own shallow (`--depth=50`) clone, not a real defect: it
+     disappeared after `git fetch --unshallow`); `verify_task.py --task
+     FTF-R017 --stage task` -> `PASS` against evidence commit `b762359`;
+     `product_truth_check.py` legitimately `0/0` (`proving_symbol: ''` on
+     `docs/spec-matrix.yaml`'s FTF-R017 entry — a real, disclosed
+     storage/OSS-lifecycle qualification layer with no live Factory
+     production service importing `storage_semantics_client.py` yet, same
+     established pattern as FTF-0004/FTF-R001/FTF-R011/FTF-R014/FTF-R015).
+  7. Merged PR #75 (`mergeable_state: clean` after the merge-conflict fix
+     above) as merge commit `aacd745`. Set `docs/spec-matrix.yaml`
+     FTF-R017 to `certification_state: CERTIFIED` / `proof_state:
+     L2-CERTIFIED` (`evidence_hash` kept at the real implementation commit
+     `b762359`, matching `spec/verification-map.json`'s own `commit`
+     field — same convention as FTF-R011/FTF-R015). Re-ran
+     `scripts.task_claim.sync_certified_status()` — updated exactly
+     `FTF-R017`'s own `status`/`evidence` fields in `spec/tasks.json` and
+     `docs/implementation/TRACKER.json`.
+  8. `verify_release.py` re-run after the above: `16/300` required tasks
+     CERTIFIED with live-passing evidence for FTF-R017 itself (via
+     `verify_task.py`; the live-container `storage-semantics-integration`
+     evidence is proven in CI, not locally re-executable in this sandbox —
+     same disclosed `resource_gate` pattern as FTF-0004's own
+     `docker-local-stack-integration` job), non-inflated transition from
+     the prior `15/300`. (This sandbox separately found `FTF-0002`/
+     `FTF-0003`/`FTF-H001` reporting FAIL under `verify_release.py` in a
+     fresh worktree before `pnpm install` — traced to this review's own
+     missing `node_modules`, not a real regression: confirmed by
+     `pnpm install` + a clean `pnpm run lint` immediately after; unrelated
+     to FTF-R017 and out of this certification's scope.)
+- Conclusion: the delivered SigV4 client, component-maintenance inventory
+  and storage-profile qualification are real and independently
+  reproduced — the fault injection confirms the signing math is
+  code-enforced, the real live-container evidence is proven twice on two
+  separate genuine CI runs (including one after this review's own
+  merge-conflict fix), and the acceptance/negative_acceptance clauses are
+  met item by item against the task's real resolved contract. No open
+  defect. Certified L2-CERTIFIED.

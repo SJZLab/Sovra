@@ -1,5 +1,108 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T19:35:00Z
+Updated: 2026-09-17T21:05:00Z
+
+## 2026-09-17T21:05:00Z — Control plane certification — FTF-R017 CERTIFIED (PR #75 independently verified)
+Triggered by GitHub webhook (`pull_request.opened`, PR #77 — a same-shift
+relay docs-only bookkeeping PR, already reviewed as out of this
+certifier's scope: no test/proof-of-work claim, nothing to certify).
+Per this run's actual job — check `docs/certifications/queue.md` for
+anything PROVISIONAL and not yet certified — found FTF-R017 (PR #75) as
+the sole pending item, L1-PROVEN with real, non-self-reported CI-green
+evidence per the prior relay shift's independent confirmation.
+
+Session-ID check: compared this session's own ID
+(`session_0197LBwCiZ8a682Vpm9iBzr8`) against all 16 commits on PR #75 —
+none match (producer sessions were `session_016bZ7g5DPgSU8eYMTo8H5NY`,
+`session_01Nzct85anuqYiaChHWrojc7`, `session_01CuWKZ8HB6vaFGqxfYg8aVL`,
+`session_01YVhNTy4brYqAztqcSzWLrs`). Independent, not self-certification.
+
+Re-read the full diff directly (`git diff origin/main...
+origin/claude/wizardly-fermat-ci7leb`, 17 files, +2893/-155):
+`apps/api/app/services/storage_semantics_client.py` (stdlib-only real
+AWS SigV4 client — confirmed no boto3/SDK added to
+`apps/api/pyproject.toml`), `spec/component-maintenance.yaml`/schema/
+validator, `infra/internal/storage-profile.yaml`/validator,
+`infra/docker/seaweedfs-s3-identity.json`, and
+`tests/integration/test_storage_semantics.py`/`tests/tasks/
+test_ftf_r017.py`.
+
+Re-checked CI for real (not the producer's commit message) on the PR's
+actual head: `pull_request_read get_check_runs` on `3526a0c` — all 3 jobs
+`completed`/`success` (run 35263130329); read
+`storage-semantics-integration`'s own job log directly (job
+105343546295) — genuine per-request S3 traffic against a live SeaweedFS
+3.99 container (real 200/400 BadDigest/403 AccessDenied/404 NoSuchKey
+responses across all 9 test functions), ending `FTF-R017 storage
+semantics: all checks passed`.
+
+PR #75 had gone `mergeable_state: dirty` again between the prior relay
+shift's confirmation and this review (PR #77's docs-only merge to `main`
+advanced the base) — the same recurring structural failure this repo's
+history already documents for FTF-0004/FTF-R011. Fixed the same way:
+merged current `main` into `claude/wizardly-fermat-ci7leb` locally (two
+tracking-doc-only conflicts, `QUEUE.md`/`PROGRESS.md`, no code conflict;
+resolved by keeping `main`'s fuller, already-reconciled history over the
+branch's own condensed summary — confirmed line counts, 695 vs 520
+lines), pushed as merge commit `b6b3a68`, and waited for a fresh, genuine
+CI run on that exact commit (run 35273905256) — all 3 jobs
+`completed`/`success` again; re-read `storage-semantics-integration`'s
+job log directly (job 105379711235) — again ends `FTF-R017 storage
+semantics: all checks passed` with genuinely different per-request
+bucket-name suffixes than the prior run, proving this was not a cached
+result.
+
+Own fault injection, distinct from the producer's own: in a separate
+worktree, edited `_signing_key` to drop the `"AWS4"` key-derivation
+prefix and re-ran `tests/tasks/test_ftf_r017.py` — failed for real
+(`FAIL [FTF-R017] the tracked module's own _signing_key produces the
+real published AWS test-suite signature (get-vanilla, generic
+'service')`); restored the file byte-identical, re-ran clean.
+
+`python tools/r1_handoff.py packet FTF-R017 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled directly: both acceptance
+clauses (maintained/qualified S3 fixture with proven storage semantics
+plus dependency/license inventory; Argilla and each dependency's
+owner/support/version/security/export record with no silent S3
+migration) and the negative_acceptance clause (reject archived-MinIO
+default, unimplemented S3 feature acceptance, unapproved license/
+enterprise dependency, unsupported Argilla deployment, missing
+export/restore) map one-to-one to specific, independently re-run tests
+in `tests/tasks/test_ftf_r017.py` — confirmed met, not just asserted.
+
+Full regression in a fresh, unshallowed worktree at the real merged
+head: `uv run ruff check`/`mypy .` clean (50 source files); `pnpm
+install --frozen-lockfile` + `pnpm run lint`/`typecheck`/`format:check`
+clean; `python3 tests/tasks/test_ftf_r017.py` clean (19 test functions /
+25 checks); `python3 scripts/validate_spec.py --strict` clean (a
+transient `stale_commit` defect seen mid-review was traced to this
+review's own `--depth=50` shallow clone, not a real defect — disappeared
+after `git fetch --unshallow`); `verify_task.py --task FTF-R017 --stage
+task` -> `PASS`; `product_truth_check.py` legitimately `0/0`
+(`proving_symbol: ''` — no live Factory production service imports
+`storage_semantics_client.py` yet, same established pattern as
+FTF-0004/FTF-R001/FTF-R011/FTF-R014/FTF-R015).
+
+Merged PR #75 as merge commit `aacd745`. Set `docs/spec-matrix.yaml`
+FTF-R017 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` kept at the real implementation commit
+`b762359`, matching `spec/verification-map.json`'s own `commit` field —
+same convention as FTF-R011/FTF-R015, not the merge commit). Ran
+`scripts.task_claim.sync_certified_status()` — updated exactly
+FTF-R017's own `status`/`evidence` fields in `spec/tasks.json` and
+`docs/implementation/TRACKER.json`. Appended the full evidence writeup
+to `docs/certifications/ledger.md`, moved FTF-R017 from QUEUE.md's
+"Provisional" to "Done" and updated the Certified/product-true counts
+(15/300 -> 16/300).
+
+Separately noted (not acted on, out of this certification's scope): a
+fresh worktree without `pnpm install` first reported `FTF-0002`/
+`FTF-0003`/`FTF-H001` as FAIL under `verify_release.py` — traced to this
+review's own missing `node_modules`/eslint config resolution, not a real
+regression (confirmed clean immediately after `pnpm install`). Not a
+finding about those tasks' own certified evidence.
+
+Not touching FTF-0102 (still Blocked on the owner ask, unchanged) or any
+other queue item — certification only, per this run's scope.
 
 ## 2026-09-17T19:35:00Z — Scheduled relay shift: independently confirmed FTF-R017 (PR #75) is real CI-green; no code changes, stopping per STEP 4(a)
 STEP 0: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` exactly

@@ -2121,9 +2121,11 @@
       "blockers": []
     },
     "FTF-R017": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "b76235989aca9b73bbefb9502435c8c25f9564ad"
+      ],
       "independent_review": null,
       "blockers": []
     },

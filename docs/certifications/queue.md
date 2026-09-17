@@ -2628,3 +2628,67 @@ bump, the header-casing bug, the SSE-C assertion correction) backed by
 direct source citations rather than assumption. Not merging or
 certifying this session — that is Control plane's role, not the
 relay's, per Law 4 and this shift's own STEP 4(a).
+
+### Control plane review — 2026-09-17 (later) — CERTIFIED
+- **Session-ID check:** all 16 commits on PR #75 carry `Claude-Session:`
+  URLs for `session_016bZ7g5DPgSU8eYMTo8H5NY`,
+  `session_01Nzct85anuqYiaChHWrojc7`, `session_01CuWKZ8HB6vaFGqxfYg8aVL`,
+  and `session_01YVhNTy4brYqAztqcSzWLrs`; this reviewing session's own ID
+  (`session_0197LBwCiZ8a682Vpm9iBzr8`) matches none of them — independent,
+  not self-certification.
+- **Real diff read directly**, not trusted from the PR body: 17 files,
+  +2893/-155, centered on `apps/api/app/services/storage_semantics_client.py`
+  (stdlib-only SigV4 client, no boto3/SDK dependency added),
+  `spec/component-maintenance.yaml`, `infra/internal/storage-profile.yaml`,
+  and the two test files.
+- **CI checked for real on the actual head, twice:** `3526a0c` (run
+  35263130329, job 105343546295) and, after this review found and fixed a
+  recurring `mergeable_state: dirty` (PR #77's same-shift docs-only merge
+  to `main` had advanced the PR's base again — the same structural issue
+  FTF-0004/FTF-R011 already hit), the new merge commit `b6b3a68` (run
+  35273905256, job 105379711235). Both job logs read directly, not the
+  checkmark alone: genuine per-request S3 traffic against a live SeaweedFS
+  3.99 container, real 200/400 BadDigest/403 AccessDenied/404 NoSuchKey
+  responses across all 9 storage-semantics test functions, both ending
+  `FTF-R017 storage semantics: all checks passed`.
+- **Real, independent fault injection:** broke `_signing_key`'s AWS4
+  key-derivation prefix (`"AWS4" + secret_key` -> `secret_key`) — re-ran
+  `tests/tasks/test_ftf_r017.py`, failed for real with the exact expected
+  signature-mismatch assertion, distinct from any check the producer
+  already wrote. Restored byte-identical, re-ran clean.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-R017 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance
+  clauses and the negative_acceptance clause map one-to-one to specific,
+  independently re-run tests (`test_minio_backend_is_rejected`,
+  `test_unapproved_license_is_rejected`,
+  `test_enterprise_or_proprietary_feature_use_is_rejected`,
+  `test_missing_export_plan_is_rejected`,
+  `test_missing_restore_plan_is_rejected`,
+  `test_argilla_unsupported_deployment_note_is_present`,
+  `test_unevidenced_qualified_claim_is_rejected`,
+  `test_missing_semantic_is_rejected`), confirmed met, not asserted.
+- **product_truth_check.py legitimately `0/0`:** `docs/spec-matrix.yaml`'s
+  FTF-R017 entry carries `proving_symbol: ''` — no live Factory
+  production service imports `storage_semantics_client.py` yet, same
+  established, disclosed pattern as FTF-0004/FTF-R001/FTF-R011/FTF-R014/
+  FTF-R015. A `0/0` pass here is legitimate, not an inflated claim.
+- **Full regression** in a fresh, unshallowed worktree at the real merged
+  head: `uv run ruff check`/`mypy .` clean; `pnpm install
+  --frozen-lockfile` + `pnpm run lint`/`typecheck`/`format:check` clean;
+  `validate_spec.py --strict` clean (a transient `stale_commit` defect
+  seen mid-review traced to this review's own `--depth=50` shallow clone,
+  confirmed spurious after `git fetch --unshallow`); `verify_task.py
+  --task FTF-R017 --stage task` -> `PASS`; `verify_release.py` non-inflated
+  (`16/300`, zero `FAILED`, up from `15/300`).
+- **Conclusion:** the delivered SigV4 client, component-maintenance
+  inventory and storage-profile qualification are real and independently
+  reproduced. Merged PR #75 as `aacd745`. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` kept at the implementation commit `b762359`, matching
+  `spec/verification-map.json`'s own `commit` field — same convention as
+  FTF-R011/FTF-R015). `scripts.task_claim.sync_certified_status()` run —
+  diff limited to exactly FTF-R017's own `status`/`evidence` fields.
+- **Validated-by:** session
+  https://claude.ai/code/session_0197LBwCiZ8a682Vpm9iBzr8 (independent —
+  see session-ID check above), 2026-09-17. Full ledger entry:
+  `docs/certifications/ledger.md`.
