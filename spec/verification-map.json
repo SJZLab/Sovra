@@ -104,6 +104,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
+    },
+    "FTF-R014": {
+      "commit": "fc1822903741fae188b7b81767a7668b3ee9cc96",
+      "commands": [["python3", "tests/implementation/test_r1_execution_binding.py"]],
+      "expected_output_contains": "All 24 checks passed.",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
     }
   }
 }
