@@ -1,5 +1,75 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T07:03:00Z
+Updated: 2026-09-17T07:10:00Z
+
+## 2026-09-17 — Control plane: FTF-1810 CERTIFIED (PR #63 independently verified)
+Autonomous certifier shift, triggered by the PR #63 `opened` webhook. Read
+`docs/certifications/queue.md`: FTF-1810 was the only PROVISIONAL item.
+Session-ID comparison performed before touching anything: all three
+commits on PR #63 (`e7ddf75`, `1a98057`, `e4ac93b`) carry
+`Claude-Session: .../session_0154rGkMQgbT7Q5x8dgGJVep`; this session is
+`session_01UbQN1CRhc9SQDCm3VoY6Vf` — no overlap, independent per Law 4.
+
+At the time of the webhook, PR #63's CI (`gate` and
+`docker-local-stack-integration`) was still `in_progress` — subscribed to
+PR activity and waited for it to complete rather than certifying against
+an unfinished run. Both jobs completed `success` on the PR's real head
+(`e4ac93b`, run 35192517673) before certification proceeded. The PR was
+merged in the interim (via the connected GitHub account) as merge commit
+`84b71cf`; `git diff e4ac93b..84b71cf -- .` confirmed no code delta beyond
+the merge itself, so the CI-verified head and the merged tree are
+identical. A separate doc-only bookkeeping PR (#64, recording the merge
+while still PROVISIONAL) also landed before this review completed —
+unaffected either way, since certification is based on the real code
+tree.
+
+Independent re-verification performed (full detail in
+`docs/certifications/ledger.md`'s new FTF-1810 entry): read the diff
+directly (10 files, additive-only — new module + test file, CI wiring in
+`ci.yml`/`10-release-qualification.yml`, and the `spec-matrix.yaml`/
+`spec/verification-map.json` entries); re-ran `tests/tasks/
+test_ftf_1810.py` (16/16 pass) and the full 12-task existing regression
+set with the pinned toolchain (`uv run ruff check`/`format --check`/
+`mypy` clean; `pnpm run lint`/`typecheck`/`format:check` and `pnpm exec
+vitest run` clean after `pnpm install --frozen-lockfile`; `uv run pytest
+tests/unit` clean) — an initial run using a stray system-wide `ruff`
+(0.15.8, not the pinned 0.6.9) produced 5 false-positive `UP042` findings
+on a file this PR never touched; re-ran with `uv run ruff` (the actual
+pinned version) and confirmed clean, so no real regression; re-ran
+`validate_spec.py --strict` and `verify_task.py --task FTF-1810 --stage
+task` (`PASS`); confirmed `verify_release.py` non-inflated
+(`11/300`/`FAILED (1): ['FTF-1810']`/`NOT READY` before this edit,
+`12/300` after); confirmed `product_truth_check.py` stays `0/0`
+legitimately (`proving_symbol: ''` in `docs/spec-matrix.yaml` — release-
+qualification aggregator tooling itself, no live product-runtime caller
+yet); ran the real aggregator (`docs/operations/
+releasequalificationworkflow.py`) directly against the actual current
+repo rather than trusting the producer's printed claim — confirmed
+`overall_status: FAIL`, all 43 required scenarios `missing`, both the
+image and profile bindings `BLOCKED_EXTERNAL`, matching the disclosed
+state exactly; ran an own fault injection distinct from the producer's
+committed (`skipped`-check) and ad hoc (`stale`-check) injections —
+removed the `incomplete`-evidence (`missing_fields`) check block instead —
+the test suite caught it with exactly the 3 expected failures, restored
+byte-identical (`diff` confirmed empty), re-ran clean; pulled the real
+contract via `tools/r1_handoff.py packet FTF-1810 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and checked the delivered work against
+its actual acceptance/negative_acceptance clauses item by item.
+
+No defect found. Updated `docs/spec-matrix.yaml` (FTF-1810:
+`certification_state: CERTIFIED`, `proof_state: L2-CERTIFIED`,
+`evidence_hash` kept as the implementation commit `e7ddf75`, matching the
+existing convention for every prior FTF-H00X/FTF-R00X entry), re-ran
+`sync_certified_status()` afterward — diff confirmed limited to exactly
+FTF-1810's own `status`/`evidence` fields in `spec/tasks.json`/
+`docs/implementation/TRACKER.json` — appended the ledger entry, moved
+FTF-1810 from QUEUE.md "Provisional" to "Done" and bumped Certified to
+12/300, Provisional to 0.
+
+Certified: 12/300. Provisional: 0. Product-true: 0 (unchanged — FTF-1810
+has no `proving_symbol`, same disclosed rationale as every other
+certified task so far). The 2026-09-16 FTF-0102 new-runtime-dependency
+owner ask and the 2026-09-15 trigger-tooling ask remain open and untouched
+— out of scope for this certification-only shift.
 
 ## 2026-09-17 — FTF-1810 (PR #63) merged to main as PROVISIONAL
 Same relay shift as the FTF-1810 implementation entry below. Subscribed to

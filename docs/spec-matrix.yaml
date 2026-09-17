@@ -2539,7 +2539,7 @@ FTF-1809:
   proving_symbol: ''
   proving_test: ''
 FTF-1810:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: ReleaseQualificationWorkflow
   evidence_hash: e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a
@@ -2551,8 +2551,9 @@ FTF-1810:
     run against the real current repo today it honestly reports NOT READY (image/profile
     BLOCKED_EXTERNAL -- no 07-container-build.yml or Section 64.3 onboarding gate yet -- and every
     scenario missing, since no product exists yet to produce evidence) -- disclosed, not hidden,
-    same resource_gate precedent as FTF-H002/FTF-H028.
-  proof_state: L1-PROVEN
+    same resource_gate precedent as FTF-H002/FTF-H028. Independently certified per
+    docs/certifications/ledger.md (PR #63, merge commit 84b71cf).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1810.py
 FTF-1811:
