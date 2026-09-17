@@ -1,5 +1,327 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T15:20:00Z
+Updated: 2026-09-17T17:35:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): capacity fix confirmed working; remaining failures are a genuine SeaweedFS 3.71 version/capability gap, not a code bug — stopping here, decision needed
+Continuation of this same relay shift, after the `-master.volumeSizeLimitMB=64`
+fix (commit `01e88fb`) triggered CI run 35251840024. Real result, read
+directly from the job log and the debug instrumentation (not inferred):
+the volume-exhaustion defect is fully fixed — the container log now shows
+56 real volumes created with zero `"no free volumes left"` errors,
+versus exhausting after only 12 before. 4 of 9 tests now pass completely
+end-to-end (`test_backup_and_restore`, `test_multipart`,
+`test_multipart_abort`, `test_identity`) where none did before this
+shift's fix.
+
+The remaining 5 failures are real, and this shift traced each to a
+specific, named SeaweedFS response — not a client/signing defect (the
+identical SigV4 code path is what made the 4 passing tests succeed):
+- `test_versioning`/`test_retention_deletion`: `PutBucketVersioning`
+  still returns `501 NotImplemented`. Root-caused with certainty, not
+  guessed: fetched SeaweedFS's own real release notes for the pinned
+  version (`3.71`, this repo's `infra/docker/docker-compose.yml` digest)
+  via `WebFetch` — zero mention of versioning/object-lock/WORM anywhere
+  in that release. Fetched release `3.94`'s own real notes — explicitly
+  "a major release adding support for S3 object versioning and locking
+  ... WORM support" and "Add object versioning" as a named new feature.
+  This is not a bug to fix in this repo's client or in SeaweedFS's
+  config — the pinned image genuinely predates this S3 API surface
+  existing at all.
+- `test_immutable_publication`: a COMPLIANCE-retained object's `DELETE`
+  succeeds when it should be rejected. Corroborated against a real,
+  dated upstream defect: `seaweedfs/seaweedfs#8350` ("Object Lock
+  COMPLIANCE mode does not enforce WORM (Delete still succeeds)") and its
+  follow-up `#11333`, with fixes in PRs `#11335`/`#11361`/`#11362` —
+  found via `WebSearch`, not assumed. Since Object Lock itself postdates
+  `3.71` (per the versioning finding above), this failure is really the
+  same "feature doesn't exist yet" root cause, not a distinct one.
+- `test_checksum`: an intentionally-corrupted `Content-MD5` upload is
+  rejected, but with `500 InternalError` instead of the expected `400`.
+  Matches a real, dated upstream fix found during this same shift's
+  earlier research (`seaweedfs/seaweedfs` PR "fix: s3 return BadDigest",
+  replacing exactly this generic-500 behavior with a proper `BadDigest`
+  response for a mismatched digest) — SeaweedFS does detect the mismatch
+  (it doesn't silently accept the corrupted body), it just reports it
+  with the wrong status code in this pinned version.
+- `test_encryption`: a `GET` without the SSE-C key, and a `GET` with the
+  wrong SSE-C key, both return `200` with data instead of being rejected
+  with `400` — SSE-C key enforcement is not active in this configuration.
+  Not yet corroborated against a specific named upstream issue (this
+  shift's research budget was spent confirming the two findings above
+  first); flagged as unconfirmed-cause, not asserted as identical to the
+  versioning gap.
+
+**This is now a fixture-adequacy/version-lock question, not a "root
+cause and fix" bug this shift can close by itself.** Deliberately did not
+attempt a speculative image-digest bump: verifying the *exact* newer
+digest that both exists for the right architecture and actually contains
+these fixes would need Docker Hub metadata queries this shift did not
+complete, and pushing an unverified guess risks exactly the kind of
+wasted CI round-trip this shift's own diagnostic work (the `debug` flag,
+the mergeable-state fix) was specifically about avoiding. Three concrete
+options for whoever continues this (next relay shift, or Control
+plane/owner judgment):
+1. Verify and bump `infra/docker/docker-compose.yml`'s pinned SeaweedFS
+   digest to a release at or after `3.94` (ideally one that also
+   includes the Object Lock enforcement fix, i.e. after
+   `seaweedfs/seaweedfs#11335`/`#11361`/`#11362` merged) — ideally also
+   confirms whether the `BadDigest`/SSE-C behaviors improve. Needs a real
+   digest verified against Docker Hub's metadata API (same no-pull
+   approach FTF-0004's own evidence already established), then a real CI
+   run to confirm, since this sandbox still has no container-registry
+   egress to test it directly.
+2. Disclose partial qualification: `multipart`/`identity`/
+   `backup_and_restore` (3 of 8 required Section 80.4 semantics) proven
+   against the current pinned fixture; `versioning`/`retention_deletion`/
+   `immutable_publication`/`checksum`/`encryption` (5 of 8) explicitly
+   `BLOCKED_EXTERNAL`/capability-gap against this specific pinned image
+   version, matching the same resource_gate discipline FTF-0004's own
+   registry-egress finding and FTF-1810's `BLOCKED_EXTERNAL` bindings
+   already established as legitimate, disclosed precedent — and let
+   Control plane/the owner judge whether that meets FTF-R017's bar as-is.
+3. Some other explicit decision (e.g. owner-provisioned
+   `maintained_organizational_s3` per `storage-profile.yaml`'s own
+   already-declared alternative backend, sidestepping the fixture
+   question entirely).
+
+Not attempting option 1 or 2 unilaterally this shift — this is a design/
+scope call bigger than the debugging work this shift was executing, and
+CLAUDE.md's relay role is explicit that decided, sliced execution is the
+mandate, not open-ended design judgment. `certification_state` for
+FTF-R017 stays `PROVISIONAL`; not resubmitting for certification with
+`storage-semantics-integration` still red. Left `01e88fb`'s real,
+verified volume-capacity fix in place (unconditionally correct
+regardless of how the fixture-version question resolves).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
+
+## 2026-09-17 — FTF-R017 (PR #75): root cause found and fixed — real SeaweedFS volume-capacity exhaustion, not a SigV4 bug
+Continuation of this same relay shift, once CI genuinely ran with the
+debug instrumentation for the first time (run 35250917560). The
+`storage-semantics-integration` job still failed
+(`check_run.completed`/`failure`, job 105302756954) — but this time with
+real per-request evidence instead of a guess.
+
+Read the job log directly (`get_job_logs`, both the Python-side debug
+print lines and the `docker compose logs s3` dump this task's prior
+`a8decce` commit already wires in on failure). Correlated them line by
+line (method/canonical-URI + real response status/code, matched to the
+container's own boot log): `test_backup_and_restore` (alphabetically
+first) completed all 10 of its own real S3 calls successfully — proving
+the SigV4 client and signing path are not the defect. Its own two
+buckets' first writes each triggered SeaweedFS's default volume-growth
+behavior (up to 7 volumes per bucket "collection", matching SeaweedFS's
+own documented no-replication default), and the container log shows the
+second bucket's growth already only partially succeeding: `"create 7
+volume, created 5: Not enough data nodes found!"`. Every subsequent
+test's first real write against its *own* brand-new bucket (this
+suite's `_unique_bucket` helper makes every bucket a fresh SeaweedFS
+collection, by design, for isolation) then failed for real with
+SeaweedFS's own `"no free volumes left"` (500 InternalError) — the
+runner's real free disk had been consumed by the first two buckets' worth
+of the master's per-volume size assumption. The 2 `501 NotImplemented`
+responses (both `PutBucketVersioning`) are a distinct SeaweedFS response
+code from the 500s and were left explicitly unresolved by this specific
+fix — not yet known whether they're a downstream symptom of the same
+capacity exhaustion or a genuine, separate capability gap.
+
+Researched (via `WebSearch`/`WebFetch` against seaweedfs/seaweedfs's own
+GitHub issues, wiki, and raw source) rather than guessing a flag name:
+confirmed SeaweedFS's master computes its auto-detected max-volume
+ceiling from real free disk space divided by its own `volumeSizeLimitMB`
+assumption (default 30000MB), and that for the combined `weed server`
+subcommand this repo's compose file uses, the correct flag is
+`-master.volumeSizeLimitMB` (verified directly against
+`weed/command/server.go`'s real flag registration before pushing, not
+assumed from a blog post). Set it to `64` (comfortably above this
+suite's largest single write, a 5MB multipart part) on the `s3` service's
+`command:` in `infra/docker/docker-compose.yml` — `docker compose config`
+confirmed it parses as a distinct argument, not string-mangled into the
+existing flags. `-master.volumePreallocate` left untouched at its own
+default (`false`) — unrelated to this fix.
+
+Law 15 check performed: grepped `tests/tasks/test_ftf_0004.py`/
+`scripts/verify_docker_local_stack.py` — FTF-0004's entire certified
+evidence surface only checks TCP-level reachability on the s3 port, never
+its command-line flags. Purely additive; no requalification triggered.
+Regression: full 16-script existing test suite, ruff/mypy/eslint/tsc,
+pytest, vitest, and `validate_spec.py --strict` all clean (fresh worktree
+at the PR's real head, matching this shift's own earlier merge-fix
+verification). Pushed as commit `01e88fb` to the same PR #75 branch.
+
+STEP 4: still not a stop condition — waiting on this specific fix's own
+CI result (subscribed to PR #75) before either resubmitting for
+certification (if all 9 tests now pass) or diagnosing the 2 remaining
+501s as a distinct, separate finding (if the 500s clear but the 501s
+persist). `certification_state` for FTF-R017 remains `PROVISIONAL`.
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
+
+## 2026-09-17 — FTF-R017 (PR #75): found and fixed why CI silently never ran (mergeable_state: dirty), CI now genuinely running
+Continuation of this same relay shift, after pushing the debug-
+instrumentation commit (`a43dff9`) below. Re-checked PR #75's CI status to
+confirm the new head triggered a run — `pull_request_read
+get_check_runs` still returned `total_count: 0`, and stayed at 0 across a
+second check several minutes later. Rather than assume a webhook delay
+and wait indefinitely, read `pull_request_read.get` directly:
+`mergeable_state: "dirty"` — a real, GitHub-computed conflict against
+`main`, caused by the Control-plane certifier session (documented below)
+having pushed its review commits (`730d87d`, `b52f83c`) directly to
+`main` while PR #75 was still open on an older base. This is the exact
+same structural failure mode FTF-0004 hit during its own review cycle
+(`docs/certifications/queue.md`'s "not in a certifiable state" entry): a
+PR that goes `dirty` against a newer `main` stops GitHub Actions from
+generating check runs for further pushes at all, silently — not a queue
+delay, not a flake, and not something the debug commit itself broke.
+
+Fixed the same way that precedent did: fetched current `main`, merged it
+into `claude/wizardly-fermat-ci7leb` in the same worktree. All three
+conflicts were pure tracking-doc conflicts (`PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`) — no code conflict — resolved by keeping
+both sides' substantive content in chronological order. While resolving,
+caught two places where git's own 3-way merge had silently picked the
+stale side *without* flagging a conflict at all: `QUEUE.md`'s `## Status`
+line and its own `## Provisional` section had reverted to a stale
+`Provisional: 1 (FTF-R017...)` entry that `main`'s own certifier review
+had already correctly cleared when reclassifying this into `## Active` —
+caught by diffing the merged file against `git show origin/main:QUEUE.md`
+directly rather than trusting a clean `git merge` exit code, and fixed to
+match `main`'s real state.
+
+Re-ran the full regression suite on the merged state before pushing: `uv
+run ruff check`/`format --check`/`mypy .` clean; `pnpm run lint`/
+`format:check`/`typecheck` clean; all 16 task negative-test-proof scripts
+(the existing 15 plus this task's own `test_ftf_r017.py`) pass; `uv run
+pytest tests/unit` (3 passed), `pnpm exec vitest run` (2 passed),
+`scripts/validate_spec.py --strict` clean. No code was touched by this
+merge — tracking docs only.
+
+Pushed the merge commit (`a2b2123`) to the same PR #75 branch. Confirmed
+via `pull_request_read.get`: `mergeable_state` is now `clean`. Confirmed
+via `get_check_runs`: a real CI run (35250917560) is now genuinely
+`in_progress`/`queued` on all three jobs, including
+`storage-semantics-integration` — the debug instrumentation from
+`a43dff9` will run for the first time on this run. Recorded the
+mergeable-state finding and fix in `docs/certifications/queue.md` as its
+own entry (not mixed into either the producer's or the certifier's prior
+entries).
+
+STEP 4: still not a stop condition in the strict sense — waiting on the
+now-unblocked CI run's actual result (subscribed to PR #75's activity)
+before drawing or acting on any root-cause conclusion about the 500/501
+failures. This is the first CI run that will actually exercise the debug
+instrumentation, so there is nothing further to do until it completes.
+`certification_state` for FTF-R017 remains `PROVISIONAL` (unchanged).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
+
+## 2026-09-17 — FTF-R017 (PR #75): per-request debug instrumentation added, root cause not yet confirmed, waiting on CI
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md/
+BLOCKER.md (all resolved history, no open blocker), cross-checked against
+live repo state via `git fetch origin main` (local designated branch
+matched `origin/main` exactly at `b52f83c`, no divergence) and
+`list_pull_requests`.
+
+Two open PRs found: #75 (FTF-R017, flagged in QUEUE.md "Active" — a real,
+reproducible CI failure on `storage-semantics-integration`, not yet
+root-caused) and #67 (the still-unconfirmed FTF-0102 "owner approved
+option 1" claim). Re-checked #67's comments: still only this session's
+own prior-shift finding comment, no owner-authored corroboration, still
+`mergeable_state: dirty` — left exactly as-is, not re-litigated.
+
+Picked up #75/FTF-R017 per QUEUE.md's own explicit instruction ("Next
+relay shift on FTF-R017: root-cause the 500/501 responses... push to the
+existing branch/PR #75"). Read the actual CI job log for the most recent
+failing run directly (`get_job_logs`, job 105262713015, run 35239135374,
+head `fb0c2ac`) rather than trusting the prior shift's own PROGRESS.md
+inference about which specific S3 operation fails inside each test —
+found that claim ("500 InternalError on object-write operations
+PutObject/CreateMultipartUpload/UploadPart... 501 specifically on
+PutBucketVersioning") was not actually verifiable from the log itself:
+`tests/integration/test_storage_semantics.py`'s `main()` only catches
+`S3Error` at the whole-test-function level, so the log shows 9 test-level
+failures with status/code/message but never which real request inside
+each test triggered it — the prior shift's operation attribution was a
+plausible but unproven guess (matching test names to their presumed
+first differentiating call), not evidence per Law 1.
+
+Before writing any fix, reviewed `apps/api/app/services/
+storage_semantics_client.py`'s `sign_request` line by line against the
+published AWS SigV4 algorithm (canonical request, canonical headers/
+query-string construction, signing-key derivation, payload-hash
+computation and its reuse in both the signature and the transmitted
+body) — found no structural defect, and the exact same code path is used
+by every operation including `create_bucket` (presumed, not proven, to
+succeed). Searched known SeaweedFS S3-gateway GitHub issues for this
+task's exact error wording (`InternalError`/"please try again",
+`NotImplemented`/"a header you provided implies functionality") — found
+real issues with each message, but for several different underlying
+causes apiece (volume-growth capacity races, a Content-MD5 digest
+mismatch that a later SeaweedFS PR changed from a generic 500 to a
+specific `BadDigest`, filer path-conflict cases, and PutBucketTagging's
+own NotImplemented precedent) — none pinned down without knowing which
+real request in this fixture is the one failing. Concluded that pushing
+another single speculative fix (as the prior two commits on this PR each
+did) risks a third wrong guess and a third CI round-trip; the actual gap
+is observability, not a specific known bug to patch blind.
+
+**Delivered (diagnosis-only, no behavior change to any existing path):**
+`S3Client.__init__` gained an opt-in `debug: bool = False` keyword
+(default unchanged for every other caller). `_request` now prints, only
+when `debug=True`: the request shape (method, canonical URI, sorted query
+key names, sorted header names, body length) before executing, and the
+real response status on success or `(status, code, message)` on an
+`S3Error` after. Deliberately never prints credentials, the
+`Authorization` header, or any signature material — reviewed the diff
+specifically for this before pushing. Wired `debug=True` only into
+`tests/integration/test_storage_semantics.py`'s own client construction
+(the `wrong_client` used solely for the identity-rejection probe is left
+undebugged — not part of this mystery).
+
+**Regression check (fresh, unshallowed worktree at the PR's real head):**
+`uv sync`/`pnpm install --frozen-lockfile` (fresh container). `uv run
+ruff check`/`format --check` clean on both changed files; `uv run mypy`
+clean on the client module. This task's own non-Docker unit test
+(`tests/tasks/test_ftf_r017.py`, SigV4 signing math + every
+negative_acceptance case) — clean, unaffected (the debug flag defaults
+False and that test never sets it). Full existing regression set — all
+15 task scripts (`test_ftf_0001_monorepo_layout.py` through
+`test_safe_parallel_executor.py`/`test_profile_scope.py`) pass; two
+Python failures and one JS failure seen on the first pass
+(`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py`) were confirmed
+to be pre-existing environment artifacts of this fresh container/shallow
+clone (missing `node_modules` before `pnpm install`; `git fetch
+--unshallow` needed for `test_ftf_h001.py`'s real-commit-resolution
+check, same documented artifact prior shifts hit) — not caused by this
+change; re-ran clean after fixing the environment, confirming no
+regression. `uv run pytest tests/unit` (3 passed), `pnpm exec vitest run`
+(2 passed), `scripts/validate_spec.py --strict` clean.
+
+Pushed as commit `a43dff9` directly to the existing PR #75 branch
+(`claude/wizardly-fermat-ci7leb`) — not a new/duplicate PR, per QUEUE.md's
+own explicit instruction. Subscribed to PR #75's activity. CI triggered
+on the new head (confirmed a new workflow run started, superseding the
+three prior runs on `fb0c2ac`/`42cae14`/`9d7bf82`).
+
+STEP 4: not a stop condition in the usual sense (not N/N proven, no true
+blocker, not stuck — this is the first debug-instrumented push, not a
+third failed guess) but no further useful action is available until the
+new CI run's actual per-request debug output is readable — continuing to
+guess at the root cause without it would repeat exactly the mistake this
+shift diagnosed in the prior two commits. Waiting on the subscribed PR
+activity event for the new run's result before drawing or acting on any
+conclusion. `certification_state` for FTF-R017 remains `PROVISIONAL`
+(unchanged — still not certifiable, CI still not green). FTF-0102 remains
+blocked on the standing owner ask; PR #67's claim remains unconfirmed and
+unactioned (no new corroboration this shift).
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged — FTF-R017 was
+never counted as Provisional in QUEUE.md's own tracker; it's tracked only
+in "Active" pending a green CI run). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-R017 (PR #75) NOT CERTIFIED — real CI failure on the PR's own new job
 Scheduled CERTIFY-mode session, triggered by PR #75's own
