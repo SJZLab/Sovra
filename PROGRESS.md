@@ -1,5 +1,37 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T01:05:00Z
+Updated: 2026-09-17T01:15:00Z
+
+## 2026-09-17 — Control plane: FTF-H002 (PR #51) CERTIFIED
+Autonomous certifier shift (scheduled/webhook firing on PR #51's
+`pull_request.opened` event, no live user present).
+Session-ID independence check performed first: this session is
+`session_01EU5uvrwEGaDsAM323SCRNj`; PR #51's 8 commits carry either
+`Claude-Session: .../session_01KcK5jpotjXCpjrQj8qMPVp` (the original
+FTF-H002 implementation, PR #49's producer) or
+`Claude-Session: .../session_01BNQGXo9Q8t1PFdEmxQZXHF` (the merge-conflict
+resubmission session) — neither matches, independent per Law 4.
+Followed CERTIFY per `docs/CONTROL_PLANE_MODES.md`: waited for the real
+CI webhook on PR #51's actual head (it moved once, `55d3ba6` → `c6985e0`,
+a `PROGRESS.md`-only bookkeeping commit — re-confirmed CI on the new head
+too, both `gate` and `docker-local-stack-integration` `success`); PR #51
+was merged by the repo owner mid-review as `b0f8184` — confirmed
+`git diff b0f8184 c6985e0` empty, so the merge commit is tree-identical to
+the CI-verified head; re-read the full diff; re-ran the full 9-task
+regression suite plus `validate_spec.py --strict` and
+`verify_task.py --task FTF-H002 --stage task` in a fresh worktree; ran an
+independent fault injection (removed the `required`-downgrade rejection
+from `scripts/release_scope_lock.py`, distinct from both producer
+sessions' own fault injections) — exactly the expected check failed,
+restored byte-identical, re-ran clean; pulled the real contract via
+`tools/r1_handoff.py packet FTF-H002` and confirmed the acceptance/
+negative_acceptance clauses against the delivered code, not just "tests
+pass." No defect found. Set `docs/spec-matrix.yaml` FTF-H002 to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, appended
+`docs/certifications/ledger.md`, moved QUEUE.md's FTF-H002 entry from
+"Provisional" to "Done" and updated its Status line (Certified: 9/300,
+Provisional: 0). Full evidence trail: `docs/certifications/ledger.md`
+"FTF-H002 — Freeze release scope, compatibility and measured execution
+inputs".
 
 ## 2026-09-17 — FTF-H002 CI fix confirmed green, resubmitted via superseding PR
 Autonomous relay shift (scheduled firing, no live user present).

@@ -754,3 +754,116 @@ corrected 2026-09-15.
   clauses item by item, including an explicit check that the disclosed
   `ExternalRunBinding` scope deferral follows existing certified precedent
   rather than being taken on trust. No open defect. Certified L2-CERTIFIED.
+
+## FTF-H002 — Freeze release scope, compatibility and measured execution inputs
+- Criterion ID: FTF-H002
+- PR: https://github.com/SJZLab/Sovra/pull/51 (`claude/wizardly-fermat-w4h9ys`
+  → `main`), superseding the earlier PR #49 (`claude/wizardly-fermat-brui19`,
+  closed as superseded — same code, blocked earlier only by a real CI test
+  bug, see docs/certifications/queue.md's 2026-09-16 NOT CERTIFIED entry and
+  its 2026-09-17 CI-fix resubmission entry for the full history). Merged as
+  `b0f818498660fa0f376fdf1d2a0db42baac25e43`
+- Merge commit: 40b61d221238a25a2420cabc945d0d41d91b36e3 (implementation;
+  `evidence_hash` recorded in `docs/spec-matrix.yaml`)
+- Validated-by: session https://claude.ai/code/session_01EU5uvrwEGaDsAM323SCRNj
+  (session-ID comparison performed and recorded before this entry: all 8
+  commits on PR #51 — 40b61d2, 3f5e618, af2b0fa, 3d235b4, 419f9cc, 1df4f83,
+  55d3ba6, c6985e0 — carry either `Claude-Session: .../session_01KcK5jpotjXCpjrQj8qMPVp`
+  or `Claude-Session: .../session_01BNQGXo9Q8t1PFdEmxQZXHF`; this session's ID
+  matches neither, so this is an independent certification, not
+  self-certification)
+- Date: 2026-09-17
+- Evidence independently re-verified this session, not taken on the PR
+  description's or queue.md entry's word:
+  1. Confirmed via GitHub's own data (not the PR body's claim) that PR #51's
+     actual final head is `c6985e064052a64b031b015e28be195770897d28` (one
+     commit past the `55d3ba6` head named in the PR's own test-plan
+     checklist, adding only a `PROGRESS.md` bookkeeping line — confirmed via
+     `gh api .../compare/55d3ba6...c6985e0` that `PROGRESS.md` is the only
+     file touched) and that `get_check_runs`/`gh api commits/.../check-runs`
+     reports both `gate` and `docker-local-stack-integration`
+     `completed`/`success` tied to that exact head, not a stale earlier
+     commit.
+  2. PR #51 was merged (by the repo owner) as `b0f8184` while this review was
+     in progress; confirmed `git diff b0f8184 c6985e0` is empty — the merge
+     commit on `main` is tree-identical to the CI-verified PR head, so the CI
+     evidence above binds to what actually landed on `main`.
+  3. Read the full diff directly (`git diff dfebd46 origin/claude/wizardly-fermat-w4h9ys
+     --stat`, 15 files, +2659/-41): `apps/api/app/services/environment_preflight.py`,
+     `scripts/release_scope_lock.py` + `spec/release-scope.yaml`,
+     `scripts/generate_compatibility_lock.py` + `spec/compatibility-lock.json`,
+     `docs/operations/budget-forecast.md`, `tests/tasks/test_ftf_h002.py`,
+     plus tracking docs and one `.github/workflows/ci.yml` addition — matches
+     the queue entry's description, no unrelated files touched, and matches
+     the task packet's own `files` list exactly
+     (`spec/release-scope.yaml`, `spec/compatibility-lock.json`,
+     `apps/api/app/services/environment_preflight.py`,
+     `docs/operations/budget-forecast.md`).
+  4. In a fresh git worktree at the real merged tip (`origin/claude/wizardly-fermat-w4h9ys`
+     at `c6985e0`): real toolchain installed (`uv sync`, `pnpm install
+     --frozen-lockfile`); `python3 scripts/release_scope_lock.py` and
+     `python3 tests/tasks/test_ftf_h002.py` (15/15 checks) genuinely re-run
+     and pass, matching how CI actually invokes them (plain `python3`, not
+     `uv run` — CI installs `pyyaml` via a bare `pip install` step
+     specifically for these scripts, confirmed by reading
+     `.github/workflows/ci.yml`); full 9-task regression set
+     (`test_ftf_0001_monorepo_layout.py` through `test_ftf_r001.py`, now
+     joined by `test_ftf_h002.py`) all pass unmodified — no regression to
+     existing certified evidence.
+  5. `python3 scripts/validate_spec.py --strict` clean;
+     `python3 scripts/verify_task.py --task FTF-H002 --stage task` → `PASS`
+     against evidence commit `40b61d2`, genuinely re-executed against this
+     exact checkout, not re-read as trusted text.
+  6. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-H002 entry has `proving_symbol: ''` — a preflight/release-scope
+     freeze layer, no live product-runtime caller yet, same disclosed
+     rationale already established for FTF-0002/0003/H001/R001.
+  7. `verify_release.py` run live on the merged tree (before this
+     certification) correctly reported `8/300 required task(s) have
+     live-passing, CERTIFIED evidence` / `NOT READY`, with FTF-H002 itself
+     listed under `FAILED` because its own `certification_state` was still
+     `PROVISIONAL` at that point — proving the release gate is not inflated.
+  8. **Real fault injection against the tracked module itself, not reused
+     verbatim from either producer session's own two (owner/next_action
+     guard removal; credential-presence-as-AVAILABLE for Bedrock):** removed
+     the `required` downgrade rejection
+     (`if entry.get("required") is not True: ...`) from
+     `scripts/release_scope_lock.py`'s `validate_release_scope` — re-ran
+     `tests/tasks/test_ftf_h002.py`: exactly 1 failure
+     (`downgrading required=false on a CAP ID is rejected`), all 14 other
+     checks stayed green; restored byte-identical from a pre-edit copy
+     (`diff` confirmed empty), re-ran clean (15/15 pass again) — confirming
+     the whole-set validator's `required` check is load-bearing, not
+     decorative.
+  9. Pulled the real contract via `python3 tools/r1_handoff.py packet
+     FTF-H002 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and read
+     `docs/implementation/task-packets/FTF-H002.md` directly: `files` list
+     matches item 3 above exactly; acceptance clause 1 ("unknown prices,
+     unavailable managed capabilities, stale LiteLLM routes or absent
+     runtime integration are explicit external blockers") is met by
+     `check_managed_provider_bedrock` (never `AVAILABLE` from credential
+     presence alone), `check_litellm_gateway` (a closed/stale socket reports
+     `BLOCKED_EXTERNAL`), and `check_coding_provider_billing` (always
+     `BLOCKED_EXTERNAL`, no invented rate — read `budget-forecast.md`
+     directly and confirmed no `$<number>/hour|token|task` pattern appears
+     anywhere in it); acceptance clause 2 ("No full release claim until all
+     mapped scenarios and exact-revision evidence pass") is enforced by
+     `verify_release.py` and independently confirmed non-inflated in item 7;
+     negative_acceptance ("Do not invent a model ID/rate or cut required
+     scope... implement preflight independently of final qualification")
+     is met — `check_litellm_gateway` reads `SOVRA_LITELLM_GATEWAY_URL`
+     directly rather than through FTF-0005's `Settings.from_env()`, and no
+     model ID/rate appears anywhere in the diff.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real, current PR head (one commit
+  past what the PR's own checklist named, confirmed to be a docs-only
+  addition), the merge commit on `main` is tree-identical to that
+  CI-verified head, the real toolchain installed and both verification
+  commands genuinely re-run, a fresh fault injection (distinct from both
+  producer sessions' own) confirming the release-scope `required`-downgrade
+  rejection is validator-enforced rather than fixture-assumed,
+  `product_truth_check.py`'s 0/0 and `verify_release.py`'s `8/300`/
+  `NOT READY` both confirmed legitimate and non-inflated, and the delivered
+  work matches the real task-packet contract's acceptance/negative_acceptance
+  clauses item by item. No open defect. Certified L2-CERTIFIED.

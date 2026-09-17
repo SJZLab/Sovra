@@ -2617,7 +2617,7 @@ FTF-H001:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h001.py
 FTF-H002:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Freeze release scope, compatibility and measured execution inputs
   evidence_hash: 40b61d221238a25a2420cabc945d0d41d91b36e3
@@ -2635,7 +2635,7 @@ FTF-H002:
     the coding-provider billing gap as BLOCKED_EXTERNAL rather than inventing a rate, per this task's own
     negative_acceptance; Bedrock/boto3 real account validation and a live LiteLLM/Kubernetes/GPU environment
     remain disclosed follow-ups pending real infrastructure access, same pattern as FTF-0004's `web` exclusion
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h002.py
 FTF-H003:
