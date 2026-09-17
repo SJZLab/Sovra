@@ -1,5 +1,156 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T07:10:00Z
+Updated: 2026-09-17T09:10:00Z
+
+## 2026-09-17 — FTF-R014 implemented (Provisional, PR #68 opened, awaiting CI + L2 certification); PR #67 finding flagged
+Autonomous relay shift (scheduled firing, no live user present). STEP 0:
+`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` — no drift.
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md, then
+cross-checked against live repo state: `git fetch origin main`, local
+designated branch (`claude/wizardly-fermat-czj1h6`) matched `origin/main`
+exactly at `3a1d77d` (PR #65's FTF-1810 certification merge) — no
+divergence. `BLOCKER.md` held only resolved history. QUEUE.md
+Active/Provisional both empty, 12/300 certified, Blocked: 1 (FTF-0102,
+unchanged open owner ask).
+
+**Finding before claiming any task — flagged, not silently worked around:**
+`list_pull_requests` (state=open) returned one open PR, #67
+(`[relay] FTF-0102: owner approved option 1 (SQLAlchemy + Alembic +
+Postgres driver)`), from a different prior session on this account
+(`session_0154rGkMQgbT7Q5x8dgGJVep` — the same session that produced
+FTF-1810's own legitimate implementation, PR #63). Its commit claims a
+live interactive session recorded the owner's (samer.zakaria@gmail.com)
+direct approval of the standing 2026-09-16 FTF-0102 new-runtime-dependency
+ask, and edits QUEUE.md to remove the ask and move FTF-0102 out of
+`## Blocked`. This is plausible on its face (it names the owner's real
+account email, matching this session's own injected `userEmail` context,
+consistent with a genuine live Claude Code session) but is not
+independently verifiable from the PR itself: `get_comments`/`get_reviews`
+both return empty — no owner comment, review, or any other GitHub-visible
+corroboration — and this shift's own operating instructions are explicit
+that a scheduled/automated turn with no live user present must never treat
+a prior claim of approval as newly confirmed on its own say-so. Separately,
+`mergeable_state` is `dirty` (real conflicts with `main`'s later
+FTF-H034/FTF-1810 merges), so it is not mergeable as-is regardless.
+`main`'s actual committed `QUEUE.md` (the operative state per STEP 0.1)
+still carries the ask as open and FTF-0102 as `Blocked`, unchanged from
+what the prior "implemented" shift entries below already recorded.
+
+Action taken: left FTF-0102 exactly as `Blocked`, did not merge PR #67, did
+not add any new runtime dependency. Posted one comment on PR #67
+explaining this finding and that a direct owner confirmation (or Control
+plane's independent judgment) would resolve it. Added a dated note to
+QUEUE.md's "Owner actions — current" block (appended under the existing
+FTF-0102 ask, not a new separate ask, per "Owner actions live in ONE
+place") recording the same. This is not a claim that PR #67 is false —
+only that this shift, with no live user input, cannot and must not treat
+it as confirmed.
+
+STEP 1: with FTF-0102 still correctly blocked, swept `docs/TASK_INDEX.md`'s
+real `Dependencies` column directly against the certified set
+(FTF-0001–0006, FTF-H001, FTF-R001, FTF-H002, FTF-H028, FTF-H034,
+FTF-1810 — 12 tasks): found FTF-0102 (blocked, as above), FTF-R011,
+FTF-R014, FTF-R017 all dependency-ready. Read all three real DoD packets
+via `tools/r1_handoff.py packet <id> --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+before picking. Picked FTF-R014: FTF-R011's own `files`/
+`shared_lock_required` touch `spec/deployment-profiles.yaml`, evidence
+already delivered under FTF-R001's certification (confirmed this file
+exists and carries FTF-R001's own header comment identifying it as that
+task's frozen contract) — extending it with new `assertion_applicability`
+keys (Q26/Q43) is plausibly a safe, purely additive Law 15 case, matching
+established precedent for touching shared files, but was not attempted
+this shift without deliberately confirming that first; FTF-R017 needs real
+Docker/SeaweedFS storage-semantics integration, a heavier resource-gate
+surface. FTF-R014 (binding the real coding executor to Section 84's
+embedded controls) has `shared_lock_required: []` and touches no
+already-certified task's files — the most self-contained of the three.
+Neither FTF-R011 nor FTF-R017 is rejected, just left for a future shift.
+
+STEP 2 (PEV):
+- P: read the FTF-R014 task packet in full, including Sections 57/57A/73/
+  81/84. Its acceptance clause needs a real receipt binding this
+  repository's actual selected executor to `R1_EMBEDDED`/
+  `R1_EMBEDDED_PLUS_EXISTING_SKILL` via Section 84's digest. Confirmed
+  before writing anything: no installed Agentic SDLC skill artifact exists
+  in this repository (grepped for `v20.1`/"Agentic SDLC" — only the spec's
+  own references turned up, no adopted artifact) — `R1_EMBEDDED` (file-only)
+  is the real, current decision, not assumed. This task's own
+  `qualification_scenarios` are `Q33`/`Q41`, not `Q42` — `Q33`'s real
+  safe-parallel-wave evidence is FTF-H034's own 8-OS-thread proof; this
+  sandbox still has no live multi-agent dispatch harness to hand a task to
+  a second, truly separate coding-executor process. Not re-claimed here;
+  this task implements `Q41`'s own, narrower scope.
+- E: implemented `tools/implementation/executor_contract.py`
+  (`ExecutorReceipt`/`ExternalSkill`/`validate_receipt`). Digests
+  (`source_file_digest`, `embedded_section_digest`) computed live against
+  the real, current `spec/RELEASE_1.md` and its Section 84 text on every
+  call — never pasted once and left to drift. Enforces every
+  negative_acceptance clause (missing/mismatched digest, fabricated
+  external-skill conformance, self-certification, unscoped workspace,
+  producer mutation of protected gates — a receipt touching a real
+  `.github/CODEOWNERS` path must be validated by that file's actual sole
+  reviewer, not an ordinary session — and claimed OpenHands qualification
+  without a real run). Reused `scripts.architecture_lock.validate_instance`
+  (FTF-R001's own bounded JSON Schema validator) against the new
+  `spec/implementation-executor.schema.json` rather than adding the
+  `jsonschema` package, and `scripts.release_evidence_gate`'s
+  `GateResult`/`GateStatus`. `docs/implementation/executor-decision.md`
+  records this repo's real decision. `tests/implementation/
+  test_r1_execution_binding.py` (24 checks) proves every clause, including
+  digests independently recomputed with plain `hashlib`/regex (not trusted
+  as canned) and a real fault injection against the tracked module's
+  self-certification guard on disk (a fresh subprocess wrongly `PASS`ed a
+  self-certified receipt with the guard removed; restored byte-identical,
+  re-ran clean). Added the new validator module and schema to
+  `.github/CODEOWNERS` as protected gate paths (Section 84.6). Confirmed
+  via `grep` that no Factory production service imports this module.
+- V: `product_truth_check.py --fail-on-unwired` stays `0/0 product-true` —
+  legitimate, no `proving_symbol` (build/implementation tooling, no live
+  Factory product-runtime caller, same rationale as every prior FTF-H00X/
+  FTF-R00X task).
+Re-ran the full existing gate after all changes (`pnpm install
+--frozen-lockfile` first — fresh container, no `node_modules`): `uv run
+ruff check`/`format --check`/`mypy .` clean; `pnpm run lint`/
+`format:check`/`typecheck` clean; all 12 existing task negative-test-proof
+scripts (`test_ftf_0001_monorepo_layout.py` through `test_ftf_1810.py`)
+pass unmodified — no already-certified task's own implementation file was
+touched, only additive files plus FTF-R014's own `docs/spec-matrix.yaml`/
+`spec/verification-map.json` entries, avoiding any Law 15 requalification
+question; `uv run pytest tests/unit` (3 passed) and `pnpm exec vitest run`
+(2 passed) clean, 0 skipped either side. `validate_spec.py --strict`
+clean; `verify_task.py --task FTF-R014 --stage task` → `PASS` against
+evidence commit `fc1822903741fae188b7b81767a7668b3ee9cc96`.
+`verify_release.py` correctly non-inflated: `12/300`/`FAILED (1):
+['FTF-R014']`/`NOT READY`.
+Wired `python3 tests/implementation/test_r1_execution_binding.py` into
+`.github/workflows/ci.yml`'s `gate` job, right after the FTF-1810 step
+(YAML-validated with `yaml.safe_load`).
+Updated `docs/spec-matrix.yaml` (FTF-R014: IMPLEMENTED/L1-PROVEN/
+PROVISIONAL, `evidence_hash` filled in the hash-fixup commit — same
+two-commit pattern as every prior FTF-H00X/FTF-R00X/FTF-1810 task),
+`spec/verification-map.json` (real, currently re-executable entry),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (Active cleared,
+Provisional entry added, Provisional 0→1, plus the PR #67 finding note).
+Certified count unchanged at 12/300 — PROVISIONAL is not certified. Per
+Law 4, did not self-certify.
+
+STEP 4: stopping here for this shift's active work — FTF-R014 is fully
+L1-PROVEN and PROVISIONAL, PR #68
+(https://github.com/SJZLab/Sovra/pull/68) opened against `main` from
+`claude/wizardly-fermat-czj1h6`, subscribed to its activity. Confirmed
+real CI (`gate` + `docker-local-stack-integration`, run 35203392745)
+genuinely `queued` on the PR's actual head via `pull_request_read
+get_check_runs` — not yet green, not merging. This session will merge on
+green (per CLAUDE.md's "Do without asking: merge on green + L1 doc
+(PROVISIONAL)") without further owner input, then continue awaiting
+Control plane L2 certification — not a self-certification, per Law 4. The
+2026-09-15 trigger-tooling ask remains open and untouched. FTF-0102
+remains blocked on the standing owner ask (the PR #67 claim is flagged,
+not treated as resolving it). Once FTF-R014 certifies, FTF-R011 (with the
+Law 15 additive-edit question above worth resolving explicitly first) or
+FTF-R017 become the next candidates.
+
+Certified: 12/300 (unchanged). Provisional: 1 (FTF-R014, PR #68, CI in
+progress). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — Control plane: FTF-1810 CERTIFIED (PR #63 independently verified)
 Autonomous certifier shift, triggered by the PR #63 `opened` webhook. Read
