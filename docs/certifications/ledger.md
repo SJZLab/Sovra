@@ -1179,3 +1179,147 @@ corrected 2026-09-15.
   confirmed legitimate and non-inflated, and the delivered work matches
   the real task-packet contract's acceptance/negative_acceptance clauses
   item by item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-1810 — ReleaseQualificationWorkflow
+- Criterion ID: FTF-1810
+- PR: https://github.com/SJZLab/Sovra/pull/63 (`claude/wizardly-fermat-g3s0o0`
+  → `main`). Merged `2026-09-17` by `samerzakaria` (human) as merge commit
+  `84b71cfc254ea1ff90441a11692f6d77260d7eb7` (parents `384ac10` and the PR's
+  actual final head `e4ac93b`; `git diff e4ac93b..84b71cf --stat` is empty —
+  the merge commit's tree is identical to the CI-verified head, a clean
+  merge, no conflict resolution to re-check). A separate doc-only PR #64
+  (bookkeeping: recorded the PR #63 merge in QUEUE.md/PROGRESS.md while
+  still PROVISIONAL) was opened afterward, still open at review time; this
+  certification is based on the real code tree already on `main`,
+  unaffected either way.
+- Evidence commit: `e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a` (implementation;
+  `1a98057` is the same-PR hash-fixup/PROVISIONAL-bookkeeping commit;
+  `evidence_hash` recorded in `docs/spec-matrix.yaml` stays the
+  implementation commit, matching the existing convention for every prior
+  FTF-H00X/FTF-R00X/FTF-H034 ledger entry).
+- Validated-by: session https://claude.ai/code/session_011nr6FJt9LbbkEFMrATSZm5
+  (session-ID comparison performed and recorded before this entry: all
+  three commits on PR #63 — `e7ddf75`, `1a98057`, `e4ac93b` — carry
+  `Claude-Session: .../session_0154rGkMQgbT7Q5x8dgGJVep`; the merge commit
+  `84b71cf` carries none (human GitHub merge). This session's ID matches
+  neither — independent, not self-certification).
+- Date: 2026-09-17
+- Evidence independently re-verified this session:
+  1. Read the full diff directly (`git diff 384ac10..84b71cf`, every
+     changed file): `docs/operations/releasequalificationworkflow.py` (new,
+     315 lines) — `ReleaseBinding`/`resolve_release_binding` (real
+     sha256 of `spec/release-scope.yaml`, real `git rev-parse HEAD`,
+     `image_digest`/`deployment_profile` genuinely `None` rather than a
+     placeholder string when absent), `evaluate_scenario_evidence` (fails
+     closed in order on missing/skipped/incomplete/stale/nonzero-exit/
+     unsigned/tampered, reaching `PASS` only via a verified signature over
+     exact-revision-bound evidence; a present signature with no configured
+     verifier is `BLOCKED_EXTERNAL`, never a fabricated `PASS` from
+     presence alone), and `run_release_qualification_workflow` (missing
+     image digest / unresolved deployment profile each independently
+     `BLOCKED_EXTERNAL`). Reuses `scripts/release_evidence_gate.py`'s
+     `GateResult`/`GateStatus`/`overall_status` rather than reimplementing
+     them. `tests/tasks/test_ftf_1810.py` (new, 390 lines, 16 checks).
+     `.github/workflows/ci.yml` and `.github/workflows/
+     10-release-qualification.yml` diffs are two lines each, wiring the new
+     test/module into the existing `gate` and Tier-3
+     `workflow_dispatch`-only jobs respectively — no new trigger on an
+     ordinary PR.
+  2. CI verified for real, on the exact PR head that got merged: GitHub
+     Actions run `35192517673`, event `pull_request`, `head_sha`
+     `e4ac93bfca3346b87c43ff2e0ca721cfa4f8758c` (PR #63's real final head,
+     confirmed via `pull_request_read`/`get_commits`, not a stale or older
+     commit) — both check runs `gate` and `docker-local-stack-integration`
+     `completed`/`success`. `git diff e4ac93b..84b71cf --stat` is empty, so
+     the CI-verified head and the merged tree are identical.
+  3. Own re-run in a fresh worktree checked out at the real merge commit
+     `84b71cf` (`git worktree add`, not trusting a cached checkout):
+     `uv sync` + `uv pip install pyyaml` (this repo's own committed
+     `pyproject.toml`/CI step installs pyyaml outside the `uv` lock, same
+     as every prior shift) + `pnpm install --frozen-lockfile`, then
+     `python3 tests/tasks/test_ftf_1810.py` → `all checks passed` (16/16),
+     matching the PR's own claim exactly.
+  4. **Real fault injection against the tracked module, reproducing the
+     producer's own committed injection independently (removed the
+     `skipped`-check block from `evaluate_scenario_evidence` via `sed` on
+     the exact line range, not a hand-typed guess):** re-ran
+     `tests/tasks/test_ftf_1810.py` — exactly 4 of 16 checks failed for
+     real (`a scenario recorded as SKIPPED is FAIL, never treated as
+     passing`, `the skipped detail names the real reason`, and two
+     fault-injection-harness self-checks the producer's own test file also
+     runs). Restored via `git checkout --` against the worktree's own HEAD
+     (not a hand copy), `git diff HEAD` confirmed empty, re-ran clean
+     (16/16) — confirms the rejection is code-enforced, not
+     fixture-assumed.
+  5. Regression check, full toolchain, on the real merged tree: `uv run
+     ruff check .` / `ruff format --check .` / `uv run mypy .` clean (35
+     source files); `pnpm run lint`/`typecheck` and `pnpm exec vitest run`
+     (2 passed) clean (after `pnpm install`); all 12 task
+     negative-test-proof scripts (`test_ftf_0001_monorepo_layout.py`
+     through `test_ftf_h034.py`, now joined by `test_ftf_1810.py`) each
+     print their own `all checks passed` line — the FTF-0002/0003/H001
+     failures seen before installing pnpm's dependencies were confirmed to
+     be the same mundane missing-`node_modules` cause every prior
+     certification shift has hit in a fresh checkout, not a regression
+     from this change. `uv run pytest tests/unit` (3 passed).
+  6. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-1810 entry has `proving_symbol: ''` — this is release-qualification
+     aggregator tooling, not a live product-runtime path, same disclosed
+     rationale as every prior FTF-H00X/FTF-R00X task.
+  7. `verify_task.py --task FTF-1810 --stage task` → `PASS` against
+     evidence commit `e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a`, re-run
+     live, not trusted from the PR body. `validate_spec.py --strict` →
+     clean. `verify_release.py` run live on the real committed tree, before
+     this certification's own `spec-matrix.yaml` edit: `11/300 required
+     task(s) have live-passing, CERTIFIED evidence` / `FAILED (1):
+     ['FTF-1810']` / `NOT READY` — correctly listed `FAILED` because its
+     `certification_state` was still `PROVISIONAL` even though its own test
+     genuinely passes live; no inflation. After this certification's edit
+     plus `sync_certified_status()`, the same command reports `12/300` /
+     `NOT READY` (288 tasks genuinely not started).
+  8. Delivered work checked against FTF-1810's real acceptance/
+     negative_acceptance clauses via `tools/r1_handoff.py packet FTF-1810
+     --plan FINE_TUNING_FACTORY_RELEASE_1.md` and a direct read of
+     `docs/implementation/task-packets/FTF-1810.md`: acceptance clause 1
+     ("run the authoritative Q01-Q43 aggregator on exact release; bind
+     result to current scope/hash/image/profile") is met by
+     `resolve_release_binding`/`run_release_qualification_workflow`
+     against the real `spec/qualification-inventory.json` (43 scenarios)
+     and `spec/release-scope.yaml`; acceptance clause 2 ("independent
+     review, exact merged commit, real relevant integration and
+     negative-test evidence recorded") is this entry itself plus the CI/PR
+     flow already checked above. The negative_acceptance clause
+     ("missing/skipped/stale/unsigned/tampered/incomplete scenario cannot
+     authorize release") is proven per-reason by dedicated fixtures in
+     `tests/tasks/test_ftf_1810.py`, independently re-run above. The task
+     packet's `files` list (`docs/operations/releasequalificationworkflow.py`,
+     `tests/tasks/test_ftf_1810.py`) matches exactly what was delivered;
+     `shared_contracts_read` (the OpenAPI/JSON-Schema interface files) is a
+     read-only binding reference, not a required deliverable, and neither
+     the packet's acceptance nor negative_acceptance clauses depend on it.
+  9. **This certification's own bookkeeping edit, checked for the same
+     self-consistency gap FTF-H034's certification found:** after setting
+     `docs/spec-matrix.yaml`'s FTF-1810 `certification_state` to
+     `CERTIFIED`, ran `sync_certified_status()` against the real repo files
+     — the diff is limited to exactly FTF-1810's own `status`/`evidence`
+     fields in `spec/tasks.json` and `docs/implementation/TRACKER.json`
+     (confirmed via `git diff`, nothing else touched), and
+     `tests/tasks/test_ftf_h034.py`'s
+     `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`
+     stays green (17/17) both before and after.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit is
+  tree-identical to the CI-verified head, the real toolchain installed and
+  every verification command genuinely re-run, a fresh fault injection
+  (reproducing the producer's own, via an independent line-based edit
+  rather than a hand-typed string match) confirms the skipped-scenario
+  rejection is code-enforced rather than fixture-assumed, the
+  `sync_certified_status()` diff is confirmed limited to exactly FTF-1810's
+  own `status`/`evidence` fields and nothing else,
+  `product_truth_check.py`'s `0/0` and `verify_release.py`'s
+  `11/300`/`FAILED (1)`/`NOT READY` (pre-certification) →
+  `12/300`/`NOT READY` (post-certification) both confirmed legitimate and
+  non-inflated, and the delivered work matches the real task-packet
+  contract's acceptance/negative_acceptance clauses item by item. No open
+  defect. Certified L2-CERTIFIED.

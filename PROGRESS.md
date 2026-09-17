@@ -2165,3 +2165,54 @@ See QUEUE.md "Owner actions — current" for the authoritative, current
 list (two items as of this shift: trigger-tooling durability
 confirmation, and the Section 85 / DoD-supply blocker). Not duplicated
 here in full per "Owner actions live in ONE place."
+
+## Control plane certification (2026-09-17) — FTF-1810
+Note: this file's own "This shift"/"Metrics" sections above went stale
+after 2026-09-15 (FTF-0002/0003/0004/0005/0006/H001/R001/H002/H028/H034/
+1810 all landed and several were independently certified since, per
+QUEUE.md "Done" and docs/certifications/ledger.md, without a matching
+PROGRESS.md update each time) — not backfilling that history here; this
+entry only records this session's own certification action per the
+scheduled CERTIFY procedure.
+Ran the queue.md sweep this run exists for: `docs/certifications/queue.md`
+had exactly one item PROVISIONAL and not yet certified, FTF-1810
+(ReleaseQualificationWorkflow), merged to `main` via PR #63 (merge commit
+`84b71cfc254ea1ff90441a11692f6d77260d7eb7`). Session-ID check: all three
+commits on PR #63 carry `Claude-Session: .../session_0154rGkMQgbT7Q5x8dgGJVep`;
+this session is `session_011nr6FJt9LbbkEFMrATSZm5` — no overlap, independent
+per Law 4.
+Independently re-verified in a fresh git worktree at the real merged tip
+(full detail in `docs/certifications/ledger.md`'s FTF-1810 entry): read
+the full diff directly; confirmed CI (`gate` + `docker-local-stack-
+integration`) genuinely ran and passed on the exact PR head that got
+merged (run 35192517673, `head_sha` `e4ac93b`, tree-identical to the
+merge commit); re-ran `tests/tasks/test_ftf_1810.py` clean (16/16); ran an
+own fault injection (removed the `skipped`-check block via a line-range
+edit, independent of the producer's own committed injection) and
+confirmed 4/16 checks fail for real, restored via `git checkout --`,
+re-ran clean; confirmed `product_truth_check.py --fail-on-unwired` stays
+legitimately `0/0` (no `proving_symbol`); pulled the real task contract
+via `tools/r1_handoff.py packet FTF-1810 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed the acceptance/
+negative_acceptance clauses were genuinely met, not just "tests pass."
+Certified: set `docs/spec-matrix.yaml`'s FTF-1810 `certification_state`
+to `CERTIFIED` / `proof_state` to `L2-CERTIFIED`, ran
+`sync_certified_status()` (diff limited to FTF-1810's own `status`/
+`evidence` fields in `spec/tasks.json`/`TRACKER.json`, confirmed via
+`git diff`), re-ran the full 12-task regression set plus
+`tests/tasks/test_ftf_h034.py`'s own tracker-consistency check clean
+(17/17), appended the ledger entry, and moved FTF-1810 from QUEUE.md
+"Provisional" to "Done" (Certified 11 -> 12/300, Provisional 1 -> 0).
+`verify_release.py` confirmed non-inflated: `11/300`/`FAILED (1):
+['FTF-1810']`/`NOT READY` before this edit -> `12/300`/`NOT READY` after
+(288 tasks genuinely not started; still no full-release claim).
+
+## Metrics (as of this certification)
+Certified / denominator: 12/300 (per QUEUE.md/spec-matrix.yaml — supersedes
+the stale "1/300" figure in the Metrics section above, which was never
+updated across the intervening shifts)
+Product-true (Law 16): 0 — must match certified; none of the twelve
+certified tasks carry a proving_symbol yet (see QUEUE.md "Status" for the
+per-task rationale), so all twelve are CERTIFIED without counting toward
+product-true
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)

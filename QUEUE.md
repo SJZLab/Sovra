@@ -1,26 +1,29 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-1810 PR #63 merged to main, PROVISIONAL, awaiting Control plane L2)
+Updated: 2026-09-17 by Control plane (FTF-1810 independently re-verified and
+CERTIFIED — see docs/certifications/ledger.md)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 11/300 · Provisional: 1 (FTF-1810) · Blocked: 1 (FTF-0102,
+Certified: 12/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
-FTF-H028 and FTF-H034 all have no proving_symbol; FTF-0001 is structural
-layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004
-is local-stack bootstrap/health tooling, FTF-0005 is a configuration
-module with no live caller yet, FTF-0006 is an observability seam with no
-live FastAPI app or Temporal workflow to instrument yet, FTF-H001 is the
-spec/gate verifier tooling itself, FTF-R001 is an architecture/version-lock
-schema freeze with no live product-runtime caller yet, FTF-H002 is a
-preflight/release-scope-freeze layer with no live product-runtime caller
-yet, FTF-H028 is the release-evidence-gate/CI-aggregator tooling itself,
-`workflow_dispatch`-only and never run by the relay, and FTF-H034 is the
-task-claim scheduler/tracker-sync tooling itself, with no live multi-agent
-dispatch harness wiring it into a running caller yet — none a live-wired
-product-runtime path, so all eleven are CERTIFIED without counting toward
-product-true).
+FTF-H028, FTF-H034 and FTF-1810 all have no proving_symbol; FTF-0001 is
+structural layout, FTF-0002 is CI tooling, FTF-0003 is test-harness
+tooling, FTF-0004 is local-stack bootstrap/health tooling, FTF-0005 is a
+configuration module with no live caller yet, FTF-0006 is an observability
+seam with no live FastAPI app or Temporal workflow to instrument yet,
+FTF-H001 is the spec/gate verifier tooling itself, FTF-R001 is an
+architecture/version-lock schema freeze with no live product-runtime
+caller yet, FTF-H002 is a preflight/release-scope-freeze layer with no
+live product-runtime caller yet, FTF-H028 is the release-evidence-gate/
+CI-aggregator tooling itself, `workflow_dispatch`-only and never run by the
+relay, FTF-H034 is the task-claim scheduler/tracker-sync tooling itself,
+with no live multi-agent dispatch harness wiring it into a running caller
+yet, and FTF-1810 is the release-qualification aggregator itself,
+`workflow_dispatch`-only, with no product yet to qualify — none a
+live-wired product-runtime path, so all twelve are CERTIFIED without
+counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -74,21 +77,7 @@ product-true).
 "Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-1810 — ReleaseQualificationWorkflow. Implemented this shift
-  (`docs/operations/releasequalificationworkflow.py` + `tests/tasks/
-  test_ftf_1810.py`). Binds the real Q01-Q43 aggregator to the release's
-  scope/hash/image/profile; fails closed on missing/skipped/incomplete/
-  stale/unsigned/tampered scenario evidence. Run against the real current
-  repo it honestly reports NOT READY (image digest and deployment profile
-  both BLOCKED_EXTERNAL — no `07-container-build.yml` yet, Section 64.3
-  onboarding gate not run; every one of the 43 required scenarios missing
-  evidence, since no product exists yet). See
-  `docs/certifications/queue.md` for the full entry. Merged to `main` via
-  PR #63 (merge commit `84b71cfc254ea1ff90441a11692f6d77260d7eb7`) —
-  real `gate` + `docker-local-stack-integration` CI confirmed `success` on
-  the PR's actual head (`e4ac93b`), `mergeable_state: clean`, no open
-  reviews/comments. Still PROVISIONAL — awaiting independent Control plane
-  L2 certification (Law 4 — not self-certified).
+(empty — FTF-1810 certified below.)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -247,6 +236,37 @@ product-true).
   parallel-wave proof and the disclosed no-live-subagent-harness
   limitation both match the task's own negative_acceptance rather than
   quietly narrowing its scope. Full entry: docs/certifications/ledger.md.
+- FTF-1810 — ReleaseQualificationWorkflow. CERTIFIED 2026-09-17, PR #63
+  (merge commit `84b71cfc254ea1ff90441a11692f6d77260d7eb7`). Independently
+  re-verified in a fresh git worktree at the real merged tip: real
+  toolchain installed (`uv sync` + `pip install pyyaml`, `pnpm install
+  --frozen-lockfile`) and both of the task's own `verification_commands`
+  genuinely re-run (`validate_spec.py --strict`, `verify_task.py --task
+  FTF-1810 --stage task`), full 12-task regression set clean,
+  `product_truth_check.py` confirmed legitimately 0/0 (no proving_symbol —
+  release-qualification aggregator tooling itself, `workflow_dispatch`-only,
+  no product yet to qualify), `verify_release.py` confirmed non-inflated
+  (`11/300`/`FAILED (1): ['FTF-1810']`/`NOT READY` before this
+  certification, `12/300`/`NOT READY` after), CI reconfirmed green on the
+  actual PR head (`e4ac93b`, run 35192517673, both `gate` and
+  `docker-local-stack-integration`), and an own fault injection (removed
+  the `skipped`-check block from `evaluate_scenario_evidence` via a
+  line-range edit, reproducing the producer's own committed injection
+  independently rather than trusting its report) caught for real by the
+  delivered test suite (4/16 fail), restored via `git checkout --`,
+  re-ran clean. Also confirmed `sync_certified_status()`'s diff to
+  `spec/tasks.json`/`TRACKER.json` was limited to exactly FTF-1810's own
+  `status`/`evidence` fields, and that
+  `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`
+  (FTF-H034's own self-consistency check) stays green (17/17) after this
+  edit. Delivered work checked against FTF-1810's real
+  acceptance/negative_acceptance clauses via `tools/r1_handoff.py packet
+  FTF-1810`; the undelivered `07-container-build.yml`
+  image-digest pipeline and Section 64.3 onboarding-profile resolver are a
+  disclosed scope deferral (both `BLOCKED_EXTERNAL`, not fabricated),
+  matching existing certified precedent (FTF-0004's `web` exclusion,
+  FTF-H001's contract-stub exclusion), not a hidden gap. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
