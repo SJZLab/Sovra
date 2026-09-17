@@ -1,5 +1,60 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T19:03:00Z
+Updated: 2026-09-17T19:10:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): real CI confirmed fully green — all 8 storage semantics proven, ready for Control plane L2 review
+Continuation of this same relay shift. Read the actual job log for the
+header-casing/SSE-C fix's own CI run
+(https://github.com/SJZLab/Sovra/actions/runs/35262488236/job/105341398028,
+commit `deaedc8`) directly rather than trusting the green checkmark: the
+script's own final printed line is `FTF-R017 storage semantics: all
+checks passed` — all 9 test functions / every assertion in
+`tests/integration/test_storage_semantics.py` genuinely passed against
+the live SeaweedFS 3.99 container, including the two that had been
+silently falling back to unversioned requests before the header-casing
+fix (`GET .../versioned.txt query=['versionId']` now appears in the real
+request log, proving the fix took effect on the wire, not just in
+review). Re-checked the subsequent doc-only bookkeeping commit's own run
+(`ce14699`, run 35262651270, job 105341937947) — `storage-semantics-
+integration` also `completed`/`success` there, confirming the result
+isn't a one-off.
+
+Ran the full verification suite once more on a fresh worktree at the PR's
+actual final head (`ce14699`) before writing this up: `uv run ruff
+check`/`format --check`/`mypy .` clean; `pnpm run lint`/`format:check`/
+`typecheck` clean (`pnpm install --frozen-lockfile` first); all 16
+existing task negative-test-proof scripts pass; `uv run pytest tests/unit`
+(3 passed); `pnpm exec vitest run` (2 passed); `scripts/validate_spec.py
+--strict` clean; `python3 scripts/verify_task.py --task FTF-R017 --stage
+task` -> `PASS`; `python3 scripts/verify_release.py` non-inflated
+(`15/300`, `FAILED (1): ['FTF-R017']` — the only remaining uncertified
+item, `NOT READY`); `python3 scripts/product_truth_check.py
+--fail-on-unwired` stays legitimately `0/0` (no live production caller
+yet).
+
+Appended the final evidence write-up to `docs/certifications/queue.md`
+("Real fix confirmed green: all 8 Section-80.4 storage semantics now
+proven, ready for L2 certification") and moved FTF-R017 from QUEUE.md's
+"Active" to "Provisional" (Provisional 0 -> 1). Did not merge the PR or
+change `certification_state` — that is Control plane's role per Law 4,
+not this relay session's, which authored the fix commits and therefore
+cannot certify its own work.
+
+STEP 4(a): this task is now fully L1-PROVEN with real, live-verified
+evidence for every one of its 8 required storage semantics — no
+`BLOCKED_EXTERNAL`, no disclosed partial qualification needed, the
+outcome this task's own contract actually asked for. Reporting as
+awaiting Control plane L2 certification and the L4 gate, and stopping
+work on this item per this shift's own operating instructions. FTF-0102
+remains blocked on the standing owner ask; PR #67's claim remains
+unconfirmed and unactioned (no new corroboration this shift). No other
+dependency-ready item was picked up this shift — this task's own
+multi-round diagnosis (mergeable-state fix, TCP-readiness race,
+volume-capacity exhaustion, version bump, header-casing bug, SSE-C
+assertion) consumed the full shift.
+
+Certified: 15/300 (unchanged — PROVISIONAL never inflates it).
+Provisional: 1 (FTF-R017, PR #75, CI green, awaiting Control plane L2
+review). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-R017 (PR #75): real client header-casing bug found and fixed, SSE-C test assertion corrected, waiting on CI
 Continuation of this same relay shift, after the `3.71 -> 3.99` bump

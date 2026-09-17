@@ -2523,3 +2523,108 @@ successfully on any of these commits yet, since it never ran at all until
 this merge). Not a resubmission for certification yet — waiting for the
 now-unblocked CI to actually run and produce real per-request debug
 output before drawing or acting on any root-cause conclusion.
+
+## 2026-09-17 — FTF-R017 — Real fix confirmed green: all 8 Section-80.4 storage semantics now proven, ready for L2 certification
+Continuation of the same PR #75. Two real, source-verified fixes landed
+this shift on top of the already-recorded capacity fix (`01e88fb`):
+
+1. **`60c8182`** — bumped the pinned SeaweedFS fixture `3.71 -> 3.99`
+   (`infra/docker/docker-compose.yml`, digest verified via Docker Hub's
+   metadata API, no pull needed). 3.71 genuinely predates S3 object
+   versioning/object-lock and returned a generic `500` instead of
+   `BadDigest` for a corrupted upload; confirmed directly against 3.99's
+   real Go source before pushing (not a web summary): `weed/s3api/
+   s3api_bucket_handlers.go` has real, implemented
+   `PutBucketVersioningHandler`/`GetBucketVersioningHandler` functions
+   with genuine object-lock interaction, and `weed/s3api/
+   s3api_object_handlers_put.go` maps a digest mismatch to
+   `s3err.ErrBadDigest`. `-s3.config`/`-s3.port`/
+   `-master.volumeSizeLimitMB` all unchanged in `weed/command/server.go`
+   at the `3.99` tag — a pure version bump.
+2. **`deaedc8`** — the 3.99 bump's own first CI run (35261643931) showed
+   `test_checksum` fully fixed but 6 assertions still failing across
+   `test_versioning`/`test_retention_deletion`/`test_immutable_publication`/
+   `test_encryption`. Traced each by hand against that run's real
+   request/response log (not assumed a second SeaweedFS gap): the
+   container's own boot log showed the server genuinely sending
+   `x-amz-version-id`, pointing at the client. `S3Client._request` built
+   its response-header dict via `dict(resp.headers.items())`, which
+   preserves the server's exact wire casing; every caller looked up
+   lowercase keys. Confirmed against SeaweedFS 3.99's real source:
+   `s3api_object_handlers_put.go:172` / `s3api_object_handlers_delete.go:
+   92-93` set `x-amz-version-id`/`x-amz-delete-marker` via
+   `Header().Set(...)`, which Go's `net/http` canonicalizes to
+   `X-Amz-Version-Id`/`X-Amz-Delete-Marker` on the wire — the client's
+   lowercase lookup always missed, silently returning `""`/`"false"`.
+   `s3api_object_handlers_put.go:378/380` writes `w.Header()["ETag"]`
+   directly, bypassing canonicalization — exactly why the ETag-only
+   checks (`test_checksum`/`test_multipart`) already passed. An
+   always-empty `version_id` explained the rest: `get_object(...,
+   version_id="")` (falsy) silently fell back to an unversioned GET
+   (both `test_versioning` failures, the `test_retention_deletion` 404
+   cascade), and `delete_object(..., version_id="")` sent no `versionId`
+   at all, so `test_immutable_publication`'s DELETE inserted a delete
+   marker instead of ever touching the actual COMPLIANCE-retained
+   version. Fixed by lowercasing every response-header key once in
+   `_request` (HTTP header names are case-insensitive per RFC 7230
+   §3.2 — a correctness fix, not a workaround) and updating the three
+   now-mismatched `"ETag"`-cased lookups to `"etag"`.
+
+   Separately corrected `test_encryption`'s wrong-SSE-C-key assertion
+   from `exc.status_code == 400` to `== 403`: read
+   `s3api_object_handlers.go:709-733` directly — a missing key raises
+   `ErrSSECustomerKeyMissing` (400, already passing) while a wrong key's
+   MD5 mismatch deliberately raises `ErrAccessDenied`, which
+   `s3err/s3api_errors.go`'s own `errorCodeResponse` map confirms is
+   `http.StatusForbidden`. This is SeaweedFS's real, intentional
+   AWS-compatible behavior (a non-matching customer key is an
+   authorization failure, not a malformed request) — the test's own
+   assertion was wrong, not the server.
+
+**Real, live evidence (Law 1) — not inferred from a green checkmark:**
+read the actual job log for `deaedc8`'s own CI run
+(https://github.com/SJZLab/Sovra/actions/runs/35262488236/job/105341398028)
+directly: every one of the 9 `test_*` functions in
+`tests/integration/test_storage_semantics.py` ran against the live
+SeaweedFS 3.99 container, ending with the script's own printed line
+`FTF-R017 storage semantics: all checks passed` — zero failures, all 8
+Section-80.4 semantics (multipart, checksum, versioning,
+immutable-publication, identity, retention/deletion, encryption,
+backup/restore) genuinely proven against the qualified SeaweedFS
+fixture, not `BLOCKED_EXTERNAL` and not a partial/disclosed-gap
+qualification. The subsequent doc-only bookkeeping commit (`ce14699`)
+re-ran the same `storage-semantics-integration` job on its own head
+(run 35262651270, job 105341937947) — also `completed`/`success`,
+confirming the fix isn't specific to one lucky run.
+
+**Regression (this shift, fresh worktree at the PR's real final head
+`ce14699`):** `uv run ruff check`/`format --check`/`mypy .` clean;
+`pnpm run lint`/`format:check`/`typecheck` clean (`pnpm install
+--frozen-lockfile` run first); all 16 existing task
+negative-test-proof scripts pass, including this task's own
+`tests/tasks/test_ftf_r017.py`; `uv run pytest tests/unit` (3 passed);
+`pnpm exec vitest run` (2 passed); `scripts/validate_spec.py --strict`
+clean; `python3 scripts/verify_task.py --task FTF-R017 --stage task` ->
+`PASS` against evidence commit `b762359...` (the original two-commit-
+pattern hash, unchanged — `verify_task.py`'s own check only needs that
+commit to resolve as a real git object, which it does; the fix commits
+are later, additive history on the same branch, same convention every
+other multi-commit task in this repo already uses);
+`python3 scripts/verify_release.py` non-inflated (`15/300`,
+`FAILED (1): ['FTF-R017']` — the only item left uncertified,
+`NOT READY`); `python3 scripts/product_truth_check.py --fail-on-unwired`
+stays legitimately `0/0` (no `proving_symbol` — no live Factory
+production service imports this client yet, same rationale as every
+other FTF-R00X/FTF-H00X task so far).
+
+`certification_state` stays `PROVISIONAL` (unchanged — not
+self-certified, per Law 4). `proof_state` stays `L1-PROVEN`. This task
+is now fully ready for Control-plane L2 review: real CI green on the
+PR's actual current head, all acceptance and negative_acceptance clauses
+independently traceable to a specific passing assertion in
+`tests/integration/test_storage_semantics.py`/`tests/tasks/
+test_ftf_r017.py`, and every finding (the capacity fix, the version
+bump, the header-casing bug, the SSE-C assertion correction) backed by
+direct source citations rather than assumption. Not merging or
+certifying this session — that is Control plane's role, not the
+relay's, per Law 4 and this shift's own STEP 4(a).
