@@ -1,5 +1,71 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T05:05:30Z
+Updated: 2026-09-17T05:20:00Z
+
+## 2026-09-17 — Control plane: FTF-H034 CERTIFIED (PR #59 independently verified)
+Autonomous certifier shift, triggered by the PR #59 `opened` webhook. Read
+`docs/certifications/queue.md`: FTF-H034 was the only PROVISIONAL item.
+Session-ID comparison performed before touching anything: all three
+commits on PR #59 (`7109100`, `7c70b77`, `37d7bcd`) carry
+`Claude-Session: .../session_01Q9LvDK2pPXKCw9Q1VSSjpF`; this session is
+`session_01TomYQSLSDkXcNVZzNsZzA3` — no overlap, independent per Law 4.
+
+At the time of the webhook, PR #59's CI (`gate` and
+`docker-local-stack-integration`) was still `in_progress` — subscribed to
+PR activity and waited for it to complete rather than certifying against
+an unfinished run. Both jobs completed `success` on the PR's real head
+(`37d7bcd`, run 35184262911) before certification proceeded. The PR was
+merged in the interim (by `samerzakaria`, human) as commit `adba850`;
+`git diff 37d7bcd..adba850` confirmed empty, so the CI-verified head and
+the merged tree are identical. A separate doc-only bookkeeping PR (#60,
+recording the merge while still PROVISIONAL) also landed before this
+review completed — unaffected either way, since certification is based on
+the real code tree.
+
+Independent re-verification performed (full detail in
+`docs/certifications/ledger.md`'s new FTF-H034 entry): read the diff
+directly, including confirming `sync_certified_status()`'s effect on
+`spec/tasks.json`/`docs/implementation/TRACKER.json` touches only the
+`status`/`evidence` fields of the 10 already-certified task IDs; re-ran
+`tests/tasks/test_ftf_h034.py` (17/17 pass) and the full 11-task
+regression set (`ruff`/`mypy` clean, `eslint`/`tsc` clean after `pnpm
+install`, `pytest`/`vitest` clean); re-ran `validate_spec.py --strict` and
+`verify_task.py --task FTF-H034 --stage task` (`PASS`); confirmed
+`verify_release.py` non-inflated (`10/300`/`FAILED (1): ['FTF-H034']`/
+`NOT READY` before this edit, `11/300` after); confirmed
+`product_truth_check.py` stays `0/0` legitimately (no `proving_symbol` —
+scheduler/tracking tooling, no live multi-agent dispatch caller); ran an
+own fault injection distinct from the producer's committed one (removed
+the `DEPENDENCY_NOT_READY` guard from `claim()` instead of the
+self-certification guard in `complete()` the producer's own test
+exercises — the test suite caught it with exactly 1 failure, restored
+byte-identical, re-ran clean); also reproduced the producer's own
+self-certification fault injection independently; pulled the real
+contract via `tools/r1_handoff.py packet FTF-H034` and checked the
+delivered work against its actual acceptance/negative_acceptance clauses
+item by item, including the real 8-OS-thread parallel-wave proof and the
+disclosed no-live-subagent-harness limitation.
+
+Setting `certification_state: CERTIFIED` on FTF-H034 itself then tripped
+`test_real_committed_tracker_and_tasks_reflect_actual_certified_set` (2/17
+failed) — correctly, since `sync_certified_status()` had only run once,
+pre-certification. Re-ran it against the real repo files; the resulting
+diff is limited to FTF-H034's own `status`/`evidence` fields in
+`spec/tasks.json`/`TRACKER.json` (confirmed via `git diff`), restoring
+17/17. Not a defect in the delivered tool — exactly the self-consistency
+it was built to enforce, now including its own certification.
+
+No defect found. Updated `docs/spec-matrix.yaml` (FTF-H034:
+`certification_state: CERTIFIED`, `proof_state: L2-CERTIFIED`,
+`evidence_hash` kept as the implementation commit `7109100`, matching the
+existing convention for every prior FTF-H00X/FTF-R00X entry), appended the
+ledger entry, moved FTF-H034 from QUEUE.md "Provisional" to "Done" and
+bumped Certified to 11/300, Provisional to 0.
+
+Certified: 11/300. Provisional: 0. Product-true: 0 (unchanged — FTF-H034
+has no `proving_symbol`, same disclosed rationale as every other
+certified task so far). The 2026-09-16 FTF-0102 new-runtime-dependency
+owner ask and the 2026-09-15 trigger-tooling ask remain open and untouched
+— out of scope for this certification-only shift.
 
 ## 2026-09-17 — FTF-H034 (PR #59) merged to main as PROVISIONAL
 Same relay shift as the FTF-H034 implementation entry below. PR activity

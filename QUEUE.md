@@ -1,24 +1,26 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-H034 PR #59 merged to main, PROVISIONAL, awaiting Control plane L2)
+Updated: 2026-09-17 by Control plane (FTF-H034 CERTIFIED, PR #59 independently verified)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 10/300 · Provisional: 1 (FTF-H034) · Blocked: 1 (FTF-0102,
+Certified: 11/300 · Provisional: 0 · Blocked: 1 (FTF-0102,
 new-runtime-dep owner ask, see below)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002 and
-FTF-H028 all have no proving_symbol; FTF-0001 is structural layout,
-FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004 is
-local-stack bootstrap/health tooling, FTF-0005 is a configuration module
-with no live caller yet, FTF-0006 is an observability seam with no live
-FastAPI app or Temporal workflow to instrument yet, FTF-H001 is the
+FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
+FTF-H028 and FTF-H034 all have no proving_symbol; FTF-0001 is structural
+layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004
+is local-stack bootstrap/health tooling, FTF-0005 is a configuration
+module with no live caller yet, FTF-0006 is an observability seam with no
+live FastAPI app or Temporal workflow to instrument yet, FTF-H001 is the
 spec/gate verifier tooling itself, FTF-R001 is an architecture/version-lock
 schema freeze with no live product-runtime caller yet, FTF-H002 is a
 preflight/release-scope-freeze layer with no live product-runtime caller
-yet, and FTF-H028 is the release-evidence-gate/CI-aggregator tooling
-itself, `workflow_dispatch`-only and never run by the relay — none a
-live-wired product-runtime path, so all ten are CERTIFIED without counting
-toward product-true).
+yet, FTF-H028 is the release-evidence-gate/CI-aggregator tooling itself,
+`workflow_dispatch`-only and never run by the relay, and FTF-H034 is the
+task-claim scheduler/tracker-sync tooling itself, with no live multi-agent
+dispatch harness wiring it into a running caller yet — none a live-wired
+product-runtime path, so all eleven are CERTIFIED without counting toward
+product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -68,24 +70,11 @@ toward product-true).
   decision. FTF-0102 stays in `## Blocked` below until this is answered —
   not claimed, not started, no dependency installed.
 ## Active (relay works this)
-(empty — FTF-H034 implemented this shift, PROVISIONAL, PR to be opened.
-FTF-0101/FTF-0102 remain blocked, see "Owner actions" and "Blocked"
-below.)
+(empty — FTF-0101/FTF-0102 remain blocked, see "Owner actions" and
+"Blocked" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-H034 — Safe parallel scheduler and task/evidence ownership.
-  Implementation commit `7109100c9bfaff995a94203720e9161e095cb7bf`. PR #59
-  merged to `main` as `adba85013f58712415e871ab258f4262bf1ae567`
-  (`gate` + `docker-local-stack-integration` both `success` on the PR's
-  real head `37d7bcd`, `mergeable_state: clean`, no reviews/comments open
-  — merged per CLAUDE.md "Do without asking: merge on green + L1 doc
-  (PROVISIONAL)"). Still PROVISIONAL — awaiting independent Control plane
-  L2 certification per Law 4, not self-certified.
-  Dependency-ready item found via a direct `docs/TASK_INDEX.md` sweep
-  (deps FTF-H001, FTF-H002, both CERTIFIED) — not from `docs/spec-matrix.yaml`'s
-  own `deps=` field, which is empty for every not-yet-started task (real
-  dependencies live only in `docs/TASK_INDEX.md`'s table; spec-matrix.yaml
-  tracks proof-state only). Full entry: `docs/certifications/queue.md`.
+(empty — FTF-H034 CERTIFIED this shift, see "Done" below.)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -212,6 +201,38 @@ below.)
   code and tests. Delivered work checked against FTF-H028's real
   acceptance/negative_acceptance clauses via `tools/r1_handoff.py packet
   FTF-H028`. Full entry: docs/certifications/ledger.md.
+- FTF-H034 — Safe parallel scheduler and task/evidence ownership.
+  CERTIFIED 2026-09-17, PR #59 (merge commit
+  `adba85013f58712415e871ab258f4262bf1ae567`). Independently re-verified:
+  real toolchain installed (system `python3` for the task scripts, `uv
+  sync`, `pnpm install --frozen-lockfile`) and both of the task's own
+  `verification_commands` genuinely re-run (`validate_spec.py --strict`,
+  `verify_task.py --task FTF-H034 --stage task`), full 11-task regression
+  set clean, `product_truth_check.py` confirmed legitimately 0/0 (no
+  proving_symbol — scheduler/tracking tooling, no live multi-agent
+  dispatch caller yet), `verify_release.py` confirmed non-inflated
+  (`10/300`/`FAILED (1): ['FTF-H034']`/`NOT READY` before this
+  certification, `11/300` after), CI reconfirmed green on the actual PR
+  head (`37d7bcd`, run 35184262911, both `gate` and
+  `docker-local-stack-integration`), and an own fault injection (removed
+  the `DEPENDENCY_NOT_READY` guard from `claim()` — distinct from the
+  producer's own committed fault injection, which targeted the
+  self-certification guard in `complete()`) caught for real by the
+  delivered test suite, restored byte-identical, re-ran clean. Also
+  confirmed the PR's own `sync_certified_status()` diff to
+  `spec/tasks.json`/`TRACKER.json` touched only the `status`/`evidence`
+  fields of the 10 already-certified task IDs and nothing else; this
+  certification's own `certification_state: CERTIFIED` edit then made
+  `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`
+  fail (correctly — FTF-H034 itself wasn't yet reflected), so
+  `sync_certified_status()` was re-run once more against the real repo
+  files post-certification (diff limited to FTF-H034's own two fields,
+  confirmed via `git diff`), restoring 17/17. Delivered work checked
+  against FTF-H034's real acceptance/negative_acceptance clauses via
+  `tools/r1_handoff.py packet FTF-H034`; the real-8-OS-thread
+  parallel-wave proof and the disclosed no-live-subagent-harness
+  limitation both match the task's own negative_acceptance rather than
+  quietly narrowing its scope. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

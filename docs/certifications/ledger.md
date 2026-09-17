@@ -1029,3 +1029,153 @@ corrected 2026-09-15.
   legitimate and non-inflated, and the delivered work matches the real
   task-packet contract's acceptance/negative_acceptance clauses item by
   item. No open defect. Certified L2-CERTIFIED.
+
+## FTF-H034 — Safe parallel scheduler and task/evidence ownership
+- Criterion ID: FTF-H034
+- PR: https://github.com/SJZLab/Sovra/pull/59 (`claude/wizardly-fermat-twhvs6`
+  → `main`). Merged `2026-09-17` by `samerzakaria` (human) as merge commit
+  `adba85013f58712415e871ab258f4262bf1ae567` (parents `462de00` and the PR's
+  actual final head `37d7bcd`; `git diff 37d7bcd..adba850 --stat` is empty —
+  the merge commit's tree is identical to the CI-verified head, a clean
+  merge, no conflict resolution to re-check). A separate doc-only PR #60
+  (bookkeeping: recorded the PR #59 merge in QUEUE.md/PROGRESS.md while
+  still PROVISIONAL) merged afterward as `7a16b99`; this certification is
+  based on the real code tree, unaffected either way.
+- Evidence commit: `7109100c9bfaff995a94203720e9161e095cb7bf` (implementation;
+  `7c70b77` is the same-PR hash-fixup/PROVISIONAL-bookkeeping commit;
+  `evidence_hash` recorded in `docs/spec-matrix.yaml` stays the
+  implementation commit, matching the existing convention for every prior
+  FTF-H00X/FTF-R00X ledger entry).
+- Validated-by: session https://claude.ai/code/session_01TomYQSLSDkXcNVZzNsZzA3
+  (session-ID comparison performed and recorded before this entry: all
+  three commits on PR #59 — `7109100`, `7c70b77`, `37d7bcd` — carry
+  `Claude-Session: .../session_01Q9LvDK2pPXKCw9Q1VSSjpF`; the merge commits
+  `adba850`/`7a16b99` carry none (human GitHub merges). This session's ID
+  matches neither — independent, not self-certification).
+- Date: 2026-09-17
+- Evidence independently re-verified this session:
+  1. Read the full diff directly (`git diff origin/main...origin/claude/wizardly-fermat-twhvs6`,
+     every changed file): `scripts/task_claim.py` (new, 346 lines —
+     `TaskClaimRegistry`: DAG-readiness-gated claims, expiring TTL claims,
+     write-set/named-lock exclusivity, bounded concurrency (default 4, hard
+     ceiling 6), a separate GPU quota, deterministic merge order,
+     stale-verification invalidation, and a self-certification guard) and
+     `tests/tasks/test_ftf_h034.py` (new, 542 lines, 17 checks). Confirmed
+     `spec/tasks.json`'s and `docs/implementation/TRACKER.json`'s diffs
+     (`sync_certified_status()`'s effect) are limited to exactly the
+     `status`/`evidence` fields of the 10 already-independently-certified
+     task IDs (counted directly: `grep -c '"status": "CERTIFIED"'` == 10 in
+     both files; no other field touched) — no already-certified task's own
+     implementation file was touched.
+  2. CI verified for real, on the actual PR head, not self-reported:
+     `pull_request_read get_check_runs` on PR #59 reports both `gate`
+     (run 35184262911, job 105082825586) and `docker-local-stack-integration`
+     (job 105082825703) `completed`/`success`, tied to PR #59's actual head
+     `37d7bcdab9ea7cbcd44de89129a66467d9327fdf` (confirmed via `pull_request_read
+     get` — `head.sha` matches). Subscribed to PR activity and re-polled
+     after both jobs were still `in_progress` at first check; both were
+     genuinely green before this certification proceeded.
+  3. Set up the real toolchain (system `python3` has `pyyaml` preinstalled,
+     matching CI's own separate `pip install pyyaml --quiet` step ahead of
+     `uv sync`, since the task test scripts run under system `python3`, not
+     `uv run`; `uv sync`; `pnpm install --frozen-lockfile` — no
+     `node_modules` in the fresh checkout) and re-ran every command for
+     real: `python3 tests/tasks/test_ftf_h034.py` → all 17 checks pass
+     directly; `python3 scripts/validate_spec.py --strict` → clean;
+     `python3 scripts/verify_task.py --task FTF-H034 --stage task` → `PASS`
+     against evidence commit `7109100` (this task's own two
+     `verification_commands`, both genuinely re-run, not re-read as trusted
+     text).
+  4. Ran the full regression set clean on the merged tree: `uv run ruff
+     check .` / `ruff format --check .` clean; `uv run mypy .` clean (33
+     source files); `pnpm run lint`/`format:check`/`typecheck` clean
+     (after `pnpm install`); all 11 task negative-test-proof scripts
+     (`test_ftf_0001_monorepo_layout.py` through `test_ftf_h028.py`, now
+     joined by `test_ftf_h034.py`) each print their own `all checks passed`
+     line — the FTF-0002/0003/H001 failures seen before installing pnpm's
+     dependencies were confirmed to be the same mundane missing-`node_modules`
+     cause every prior certification shift has hit in a fresh checkout, not
+     a regression from this change. `uv run pytest tests/unit` (3 passed);
+     `pnpm exec vitest run` (2 passed).
+  5. `product_truth_check.py --fail-on-unwired` → `0/0 product-true`,
+     confirmed legitimate per CERTIFY step 4: `docs/spec-matrix.yaml`'s
+     FTF-H034 entry has `proving_symbol: ''` — this is scheduler/tracking
+     tooling, not a live product-runtime path, same disclosed rationale as
+     every prior FTF-H00X/FTF-R00X task.
+  6. `verify_release.py` run live on the real committed tree, before this
+     certification's own `spec-matrix.yaml` edit: `10/300 required task(s)
+     have live-passing, CERTIFIED evidence` / `FAILED (1): ['FTF-H034']` /
+     `NOT READY` — FTF-H034 correctly listed `FAILED` because its
+     `certification_state` was still `PROVISIONAL` at that point even
+     though its own test genuinely passes live; no inflation. After this
+     certification's edit, the same command reports `11/300`.
+  7. **Real fault injection against the tracked module, targeting a
+     different code path than the producer's own committed fault injection
+     (which targeted the `certifier == claimant` self-certification guard
+     in `complete()`):** temporarily removed the
+     `_dependencies_ready_locked` guard block from `claim()` (the
+     `DEPENDENCY_NOT_READY` check). Re-ran `tests/tasks/test_ftf_h034.py`
+     directly: exactly 1 failure — `FAIL [FTF-H034] a task depending on a
+     not-yet-CERTIFIED task is denied a claim`. Restored the file
+     byte-identical from a pre-edit copy (`diff` confirmed empty), re-ran
+     clean (all 17 checks pass again) — confirms the test suite is
+     load-bearing against a real, independently chosen regression, not
+     merely self-consistent with the producer's own fault injection.
+     Separately reproduced the producer's own self-certification-guard
+     fault injection too (same removal the committed
+     `test_self_certification_guard_is_load_bearing_real_fault_injection`
+     performs): confirmed a fresh, unguarded `complete()` call lets a
+     self-certified completion through, restored byte-identical.
+  8. Delivered work checked against FTF-H034's real acceptance/
+     negative_acceptance clauses via `tools/r1_handoff.py packet FTF-H034
+     --plan FINE_TUNING_FACTORY_RELEASE_1.md` and a direct read of
+     `docs/implementation/task-packets/FTF-H034.md`: overlapping claims
+     (`WRITE_SET_CONFLICT`/`LOCK_CONFLICT`), dependent starts
+     (`DEPENDENCY_NOT_READY`), and stale completion (`CLAIM_EXPIRED`) are
+     all denied with dedicated tests; the "actual safe parallel wave" is
+     proven with a real 8-OS-thread `threading.Barrier` race
+     (`test_real_parallel_wave_exactly_one_claim_wins` — exactly 1 thread
+     wins, the other 7 are denied `TASK_ALREADY_CLAIMED` specifically, and
+     `active_count()` is exactly 1 afterward); `merge_order()` is proven
+     deterministic regardless of completion arrival order; stale-CI
+     invalidation on an overlapping later completion is proven
+     (`test_completion_invalidates_overlapping_earlier_verification`). The
+     negative_acceptance clause ("if runner lacks real subagent capability,
+     record orchestration blocker, never fabricate workers") is honestly
+     disclosed in the module's own docstring and in the PR body — this
+     sandbox has no live multi-agent dispatch harness to hand a task to a
+     second, truly separate worker process, so the parallel-wave proof is
+     built at real-OS-thread contention against the registry's own
+     locking, not a fabricated multi-worker claim. No full-release claim is
+     made anywhere (`verify_release.py` stays honestly `NOT READY`).
+  9. **This certification's own bookkeeping edit surfaced a real,
+     self-consistent gap, caught by the delivered test suite itself, not
+     hidden:** after setting `docs/spec-matrix.yaml`'s FTF-H034
+     `certification_state` to `CERTIFIED` (this entry's own action),
+     re-running `tests/tasks/test_ftf_h034.py` failed 2/17 —
+     `test_real_committed_tracker_and_tasks_reflect_actual_certified_set`
+     correctly detected that `spec/tasks.json`/`TRACKER.json` still showed
+     FTF-H034 itself as `NOT_STARTED`, since `sync_certified_status()` had
+     only been run once, against the pre-certification state, as part of
+     the PR. Re-ran `sync_certified_status()` against the real repo files
+     post-certification — the diff is limited to exactly FTF-H034's own
+     `status`/`evidence` fields in both files (confirmed via `git diff`,
+     nothing else touched), and `tests/tasks/test_ftf_h034.py` returns to
+     17/17. This is the tool doing exactly what it was built to do, not a
+     defect in the delivered code — recorded here since it changed the
+     committed tree as part of this certification.
+- Conclusion: the L1 evidence holds up under independent re-verification —
+  CI genuinely completed green on the real PR head, the merge commit is
+  tree-identical to the CI-verified head, the real toolchain installed and
+  both verification commands genuinely re-run, a fresh fault injection
+  (distinct from the producer's own) confirms the DAG-readiness guard is
+  code-enforced rather than fixture-assumed, the `sync_certified_status()`
+  diff to `spec/tasks.json`/`TRACKER.json` is confirmed limited to exactly
+  the 10 already-certified tasks' `status`/`evidence` fields (plus, after
+  this certification's own edit, FTF-H034's own, re-run and reconfirmed
+  minimal) and nothing else, `product_truth_check.py`'s `0/0` and
+  `verify_release.py`'s `10/300`/`FAILED (1)`/`NOT READY`
+  (pre-certification) → `11/300`/`NOT READY` (post-certification) both
+  confirmed legitimate and non-inflated, and the delivered work matches
+  the real task-packet contract's acceptance/negative_acceptance clauses
+  item by item. No open defect. Certified L2-CERTIFIED.
