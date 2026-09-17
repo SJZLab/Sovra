@@ -1,5 +1,41 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T05:10:00Z
+Updated: 2026-09-17T05:05:30Z
+
+## 2026-09-17 — FTF-H034 (PR #59) merged to main as PROVISIONAL
+Same relay shift as the FTF-H034 implementation entry below. PR activity
+subscription confirmed `gate` and `docker-local-stack-integration` both
+`completed`/`success` on the PR's actual current head SHA (`37d7bcd`,
+confirmed via `pull_request_read get_check_runs` and cross-checked
+against `pull_request_read get` — not a stale/earlier-commit claim; an
+earlier `check_suite.completed` event for a superseded intermediate
+commit (`7c70b77`, before this session's final PROGRESS.md push) was
+correctly recognized as stale and not acted on). `mergeable_state: clean`,
+`get_reviews`/`get_comments` both empty — no open review threads. Matches
+CLAUDE.md's "Do without asking: merge on green + L1 doc (PROVISIONAL)" —
+same discipline as every prior FTF-000X/FTF-H00X merge. Merged PR #59
+(merge commit `adba85013f58712415e871ab258f4262bf1ae567`). Not a
+certification — still PROVISIONAL, Law 4 untouched; `docs/spec-matrix.yaml`/
+`QUEUE.md`/`docs/certifications/queue.md` already carried the correct
+PROVISIONAL bookkeeping as part of this PR itself. Certified: 10/300
+(unchanged — a merge to PROVISIONAL is not a certification). Product-true:
+0 (unchanged). Unsubscribed this session from PR #59's activity (merged,
+nothing left to watch). Per the branch-restart convention (this session's
+designated branch's PR merged): restarted `claude/wizardly-fermat-twhvs6`
+from the new `main` tip (`adba850`) to record this merge note, rather than
+stacking on now-merged history.
+
+STEP 4: no stop condition applies cleanly (not N/N proven — FTF-1810/
+FTF-R011/FTF-R017 remain dependency-ready and unclaimed; no true blocker;
+not stuck; no ask-first item newly raised) — this was simply the end of
+the concrete action available this shift (FTF-H034 driven from "PR open,
+CI in flight" to "green and merged, awaiting L2"). Not spending this
+shift's remaining effort starting a new task from scratch after already
+landing FTF-H034 — leaving the FTF-1810/FTF-R011/FTF-R017 sweep to the
+next shift, consistent with this repo's established one-task-per-shift
+pattern.
+
+Certified: 10/300 (unchanged). Provisional: 1 (FTF-H034, PR #59, merged,
+awaiting L2). Product-true: 0 (unchanged).
 
 ## 2026-09-17 — FTF-H034 implemented (Provisional, PR #59 opened, awaiting CI + L2 certification)
 Autonomous relay shift (scheduled firing, no live user present). STEP 0:
