@@ -1,0 +1,21 @@
+{
+  "_comment": "FTF-R017 -- real S3 identity for the local SeaweedFS fixture. Format verified against SeaweedFS's own docker/compose/s3.json example (github.com/seaweedfs/seaweedfs, Apache-2.0). Deliberately carries NO 'anonymous' identity: an unsigned/unauthenticated request must be rejected, proving this endpoint enforces caller identity (Section 65.2) rather than SeaweedFS's own unconfigured default of accepting any access key. Development-only credentials, not a production secret -- matches the same local-dev-only convention as this compose file's postgres password.",
+  "identities": [
+    {
+      "name": "sovra-storage-test",
+      "credentials": [
+        {
+          "accessKey": "sovra-local-test-access-key",
+          "secretKey": "sovra_local_dev_only_secret_key_1234"
+        }
+      ],
+      "actions": [
+        "Admin",
+        "Read",
+        "Write",
+        "List",
+        "Tagging"
+      ]
+    }
+  ]
+}

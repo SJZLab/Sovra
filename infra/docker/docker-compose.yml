@@ -57,11 +57,17 @@ services:
 
   s3:
     image: chrislusf/seaweedfs@sha256:2829e52cd2f653cfb900cbbbc72f4c3fda0e8ab785429a80514090cdd73dec8c # 3.71 (amd64)
-    command: server -dir=/data -s3 -s3.port=8333
+    # FTF-R017: -s3.config points at a real identity file (no "anonymous"
+    # entry) so the fixture actually enforces caller identity (Section
+    # 65.2) instead of SeaweedFS's own unconfigured default of accepting
+    # any access key -- see seaweedfs-s3-identity.json for the real
+    # credential and the negative-acceptance test it backs.
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3-identity.json
     ports:
       - "8333:8333"
     volumes:
       - s3_data:/data
+      - ./seaweedfs-s3-identity.json:/etc/seaweedfs/s3-identity.json:ro
 
   api:
     image: python@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72 # python:3.11-slim (amd64)

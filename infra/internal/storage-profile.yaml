@@ -1,0 +1,114 @@
+# FTF-R017 -- storage profile qualified against the actual multipart,
+# checksum, versioning, immutable-publication, identity, retention/deletion,
+# encryption, backup and restore contract (Section 80.4). Validated by
+# scripts/validate_storage_profile.py; the real pass/fail evidence for each
+# semantic is produced by tests/integration/test_storage_semantics.py, run
+# against the live backend -- never asserted here ahead of a real test run.
+#
+# `backend` is deliberately restricted to an enum that excludes "minio":
+# Section 80.4 says plainly "the old blanket MinIO default is removed: the
+# official MinIO repository is archived" -- this schema structurally cannot
+# select it, satisfying this task's own negative_acceptance clause ("Reject
+# automatic archived-MinIO default").
+schema_version: 1
+
+backend: seaweedfs_offline_fixture
+# Allowed values: seaweedfs_offline_fixture | maintained_organizational_s3
+# (never minio -- see header comment). Selecting
+# maintained_organizational_s3 requires the owner to supply real endpoint/
+# credential values below; this repository has none today, so the offline
+# SeaweedFS fixture (infra/docker/docker-compose.yml's `s3` service,
+# already booted and qualified for TCP reachability under FTF-0004) is the
+# real, currently-testable target. The client itself
+# (apps/api/app/services/storage_semantics_client.py) is identical either
+# way -- switching `backend` is a configuration change, never a code
+# migration (component-maintenance.yaml's old_external_s3_compatibility).
+
+endpoint:
+  # Populated from real environment variables at test time, never a
+  # hardcoded production value committed here.
+  host_env_var: SOVRA_STORAGE_S3_HOST
+  port_env_var: SOVRA_STORAGE_S3_PORT
+  scheme_env_var: SOVRA_STORAGE_S3_SCHEME
+  region_env_var: SOVRA_STORAGE_S3_REGION
+  access_key_env_var: SOVRA_STORAGE_S3_ACCESS_KEY
+  secret_key_env_var: SOVRA_STORAGE_S3_SECRET_KEY
+  # Local-fixture defaults used only when the corresponding env var is
+  # unset -- matching infra/docker/docker-compose.yml's own s3 port
+  # (8333) and infra/docker/seaweedfs-s3-identity.json's real identity.
+  local_fixture_defaults:
+    host: localhost
+    port: 8333
+    scheme: http
+    region: us-east-1
+    access_key: sovra-local-test-access-key
+    secret_key: sovra_local_dev_only_secret_key_1234
+
+# The exact eight semantics Section 80.4 names, in the exact order named
+# there. `qualified` is never hand-set to true here -- it is populated only
+# by a real CI run of tests/integration/test_storage_semantics.py
+# (.github/workflows/ci.yml's storage-semantics-integration job), following
+# this repository's own resource_gate discipline: this session's
+# interactive sandbox has no container-registry egress (confirmed by a
+# real `docker pull` attempt this task -- same reproducible 403 FTF-0004's
+# own evidence already documented), so the real container-boot evidence is
+# produced on GitHub Actions' hosted runner, not asserted here.
+required_semantics:
+  - id: multipart
+    description: >-
+      A multi-part upload (CreateMultipartUpload/UploadPart x2/
+      CompleteMultipartUpload) reconstructs the exact original bytes.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: checksum
+    description: >-
+      The server-returned ETag for a single PUT matches the locally
+      computed MD5 of the uploaded bytes; a corrupted-body PUT is
+      detectable by ETag mismatch on GET.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: versioning
+    description: >-
+      Bucket versioning enabled; overwriting an object twice produces two
+      distinct, independently retrievable versions; ListObjectVersions
+      reports both.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: immutable_publication
+    description: >-
+      An object under Object Lock COMPLIANCE retention cannot be deleted
+      or overwritten before its retention date -- the delete attempt is
+      genuinely rejected by the server, not merely undocumented.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: identity
+    description: >-
+      A request signed with an unconfigured/unknown access key is rejected
+      by the server; the same request signed with the real configured
+      identity succeeds. Proves the endpoint enforces caller identity
+      (Section 65.2), not SeaweedFS's own unconfigured anonymous-access
+      default.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: retention_deletion
+    description: >-
+      A non-retained object's DELETE produces a real delete marker on a
+      versioned bucket (object recoverable by version ID) rather than an
+      unconditional silent purge.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: encryption
+    description: >-
+      An object PUT with SSE-C (customer-supplied key) headers is
+      retrievable only when the same key is presented again on GET; GET
+      without the key or with the wrong key is genuinely rejected.
+    qualified: false
+    evidence: NOT_YET_RUN
+  - id: backup_and_restore
+    description: >-
+      An object copied out of its bucket, deleted from the original
+      location, then restored from the copy, is byte-identical and
+      checksum-identical to the original -- Section 48's create/delete/
+      restore/verify-hash pattern applied to object storage.
+    qualified: false
+    evidence: NOT_YET_RUN

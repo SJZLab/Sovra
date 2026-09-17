@@ -1,0 +1,209 @@
+# FTF-R017 -- OSS dependency lifecycle / license record for the seven
+# canonical reuse components (Section 80.4). Validated by
+# scripts/validate_component_maintenance.py against
+# spec/component-maintenance.schema.json.
+#
+# License claims are verified against each project's actual, current
+# LICENSE file (real fetches performed this task, URLs recorded below),
+# never asserted from memory. All seven are permissive (Apache-2.0/MIT) --
+# none required adding an unapproved copyleft/enterprise dependency.
+# `version_status` is honestly NOT_YET_RESOLVED for all seven, matching
+# spec/release-scope.yaml's own real state (every capability's
+# supported_version_profile is "NOT_YET_RESOLVED (Section 64.3 onboarding
+# gate not yet run)") -- this task does not fabricate a pinned version
+# ahead of that onboarding gate.
+
+component_maintenance_records:
+  - component_key: axolotl
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: community_oss_self_hosted
+    spdx_license_id: Apache-2.0
+    license_evidence_url: https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/LICENSE
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Tracked via upstream GitHub Security Advisories and release notes;
+      exact package/image version pinned via spec/component-lock.schema.json's
+      ComponentVersionLock at onboarding (Section 64.3), not asserted here;
+      no CVE/vulnerability status claimed without a real scan record.
+    version_status: >-
+      NOT_YET_RESOLVED -- Section 64.3 onboarding gate has not run (see
+      spec/release-scope.yaml). Pinned exact version/digest is delivered by
+      the component-lock qualification task (FTF-R001's ComponentVersionLock
+      instance), not this task.
+    export_plan: >-
+      Training configs/checkpoints/adapters export as versioned artifacts to
+      private object storage (Section 77.5 ComponentVersionLock + private
+      artifact storage); standard PyTorch/PEFT checkpoint formats, no
+      Axolotl-proprietary lock-in format.
+    restore_plan: >-
+      Checkpoints restorable from private artifact storage by content hash;
+      covered by Section 48's backup/restore program (create -> delete ->
+      restore -> verify hash).
+
+  - component_key: inspect_ai
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: community_oss_self_hosted
+    spdx_license_id: MIT
+    license_evidence_url: https://raw.githubusercontent.com/UKGovernmentBEIS/inspect_ai/main/LICENSE
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Tracked via upstream GitHub Security Advisories and release notes;
+      exact version pinned at onboarding (Section 64.3), not asserted here;
+      no CVE/vulnerability status claimed without a real scan record.
+    version_status: >-
+      NOT_YET_RESOLVED -- Section 64.3 onboarding gate has not run (see
+      spec/release-scope.yaml).
+    export_plan: >-
+      Evaluation logs/transcripts export to the restricted qualification
+      enclave (Section 84.7) in Inspect's own .eval log format -- an
+      open, documented interchange format, not a proprietary lock-in.
+    restore_plan: >-
+      Eval logs restorable from backup per Section 48's tested restore
+      program; sealed evidence is never restored into an ordinary index
+      (Section 80.4).
+
+  - component_key: mlflow
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: community_oss_self_hosted
+    spdx_license_id: Apache-2.0
+    license_evidence_url: https://raw.githubusercontent.com/mlflow/mlflow/master/LICENSE.txt
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Tracked via upstream GitHub Security Advisories and release notes;
+      exact version pinned at onboarding (Section 64.3), not asserted here;
+      no CVE/vulnerability status claimed without a real scan record.
+    version_status: >-
+      NOT_YET_RESOLVED -- Section 64.3 onboarding gate has not run (see
+      spec/release-scope.yaml).
+    export_plan: >-
+      Tracking/registry metadata exported via MLflow's own REST/SDK surface
+      into Factory-owned evidence records (Section 77.4: "user-editable
+      tags are not acceptance evidence"); artifacts live in private object
+      storage, not MLflow's own default local store.
+    restore_plan: >-
+      Section 48/80.5: MLflow database/artifact mappings restored into a
+      clean environment, hashes and grants compared, no duplicate paid
+      work re-triggered.
+
+  - component_key: vllm
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: community_oss_self_hosted
+    spdx_license_id: Apache-2.0
+    license_evidence_url: https://raw.githubusercontent.com/vllm-project/vllm/main/LICENSE
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Tracked via upstream GitHub Security Advisories and release notes;
+      exact version pinned at onboarding (Section 64.3), not asserted here;
+      no CVE/vulnerability status claimed without a real scan record.
+    version_status: >-
+      NOT_YET_RESOLVED -- Section 64.3 onboarding gate has not run (see
+      spec/release-scope.yaml).
+    export_plan: >-
+      Model/adapter artifacts are identity-pinned and stored in private
+      artifact storage (Section 77.5); vLLM's own serving process holds no
+      exclusive state this Factory depends on beyond that pinned artifact.
+    restore_plan: >-
+      The serving process is stateless per Section 77.3; restore is
+      re-deploying the pinned artifact digest through the deployment
+      controller, exercised under Section 48.
+
+  - component_key: temporal
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: community_oss_self_hosted
+    spdx_license_id: MIT
+    license_evidence_url: https://raw.githubusercontent.com/temporalio/temporal/main/LICENSE
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Tracked via upstream GitHub Security Advisories and release notes;
+      exact version pinned at onboarding (Section 64.3), not asserted here;
+      no CVE/vulnerability status claimed without a real scan record.
+    version_status: >-
+      NOT_YET_RESOLVED -- Section 64.3 onboarding gate has not run (see
+      spec/release-scope.yaml). Section 79 records the already-pinned
+      digest actually booted by infra/docker/docker-compose.yml
+      (temporalio/auto-setup 1.24.2) as the current local-dev fixture; the
+      onboarding-gate pin covers the qualified production tuple.
+    export_plan: >-
+      Workflow history is Temporal's own durable execution log (Section
+      77.4: "Factory exposes a reconciled read model, never invented
+      progress"); no proprietary export format needed beyond Temporal's
+      own persistence.
+    restore_plan: >-
+      Section 80.5: Temporal persistence/task routing restored into a
+      clean environment; fenced old workers cannot publish new results
+      after migration.
+
+  - component_key: litellm
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: existing_internal_deployment
+    spdx_license_id: MIT
+    license_evidence_url: https://raw.githubusercontent.com/BerriAI/litellm/main/LICENSE
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Existing organizational deployment operated outside this Factory
+      (Section 4: "Reuse actual deployment; no replacement"); its own
+      operator owns patching/CVE response. The core gateway code this
+      Factory calls over the API is MIT-licensed; the repository's
+      separate enterprise/ directory (proprietary terms) is explicitly not
+      used -- this Factory never imports or deploys enterprise/ code.
+    version_status: >-
+      Not a Factory-managed dependency to pin -- the organization's
+      existing LiteLLM deployment's version is that deployment's own
+      operational fact, observed via its API (Section 77.4), not
+      pinned by spec/component-lock.schema.json the way a Factory-deployed
+      component is.
+    export_plan: >-
+      Factory records only route/alias bindings and access checks (Section
+      77.6); the gateway's own configuration and data are outside this
+      Factory's export scope since it does not own that deployment.
+    restore_plan: >-
+      Gateway availability/restore is the existing deployment's own
+      operational responsibility; Factory-side route bindings restorable
+      from Factory's own PostgreSQL backup (Section 48).
+
+  - component_key: argilla
+    owner: Factory implementation owner (relay/control-plane per QUEUE.md)
+    support_model: community_oss_self_hosted
+    spdx_license_id: Apache-2.0
+    license_evidence_url: https://raw.githubusercontent.com/argilla-io/argilla/main/LICENSE
+    enterprise_or_proprietary_features_used: false
+    security_process: >-
+      Tracked via upstream GitHub Security Advisories and release notes;
+      exact version pinned at onboarding (Section 64.3), not asserted here;
+      no CVE/vulnerability status claimed without a real scan record.
+    version_status: >-
+      NOT_YET_RESOLVED -- Section 64.3 onboarding gate has not run (see
+      spec/release-scope.yaml). Deployment mode is fixed regardless of the
+      pinned version: self-hosted internal server via SDK/API (Section
+      77.3) -- no SaaS-hosted Argilla deployment is a supported option
+      under Section 65's internal-only routing default.
+    export_plan: >-
+      Canonical datasets and annotations export independently of vendor
+      availability into Factory-owned immutable artifacts (Section 80.4:
+      "Canonical datasets and annotations must export independently of
+      vendor availability").
+    restore_plan: >-
+      Section 80.4: search indexes are rebuilt only from complete
+      authorized canonical source; sealed data is never restored into a
+      normal index.
+
+old_external_s3_compatibility:
+  policy: >-
+    The storage client
+    (apps/api/app/services/storage_semantics_client.py) is
+    endpoint-configurable via S3Endpoint/S3Credentials constructor
+    arguments -- never a hardcoded SeaweedFS host -- so the identical
+    signed-request code path qualifies the organization's real external S3
+    endpoint the moment one is provisioned, without a code migration
+    (Section 80.4: "Retain compatibility with organization-provided S3
+    endpoints that pass policy and tests; do not silently migrate existing
+    organizational data").
+  no_silent_migration_statement: >-
+    No task in this repository has moved, deleted, or rewritten any
+    pre-existing organizational S3 data -- this is a net-new Factory
+    deployment with no prior external S3 source yet. The qualification
+    target today is the SeaweedFS offline fixture per Section 77.3
+    (infra/internal/storage-profile.yaml); the same client code path
+    qualifies a real organizational S3 endpoint once the owner provisions
+    one. Nothing in this task forces or silently performs a migration
+    away from any existing organizational S3 data.
