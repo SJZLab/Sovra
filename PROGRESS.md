@@ -1,5 +1,68 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T17:10:00Z
+Updated: 2026-09-17T17:20:00Z
+
+## 2026-09-17 — FTF-R017 (PR #75): root cause found and fixed — real SeaweedFS volume-capacity exhaustion, not a SigV4 bug
+Continuation of this same relay shift, once CI genuinely ran with the
+debug instrumentation for the first time (run 35250917560). The
+`storage-semantics-integration` job still failed
+(`check_run.completed`/`failure`, job 105302756954) — but this time with
+real per-request evidence instead of a guess.
+
+Read the job log directly (`get_job_logs`, both the Python-side debug
+print lines and the `docker compose logs s3` dump this task's prior
+`a8decce` commit already wires in on failure). Correlated them line by
+line (method/canonical-URI + real response status/code, matched to the
+container's own boot log): `test_backup_and_restore` (alphabetically
+first) completed all 10 of its own real S3 calls successfully — proving
+the SigV4 client and signing path are not the defect. Its own two
+buckets' first writes each triggered SeaweedFS's default volume-growth
+behavior (up to 7 volumes per bucket "collection", matching SeaweedFS's
+own documented no-replication default), and the container log shows the
+second bucket's growth already only partially succeeding: `"create 7
+volume, created 5: Not enough data nodes found!"`. Every subsequent
+test's first real write against its *own* brand-new bucket (this
+suite's `_unique_bucket` helper makes every bucket a fresh SeaweedFS
+collection, by design, for isolation) then failed for real with
+SeaweedFS's own `"no free volumes left"` (500 InternalError) — the
+runner's real free disk had been consumed by the first two buckets' worth
+of the master's per-volume size assumption. The 2 `501 NotImplemented`
+responses (both `PutBucketVersioning`) are a distinct SeaweedFS response
+code from the 500s and were left explicitly unresolved by this specific
+fix — not yet known whether they're a downstream symptom of the same
+capacity exhaustion or a genuine, separate capability gap.
+
+Researched (via `WebSearch`/`WebFetch` against seaweedfs/seaweedfs's own
+GitHub issues, wiki, and raw source) rather than guessing a flag name:
+confirmed SeaweedFS's master computes its auto-detected max-volume
+ceiling from real free disk space divided by its own `volumeSizeLimitMB`
+assumption (default 30000MB), and that for the combined `weed server`
+subcommand this repo's compose file uses, the correct flag is
+`-master.volumeSizeLimitMB` (verified directly against
+`weed/command/server.go`'s real flag registration before pushing, not
+assumed from a blog post). Set it to `64` (comfortably above this
+suite's largest single write, a 5MB multipart part) on the `s3` service's
+`command:` in `infra/docker/docker-compose.yml` — `docker compose config`
+confirmed it parses as a distinct argument, not string-mangled into the
+existing flags. `-master.volumePreallocate` left untouched at its own
+default (`false`) — unrelated to this fix.
+
+Law 15 check performed: grepped `tests/tasks/test_ftf_0004.py`/
+`scripts/verify_docker_local_stack.py` — FTF-0004's entire certified
+evidence surface only checks TCP-level reachability on the s3 port, never
+its command-line flags. Purely additive; no requalification triggered.
+Regression: full 16-script existing test suite, ruff/mypy/eslint/tsc,
+pytest, vitest, and `validate_spec.py --strict` all clean (fresh worktree
+at the PR's real head, matching this shift's own earlier merge-fix
+verification). Pushed as commit `01e88fb` to the same PR #75 branch.
+
+STEP 4: still not a stop condition — waiting on this specific fix's own
+CI result (subscribed to PR #75) before either resubmitting for
+certification (if all 9 tests now pass) or diagnosing the 2 remaining
+501s as a distinct, separate finding (if the 500s clear but the 501s
+persist). `certification_state` for FTF-R017 remains `PROVISIONAL`.
+
+Certified: 15/300 (unchanged). Provisional: 0 (unchanged). Product-true: 0
+(unchanged).
 
 ## 2026-09-17 — FTF-R017 (PR #75): found and fixed why CI silently never ran (mergeable_state: dirty), CI now genuinely running
 Continuation of this same relay shift, after pushing the debug-

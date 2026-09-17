@@ -1,9 +1,7 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — fixed a real
-  `mergeable_state: dirty` blocker that was silently preventing CI from
-  running at all on the last few pushes, same structural issue FTF-0004
-  hit; per-request debug instrumentation now genuinely running in CI for
-  the first time, see "Active" below)
+Updated: 2026-09-17 by relay (FTF-R017 / PR #75 — real root cause found:
+  SeaweedFS volume-capacity exhaustion, not a SigV4 bug; fix pushed as
+  `01e88fb`, waiting on CI, see "Active" below)
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -185,6 +183,29 @@ disclose that as a resource_gate/negative-acceptance-scope finding rather
 than inventing a workaround), push to the existing branch/PR #75, let
 `storage-semantics-integration` actually go green, then resubmit for
 certification. Do not open a new/duplicate PR for this.
+
+**Update, same shift — root cause found, not a client/signing bug:** the
+new run (35250917560) genuinely ran with the debug instrumentation and
+failed again, but this time with real evidence: `test_backup_and_restore`
+completed all 10 of its own S3 calls successfully (proving the SigV4
+client itself is not the defect), and the `s3` container's own boot log
+(captured by this task's own `a8decce` commit) shows SeaweedFS's real
+`"no free volumes left"`/`"Not enough data nodes found"` errors — its
+default per-volume size assumption (30000MB) made its master compute far
+too low a volume ceiling for the GitHub Actions runner's real free disk,
+against this suite's ~11 independently-isolated buckets (each its own
+SeaweedFS "collection", eagerly growing up to 7 volumes on first write).
+Verified the correct fix flag against SeaweedFS's real source
+(`weed/command/server.go`) rather than guessing: `-master.
+volumeSizeLimitMB=64` added to the `s3` service's `command:` in
+`infra/docker/docker-compose.yml`, pushed as commit `01e88fb`. The 2
+`501 NotImplemented` (`PutBucketVersioning`) responses are a distinct
+SeaweedFS code from the 500s and are not yet confirmed resolved by this
+fix — next shift/continuation: if all 9 tests pass, resubmit for
+certification; if the 500s clear but the 501s persist, diagnose that as
+its own separate, disclosed finding (capacity exhaustion vs. a genuine
+SeaweedFS versioning capability gap) rather than assuming this fix
+covers it too.
 (FTF-0101/FTF-0102 separately remain blocked, see "Owner actions" and
 "Blocked" below.)
 
