@@ -1923,3 +1923,109 @@ Relay appends PROVISIONAL items here for the Control plane to certify.
   on the opened PR before merge.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
   self-certified — awaiting Control plane L2 review per Law 4.
+
+### Control plane review — 2026-09-17 — NOT CERTIFIED (unaddressed acceptance-clause item)
+- **PR:** https://github.com/SJZLab/Sovra/pull/70 (`claude/wizardly-fermat-dkivni`
+  → `main`), head `667ce4c9b850ce245d5c5b47981b214536e4a7d9`, merged by the
+  owner as merge commit `c055226b506df964fca67b5d3ca7b6e39d329a6c` while this
+  review was in progress (merge is not certification — Law 4).
+- **Session-ID check:** all four PR commits (`a1771c2`, `87c931e`, `57dea79`,
+  `667ce4c`) carry `Claude-Session: .../session_01C4Vvhh8pRi5yqZTmnFce6A`;
+  this reviewing session's ID (`session_01Wn6FwbAzgvmKf9AcqXKLbQ`) does not
+  match — independent, not self-certification.
+- **CI verified for real:** GitHub Actions run
+  https://github.com/SJZLab/Sovra/actions/runs/35213712242, tied to the
+  actual PR head SHA `667ce4c` (confirmed via `get_check_runs`, not a stale
+  claim) — both `gate` and `docker-local-stack-integration` jobs
+  `completed`/`success`.
+- **Own re-run, fresh worktree at the real head:** `uv sync` + `uv pip
+  install pyyaml`, `pnpm install --frozen-lockfile`; all 32
+  `tests/implementation/test_safe_parallel_executor.py` checks pass; the
+  full 13-task existing regression set (`test_ftf_0001_monorepo_layout.py`
+  through `test_r1_execution_binding.py`) passes unmodified; `ruff
+  check`/`format --check`/`mypy .` clean; `pnpm run lint`/`typecheck`/
+  `format:check` and `pnpm exec vitest run` (2 passed) clean.
+  `validate_spec.py --strict` clean; `verify_task.py --task FTF-R015
+  --stage task` → `PASS`; `verify_release.py` correctly non-inflated
+  (`13/300`, `FAILED (1): ['FTF-R015']`, `NOT READY`); `product_truth_check.py
+  --fail-on-unwired` confirmed legitimately `0/0` (`proving_symbol: ''`,
+  no live product-runtime caller, same rationale as every prior FTF-H00X/
+  FTF-R00X task). Note: this session's own git checkout was initially
+  shallow, which made `validate_spec.py --strict` falsely report
+  `stale_commit: FTF-0001` (the pre-existing, already-certified
+  `7ab3f6f` genuinely not resolving in a shallow clone) — `git fetch
+  --unshallow` resolved it and both `validate_spec.py --strict` and
+  `tests/tasks/test_ftf_h001.py` went clean; not a defect in this PR, a
+  local environment artifact, disclosed here rather than silently
+  worked around.
+- **Own fault injection (distinct from the producer's own, which targeted
+  `task_orchestrator.py`'s protected-gate-write guard):** removed the
+  `ci_failed` bookkeeping in `TaskOrchestrator.run_wave`'s worker
+  (`if not result.ci_passed: ci_failed.add(task.task_id)`) — re-ran the
+  suite, exactly 3 checks failed for real (`the failing task is recorded
+  CI-failed`, `a genuinely passing sibling in the same wave is still
+  approved`, `the integrated CI step still passes for the approved subset
+  alone`), proving the "advancement after failed CI" containment is real,
+  not decorative. Restored byte-identical (`diff` confirmed empty), re-ran
+  clean (32/32).
+- **Acceptance-clause item not addressed or disclosed (CERTIFY step 6 —
+  "confirm the acceptance/negative_acceptance clauses were actually met,
+  not just 'tests pass'"):** `tools/r1_handoff.py packet FTF-R015`'s
+  resolved contract states acceptance clause 1 as: "Execute disjoint real
+  tasks using the selected existing host in isolated workspaces with
+  default4/max6 only when safe; record actual overlap, **leases,
+  commits**, tests and an independent integrated merge gate." Checked each
+  named evidence category against the delivered code: overlap is proven
+  (barrier-synchronized `[started_at, finished_at]` overlap), leases are
+  reused from FTF-H034's `Claim`/`CompletedClaim`, tests are `ExecutionResult`,
+  and the merge gate is the reviewer-independence + integrated-CI check.
+  **"commits" has no corresponding evidence anywhere in this PR.**
+  `ExecutionResult` (`tools/implementation/executor_adapter.py:34-47`)
+  records `task_id`/`command`/`exit_code`/`stdout`/`stderr`/timestamps —
+  no commit field. `Claim`/`CompletedClaim`
+  (`scripts/task_claim.py:65-90`, reused unmodified) likewise carry no
+  commit field. `executor_adapter.ALLOWED_COMMAND_PREFIXES` explicitly
+  allows `git` alongside `python3` (line 23-26) — the only plausible reason
+  a real coding-execution wave would need to run `git` at all is to make
+  and evidence real commits — yet no code path captures a resulting commit
+  SHA, and `tests/implementation/test_safe_parallel_executor.py` never
+  exercises the `git` prefix or asserts anything commit-shaped (`grep -n
+  git tests/implementation/test_safe_parallel_executor.py` — zero matches).
+  Confirmed this is task-specific language, not generic task-card
+  boilerplate that's satisfied elsewhere: pulled FTF-R014's and
+  FTF-H034's own resolved acceptance clauses for comparison — neither
+  mentions "commits" at all. The PR's own queue entry above states the
+  32-check suite "proves every acceptance/negative_acceptance clause" —
+  that claim is not accurate for this one item, and neither the PR body
+  nor this queue entry discloses the gap as an intentional scope decision
+  (unlike this same PR's own, correctly disclosed, BLOCKED_EXTERNAL
+  treatment of true separate-host-session concurrency, or FTF-0004's `web`
+  exclusion, or FTF-0006's `identity`-format-boundary note) — this reads as
+  an overlooked contract item, not a disclosed limitation.
+- **Conclusion:** the delivered isolation/permission/budget/CI-containment/
+  merge-gate machinery is real and independently reproduced (session-ID
+  clean, CI green on the real head, 32/32 own re-run, an own fault
+  injection distinct from the producer's caught a real regression) — this
+  is not a rejection of the module's core design. But one explicitly named
+  acceptance-clause evidence category ("commits") is neither implemented
+  nor tested nor disclosed as out of scope, so the clause is not fully met
+  as written. Per Law 1/Law 5 and this repo's own FTF-0005 precedent (an
+  unaddressed clause element blocks certification even when every written
+  test passes), not certifying. `certification_state` stays `PROVISIONAL`
+  (not downgraded further — the rest of the delivered evidence is sound;
+  this is a scoped gap, not a redo).
+  **Fix needed:** either (a) record the real commit SHA(s) a task's
+  executed command actually produces — e.g. add a `git rev-parse HEAD`
+  read (or parse from the command's own output) into `ExecutionResult`
+  after a task's command runs inside its isolated workspace, with a test
+  that runs a real `git commit` through `execute_task`/a wave and asserts
+  the resulting SHA is captured — or (b) if real commit-producing tasks
+  are genuinely out of this task's scope for this sandbox (no test in the
+  delivered suite actually invokes `git`), say so explicitly in
+  `docs/spec-matrix.yaml`'s FTF-R015 notes and in this queue entry, the
+  same way this PR already discloses the separate-host-session limitation,
+  rather than leaving the clause silently unaddressed. Re-submit for
+  certification once either is done; no other part of this PR needs
+  rework.
+- **Validated-by:** session https://claude.ai/code/session_01Wn6FwbAzgvmKf9AcqXKLbQ
+  (independent — see session-ID check above), 2026-09-17.

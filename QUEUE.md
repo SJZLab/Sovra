@@ -99,8 +99,26 @@ service imports it either).
 
 ## Provisional (awaiting Control plane L2 certification)
 - FTF-R015 — Enforce isolated concurrent coding execution and independent
-  integration. Implemented, PR to be opened against `main`. Full entry:
-  docs/certifications/queue.md.
+  integration. PR #70, merged to `main` as PROVISIONAL (merge commit
+  `c055226b506df964fca67b5d3ca7b6e39d329a6c`). Control plane reviewed
+  2026-09-17 — **NOT CERTIFIED yet**: the module's isolation/permission/
+  budget/CI-containment/merge-gate machinery is real and independently
+  reproduced (own fault injection distinct from the producer's caught a
+  real regression, CI green on the real head, session-ID clean), but its
+  own resolved acceptance clause 1 names "leases, **commits**, tests" as
+  evidence to record, and "commits" has no corresponding code, test, or
+  scope-disclosure anywhere in this PR — `ExecutionResult`/`Claim`/
+  `CompletedClaim` carry no commit field, and `executor_adapter.py`'s
+  `git`-prefix allowlist entry is never exercised. Fix needed before
+  resubmitting: either capture the real commit SHA a task's executed
+  command produces (with a test that runs a real `git commit` through
+  `execute_task`/a wave and asserts it's captured), or explicitly disclose
+  in `docs/spec-matrix.yaml`'s FTF-R015 notes and the queue entry that
+  commit-producing tasks are out of this task's scope, the same way the
+  separate-host-session limitation is already disclosed. Full finding:
+  docs/certifications/queue.md ("Control plane review — 2026-09-17 — NOT
+  CERTIFIED"). `certification_state` stays `PROVISIONAL` (not downgraded
+  further).
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
