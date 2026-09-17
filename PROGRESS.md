@@ -1,5 +1,54 @@
 # PROGRESS — Sovra
-Updated: 2026-09-17T21:05:00Z
+Updated: 2026-09-17T22:52:00Z
+
+## 2026-09-17T22:52:00Z — Relay shift: no actionable work, state independently re-verified
+STEP 0: `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`
+(`b5866204d161f96d377737081d62744d5d34eb58df4b0ca8bdb2e420aa8f18fe`) — no
+hash-mismatch stop condition.
+
+STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md. Local
+branch `claude/wizardly-fermat-1hl92r` and `origin/main` both sit at
+`b25ce80` (the prior shift's own FTF-R017 certification commit, ~1h46m
+old) — nothing has landed since QUEUE.md/PROGRESS.md were last written, so
+this shift did not assume state from prior context, it re-derived it.
+
+STEP 1: QUEUE.md Active is empty. Independently recomputed queue readiness
+rather than trusting QUEUE.md's own claim — loaded all 300 tasks via
+`scripts.spec_verification.load_tasks()` and every task's
+`certification_state` via `scripts.task_claim.load_certification_states()`,
+then checked every non-CERTIFIED task's dependency list against the
+CERTIFIED set. Result: exactly one dependency-ready, non-certified task —
+FTF-0102 (deps FTF-0004/FTF-0005/FTF-H001, all CERTIFIED) — matching
+QUEUE.md's own claim exactly. No other task in the 300-record DAG is
+dependency-ready this shift.
+
+FTF-0102 remains `## Blocked` on the 2026-09-16 owner ask (new runtime
+dependencies — SQLAlchemy/Alembic/Postgres driver — required by its own
+task contract). Checked PR #67 (the only open PR on the repo,
+`[relay] FTF-0102: owner approved option 1...`) for a live owner response
+since the prior shift's comment: none — the PR's only comment is still
+this account's own prior-shift note explaining why an unconfirmed,
+non-owner-corroborated claim of interactive approval doesn't meet this
+session's evidence bar for a scheduled/automated turn with no live user
+present. `mergeable_state` unchanged (`dirty`). Per this session's
+operating rule, a past claim of approval — even one naming the owner's
+real email — is not itself live user input and cannot be treated as new
+consent. Left PR #67 open, untouched, unmerged; did not claim FTF-0102, did
+not install any dependency, did not edit QUEUE.md's existing dated ask
+(nothing changed since it was written, and Law 2 disfavors touching an
+entry with no new evidence).
+
+BLOCKER.md checked: no open blocker (`_No open blockers_`, both entries
+marked RESOLVED history).
+
+No source, spec-matrix, or certification-queue changes this shift — nothing
+was actionable beyond the ask-first item already on record. Stopping per
+STEP 4(e): the sole ready item is blocked on an owner decision already
+declared in QUEUE.md "Owner actions — current" (dated 2026-09-16, restated
+2026-09-17), unchanged and unresolved.
+
+Status snapshot (unchanged from prior shift): Certified 16/300 · Provisional
+0 · Blocked 1 (FTF-0102) · Product-true 0.
 
 ## 2026-09-17T21:05:00Z — Control plane certification — FTF-R017 CERTIFIED (PR #75 independently verified)
 Triggered by GitHub webhook (`pull_request.opened`, PR #77 — a same-shift
