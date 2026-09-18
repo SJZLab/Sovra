@@ -110,10 +110,20 @@ without counting toward product-true).
 ## Active (relay works this)
 (empty in the sense of "claimed by this shift" — FTF-1601 (Postgres
 backup, deps FTF-0004/FTF-0102) was claimed by a relay shift earlier
-2026-09-18 and is awaiting CI + independent Control-plane L2
-certification via open PR https://github.com/SJZLab/Sovra/pull/90 (not
-yet merged into this QUEUE.md's own tracking below). Do not re-claim
-FTF-1601 until that PR is merged or closed.)
+2026-09-18 via open PR https://github.com/SJZLab/Sovra/pull/90. Reviewed
+by Control plane 2026-09-18 (session_01Hqc673opTMxfCqsyXmGuoo): the
+delivered evidence itself is sound and was independently reproduced,
+including a fresh fault injection against a live local Postgres cluster
+— but the merge was blocked, not certified: PR #91 merged into `main`
+(0c74f31) while PR #90 was open, and both touch `QUEUE.md`/`PROGRESS.md`,
+producing a real tracking-doc-only conflict (`git merge-tree` confirmed,
+not just GitHub's status field). **Next relay shift: merge current
+`main` into `claude/wizardly-fermat-e9tyvg`, resolve the two tracking-doc
+conflicts, push, confirm CI stays green, then it's ready for
+re-certification — no code rework needed.** Full review:
+docs/certifications/queue.md's "2026-09-18 — NOT CERTIFIED (structural
+blocker, content sound)" entry. Do not re-claim FTF-1601 as a new task —
+this is a continuation of the same PR #90.)
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-0104 certified this shift, see "## Done" below.)

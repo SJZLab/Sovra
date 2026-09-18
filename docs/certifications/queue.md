@@ -3113,3 +3113,115 @@ PR: https://github.com/SJZLab/Sovra/pull/87
   https://claude.ai/code/session_019oRVQmqyscTzBokcuJyXxw (independent —
   see session-ID check above), 2026-09-18. Full ledger entry:
   `docs/certifications/ledger.md`.
+
+### Control plane review — 2026-09-18 — NOT CERTIFIED (structural blocker, content sound)
+- **PR:** https://github.com/SJZLab/Sovra/pull/90 (`claude/wizardly-fermat-e9tyvg`
+  → `main`), reviewed at head `f104ef60d16fbb009587c41c37bdadea6d8465e8`.
+  Item: FTF-1601 (Postgres backup). Note: `main` does not yet carry an
+  FTF-1601 `PROVISIONAL` entry above — its evidence writeup exists only on
+  PR #90's own branch (same disclosed situation as the FTF-0004/PR #35
+  precedent earlier in this file); reviewed from there directly.
+- **Session-ID check:** all 4 commits on PR #90
+  (`f5d3aee`, `33f4cb5`, `e8ca71d`, `f104ef6`) carry
+  `Claude-Session: .../session_01B9eYtKy6gPX3Ym8Cvx3X9c`; this reviewing
+  session's own ID does not match — independent, not self-certification.
+- **Real diff read directly** in a dedicated worktree at the real PR head:
+  7 substantive files (+1724/-6), centered on `scripts/postgres_backup.py`,
+  its two test files, and the new `packages/contracts/{jsonschema,openapi}/16-*`
+  contract pair.
+- **CI checked for real on the actual head:** `get_check_runs` on PR #90
+  → 6/6 `completed`/`success` (`gate`, `docker-local-stack-integration`,
+  `storage-semantics-integration`, `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`);
+  `actions_get get_workflow_run` on the run confirmed its own `head_sha`
+  (`f104ef6`) matches the PR's real head before trusting the result — not
+  a stale or self-reported claim.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  (frozen contract + encrypted backup with role/schema/RLS/version
+  metadata and a restoration test), acceptance clause 2 (independent
+  review/exact-commit/real-integration/negative-test evidence, satisfied
+  by this review itself), and the negative_acceptance clause ("backup
+  command success without verifiable usable data/key path is not done")
+  all map to specific, independently re-run tests below, confirmed met,
+  not asserted. `database_changes: "No independent schema change"`
+  respected — no Alembic migration file in this PR's diff.
+- **Real, independent reproduction against a live Postgres 16 cluster**
+  (this sandbox's own directly-installed cluster, same no-registry-egress
+  finding as FTF-0004/FTF-R017/FTF-0102/FTF-0104; `sovra_migrate` granted
+  `LOGIN SUPERUSER` locally to match the `postgres:16-alpine` image's own
+  bootstrap-superuser `CREATE DATABASE` privilege the restore step needs):
+  both `tests/tasks/test_ftf_1601.py` (no-DB) and
+  `tests/integration/test_postgres_backup.py` (real backup, real restore
+  into a second scratch database, real seeded-row survival) pass cleanly.
+- **Own fault injection against the tracked module** (not merely
+  re-running the producer's own script): patched `_encrypt_file` to
+  encrypt under `key + "-INJECTED-FAULT"` while `create_backup`'s
+  self-verification step still decrypts with the real, unmodified key —
+  re-ran both suites: the no-DB suite failed for real at
+  `test_create_backup_happy_path_produces_a_verifiable_artifact` with
+  `BackupError: decryption failed -- wrong key or corrupted backup (...
+  bad decrypt)`, and the live-Postgres integration test failed identically
+  at the same `create_backup()` self-verification step. Restored
+  byte-identical from a pre-edit copy (`diff` confirmed empty), re-ran —
+  both suites clean again. This directly exercises the negative_acceptance
+  clause end to end, live database included, not just the producer's own
+  unit-level fault case (which targeted the same self-verification path
+  via a different substitution).
+- **Full regression** in the same worktree, fresh `uv sync --all-packages`
+  + `pnpm install --frozen-lockfile`: `ruff`/`mypy`/`eslint`/`tsc`/
+  `prettier`/`vitest`/`pytest` all clean; every existing task test
+  unmodified and clean (FTF-0002 through FTF-R017, FTF-1810, FTF-H001/
+  H002/H028/H034/R001), including FTF-0102's and FTF-0104's own live
+  integration tests re-run clean against the same shared local Postgres
+  cluster (no regression to their tenant-isolation/audit evidence).
+  `validate_spec.py --strict` — one transient `stale_commit` defect
+  traced to this worktree's own shallow clone, confirmed spurious after
+  `git fetch --unshallow` (same class of issue this repo's own FTF-H034
+  history already documents), clean thereafter. `verify_task.py --task
+  FTF-1601 --stage task` → `BLOCKED` (no merged verification evidence
+  yet — correct and expected pre-certification).
+  `product_truth_check.py --fail-on-unwired` legitimately `0/0`
+  (`proving_symbol: ''` on PR #90's own branch — no live FastAPI app
+  imports `postgres_backup.py` yet, same established pattern as every
+  prior non-product-true certified task). `verify_release.py`
+  non-inflated (`18/300`, matching `main`'s current pre-existing state —
+  this PR does not change the certified count on its own).
+- **Contract files confirmed sound:** `packages/contracts/openapi/16-interface.yaml`
+  declares zero `paths` (Law 11 — no live FastAPI app exists yet, same
+  disclosed pattern as every prior contract file in this repo) and its
+  `components.schemas` defines `BackupRecord`/`RestoreRecord`; both are
+  validated by the suite's own hand-rolled, stdlib-only structural
+  validator against real constructed instances.
+- **`docs/spec-matrix.yaml` on PR #90's own branch correctly left at**
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` /
+  `evidence_hash: f5d3aee56da747f52c335813fc03677052bf8949` (the real
+  implementation commit) — not self-certified, correctly deferred to
+  Control plane per Law 4.
+- **Blocker — real, not a content defect:** attempted `merge_pull_request`
+  on PR #90 (`expectedHeadSha: f104ef6`) — GitHub's merge API refused it:
+  `405 Pull Request has merge conflicts`. Reproduced independently:
+  `main` advanced from `6f330eb` (PR #90's recorded base) to `0c74f31`
+  while this review was in progress — PR #91 (a same-day relay
+  tracking-only shift, no code changes) merged in the interim, and both
+  PRs touch `QUEUE.md`/`PROGRESS.md`. `git merge-tree --write-tree
+  origin/main pr90-review` against the real current `main` reproduces
+  genuine `CONFLICT (content)` markers in exactly those two files (pure
+  tracking-doc content, not code) — not inferred from GitHub's status
+  field alone. Same structural-blocker class as this file's own
+  FTF-0004/PR #35 precedent above (2026-09-16): a tracking-doc-only
+  divergence, not a defect in the delivered backup/restore code, which is
+  independently confirmed sound by every check above.
+- **Conclusion:** not merging, not certifying. `certification_state` for
+  FTF-1601 stays `PROVISIONAL` as PR #90's own branch already states —
+  not downgraded further, since nothing found here contradicts that L1
+  evidence, which was produced independently of and is re-checkable
+  regardless of `main`'s tip. **Action needed before resubmitting:**
+  merge current `main` (`0c74f31` or later) into
+  `claude/wizardly-fermat-e9tyvg`, resolve the `PROGRESS.md`/`QUEUE.md`
+  conflicts (both pure tracking-doc conflicts, not code), push, and
+  confirm CI stays green on the new merge commit before requesting
+  certification again — no other part of this PR needs rework.
+- **Validated-by:** session
+  https://claude.ai/code/session_01Hqc673opTMxfCqsyXmGuoo (independent —
+  see session-ID check above), 2026-09-18.
