@@ -1,5 +1,99 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Relay shift)
+Updated: 2026-09-18 (Control plane certifier shift)
+
+## 2026-09-18 — Control plane: FTF-0104 (PR #87) independently certified
+Scheduled certifier shift, triggered by PR #87's `pull_request.opened`
+webhook. `docs/certifications/queue.md` had exactly one PROVISIONAL,
+uncertified item once the PR's own append landed mid-review: FTF-0104
+(PR #87). Followed `docs/CONTROL_PLANE_MODES.md`'s CERTIFY procedure:
+
+- **Session-ID check:** all 5 commits on PR #87 (across the initial
+  implementation and 4 follow-up tracking-doc pushes, the last of which
+  landed mid-review) carry `Claude-Session: .../session_01FbdsNrj2DRZh92AB3edHUJ`;
+  this session's own ID does not match — independent, not
+  self-certification.
+- **Diff read directly** in a dedicated worktree at the real PR head:
+  `apps/api/app/auth/audit_event_writer.py` (`AuditEvent` ORM model,
+  `redact_details()` secret-shaped key/value redaction, `write_audit_event()`
+  which only `session.add()`s and never commits) and
+  `apps/api/alembic/versions/0002_audit_event_writer.py` (real forward
+  migration chained onto FTF-0102's `0001`, FORCE ROW LEVEL SECURITY,
+  `GRANT SELECT, INSERT` only — no UPDATE/DELETE), plus both test files.
+- **CI re-checked for real on the actual head:** the PR's head SHA moved
+  twice mid-review (a tracking-doc-only commit landed while checks were
+  still running); confirmed via `actions_get get_workflow_run` that the
+  in-progress workflow run's own `head_sha` matched the PR's real current
+  head before trusting its result. Waited out all 5 check runs to
+  `completed`/`success`: `gate`, `docker-local-stack-integration`,
+  `storage-semantics-integration`, `organization-workspace-schema-integration`,
+  and the new `audit-event-writer-integration` job. Read the latter's log
+  content directly: a genuine PostgreSQL 16.15 container on GitHub's own
+  registry-egress runner, with the container's own Postgres log showing
+  real `ERROR: permission denied for table audit_events` lines for both
+  the UPDATE and DELETE attempts the negative_acceptance test issues.
+  `mergeable_state: clean` on the final head.
+- **Real, independent reproduction** against this sandbox's own
+  directly-installed PostgreSQL 16 (no container-registry egress, same
+  FTF-0004/FTF-R017/FTF-0102 finding): created a scratch role/database,
+  ran `alembic upgrade head` for real (0001 then 0002 apply cleanly),
+  inspected the real GRANT surface directly via `psql \dp audit_events`
+  (`sovra_app=ar/sovra_migrate` — SELECT+INSERT only, matching the claim
+  exactly), then ran both delivered test files — all checks pass.
+- **Own fault injection against the no-DB suite** (not one the producer
+  tried): removed the `actor_type` allow-list check from
+  `AuditEvent.__init__` — exactly the "an unknown actor_type is rejected"
+  check failed for real; restored byte-identical, re-ran clean.
+- **Own fault injection directly against the live database** (not merely
+  re-running the producer's own fixture script): ran
+  `GRANT UPDATE, DELETE ON audit_events TO sovra_app;` via `psql` against
+  the scratch database, then re-ran the integration suite — exactly the 3
+  append-only negative_acceptance checks failed for real (UPDATE
+  rejected, DELETE rejected, row survives unchanged), matching the
+  producer's own claimed fault-injection result. Revoked the grant,
+  re-ran clean.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-0104 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("each committed sensitive mutation emits append-only
+  actor/resource/version/request evidence") maps to the `AuditEvent`
+  schema (Section 6.24's own field list has no separate "version" field;
+  `action` is the real field recording what changed, matching the domain
+  model verbatim) and the live-Postgres acceptance check above.
+  Negative_acceptance ("failed transaction cannot emit misleading
+  success; redacted audit cannot be edited by normal app role") confirmed
+  met by the rollback and GRANT-surface checks above. The
+  `shared_lock_required: contracts:01` note in the initial packet was
+  checked, not assumed correct — the task's actual acceptance clauses and
+  `files` list require no HTTP-exposed contract surface, same disclosed,
+  already-accepted scope limit as FTF-0102's own 0 OpenAPI paths.
+- **Governance claims double-checked:** the PR body's claim that PR #82
+  and PR #84 were closed as stale/superseded was confirmed directly via
+  `pull_request_read` (`state: closed`, `merged: false` on both), not
+  taken on trust.
+- **Full regression** in the same worktree, fresh `uv sync --all-packages`
+  + `pnpm install --frozen-lockfile` + `git fetch --unshallow`: ruff/mypy
+  clean, `pnpm run lint`/`typecheck`/`format:check` clean, every existing
+  task test unmodified and clean (including FTF-0102's own
+  `tests/integration/test_organization_workspace_schema.py`, re-run clean
+  against the same fresh Postgres cluster — no regression to its own RLS
+  evidence), `validate_spec.py --strict` clean, `verify_task.py --task
+  FTF-0104 --stage task` -> `PASS`, `product_truth_check.py` legitimately
+  `0/0`, `verify_release.py` non-inflated (`18/300`, zero FAILED, up from
+  `17/300`).
+- **Merged PR #87 as `c682687`.** Set `docs/spec-matrix.yaml` FTF-0104 to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` kept at the implementation commit `96e1598`). Added
+  FTF-0104's own entry to `spec/verification-map.json`. Ran
+  `scripts.task_claim.sync_certified_status()` — diff limited to exactly
+  FTF-0104's own `status`/`evidence` fields. Appended full entries to
+  `docs/certifications/ledger.md` and `docs/certifications/queue.md`.
+  Moved FTF-0104 from QUEUE.md's Provisional to Done (17/300 -> 18/300).
+
+No blocking defect found. Certification-only shift — no other task work
+attempted, per this session's scope.
+
+Certified: 18/300 (main). Provisional: 0. Product-true: 0 (unchanged —
+FTF-0104 has no proving_symbol, same disclosed pattern as the other
+seventeen).
 
 ## 2026-09-18 — PR #87 (FTF-0104): CI confirmed green for real on GitHub's own registry-egress runner
 Follow-up to this shift's own FTF-0104 submission (see entry below).
