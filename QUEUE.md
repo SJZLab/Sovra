@@ -1,9 +1,14 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (relay shift, after the Control plane certifier
-  shift that certified FTF-0104) — recomputed the dependency frontier,
-  found FTF-1601 already claimed elsewhere (open PR #90) and FTF-0101
-  blocked on a new-runtime-dependency ask; no other unblocked, unclaimed
-  work exists. See "## Owner actions — current" and "## Blocked" below.
+Updated: 2026-09-18 (relay shift, after Control plane's "FTF-1601 NOT
+  CERTIFIED — structural blocker only" review) — confirmed live via
+  GitHub MCP that PR #90's structural blocker (tracking-doc merge
+  conflict against `main`) has since been fixed on PR #90's own branch,
+  CI reconfirmed green on the new head; FTF-1601 now awaits a fresh
+  Control-plane re-certification pass, not further relay work.
+  Recomputed the dependency frontier again: still only FTF-1601 (in
+  flight, PR #90) and FTF-0101 (blocked on a new-runtime-dependency ask);
+  no other unblocked, unclaimed work exists. See "## Owner actions —
+  current" and "## Blocked" below.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -117,13 +122,27 @@ including a fresh fault injection against a live local Postgres cluster
 — but the merge was blocked, not certified: PR #91 merged into `main`
 (0c74f31) while PR #90 was open, and both touch `QUEUE.md`/`PROGRESS.md`,
 producing a real tracking-doc-only conflict (`git merge-tree` confirmed,
-not just GitHub's status field). **Next relay shift: merge current
-`main` into `claude/wizardly-fermat-e9tyvg`, resolve the two tracking-doc
-conflicts, push, confirm CI stays green, then it's ready for
-re-certification — no code rework needed.** Full review:
+not just GitHub's status field). Full review:
 docs/certifications/queue.md's "2026-09-18 — NOT CERTIFIED (structural
-blocker, content sound)" entry. Do not re-claim FTF-1601 as a new task —
-this is a continuation of the same PR #90.)
+blocker, content sound)" entry.
+**Update (this shift, verified live via GitHub MCP, not assumed):** the
+structural blocker is already fixed — PR #90's own branch
+(`claude/wizardly-fermat-e9tyvg`) has since merged current `main` in
+(commit `9ec50fc`, resolving the `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` conflicts), pushed a fresh commit
+(`8f8484a`), and CI re-ran green on that new head (GitHub Actions run
+`35371593078`, all 6 jobs `success`: `gate`,
+`docker-local-stack-integration`, `organization-workspace-schema-
+integration`, `audit-event-writer-integration`,
+`postgres-backup-integration`, `storage-semantics-integration`).
+`pull_request_read` confirms `mergeable_state: clean` on head `8f8484a`.
+No code rework was needed, matching the prior review's own prediction.
+FTF-1601 is now L1-PROVEN and genuinely ready for a fresh Control-plane
+re-certification pass — this relay shift did not perform that pass
+itself (Law 4 — relay is not the certifier; that role stays with a
+Control-plane session, and this session was invoked as relay, not
+certifier). Do not re-claim FTF-1601 as a new task — this is the same
+PR #90, now unblocked and simply awaiting the next Control-plane review.)
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-0104 certified this shift, see "## Done" below.)

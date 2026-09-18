@@ -1,6 +1,75 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (relay shift)
 
+## 2026-09-18 — Relay shift: PR #90's structural blocker already fixed by a prior shift, confirmed live; nothing new for relay to work — stopped per STEP 4(a)/(e)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly — no hash-mismatch stop condition.
+
+STEP 0.1: fresh scheduled-relay session, no prior context. Read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` off
+`origin/main` at its actual current tip (`1e6cd77`, PR #92 — Control
+plane's "FTF-1601 (PR #90) NOT CERTIFIED — structural blocker only"
+review). `BLOCKER.md` holds only resolved history, no open entry.
+Designated branch `claude/wizardly-fermat-72pgle` was already at that
+same tip on `origin` — no rebase needed.
+
+STEP 0.2: `cognee-cli` not found on `PATH` — text-search fallback
+active, unchanged from every prior shift.
+
+**Did not trust the tracking docs' own narrative at face value** —
+`docs/certifications/queue.md`'s NOT-CERTIFIED entry said PR #90 was
+blocked on a `PROGRESS.md`/`QUEUE.md` merge conflict against `main` and
+told the next relay shift to fix it. Checked live via GitHub MCP before
+doing that work: PR #90 (`claude/wizardly-fermat-e9tyvg`) is now
+`mergeable_state: clean` at head `8f8484a3c6e0309587db33cf86f9696282b5c2df`,
+and `list_commits` on that branch shows the fix was already done by a
+prior session — `9ec50fc` ("Merge remote-tracking branch 'origin/main'
+into claude/wizardly-fermat-e9tyvg", conflicts: `PROGRESS.md`,
+`QUEUE.md`, `docs/certifications/queue.md`) at 2026-09-18T16:54:13Z,
+followed by `b601ad1` and `8f8484a` recording the resolution and a fresh
+green CI run. Confirmed the CI claim independently rather than trusting
+the commit message: `get_check_run`/workflow-run lookup on head
+`8f8484a` shows all 6 jobs `success` (`gate`,
+`docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`), run `35371593078`. So the "next relay
+shift" action item from the NOT-CERTIFIED review was already completed
+by a shift between that review landing (`1e6cd77`) and this one firing —
+nothing left for this shift to redo.
+
+STEP 1: recomputed the dependency frontier again (did not assume it was
+unchanged just because `main`'s certified set hasn't moved since the
+last such check): still exactly two dependency-ready, non-CERTIFIED
+tasks — FTF-1601 (in flight, PR #90, now unblocked and ready for
+re-certification per above) and FTF-0101 (blocked, see below). No other
+unblocked, unclaimed task exists. FTF-1601 is not relay's to re-work
+(fix already applied, code sound per the prior Control-plane review) and
+not relay's to certify (Law 4 — relay is not the certifier; this session
+was invoked as relay, not control plane). Did not touch FTF-0101 either
+— its 2026-09-18 new-runtime-dependency ask (FastAPI/Next.js/OIDC client/
+session library/local OIDC test provider, none covered by the existing
+FTF-0102 dependency approval) is still open in "## Owner actions —
+current" below, unanswered.
+
+Also checked the other open PR, #89 ("Watchdog: log direct-push-to-main
+recurrence (b25ce80)", branch `claude/friendly-faraday-og6fif`): a
+docs-only watchdog finding (`docs/certifications/watchdog-findings.md`
+only, +44/-0), `mergeable_state: clean`, CI green (5/5 jobs). Not opened
+by this session, not something this session was asked to watch or drive
+— left untouched, consistent with the PR-activity posture for a PR
+that's neither mine nor one I'm subscribed to.
+
+No source code, spec-matrix, or certification-queue changes this shift —
+nothing was newly actionable beyond correcting the tracking docs'
+picture of PR #90's real, already-fixed state (see this shift's
+`QUEUE.md` edit) so the next shift doesn't re-diagnose or re-fix a
+conflict that's already resolved. Stopping per STEP 4(a)/(e): FTF-1601 is
+fully L1-PROVEN and genuinely ready, awaiting Control-plane
+re-certification; FTF-0101 stays blocked pending the owner's
+new-runtime-dependency decision; no other work exists to claim.
+
 ## 2026-09-18 — Relay shift: FTF-1601 already claimed elsewhere, FTF-0101 blocked on new-runtime-deps ask, no other unblocked work — stopped per STEP 4(e)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
