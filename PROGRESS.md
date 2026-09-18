@@ -1,6 +1,29 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (this relay shift)
 
+## 2026-09-18 — PR #83 (FTF-0102): CI confirmed green for real on GitHub's own registry-egress runner
+Follow-up to this shift's own FTF-0102 submission (see entry below).
+Subscribed to PR #83's activity; the `check_suite.completed` event on the
+actual current head (`01ebde9`) was independently re-verified via
+`pull_request_read get_check_runs` rather than trusted from the event
+body alone: all 4 jobs `completed`/`success` — `gate`,
+`docker-local-stack-integration`, `storage-semantics-integration`, and
+the new `organization-workspace-schema-integration` job (the real
+Postgres migration + RLS tenant-isolation evidence, run for the first
+time against GitHub's own `services: postgres` container with real
+registry egress — this session's own sandbox could only reproduce that
+evidence against a directly-installed local Postgres, disclosed in the PR
+body). `mergeable_state: "clean"`. Zero review comments, zero reviews —
+nothing else outstanding. No Claude Approvals check runs in this repo.
+
+Per Law 4 (producer never certifies own work) this session does not
+merge or certify its own PR — PR #83 is now genuinely CI-green and
+mergeable, waiting on Control plane's independent L2 review, not idle or
+blocked on anything this session can act on further.
+
+Certified: 16/300 (unchanged — main). Provisional: 1 (FTF-0102, PR #83,
+CI-green). Product-true: 0 (unchanged).
+
 ## 2026-09-18 — Relay shift: claimed and implemented FTF-0102 (Organization/workspace tenant schema), submitted PROVISIONAL
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
 exactly — no hash-mismatch stop condition.
