@@ -1,5 +1,144 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Control plane certifier shift)
+Updated: 2026-09-18 (relay shift)
+
+## 2026-09-18 — Relay shift: FTF-1601 already claimed elsewhere, FTF-0101 blocked on new-runtime-deps ask, no other unblocked work — stopped per STEP 4(e)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly — no hash-mismatch stop condition.
+
+STEP 0.1: fresh scheduled-relay session, no prior context. Read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` off
+`origin/main` at its actual current tip (`6f330eb`, PR #88 — Control
+plane's independent FTF-0104 certification). `BLOCKER.md` held only
+resolved history (no open entry). Designated branch
+`claude/wizardly-fermat-j8s1wx` already existed on `origin` and was
+already based exactly on that same tip — no rebase needed.
+
+STEP 0.2: `cognee-cli` not found on `PATH` — text-search fallback active,
+unchanged from every prior shift.
+
+**GitHub state check (before trusting QUEUE.md's own "Active empty"
+claim):** `list_pull_requests(state=open)` returned two: PR #90
+(`[relay] FTF-1601: Postgres backup`, `mergeable_state: clean`, opened
+2026-09-18T13:08Z by a different relay shift — not this session, body
+discloses stdlib-only implementation, PROVISIONAL, awaiting CI +
+independent L2 certification) and PR #89 (a watchdog documentation-only
+finding about a recurring direct-push-to-`main` pattern, also open,
+`mergeable_state: clean`). Neither PR is mine to drive: I did not open
+either, and this session was not asked to watch them, so per the PR-
+activity posture they need no action from this shift beyond noting their
+existence so this shift doesn't duplicate FTF-1601's work.
+
+STEP 1: did not trust QUEUE.md's stale "FTF-1601 is the dependency-ready
+frontier item, not claimed" note (written before PR #90 existed).
+Recomputed the full 300-task dependency frontier directly: loaded
+`spec/tasks.json` via `scripts.task_claim.load_tasks()` and cross-checked
+every non-CERTIFIED task's `dependencies` against
+`scripts.task_claim.load_certification_states()`'s 18 CERTIFIED entries
+on `main` (FTF-0104 now included). Exactly two tasks are dependency-ready
+and not yet CERTIFIED: **FTF-0101** (deps FTF-0004/FTF-0005/FTF-0102, all
+CERTIFIED) and **FTF-1601** (deps FTF-0004/FTF-0102, both CERTIFIED).
+FTF-1601 is already claimed (PR #90, open, not yet merged) — not
+re-claimed, per the standing rule against duplicating in-flight work.
+
+Pulled FTF-0101's real DoD via `tools/r1_handoff.py packet FTF-0101
+--plan FINE_TUNING_FACTORY_RELEASE_1.md` before deciding anything (not
+improvised, not judged by title alone). Its resolved contract: `files`
+= `apps/web/components/identity-and-tenancy/oidc_login.tsx` +
+`apps/web/tests/ftf_0101.spec.ts`; `api_contract` = "OIDC callback/
+session; scoped role enforcement for every /api/v1 mutation; audit read
+API"; `acceptance` = "Real OIDC provider login/refresh/logout validates
+issuer+audience+subject and secure session"; `negative_acceptance` =
+"Forged issuer/audience, expired token, state/nonce mismatch, revoked
+membership and CSRF are denied."
+
+Checked this repo's actual current state before assuming feasibility,
+same discipline as the 2026-09-16 FTF-0102 review that first surfaced
+this exact issue: `apps/api/app` has no `main.py` — no live FastAPI app
+exists anywhere in this repo, on any branch merged to `main`, despite 18
+certified tasks (every one of FTF-0005/0006/R001/H002/H028/R011/R014/
+R015/R017/0102/0104's own certification entries explicitly discloses "no
+live FastAPI app" as an accepted, disclosed scope limit — a consistent
+18-for-18 pattern, not an oversight). `apps/web/package.json` has zero
+dependencies — no Next.js, no React, no TypeScript-JSX tooling anywhere
+in `apps/web` either (`docs/certifications/ledger.md` line 357-361
+records a prior shift explicitly declining to add a Next.js/React
+runtime for exactly this "new runtime dependency ask-first" reason).
+
+Meeting FTF-0101's real acceptance/negative_acceptance clauses for real
+(not a fake/placeholder path, per Law 11 and Section 84.4's "production
+code cannot contain fake provider clients, hard-coded success ...
+swallowed errors or hidden placeholder routes") requires, at minimum:
+on the Python side, `fastapi` + an ASGI server (`uvicorn`) to expose the
+callback/session/audit-read routes at all, plus a real OIDC/OAuth2 client
+and JWT/JWKS-validation library (e.g. `authlib`) to validate
+issuer+audience+subject+nonce/state against a real provider, plus a
+session-signing library (e.g. `itsdangerous`) for the "secure session"
+half of the acceptance clause; on the TypeScript side, `next` + `react`
++ `react-dom` (+ types) to render a real `.tsx` component instead of an
+inert static file. None of these packages exist anywhere in
+`pyproject.toml`/`uv.lock`/`package.json`/`pnpm-lock.yaml` today. Also
+relevant: Section 65.3 permits "a real local OIDC provider" for read-only
+local setup (never a bypass/test-token login) — satisfying that for
+genuine integration evidence (not FTF-0101's negative_acceptance clauses
+alone) means picking and installing a specific local test-IdP package
+(e.g. Node's `oidc-provider`, or Python's `idpy-oidc`) too, which is its
+own separate dependency decision.
+
+Weighed whether the master architecture table
+(`FINE_TUNING_FACTORY_RELEASE_1.md` line 290-291, naming "Next.js +
+TypeScript" and "FastAPI + SQLAlchemy/Alembic + PostgreSQL") already
+pre-approves these specific packages, against the exact same question
+already litigated for FTF-0102 on 2026-09-16: that review concluded
+prior architecture naming does not override CLAUDE.md's "new runtime
+deps" ask-first hard stop, and the eventual 2026-09-18 owner resolution
+of that ask (option 1) was confirmed scoped only to SQLAlchemy + Alembic
++ a Postgres driver for FTF-0102's ORM/migration work — FTF-0102 itself
+still has no live FastAPI app, so that approval never actually reached
+FastAPI, an OIDC client library, a session library, or any JS frontend
+framework. Treating FTF-0101 as pre-approved by the same table row, when
+FTF-0102's own resolution explicitly didn't reach that far, would be
+inventing a broader approval than what was actually granted — the same
+mistake the FTF-0102 "owner approved option 1" self-attestation saga
+(see this file's own 2026-09-16 through 2026-09-18 entries and
+`docs/certifications/watchdog-findings.md`) already showed is exactly
+the kind of unverified claim this repo's norms exist to prevent. Also
+considered and rejected a stdlib/CLI-only substitute (e.g., a raw
+`http.server`-based callback endpoint instead of FastAPI, or a hand-
+rolled OIDC/JWT validator instead of `authlib`): technically avoids a
+new package, but silently substitutes for the master spec's explicit,
+specific "FastAPI" naming and Section 84's ban on inventing ad hoc
+infrastructure — that is improvising the DoD, not executing it, which
+CLAUDE.md's "Relay is execution-only" forbids exactly as much as an
+unclear DoD would (identical reasoning to the FTF-0102 review's own
+rejection of an Alembic-via-raw-SQL substitute).
+
+**Decision: this is a genuine ask-first item (new runtime dependencies),
+distinct from and not covered by FTF-0102's own resolved ask.** Recorded
+a dated entry in `QUEUE.md`'s "Owner actions — current" (2026-09-18,
+appended after the existing two unresolved/informational entries — did
+not remove or touch either) naming the specific packages needed on both
+sides and the separate local-test-IdP decision, added FTF-0101 to
+`QUEUE.md`'s "## Blocked" section, and updated the Status line (`Blocked:
+1`, plus a note that PR #90/FTF-1601 is open-but-uncertified so
+Provisional isn't really 0 even though nothing in this QUEUE.md's own
+tracking reflects it yet — that update belongs to FTF-1601's own PR, not
+this shift). No code written, no dependency installed, FTF-0101 not
+claimed as Active.
+
+No other dependency-ready, unclaimed task exists this shift (the same
+frontier recomputation above is exhaustive over all 300 tasks, not just
+these two). Per STEP 4(e), stopping this shift here rather than
+inventing work or re-litigating FTF-1601 (already claimed) or FTF-0104
+(already certified, this same day, by the Control plane shift above).
+
+Certified: 18/300 (unchanged). Provisional: 0 in this QUEUE.md's own
+tracking, though PR #90 (FTF-1601) is open and CI-pending — not yet
+reflected here since that update belongs to FTF-1601's own producing
+shift. Product-true: 0 (unchanged). No blockers requiring BLOCKER.md
+(this is an ask-first item per STEP 4(e), not a true blocker per STEP
+4(b) — QUEUE.md is the correct record per CLAUDE.md's "Owner actions
+live in ONE place").
 
 ## 2026-09-18 — Control plane: FTF-0104 (PR #87) independently certified
 Scheduled certifier shift, triggered by PR #87's `pull_request.opened`

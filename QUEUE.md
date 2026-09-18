@@ -1,12 +1,17 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (Control plane certifier shift) — independently
-  certified FTF-0104 (PR #87, merged as `c682687`) per Law 4. See
-  "## Done" below and docs/certifications/ledger.md for full evidence.
+Updated: 2026-09-18 (relay shift, after the Control plane certifier
+  shift that certified FTF-0104) — recomputed the dependency frontier,
+  found FTF-1601 already claimed elsewhere (open PR #90) and FTF-0101
+  blocked on a new-runtime-dependency ask; no other unblocked, unclaimed
+  work exists. See "## Owner actions — current" and "## Blocked" below.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
-`c682687` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #90,
+FTF-1601, is open but not yet merged/certified — see "## Active" below) ·
+Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
+"## Owner actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017 and FTF-0102
@@ -67,10 +72,48 @@ without counting toward product-true).
   direct-to-main commit's history rewritten (not recommended — it is
   otherwise a correct, already-verified certification); flagging so it
   isn't repeated silently.
+- 2026-09-18 (this shift, relay): FTF-0101 (OIDC login) is the only other
+  dependency-ready item (deps FTF-0004/FTF-0005/FTF-0102, all CERTIFIED)
+  besides FTF-1601 (already claimed elsewhere this same day — PR #90,
+  open, not yet merged). FTF-0101's real DoD (`tools/r1_handoff.py packet
+  FTF-0101`) requires `apps/web/components/identity-and-tenancy/
+  oidc_login.tsx` and a real OIDC callback/session API enforcing scoped
+  roles on `/api/v1` — this repo has *no* live FastAPI app anywhere yet
+  (`apps/api/app` has no `main.py`) and *no* Next.js/React runtime in
+  `apps/web` (its `package.json` has zero dependencies). Building this
+  task's acceptance criteria for real (not a fake/placeholder path, per
+  Law 11) requires installing, at minimum: `fastapi` + an ASGI server
+  (`uvicorn`) + an OIDC/OAuth2 client and JWT/JWKS-validation library
+  (e.g. `authlib`) + a session-signing library (e.g. `itsdangerous`) on
+  the Python side, and `next`/`react`/`react-dom` (+ types) on the
+  TypeScript side — every one of these is a genuinely new runtime
+  dependency, not yet approved for this repo. The prior 2026-09-16
+  FTF-0102 new-runtime-dependency approval (see "## Blocked" below) was
+  confirmed scoped only to SQLAlchemy/Alembic/a Postgres driver for that
+  task's ORM/migration work — it does not cover FastAPI, an OIDC client
+  library, a session library, or any JS frontend framework, none of
+  which FTF-0102 needed or installed (it still has no live FastAPI app
+  either). Also relevant: FTF-0101's own acceptance clause expects a real
+  local OIDC provider for integration evidence (Section 65.3 allows "a
+  real local OIDC provider" for read-only local setup, never a
+  bypass/test-token login) — that is itself another new dependency
+  decision (e.g. the Node `oidc-provider` package, or Python `idpy-oidc`)
+  this relay should not pick unilaterally either. Filed as a dated ask
+  below rather than improvised or silently substituted, per CLAUDE.md
+  "Relay is execution-only" and the "new runtime deps" ask-first hard
+  stop. Not claimed. No other dependency-ready, unclaimed task exists
+  this shift (recomputed the full 300-task frontier against all 18
+  CERTIFIED entries directly via `scripts.task_claim.load_tasks()` /
+  `load_certification_states()` — FTF-0101 and FTF-1601 are the only two
+  ready items, and FTF-1601 is already in flight). Per STEP 4(e),
+  stopping this shift here.
 ## Active (relay works this)
-(empty — FTF-0104 certified this shift, see "## Done" below. FTF-1601
-(Postgres backup, deps FTF-0004/FTF-0102) is now the dependency-ready
-frontier item; not claimed this shift, certification-only.)
+(empty in the sense of "claimed by this shift" — FTF-1601 (Postgres
+backup, deps FTF-0004/FTF-0102) was claimed by a relay shift earlier
+2026-09-18 and is awaiting CI + independent Control-plane L2
+certification via open PR https://github.com/SJZLab/Sovra/pull/90 (not
+yet merged into this QUEUE.md's own tracking below). Do not re-claim
+FTF-1601 until that PR is merged or closed.)
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-0104 certified this shift, see "## Done" below.)
@@ -468,11 +511,20 @@ to get its real DoD — read the generated
 not merely because the task looked title-only elsewhere.
 
 ## Blocked
-(empty — FTF-0102's new-runtime-dependency ask was resolved 2026-09-18 by
-live owner confirmation (option 1: SQLAlchemy + Alembic + a Postgres
-driver, matching the master architecture table as written) — see
-PROGRESS.md's matching entry for the full record. FTF-0102 has since been
-implemented, submitted and CERTIFIED this same day — see "## Done" above.)
+- FTF-0101 — OIDC login. Blocked 2026-09-18 on a genuine new-runtime-
+  dependency ask-first item: this repo has no live FastAPI app and no
+  Next.js/React runtime anywhere yet, and this task's real acceptance
+  criteria cannot be met without both, plus an OIDC/JWT client library,
+  a session library, and (for real integration evidence) a local OIDC
+  test provider. See "## Owner actions — current" (dated 2026-09-18) for
+  the concrete options recorded for the owner. Distinct from, and not
+  covered by, the FTF-0102 approval below (that one was scoped only to
+  SQLAlchemy/Alembic/a Postgres driver).
+- (FTF-0102's own 2026-09-16 new-runtime-dependency ask was resolved
+  2026-09-18 by live owner confirmation (option 1: SQLAlchemy + Alembic +
+  a Postgres driver, matching the master architecture table as written) —
+  see PROGRESS.md's matching entry for the full record. FTF-0102 has
+  since been implemented, submitted and CERTIFIED — see "## Done" above.)
 
 ## Done (certified + promoted via L4)
 - [x] FTF-0001 — Initialize monorepo. CERTIFIED 2026-09-15 (control-plane
