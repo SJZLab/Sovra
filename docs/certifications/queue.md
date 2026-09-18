@@ -2931,3 +2931,94 @@ relay's, per Law 4 and this shift's own STEP 4(a).
   https://claude.ai/code/session_01WYf49qFkGAtWXsTMpiKbxu (independent —
   see session-ID check above), 2026-09-18. Full ledger entry:
   `docs/certifications/ledger.md`.
+
+## PENDING — FTF-0104 (Audit event writer), PR #87, submitted 2026-09-18
+
+Producer session: https://claude.ai/code/session_01FbdsNrj2DRZh92AB3edHUJ.
+Implementation commit: `96e15980c1c375ed3f864b88024027ea4554e73b`.
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` in
+`docs/spec-matrix.yaml`. Awaiting independent Control-plane L2 review per
+Law 4 (producer never certifies own work).
+
+**What was delivered:**
+- `apps/api/app/auth/audit_event_writer.py` — `AuditEvent` ORM model
+  (Section 6.24) sharing FTF-0102's `Base`/metadata; `redact_details()`
+  recursively redacts secret-shaped keys (case-insensitive) and
+  secret-shaped values (Bearer/JWT-looking strings under an unexpected
+  key) before construction; `write_audit_event()` only `session.add()`s
+  — never commits — so the caller's own transaction boundary decides
+  both-or-neither (this task's own "failed transaction cannot emit
+  misleading success" negative_acceptance clause).
+- `apps/api/alembic/versions/0002_audit_event_writer.py` — real forward
+  migration, `down_revision = "0001_org_workspace_schema"` (single
+  serialized chain, matching `database_changes`'s "Serialize migration
+  chain" requirement); FORCE ROW LEVEL SECURITY on `audit_events` scoped
+  to the same `app.current_organization_id` context FTF-0102 uses;
+  `GRANT SELECT, INSERT ON audit_events TO "sovra_app"` — no `UPDATE`, no
+  `DELETE` — enforcing append-only at the database's own GRANT surface
+  (verified directly via `psql \dp` before any test was written:
+  `sovra_app=ar/sovra_migrate`, i.e. SELECT+INSERT only).
+- `tests/tasks/test_ftf_0104.py` (26 no-DB checks) +
+  `tests/integration/test_audit_event_writer.py` (real live-Postgres
+  proof, run against this sandbox's own directly-installed PostgreSQL 16
+  — no container-registry egress here, same finding as
+  FTF-0004/FTF-R017/FTF-0102).
+- `.github/workflows/ci.yml`: new `gate`-job step + new
+  `audit-event-writer-integration` job (real `services: postgres`
+  container), mirroring `organization-workspace-schema-integration`.
+
+**Fault injections (shown able to fail, Law 1), both restored
+byte-identical and re-run clean:**
+1. Removed `FORCE ROW LEVEL SECURITY` from the tracked migration file —
+   the no-DB suite's own check failed for real.
+2. Widened the migration's `GRANT` to `SELECT, INSERT, UPDATE, DELETE`
+   and ran it against a fresh scratch Postgres database — exactly the 3
+   append-only negative_acceptance checks in the live-Postgres suite
+   failed for real (UPDATE rejected / DELETE rejected / row survives
+   unchanged), no other check in that same run was affected.
+
+**Full regression this shift** (same environment used throughout, not a
+separate fresh worktree — flagging so the certifying session knows to
+re-verify independently in its own): `ruff`/`mypy`/`eslint`/`tsc`/
+`prettier`/`vitest`/`pytest` all clean; every existing task test
+(FTF-0002 through FTF-R017) unmodified and still passing, including
+FTF-0102's own two test files re-run clean against a fresh local Postgres
+database (no regression to its RLS/tenant-isolation evidence);
+`validate_spec.py --strict` clean (a transient `stale_commit` defect
+traced to this session's own shallow clone, confirmed spurious after
+`git fetch --unshallow`); `verify_task.py --task FTF-0104 --stage task`
+correctly reports `BLOCKED` (no merged verification evidence yet —
+expected at PROVISIONAL stage, matching FTF-0102's own precedent before
+its L2 certification added the `spec/verification-map.json` entry, not a
+defect); `product_truth_check.py --fail-on-unwired` legitimately `0/0`
+(no live FastAPI app imports this module yet); `scripts/status.py`
+unchanged at `17/300 certified`.
+
+**Disclosed judgment call, flagged for the certifying session's own
+review, not assumed correct:** this task's initial packet listed
+`contracts:01` under `shared_lock_required`, but its concrete `files`
+list and acceptance/negative_acceptance clauses require no HTTP-exposed
+contract surface — no live FastAPI app exists yet to host an "audit read
+API" route (same scope limit FTF-0102 already disclosed for its own 0
+OpenAPI paths in `packages/contracts/openapi/01-interface.yaml`). Did not
+touch `packages/contracts/{jsonschema,openapi}/01-*`.
+
+**Also found and fixed** (before it reached `main`): this shift's own
+drafted `docs/spec-matrix.yaml` notes text introduced two bare `word: `
+sequences inside an unquoted YAML plain scalar, which broke
+`yaml.safe_load` for the entire file — caught by this shift's own full
+regression run (`tests/tasks/test_ftf_h034.py` failed with a raw
+`yaml.scanner.ScannerError`). Reworded both to use `--` instead of `:`;
+re-verified the whole file parses clean.
+
+**Governance note (unrelated to this task's own evidence):** this shift
+also closed PR #82 and PR #84 as stale/superseded — both predated
+FTF-0102's real independent Control-plane certification (PR #85, already
+on `main`) and carried `mergeable_state: dirty` against current `main`;
+see PR #84's own closing comment for the full investigation (its premise
+that PR #83 "was merged directly by the account owner... rather than
+through Control-plane review" reflected a misreading of GitHub's merge
+attribution, not an actual review gap — the real review is PR #85,
+already merged).
+
+PR: https://github.com/SJZLab/Sovra/pull/87
