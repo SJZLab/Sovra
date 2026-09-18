@@ -149,6 +149,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014/FTF-R015/FTF-R011/FTF-R017 — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres RLS/tenant-isolation evidence is tests/integration/test_organization_workspace_schema.py, run separately in CI (organization-workspace-schema-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017."
+    },
+    "FTF-0104": {
+      "commit": "96e15980c1c375ed3f864b88024027ea4554e73b",
+      "commands": [["python3", "tests/tasks/test_ftf_0104.py"]],
+      "expected_output_contains": "FTF-0104 audit event writer: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102 and its own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres append-only/tenant-isolation/atomicity evidence is tests/integration/test_audit_event_writer.py, run separately in CI (audit-event-writer-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102."
     }
   }
 }

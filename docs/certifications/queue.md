@@ -3022,3 +3022,94 @@ attribution, not an actual review gap — the real review is PR #85,
 already merged).
 
 PR: https://github.com/SJZLab/Sovra/pull/87
+
+### Control plane review — 2026-09-18 — CERTIFIED
+- **PR:** https://github.com/SJZLab/Sovra/pull/87 (`claude/wizardly-fermat-inchhv`
+  → `main`), merged as `c682687` (`c682687af99230efcbbdd1942cefcf933844b826`).
+- **Session-ID check:** all 5 commits on PR #87 (`96e1598`, `8ccbd21`,
+  `8f8b0c9`, `46938eb`, `5efcbb9`) carry `Claude-Session: .../session_01FbdsNrj2DRZh92AB3edHUJ`;
+  this reviewing session's own ID does not match — independent, not
+  self-certification.
+- **Real diff read directly** in a dedicated worktree at the real PR
+  head: 9 files, +2611/-15, centered on
+  `apps/api/app/auth/audit_event_writer.py` and
+  `apps/api/alembic/versions/0002_audit_event_writer.py`, plus the two
+  test files.
+- **CI checked for real on the actual head:** the PR's head SHA advanced
+  twice mid-review (further tracking-doc-only pushes while jobs were
+  still `in_progress`); confirmed via `actions_get get_workflow_run` that
+  the in-progress run's own `head_sha` matched the PR's real current head
+  (`5efcbb9`) before trusting its result — all 5 check runs `completed`/
+  `success`: `gate`, `docker-local-stack-integration`,
+  `storage-semantics-integration`, `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`. Read the
+  `audit-event-writer-integration` job's log content directly: a genuine
+  PostgreSQL 16.15 container on GitHub's own registry-egress runner, real
+  `ERROR: permission denied for table audit_events` lines for both the
+  UPDATE and DELETE attempts the negative_acceptance test issues, ending
+  `FTF-0104 audit event writer real proof: all checks passed`.
+  `mergeable_state: clean`.
+- **Real, independent reproduction against a live Postgres 16 cluster**
+  (this sandbox's own directly-installed cluster, same no-registry-egress
+  finding as FTF-0004/FTF-R017/FTF-0102): ran the real migration (0001
+  then 0002 apply cleanly in sequence), inspected the real GRANT surface
+  directly via `psql \dp audit_events` (`sovra_app=ar/sovra_migrate` —
+  SELECT+INSERT only, matching the claim exactly), then
+  `tests/tasks/test_ftf_0104.py` and
+  `tests/integration/test_audit_event_writer.py` — all checks pass.
+- **Own fault injection against the no-DB suite** (not in the producer's
+  own set): removed the `actor_type` allow-list check from
+  `AuditEvent.__init__` — exactly the "an unknown actor_type is rejected"
+  check failed for real; restored byte-identical, re-ran clean.
+- **Own fault injection directly against the live database** (not merely
+  re-running the producer's own script): ran `GRANT UPDATE, DELETE ON
+  audit_events TO sovra_app;` via `psql` against the scratch database,
+  then re-ran the integration suite — exactly 3 append-only
+  negative_acceptance checks failed for real (UPDATE rejected, DELETE
+  rejected, row survives unchanged), matching the producer's own claimed
+  fault-injection result exactly. Revoked the grant, re-ran clean.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-0104 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance
+  clauses and the negative_acceptance clause map one-to-one to specific,
+  independently re-run tests and the fault injections above, confirmed
+  met, not asserted. Section 6.24's own field list confirms "version" in
+  the acceptance clause has no separate field in the real domain model —
+  `action` is the field recording what changed, matching the shipped
+  schema verbatim.
+- **Disclosed scope note confirmed correct, not assumed:** the initial
+  task packet's `shared_lock_required: contracts:01` does not apply in
+  practice — this task's actual acceptance/negative_acceptance clauses
+  and `files` list require no HTTP-exposed contract surface (no live
+  FastAPI app exists yet), same disclosed, already-accepted scope limit
+  as FTF-0102's own 0 OpenAPI paths.
+- **Governance claims double-checked:** the PR body's claim that PR #82
+  and PR #84 were closed as stale/superseded was confirmed directly via
+  `pull_request_read` (`state: closed`, `merged: false` on both).
+- **product_truth_check.py legitimately `0/0`:** `proving_symbol: ''` —
+  no live FastAPI app imports `audit_event_writer.py` yet, same
+  established, disclosed pattern as FTF-0002/0003/0004/0005/0006/R001/
+  R011/R014/R015/R017/0102.
+- **Full regression** in the same worktree, fresh `uv sync --all-packages`
+  + `pnpm install --frozen-lockfile` + `git fetch --unshallow`: `uv run
+  ruff check`/`mypy .` clean; `pnpm run lint`/`typecheck`/`format:check`
+  clean; every existing task test unmodified and clean, including
+  FTF-0102's own `tests/integration/test_organization_workspace_schema.py`
+  re-run clean against the same fresh Postgres cluster (no regression to
+  its own RLS/tenant-isolation evidence); `validate_spec.py --strict`
+  clean; `verify_task.py --task FTF-0104 --stage task` -> `PASS`;
+  `verify_release.py` non-inflated (`18/300`, zero `FAILED`, up from
+  `17/300`).
+- **Conclusion:** the delivered append-only, tenant-scoped audit event
+  writer and its database-enforced GRANT surface are real and
+  independently reproduced, including two fault injections not in the
+  producer's own set. Merged PR #87 as `c682687`. `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` kept at the implementation commit `96e1598`, matching
+  `spec/verification-map.json`'s own new `commit` field). Added
+  FTF-0104's entry to `spec/verification-map.json`.
+  `scripts.task_claim.sync_certified_status()` run — diff limited to
+  exactly FTF-0104's own `status`/`evidence` fields.
+- **Validated-by:** session
+  https://claude.ai/code/session_019oRVQmqyscTzBokcuJyXxw (independent —
+  see session-ID check above), 2026-09-18. Full ledger entry:
+  `docs/certifications/ledger.md`.

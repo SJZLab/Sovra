@@ -1,17 +1,12 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (Relay shift) — claimed and implemented FTF-0104
-  (Audit event writer), submitted PROVISIONAL, PR #87 confirmed CI-green
-  for real on GitHub's own registry-egress runner (all 5 jobs, including
-  the new audit-event-writer-integration job), now awaiting Control
-  plane's independent L2 review. Closed two stale/superseded PRs (#82,
-  #84) left open from before FTF-0102's real certification. See
-  "## Provisional" below and PROGRESS.md for full evidence.
+Updated: 2026-09-18 (Control plane certifier shift) — independently
+  certified FTF-0104 (PR #87, merged as `c682687`) per Law 4. See
+  "## Done" below and docs/certifications/ledger.md for full evidence.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 17/300 (main; FTF-0102 CERTIFIED 2026-09-18, PR #83 merged as
-`1874932` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0104,
-this shift) · Blocked: 0
+Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
+`c682687` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017 and FTF-0102
@@ -40,11 +35,12 @@ governance/validator layer with no Factory production service importing
 it, FTF-R017 is a storage/OSS-dependency-lifecycle qualification layer
 (SigV4 client, component-maintenance inventory, storage-profile
 qualification) with no live Factory production service importing
-`storage_semantics_client.py` yet, and FTF-0102 is the Organization/
+`storage_semantics_client.py` yet, FTF-0102 is the Organization/
 Workspace ORM/migration/RLS layer with no live FastAPI app importing
-`organization_workspace_schema.py` yet — none a live-wired product-runtime
-path, so all seventeen are CERTIFIED without counting toward
-product-true).
+`organization_workspace_schema.py` yet, and FTF-0104 is the audit event
+writer with no live FastAPI app importing `audit_event_writer.py` yet —
+none a live-wired product-runtime path, so all eighteen are CERTIFIED
+without counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-15: One setup gap remains — no *durable* trigger tooling
@@ -72,64 +68,12 @@ product-true).
   otherwise a correct, already-verified certification); flagging so it
   isn't repeated silently.
 ## Active (relay works this)
-(empty — FTF-0104 claimed and submitted PROVISIONAL this shift, see
-"## Provisional" below. Two other tasks became dependency-ready once
-FTF-0102 certified — FTF-0104 (this shift) and FTF-1601 (Postgres
-backup, deps FTF-0004/FTF-0102) — not claimed this shift.)
+(empty — FTF-0104 certified this shift, see "## Done" below. FTF-1601
+(Postgres backup, deps FTF-0004/FTF-0102) is now the dependency-ready
+frontier item; not claimed this shift, certification-only.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0104 — Audit event writer. Implemented this shift:
-  `apps/api/app/auth/audit_event_writer.py` (AuditEvent ORM model,
-  Section 6.24; `redact_details()` secret-shaped key/value redaction per
-  Section 46; `write_audit_event()` adds but never commits, so the
-  caller's own transaction boundary decides both-or-neither) +
-  `apps/api/alembic/versions/0002_audit_event_writer.py` (real forward
-  migration chained onto FTF-0102's `0001` as the single serialized
-  head; FORCE ROW LEVEL SECURITY scoped to the same
-  `app.current_organization_id` context; grants `sovra_app` SELECT+INSERT
-  only — never UPDATE/DELETE — enforcing append-only at the database
-  level, this task's own negative_acceptance clause). Evidence:
-  `tests/tasks/test_ftf_0104.py` (26 no-DB checks, two real fault
-  injections against the migration file on disk) +
-  `tests/integration/test_audit_event_writer.py` (real live-Postgres
-  proof: committed mutation+audit-event pair visible after commit; the
-  same pair in a rolled-back transaction genuinely absent — "failed
-  transaction cannot emit misleading success"; `sovra_app`'s own
-  UPDATE/DELETE attempts against an existing audit row rejected by the
-  database; tenant isolation — this sandbox has no container-registry
-  egress, same finding as FTF-0004/FTF-R017/FTF-0102, so produced locally
-  against a directly-installed PostgreSQL 16 cluster, including a real
-  fault injection widening the GRANT to include UPDATE/DELETE, which made
-  exactly 3 append-only checks genuinely fail; restored byte-identical,
-  re-ran clean). Wired into CI: `.github/workflows/ci.yml` gained the
-  `FTF-0104 negative-test proof` gate step and a new
-  `audit-event-writer-integration` job (real `services: postgres`
-  container, same pattern as `organization-workspace-schema-integration`).
-  Full regression clean in this same shift's environment: `ruff`/`mypy`/
-  `eslint`/`tsc`/`prettier`/`vitest`/`pytest` all clean; every existing
-  task test (FTF-0001 through FTF-0102) still passes, including
-  FTF-0102's own real-Postgres integration test re-run clean;
-  `validate_spec.py --strict` clean (a transient `stale_commit` defect
-  seen mid-shift traced to this session's own shallow clone, confirmed
-  spurious after `git fetch --unshallow`); `verify_task.py --task
-  FTF-0104 --stage task` correctly reports `BLOCKED` (no merged
-  verification evidence yet — expected at PROVISIONAL stage, same as
-  FTF-0102's own precedent before its L2 certification added its
-  `spec/verification-map.json` entry); `product_truth_check.py`
-  legitimately `0/0`; `scripts/status.py` unchanged at `17/300 certified`
-  (PROVISIONAL, not yet certified). Disclosed, not hidden: this task's
-  initial packet listed `contracts:01` in `shared_lock_required`, but its
-  actual acceptance/negative_acceptance clauses and `files` list require
-  no HTTP-exposed contract surface (no live FastAPI app exists yet, same
-  scope limit FTF-0102 itself already disclosed for its own 0 OpenAPI
-  paths) — did not touch `packages/contracts/{jsonschema,openapi}/01-*`;
-  flagged in `docs/spec-matrix.yaml`'s own notes for independent review
-  rather than silently assumed correct. Set `docs/spec-matrix.yaml`
-  FTF-0104 to `certification_state: PROVISIONAL` / `proof_state:
-  L1-PROVEN` — did not touch `spec/verification-map.json`,
-  `spec/tasks.json` or `docs/implementation/TRACKER.json`, which get
-  their FTF-0104 entries from Control plane's own `sync_certified_status()`
-  run at L2 certification, per Law 4. Full narrative in PROGRESS.md.
+(empty — FTF-0104 certified this shift, see "## Done" below.)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -464,6 +408,41 @@ backup, deps FTF-0004/FTF-0102) — not claimed this shift.)
   `sync_certified_status()` — diff limited to exactly FTF-0102's own
   `status`/`evidence` fields. `verify_release.py` non-inflated (`16/300`
   before, `17/300`/zero FAILED after). Full entry:
+  docs/certifications/ledger.md.
+- FTF-0104 — Audit event writer. CERTIFIED 2026-09-18, PR #87 (merge
+  commit `c682687af99230efcbbdd1942cefcf933844b826`). Independent
+  re-verification (session-ID clean against producer session
+  `session_01FbdsNrj2DRZh92AB3edHUJ`, all 5 PR commits): read the full
+  delivered diff directly; re-ran the no-DB suite in a fresh
+  `uv sync --all-packages` environment; own fault injection against the
+  no-DB suite (removed the `actor_type` allow-list check — caught for
+  real, restored byte-identical); real, independent live-Postgres
+  reproduction (directly-installed local PostgreSQL 16, no
+  container-registry egress in this sandbox, same FTF-0004/FTF-R017/
+  FTF-0102 finding) — ran the real migration, inspected the real GRANT
+  surface via `psql \dp` (`sovra_app=ar/sovra_migrate`, confirmed
+  SELECT+INSERT only), ran the integration suite clean; own independent
+  fault injection directly against the live database (`GRANT UPDATE,
+  DELETE ... TO sovra_app` via `psql`, not through the producer's own
+  script) — exactly the 3 append-only negative_acceptance checks failed
+  for real, matching the producer's own claim; waited out CI on the
+  actual final PR head (the producer pushed one more tracking-only
+  commit mid-review; confirmed via `actions_get get_workflow_run` that
+  the workflow run's `head_sha` matched) — all 5 jobs `success`, read the
+  `audit-event-writer-integration` job's log directly (genuine Postgres
+  16.15 container, real `permission denied for table audit_events`
+  errors on both UPDATE and DELETE); `tools/r1_handoff.py packet
+  FTF-0104` confirmed both the acceptance and negative_acceptance clauses
+  map to specific, independently re-run/reproduced evidence; double-checked
+  the PR body's governance claim that PR #82/#84 were closed as
+  stale/superseded — confirmed via direct `pull_request_read`;
+  `validate_spec.py --strict` clean, `verify_task.py --task FTF-0104
+  --stage task` -> `PASS`, `product_truth_check.py` legitimately `0/0`,
+  full regression (`ruff`/`mypy`/`pnpm lint`/`typecheck`/`format:check`/
+  every existing task test including FTF-0102's own integration test/
+  `pytest`/`vitest`) clean. Ran `sync_certified_status()` — diff limited
+  to exactly FTF-0104's own `status`/`evidence` fields. `verify_release.py`
+  non-inflated (`17/300` before, `18/300`/zero FAILED after). Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

@@ -1924,3 +1924,135 @@ corrected 2026-09-15.
   The acceptance/negative_acceptance clauses are met item by item against
   the task's real resolved contract, and CI is genuinely green on the
   actual merged head. No blocking defect. Certified L2-CERTIFIED.
+
+## FTF-0104 — Audit event writer
+- Criterion ID: FTF-0104
+- PR: https://github.com/SJZLab/Sovra/pull/87
+- Merge commit: c682687 (`c682687af99230efcbbdd1942cefcf933844b826`)
+- Validated-by: session https://claude.ai/code/session_019oRVQmqyscTzBokcuJyXxw
+  (session-ID comparison performed and recorded before this entry: all 5
+  commits on PR #87 — 96e1598, 8ccbd21, 8f8b0c9, 46938eb, 5efcbb9 — carry
+  `Claude-Session: .../session_01FbdsNrj2DRZh92AB3edHUJ`; none match this
+  reviewing session's own ID, so this is an independent certification,
+  not self-certification.)
+- Steps performed:
+  1. Read the full delivered diff directly in a dedicated worktree at the
+     real PR head (5efcbb9): `apps/api/app/auth/audit_event_writer.py`
+     (`AuditEvent` ORM model sharing FTF-0102's `Base`/metadata;
+     `redact_details()` recursively redacts secret-shaped keys and
+     secret-shaped values under unexpected keys; `write_audit_event()`
+     only `session.add()`s, never commits), and
+     `apps/api/alembic/versions/0002_audit_event_writer.py` (real forward
+     migration, `down_revision = "0001_org_workspace_schema"` — single
+     serialized chain onto FTF-0102; `FORCE ROW LEVEL SECURITY` on
+     `audit_events`; `GRANT SELECT, INSERT` only to `sovra_app`, no
+     `UPDATE`/`DELETE`), plus the two test files.
+  2. Re-ran `tests/tasks/test_ftf_0104.py` (no DB required) in a fresh
+     `uv sync --all-packages` environment — all 26 checks pass.
+  3. **Own independent fault injection against the no-DB suite** (not one
+     the producer tried): removed the `actor_type` allow-list check from
+     `AuditEvent.__init__` — exactly the "an unknown actor_type is
+     rejected" check failed for real; restored byte-identical, re-ran
+     clean.
+  4. **Real, independent live-Postgres reproduction** (this sandbox has a
+     directly-installed PostgreSQL 16 cluster, same documented
+     no-registry-egress finding as FTF-0004/FTF-R017/FTF-0102): created a
+     scratch role/database, ran `alembic upgrade head` for real (both
+     0001 and 0002 apply cleanly in sequence), inspected the real GRANT
+     surface directly via `psql \dp audit_events` — confirmed
+     `sovra_app=ar/sovra_migrate` (SELECT+INSERT only, matching the
+     claim exactly) — then ran
+     `tests/integration/test_audit_event_writer.py` against it: all
+     checks pass, including the acceptance case (a committed mutation +
+     its audit event are both visible after commit) and the
+     negative_acceptance cases (a rolled-back transaction leaves neither
+     the mutation nor its audit event behind — "failed transaction
+     cannot emit misleading success"; the restricted role's own
+     UPDATE/DELETE against an existing audit row are rejected by the
+     database).
+  5. **Own independent fault injection against the live database** (not
+     merely re-running the producer's own fixture): ran
+     `GRANT UPDATE, DELETE ON audit_events TO sovra_app;` directly via
+     `psql` against the scratch database, then re-ran
+     `tests/integration/test_audit_event_writer.py` — exactly the 3
+     append-only negative_acceptance checks failed for real (UPDATE
+     rejected / DELETE rejected / row survives unchanged), matching the
+     producer's own claimed fault-injection result exactly. Revoked the
+     grant, re-ran clean.
+  6. **CI verified for real on the actual PR head**, not a stale or
+     self-reported claim: `pull_request_read get_check_runs` on PR #87
+     initially showed 3 of 5 jobs still `in_progress` against an earlier
+     commit (46938eb); the producer pushed one more tracking-doc-only
+     commit (5efcbb9) mid-review — confirmed via `actions_get
+     get_workflow_run` that workflow run 35338047691's own `head_sha`
+     matched the PR's actual current head, not a stale run tied to an
+     older commit. Waited for all 5 check runs to reach `completed`:
+     `gate`, `docker-local-stack-integration`,
+     `storage-semantics-integration`,
+     `organization-workspace-schema-integration`, and
+     `audit-event-writer-integration` — all `success`. Read the
+     `audit-event-writer-integration` job's log content directly (not
+     trusted from the green checkmark alone): a genuine PostgreSQL 16.15
+     container on GitHub's own registry-egress runner, with the
+     container's own Postgres log showing real
+     `ERROR: permission denied for table audit_events` lines for both the
+     UPDATE and DELETE attempts the negative_acceptance test issues,
+     ending `FTF-0104 audit event writer real proof: all checks passed`.
+     `mergeable_state: clean` on the final head.
+  7. **Regression check**, fresh `uv sync --all-packages` +
+     `pnpm install --frozen-lockfile` + `git fetch --unshallow` (the
+     `stale_commit`/missing-`node_modules` artifacts this exact sequence
+     is known to produce, per FTF-0102/FTF-R017's own prior review
+     entries, disappeared after the fix, confirming they were
+     environmental, not real defects): `ruff check .` / `mypy .` clean;
+     `pnpm run lint`/`typecheck`/`format:check` clean; every existing
+     `tests/tasks/test_ftf_*.py` and
+     `tests/test_ftf_0001_monorepo_layout.py` re-run clean, including
+     FTF-0102's own `tests/integration/test_organization_workspace_schema.py`
+     re-run clean against the same fresh Postgres cluster (no regression
+     to its RLS/tenant-isolation evidence); `validate_spec.py --strict`
+     clean; `product_truth_check.py --fail-on-unwired` stays legitimately
+     `0/0` (`proving_symbol: ''` — no live FastAPI app imports
+     `audit_event_writer.py` yet, same disclosed pattern as
+     FTF-0002/0003/0004/0005/0006/R001/R011/R014/R015/R017/0102).
+  8. Task contract re-pulled directly: `tools/r1_handoff.py packet
+     FTF-0104 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause
+     1 ("each committed sensitive mutation emits append-only
+     actor/resource/version/request evidence") maps one-to-one to the
+     `AuditEvent` schema (Section 6.24's own field list has no separate
+     "version" field — `action` is the real field recording what
+     changed, matching the domain model verbatim) and the live-Postgres
+     acceptance check (step 4 above). Negative_acceptance ("failed
+     transaction cannot emit misleading success; redacted audit cannot be
+     edited by normal app role") maps to steps 4 and 5 above exactly.
+     `shared_lock_required` lists `contracts:01`, but the task's own
+     `files` list and acceptance/negative_acceptance clauses require no
+     HTTP-exposed contract surface — confirmed on review, same disclosed,
+     already-accepted scope limit as FTF-0102's own 0 OpenAPI paths, not
+     assumed correct without checking.
+  9. Governance claims in the PR body double-checked, not taken on trust:
+     PR #82 and PR #84 (closed as stale/superseded per the PR body) are
+     both confirmed `state: closed`, `merged: false` via direct
+     `pull_request_read`.
+  10. Set `docs/spec-matrix.yaml` FTF-0104 to `certification_state:
+      CERTIFIED` / `proof_state: L2-CERTIFIED` (`evidence_hash` kept at
+      the implementation commit `96e1598`, matching
+      `spec/verification-map.json`'s own new `commit` field). Added
+      FTF-0104's own entry to `spec/verification-map.json` (the no-DB
+      `tests/tasks/test_ftf_0104.py` command — the live-Postgres
+      integration evidence is disclosed as CI-only/not locally
+      re-executable in this sandbox, same as FTF-0004/FTF-R017/FTF-0102).
+      Ran `scripts.task_claim.sync_certified_status()` — diff limited to
+      exactly FTF-0104's own `status`/`evidence` fields in
+      `spec/tasks.json` and `docs/implementation/TRACKER.json`.
+  11. `verify_task.py --task FTF-0104 --stage task` -> `PASS`.
+      `verify_release.py` non-inflated: `18/300` required tasks CERTIFIED
+      with live-passing evidence, zero `FAILED`, up from `17/300`.
+- Conclusion: the delivered append-only, tenant-scoped audit event writer
+  and its database-enforced GRANT surface are real and independently
+  reproduced, including two fault injections not in the producer's own
+  set (the no-DB actor_type check, and a live-database GRANT widening run
+  directly via `psql` rather than through the producer's own script). The
+  acceptance/negative_acceptance clauses are met item by item against the
+  task's real resolved contract, and CI is genuinely green on the actual
+  merged head. No blocking defect. Certified L2-CERTIFIED.
