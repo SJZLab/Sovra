@@ -85,6 +85,40 @@ test locally — no code changed since Control plane's own independent
 live-Postgres reproduction of this exact evidence on a prior review of PR
 #90; CI's `postgres-backup-integration` job covers it on the real new
 head.
+
+**Pushed, opened PR, confirmed CI, closed the superseded PR:** committed
+and pushed to `claude/wizardly-fermat-vmg0oc` (`6c90f80`), then opened
+https://github.com/SJZLab/Sovra/pull/96 (`[relay] FTF-1601: Postgres
+backup (resubmit — supersedes #90, branch-permission-blocked conflict
+resolved)`), subscribed this session to its activity, then pushed one more
+tracking-doc-only commit recording the real PR number (`20aa4e5`). CI ran
+fresh on that real final head (run `35403729104`) and completed via the
+subscription's own `check_suite.completed` events — verified directly via
+`get_check_runs`, not just the event: all 6 jobs `completed`/`success`
+(`gate`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`). `pull_request_read get` confirms
+`mergeable_state: "clean"`. Closed PR #90 with an explanatory comment
+(https://github.com/SJZLab/Sovra/pull/90#issuecomment-5737183706) linking
+to #96, rather than leaving two open PRs for the same task. Appended a
+continuation entry to `docs/certifications/queue.md` recording this
+resubmission (the delivered code is byte-identical to what a prior
+Control-plane session already independently reproduced against a live
+Postgres cluster for PR #90 — only the branch/PR changed).
+
+Did not self-certify and did not merge — independent L2 review is Control
+plane's job per Law 4. FTF-1601/PR #96 is now ready for a fresh,
+independent Control-plane L2 review. STEP 3: this entry is that write.
+Certified: 18/300 (unchanged) · Product-true: 0 (unchanged) — no
+certification work performed or claimed this shift; this shift's own work
+was unblocking a three-shift-old structural conflict and resubmitting
+already-reviewed evidence on a clean head.
+
+Stopping this shift here — FTF-0101 remains the only other item and stays
+blocked on its own new-runtime-dependency ask (unchanged, no owner
+response found); no other unblocked, unclaimed work exists.
+
 STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md as of
 their last write (the "routines" resolution above). STEP 0 hash check:
 `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` exactly — no

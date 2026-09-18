@@ -16,9 +16,12 @@ Updated: 2026-09-18 (relay shift, branch `claude/wizardly-fermat-vmg0oc`) —
   branch instead (a read of that branch's content, not a push to it),
   resolved the tracking-doc conflicts, full regression clean, pushed, and
   opened PR https://github.com/SJZLab/Sovra/pull/96
-  (`claude/wizardly-fermat-vmg0oc` → `main`) to supersede #90 — see
-  "## Active" below; CI status on the new PR to be confirmed and #90 closed
-  once green. Recomputed the dependency frontier independently via
+  (`claude/wizardly-fermat-vmg0oc` → `main`) to supersede #90. CI
+  reconfirmed green on the real final head `20aa4e5` (all 6 jobs, run
+  `35403729104`), `mergeable_state: "clean"` — PR #90 closed with an
+  explanatory comment linking to #96. FTF-1601/PR #96 is ready for a
+  fresh, independent Control-plane L2 review; see "## Active" below.
+  Recomputed the dependency frontier independently via
   `scripts/task_claim.load_tasks()`/`load_certification_states()` (not
   just QUEUE.md's own prose): still only FTF-1601 and FTF-0101 (blocked on
   a new-runtime-dependency ask, no owner response found — repo has zero
@@ -29,8 +32,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
-`c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #90,
-FTF-1601, is open but not yet merged/certified — see "## Active" below) ·
+`c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #96,
+FTF-1601 (supersedes closed #90), is open, CI green, but not yet
+merged/certified — see "## Active" below) ·
 Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
 "## Owner actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
@@ -105,9 +109,13 @@ without counting toward product-true).
   ready items, and FTF-1601 is already in flight). Per STEP 4(e),
   stopping this shift here.
 ## Active (relay works this)
-FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — same task, third
-structural-blocker recurrence, now being resolved via a new PR rather than
-a fourth stall. History: claimed by a relay shift 2026-09-18 via PR #90
+(empty — FTF-1601/PR #96 is done from the relay's side and now sits in
+"## Provisional" below, awaiting Control plane L2 certification.)
+
+## Provisional (awaiting Control plane L2 certification)
+FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third
+structural-blocker recurrence resolved via a new PR rather than a fourth
+stall. History: claimed by a relay shift 2026-09-18 via PR #90
 (`claude/wizardly-fermat-e9tyvg`); first structural blocker (PR #91's
 merge into `main` conflicting on tracking docs) reviewed NOT CERTIFIED by
 Control plane, fixed by that branch merging `main` back in (`8f8484a`, CI
@@ -125,17 +133,15 @@ designated branch `claude/wizardly-fermat-vmg0oc`, resolved the
 tracking-doc conflicts there, ran the full regression suite (clean — see
 PROGRESS.md's matching entry), pushed, and opened
 https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
-→ `main`) to supersede #90. Subscribed this session to PR #96's activity.
-PR #90 will be closed with an explanatory comment once #96 is confirmed
-green, rather than leaving two open PRs for the same task. Not re-claiming
-FTF-1601 as a new task — this is a continuation of the same item, just
-retargeted to a branch this session can actually push to.
-
-## Provisional (awaiting Control plane L2 certification)
-(empty — FTF-1601/PR #96 (superseding #90) stays in "## Active" above
-until CI is
-reconfirmed green on the merged head; FTF-0104 certified 2026-09-18, see
-"## Done" below.)
+→ `main`) to supersede #90. CI reconfirmed green on the real final head
+`20aa4e5` (all 6 jobs, run `35403729104`), `mergeable_state: "clean"`.
+PR #90 closed with an explanatory comment linking to #96, avoiding two
+open PRs for the same task. Not re-claiming FTF-1601 as a new task — this
+is a continuation of the same item, just retargeted to a branch this
+session can actually push to, and it is now ready for a fresh,
+independent Control-plane L2 review — see `docs/certifications/queue.md`'s
+matching continuation entry. `proof_state=L1-PROVEN`,
+`certification_state=PROVISIONAL`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

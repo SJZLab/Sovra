@@ -3385,3 +3385,69 @@ certified — `spec/verification-map.json`/`spec/tasks.json`/
 - **Validated-by:** session
   https://claude.ai/code/session_01Hqc673opTMxfCqsyXmGuoo (independent —
   see session-ID check above), 2026-09-18.
+
+## FTF-1601 — Postgres backup — resubmitted under new PR #96, structural blocker resolved for real (2026-09-18)
+
+**Background:** the resolution above (merging `main` into PR #90's own
+branch, `claude/wizardly-fermat-e9tyvg`) worked once but the same
+tracking-doc conflict recurred twice more over the following shifts as
+`main` kept moving. Each of those shifts correctly declined to push
+another fix directly to `e9tyvg`, since it was never their own designated
+branch and CLAUDE.md forbids pushing to an unassigned branch without
+explicit permission (no live user exists in a scheduled/automated shift to
+grant it) — recorded in QUEUE.md/PROGRESS.md rather than worked around.
+
+**This shift's action:** rather than record the same structural finding a
+fourth time, merged FTF-1601's actual delivered code from
+`claude/wizardly-fermat-e9tyvg` (a read of that branch's content, never a
+push to it) into this session's own designated branch
+(`claude/wizardly-fermat-vmg0oc`), confirmed via `git diff --stat` that
+the code itself (`scripts/postgres_backup.py`,
+`tests/integration/test_postgres_backup.py`, `tests/tasks/test_ftf_1601.py`,
+the `16-*` contracts, the CI job, the task packet — 2,151 lines across 7
+files) is byte-identical to what's already documented and reviewed above;
+only `PROGRESS.md`/`QUEUE.md` needed manual conflict resolution.
+
+**PR:** https://github.com/SJZLab/Sovra/pull/96 (supersedes #90, now
+closed), head commit `20aa4e5704d1c0da9d973c1b9f931d531324c63a` on branch
+`claude/wizardly-fermat-vmg0oc`.
+
+**Regression re-run on the merged tree before pushing** (`uv sync
+--all-packages` + `pnpm install --frozen-lockfile` + `git fetch
+--unshallow` first, to avoid this sandbox's known shallow-clone
+`stale_commit` false positive): `ruff check .` / `ruff format --check .` /
+`mypy .` clean (63 files); `pnpm lint`/`typecheck`/`format:check` clean;
+`uv run pytest tests/unit tests/tasks` — 209 passed, including FTF-1601's
+own 14-check no-DB suite; `pnpm exec vitest run` — 2 passed; `uv run
+python3 scripts/validate_spec.py --strict` clean; `uv run python3
+scripts/status.py` — `18/300 certified · 0 product-true` (unchanged); `uv
+run python3 scripts/product_truth_check.py --fail-on-unwired` — `0/0`
+(unchanged); `uv run python3 scripts/verify_release.py` — `18/300`, zero
+`FAILED` (unchanged). Did not re-run the live-Postgres integration test
+locally — no code changed since the independent live-Postgres
+reproduction already recorded above for this exact delivered code; PR
+#96's own `postgres-backup-integration` CI job covers it on the real new
+head.
+
+**CI on the real final head, confirmed directly via `get_check_runs`
+(not inferred from a stale field):** all 6 jobs `completed`/`success`
+(`gate`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`, run `35403729104`). `pull_request_read
+get` confirms `mergeable_state: "clean"`. PR #90 closed with an
+explanatory comment linking here, rather than leaving two open PRs for
+the same task.
+
+**Not self-certified, not merged:** this shift only unblocked the
+structural conflict that had stalled three consecutive shifts and
+resubmitted the exact same already-independently-reviewed-sound evidence
+under a mergeable head — it did not certify or merge, per Law 4.
+`certification_state` stays `PROVISIONAL`. **FTF-1601/PR #96 is ready for
+a fresh, independent Control-plane L2 review** — the delivered evidence
+itself needs no new content review (it is byte-identical to what a prior
+Control-plane session already independently reproduced against a live
+Postgres cluster, recorded above), only confirmation that this is in fact
+the same code on a now-clean head.
+- **Producer session (this continuation only — not the original
+  implementation):** https://claude.ai/code/session_01RDefDg12JGVTtU732EEARs.
