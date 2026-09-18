@@ -53,25 +53,6 @@ none a live-wired product-runtime path, so all eighteen are CERTIFIED
 without counting toward product-true).
 
 ## Owner actions — current
-- 2026-09-18 (live owner conversation, updated from the 2026-09-15 item):
-  the owner directly confirmed receiving two summary emails landing
-  around 08:30 and 19:30 (Asia/Riyadh) — real, first-hand confirmation
-  the report cadence is configured and delivering as designed, resolving
-  that half of the setup gap. STILL OPEN, narrower now, and now
-  confirmed structurally rather than just unconfirmed: this same live
-  session checked its own available tooling and found `CronCreate` —
-  the only trigger-shaped tool exposed to any session — is explicitly
-  session-only (its own description: jobs live only in the creating
-  session, nothing persists to disk, gone when that session exits) and
-  auto-expires after 7 days even then. It is structurally incapable of
-  being the mechanism producing the relay shifts and the 08:30/19:30
-  emails, which persist across sessions/days. So no session-level tool
-  grant can close this — durable, cross-session scheduling is a
-  platform/account-level capability outside any single session's control
-  plane, not something fixable in this repo. What actually closes it:
-  the owner stating plainly what mechanism is configured (where, what
-  cadence) so it's documented rather than inferred. See CLAUDE.md "Setup
-  gaps" for the full record.
 - 2026-09-18 (this shift, relay): FTF-0101 (OIDC login) is the only other
   dependency-ready item (deps FTF-0004/FTF-0005/FTF-0102, all CERTIFIED)
   besides FTF-1601 (already claimed elsewhere this same day — PR #90,

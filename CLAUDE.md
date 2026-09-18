@@ -49,26 +49,27 @@ CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   GIT_CONNECTOR/GIT_WRITE above for the current, evidence-based state. A
   bare control-plane session without that connector still cannot push;
   that's an intentional separation of proposer/executor roles, not a gap.
-- PARTIALLY RESOLVED (2026-09-18, live owner conversation): the owner
-  directly confirmed receiving two summary emails landing around 08:30
-  and 19:30 (Asia/Riyadh) — real, first-hand evidence the report cadence
-  is actually configured and delivering as designed in S1.8, not merely
-  assumed from indirect signals. This resolves the report-cadence half of
-  the gap. STILL OPEN, narrower than before, and now confirmed
-  structurally rather than merely unconfirmed: this same live session
-  checked its own available tooling and found `CronCreate` — the only
-  trigger-shaped tool exposed to any session — is explicitly session-only
-  (its own description: jobs live only in the creating session, nothing
-  persists to disk, gone when that session exits) and auto-expires after
-  7 days regardless. It is structurally incapable of being the mechanism
-  producing the relay shifts and the 08:30/19:30 emails, which persist
-  across sessions and days. So this gap cannot be closed by granting any
-  session a tool — durable, cross-session/cross-container scheduling is a
-  platform/account-level capability outside any single session's control
-  plane, not something a repo-level change or tool grant can fix. What
-  actually closes it: the owner stating plainly what mechanism is
-  configured (where, what cadence) so it is documented rather than
-  inferred. Tracked in QUEUE.md "Owner actions — current."
+- RESOLVED (2026-09-18, live owner conversation): the owner directly
+  confirmed both halves of this gap. (1) Receiving two summary emails
+  landing around 08:30 and 19:30 (Asia/Riyadh) — real, first-hand
+  evidence the report cadence is actually configured and delivering as
+  designed in S1.8. (2) The actual mechanism: this platform's own
+  "routines" feature (a first-class scheduled-task capability of this
+  Claude Code environment — this very repo's shifts, including this
+  file's own automated edits, have run as routines the whole time,
+  confirmed by a session's own prompt literally stating "running as a
+  scheduled routine") — one routine fires every 2h to check/work the
+  queue (the relay cadence), and two further routines produce the
+  08:30/19:30 report emails. This is owner-stated, not assumed or
+  inferred from indirect signals (a prior session had checked its own
+  available tooling and found `CronCreate` — session-scoped, gone when
+  the session exits, 7-day auto-expiry regardless — structurally
+  incapable of being this mechanism; routines are evidently a separate,
+  durable, platform/account-level capability outside any single session's
+  own tool access, consistent with that finding). No session action is
+  needed to configure or recreate routines — they are managed outside any
+  session's control plane, at the account level. Tracked in QUEUE.md
+  "Owner actions — current" (item removed, resolved).
 - RESOLVED (PR #10, 2026-09-15/16): SOURCE_ROOTS is filled in
   scripts/product_truth_check.py from FTF-0001's real layout — see
   SOURCE_ROOTS above. product_truth_check.py still fails closed if any

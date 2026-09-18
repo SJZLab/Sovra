@@ -1,6 +1,48 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (Control plane, live owner conversation)
 
+## 2026-09-18 — Control plane: trigger-tooling setup gap fully RESOLVED — owner confirmed the mechanism is this platform's "routines" feature
+Same live, interactive session as the two entries below (continued
+conversation with the account holder, samer.zakaria@gmail.com).
+
+Following up the `CronCreate`-insufficiency finding (entry immediately
+below), the owner was asked directly whether the 2h relay cadence was
+the same mechanism as the report emails. The owner confirmed plainly:
+both are driven by this platform's own "routines" feature — a
+first-class scheduled-task capability of this Claude Code environment,
+managed outside any session's own tool access, at the account/product
+level. Specifically: one routine fires every 2h to check/work the queue
+(the relay cadence), and two further routines produce the 08:30/19:30
+(Asia/Riyadh) report emails.
+
+This is consistent with, not contradicted by, the `CronCreate` finding:
+`CronCreate` is a session-scoped, 7-day-capped tool exposed to an agent
+mid-conversation, while "routines" are evidently a separate, durable
+capability configured through the platform itself (this repo's own
+certifier shifts, including the one earlier today, have run as routines
+the whole time — a routine's own system prompt states "You're running as
+a scheduled routine," confirming this retroactively for every prior
+automated shift too, not just today's).
+
+This closes the setup gap fully — both the report-cadence half (already
+resolved two entries below) and the mechanism-identification half (open
+until now) are now owner-stated and documented, per S1.7/S1.8's own
+requirement and CLAUDE.md's "Owner: please confirm what's actually
+configured" ask.
+
+Actions taken this turn:
+- Updated CLAUDE.md's "Setup gaps" entry from `PARTIALLY RESOLVED` to
+  `RESOLVED`, recording both confirmations (the emails, and the routines
+  mechanism) and the reasoning connecting them to the `CronCreate`
+  finding. Recomputed `CLAUDE.md.sha256` to match (third recomputation
+  this conversation, one per edit).
+- Removed the item entirely from QUEUE.md's "Owner actions — current"
+  block, per "remove it the moment the owner responds... never leave
+  resolved asks in item history" — this entry is the durable record.
+- No session action is needed or possible to configure/recreate routines
+  — they are managed outside any session's control plane. Nothing left
+  to grant or fix at the repo or tooling level for this gap.
+
 ## 2026-09-18 — Control plane: b25ce80 direct-to-main finding closed by owner; CronCreate confirmed structurally unable to be the durable trigger
 Same live, interactive session as the entry immediately below (continued
 conversation with the account holder, samer.zakaria@gmail.com).
