@@ -2856,3 +2856,78 @@ relay's, per Law 4 and this shift's own STEP 4(a).
   registry-egress-capable runner, since this session's own sandbox could
   only produce this evidence against a directly-installed Postgres, not
   the pinned container image the CI job actually uses.
+
+### Control plane review — 2026-09-18 — CERTIFIED
+- **PR:** https://github.com/SJZLab/Sovra/pull/83 (`claude/wizardly-fermat-szi9tm`
+  → `main`), merged as `1874932` (`18749323d091a6f6a23be2e9510692035911ac25`).
+- **Session-ID check:** all 4 commits on PR #83 (`82c75f4`, `b2bb569`,
+  `01ebde9`, `8521558`) carry `Claude-Session: .../session_01FLEHnA2RjFZB9RftzV4Lso`;
+  this reviewing session's own ID does not match — independent, not
+  self-certification.
+- **Real diff read directly** in a dedicated worktree, not trusted from
+  the PR body: 17 files, +2118/-25, centered on
+  `apps/api/app/auth/organization_workspace_schema.py`,
+  `apps/api/alembic/versions/0001_org_workspace_schema.py`, and the two
+  test files.
+- **CI checked for real on the actual head:** initial check (`01ebde9`)
+  showed all wired jobs `in_progress`; re-checked after real independent
+  work — head had advanced to `8521558` (tracking-doc-only, confirmed via
+  `git diff`) with `mergeable_state: clean` and all 4 check runs
+  `completed`/`success`. Read the
+  `organization-workspace-schema-integration` job's log content directly:
+  a genuine PostgreSQL 16.15 container, a real `alembic upgrade head` run,
+  and the container's own Postgres log showing the actual RLS/
+  unique-constraint errors the negative_acceptance test expects, ending
+  `FTF-0102 real tenant-isolation proof: all checks passed`.
+- **Real, independent reproduction against a live Postgres 16 cluster**
+  (this sandbox's own directly-installed cluster, same no-registry-egress
+  finding as FTF-0004/FTF-R017): ran the real migration, then
+  `tests/integration/test_organization_workspace_schema.py` — all 11
+  checks pass.
+- **Real, independent fault injection matching the producer's own
+  claim exactly:** granted `sovra_app` `BYPASSRLS` in a scratch copy of
+  the migration — exactly 6 checks failed for real (every
+  tenant-isolation/negative_acceptance case). Restored byte-identical,
+  re-ran clean.
+- **A second, independent fault injection** (not in the producer's own
+  set): set the `workspaces` policy's `WITH CHECK` to `true`. The
+  integration suite still passed — traced to Postgres enforcing the
+  table's `SELECT` USING policy against the resulting row of both
+  `INSERT ... RETURNING` (SQLAlchemy's default flush behavior) and
+  `UPDATE`, independently of the (broken) `WITH CHECK`. A raw INSERT
+  bypassing `RETURNING` — a code path that does not exist anywhere in
+  this codebase — would exploit it. Not a blocking defect: the shipped
+  migration's real `WITH CHECK` clauses are correct, and the only live
+  application code path (ORM-only) is genuinely protected regardless.
+  Recorded as a non-blocking observation in `docs/certifications/ledger.md`
+  for whoever next touches this module's write paths.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-0102 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance
+  clauses and the negative_acceptance clause map one-to-one to specific,
+  independently re-run tests and the fault injections above, confirmed
+  met, not asserted.
+- **product_truth_check.py legitimately `0/0`:** `proving_symbol: ''` —
+  no live FastAPI app imports `organization_workspace_schema.py` yet,
+  same established, disclosed pattern as FTF-0002/0003/0004/0005/0006/
+  R001/R011/R014/R015/R017.
+- **Full regression** in a fresh worktree at the real merged head: `uv run
+  ruff check`/`mypy .` clean; `pnpm install --frozen-lockfile` + `pnpm run
+  lint`/`typecheck`/`format:check` clean; every existing task test
+  unmodified and clean; `validate_spec.py --strict` clean (a transient
+  `stale_commit` defect traced to this review's own shallow clone,
+  confirmed spurious after `git fetch --unshallow`); `verify_task.py
+  --task FTF-0102 --stage task` -> `PASS`; `verify_release.py`
+  non-inflated (`17/300`, zero `FAILED`, up from `16/300`).
+- **Conclusion:** the delivered Organization/Workspace schema, migration
+  and RLS tenant-isolation enforcement are real and independently
+  reproduced. Merged PR #83 as `1874932`. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` kept at the implementation commit `82c75f4`, matching
+  `spec/verification-map.json`'s own new `commit` field). Added
+  FTF-0102's entry to `spec/verification-map.json`.
+  `scripts.task_claim.sync_certified_status()` run — diff limited to
+  exactly FTF-0102's own `status`/`evidence` fields.
+- **Validated-by:** session
+  https://claude.ai/code/session_01WYf49qFkGAtWXsTMpiKbxu (independent —
+  see session-ID check above), 2026-09-18. Full ledger entry:
+  `docs/certifications/ledger.md`.
