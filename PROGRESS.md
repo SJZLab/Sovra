@@ -1,6 +1,41 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (this relay shift)
 
+## 2026-09-18 — PR #83 (FTF-0102) merged directly by the account owner — certification_state unchanged (PROVISIONAL) per Law 4
+Follow-up to this shift's own FTF-0102 submission (see entries below).
+The PR-subscription's `pull_request.closed` event reported `outcome:
+merged`; independently re-verified rather than trusted from the event
+alone via `pull_request_read.get`: `merged: true`, `merged_by:
+"samerzakaria"` (the account owner, not a Control-plane session — no
+session-ID or "Control plane" identity anywhere in the merge), merge
+commit `1874932`, `2026-09-18T09:25:08Z`. Confirmed directly on `main`
+too: `git fetch origin main` shows `main` now at `1874932`, containing
+this shift's own four commits.
+
+This is a live, real merge to `main` — not something this session
+performed or asked for — but it is **not** the independent Control-plane
+L2 certification this repo's own process (CLAUDE.md's Definition of Done,
+Law 4 "Producer never certifies own work... Merge = PROVISIONAL only")
+requires before a task's `certification_state` becomes `CERTIFIED`.
+Restarted this session's designated branch
+(`claude/wizardly-fermat-szi9tm`) from the new `main` tip, per this
+session's own branch instructions for an already-merged PR, and updated
+`QUEUE.md` to record the merge commit and explicitly state that
+`docs/spec-matrix.yaml`'s `FTF-0102` entry stays `PROVISIONAL`/
+`L1-PROVEN` — the Certified count is **not** being bumped to 17/300 by
+this entry; only an independent Control-plane review (session-ID checked
+against this shift's own commits, its own fault injection, real
+re-verification of the CI evidence) can do that, matching every other
+certified task's own precedent in `docs/certifications/ledger.md`.
+
+Not otherwise acting further on PR #83 — it is closed/merged, this
+session was automatically unsubscribed, and per the event's own guidance
+this is the final outcome (not reopening it or opening a duplicate PR).
+
+Certified: 16/300 (unchanged). Provisional: 1 (FTF-0102, now on `main` via
+merge commit `1874932`, still awaiting independent L2 certification).
+Product-true: 0 (unchanged).
+
 ## 2026-09-18 — PR #83 (FTF-0102): CI confirmed green for real on GitHub's own registry-egress runner
 Follow-up to this shift's own FTF-0102 submission (see entry below).
 Subscribed to PR #83's activity; the `check_suite.completed` event on the

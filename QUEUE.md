@@ -2,8 +2,19 @@
 Updated: 2026-09-18 (this relay shift) — claimed FTF-0102 (the sole
   dependency-ready item, unblocked earlier the same day by live owner
   confirmation — see the prior "Owner actions" record in PROGRESS.md),
-  implemented and submitted PROVISIONAL. See "## Provisional" below and
-  docs/certifications/queue.md for full evidence.
+  implemented, submitted PROVISIONAL, and confirmed CI-green for real
+  (including the new `organization-workspace-schema-integration` job on
+  GitHub's own registry-egress runner). PR #83 was then merged directly
+  by the account owner (`samerzakaria`, merge commit `1874932`,
+  2026-09-18T09:25:08Z) — not through this repo's usual Control-plane
+  independent L2 review. Per Law 4 ("Producer never certifies own work...
+  Merge = PROVISIONAL only") this does **not** upgrade
+  `certification_state`: `docs/spec-matrix.yaml` still shows FTF-0102 as
+  `PROVISIONAL`/`L1-PROVEN` on `main`, unchanged by the merge itself. See
+  "## Provisional" below and docs/certifications/queue.md for full
+  evidence; a fresh Control-plane session still needs to independently
+  re-verify and certify it, same as every other task in this repo's own
+  history.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -58,20 +69,26 @@ product-true).
 below. No other task is dependency-ready this shift.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0102 — Organization/workspace tenant schema. Commit
-  `82c75f42231c32c2fa45988bb36e805534548ed1` on branch
-  `claude/wizardly-fermat-szi9tm`. proof_state=L1-PROVEN. Real forward
-  Alembic migration (Organization/Workspace, tenant-composite unique
-  constraint, FORCE ROW LEVEL SECURITY with a distinct NOSUPERUSER/
-  NOBYPASSRLS `sovra_app` role) plus the frozen phase-01 contract files
-  (zero OpenAPI paths — no live FastAPI app exists yet). First real
-  runtime dependency in `apps/api` (sqlalchemy/alembic/psycopg),
-  owner-approved 2026-09-18. Full evidence, including a real fault
-  injection (granting `sovra_app` BYPASSRLS caught 6 real failures) run
-  against a directly-installed local PostgreSQL 16 (this sandbox has no
-  container-registry egress): docs/certifications/queue.md. Awaiting
-  Control plane L2 review per Law 4 — not self-certified. PR: to be
-  opened against `main` from `claude/wizardly-fermat-szi9tm`.
+- FTF-0102 — Organization/workspace tenant schema. Implementation commit
+  `82c75f42231c32c2fa45988bb36e805534548ed1`, merged to `main` as
+  `1874932` via PR #83 (merged directly by the account owner
+  `samerzakaria`, 2026-09-18T09:25:08Z — not via Control-plane L2 review;
+  see the "Updated" note above). proof_state=L1-PROVEN,
+  certification_state=PROVISIONAL (unchanged by the merge, per Law 4).
+  Real forward Alembic migration (Organization/Workspace, tenant-composite
+  unique constraint, FORCE ROW LEVEL SECURITY with a distinct
+  NOSUPERUSER/NOBYPASSRLS `sovra_app` role) plus the frozen phase-01
+  contract files (zero OpenAPI paths — no live FastAPI app exists yet).
+  First real runtime dependency in `apps/api`
+  (sqlalchemy/alembic/psycopg), owner-approved 2026-09-18. Full evidence,
+  including a real fault injection (granting `sovra_app` BYPASSRLS caught
+  6 real failures, run against a directly-installed local PostgreSQL 16 —
+  this sandbox has no container-registry egress) and independent
+  confirmation that CI's new `organization-workspace-schema-integration`
+  job passed for real against GitHub's own registry-egress runner:
+  docs/certifications/queue.md. Still awaiting a fresh Control-plane
+  session's independent L2 review — not self-certified; the code being
+  on `main` does not substitute for it.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
