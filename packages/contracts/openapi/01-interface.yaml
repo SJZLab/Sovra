@@ -1,0 +1,79 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 01 Interface (Organization/Workspace)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas for the tenant-root entities (Section
+    6.1/6.2, FTF-0102). `paths` is deliberately empty: no live FastAPI app
+    exists yet (apps/api/app has no main.py — the same disclosed scope
+    limit FTF-0006 already recorded), so declaring HTTP routes here would
+    be a placeholder endpoint under Law 11 ("No production mock path
+    exists... No production placeholder path exists"). Whichever task
+    first wires a real /api/v1/organizations or /api/v1/workspaces route
+    adds its own path item here, backed by a genuine handler, under this
+    same contract-owner lock (shared_lock_required: contracts:01).
+paths: {}
+components:
+  schemas:
+    Slug:
+      type: string
+      pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+      minLength: 1
+      maxLength: 63
+    EntityName:
+      type: string
+      minLength: 1
+      maxLength: 200
+    EntityStatus:
+      type: string
+      enum: [active, suspended, archived]
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          $ref: '#/components/schemas/EntityName'
+        slug:
+          $ref: '#/components/schemas/Slug'
+        status:
+          $ref: '#/components/schemas/EntityStatus'
+        default_security_profile:
+          type: string
+          maxLength: 64
+        default_currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        default_timezone:
+          type: string
+          maxLength: 64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, name, slug, status]
+      additionalProperties: false
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          $ref: '#/components/schemas/EntityName'
+        slug:
+          $ref: '#/components/schemas/Slug'
+        status:
+          $ref: '#/components/schemas/EntityStatus'
+        created_at:
+          type: string
+          format: date-time
+      required: [id, organization_id, name, slug, status]
+      additionalProperties: false

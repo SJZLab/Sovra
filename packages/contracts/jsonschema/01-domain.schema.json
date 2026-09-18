@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-01/domain.schema.json",
+  "title": "Sovra Phase 01 Domain Schemas (FTF-0102 — Organization/Workspace)",
+  "description": "Frozen shared domain schemas for the tenant-root entities (Section 6.1/6.2). Field constraints (patterns, lengths, enums) are copied verbatim from the single real enforcing source, apps/api/app/auth/organization_workspace_schema.py, and tested against it directly in tests/tasks/test_ftf_0102.py so this file cannot silently drift from the code that actually validates these shapes.",
+  "$defs": {
+    "Slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+      "minLength": 1,
+      "maxLength": 63,
+      "description": "Lowercase alphanumeric with internal hyphens only; no leading/trailing hyphen."
+    },
+    "EntityName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "EntityStatus": {
+      "type": "string",
+      "enum": ["active", "suspended", "archived"]
+    },
+    "Organization": {
+      "type": "object",
+      "description": "Section 6.1 — the tenant root. Every tenant-scoped row traces to one.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/EntityName" },
+        "slug": { "$ref": "#/$defs/Slug" },
+        "status": { "$ref": "#/$defs/EntityStatus" },
+        "default_security_profile": { "type": "string", "maxLength": 64 },
+        "default_currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+        "default_timezone": { "type": "string", "maxLength": 64 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug", "status"],
+      "additionalProperties": false
+    },
+    "Workspace": {
+      "type": "object",
+      "description": "Section 6.2 — tenant-scoped under its parent Organization. (organization_id, slug) is unique; slug alone is not.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/EntityName" },
+        "slug": { "$ref": "#/$defs/Slug" },
+        "status": { "$ref": "#/$defs/EntityStatus" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organization_id", "name", "slug", "status"],
+      "additionalProperties": false
+    }
+  }
+}
