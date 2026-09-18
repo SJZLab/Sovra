@@ -1,5 +1,57 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18T02:50:00Z
+Updated: 2026-09-18T04:55:00Z
+
+## 2026-09-18T04:55:00Z — Relay shift: no actionable work, state independently re-verified (again)
+STEP 0: `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`
+exactly (`b5866204d161f96d377737081d62744d5d34eb58df4b0ca8bdb2e420aa8f18fe`)
+— no hash-mismatch stop condition.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/
+`BLOCKER.md` fresh rather than assuming state from prior context. Local
+designated branch `claude/wizardly-fermat-w3h9oj` and `origin/main` both
+sit at `f9513f8` (the prior shift's own "no actionable work" merge, PR
+#80) — nothing has landed since; `BLOCKER.md` has no open entry (both
+recorded entries are resolved history, unchanged).
+
+STEP 0.2: `cognee-cli` not found on `PATH` — text-search fallback active,
+unchanged from every prior shift.
+
+STEP 1: independently recomputed queue readiness rather than trusting
+QUEUE.md's own claim — loaded all 300 tasks via
+`scripts.spec_verification.load_tasks()` and cross-checked every
+non-CERTIFIED task's dependency list against `docs/spec-matrix.yaml`'s 16
+CERTIFIED entries directly (script run, not eyeballed): exactly one
+dependency-ready, non-certified task — FTF-0102 (deps FTF-0004/FTF-0005/
+FTF-H001, all CERTIFIED) — matching QUEUE.md's own claim exactly. No other
+task in the 300-record DAG is dependency-ready this shift.
+
+Dispatched a live, read-only GitHub check (not trusting any local file's
+claim about PR state): `list_pull_requests` shows PR #67 is still the only
+open PR on the repo, unchanged since `2026-09-17T08:51:52Z`. Read its
+comments directly: still only this account's own prior-shift caution
+note (posted `2026-09-17T08:51:52Z`) — zero owner-authored comment or
+review corroborating the "owner approved option 1" claim, and zero new
+activity of any kind since that timestamp. FTF-0102 remains `## Blocked`
+on the unchanged 2026-09-16/17 owner ask; not claimed, no dependency
+installed.
+
+Also re-ran the real toolchain in this fresh container to confirm no
+silent regression: `uv sync` + `pnpm install --frozen-lockfile` (fresh
+installs) + `git fetch --unshallow` (picked up branches this shallow
+clone hadn't seen yet, no effect on `main`'s own tip). `verify_release.py`
+correctly reports `16/300` CERTIFIED, zero FAILED, matching
+`docs/spec-matrix.yaml`/QUEUE.md exactly; `validate_spec.py --strict`
+clean ("task graph and verification-map are clean").
+
+No source, spec-matrix, or certification-queue changes this shift —
+nothing was actionable beyond the ask-first item already on record.
+Stopping per STEP 4(e): the sole ready item is blocked on an owner
+decision already declared in QUEUE.md "Owner actions — current" (dated
+2026-09-16, restated 2026-09-17), unchanged and unresolved, with zero new
+owner activity found by this shift's live GitHub check.
+
+Status snapshot (unchanged from prior shift): Certified 16/300 ·
+Provisional 0 · Blocked 1 (FTF-0102) · Product-true 0.
 
 ## 2026-09-18T02:50:00Z — Relay shift: no actionable work, state independently re-verified (again)
 STEP 0: `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`
