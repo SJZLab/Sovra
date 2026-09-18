@@ -17,8 +17,9 @@ Updated: 2026-09-18 (relay shift, branch `claude/wizardly-fermat-vmg0oc`) —
   resolved the tracking-doc conflicts, full regression clean, pushed, and
   opened PR https://github.com/SJZLab/Sovra/pull/96
   (`claude/wizardly-fermat-vmg0oc` → `main`) to supersede #90. CI
-  reconfirmed green on the real final head `20aa4e5` (all 6 jobs, run
-  `35403729104`), `mergeable_state: "clean"` — PR #90 closed with an
+  reconfirmed green on the real final head `2a98c9d` (all 6 jobs, run
+  `35403943528`; CI also ran and stayed green on the intermediate head
+  `20aa4e5`, run `35403729104`), `mergeable_state: "clean"` — PR #90 closed with an
   explanatory comment linking to #96. FTF-1601/PR #96 is ready for a
   fresh, independent Control-plane L2 review; see "## Active" below.
   Recomputed the dependency frontier independently via
@@ -134,7 +135,8 @@ tracking-doc conflicts there, ran the full regression suite (clean — see
 PROGRESS.md's matching entry), pushed, and opened
 https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
 → `main`) to supersede #90. CI reconfirmed green on the real final head
-`20aa4e5` (all 6 jobs, run `35403729104`), `mergeable_state: "clean"`.
+`2a98c9d` (all 6 jobs, run `35403943528`; also green on the intermediate
+head `20aa4e5`, run `35403729104`), `mergeable_state: "clean"`.
 PR #90 closed with an explanatory comment linking to #96, avoiding two
 open PRs for the same task. Not re-claiming FTF-1601 as a new task — this
 is a continuation of the same item, just retargeted to a branch this

@@ -3409,8 +3409,11 @@ files) is byte-identical to what's already documented and reviewed above;
 only `PROGRESS.md`/`QUEUE.md` needed manual conflict resolution.
 
 **PR:** https://github.com/SJZLab/Sovra/pull/96 (supersedes #90, now
-closed), head commit `20aa4e5704d1c0da9d973c1b9f931d531324c63a` on branch
-`claude/wizardly-fermat-vmg0oc`.
+closed), real final head commit `2a98c9d4ed04c82cbd60b8640de0387d30a1a6fe`
+on branch `claude/wizardly-fermat-vmg0oc` (the implementation-plus-merge
+commit itself is `20aa4e5704d1c0da9d973c1b9f931d531324c63a`; one further
+tracking-doc-only commit recording CI confirmation and PR #90's closure
+followed).
 
 **Regression re-run on the merged tree before pushing** (`uv sync
 --all-packages` + `pnpm install --frozen-lockfile` + `git fetch
@@ -3429,15 +3432,16 @@ reproduction already recorded above for this exact delivered code; PR
 #96's own `postgres-backup-integration` CI job covers it on the real new
 head.
 
-**CI on the real final head, confirmed directly via `get_check_runs`
-(not inferred from a stale field):** all 6 jobs `completed`/`success`
-(`gate`, `docker-local-stack-integration`,
+**CI on the real final head (`2a98c9d`), confirmed directly via
+`get_check_runs` (not inferred from a stale field):** all 6 jobs
+`completed`/`success` (`gate`, `docker-local-stack-integration`,
 `organization-workspace-schema-integration`,
 `audit-event-writer-integration`, `postgres-backup-integration`,
-`storage-semantics-integration`, run `35403729104`). `pull_request_read
-get` confirms `mergeable_state: "clean"`. PR #90 closed with an
-explanatory comment linking here, rather than leaving two open PRs for
-the same task.
+`storage-semantics-integration`, run `35403943528`; also green on the
+intermediate head `20aa4e5`, run `35403729104`, confirmed the same way
+before the final doc-only commit landed). `pull_request_read get`
+confirms `mergeable_state: "clean"`. PR #90 closed with an explanatory
+comment linking here, rather than leaving two open PRs for the same task.
 
 **Not self-certified, not merged:** this shift only unblocked the
 structural conflict that had stalled three consecutive shifts and

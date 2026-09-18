@@ -92,14 +92,18 @@ https://github.com/SJZLab/Sovra/pull/96 (`[relay] FTF-1601: Postgres
 backup (resubmit — supersedes #90, branch-permission-blocked conflict
 resolved)`), subscribed this session to its activity, then pushed one more
 tracking-doc-only commit recording the real PR number (`20aa4e5`). CI ran
-fresh on that real final head (run `35403729104`) and completed via the
+fresh on that head (run `35403729104`) and completed via the
 subscription's own `check_suite.completed` events — verified directly via
 `get_check_runs`, not just the event: all 6 jobs `completed`/`success`
 (`gate`, `docker-local-stack-integration`,
 `organization-workspace-schema-integration`,
 `audit-event-writer-integration`, `postgres-backup-integration`,
-`storage-semantics-integration`). `pull_request_read get` confirms
-`mergeable_state: "clean"`. Closed PR #90 with an explanatory comment
+`storage-semantics-integration`). `pull_request_read get` confirmed
+`mergeable_state: "clean"` on that head. Pushed one further tracking-doc
+commit recording this CI confirmation and closing PR #90 (`2a98c9d`,
+the real current final head) — CI re-ran and stayed green there too (all
+6 jobs, run `35403943528`), confirmed the same way. Closed PR #90 with an
+explanatory comment
 (https://github.com/SJZLab/Sovra/pull/90#issuecomment-5737183706) linking
 to #96, rather than leaving two open PRs for the same task. Appended a
 continuation entry to `docs/certifications/queue.md` recording this
