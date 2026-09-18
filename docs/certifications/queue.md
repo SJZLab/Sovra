@@ -3113,3 +3113,163 @@ PR: https://github.com/SJZLab/Sovra/pull/87
   https://claude.ai/code/session_019oRVQmqyscTzBokcuJyXxw (independent —
   see session-ID check above), 2026-09-18. Full ledger entry:
   `docs/certifications/ledger.md`.
+
+## FTF-1601 — Postgres backup — PROVISIONAL submission (2026-09-18)
+
+**PR:** https://github.com/SJZLab/Sovra/pull/90 (`[relay] FTF-1601: Postgres
+backup`), head commit `33f4cb5` (implementation commit `f5d3aee`).
+**Producer session:** https://claude.ai/code/session_01B9eYtKy6gPX3Ym8Cvx3X9c.
+**Dependencies:** FTF-0004, FTF-0102 — both CERTIFIED. This was QUEUE.md's
+own flagged dependency-ready frontier item from the prior shift ("not
+claimed this shift, certification-only"); claimed this shift.
+
+**What was delivered:**
+- `scripts/postgres_backup.py` — a stdlib-only backup/restore tool (no new
+  pip dependency: `cryptography`/`pynacl` do not appear anywhere in this
+  repo's `pyproject.toml`/`uv.lock`, confirmed by grep before starting;
+  adding either would itself be an unapproved new-runtime-dependency
+  ask-first item). Shells out to `pg_dump`/`pg_restore`/`psql`/`openssl`
+  — OS binaries already present in this repo's Postgres tooling and CI
+  environment (confirmed present via `which` before relying on them),
+  never a new dependency.
+  - `create_backup()`: real `pg_dump --format=custom` logical backup;
+    `capture_metadata()` records the real server version, the live
+    Alembic `alembic_version` head revision, public-schema table names,
+    `pg_class.relforcerowsecurity` tables, `pg_policies` rows, and
+    distinct `information_schema.role_table_grants` grantees (the
+    "role/schema/RLS/version metadata" this task's acceptance clause
+    requires); encrypts with `openssl enc -aes-256-cbc -pbkdf2` under
+    `SOVRA_BACKUP_ENCRYPTION_KEY` (no development fallback, same rule as
+    `SOVRA_APP_DB_PASSWORD`); then immediately self-verifies by
+    decrypting the fresh ciphertext back and checksumming it against the
+    original plaintext dump *before* ever returning a `BackupRecord` —
+    this is this task's own negative_acceptance clause ("backup command
+    success without verifiable usable data/key path is not done") made
+    structural, not just tested for. The plaintext dump and the
+    self-check scratch file are unlinked in a `finally` block regardless
+    of success or failure; a failed self-verification also deletes the
+    ciphertext/metadata sidecar so no half-verified artifact looks like a
+    successful backup.
+  - `restore_backup()`: verifies the backup file's own recorded
+    `ciphertext_sha256` before ever decrypting, and the decrypted
+    plaintext's `plaintext_sha256` before ever invoking `pg_restore` — a
+    tampered file or the wrong key is rejected by checksum, never reaches
+    `pg_restore`. After restoring, re-runs the identical metadata capture
+    against the restored database plus real `SELECT count(*)` row counts,
+    and computes `restoration_validated` as a real boolean conjunction of
+    every one of those checks, not a bare exit-code pass-through.
+  - Disclosed scope limit (not hidden): "role...metadata" means the role
+    names this database's own `GRANT`s reference, not a `CREATE ROLE`
+    capture — Postgres roles are cluster-wide, not per-database, and a
+    full role-definition dump needs `pg_dumpall --roles-only` against
+    privileges this per-database tool does not assume. Both this repo's
+    local dev stack and its CI integration jobs run every task inside one
+    already-provisioned cluster where `sovra_app`/`sovra_migrate` already
+    exist cluster-wide, so this scope limit does not block the actual
+    restoration test below.
+- `packages/contracts/jsonschema/16-domain.schema.json` +
+  `packages/contracts/openapi/16-interface.yaml`: frozen `BackupRecord`/
+  `RestoreRecord` schemas, field shapes copied verbatim from the real
+  enforcing dataclasses and tested against them directly (same
+  discipline as FTF-0102's `01-*` contract files). This task's own
+  acceptance clause 1 ("Freeze the minimum shared phase interface and
+  domain schemas at the declared owner paths") and
+  `contract_owner: FTF-1601` / `shared_lock_required: contracts:16`
+  explicitly require this — unlike FTF-0104, where the same
+  `shared_lock_required: contracts:01` boilerplate was disclosed as not
+  literally applicable to that task's own concrete acceptance clauses.
+  The OpenAPI file declares zero `paths` (Law 11 — no live FastAPI app
+  exists yet), same disclosed pattern as every prior contract file in
+  this repo.
+- `tests/tasks/test_ftf_1601.py` — no Postgres required. Exercises the
+  *real* `openssl` binary for genuine encrypt/decrypt round trips
+  (correct-key round-trip and a wrong-key negative case), `sha256_file`/
+  `key_fingerprint`/`_libpq_dsn`/`required_env` unit checks, and
+  `create_backup()`/`restore_backup()`'s own control-flow logic via
+  injected fake `dump_fn`/`metadata_fn` callables — including one fault
+  injection that monkeypatches `_encrypt_file` to encrypt under a
+  silently different key than the one used for self-verification (
+  reproducing "the encrypt step used the wrong key" as a real code path,
+  not a hypothetical) and confirms `create_backup()` genuinely raises and
+  leaves no artifact behind, not merely that the encrypt call returned
+  zero. Also validates real `BackupRecord`/`RestoreRecord` instances
+  against the frozen contract files via a hand-rolled, stdlib-only
+  structural validator (deliberately not the third-party `jsonschema`
+  package — would itself be a second unapproved dependency, same
+  reasoning FTF-0102's own suite already established), and confirms the
+  validator genuinely rejects an unsupported cipher value and a
+  non-boolean `restoration_validated` value (not a decorative
+  always-pass check).
+- `tests/integration/test_postgres_backup.py` — requires a real Postgres.
+  Seeds one real `Organization` row through FTF-0102's own schema, takes
+  a real encrypted backup of the live database, proves the wrong key and
+  a tampered backup file (one flipped byte) are both rejected by
+  `restore_backup()` before any `pg_restore` attempt against a real
+  target database, then restores into a second, freshly created scratch
+  database in the same cluster and proves the restored copy genuinely
+  carries the `organizations` table, `FORCE ROW LEVEL SECURITY`, the
+  `tenant_isolation` policy, and the exact seeded row (by primary key,
+  name intact) — "a backup that has never been restored does not count
+  as validated" (Section 71.2). Cleans up its own scratch database at the
+  end.
+
+**Local verification performed before opening the PR** (this sandbox has
+no container-registry egress — same finding as
+FTF-0004/FTF-R017/FTF-0102/FTF-0104 — so live evidence was produced
+locally against a directly-installed PostgreSQL 16 cluster, `sovra_migrate`
+granted `SUPERUSER` locally to match the `postgres:16-alpine` image's own
+bootstrap-superuser `CREATE DATABASE` privilege the restore step needs):
+- `uv run ruff check .` / `ruff format --check .` / `uv run mypy .` — all
+  clean (63 source files).
+- `pnpm run lint` / `format:check` / `typecheck` — all clean.
+- Every `tests/tasks/test_ftf_*.py` run individually, including
+  FTF-0102/FTF-0104's own no-DB suites — all pass, no regression.
+- `tests/integration/test_organization_workspace_schema.py` and
+  `tests/integration/test_audit_event_writer.py` re-run against the same
+  local Postgres cluster this task's own integration test used — both
+  pass, no regression to FTF-0102/FTF-0104's own live evidence.
+- `tests/integration/test_postgres_backup.py` — passes for real against
+  the live local cluster (see above).
+- `uv run pytest tests/unit` (3 passed) + `pnpm exec vitest run` (2
+  passed) + `scripts/check_test_harness.py` — clean.
+- `python3 scripts/product_truth_check.py --fail-on-unwired` —
+  legitimately `0/0` (`proving_symbol: ''`, no live FastAPI app imports
+  `postgres_backup.py`, same established pattern as every non-product-true
+  certified task).
+- `python3 scripts/status.py` — `18/300 certified · 0 product-true`
+  (unchanged; this PR is PROVISIONAL, not yet certified).
+- `python3 scripts/validate_spec.py --strict` — clean (also caught and
+  fixed a real defect this shift's own first draft of the
+  `docs/spec-matrix.yaml` notes text introduced: two bare `word: `
+  sequences inside an unquoted YAML plain scalar broke `yaml.safe_load`
+  for the whole file — same class of defect FTF-0104's own history
+  already hit once; fixed before this PR was opened, not left for
+  review to catch).
+- `python3 scripts/verify_task.py --task FTF-1601 --stage task` →
+  `BLOCKED` ("no merged verification evidence yet") — correct and
+  expected at this stage; `spec/verification-map.json` gets its FTF-1601
+  entry from Control plane's own two-commit pattern at certification
+  time, once the implementation commit already exists in history (same
+  as every prior task).
+- `python3 scripts/verify_release.py` — confirmed non-inflated: `18/300`,
+  zero `FAILED`, `NOT READY`, identical to `main`'s own pre-existing
+  state before this PR (verified by `git stash` + re-run on the
+  unmodified tree) — this PR does not change the certified count on its
+  own.
+- CI on the actual PR head not yet observed by this producer session (PR
+  just opened); Control plane's independent review should reconfirm
+  green on the real head, per this repo's own established practice, and
+  should specifically watch the new `postgres-backup-integration` job's
+  `apt-get install postgresql-client-16` step, since it is the first job
+  in this repo to install a Postgres client on the runner itself (every
+  prior DB-integration job only ever spoke to Postgres via
+  `psycopg`/SQLAlchemy).
+
+**Not yet done (left for Control plane, per Law 4 — never self-certified):**
+independent review of the diff, independent re-run of both the no-DB
+suite and the live-Postgres integration test (ideally in a fresh worktree
+against the actual PR head), an own fault injection distinct from the
+ones in this PR's own test suite, confirmation CI is genuinely green on
+the real merged head (not just this producer's local re-run), and — if
+certified — `spec/verification-map.json`/`spec/tasks.json`/
+`docs/implementation/TRACKER.json` updates via `sync_certified_status()`.
