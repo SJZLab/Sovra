@@ -1,5 +1,52 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Control plane, live owner conversation)
+Updated: 2026-09-18 (relay shift)
+
+## 2026-09-18 — Relay: PR #90's structural blocker recurred (tracking-doc conflict), not fixed this shift (branch-permission constraint)
+STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md as of
+their last write (the "routines" resolution above). STEP 0 hash check:
+`sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` exactly — no
+drift, no BLOCKER.md needed.
+
+STEP 1: recomputed the dependency frontier. Same two items as the last
+shift — FTF-1601 (in flight, PR #90) and FTF-0101 (blocked on a
+new-runtime-dependency owner ask, still open in QUEUE.md "Owner actions
+— current," unchanged since 2026-09-18, not duplicated here). No other
+dependency-ready, unclaimed task exists.
+
+Checked PR #90 live rather than trusting the last shift's "clean" note:
+`pull_request_read` (GitHub MCP) now reports `mergeable_state: "dirty"`
+against current `main` tip (`02b1ed2`), where the last shift's note was
+against an older tip (`1e6cd77`). Confirmed for real, not just GitHub's
+cached field, with `git merge-tree origin/main
+origin/claude/wizardly-fermat-e9tyvg`: `PROGRESS.md` auto-merges cleanly,
+`QUEUE.md` produces a genuine `CONFLICT (content)`. CI on PR #90's
+existing head (`8f8484a`) is unchanged and still green (same run
+`35371593078`, all 6 jobs `success`) — this is purely a tracking-doc
+merge conflict caused by several intervening `main` merges that also
+touched `QUEUE.md`/`PROGRESS.md`/`CLAUDE.md` (`71914f2`, `d2780c1`,
+`4f6c031`, `#94`/`02b1ed2`), not a code or evidence regression.
+
+**Why this shift did not push a fix:** the established fix pattern (seen
+in the prior structural-blocker cycle on this same PR) is to merge
+`main` into the PR's own branch and push a fresh commit. That branch is
+`claude/wizardly-fermat-e9tyvg`. This session's own designated branch is
+`claude/wizardly-fermat-azvcdp` — a different one. This session's
+governing instructions state plainly: never push to a different branch
+without explicit permission. No user is live this shift (scheduled,
+automated firing) to grant that permission, so per that hard rule this
+session recorded the finding in QUEUE.md's "## Active" section instead
+of pushing the fix itself. Not claimed as a new relay task either way —
+Law 4 (relay is not the certifier) and the "same PR, don't re-claim"
+convention both still apply regardless of the conflict.
+
+Did not touch FTF-0101's owner ask (unchanged, no owner response yet).
+No BLOCKER.md written — this isn't a stop condition for the relay's own
+designated work (there was no unclaimed work to stop mid-way on either
+before or after this finding); it's a structural note for whichever
+session next holds PR #90's branch, or Control plane, to action.
+
+Certified: 18/300 · Product-true: 0 (unchanged this shift — no
+certification or code work performed).
 
 ## 2026-09-18 — Control plane: trigger-tooling setup gap fully RESOLVED — owner confirmed the mechanism is this platform's "routines" feature
 Same live, interactive session as the two entries below (continued

@@ -1,14 +1,23 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (relay shift, after Control plane's "FTF-1601 NOT
-  CERTIFIED — structural blocker only" review) — confirmed live via
-  GitHub MCP that PR #90's structural blocker (tracking-doc merge
-  conflict against `main`) has since been fixed on PR #90's own branch,
-  CI reconfirmed green on the new head; FTF-1601 now awaits a fresh
-  Control-plane re-certification pass, not further relay work.
-  Recomputed the dependency frontier again: still only FTF-1601 (in
-  flight, PR #90) and FTF-0101 (blocked on a new-runtime-dependency ask);
-  no other unblocked, unclaimed work exists. See "## Owner actions —
-  current" and "## Blocked" below.
+Updated: 2026-09-18 (relay shift) — re-verified PR #90 live via GitHub MCP:
+  `pull_request_read` now reports `mergeable_state: "dirty"` again (base
+  moved from `1e6cd77` to current `main` tip `02b1ed2` while PR #90's head
+  stayed at `8f8484a`); confirmed for real, not just GitHub's cached
+  field, with `git merge-tree origin/main origin/claude/wizardly-fermat-
+  e9tyvg` — auto-merges `PROGRESS.md` cleanly but `CONFLICT (content):
+  Merge conflict in QUEUE.md`. Same recurring tracking-doc-churn pattern
+  as the previous structural blocker on this same PR (multiple concurrent
+  sessions editing QUEUE.md/PROGRESS.md/CLAUDE.md on `main` while PR #90
+  stays open). Not fixed this shift: this session's designated branch is
+  `claude/wizardly-fermat-azvcdp`, not PR #90's own branch
+  (`claude/wizardly-fermat-e9tyvg`), and no explicit permission exists
+  this shift to push to a different branch — recorded here for whichever
+  session next has that branch/PR in hand (a continuing session on that
+  branch, or Control plane) rather than pushed around. Recomputed the
+  dependency frontier again: still only FTF-1601 (in flight, PR #90, now
+  re-blocked structurally) and FTF-0101 (blocked on a new-runtime-
+  dependency ask); no other unblocked, unclaimed work exists. See
+  "## Owner actions — current" and "## Blocked" below.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -90,35 +99,37 @@ without counting toward product-true).
   stopping this shift here.
 ## Active (relay works this)
 (empty in the sense of "claimed by this shift" — FTF-1601 (Postgres
-backup, deps FTF-0004/FTF-0102) was claimed by a relay shift earlier
-2026-09-18 via open PR https://github.com/SJZLab/Sovra/pull/90. Reviewed
-by Control plane 2026-09-18 (session_01Hqc673opTMxfCqsyXmGuoo): the
-delivered evidence itself is sound and was independently reproduced,
-including a fresh fault injection against a live local Postgres cluster
-— but the merge was blocked, not certified: PR #91 merged into `main`
-(0c74f31) while PR #90 was open, and both touch `QUEUE.md`/`PROGRESS.md`,
-producing a real tracking-doc-only conflict (`git merge-tree` confirmed,
-not just GitHub's status field). Full review:
-docs/certifications/queue.md's "2026-09-18 — NOT CERTIFIED (structural
-blocker, content sound)" entry.
-**Update (this shift, verified live via GitHub MCP, not assumed):** the
-structural blocker is already fixed — PR #90's own branch
-(`claude/wizardly-fermat-e9tyvg`) has since merged current `main` in
-(commit `9ec50fc`, resolving the `PROGRESS.md`/`QUEUE.md`/
-`docs/certifications/queue.md` conflicts), pushed a fresh commit
-(`8f8484a`), and CI re-ran green on that new head (GitHub Actions run
-`35371593078`, all 6 jobs `success`: `gate`,
-`docker-local-stack-integration`, `organization-workspace-schema-
-integration`, `audit-event-writer-integration`,
-`postgres-backup-integration`, `storage-semantics-integration`).
-`pull_request_read` confirms `mergeable_state: clean` on head `8f8484a`.
-No code rework was needed, matching the prior review's own prediction.
-FTF-1601 is now L1-PROVEN and genuinely ready for a fresh Control-plane
-re-certification pass — this relay shift did not perform that pass
-itself (Law 4 — relay is not the certifier; that role stays with a
-Control-plane session, and this session was invoked as relay, not
-certifier). Do not re-claim FTF-1601 as a new task — this is the same
-PR #90, now unblocked and simply awaiting the next Control-plane review.)
+backup, deps FTF-0004/FTF-0102) remains in flight via open PR
+https://github.com/SJZLab/Sovra/pull/90, head `8f8484a` on branch
+`claude/wizardly-fermat-e9tyvg`. History: claimed by a relay shift
+2026-09-18; first structural blocker (PR #91's merge into `main`
+conflicting with PR #90 on tracking docs) reviewed and left NOT
+CERTIFIED by Control plane, then fixed by that PR's own branch merging
+`main` back in and pushing `8f8484a`, CI green on that head (run
+`35371593078`, all 6 jobs `success`).
+**This shift's finding (verified live via GitHub MCP + `git merge-tree`,
+not assumed):** the same conflict pattern has recurred. `main` has moved
+on again since `8f8484a` was pushed (four more merges touching
+`QUEUE.md`/`PROGRESS.md`/`CLAUDE.md` — `71914f2`, `bc21381`/`3d75ac4`
+folded into `02b1ed2` via #94, `d2780c1`, `4f6c031` — while PR #90's head
+stayed put). `pull_request_read` now reports `mergeable_state: "dirty"`;
+confirmed for real with `git merge-tree origin/main
+origin/claude/wizardly-fermat-e9tyvg`: `PROGRESS.md` auto-merges, but
+`CONFLICT (content): Merge conflict in QUEUE.md`. CI on the existing head
+is still green (unchanged, still the same `35371593078` run) — this is a
+tracking-doc-only conflict against a newer base, not a code or evidence
+problem, same as before.
+**Not fixed this shift, and why:** resolving it means pushing a merge
+commit to PR #90's own branch (`claude/wizardly-fermat-e9tyvg`). This
+session's designated branch is a different one
+(`claude/wizardly-fermat-azvcdp`), and the hard rule governing this
+session is "never push to a different branch without explicit
+permission" — no such permission was given this shift. Do not re-claim
+FTF-1601 as a new task either way; it is still the same PR #90, just
+re-blocked structurally. Left for whichever session next has that
+specific branch in hand (a session continuing that PR, or Control plane
+reviewing it) to merge `main` in and push a fresh commit, the same fix
+pattern as last time.)
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-0104 certified this shift, see "## Done" below.)
