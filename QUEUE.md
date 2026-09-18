@@ -57,28 +57,21 @@ without counting toward product-true).
   the owner directly confirmed receiving two summary emails landing
   around 08:30 and 19:30 (Asia/Riyadh) — real, first-hand confirmation
   the report cadence is configured and delivering as designed, resolving
-  that half of the setup gap. STILL OPEN, narrower now: no *durable*
-  `create_trigger`/`fire_trigger` tooling has been confirmed available to
-  any session, so no session can independently inspect the live trigger
-  config (confirm the 2h relay cadence specifically, versus just
-  observing that shifts keep firing) or recreate it if it ever silently
-  stops/drifts. See CLAUDE.md "Setup gaps" for the full record. Owner:
-  grant a control-plane session trigger tooling (or confirm by design
-  none will be granted) to close this fully.
-- 2026-09-18 (this shift): `git log` shows commit `b25ce80` ("Control
-  plane: FTF-R017 CERTIFIED", 2026-09-17) landed directly on `main` as a
-  single-parent commit committed by `Claude <noreply@anthropic.com>` —
-  not a GitHub PR merge (contrast `aacd745`, PR #75's actual two-parent
-  merge commit, committer `GitHub <noreply@github.com>`). This is exactly
-  the direct-push pattern `CLAUDE.md`'s own `BRANCH_PROTECTION` note
-  (dated 2026-09-15) says it exists to close, recurring on 2026-09-17
-  after that note was written. This shift's own tracking-doc/certification
-  updates were instead opened as a pull request and merged through the
-  normal GitHub flow, per `CLAUDE.md`'s current instruction. Owner: no
-  action required unless you want the prior
-  direct-to-main commit's history rewritten (not recommended — it is
-  otherwise a correct, already-verified certification); flagging so it
-  isn't repeated silently.
+  that half of the setup gap. STILL OPEN, narrower now, and now
+  confirmed structurally rather than just unconfirmed: this same live
+  session checked its own available tooling and found `CronCreate` —
+  the only trigger-shaped tool exposed to any session — is explicitly
+  session-only (its own description: jobs live only in the creating
+  session, nothing persists to disk, gone when that session exits) and
+  auto-expires after 7 days even then. It is structurally incapable of
+  being the mechanism producing the relay shifts and the 08:30/19:30
+  emails, which persist across sessions/days. So no session-level tool
+  grant can close this — durable, cross-session scheduling is a
+  platform/account-level capability outside any single session's control
+  plane, not something fixable in this repo. What actually closes it:
+  the owner stating plainly what mechanism is configured (where, what
+  cadence) so it's documented rather than inferred. See CLAUDE.md "Setup
+  gaps" for the full record.
 - 2026-09-18 (this shift, relay): FTF-0101 (OIDC login) is the only other
   dependency-ready item (deps FTF-0004/FTF-0005/FTF-0102, all CERTIFIED)
   besides FTF-1601 (already claimed elsewhere this same day — PR #90,

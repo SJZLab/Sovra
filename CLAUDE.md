@@ -54,16 +54,21 @@ CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   and 19:30 (Asia/Riyadh) — real, first-hand evidence the report cadence
   is actually configured and delivering as designed in S1.8, not merely
   assumed from indirect signals. This resolves the report-cadence half of
-  the gap. STILL OPEN, narrower than before: no `create_trigger`/
-  `fire_trigger` tooling has been confirmed available to any session, so
-  no session can independently inspect the live trigger config itself
-  (confirm the *relay* cadence is really 2h, not just that shifts keep
-  firing), nor recreate it if it ever silently stops or drifts. The owner
-  confirming they receive the emails is evidence the schedule works
-  today; it does not grant any session the access needed to audit or
-  recover it. Owner: grant a control-plane session trigger tooling (or
-  confirm none is available by design) to close this fully. Tracked in
-  QUEUE.md "Owner actions — current."
+  the gap. STILL OPEN, narrower than before, and now confirmed
+  structurally rather than merely unconfirmed: this same live session
+  checked its own available tooling and found `CronCreate` — the only
+  trigger-shaped tool exposed to any session — is explicitly session-only
+  (its own description: jobs live only in the creating session, nothing
+  persists to disk, gone when that session exits) and auto-expires after
+  7 days regardless. It is structurally incapable of being the mechanism
+  producing the relay shifts and the 08:30/19:30 emails, which persist
+  across sessions and days. So this gap cannot be closed by granting any
+  session a tool — durable, cross-session/cross-container scheduling is a
+  platform/account-level capability outside any single session's control
+  plane, not something a repo-level change or tool grant can fix. What
+  actually closes it: the owner stating plainly what mechanism is
+  configured (where, what cadence) so it is documented rather than
+  inferred. Tracked in QUEUE.md "Owner actions — current."
 - RESOLVED (PR #10, 2026-09-15/16): SOURCE_ROOTS is filled in
   scripts/product_truth_check.py from FTF-0001's real layout — see
   SOURCE_ROOTS above. product_truth_check.py still fails closed if any

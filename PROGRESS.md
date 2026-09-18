@@ -1,6 +1,44 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (Control plane, live owner conversation)
 
+## 2026-09-18 — Control plane: b25ce80 direct-to-main finding closed by owner; CronCreate confirmed structurally unable to be the durable trigger
+Same live, interactive session as the entry immediately below (continued
+conversation with the account holder, samer.zakaria@gmail.com).
+
+**b25ce80 direct-to-main-push finding:** the owner reviewed the
+2026-09-18 QUEUE.md item about commit `b25ce80` ("Control plane: FTF-R017
+CERTIFIED") landing directly on `main` instead of through a PR merge, and
+explicitly accepted it — no issue for that PR, no history rewrite wanted.
+Removed the item from QUEUE.md's "Owner actions — current" block per
+CLAUDE.md's "remove it the moment the owner responds... never leave
+resolved asks in item history" rule; this entry is the durable record.
+No code or certification state changed — the underlying FTF-R017
+certification was already correct and independently verified; only the
+push mechanism had deviated, and every shift since has used the normal
+PR flow per `CLAUDE.md`'s current instruction.
+
+**CronCreate checked and found insufficient:** asked directly "how to fix
+the trigger issue," this session checked its own available tooling
+(`ToolSearch`) and found a `CronCreate` tool — the only trigger-shaped
+tool exposed to any session in this environment. Read its own
+description closely rather than assuming it was the missing piece:
+"Jobs live only in this Claude session — nothing is written to disk, and
+the job is gone when Claude exits," and recurring jobs auto-expire after
+7 days regardless. This rules it out as the mechanism producing the
+relay shifts and the 08:30/19:30 report emails (both persist across
+sessions and days, which `CronCreate` structurally cannot do). Updated
+CLAUDE.md's "Setup gaps" entry and QUEUE.md's matching "Owner actions —
+current" item to record this: the remaining gap cannot be closed by
+granting any session a tool, since durable cross-session/cross-container
+scheduling is a platform/account-level capability, not something exposed
+to an agent's toolset or fixable via a repo change. What would actually
+close it is the owner stating what mechanism is really configured.
+Recomputed `CLAUDE.md.sha256` again to match the further edit.
+
+Both changes pushed as an additional commit to the same open PR (#94)
+that recorded the report-cadence confirmation, rather than opening a
+second PR for the same live conversation.
+
 ## 2026-09-18 — Control plane: report-cadence half of the 2026-09-15 trigger-tooling setup gap resolved by live owner confirmation
 This is a live, interactive Claude Code session with the account holder
 (samer.zakaria@gmail.com) — not a scheduled/automated turn. Same
