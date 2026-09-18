@@ -94,9 +94,18 @@ Control plane's own `sync_certified_status()` run at L2 certification, per
 Law 4 (producer never certifies own work). Appended the full evidence
 writeup to `docs/certifications/queue.md`. Updated `QUEUE.md` (FTF-0102
 moved from unclaimed-but-ready into `## Provisional`, Status line updated).
-Will push this branch and open a PR titled `[relay] FTF-0102:
-Organization/workspace tenant schema` against `main` next, per STEP 2's
-own "open PR as PROVISIONAL" requirement.
+Pushed this branch and opened PR #83
+(https://github.com/SJZLab/Sovra/pull/83, `[relay] FTF-0102:
+Organization/workspace tenant schema`), per STEP 2's own "open PR as
+PROVISIONAL" requirement. Subscribed to PR #83's activity; at the time of
+writing all four CI jobs (`gate`, `docker-local-stack-integration`,
+`storage-semantics-integration`, the new
+`organization-workspace-schema-integration`) were `in_progress` on run
+`35327960620` — not yet confirmed green on GitHub's own real
+registry-egress runner (this session's sandbox evidence was produced
+against a directly-installed local Postgres instead, disclosed above and
+in the PR body). Will watch for the completion event and push a fix if
+CI surfaces a real defect this session's own local evidence didn't catch.
 
 STEP 3: this entry itself, written before any compaction, per the
 standing instruction.
