@@ -3225,3 +3225,144 @@ PR: https://github.com/SJZLab/Sovra/pull/87
 - **Validated-by:** session
   https://claude.ai/code/session_01Hqc673opTMxfCqsyXmGuoo (independent —
   see session-ID check above), 2026-09-18.
+
+### Control plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap: restoration completeness never proven able to fail)
+- **PR:** https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
+  → `main`, supersedes closed PR #90), reviewed at real final head
+  `902139b8f5a91191619f707600a5c347e98e8392`. The PR's own branch
+  advanced twice mid-review (`20aa4e5` → `2a98c9d` → `902139b`, all three
+  tracking-doc-only commits, no code delta) — re-fetched and re-checked
+  CI on each new head rather than trusting the PR's self-reported "CI
+  green" note, which itself referenced a since-superseded head.
+- **Session-ID check:** all 11 commits on PR #96 carry
+  `Claude-Session: .../session_01B9eYtKy6gPX3Ym8Cvx3X9c`,
+  `.../session_01TkFfAaPq6htuVNNLXU9G2b`, or
+  `.../session_01RDefDg12JGVTtU732EEARs`; this reviewing session's own ID
+  (`session_01DPo17mjXAspEDoRvGvwtgn`) matches none of them — independent,
+  not self-certification.
+- **Real diff read directly** in a dedicated worktree (`git fetch
+  origin refs/pull/96/head` + `git worktree add`) at the real PR head:
+  code identical to PR #90's own already-reviewed delivery (confirmed via
+  `git diff --stat` against `origin/main` — same 11 files, no drift), plus
+  two additional tracking-doc-only commits recording the resubmission.
+  `git merge-tree --write-tree origin/main <pr-head>` — clean, no
+  conflict markers; `mergeable_state: "clean"` on the live PR — the prior
+  review's structural blocker is genuinely resolved.
+- **CI checked for real on the actual current head, not a stale claim:**
+  `pull_request_read get_check_runs` on PR #96 initially showed CI
+  `in_progress`/`queued` (the PR had just been opened when this session's
+  webhook fired); waited for real completion rather than trusting the
+  PR's own "CI reconfirmed green" commit, which named an intermediate
+  head (`20aa4e5`/`2a98c9d`) that a later doc-only commit (`902139b`)
+  superseded. `actions_get get_workflow_run` on the final run
+  (`35404112803`) confirms its own `head_sha` is `902139b` — matching the
+  PR's live head exactly, not inferred: all 6 jobs (`gate`,
+  `docker-local-stack-integration`, `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`) `completed`/`success`.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ends in "...and restoration test"; Section 71.2 (embedded in the same
+  packet) states explicitly "a backup that has never been restored does
+  not count as validated." `RestoreRecord.restoration_validated` is this
+  code's own chosen mechanism for satisfying that clause — a boolean
+  conjunction of checksum verification plus three schema/RLS
+  survival-subset checks (`tables`, `rls_forced_tables`, `rls_policies`).
+- **Real, independent reproduction against a live Postgres 16 cluster**
+  (this sandbox's own directly-installed cluster, same no-registry-egress
+  finding as FTF-0004/FTF-R017/FTF-0102/FTF-0104/PR #90's own prior
+  review): both `tests/tasks/test_ftf_1601.py` (14/14) and
+  `tests/integration/test_postgres_backup.py` (real backup, real restore
+  into a second scratch database, real seeded-row survival) pass cleanly
+  on the actual PR content, fresh `uv sync --all-packages` +
+  `pnpm install --frozen-lockfile`.
+- **Own fault injection, distinct from the ones already in this PR's test
+  suite and from the prior PR #90 review's own (which targeted the
+  `create_backup` self-verification encrypt/decrypt path):** targeted
+  `restore_backup()`'s `restoration_validated` conjunction itself
+  (`scripts/postgres_backup.py`, the `and set(record["rls_policies"])...`
+  term). Built a **real** scenario, not a mock: took a genuine encrypted
+  backup of the live `sovra_ftf1601` database (real `organizations`/
+  `workspaces`/`audit_events` tables, real `tenant_isolation` RLS
+  policies), `pg_dump`/`pg_restore`'d it byte-for-byte into a second
+  scratch database, then manually `DROP POLICY tenant_isolation ON
+  organizations` on that scratch copy — a real, physically incomplete
+  restoration (schema and data present, one required RLS policy silently
+  missing). Called `restore_backup()` against that real scratch database
+  with a no-op `restore_fn` (the "restore" already happened above) and
+  the real, unmodified `metadata_fn` (queries the live scratch DB for
+  real):
+  - **Unpatched code (as shipped in this PR):** `restoration_validated`
+    correctly comes back `False` — the code genuinely catches this real
+    defect, exactly as its own docstring and Section 71.2 promise.
+  - **With the RLS-policy-survival term removed from the conjunction**
+    (`and set((p["table"], p["policy"]) for p in record["rls_policies"])
+    .issubset(...)` deleted, everything else unchanged): the identical
+    real scenario now reports `restoration_validated: True` — a silent
+    false positive for a real, physically incomplete restore. Re-ran
+    **both** `tests/tasks/test_ftf_1601.py` (14/14 still pass) and
+    `tests/integration/test_postgres_backup.py` (still reports "all
+    checks passed") against this faulted code — **neither test suite
+    detects the fault.** Restored the file byte-for-byte from a pre-edit
+    copy (`diff` confirmed empty) before finishing.
+  - **Why neither existing test catches it:** the no-DB suite never
+    exercises the happy-path restore-verification arithmetic at all (only
+    the tamper/wrong-key *rejection* paths, which fail earlier via
+    `pg_restore`'s/`openssl`'s own checksum-before-decrypt gates — those
+    are genuinely covered). The live integration test's own restore
+    always restores the *intact* backup, so it only ever exercises the
+    conjunction's all-`True` branch; its one direct reference to
+    `restoration_validated` (`tests/tasks/test_ftf_1601.py:578-583`) only
+    proves the *field* is a real boolean, not that the *comparison logic
+    producing it* can independently fail and be caught. The same
+    reasoning applies symmetrically to the `tables` and
+    `rls_forced_tables` subset terms — neither has negative-path coverage
+    either, by the same gap.
+- **Why this is a certification blocker, not a nice-to-have:** CLAUDE.md
+  Law 1 is unconditional — "Nothing proven until test shown able to fail
+  — evidence bound to criterion ID, test ID, commit, failure reason,
+  hash." The acceptance clause's "restoration test" and Section 71.2's
+  own stated purpose for `restoration_validated` existing at all is
+  specifically to catch a restore that silently lost schema/RLS state —
+  exactly the scenario reproduced above. That specific, load-bearing
+  behavior has never been shown able to fail by any test this PR ships;
+  it was only shown able to fail just now, in this review, against a
+  temporarily-faulted copy of the code that was reverted immediately
+  after. The shipped code is correct (independently confirmed above) —
+  this is a real test-coverage gap on the acceptance criterion's own
+  core mechanism, not a defect in the shipped logic itself.
+- **Everything else checked out clean:** `ruff`/`mypy`/`eslint`/`tsc`/
+  `prettier` all clean (63 source files); full existing regression
+  (FTF-0002 through FTF-R017, FTF-1810, FTF-H001/H002/H028/H034/R001,
+  FTF-0102/FTF-0104's own live integration tests) re-run with no
+  regression; `validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` legitimately `0/0` (no live FastAPI app imports
+  `postgres_backup.py` yet, same established pattern); `verify_release.py`
+  — `18/300`, zero `FAILED`, matching `main`'s pre-existing state exactly
+  (confirmed non-inflated via a from-scratch `uv sync --all-packages` +
+  `pnpm install --frozen-lockfile` re-run — an initial run without
+  `pnpm install` first showed 3 false `FAILED` entries from missing
+  `node_modules`, not a real regression; resolved before relying on the
+  result). PR #90 confirmed genuinely `closed`/`merged: false` (not
+  reused, not silently abandoned). Contract files
+  (`packages/contracts/{jsonschema,openapi}/16-*`) confirmed to match the
+  real dataclasses field-for-field.
+- **Conclusion:** not merging, not certifying. `certification_state` for
+  FTF-1601 is not yet `PROVISIONAL` on `main` (this PR is unmerged;
+  `docs/spec-matrix.yaml` on `main` still shows FTF-1601 as
+  `certification_state: NONE` — nothing to downgrade there). On PR #96's
+  own branch the PROVISIONAL entry stands as submitted — not altered by
+  this review, since the *shipped code* is sound; what's missing is test
+  coverage proving it. **Action needed before re-requesting
+  certification:** add a negative test — no-DB is sufficient, following
+  this repo's own established `dump_fn`/`metadata_fn`-injection pattern —
+  that calls `restore_backup()` with a `metadata_fn` returning a restored
+  state genuinely missing a table, a `FORCE ROW LEVEL SECURITY` flag, or
+  an RLS policy the original `record` had, and asserts
+  `restoration_validated is False` for each of the three subset terms
+  independently (not just the checksum terms, which are already proven).
+  Push that test to PR #96's own branch (no code change expected/needed —
+  the underlying logic is already correct) and confirm CI stays green
+  before resubmitting.
+- **Validated-by:** this session (independent — see session-ID check
+  above), 2026-09-18.
