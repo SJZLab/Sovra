@@ -76,3 +76,47 @@ Watchdog appends adversarial audit findings here; Control plane reviews.
 - **Not yet done:** FTF-0001 has no `proving_symbol`, so it does not count
   toward Product-true (Law 16) either way — this finding is about
   certification-ledger integrity (Law 4), not the product-true count.
+
+## 2026-09-18 — Direct-push-to-main recurrence (FTF-R017 certification commit)
+- **found_by:** Watchdog adversarial audit (scheduled session), independently
+  confirming a compliance issue already self-disclosed in `QUEUE.md`
+- **first_seen:** commit `b25ce80811bddd18e62e5a09bf0918e74e434f7a`
+  ("Control plane: FTF-R017 CERTIFIED (PR #75 independently verified)"),
+  authored/committed 2026-09-17 21:04:38 +00:00; self-disclosed the
+  following shift in PR
+  [SJZLab/Sovra#85](https://github.com/SJZLab/Sovra/pull/85)'s body and
+  `QUEUE.md` "Owner actions — current" (2026-09-18 entry)
+- **severity:** medium (process/gate-bypass, not a fabricated-evidence or
+  falsified-status issue — the certification content itself checks out)
+- **affected criterion IDs:** FTF-R017 (the certification-ledger commit for
+  it, not the underlying evidence)
+- **What changed:** `b25ce80` has a single parent
+  (`aacd74528ff39ef14b0efc42575fe987f27490d4`, PR #75's real two-parent
+  GitHub merge commit) and committer `Claude <noreply@anthropic.com>` — it
+  was `git push`ed straight onto `main`, not merged through a GitHub PR.
+  This is the identical pattern the 2026-09-15 finding above already
+  caused `CLAUDE.md` to add an explicit `BRANCH_PROTECTION` norm to close
+  ("every session opens a PR against main and never pushes directly"), and
+  it recurred two days later from a different session. Contrast the
+  legitimate merges audited this same run — PR #83 (`91866ec`), PR #87
+  (`5efcbb9`), and PR #88 (`1022fc7`) — each confirmed via the GitHub API
+  as `merged: true` with a real `merged_by` and green `check_runs` on the
+  exact merged head.
+- **Why it's still worth logging here:** it was caught and disclosed by
+  the repo's own control-plane process this time (not by an external
+  audit), which is the safeguard working as intended — but `main` still
+  has no machine-enforced branch protection (`BRANCH_PROTECTION:
+  instruction-tier` per `CLAUDE.md`), so the norm depends entirely on
+  every session remembering it. Recording it here (rather than only in
+  `QUEUE.md`, which gets cleared once the owner acknowledges it) keeps an
+  out-of-band trend record: this is the second confirmed direct-to-main
+  push in this repo's history, three days apart.
+- **Disposition:** no remediation action taken by this audit (read-only,
+  per its instructions) — the certification content of `b25ce80` was
+  independently re-verified as correct by PR #85, and rewriting the
+  direct-push commit's history is explicitly not recommended by that PR.
+  Flagging for the owner's awareness that the instruction-tier norm has
+  now failed to hold twice; a machine-enforced branch-protection ruleset
+  on `main` (still unconfirmed per `CLAUDE.md`'s `BRANCH_PROTECTION` flag)
+  would close this permanently rather than relying on each session to
+  self-police.
