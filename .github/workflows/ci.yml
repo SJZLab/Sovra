@@ -51,7 +51,12 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - name: Install Python dev dependencies
-        run: uv sync
+        # --all-packages: a bare `uv sync` only installs the root workspace
+        # package + dev group, not each member's own `dependencies` (FTF-0102
+        # confirmed this empirically -- it silently uninstalled apps/api's
+        # freshly-added sqlalchemy/alembic/psycopg). Every prior task's
+        # apps/api had `dependencies = []`, so this never mattered before.
+        run: uv sync --all-packages
       - name: Install JS/TS dev dependencies
         run: pnpm install --frozen-lockfile
       - name: Python lint + format + type check (FTF-0002)
@@ -112,6 +117,11 @@ jobs:
         run: python3 scripts/validate_storage_profile.py
       - name: FTF-R017 negative-test proof (storage/OSS-lifecycle qualification catches real defects)
         run: python3 tests/tasks/test_ftf_r017.py
+      - name: FTF-0102 negative-test proof (organization/workspace schema catches real defects, no DB required)
+        # uv run, not bare python3: this is the first task with a real,
+        # owner-approved third-party runtime dependency (sqlalchemy) --
+        # every prior tests/tasks/test_ftf_*.py needed only the stdlib.
+        run: uv run python3 tests/tasks/test_ftf_0102.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -135,6 +145,44 @@ jobs:
       - uses: actions/checkout@v4
       - name: Boot the real local stack and prove restart/persistence
         run: python3 scripts/verify_docker_local_stack.py
+
+  organization-workspace-schema-integration:
+    # FTF-0102: real Postgres migration + FORCE ROW LEVEL SECURITY
+    # tenant-isolation evidence for Organization/Workspace (Section
+    # 6.1/6.2, 65.1) -- tests/integration/test_organization_workspace_schema.py.
+    # Uses GitHub Actions' own `services: postgres` container (real
+    # registry egress on the hosted runner; this repo's interactive dev
+    # sandbox does not have it -- confirmed again this task with a real
+    # `docker pull postgres:16-alpine`, same reproducible 403 FTF-0004's
+    # own evidence already documents. That evidence was instead produced
+    # locally against a directly-installed PostgreSQL 16 -- see this
+    # task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0102
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0102"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0102
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real migration + RLS tenant-isolation evidence against the live database
+        run: uv run python3 tests/integration/test_organization_workspace_schema.py
 
   storage-semantics-integration:
     # FTF-R017: real multipart/checksum/versioning/immutable-publication/

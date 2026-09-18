@@ -1,5 +1,149 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18T00:00:00Z
+Updated: 2026-09-18 (this relay shift)
+
+## 2026-09-18 — PR #83 (FTF-0102): CI confirmed green for real on GitHub's own registry-egress runner
+Follow-up to this shift's own FTF-0102 submission (see entry below).
+Subscribed to PR #83's activity; the `check_suite.completed` event on the
+actual current head (`01ebde9`) was independently re-verified via
+`pull_request_read get_check_runs` rather than trusted from the event
+body alone: all 4 jobs `completed`/`success` — `gate`,
+`docker-local-stack-integration`, `storage-semantics-integration`, and
+the new `organization-workspace-schema-integration` job (the real
+Postgres migration + RLS tenant-isolation evidence, run for the first
+time against GitHub's own `services: postgres` container with real
+registry egress — this session's own sandbox could only reproduce that
+evidence against a directly-installed local Postgres, disclosed in the PR
+body). `mergeable_state: "clean"`. Zero review comments, zero reviews —
+nothing else outstanding. No Claude Approvals check runs in this repo.
+
+Per Law 4 (producer never certifies own work) this session does not
+merge or certify its own PR — PR #83 is now genuinely CI-green and
+mergeable, waiting on Control plane's independent L2 review, not idle or
+blocked on anything this session can act on further.
+
+Certified: 16/300 (unchanged — main). Provisional: 1 (FTF-0102, PR #83,
+CI-green). Product-true: 0 (unchanged).
+
+## 2026-09-18 — Relay shift: claimed and implemented FTF-0102 (Organization/workspace tenant schema), submitted PROVISIONAL
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly — no hash-mismatch stop condition.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/
+`BLOCKER.md` fresh. Local designated branch `claude/wizardly-fermat-szi9tm`
+matched `origin/main` exactly at `d4d0a76` (the prior shift's owner-ask
+resolution commit) — nothing landed since. `BLOCKER.md` had no open entry.
+
+STEP 0.2: `cognee-cli` not found on `PATH` — text-search fallback active,
+unchanged from every prior shift.
+
+STEP 1: independently recomputed queue readiness (loaded all 300 tasks via
+`scripts.spec_verification.load_tasks()`, cross-checked every
+non-CERTIFIED task's dependencies against `docs/spec-matrix.yaml`'s 16
+CERTIFIED entries) — confirmed FTF-0102 (deps FTF-0004/FTF-0005/FTF-H001,
+all CERTIFIED) is the sole dependency-ready task, matching QUEUE.md's own
+claim. Its new-runtime-dependency ask was already resolved by a live owner
+conversation recorded in the prior shift's own entry (not a self-reported
+claim like PR #67's, which that session had already correctly refused to
+act on) — QUEUE.md's "Owner actions — current" no longer lists it, so
+claimed FTF-0102 this shift.
+
+STEP 2 (PEV):
+- **P:** pulled the real DoD via `tools/r1_handoff.py packet FTF-0102`.
+  Its concrete, non-boilerplate acceptance is: freeze the phase-01 shared
+  interface/domain schemas with no placeholder endpoints, then create two
+  organizations/workspaces enforcing unique names and tenant-composite
+  foreign keys via a real migration; negative_acceptance is cross-tenant
+  parent IDs and missing tenant context failing DB constraints/RLS. Found
+  Docker has no container-registry egress in this sandbox (confirmed with
+  a real `docker pull postgres:16-alpine`, reproducing FTF-0004/FTF-R017's
+  already-documented 403) — but PostgreSQL 16 is installed directly on
+  this container (not via Docker), so used that for real, local evidence
+  instead of deferring everything to CI.
+- **E:** added `sqlalchemy`/`alembic`/`psycopg[binary]` to
+  `apps/api/pyproject.toml` (owner-approved 2026-09-18, option 1). Wrote
+  `apps/api/app/auth/organization_workspace_schema.py`
+  (Organization/Workspace ORM models + `set_tenant_context`), a real
+  forward Alembic migration
+  (`apps/api/alembic/versions/0001_org_workspace_schema.py`) creating both
+  tables, a distinct `NOSUPERUSER`/`NOBYPASSRLS` `sovra_app` role, and
+  `FORCE ROW LEVEL SECURITY` policies scoped to a transaction-local
+  `app.current_organization_id`, plus the frozen
+  `packages/contracts/{jsonschema,openapi}/01-*` phase-01 contract files
+  (zero OpenAPI paths — no live FastAPI app exists yet, avoiding a Law 11
+  placeholder route). Ran the real migration against a local Postgres 16
+  cluster (started via `pg_ctlcluster`) — caught and fixed a real bug on
+  the first run (the initial 34-character revision ID overflowed
+  Alembic's own `VARCHAR(32)` version-tracking column). Wrote
+  `tests/tasks/test_ftf_0102.py` (24 no-DB checks: domain-shape
+  validation, static migration-source checks, contract-file
+  parse/drift/placeholder-endpoint checks, a stdlib-only structural
+  schema validator proving real ORM instances satisfy the frozen contract)
+  and `tests/integration/test_organization_workspace_schema.py` (the real
+  live-Postgres tenant-isolation/negative_acceptance proof). Shown able to
+  fail: granting `sovra_app` `BYPASSRLS` in a scratch copy of the
+  migration made 6 real integration checks fail; removing `FORCE ROW LEVEL
+  SECURITY` made a static check fail; both restored byte-identical and
+  re-run clean. Also found and fixed a real, previously-latent CI gap this
+  task's own dependency addition exposed: a bare `uv sync` only installs
+  the root workspace package + dev group, not each member's own
+  `dependencies` — confirmed empirically (it silently uninstalled
+  apps/api's freshly-added packages). Fixed with `uv sync --all-packages`
+  in `.github/workflows/ci.yml` (both the `gate` job and a new
+  `organization-workspace-schema-integration` job using GitHub Actions'
+  own `services: postgres` container).
+- **V:** full regression in this same container after `pnpm install
+  --frozen-lockfile` + `git fetch --unshallow` (both needed here, same
+  documented environment-artifact pattern prior shifts have hit — confirmed
+  spurious by re-running clean immediately after): `uv run ruff check`/
+  `ruff format --check`/`mypy .` clean (57 source files); `pnpm run lint`/
+  `typecheck`/`format:check` clean; every existing task test (FTF-0001
+  through FTF-R017, `tests/implementation/*`, `tests/security/*`) still
+  passes; `uv run pytest tests/unit` (3 passed), `pnpm exec vitest run` (2
+  passed), `scripts/check_test_harness.py` clean, `scripts/validate_spec.py
+  --strict` clean, `scripts/product_truth_check.py --fail-on-unwired` stays
+  `0/0 product-true` (legitimate — no live FastAPI app imports this module
+  yet, same rationale as FTF-0002 through FTF-0006), `scripts/status.py`
+  reports `16/300 certified · 0 product-true` (unchanged — PROVISIONAL,
+  not yet certified). No TRACKER path to diagnose/wire — this is new code
+  with no prior claimed-but-unproven state.
+
+Committed implementation as `82c75f42231c32c2fa45988bb36e805534548ed1` on
+`claude/wizardly-fermat-szi9tm`. Set `docs/spec-matrix.yaml` FTF-0102 to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` /
+`evidence_hash: 82c75f42231c32c2fa45988bb36e805534548ed1` — did not touch
+`spec/verification-map.json`, `spec/tasks.json` or
+`docs/implementation/TRACKER.json`, which get their FTF-0102 entries from
+Control plane's own `sync_certified_status()` run at L2 certification, per
+Law 4 (producer never certifies own work). Appended the full evidence
+writeup to `docs/certifications/queue.md`. Updated `QUEUE.md` (FTF-0102
+moved from unclaimed-but-ready into `## Provisional`, Status line updated).
+Pushed this branch and opened PR #83
+(https://github.com/SJZLab/Sovra/pull/83, `[relay] FTF-0102:
+Organization/workspace tenant schema`), per STEP 2's own "open PR as
+PROVISIONAL" requirement. Subscribed to PR #83's activity; at the time of
+writing all four CI jobs (`gate`, `docker-local-stack-integration`,
+`storage-semantics-integration`, the new
+`organization-workspace-schema-integration`) were `in_progress` on run
+`35327960620` — not yet confirmed green on GitHub's own real
+registry-egress runner (this session's sandbox evidence was produced
+against a directly-installed local Postgres instead, disclosed above and
+in the PR body). Will watch for the completion event and push a fix if
+CI surfaces a real defect this session's own local evidence didn't catch.
+
+STEP 3: this entry itself, written before any compaction, per the
+standing instruction.
+
+STEP 4: not a stop condition (not N/N proven — this task isn't certified
+yet; not a true blocker; not stuck; not a usage-limit heartbeat; not an
+ask-first item — the one ask-first item this task depended on was already
+resolved by live owner confirmation, recorded in the prior shift's own
+entry). Continuing to push and open the PR in this same shift before
+stopping at STEP 4(a)-equivalent (L1-PROVEN, awaiting Control plane L2
+certification and the L4 gate).
+
+Certified: 16/300 (unchanged — this shift's own work is PROVISIONAL, not
+yet certified). Provisional: 1 (FTF-0102, this shift). Product-true: 0
+(unchanged).
 
 ## 2026-09-18T00:00:00Z — Control plane: FTF-0102 new-runtime-dependency ask resolved by live owner confirmation; PR #67 closed as superseded
 This is a live, interactive Claude Code session with the account holder

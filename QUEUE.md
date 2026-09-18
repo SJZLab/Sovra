@@ -1,20 +1,15 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18T00:00:00Z (owner's live local clock; recorded by
-  Control plane) — FTF-0102's new-runtime-dependency ask resolved by live
-  owner confirmation in a direct conversation with the account holder
-  (samer.zakaria@gmail.com), not a self-reported claim: option 1
-  approved (SQLAlchemy + Alembic + a Postgres driver, matching the
-  master architecture table as written). FTF-0102 moved out of
-  `## Blocked`, now dependency-ready. PR #67 (the earlier, unverifiable
-  self-reported claim of this same approval) closed as superseded — see
-  PROGRESS.md for the full record.
+Updated: 2026-09-18 (this relay shift) — claimed FTF-0102 (the sole
+  dependency-ready item, unblocked earlier the same day by live owner
+  confirmation — see the prior "Owner actions" record in PROGRESS.md),
+  implemented and submitted PROVISIONAL. See "## Provisional" below and
+  docs/certifications/queue.md for full evidence.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 16/300 (main; FTF-R017 CERTIFIED 2026-09-17, PR #75 merged as
-`aacd745` — see docs/certifications/ledger.md) · Provisional: 0 ·
-Blocked: 0 (FTF-0102 unblocked 2026-09-18 by live owner confirmation, see
-"Updated" above)
+`aacd745` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0102, this shift — see "## Provisional" below) · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015 and FTF-R017 all have no
@@ -59,12 +54,24 @@ product-true).
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
 ## Active (relay works this)
-(empty — FTF-R017 CERTIFIED 2026-09-17, see "## Done" below. FTF-0102 is
-now dependency-ready (unblocked 2026-09-18 by live owner confirmation,
-see "Updated" above) but not yet claimed by a relay shift.)
+(empty — FTF-0102 claimed and submitted this shift, see "## Provisional"
+below. No other task is dependency-ready this shift.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty — FTF-R017 CERTIFIED this shift, see "## Done" below.)
+- FTF-0102 — Organization/workspace tenant schema. Commit
+  `82c75f42231c32c2fa45988bb36e805534548ed1` on branch
+  `claude/wizardly-fermat-szi9tm`. proof_state=L1-PROVEN. Real forward
+  Alembic migration (Organization/Workspace, tenant-composite unique
+  constraint, FORCE ROW LEVEL SECURITY with a distinct NOSUPERUSER/
+  NOBYPASSRLS `sovra_app` role) plus the frozen phase-01 contract files
+  (zero OpenAPI paths — no live FastAPI app exists yet). First real
+  runtime dependency in `apps/api` (sqlalchemy/alembic/psycopg),
+  owner-approved 2026-09-18. Full evidence, including a real fault
+  injection (granting `sovra_app` BYPASSRLS caught 6 real failures) run
+  against a directly-installed local PostgreSQL 16 (this sandbox has no
+  container-registry egress): docs/certifications/queue.md. Awaiting
+  Control plane L2 review per Law 4 — not self-certified. PR: to be
+  opened against `main` from `claude/wizardly-fermat-szi9tm`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

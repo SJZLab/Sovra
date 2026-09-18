@@ -2692,3 +2692,167 @@ relay's, per Law 4 and this shift's own STEP 4(a).
   https://claude.ai/code/session_0197LBwCiZ8a682Vpm9iBzr8 (independent —
   see session-ID check above), 2026-09-17. Full ledger entry:
   `docs/certifications/ledger.md`.
+
+## 2026-09-18 — FTF-0102 — Organization/workspace tenant schema
+- **PR:** to be opened against `main` from `claude/wizardly-fermat-szi9tm`.
+- **Commit:** `82c75f42231c32c2fa45988bb36e805534548ed1` (implementation).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0102 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-0004/FTF-0005/FTF-H001 all `CERTIFIED` — unblocked. The
+  task's own new-runtime-dependency ask (SQLAlchemy + Alembic + a Postgres
+  driver) was resolved 2026-09-18 by live owner confirmation in a direct
+  conversation with the account holder (option 1, matching the master
+  architecture table) — see `QUEUE.md`/`PROGRESS.md` for that record; PR
+  #67's earlier, unverifiable self-reported claim of the same approval was
+  separately closed as superseded, not relied on here.
+- **Delivered:**
+  - `apps/api/app/auth/organization_workspace_schema.py`: `Organization`/
+    `Workspace` SQLAlchemy ORM models (Section 6.1/6.2) with constructor-
+    level shape validation (slug pattern, name length, status enum) —
+    `SLUG_PATTERN_SOURCE`/`NAME_MAX_LENGTH`/`ALLOWED_STATUSES` exposed
+    (not underscore-prefixed) specifically so the frozen contract files
+    below are tested against these exact values, not an independently
+    retyped copy that could drift. `set_tenant_context()` issues a
+    parameterized `SELECT set_config('app.current_organization_id',
+    :org_id, true)` — never a string-formatted `SET`.
+  - `apps/api/alembic/{alembic.ini,env.py,versions/0001_org_workspace_schema.py}`:
+    the first real forward migration in this repo. Creates `organizations`/
+    `workspaces` with the tenant-composite `UNIQUE (organization_id, slug)`
+    constraint the acceptance clause requires, plus a distinct `sovra_app`
+    role created `NOSUPERUSER NOBYPASSRLS` (Section 65.1: "application
+    runtime role is not the table owner, a superuser or BYPASSRLS") with
+    only row-level DML grants, and `FORCE ROW LEVEL SECURITY` on both
+    tables with a `tenant_isolation` policy keyed off
+    `NULLIF(current_setting('app.current_organization_id', true), '')::uuid`
+    — a connection that never calls `set_tenant_context` sees/writes zero
+    rows (`NULL = column` is never true), not every row. The role's
+    password comes only from a required `SOVRA_APP_DB_PASSWORD` env var
+    (no development-fallback credential), embedded into the `CREATE ROLE`
+    DDL via Postgres dollar-quoting (`$sovra_app_pwd$...$sovra_app_pwd$`)
+    rather than a bind parameter, because `CREATE ROLE ... PASSWORD` is a
+    plain string-constant grammar position that does not accept one.
+  - `packages/contracts/jsonschema/01-domain.schema.json` +
+    `packages/contracts/openapi/01-interface.yaml`: the frozen phase-01
+    shared interface/domain schemas the acceptance clause requires.
+    `01-interface.yaml` declares `paths: {}` deliberately — no live
+    FastAPI app exists yet (`apps/api/app` has no `main.py`, the same
+    disclosed gap FTF-0006 already recorded), so declaring an HTTP route
+    with no real handler would itself be a Law 11 placeholder; whichever
+    task first wires a real `/api/v1` route adds its own path item here
+    under the same `contracts:01` lock. `components.schemas` mirrors the
+    JSON Schema file exactly (tested for drift, not just re-read).
+  - `.github/workflows/ci.yml`: a new `organization-workspace-schema-integration`
+    job (GitHub Actions' own `services: postgres` container, real registry
+    egress on the hosted runner — matches the `postgres:16-alpine` digest
+    FTF-0004 already pinned) running the real migration then
+    `tests/integration/test_organization_workspace_schema.py`. Also added
+    `uv run python3 tests/tasks/test_ftf_0102.py` to the existing `gate`
+    job, and fixed a real, previously-latent gap this task's own
+    dependency addition exposed: a bare `uv sync` only installs the root
+    workspace package + dev group, **not** each member's own
+    `dependencies` — confirmed empirically (it silently uninstalled
+    apps/api's freshly-added sqlalchemy/alembic/psycopg the first time
+    this task ran `uv sync` locally). Never mattered before because every
+    prior task's `apps/api/pyproject.toml` had `dependencies = []`. Fixed
+    with `uv sync --all-packages` in both the `gate` job and the new
+    integration job.
+- **Tests:**
+  - `tests/tasks/test_ftf_0102.py` — 24 check functions, no DB required:
+    domain-shape validation (bad slug/name/status rejected, valid shapes
+    accepted), the tenant-composite unique constraint and FK are really
+    declared on the ORM metadata, `set_tenant_context` genuinely uses a
+    parameterized `set_config(...)` call (asserted against the real
+    `MagicMock` call args, not the function's docstring), and static
+    checks against the tracked migration file's own source text (FORCE
+    ROW LEVEL SECURITY on both tables, `NOSUPERUSER`/`NOBYPASSRLS`, no
+    hardcoded fallback password) plus the two frozen contract files
+    (parses, Slug pattern/NAME_MAX_LENGTH/ALLOWED_STATUSES byte-identical
+    to the real enforcing code, zero OpenAPI paths). Includes a tiny
+    stdlib-only structural JSON-Schema-subset validator (type/pattern/
+    maxLength/enum) used to prove real `Organization`/`Workspace`
+    instances actually satisfy the frozen schema — not the third-party
+    `jsonschema` package, which would itself be a second, unapproved
+    new-runtime-dependency ask.
+  - `tests/integration/test_organization_workspace_schema.py` — the real
+    live-Postgres evidence: runs `alembic upgrade head` for real, seeds
+    two real organizations/workspaces as the migration owner, then as the
+    restricted `sovra_app` role proves (a) tenant context = org1 sees only
+    org1's own rows, (b) missing tenant context sees zero rows, (c) a
+    cross-tenant `organization_id` on `INSERT` is rejected, (d) an
+    `UPDATE` retargeting an owned row to a different tenant is rejected,
+    (e) an `UPDATE` reaching for a foreign tenant's row by ID affects zero
+    rows (RLS filters it silently, a distinct code path from (c)/(d)), (f)
+    a duplicate organization slug and a duplicate `(organization_id,
+    slug)` are each rejected by real constraints, and (g) the same slug
+    across two different organizations is allowed (tenant-composite, not
+    global, uniqueness).
+- **Evidence — shown able to fail (Law 1), against a real local PostgreSQL
+  16 cluster (this sandbox has no container-registry egress to boot
+  Postgres via Docker — confirmed again this task with a real `docker
+  pull postgres:16-alpine`, same reproducible 403 FTF-0004/FTF-R017
+  already documented; PostgreSQL 16 was already installed directly on
+  this container, not via a container, which is what all of this
+  evidence was produced against before being wired into CI's own
+  `services: postgres` job):**
+  1. Fixed a real bug this task's own first migration run surfaced before
+     any fault injection: the initial revision ID
+     (`0001_organization_workspace_schema`, 34 characters) overflowed
+     Alembic's default `alembic_version.version_num VARCHAR(32)` column —
+     `StringDataRightTruncation` on the very first `alembic upgrade head`.
+     Shortened to `0001_org_workspace_schema` (25 characters), re-ran
+     clean.
+  2. Removing the explicit `WITH CHECK` clause from the workspaces policy
+     (keeping only `USING`) was tried as a fault injection and found to
+     **not** break anything — Postgres itself defaults an omitted `WITH
+     CHECK` to the same expression as `USING` for a `FOR ALL` policy. Not
+     a false claim left uncorrected: `tests/tasks/test_ftf_0102.py`'s own
+     docstring and check description were written to state this
+     explicitly (explicit `WITH CHECK` is redundant defense-in-depth, not
+     something the omission was shown to exploit) rather than asserting a
+     property that testing had just disproven.
+  3. **The real, meaningful fault injection:** granting the `sovra_app`
+     role `BYPASSRLS` instead of `NOBYPASSRLS` in a scratch copy of the
+     migration made 6 of `tests/integration/test_organization_workspace_schema.py`'s
+     checks genuinely fail (every tenant-isolation and negative_acceptance
+     case — tenant-scoped visibility, missing-context denial, cross-tenant
+     insert/update rejection all failed for real once RLS could be
+     bypassed), confirming the suite actually depends on RLS being
+     enforced rather than passing regardless. Restored the migration file
+     byte-identical (`diff` empty) and re-ran both test files clean.
+  4. A separate, targeted fault injection against `tests/tasks/test_ftf_0102.py`'s
+     own static check (not the DB): removing the `FORCE ROW LEVEL
+     SECURITY` line for `workspaces` from the tracked migration file made
+     that suite's own check fail for real; restored byte-identical,
+     re-ran clean — this file's own regression tests are proven, not
+     decorative.
+- **Regression check:** `uv run ruff check .`/`ruff format --check .`/
+  `mypy .` clean (57 source files, including the 3 new/changed ones);
+  `pnpm run lint`/`typecheck`/`format:check` clean (unaffected, no
+  TypeScript touched); the full existing task-test set (FTF-0001 through
+  FTF-R017, `tests/implementation/*`, `tests/security/*`) re-run clean in
+  this same fresh container after `pnpm install --frozen-lockfile` +
+  `git fetch --unshallow` (both needed for this exact container, matching
+  the same documented environment-artifact pattern prior shifts have hit —
+  confirmed spurious, not a real regression, by re-running clean
+  immediately after); `uv run pytest tests/unit` (3 passed), `pnpm exec
+  vitest run` (2 passed), `scripts/check_test_harness.py` clean,
+  `scripts/validate_spec.py --strict` clean, `scripts/product_truth_check.py
+  --fail-on-unwired` stays `0/0 product-true` (legitimate — no live
+  FastAPI app imports `organization_workspace_schema.py` yet, same
+  no-proving-symbol rationale as FTF-0002/0003/0004/0005/0006),
+  `scripts/status.py` reports `16/300 certified · 0 product-true`
+  (unchanged — this submission is PROVISIONAL, not yet certified).
+- **`docs/spec-matrix.yaml`:** `FTF-0102` set to
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` /
+  `evidence_hash: 82c75f42231c32c2fa45988bb36e805534548ed1`. Not touching
+  `spec/verification-map.json`, `spec/tasks.json` or
+  `docs/implementation/TRACKER.json` — those get their FTF-0102 entries
+  from Control plane's own `sync_certified_status()` run at L2
+  certification, same convention every prior task followed.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4, which
+  should specifically re-verify the `organization-workspace-schema-integration`
+  CI job passed for real (not merely that it exists) against a fresh
+  registry-egress-capable runner, since this session's own sandbox could
+  only produce this evidence against a directly-installed Postgres, not
+  the pinned container image the CI job actually uses.

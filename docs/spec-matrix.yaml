@@ -72,15 +72,15 @@ FTF-0101:
   proving_symbol: ''
   proving_test: ''
 FTF-0102:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Organization/workspace schema
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-08; scenarios=Q01, Q24; deps=FTF-0004, FTF-0005, FTF-H001
-  proof_state: UNPROVEN
+  evidence_hash: 82c75f42231c32c2fa45988bb36e805534548ed1
+  implementation_state: IMPLEMENTED
+  notes: kind=retained_feature; requirements=AF-08; scenarios=Q01, Q24; deps=FTF-0004, FTF-0005, FTF-H001; first apps/api runtime dependency (sqlalchemy, alembic, psycopg[binary]) -- owner-approved 2026-09-18; apps/api/app/auth/organization_workspace_schema.py (Organization/Workspace ORM models, Section 6.1/6.2) + apps/api/alembic/versions/0001_org_workspace_schema.py (real forward migration creating both tables, a distinct NOSUPERUSER/NOBYPASSRLS sovra_app role, and FORCE ROW LEVEL SECURITY scoped to app.current_organization_id per Section 65.1); packages/contracts/{jsonschema,openapi}/01-*.{json,yaml} (frozen phase-01 domain schemas, zero OpenAPI paths -- no live FastAPI app exists yet, avoiding a Law 11 placeholder route); tests/tasks/test_ftf_0102.py (no-DB structural/contract evidence, runs in CI's gate job via uv run) + tests/integration/test_organization_workspace_schema.py (real live-Postgres RLS/tenant-isolation negative_acceptance proof, CI's new organization-workspace-schema-integration job -- this sandbox has no container-registry egress, confirmed again this task, so this evidence was produced locally against a directly-installed PostgreSQL 16 cluster instead, including a real fault injection (granting sovra_app BYPASSRLS made 6 checks genuinely fail, restored clean)); also fixed a latent CI gap (bare `uv sync` silently drops workspace members' own dependencies -- never mattered while apps/api had none) via --all-packages in .github/workflows/ci.yml
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0102.py
 FTF-0103:
   certification_state: NONE
   criticality: MUST
