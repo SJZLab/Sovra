@@ -1,5 +1,61 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18T04:55:00Z
+Updated: 2026-09-18T00:00:00Z
+
+## 2026-09-18T00:00:00Z — Control plane: FTF-0102 new-runtime-dependency ask resolved by live owner confirmation; PR #67 closed as superseded
+This is a live, interactive Claude Code session with the account holder
+(samer.zakaria@gmail.com) — not a scheduled/automated turn. That
+distinction matters directly to this entry, since it is the one
+condition every prior automated shift's own operating rule required
+before treating any approval claim as real (see the 2026-09-17 relay
+entries and `docs/certifications/queue.md`'s handling of PR #67 below).
+
+Background: the 2026-09-16 FTF-0102 (Organization/workspace schema)
+new-runtime-dependency ask (QUEUE.md's own "Owner actions — current")
+required an owner decision among three options before this repo's first
+Postgres client/ORM/migration dependencies (SQLAlchemy + Alembic + a
+driver) could be added to `apps/api`, per CLAUDE.md's "new runtime deps"
+ask-first hard stop. On 2026-09-17, PR #67 appeared claiming this had
+already been decided ("owner approved option 1") in some other live
+session — but that claim was self-reported inside an AI-authored commit
+message with zero corroborating evidence anywhere on GitHub (no
+owner comment/review), and every automated shift since correctly refused
+to act on it per this repo's own rule that only live user input can
+confirm an approval.
+
+The owner, live in this conversation, asked what it would actually take
+to make such a decision official (having been shown that PR #67 did not
+qualify), and was given the two valid channels: (a) a live conversation
+like this one, recorded directly into QUEUE.md's "Owner actions —
+current" block as the one place these live, or (b) a GitHub comment/
+review from the owner's own account, independently verifiable via the
+API. The owner then explicitly confirmed, live, in this conversation:
+**option 1 — SQLAlchemy + Alembic + a Postgres driver (psycopg or
+asyncpg) as `apps/api`'s first runtime dependencies, matching the master
+architecture table (`FINE_TUNING_FACTORY_RELEASE_1.md`, "binding
+architecture", API/policy row) as written.**
+
+Actions taken this turn:
+- Removed the resolved FTF-0102 ask (both the original 2026-09-16 entry
+  and the 2026-09-17 note about PR #67) from QUEUE.md's "Owner actions —
+  current" block, per CLAUDE.md's "remove it the moment the owner
+  responds... never leave resolved asks in item history" rule. The
+  unrelated 2026-09-15 trigger-tooling ask is untouched and still open.
+- Moved FTF-0102 out of `## Blocked` (now empty) — it is dependency-ready
+  (deps FTF-0004/FTF-0005/FTF-H001 all CERTIFIED) for the next relay
+  shift to claim, but not claimed or implemented by this turn. No
+  dependency has actually been added to `pyproject.toml` yet — that
+  remains real implementation work (adding the packages, writing the
+  forward Alembic migration, proving the negative-acceptance RLS/tenant-
+  isolation clause) for whichever shift picks it up.
+- Updated QUEUE.md's `Status`/`Updated` header accordingly.
+- Left a comment on PR #67 explaining that this live conversation now
+  supersedes its claim with a properly-sourced decision, and closed it
+  (unmerged, `mergeable_state` had already been `dirty` against later
+  `main` history — nothing in it ever took effect).
+
+No source code changed this turn — this is a decision-recording and
+owner-ask resolution only, same category of action CLAUDE.md's "Do
+without asking" list already covers for tracking-file edits.
 
 ## 2026-09-18T04:55:00Z — Relay shift: no actionable work, state independently re-verified (again)
 STEP 0: `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`

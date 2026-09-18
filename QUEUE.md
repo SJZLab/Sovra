@@ -1,17 +1,20 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-17T21:05:00Z by Control plane (FTF-R017 / PR #75 —
-  independently re-verified: real diff review, real CI-green on two
-  separate genuine runs (including after fixing a recurring
-  mergeable_state:dirty conflict against main), a real fault injection
-  against the SigV4 signing math, and the task's real acceptance/
-  negative_acceptance contract via tools/r1_handoff.py. Merged PR #75
-  as aacd745 and CERTIFIED — see docs/certifications/ledger.md.)
+Updated: 2026-09-18T00:00:00Z (owner's live local clock; recorded by
+  Control plane) — FTF-0102's new-runtime-dependency ask resolved by live
+  owner confirmation in a direct conversation with the account holder
+  (samer.zakaria@gmail.com), not a self-reported claim: option 1
+  approved (SQLAlchemy + Alembic + a Postgres driver, matching the
+  master architecture table as written). FTF-0102 moved out of
+  `## Blocked`, now dependency-ready. PR #67 (the earlier, unverifiable
+  self-reported claim of this same approval) closed as superseded — see
+  PROGRESS.md for the full record.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 16/300 (main; FTF-R017 CERTIFIED this shift, PR #75 merged as
+Certified: 16/300 (main; FTF-R017 CERTIFIED 2026-09-17, PR #75 merged as
 `aacd745` — see docs/certifications/ledger.md) · Provisional: 0 ·
-Blocked: 1 (FTF-0102, new-runtime-dep owner ask, see below)
+Blocked: 0 (FTF-0102 unblocked 2026-09-18 by live owner confirmation, see
+"Updated" above)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015 and FTF-R017 all have no
@@ -55,62 +58,10 @@ product-true).
   resolved without evidence of the watchdog trigger and the 08:30/19:30
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
-- 2026-09-16: FTF-0102 (Organization/workspace schema) is dependency-ready
-  (deps FTF-0004/FTF-0005/FTF-H001 all CERTIFIED; FTF-0101 is blocked
-  behind FTF-0102 itself, not ready) but blocked on this ask, not on
-  readiness. This shift instead picked up FTF-R001, a separate
-  dependency-ready item (deps FTF-0001/FTF-H001, unrelated to this ask) —
-  see "Provisional" below; this ask still stands unchanged. Its own resolved
-  task contract (`tools/r1_handoff.py packet FTF-0102`) requires "Own
-  forward Alembic migration for this resource; tenant/composite
-  constraints/RLS" and a negative-acceptance clause proven against real
-  DB constraints/RLS (cross-tenant parent IDs and missing tenant context
-  must fail). This repo currently has **zero** Postgres client/ORM/
-  migration runtime dependencies anywhere (`apps/api/pyproject.toml`
-  dependencies list is empty; root `pyproject.toml` dev-group is
-  ruff/mypy/pytest only) — satisfying this contract requires adding
-  SQLAlchemy + Alembic + a Postgres driver (psycopg or asyncpg) to
-  `apps/api`. The master architecture table
-  (`FINE_TUNING_FACTORY_RELEASE_1.md`, "binding architecture", API/policy
-  row) does name "FastAPI + SQLAlchemy/Alembic + PostgreSQL" for this
-  layer — but this repo's own consistent precedent (FTF-0004/0005/0006
-  each deliberately declined to add FastAPI/pydantic even though that
-  same table row names them, explicitly citing CLAUDE.md's "new runtime
-  deps" ask-first hard stop as governing regardless of prior architecture
-  naming) treats that table as declared intent, not a standing
-  pre-approval to install. Improvising a stdlib-only substitute (e.g.
-  shelling out to a `psql` CLI instead of Alembic) would silently deviate
-  from the contract's explicit, specific "Alembic" naming — that's
-  improvising the DoD, not executing it, so this shift did not do that
-  either. Options for the owner: (1) approve adding SQLAlchemy + Alembic
-  + a Postgres driver as apps/api's first runtime dependencies, matching
-  the master architecture table as written; (2) approve a narrower
-  stdlib/CLI-only alternative (raw SQL migration files run via `psql`
-  subprocess against FTF-0004's docker-local-stack Postgres, no new
-  Python package) with the "Alembic" contract-language deviation
-  explicitly disclosed rather than hidden; (3) some other explicit stack
-  decision. FTF-0102 stays in `## Blocked` below until this is answered —
-  not claimed, not started, no dependency installed.
-- 2026-09-17: an open PR (#67, from a prior session on this account)
-  claims this ask was resolved in a live interactive session ("owner
-  approved option 1") and edits this file to remove it and unblock
-  FTF-0102. That PR is unmerged (`mergeable_state: dirty`, conflicts with
-  `main`'s later history) and carries no GitHub-visible corroboration
-  (no comment/review from the owner on the PR itself) — plausible (it
-  names the owner's real account email) but not independently verifiable
-  from this file's own source of truth. This shift (scheduled/automated,
-  no live user present) left this ask exactly as written above rather
-  than treating an unconfirmed prior claim as newly approved, per this
-  session's own operating rule that only live user input can confirm an
-  approval. Commented on PR #67 explaining this; did not merge it, did
-  not touch FTF-0102. Resolving this — by the owner confirming directly
-  (a PR comment would do it), or by Control plane's independent judgment
-  — is still open. See PR #67 for the full claim.
 ## Active (relay works this)
-(empty — FTF-R017 CERTIFIED this shift, see "## Done" below. No other
-item is dependency-ready this shift: FTF-0102 remains the sole Blocked
-item, unchanged since 2026-09-16, see "Owner actions — current" above —
-no new owner response found on PR #67 as of this shift's check.)
+(empty — FTF-R017 CERTIFIED 2026-09-17, see "## Done" below. FTF-0102 is
+now dependency-ready (unblocked 2026-09-18 by live owner confirmation,
+see "Updated" above) but not yet claimed by a relay shift.)
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-R017 CERTIFIED this shift, see "## Done" below.)
@@ -445,10 +396,11 @@ to get its real DoD — read the generated
 not merely because the task looked title-only elsewhere.
 
 ## Blocked
-- FTF-0102 — Organization/workspace schema. Blocked on owner decision re:
-  new runtime dependencies (SQLAlchemy/Alembic/Postgres driver) required
-  by its own task contract. See "Owner actions — current" above, dated
-  2026-09-16. Not claimed, no code written, no dependency installed.
+(empty — FTF-0102's new-runtime-dependency ask was resolved 2026-09-18 by
+live owner confirmation (option 1: SQLAlchemy + Alembic + a Postgres
+driver, matching the master architecture table as written) — see
+PROGRESS.md's matching entry for the full record. FTF-0102 is now
+dependency-ready, not yet claimed.)
 
 ## Done (certified + promoted via L4)
 - [x] FTF-0001 — Initialize monorepo. CERTIFIED 2026-09-15 (control-plane
