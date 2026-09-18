@@ -2,9 +2,11 @@
 Updated: 2026-09-18 (relay shift) — merged current `main` into PR #90's
   branch (`claude/wizardly-fermat-e9tyvg`) and resolved the two
   tracking-doc conflicts per the prior Control-plane review's own
-  instruction (see "## Active" below); no code rework. FTF-1601 remains
-  open/uncertified (PR #90), FTF-0101 remains blocked on a
-  new-runtime-dependency ask; no other unblocked, unclaimed work exists.
+  instruction; CI reconfirmed green on the real final head (`b601ad1`,
+  all 6 jobs, `mergeable_state: clean`) — no code rework. FTF-1601/PR #90
+  is now ready for a fresh Control-plane L2 review (see "## Active"
+  below). FTF-0101 remains blocked on a new-runtime-dependency ask; no
+  other unblocked, unclaimed work exists.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -132,10 +134,21 @@ clone, not a real defect), `status.py`/`product_truth_check.py`
 (18/300 · 0 product-true, unchanged), `verify_release.py` (18/300, zero
 FAILED, matching `main`'s pre-existing state) — all clean, confirming
 this merge changed no evidence, only resolved doc conflicts. Pushed as
-merge commit `9ec50fc` (`f104ef6` + `origin/main`'s `1e6cd77`); CI
-(run 35371223072) started fresh on the new head — awaiting confirmation
-it stays green before this is ready for re-certification. Full review:
-docs/certifications/queue.md's
+merge commit `9ec50fc` (`f104ef6` + `origin/main`'s `1e6cd77`), then a
+second commit `b601ad1` recording this shift's own doc updates (which
+superseded the first CI run with a fresh one on the real final head).
+Subscribed this session to PR #90's activity rather than busy-polling (no
+`gh`/direct GitHub API access in this environment); the subscription
+delivered `check_suite.completed` for both heads. **CI reconfirmed green
+on the real final head `b601ad1`: all 6 jobs (`gate`,
+`docker-local-stack-integration`, `organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) `completed`/`success`
+(run `35371304954`); `mergeable_state` is now `clean` (no conflict); no
+open review threads (`get_reviews` empty). The structural blocker is
+fully cleared — FTF-1601/PR #90 is ready for a fresh, independent
+Control-plane L2 review; this relay session does not certify it itself,
+per Law 4.** Full review: docs/certifications/queue.md's
 "2026-09-18 — NOT CERTIFIED (structural blocker, content sound)" entry.
 Do not re-claim FTF-1601 as a new task — this is a continuation of the
 same PR #90.)

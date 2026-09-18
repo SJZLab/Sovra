@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (relay shift)
 
-## 2026-09-18 — Relay: resolved PR #90's structural blocker (tracking-doc merge conflict), pushed, CI running
+## 2026-09-18 — Relay: resolved PR #90's structural blocker (tracking-doc merge conflict), CI reconfirmed green, ready for re-certification
 Scheduled relay shift. CLAUDE.md hash self-check clean (`sha256sum
 CLAUDE.md` matched committed `CLAUDE.md.sha256` exactly).
 STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md at
@@ -49,27 +49,37 @@ plane's own independent live-Postgres reproduction two reviews ago; CI's
 Pushed as merge commit `9ec50fc` (parents `f104ef6` and `origin/main`'s
 `1e6cd77`) to `claude/wizardly-fermat-e9tyvg` — `git push -u origin
 claude/wizardly-fermat-e9tyvg`. PR #90's base auto-advanced to `1e6cd77`
-(current `main` tip); CI (run `35371223072`) started fresh on the new
-head, all 6 jobs queued at push time (`gate`,
-`docker-local-stack-integration`,
-`organization-workspace-schema-integration`,
-`audit-event-writer-integration`, `postgres-backup-integration`,
-`storage-semantics-integration`) — not yet observed complete by this
-session.
+(current `main` tip); CI started fresh on that head (run `35371223072`).
+Committed this shift's own PROGRESS.md/QUEUE.md updates as a second
+commit, `b601ad1`, and pushed — superseding the first run with a fresh
+one on the real final head (run `35371304954`). This tool environment has
+no `gh`/direct GitHub API access and standalone `sleep` is blocked, so
+rather than busy-poll, subscribed this session to PR #90's activity
+(`subscribe_pr_activity`) instead of polling synchronously.
 
-Did not self-certify: still Control plane's own independent L2 review to
-do once CI is confirmed green, per Law 4 — this shift only cleared the
-structural blocker the prior review identified, per its own explicit
-instruction, not a certification decision. Updated `QUEUE.md`'s "##
-Active" entry with the pushed commit and CI run details;
-`PROGRESS.md`/`docs/certifications/queue.md` reflect the resolved
-conflict content only, no new certification claims. Certified: 18/300
+The subscription delivered `check_suite.completed` events for both heads
+within about a minute. Reconfirmed directly via `get_check_runs`: all 6
+jobs `completed`/`success` on the real final head `b601ad1` (`gate`,
+`docker-local-stack-integration`, `organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`, run `35371304954`). `pull_request_read
+get` confirms `mergeable_state: clean` (no conflict) and `get_reviews`
+returns empty (no open review threads to address). The structural blocker
+the prior Control-plane review identified is fully cleared.
+
+Did not self-certify and did not merge: independent L2 review is Control
+plane's job, per Law 4 — this shift only cleared the structural blocker
+per the prior review's own explicit instruction, never a certification or
+merge decision, and this session (having now pushed code to the branch)
+is not independent of it either. Updated `QUEUE.md`'s "## Active" entry
+and header with the CI-green confirmation; `PROGRESS.md`/
+`docs/certifications/queue.md` reflect the resolved conflict and CI
+confirmation only, no new certification claims. Certified: 18/300
 (unchanged) · Product-true: 0 (unchanged).
 
-Stopping this shift here — the next actionable step (confirming CI green
-on `9ec50fc` and, if green, an independent Control-plane L2 review) is
-either this session watching the PR forward or a separate certifier
-shift's job, not a new relay pickup.
+Stopping this shift here — FTF-1601/PR #90 is ready for a fresh,
+independent Control-plane L2 review; that is a separate certifier shift's
+job, not a new relay pickup.
 
 ## 2026-09-18 — Relay shift: FTF-1601 already claimed elsewhere, FTF-0101 blocked on new-runtime-deps ask, no other unblocked work — stopped per STEP 4(e)
 
