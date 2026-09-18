@@ -53,16 +53,18 @@ none a live-wired product-runtime path, so all eighteen are CERTIFIED
 without counting toward product-true).
 
 ## Owner actions — current
-- 2026-09-15: One setup gap remains — no *durable* trigger tooling
-  available to create the 2h relay / watchdog triggers. See CLAUDE.md
-  "Setup gaps". Owner must create them (or grant a control-plane session
-  trigger tooling and re-run Groundwork S1.7/S1.8). Note: this shift's
-  own session was itself invoked by some external schedule (its prompt
-  says "started automatically by a schedule"), so a trigger mechanism
-  exists for the relay cadence at minimum — not confirming this gap
-  resolved without evidence of the watchdog trigger and the 08:30/19:30
-  report cadence too, per the prior watchdog finding on unverified
-  "gap resolved" claims. Owner: please confirm what's actually configured.
+- 2026-09-18 (live owner conversation, updated from the 2026-09-15 item):
+  the owner directly confirmed receiving two summary emails landing
+  around 08:30 and 19:30 (Asia/Riyadh) — real, first-hand confirmation
+  the report cadence is configured and delivering as designed, resolving
+  that half of the setup gap. STILL OPEN, narrower now: no *durable*
+  `create_trigger`/`fire_trigger` tooling has been confirmed available to
+  any session, so no session can independently inspect the live trigger
+  config (confirm the 2h relay cadence specifically, versus just
+  observing that shifts keep firing) or recreate it if it ever silently
+  stops/drifts. See CLAUDE.md "Setup gaps" for the full record. Owner:
+  grant a control-plane session trigger tooling (or confirm by design
+  none will be granted) to close this fully.
 - 2026-09-18 (this shift): `git log` shows commit `b25ce80` ("Control
   plane: FTF-R017 CERTIFIED", 2026-09-17) landed directly on `main` as a
   single-parent commit committed by `Claude <noreply@anthropic.com>` —

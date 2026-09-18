@@ -49,15 +49,21 @@ CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   GIT_CONNECTOR/GIT_WRITE above for the current, evidence-based state. A
   bare control-plane session without that connector still cannot push;
   that's an intentional separation of proposer/executor roles, not a gap.
-- STILL OPEN — no `create_trigger`/`fire_trigger` tooling has been confirmed
-  available to any session. Scheduled relay shifts are demonstrably firing
-  (this file's own edits are evidence something is scheduling them), but
-  no session has independently confirmed the watchdog trigger and the
-  08:30/19:30 Asia/Riyadh report cadence are actually configured as
-  designed in S0.3/S1.7/S1.8, rather than assumed. Owner: please confirm
-  what's actually configured, or grant a control-plane session trigger
-  tooling and re-run Groundwork S1.7/S1.8. Tracked in QUEUE.md "Owner
-  actions — current."
+- PARTIALLY RESOLVED (2026-09-18, live owner conversation): the owner
+  directly confirmed receiving two summary emails landing around 08:30
+  and 19:30 (Asia/Riyadh) — real, first-hand evidence the report cadence
+  is actually configured and delivering as designed in S1.8, not merely
+  assumed from indirect signals. This resolves the report-cadence half of
+  the gap. STILL OPEN, narrower than before: no `create_trigger`/
+  `fire_trigger` tooling has been confirmed available to any session, so
+  no session can independently inspect the live trigger config itself
+  (confirm the *relay* cadence is really 2h, not just that shifts keep
+  firing), nor recreate it if it ever silently stops or drifts. The owner
+  confirming they receive the emails is evidence the schedule works
+  today; it does not grant any session the access needed to audit or
+  recover it. Owner: grant a control-plane session trigger tooling (or
+  confirm none is available by design) to close this fully. Tracked in
+  QUEUE.md "Owner actions — current."
 - RESOLVED (PR #10, 2026-09-15/16): SOURCE_ROOTS is filled in
   scripts/product_truth_check.py from FTF-0001's real layout — see
   SOURCE_ROOTS above. product_truth_check.py still fails closed if any

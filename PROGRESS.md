@@ -1,5 +1,58 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (relay shift)
+Updated: 2026-09-18 (Control plane, live owner conversation)
+
+## 2026-09-18 — Control plane: report-cadence half of the 2026-09-15 trigger-tooling setup gap resolved by live owner confirmation
+This is a live, interactive Claude Code session with the account holder
+(samer.zakaria@gmail.com) — not a scheduled/automated turn. Same
+qualifying condition the 2026-09-18T00:00:00Z FTF-0102 entry above this
+one required before treating any approval/confirmation as real: a live
+conversation, or a GitHub comment/review from the owner's own account.
+This entry is the former.
+
+Background: CLAUDE.md's "Setup gaps" and QUEUE.md's "Owner actions —
+current" both carried a 2026-09-15 item stating no session had
+independently confirmed the watchdog trigger and the 08:30/19:30
+Asia/Riyadh report cadence were actually configured as designed in
+S0.3/S1.7/S1.8 — only that *some* scheduling mechanism existed, evidenced
+indirectly by scheduled sessions firing at all (including this session's
+own certifier turn earlier today, invoked by a GitHub webhook rather than
+a time-based trigger).
+
+The owner, live in this conversation, was asked directly what the two
+emails they mentioned receiving actually were, and confirmed: two
+summary emails landing around 08:30 and 19:30 (Asia/Riyadh) — matching
+S1.8's documented report cadence exactly. This is real, first-hand
+confirmation the report cadence is configured and delivering as
+designed, not an inference from indirect signals.
+
+What this does and does not resolve, kept precise per Law 2 (never
+inflate tracker beyond what evidence supports):
+- RESOLVED: the report-cadence half of the gap — the 08:30/19:30
+  Asia/Riyadh emails are real and confirmed by the owner directly.
+- STILL OPEN, narrower than before: no `create_trigger`/`fire_trigger`
+  tooling has been confirmed available to any session. The owner
+  confirming they receive the emails is evidence the schedule works
+  today; it is not the same as any session having the access needed to
+  independently inspect the live trigger config (confirm the 2h relay
+  cadence specifically, not just that shifts keep firing) or to recreate
+  it if it ever silently stops or drifts. That access gap is unchanged.
+
+Actions taken this turn:
+- Updated CLAUDE.md's "Setup gaps" entry from "STILL OPEN" to
+  "PARTIALLY RESOLVED", recording the owner's confirmation and the
+  narrowed remaining gap. Recomputed `CLAUDE.md.sha256` to match (CI
+  fails the build otherwise).
+- Updated QUEUE.md's "Owner actions — current" 2026-09-15 item to match,
+  dated 2026-09-18. Not removed outright, per "remove it the moment the
+  owner responds... never leave resolved asks in item history" — only
+  the resolved half is closed out in the text; the still-open half stays
+  as a live, current ask.
+- Opened as a pull request per CLAUDE.md's `BRANCH_PROTECTION`
+  instruction (docs-only, no code/gate changes).
+
+No source code changed this turn — decision-recording and partial
+owner-ask resolution only, same category CLAUDE.md's "Do without asking"
+list already covers for tracking-file edits.
 
 ## 2026-09-18 — Relay shift: PR #90's structural blocker already fixed by a prior shift, confirmed live; nothing new for relay to work — stopped per STEP 4(a)/(e)
 
