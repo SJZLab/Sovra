@@ -1,12 +1,14 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (Control plane certifier shift) — independently
-  certified FTF-0102 (PR #83, merged as `1874932`) per Law 4. See
-  "## Done" below and docs/certifications/ledger.md for full evidence.
+Updated: 2026-09-18 (Relay shift) — claimed and implemented FTF-0104
+  (Audit event writer), submitted PROVISIONAL. Closed two stale/superseded
+  PRs (#82, #84) left open from before FTF-0102's real certification. See
+  "## Provisional" below and PROGRESS.md for full evidence.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 17/300 (main; FTF-0102 CERTIFIED 2026-09-18, PR #83 merged as
-`1874932` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`1874932` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0104,
+this shift) · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017 and FTF-0102
@@ -67,12 +69,64 @@ product-true).
   otherwise a correct, already-verified certification); flagging so it
   isn't repeated silently.
 ## Active (relay works this)
-(empty — no dependency-ready, non-certified task remains unblocked this
-shift. FTF-0102 was the sole dependency-ready item and is now certified;
-see "## Done" below.)
+(empty — FTF-0104 claimed and submitted PROVISIONAL this shift, see
+"## Provisional" below. Two other tasks became dependency-ready once
+FTF-0102 certified — FTF-0104 (this shift) and FTF-1601 (Postgres
+backup, deps FTF-0004/FTF-0102) — not claimed this shift.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty — FTF-0102 certified this shift, see "## Done" below.)
+- FTF-0104 — Audit event writer. Implemented this shift:
+  `apps/api/app/auth/audit_event_writer.py` (AuditEvent ORM model,
+  Section 6.24; `redact_details()` secret-shaped key/value redaction per
+  Section 46; `write_audit_event()` adds but never commits, so the
+  caller's own transaction boundary decides both-or-neither) +
+  `apps/api/alembic/versions/0002_audit_event_writer.py` (real forward
+  migration chained onto FTF-0102's `0001` as the single serialized
+  head; FORCE ROW LEVEL SECURITY scoped to the same
+  `app.current_organization_id` context; grants `sovra_app` SELECT+INSERT
+  only — never UPDATE/DELETE — enforcing append-only at the database
+  level, this task's own negative_acceptance clause). Evidence:
+  `tests/tasks/test_ftf_0104.py` (26 no-DB checks, two real fault
+  injections against the migration file on disk) +
+  `tests/integration/test_audit_event_writer.py` (real live-Postgres
+  proof: committed mutation+audit-event pair visible after commit; the
+  same pair in a rolled-back transaction genuinely absent — "failed
+  transaction cannot emit misleading success"; `sovra_app`'s own
+  UPDATE/DELETE attempts against an existing audit row rejected by the
+  database; tenant isolation — this sandbox has no container-registry
+  egress, same finding as FTF-0004/FTF-R017/FTF-0102, so produced locally
+  against a directly-installed PostgreSQL 16 cluster, including a real
+  fault injection widening the GRANT to include UPDATE/DELETE, which made
+  exactly 3 append-only checks genuinely fail; restored byte-identical,
+  re-ran clean). Wired into CI: `.github/workflows/ci.yml` gained the
+  `FTF-0104 negative-test proof` gate step and a new
+  `audit-event-writer-integration` job (real `services: postgres`
+  container, same pattern as `organization-workspace-schema-integration`).
+  Full regression clean in this same shift's environment: `ruff`/`mypy`/
+  `eslint`/`tsc`/`prettier`/`vitest`/`pytest` all clean; every existing
+  task test (FTF-0001 through FTF-0102) still passes, including
+  FTF-0102's own real-Postgres integration test re-run clean;
+  `validate_spec.py --strict` clean (a transient `stale_commit` defect
+  seen mid-shift traced to this session's own shallow clone, confirmed
+  spurious after `git fetch --unshallow`); `verify_task.py --task
+  FTF-0104 --stage task` correctly reports `BLOCKED` (no merged
+  verification evidence yet — expected at PROVISIONAL stage, same as
+  FTF-0102's own precedent before its L2 certification added its
+  `spec/verification-map.json` entry); `product_truth_check.py`
+  legitimately `0/0`; `scripts/status.py` unchanged at `17/300 certified`
+  (PROVISIONAL, not yet certified). Disclosed, not hidden: this task's
+  initial packet listed `contracts:01` in `shared_lock_required`, but its
+  actual acceptance/negative_acceptance clauses and `files` list require
+  no HTTP-exposed contract surface (no live FastAPI app exists yet, same
+  scope limit FTF-0102 itself already disclosed for its own 0 OpenAPI
+  paths) — did not touch `packages/contracts/{jsonschema,openapi}/01-*`;
+  flagged in `docs/spec-matrix.yaml`'s own notes for independent review
+  rather than silently assumed correct. Set `docs/spec-matrix.yaml`
+  FTF-0104 to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` — did not touch `spec/verification-map.json`,
+  `spec/tasks.json` or `docs/implementation/TRACKER.json`, which get
+  their FTF-0104 entries from Control plane's own `sync_certified_status()`
+  run at L2 certification, per Law 4. Full narrative in PROGRESS.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

@@ -1,5 +1,191 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Control plane certifier shift)
+Updated: 2026-09-18 (Relay shift)
+
+## 2026-09-18 — Relay shift: closed two stale/superseded PRs, claimed and implemented FTF-0104 (Audit event writer), submitted PROVISIONAL
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly — no
+hash-mismatch stop condition.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/
+`BLOCKER.md` fresh (this is a fresh scheduled-relay session with no prior
+context in this conversation). `BLOCKER.md` had no open entry. The
+designated branch `claude/wizardly-fermat-inchhv` did not exist on
+`origin` yet; created it from `main` at `06746ed` (the prior shift's
+FTF-0102 certification merge, PR #85) — nothing landed on `main` since.
+
+STEP 0.2: `cognee-cli` not found on `PATH` — text-search fallback active,
+unchanged from every prior shift.
+
+**GitHub state check (before trusting QUEUE.md's "Active empty" claim):**
+found two open PRs neither reflected in the tracking docs: #82 ("No
+actionable work this shift") and #84 ("FTF-0102: record PR #83 merged
+directly by account owner"). Investigated #84 directly rather than taking
+its own claim at face value, since it contradicted PROGRESS.md's already-
+recorded account of an independent Control-plane certification (PR #85):
+read the real commit metadata — `1874932` (PR #83's merge) has committer
+`GitHub <noreply@github.com>` (a genuine API/button merge, not a direct
+push), and the very next commit `91866ec`, committed six minutes after
+PR #84 was opened by a *different* session
+(`session_01WYf49qFkGAtWXsTMpiKbxu`, no ID overlap with PR #84's own
+`session_01FLEHnA2RjFZB9RftzV4Lso` — the FTF-0102 producer session), is
+the real, thorough, independent L2 certification already on `main` via
+PR #85. PR #84's premise (that the merge bypassed review) reflects a
+misreading of GitHub's merge attribution — an API-driven merge using the
+repo's connected account shows that account as the merger regardless of
+whether a human or an authenticated session performed it — not an actual
+review gap; the real review happened six minutes later and is already
+merged. Both PRs' diffs were also `mergeable_state: dirty` against
+current `main` (real conflicts, fully superseded content). Closed both
+with explanatory comments, per this repo's own PR #67 precedent for
+closing stale, unmerged, unactioned claims once superseded by real
+evidence (`docs/certifications/queue.md`/PROGRESS.md's 2026-09-18T00:00Z
+entry) — no content lost, since `main` already carries the correct,
+more current state.
+
+STEP 1: independently recomputed queue readiness rather than trusting
+QUEUE.md's own "Active empty" claim (written before this recomputation) —
+loaded all 300 tasks via `scripts.spec_verification.load_tasks()` and
+`scripts.task_claim.load_certification_states()`, cross-checked every
+non-CERTIFIED task's dependencies against the 17 CERTIFIED entries now on
+`main` (FTF-0102 certified since the last time this queue was
+recomputed). Result: three dependency-ready, non-certified tasks —
+FTF-0101 (OIDC login), FTF-0104 (Audit event writer), FTF-1601 (Postgres
+backup) — where QUEUE.md's stale copy claimed zero.
+
+Pulled each task's real DoD via `tools/r1_handoff.py packet <id> --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` before claiming anything. FTF-0101
+(OIDC login) requires a live FastAPI app plus real OIDC client libraries
+— new runtime dependencies, the same CLAUDE.md "new runtime deps"
+ask-first hard stop FTF-0102 itself hit, and no live owner is present in
+this scheduled/automated shift to grant it — not claimed. FTF-0104
+(Audit event writer) needs only SQLAlchemy/Alembic, already
+owner-approved and installed for FTF-0102 — no new ask-first item.
+Claimed FTF-0104.
+
+STEP 2 (PEV):
+- **P:** `tools/r1_handoff.py packet FTF-0104` resolved the real
+  contract: `database_changes` requires the task's own forward Alembic
+  migration with tenant/composite constraints/RLS (Sections 6/65/71);
+  acceptance requires every committed sensitive mutation to emit
+  append-only actor/resource/version/request evidence; negative_
+  acceptance requires that a failed transaction cannot emit misleading
+  success, and that a redacted audit row cannot be edited by the normal
+  app role. Inspected the real FTF-0102 migration/module first
+  (`apps/api/alembic/versions/0001_org_workspace_schema.py`,
+  `apps/api/app/auth/organization_workspace_schema.py`) to reuse its
+  exact RLS/role/tenant-context conventions rather than inventing a
+  parallel pattern.
+- **E:** wrote `apps/api/app/auth/audit_event_writer.py` (`AuditEvent`
+  ORM model sharing FTF-0102's `Base`/metadata so both tables live in one
+  Alembic chain; `redact_details()` — a recursive, non-mutating
+  redaction of secret-shaped keys *and* secret-shaped values, i.e. a
+  Bearer/JWT-looking string is redacted even under an unexpected key
+  name; `write_audit_event()`, which only `session.add()`s — it
+  deliberately never commits, so the caller's own transaction boundary
+  decides both-or-neither) and
+  `apps/api/alembic/versions/0002_audit_event_writer.py` (chained onto
+  FTF-0102's `0001` as the single serialized head — `database_changes`'s
+  own "Serialize migration chain" requirement; FORCE ROW LEVEL SECURITY
+  scoped to the same `app.current_organization_id` context; grants
+  `sovra_app` `SELECT, INSERT` only — no `UPDATE`, no `DELETE` — so
+  "audit events are append-only" (Section 6.24) is enforced by the
+  database's own GRANT surface, not application convention). Ran the
+  real migration against this sandbox's own directly-installed
+  PostgreSQL 16 (same no-container-registry-egress finding as
+  FTF-0004/FTF-R017/FTF-0102) and verified the real grants/RLS/policy
+  directly via `psql \dp`/`pg_policy` before writing a single test
+  against them. Wrote `tests/tasks/test_ftf_0104.py` (26 no-DB checks:
+  domain-shape validation, `redact_details` correctness — including
+  nested structures and secret-shaped values under unexpected keys —
+  migration static checks, two real fault injections against the
+  migration file on disk) and
+  `tests/integration/test_audit_event_writer.py` (the real live-Postgres
+  proof).
+- **V — shown able to fail (Law 1), not just asserted:** two independent
+  fault injections against a scratch copy of the tracked migration file,
+  each restored byte-identical and re-run clean afterward:
+  1. Removed `FORCE ROW LEVEL SECURITY` — the no-DB suite's own check
+     failed for real.
+  2. Widened the `GRANT` to `SELECT, INSERT, UPDATE, DELETE` and ran the
+     real migration against a fresh scratch database — exactly the 3
+     append-only negative_acceptance checks in the live-Postgres suite
+     failed for real (`UPDATE rejected`, `DELETE rejected`, `row
+     survives unchanged`), none of the other checks in that same run
+     were affected. Restored byte-identical, re-ran clean.
+  Full regression in this same shift's environment (not a fresh
+  worktree, but the same real toolchain/state used throughout): `uv run
+  ruff check`/`ruff format --check`/`mypy .` clean (62 source files);
+  `pnpm run lint`/`typecheck`/`format:check` clean; every existing task
+  test (FTF-0002 through FTF-R017) still passes unmodified, including
+  FTF-0102's own two test files re-run clean against a fresh local
+  Postgres database (no regression to its RLS/tenant-isolation evidence);
+  `uv run pytest tests/unit` (3 passed), `pnpm exec vitest run` (2
+  passed), `scripts/check_test_harness.py` clean; `scripts/
+  validate_spec.py --strict` clean (a transient `stale_commit` defect
+  seen mid-shift traced to this session's own shallow clone — this was a
+  fresh session with no prior `git fetch --unshallow`, not a code defect
+  — confirmed spurious immediately after unshallowing); `verify_task.py
+  --task FTF-0104 --stage task` correctly reports `BLOCKED` ("no merged
+  verification evidence yet" — expected at PROVISIONAL stage, identical
+  to FTF-0102's own state before its L2 certification added the
+  `spec/verification-map.json` entry, not a defect this shift needs to
+  fix); `product_truth_check.py --fail-on-unwired` legitimately `0/0`
+  (`proving_symbol: ''` — no live FastAPI app imports
+  `audit_event_writer.py` yet, same established, disclosed pattern as
+  every other CERTIFIED task); `scripts/status.py` unchanged at `17/300
+  certified` (this task is PROVISIONAL, not yet certified).
+
+  Also found and fixed a real defect in this shift's own drafted
+  `docs/spec-matrix.yaml` notes text before it could reach `main`: two
+  instances of a bare `word: ` sequence inside the unquoted YAML plain
+  scalar (`"...checks: domain-shape..."`, `"...proof: a committed..."`)
+  broke `yaml.safe_load` for the *entire file* — caught by this shift's
+  own full regression run (`tests/tasks/test_ftf_h034.py` failed with a
+  raw `yaml.scanner.ScannerError`, not a decorative false green). Fixed
+  by rewording both to use `--` instead of `:`, re-verified `yaml.safe_
+  load` parses the whole file clean and `test_ftf_h034.py` passes again.
+  Disclosed, not silently worked around: this task's initial packet
+  listed `contracts:01` under `shared_lock_required`, but neither its
+  concrete `files` list nor its acceptance/negative_acceptance clauses
+  require touching `packages/contracts/{jsonschema,openapi}/01-*` — no
+  live FastAPI app exists yet to expose an "audit read API" route (same
+  disclosed scope limit FTF-0102 itself already established for its own
+  0 OpenAPI paths). Did not edit those contract files; flagged this
+  judgment call in `docs/spec-matrix.yaml`'s own notes for independent
+  Control-plane review rather than assuming it silently correct.
+
+Wired into CI: `.github/workflows/ci.yml` gained the `FTF-0104
+negative-test proof` step in the `gate` job (`uv run`, matching
+FTF-0102's own convention since this is the second task with a real
+third-party runtime dependency) and a new `audit-event-writer-
+integration` job using GitHub Actions' own `services: postgres`
+container, mirroring `organization-workspace-schema-integration`'s
+pattern exactly.
+
+Set `docs/spec-matrix.yaml` FTF-0104 to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN` / `evidence_hash:
+PENDING_COMMIT` (to be corrected to this shift's real implementation
+commit hash once committed — matches FTF-0102's own convention of
+pinning to the implementation commit, not a later merge commit) — did
+not touch `spec/verification-map.json`, `spec/tasks.json` or
+`docs/implementation/TRACKER.json`, which get their FTF-0104 entries
+from Control plane's own `sync_certified_status()` run at L2
+certification, per Law 4 (producer never certifies own work). Updated
+`QUEUE.md` (FTF-0104 moved into `## Provisional` with the full evidence
+narrative; `## Active` and the `Status` header updated; closed-PR note
+added).
+
+STEP 3: this entry itself, written before any compaction, per the
+standing instruction.
+
+STEP 4: not a stop condition yet — will push this branch and open a PR
+(`[relay] FTF-0104: ...`) as PROVISIONAL and append to
+`docs/certifications/queue.md` before stopping at the STEP 4(a)-equivalent
+(L1-PROVEN, awaiting Control plane L2 certification and the L4 gate).
+
+Certified: 17/300 (unchanged — this shift's own work is PROVISIONAL, not
+yet certified). Provisional: 1 (FTF-0104, this shift). Product-true: 0
+(unchanged).
 
 ## 2026-09-18 — Control plane: FTF-0102 (PR #83) independently certified
 Scheduled certifier shift. `docs/certifications/queue.md` had exactly one
