@@ -1,28 +1,25 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (this relay shift) — claimed FTF-0102 (the sole
-  dependency-ready item, unblocked earlier the same day by live owner
-  confirmation — see the prior "Owner actions" record in PROGRESS.md),
-  implemented and submitted PROVISIONAL. See "## Provisional" below and
-  docs/certifications/queue.md for full evidence.
+Updated: 2026-09-18 (Control plane certifier shift) — independently
+  certified FTF-0102 (PR #83, merged as `1874932`) per Law 4. See
+  "## Done" below and docs/certifications/ledger.md for full evidence.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 16/300 (main; FTF-R017 CERTIFIED 2026-09-17, PR #75 merged as
-`aacd745` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0102, this shift — see "## Provisional" below) · Blocked: 0
+Certified: 17/300 (main; FTF-0102 CERTIFIED 2026-09-18, PR #83 merged as
+`1874932` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
-FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015 and FTF-R017 all have no
-proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI tooling,
-FTF-0003 is test-harness tooling, FTF-0004 is local-stack bootstrap/health
-tooling, FTF-0005 is a configuration module with no live caller yet,
-FTF-0006 is an observability seam with no live FastAPI app or Temporal
-workflow to instrument yet, FTF-H001 is the spec/gate verifier tooling
-itself, FTF-R001 is an architecture/version-lock schema freeze with no
-live product-runtime caller yet, FTF-H002 is a preflight/release-scope-
-freeze layer with no live product-runtime caller yet, FTF-H028 is the
-release-evidence-gate/CI-aggregator tooling itself, `workflow_dispatch`-only
-and never run by the relay, FTF-H034 is the task-claim scheduler/
+FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017 and FTF-0102
+all have no proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI
+tooling, FTF-0003 is test-harness tooling, FTF-0004 is local-stack
+bootstrap/health tooling, FTF-0005 is a configuration module with no live
+caller yet, FTF-0006 is an observability seam with no live FastAPI app or
+Temporal workflow to instrument yet, FTF-H001 is the spec/gate verifier
+tooling itself, FTF-R001 is an architecture/version-lock schema freeze
+with no live product-runtime caller yet, FTF-H002 is a preflight/release-
+scope-freeze layer with no live product-runtime caller yet, FTF-H028 is
+the release-evidence-gate/CI-aggregator tooling itself, `workflow_dispatch`-
+only and never run by the relay, FTF-H034 is the task-claim scheduler/
 tracker-sync tooling itself, with no live multi-agent dispatch harness
 wiring it into a running caller yet, FTF-1810 is the release-qualification
 aggregator tooling itself — run against the real repo it honestly reports
@@ -35,11 +32,13 @@ execution/orchestration tooling itself (workspace manager, executor
 adapter, task orchestrator), with no live multi-agent dispatch harness
 wiring it into a running caller yet, FTF-R011 is a release-matrix
 governance/validator layer with no Factory production service importing
-it, and FTF-R017 is a storage/OSS-dependency-lifecycle qualification
-layer (SigV4 client, component-maintenance inventory, storage-profile
+it, FTF-R017 is a storage/OSS-dependency-lifecycle qualification layer
+(SigV4 client, component-maintenance inventory, storage-profile
 qualification) with no live Factory production service importing
-`storage_semantics_client.py` yet — none a live-wired product-runtime
-path, so all sixteen are CERTIFIED without counting toward
+`storage_semantics_client.py` yet, and FTF-0102 is the Organization/
+Workspace ORM/migration/RLS layer with no live FastAPI app importing
+`organization_workspace_schema.py` yet — none a live-wired product-runtime
+path, so all seventeen are CERTIFIED without counting toward
 product-true).
 
 ## Owner actions — current
@@ -53,25 +52,27 @@ product-true).
   resolved without evidence of the watchdog trigger and the 08:30/19:30
   report cadence too, per the prior watchdog finding on unverified
   "gap resolved" claims. Owner: please confirm what's actually configured.
+- 2026-09-18 (this shift): `git log` shows commit `b25ce80` ("Control
+  plane: FTF-R017 CERTIFIED", 2026-09-17) landed directly on `main` as a
+  single-parent commit committed by `Claude <noreply@anthropic.com>` —
+  not a GitHub PR merge (contrast `aacd745`, PR #75's actual two-parent
+  merge commit, committer `GitHub <noreply@github.com>`). This is exactly
+  the direct-push pattern `CLAUDE.md`'s own `BRANCH_PROTECTION` note
+  (dated 2026-09-15) says it exists to close, recurring on 2026-09-17
+  after that note was written. This shift's own tracking-doc/certification
+  updates were instead opened as a pull request and merged through the
+  normal GitHub flow, per `CLAUDE.md`'s current instruction. Owner: no
+  action required unless you want the prior
+  direct-to-main commit's history rewritten (not recommended — it is
+  otherwise a correct, already-verified certification); flagging so it
+  isn't repeated silently.
 ## Active (relay works this)
-(empty — FTF-0102 claimed and submitted this shift, see "## Provisional"
-below. No other task is dependency-ready this shift.)
+(empty — no dependency-ready, non-certified task remains unblocked this
+shift. FTF-0102 was the sole dependency-ready item and is now certified;
+see "## Done" below.)
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0102 — Organization/workspace tenant schema. Commit
-  `82c75f42231c32c2fa45988bb36e805534548ed1` on branch
-  `claude/wizardly-fermat-szi9tm`. proof_state=L1-PROVEN. Real forward
-  Alembic migration (Organization/Workspace, tenant-composite unique
-  constraint, FORCE ROW LEVEL SECURITY with a distinct NOSUPERUSER/
-  NOBYPASSRLS `sovra_app` role) plus the frozen phase-01 contract files
-  (zero OpenAPI paths — no live FastAPI app exists yet). First real
-  runtime dependency in `apps/api` (sqlalchemy/alembic/psycopg),
-  owner-approved 2026-09-18. Full evidence, including a real fault
-  injection (granting `sovra_app` BYPASSRLS caught 6 real failures) run
-  against a directly-installed local PostgreSQL 16 (this sandbox has no
-  container-registry egress): docs/certifications/queue.md. Awaiting
-  Control plane L2 review per Law 4 — not self-certified. PR: to be
-  opened against `main` from `claude/wizardly-fermat-szi9tm`.
+(empty — FTF-0102 certified this shift, see "## Done" below.)
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -379,6 +380,34 @@ below. No other task is dependency-ready this shift.)
   (`ruff`/`mypy`/`pnpm lint`/`typecheck`/`format:check`) clean. Ran
   `sync_certified_status()` — diff limited to exactly FTF-R017's own
   `status`/`evidence` fields. Full entry: docs/certifications/ledger.md.
+- FTF-0102 — Organization/workspace schema. CERTIFIED 2026-09-18, PR #83
+  (merge commit `18749323d091a6f6a23be2e9510692035911ac25`). Independent
+  re-verification (session-ID clean against producer session
+  `session_01FLEHnA2RjFZB9RftzV4Lso`): read the full delivered diff
+  directly; re-ran both delivered test suites against a real,
+  directly-installed local PostgreSQL 16 cluster (no container-registry
+  egress in this sandbox, same FTF-0004/FTF-R017 finding); an own fault
+  injection matching the producer's own claim exactly (granting
+  `sovra_app` `BYPASSRLS` caught the same 6 real failures, restored
+  byte-identical); a second, independent fault injection (breaking the
+  `workspaces` policy's `WITH CHECK` to `true`) surfaced a non-blocking
+  observation about Postgres's own SELECT-policy/RETURNING interaction
+  masking that specific fault for the ORM-only code path that actually
+  exists — recorded in docs/certifications/ledger.md, not a live defect;
+  read the real `organization-workspace-schema-integration` CI job log
+  directly on the actual merged head (genuine Postgres 16.15 container,
+  real RLS/unique-constraint errors); `tools/r1_handoff.py packet
+  FTF-0102` confirmed both acceptance clauses and the negative_acceptance
+  clause map to specific, independently re-run tests; `validate_spec.py
+  --strict` clean (a transient `stale_commit` defect traced to this
+  review's own shallow clone, not real), `verify_task.py --task FTF-0102
+  --stage task` -> `PASS`, `product_truth_check.py` legitimately `0/0`,
+  full regression (`ruff`/`mypy`/`pnpm lint`/`typecheck`/`format:check`/
+  every existing task test/`pytest`/`vitest`) clean. Ran
+  `sync_certified_status()` — diff limited to exactly FTF-0102's own
+  `status`/`evidence` fields. `verify_release.py` non-inflated (`16/300`
+  before, `17/300`/zero FAILED after). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -406,8 +435,8 @@ not merely because the task looked title-only elsewhere.
 (empty — FTF-0102's new-runtime-dependency ask was resolved 2026-09-18 by
 live owner confirmation (option 1: SQLAlchemy + Alembic + a Postgres
 driver, matching the master architecture table as written) — see
-PROGRESS.md's matching entry for the full record. FTF-0102 is now
-dependency-ready, not yet claimed.)
+PROGRESS.md's matching entry for the full record. FTF-0102 has since been
+implemented, submitted and CERTIFIED this same day — see "## Done" above.)
 
 ## Done (certified + promoted via L4)
 - [x] FTF-0001 — Initialize monorepo. CERTIFIED 2026-09-15 (control-plane

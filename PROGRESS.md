@@ -1,5 +1,82 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (this relay shift)
+Updated: 2026-09-18 (Control plane certifier shift)
+
+## 2026-09-18 — Control plane: FTF-0102 (PR #83) independently certified
+Scheduled certifier shift. `docs/certifications/queue.md` had exactly one
+PROVISIONAL, uncertified item: FTF-0102 (PR #83). Followed
+`docs/CONTROL_PLANE_MODES.md`'s CERTIFY procedure:
+
+- **Session-ID check:** all 4 commits on PR #83 carry
+  `Claude-Session: .../session_01FLEHnA2RjFZB9RftzV4Lso`; this session's
+  own ID does not match — independent, not self-certification.
+- **Diff read directly** in a dedicated worktree (`git diff d4d0a76..01ebde9`,
+  17 files, +2118/-25): the Organization/Workspace ORM models, the real
+  forward Alembic migration (FORCE ROW LEVEL SECURITY, distinct
+  NOSUPERUSER/NOBYPASSRLS `sovra_app` role), the frozen phase-01 contract
+  files (zero OpenAPI paths, confirmed no live FastAPI app exists), and
+  the two test files.
+- **CI re-checked for real on the actual head:** initial check
+  (`01ebde9`) showed all jobs `in_progress`; re-checked after independent
+  work — head had advanced to `8521558` (a tracking-doc-only commit,
+  confirmed via diff) with `mergeable_state: clean` and all 4 check runs
+  `completed`/`success`. Read the `organization-workspace-schema-integration`
+  job's log content directly: a genuine PostgreSQL 16.15 container,
+  `alembic upgrade head` run for real, and the container's own Postgres
+  log showing the actual RLS/unique-constraint errors the
+  negative_acceptance test expects.
+- **Real, independent reproduction** against this sandbox's own
+  directly-installed PostgreSQL 16 (no container-registry egress, same
+  FTF-0004/FTF-R017 finding): ran the real migration, then both delivered
+  test files — all checks pass.
+- **Real fault injection matching the producer's own claim exactly:**
+  granted `sovra_app` `BYPASSRLS` in a scratch copy of the migration —
+  exactly 6 checks failed for real, same set the producer reported.
+  Restored byte-identical, re-ran clean.
+- **A second, independent fault injection** (not in the producer's own
+  set): set the `workspaces` RLS policy's `WITH CHECK` clause to `true`.
+  The integration suite still passed — traced this to Postgres enforcing
+  the table's `SELECT` (`USING`) policy against the resulting row of both
+  `INSERT ... RETURNING` (SQLAlchemy's own default flush behavior) and
+  `UPDATE`, independently of the broken `WITH CHECK`. A raw INSERT
+  bypassing `RETURNING` — a code path that does not exist anywhere in
+  this codebase — would exploit it. Not a blocking defect: the shipped
+  migration's real `WITH CHECK` clauses are correct, and the only live
+  application code path (ORM-only) is genuinely protected regardless.
+  Recorded as a non-blocking observation in `docs/certifications/ledger.md`.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-0102 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance
+  clauses and the negative_acceptance clause confirmed met against
+  specific, independently re-run tests.
+- **Full regression** in a fresh worktree at the real merged head: ruff/
+  mypy/eslint/tsc clean, every existing task test unmodified and clean,
+  `validate_spec.py --strict` clean (a transient `stale_commit` defect
+  traced to this review's own shallow clone, confirmed spurious after
+  `git fetch --unshallow`), `verify_task.py --task FTF-0102 --stage task`
+  -> `PASS`, `product_truth_check.py` legitimately `0/0`, `verify_release.py`
+  non-inflated (`17/300`, zero FAILED, up from `16/300`).
+- **Merged PR #83 as `1874932`.** Set `docs/spec-matrix.yaml` FTF-0102 to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` kept at the implementation commit `82c75f4`). Added
+  FTF-0102's own entry to `spec/verification-map.json`. Ran
+  `scripts.task_claim.sync_certified_status()` — diff limited to exactly
+  FTF-0102's own `status`/`evidence` fields. Appended full entries to
+  `docs/certifications/ledger.md` and `docs/certifications/queue.md`.
+  Moved FTF-0102 from QUEUE.md's Provisional to Done (16/300 -> 17/300).
+
+**Compliance note (disclosed, not a certification defect):** found
+`git log` shows commit `b25ce80` ("Control plane: FTF-R017 CERTIFIED",
+2026-09-17) landed directly on `main` as a single-parent commit, not a
+GitHub PR merge — a real direct-to-main push, contrary to `CLAUDE.md`'s
+explicit `BRANCH_PROTECTION` instruction (whose own note says it exists
+to close exactly this pattern, dated two days earlier). This shift's own
+tracking-doc/certification updates were instead opened as a pull request
+and merged through the normal GitHub flow. Flagged in QUEUE.md's "Owner
+actions — current" for visibility; no other action taken, per this
+shift's certification-only scope.
+
+Certified: 17/300 (main). Provisional: 0. Product-true: 0 (unchanged —
+FTF-0102 has no proving_symbol, same disclosed pattern as the other
+sixteen).
 
 ## 2026-09-18 — PR #83 (FTF-0102): CI confirmed green for real on GitHub's own registry-egress runner
 Follow-up to this shift's own FTF-0102 submission (see entry below).
