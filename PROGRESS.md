@@ -1,5 +1,117 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (this relay shift)
+Updated: 2026-09-18 (Control plane certifier shift) — FTF-0102 CERTIFIED
+  (17/300). See entry below.
+
+## 2026-09-18 — Control plane certification — FTF-0102 CERTIFIED (PR #83 independently verified)
+Triggered by GitHub webhook (`pull_request.opened`, PR #84 — a same-day
+relay docs-only bookkeeping PR recording PR #83's direct owner-merge;
+already reviewed as out of this certifier's scope: no source/spec-matrix/
+certification-queue change, nothing itself to certify). Per this run's
+actual job — check `docs/certifications/queue.md` for anything
+PROVISIONAL and not yet certified — found FTF-0102 (PR #83, already
+merged to `main` as `1874932` by the account owner directly) as the sole
+pending item, L1-PROVEN with real, non-self-reported CI-green evidence
+recorded by the producer shift.
+
+Session-ID check: compared this session's own ID
+(`session_01BoshQMzEpv5gWF2wwopKsp`) against all of PR #83's commits
+(`82c75f4`, `b2bb569`, `01ebde9`, `8521558`) — all four carry
+`Claude-Session: .../session_01FLEHnA2RjFZB9RftzV4Lso`, no match.
+Independent, not self-certification.
+
+Re-read the full diff directly: `apps/api/app/auth/organization_workspace_schema.py`
+(`Organization`/`Workspace` SQLAlchemy models with constructor-level
+slug/name/status validation, `set_tenant_context()` using a parameterized
+`set_config(...)` call), `apps/api/alembic/versions/0001_org_workspace_schema.py`
+(the real forward migration: `organizations`/`workspaces` tables, the
+tenant-composite `UNIQUE (organization_id, slug)` constraint, a distinct
+`NOSUPERUSER NOBYPASSRLS sovra_app` role with only row-level DML grants,
+and `FORCE ROW LEVEL SECURITY` with a `tenant_isolation` policy on both
+tables), and `packages/contracts/{jsonschema,openapi}/01-*` (frozen
+phase-01 contract files, zero OpenAPI paths — no live FastAPI app exists
+yet, so this is not a Law 11 placeholder route).
+
+Re-checked CI for real (not the producer's commit message) on PR #83's
+actual head `8521558`: `pull_request_read get_check_runs` — all 4 jobs
+(`gate`, `organization-workspace-schema-integration`,
+`docker-local-stack-integration`, `storage-semantics-integration`)
+`completed`/`success` (run 35328197453). Read
+`organization-workspace-schema-integration`'s own job log directly (job
+105546139193) — a real `services: postgres` container boots, the real
+integration test runs, genuine Postgres errors appear in the log while
+proving the negative_acceptance cases (`new row violates row-level
+security policy for table "workspaces"`, `duplicate key value violates
+unique constraint...`), ending `FTF-0102 real tenant-isolation proof: all
+checks passed`. Read the `gate` job log directly (job 105546139003) —
+`FTF-0102 organization/workspace schema: all checks passed`,
+`Product-truth: 0/0 product-true`, `Status: 16/300 certified` (correctly
+not yet bumped — the job ran while this task was still PROVISIONAL).
+
+Own fault injection, distinct from the producer's own (which granted
+`sovra_app` `BYPASSRLS`): against a locally-installed PostgreSQL 16 (this
+sandbox has the same no-container-registry-egress constraint the
+producer documented, confirmed again — but has a directly-installed
+Postgres 16 cluster available), changed the tracked migration's
+`workspaces` `tenant_isolation` policy from `USING (organization_id =
+...) WITH CHECK (organization_id = ...)` to `USING (true) WITH CHECK
+(true)` and re-ran `tests/integration/test_organization_workspace_schema.py`
+against a fresh database — 4 checks failed for real (tenant-scoped
+visibility, missing-context denial, cross-tenant insert rejection,
+cross-tenant update-by-ID rejection). Restored the file byte-identical
+from a pre-edit copy (`diff` confirmed empty), re-ran against another
+fresh database — clean again.
+
+`python tools/r1_handoff.py packet FTF-0102 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled directly: the acceptance
+clause ("freeze the minimum shared phase interface and domain schemas...
+no placeholder endpoints. Create two organizations/workspaces, enforce
+unique names and tenant-composite foreign keys with real migration") and
+the negative_acceptance clause ("cross-tenant parent IDs and missing
+tenant context fail DB constraints/RLS, including privileged test-role
+mistakes") both map one-to-one to specific, independently re-run tests in
+`tests/tasks/test_ftf_0102.py` and
+`tests/integration/test_organization_workspace_schema.py` — confirmed
+met, not just asserted.
+
+Full regression in this fresh, unshallowed container after `git fetch
+--unshallow` (the `stale_commit` defects `validate_spec.py --strict`
+initially reported for FTF-0001/0002/0003 were traced to this session's
+own shallow clone, not a real defect — disappeared after unshallowing,
+same documented pattern as prior shifts) and `pnpm install
+--frozen-lockfile` (needed fresh in this container, same documented
+pattern): `uv run ruff check .`/`ruff format --check .`/`mypy .` clean;
+`pnpm run lint`/`typecheck`/`format:check` clean; `uv run pytest
+tests/unit` (3 passed); `pnpm exec vitest run` (2 passed); every existing
+task test (FTF-0001 through FTF-H001, FTF-0004/0005/0006) re-run clean;
+`python3 scripts/validate_spec.py --strict` clean; `verify_task.py --task
+FTF-0102 --stage task` -> `PASS`; `product_truth_check.py` legitimately
+`0/0` (`proving_symbol: ''` — no `apps/api/app/main.py` or other live
+caller imports `organization_workspace_schema.py` yet, same established
+pattern as FTF-0002/0003/0004/0005/0006).
+
+Not re-merging PR #83 — it is already merged (directly by the account
+owner). Set `docs/spec-matrix.yaml` FTF-0102 to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED` (`evidence_hash` set to PR #83's
+real head commit `8521558a2231dab81af3c74f85f4af764152ecb9` — the exact
+commit GitHub Actions' `pull_request`-triggered CI validated, since
+`ci.yml` never triggers on push to `main` and so the synthetic 2-parent
+merge commit `1874932` itself was never independently CI-checked; this
+matches the new `spec/verification-map.json` entry's own `commit`
+field). Ran `scripts.task_claim.sync_certified_status()` — diff limited
+to exactly FTF-0102's own `status`/`evidence` fields in
+`spec/tasks.json` and `docs/implementation/TRACKER.json`. Appended the
+full independent-review entry to `docs/certifications/ledger.md`, moved
+FTF-0102 from "## Provisional" to "## Done" in `QUEUE.md`.
+
+`verify_release.py` re-run after the above: `17/300` required tasks
+CERTIFIED with live-passing evidence, non-inflated transition from the
+prior `16/300`. `status.py` -> `17/300 certified · 0 product-true`, no
+`CERTIFIED-WITHOUT-LEDGER` defect (the ledger entry was appended before
+this final check).
+
+Certified: 17/300 (was 16). Provisional: 0 (was 1 — FTF-0102).
+Product-true: 0 (unchanged — no live caller wires this module into a
+running service yet).
 
 ## 2026-09-18 — PR #83 (FTF-0102) merged directly by the account owner — certification_state unchanged (PROVISIONAL) per Law 4
 Follow-up to this shift's own FTF-0102 submission (see entries below).

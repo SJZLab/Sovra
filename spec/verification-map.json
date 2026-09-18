@@ -140,6 +140,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014/FTF-R015/FTF-R011 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history. The real live-container storage-semantics evidence is tests/integration/test_storage_semantics.py, run separately in CI (storage-semantics-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004's own docker-local-stack-integration job."
+    },
+    "FTF-0102": {
+      "commit": "8521558a2231dab81af3c74f85f4af764152ecb9",
+      "commands": [["python3", "tests/tasks/test_ftf_0102.py"]],
+      "expected_output_contains": "FTF-0102 organization/workspace schema: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "commit is PR #83's real head (the exact commit GitHub Actions' pull_request-triggered CI validated, not the synthetic merge commit — ci.yml only triggers on pull_request, never push to main). The real live-Postgres RLS/tenant-isolation evidence is tests/integration/test_organization_workspace_schema.py, run separately in CI (organization-workspace-schema-integration job, a services:postgres container) — not re-executable by verify_task.py in this sandbox by default (requires a running Postgres + SOVRA_APP_DB_PASSWORD), same resource_gate rationale as FTF-0004's own docker-local-stack-integration job."
     }
   }
 }
