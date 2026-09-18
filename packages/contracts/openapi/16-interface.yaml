@@ -1,0 +1,139 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 16 Interface (Postgres backup)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas for the backup/restore evidence records
+    (Section 48/71.2, FTF-1601). `paths` is deliberately empty: no live
+    FastAPI app exists yet (apps/api/app has no main.py — the same disclosed
+    scope limit FTF-0102/FTF-0104 already recorded), so declaring HTTP
+    routes here would be a placeholder endpoint under Law 11 ("No production
+    mock path exists... No production placeholder path exists"). Whichever
+    task first wires a real /api/v1/backups route adds its own path item
+    here, backed by a genuine handler, under this same contract-owner lock
+    (shared_lock_required: contracts:16).
+paths: {}
+components:
+  schemas:
+    Sha256Hex:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    RlsPolicy:
+      type: object
+      properties:
+        table:
+          type: string
+          minLength: 1
+        policy:
+          type: string
+          minLength: 1
+      required: [table, policy]
+      additionalProperties: false
+    BackupRecord:
+      type: object
+      properties:
+        backup_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+          minLength: 1
+        postgres_version:
+          type: string
+          minLength: 1
+        migration_head_revision:
+          type: [string, 'null']
+        tables:
+          type: array
+          items:
+            type: string
+        rls_forced_tables:
+          type: array
+          items:
+            type: string
+        rls_policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/RlsPolicy'
+        roles:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        plaintext_sha256:
+          $ref: '#/components/schemas/Sha256Hex'
+        ciphertext_sha256:
+          $ref: '#/components/schemas/Sha256Hex'
+        cipher:
+          type: string
+          enum: [aes-256-cbc]
+        key_fingerprint:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+        ciphertext_size_bytes:
+          type: integer
+          minimum: 1
+      required:
+        - backup_id
+        - database_name
+        - postgres_version
+        - tables
+        - rls_forced_tables
+        - rls_policies
+        - roles
+        - created_at
+        - plaintext_sha256
+        - ciphertext_sha256
+        - cipher
+        - key_fingerprint
+        - ciphertext_size_bytes
+      additionalProperties: false
+    RestoreRecord:
+      type: object
+      properties:
+        backup_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+          minLength: 1
+        restored_at:
+          type: string
+          format: date-time
+        tables_restored:
+          type: array
+          items:
+            type: string
+        rls_forced_tables_verified:
+          type: array
+          items:
+            type: string
+        rls_policies_verified:
+          type: array
+          items:
+            $ref: '#/components/schemas/RlsPolicy'
+        row_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        ciphertext_sha256_verified:
+          type: boolean
+        plaintext_sha256_verified:
+          type: boolean
+        restoration_validated:
+          type: boolean
+      required:
+        - backup_id
+        - database_name
+        - restored_at
+        - tables_restored
+        - rls_forced_tables_verified
+        - rls_policies_verified
+        - row_counts
+        - ciphertext_sha256_verified
+        - plaintext_sha256_verified
+        - restoration_validated
+      additionalProperties: false
