@@ -14,10 +14,11 @@ Updated: 2026-09-18 (relay shift, branch `claude/wizardly-fermat-vmg0oc`) —
   reason to record a fourth time. This shift merged FTF-1601's actual code
   from `claude/wizardly-fermat-e9tyvg` into this session's own designated
   branch instead (a read of that branch's content, not a push to it),
-  resolved the tracking-doc conflicts, and is proceeding to push its own
-  branch and open a fresh PR to supersede #90 — see "## Active" below for
-  the in-progress record; this entry will be updated with the real PR
-  number once opened. Recomputed the dependency frontier independently via
+  resolved the tracking-doc conflicts, full regression clean, pushed, and
+  opened PR https://github.com/SJZLab/Sovra/pull/96
+  (`claude/wizardly-fermat-vmg0oc` → `main`) to supersede #90 — see
+  "## Active" below; CI status on the new PR to be confirmed and #90 closed
+  once green. Recomputed the dependency frontier independently via
   `scripts/task_claim.load_tasks()`/`load_certification_states()` (not
   just QUEUE.md's own prose): still only FTF-1601 and FTF-0101 (blocked on
   a new-runtime-dependency ask, no owner response found — repo has zero
@@ -121,17 +122,18 @@ permission — no live user exists in a scheduled shift to grant it).
 FTF-1601's actual delivered code from `claude/wizardly-fermat-e9tyvg`
 (a read of that branch, never a push to it) into this session's own
 designated branch `claude/wizardly-fermat-vmg0oc`, resolved the
-tracking-doc conflicts there, ran the full regression suite, and is
-pushing/opening a fresh PR from `vmg0oc` → `main` to supersede #90 — see
-PROGRESS.md's matching entry for full evidence once complete. PR #90 will
-be closed with an explanatory comment once the new PR is open and green,
-rather than leaving two open PRs for the same task. Not re-claiming
+tracking-doc conflicts there, ran the full regression suite (clean — see
+PROGRESS.md's matching entry), pushed, and opened
+https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
+→ `main`) to supersede #90. Subscribed this session to PR #96's activity.
+PR #90 will be closed with an explanatory comment once #96 is confirmed
+green, rather than leaving two open PRs for the same task. Not re-claiming
 FTF-1601 as a new task — this is a continuation of the same item, just
-retargeted to a branch this session can actually push to. Full,
-up-to-the-minute status: PROGRESS.md's newest entry.
+retargeted to a branch this session can actually push to.
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty — FTF-1601/PR #90 stays in "## Active" above until CI is
+(empty — FTF-1601/PR #96 (superseding #90) stays in "## Active" above
+until CI is
 reconfirmed green on the merged head; FTF-0104 certified 2026-09-18, see
 "## Done" below.)
 
