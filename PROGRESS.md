@@ -1,5 +1,84 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Control plane certifier shift)
+Updated: 2026-09-18 (Relay shift)
+
+## 2026-09-18 — Relay: FTF-1601 (Postgres backup) implemented, PR #90 opened
+Scheduled relay shift. CLAUDE.md hash self-check clean
+(`sha256sum CLAUDE.md` matched committed `CLAUDE.md.sha256` exactly).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md — no open
+blocker (`BLOCKER.md` both entries RESOLVED history), no owner ask pending
+a relay-actionable response, one open PR (#89, a watchdog session's
+direct-push-to-main finding — not this session's to act on). QUEUE.md
+Active was empty; the prior certifier shift had flagged FTF-1601
+("Postgres backup", deps FTF-0004/FTF-0102, both CERTIFIED) as the
+dependency-ready frontier item but explicitly left it unclaimed
+("certification-only" shift). Pulled its real DoD via
+`python tools/r1_handoff.py packet FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+before claiming it — a genuine acceptance/negative_acceptance/
+verification_commands contract, not a bare title.
+
+STEP 2 (PEV): researched existing conventions first (a background Explore
+agent read `.github/workflows/ci.yml`'s exact live-Postgres integration
+job pattern, `scripts/task_claim.py`/`verify_task.py`/
+`spec/verification-map.json`'s real status-tracking flow, FTF-0102/FTF-0104's
+actual implementation+migration+test-pair shape, and confirmed by grep
+that `cryptography`/`pynacl` appear nowhere in this repo's
+`pyproject.toml`/`uv.lock` — so real encryption had to shell out to the
+already-present `openssl` OS binary rather than add a new pip dependency,
+which would itself be an ask-first item). Implemented
+`scripts/postgres_backup.py` (stdlib-only; `pg_dump`/`pg_restore`/`psql`/
+`openssl` subprocess calls only), froze
+`packages/contracts/{jsonschema,openapi}/16-*` per this task's own
+acceptance clause 1 and `contract_owner: FTF-1601`, and wrote both
+`tests/tasks/test_ftf_1601.py` (no-DB, real-`openssl`-backed encrypt/
+decrypt round trips, a fault injection breaking the self-verification
+decrypt path, hand-rolled stdlib-only contract validation) and
+`tests/integration/test_postgres_backup.py` (real live-Postgres proof:
+seeded data → real encrypted backup → wrong-key/tampered-file rejection
+proven before any `pg_restore` attempt → restore into a fresh scratch
+database in the same cluster → restored copy's tables/RLS/policy/data all
+independently re-verified, not just a process exit code). Wired a new
+`postgres-backup-integration` CI job (own `services: postgres` container
++ a new `apt-get install postgresql-client-16` step — the first job in
+this repo to shell out to Postgres client binaries directly rather than
+only `psycopg`/SQLAlchemy).
+
+This sandbox has no container-registry egress (same finding as
+FTF-0004/FTF-R017/FTF-0102/FTF-0104) — live evidence produced locally
+against a directly-installed PostgreSQL 16 cluster (`sovra_migrate`
+granted `SUPERUSER` locally to match the `postgres:16-alpine` image's own
+bootstrap-superuser `CREATE DATABASE` privilege the restore step needs).
+Full local regression re-run clean before opening the PR: `ruff`/`format`/
+`mypy`, `pnpm lint`/`format:check`/`typecheck`, every existing
+`tests/tasks/test_ftf_*.py` (including FTF-0102/FTF-0104's own no-DB
+suites, no regression), FTF-0102/FTF-0104's own integration tests re-run
+against the same local Postgres cluster with no regression,
+`product_truth_check.py` (legitimately 0/0), `status.py`,
+`validate_spec.py --strict` (which caught and required fixing a real
+defect this shift's own first-draft `docs/spec-matrix.yaml` notes text
+introduced — two bare `word: ` sequences broke `yaml.safe_load` for the
+whole file, same class of defect FTF-0104's own history already hit
+once), and `verify_release.py` (confirmed non-inflated: `18/300`, zero
+`FAILED`, `NOT READY`, identical to `main`'s own pre-existing state,
+verified via `git stash` + re-run on the unmodified tree).
+
+Opened PR #90 (`[relay] FTF-1601: Postgres backup`), two implementation
+commits (`f5d3aee` code, `33f4cb5` evidence_hash fixup — same
+chicken-and-egg two-commit pattern FTF-0102/FTF-0104's own history
+established) plus `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`, and
+appended the full evidence writeup to `docs/certifications/queue.md`
+(commit `e8ca71d`) for Control plane's independent L2 review, per Law 4 —
+never self-certified. `spec/verification-map.json`/`spec/tasks.json`/
+`docs/implementation/TRACKER.json` intentionally untouched; those get
+their FTF-1601 entries from Control plane's own `sync_certified_status()`
+run at certification time.
+
+Did not touch PR #89 (a separate watchdog finding about a direct-push-to-
+main recurrence) — not this shift's item to act on; noted here only so
+the next shift doesn't lose track of it. Certified: 18/300 · Product-true:
+0 (unchanged this shift — FTF-1601 has no `proving_symbol`, no live
+FastAPI app imports `postgres_backup.py`, same established pattern as
+every other non-product-true certified task).
 
 ## 2026-09-18 — Control plane: FTF-0104 (PR #87) independently certified
 Scheduled certifier shift, triggered by PR #87's `pull_request.opened`

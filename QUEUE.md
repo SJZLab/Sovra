@@ -1,12 +1,15 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (Control plane certifier shift) — independently
-  certified FTF-0104 (PR #87, merged as `c682687`) per Law 4. See
-  "## Done" below and docs/certifications/ledger.md for full evidence.
+Updated: 2026-09-18 (Relay shift) — implemented and submitted FTF-1601
+  (Postgres backup, PR #90) as PROVISIONAL, per Law 4 (never
+  self-certified). See "## Provisional" below and
+  docs/certifications/queue.md for the full evidence writeup awaiting
+  Control plane's independent L2 review.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
-`c682687` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`c682687` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-1601, PR #90, awaiting Control plane L2 review) · Blocked: 0
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017 and FTF-0102
@@ -68,12 +71,20 @@ without counting toward product-true).
   otherwise a correct, already-verified certification); flagging so it
   isn't repeated silently.
 ## Active (relay works this)
-(empty — FTF-0104 certified this shift, see "## Done" below. FTF-1601
-(Postgres backup, deps FTF-0004/FTF-0102) is now the dependency-ready
-frontier item; not claimed this shift, certification-only.)
+(empty — FTF-1601 claimed, implemented and submitted this shift, see
+"## Provisional" below. FTF-1602 (Object storage backup, deps FTF-0004,
+FTF-1002, FTF-1601) cannot start until FTF-1601 is CERTIFIED — FTF-1002 is
+also not yet certified, so FTF-1602 is not yet dependency-ready either
+way.)
 
 ## Provisional (awaiting Control plane L2 certification)
-(empty — FTF-0104 certified this shift, see "## Done" below.)
+- FTF-1601 — Postgres backup. PR: https://github.com/SJZLab/Sovra/pull/90
+  (`[relay] FTF-1601: Postgres backup`), implementation commit `f5d3aee`,
+  evidence_hash fixup `33f4cb5`. Full evidence writeup:
+  docs/certifications/queue.md. `docs/spec-matrix.yaml`:
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. Not yet
+  independently re-verified — Control plane's own L2 review still owed
+  per Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
