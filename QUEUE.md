@@ -53,30 +53,6 @@ none a live-wired product-runtime path, so all eighteen are CERTIFIED
 without counting toward product-true).
 
 ## Owner actions — current
-- 2026-09-15: One setup gap remains — no *durable* trigger tooling
-  available to create the 2h relay / watchdog triggers. See CLAUDE.md
-  "Setup gaps". Owner must create them (or grant a control-plane session
-  trigger tooling and re-run Groundwork S1.7/S1.8). Note: this shift's
-  own session was itself invoked by some external schedule (its prompt
-  says "started automatically by a schedule"), so a trigger mechanism
-  exists for the relay cadence at minimum — not confirming this gap
-  resolved without evidence of the watchdog trigger and the 08:30/19:30
-  report cadence too, per the prior watchdog finding on unverified
-  "gap resolved" claims. Owner: please confirm what's actually configured.
-- 2026-09-18 (this shift): `git log` shows commit `b25ce80` ("Control
-  plane: FTF-R017 CERTIFIED", 2026-09-17) landed directly on `main` as a
-  single-parent commit committed by `Claude <noreply@anthropic.com>` —
-  not a GitHub PR merge (contrast `aacd745`, PR #75's actual two-parent
-  merge commit, committer `GitHub <noreply@github.com>`). This is exactly
-  the direct-push pattern `CLAUDE.md`'s own `BRANCH_PROTECTION` note
-  (dated 2026-09-15) says it exists to close, recurring on 2026-09-17
-  after that note was written. This shift's own tracking-doc/certification
-  updates were instead opened as a pull request and merged through the
-  normal GitHub flow, per `CLAUDE.md`'s current instruction. Owner: no
-  action required unless you want the prior
-  direct-to-main commit's history rewritten (not recommended — it is
-  otherwise a correct, already-verified certification); flagging so it
-  isn't repeated silently.
 - 2026-09-18 (this shift, relay): FTF-0101 (OIDC login) is the only other
   dependency-ready item (deps FTF-0004/FTF-0005/FTF-0102, all CERTIFIED)
   besides FTF-1601 (already claimed elsewhere this same day — PR #90,

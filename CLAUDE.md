@@ -49,15 +49,27 @@ CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   GIT_CONNECTOR/GIT_WRITE above for the current, evidence-based state. A
   bare control-plane session without that connector still cannot push;
   that's an intentional separation of proposer/executor roles, not a gap.
-- STILL OPEN — no `create_trigger`/`fire_trigger` tooling has been confirmed
-  available to any session. Scheduled relay shifts are demonstrably firing
-  (this file's own edits are evidence something is scheduling them), but
-  no session has independently confirmed the watchdog trigger and the
-  08:30/19:30 Asia/Riyadh report cadence are actually configured as
-  designed in S0.3/S1.7/S1.8, rather than assumed. Owner: please confirm
-  what's actually configured, or grant a control-plane session trigger
-  tooling and re-run Groundwork S1.7/S1.8. Tracked in QUEUE.md "Owner
-  actions — current."
+- RESOLVED (2026-09-18, live owner conversation): the owner directly
+  confirmed both halves of this gap. (1) Receiving two summary emails
+  landing around 08:30 and 19:30 (Asia/Riyadh) — real, first-hand
+  evidence the report cadence is actually configured and delivering as
+  designed in S1.8. (2) The actual mechanism: this platform's own
+  "routines" feature (a first-class scheduled-task capability of this
+  Claude Code environment — this very repo's shifts, including this
+  file's own automated edits, have run as routines the whole time,
+  confirmed by a session's own prompt literally stating "running as a
+  scheduled routine") — one routine fires every 2h to check/work the
+  queue (the relay cadence), and two further routines produce the
+  08:30/19:30 report emails. This is owner-stated, not assumed or
+  inferred from indirect signals (a prior session had checked its own
+  available tooling and found `CronCreate` — session-scoped, gone when
+  the session exits, 7-day auto-expiry regardless — structurally
+  incapable of being this mechanism; routines are evidently a separate,
+  durable, platform/account-level capability outside any single session's
+  own tool access, consistent with that finding). No session action is
+  needed to configure or recreate routines — they are managed outside any
+  session's control plane, at the account level. Tracked in QUEUE.md
+  "Owner actions — current" (item removed, resolved).
 - RESOLVED (PR #10, 2026-09-15/16): SOURCE_ROOTS is filled in
   scripts/product_truth_check.py from FTF-0001's real layout — see
   SOURCE_ROOTS above. product_truth_check.py still fails closed if any

@@ -1,5 +1,138 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (relay shift)
+Updated: 2026-09-18 (Control plane, live owner conversation)
+
+## 2026-09-18 — Control plane: trigger-tooling setup gap fully RESOLVED — owner confirmed the mechanism is this platform's "routines" feature
+Same live, interactive session as the two entries below (continued
+conversation with the account holder, samer.zakaria@gmail.com).
+
+Following up the `CronCreate`-insufficiency finding (entry immediately
+below), the owner was asked directly whether the 2h relay cadence was
+the same mechanism as the report emails. The owner confirmed plainly:
+both are driven by this platform's own "routines" feature — a
+first-class scheduled-task capability of this Claude Code environment,
+managed outside any session's own tool access, at the account/product
+level. Specifically: one routine fires every 2h to check/work the queue
+(the relay cadence), and two further routines produce the 08:30/19:30
+(Asia/Riyadh) report emails.
+
+This is consistent with, not contradicted by, the `CronCreate` finding:
+`CronCreate` is a session-scoped, 7-day-capped tool exposed to an agent
+mid-conversation, while "routines" are evidently a separate, durable
+capability configured through the platform itself (this repo's own
+certifier shifts, including the one earlier today, have run as routines
+the whole time — a routine's own system prompt states "You're running as
+a scheduled routine," confirming this retroactively for every prior
+automated shift too, not just today's).
+
+This closes the setup gap fully — both the report-cadence half (already
+resolved two entries below) and the mechanism-identification half (open
+until now) are now owner-stated and documented, per S1.7/S1.8's own
+requirement and CLAUDE.md's "Owner: please confirm what's actually
+configured" ask.
+
+Actions taken this turn:
+- Updated CLAUDE.md's "Setup gaps" entry from `PARTIALLY RESOLVED` to
+  `RESOLVED`, recording both confirmations (the emails, and the routines
+  mechanism) and the reasoning connecting them to the `CronCreate`
+  finding. Recomputed `CLAUDE.md.sha256` to match (third recomputation
+  this conversation, one per edit).
+- Removed the item entirely from QUEUE.md's "Owner actions — current"
+  block, per "remove it the moment the owner responds... never leave
+  resolved asks in item history" — this entry is the durable record.
+- No session action is needed or possible to configure/recreate routines
+  — they are managed outside any session's control plane. Nothing left
+  to grant or fix at the repo or tooling level for this gap.
+
+## 2026-09-18 — Control plane: b25ce80 direct-to-main finding closed by owner; CronCreate confirmed structurally unable to be the durable trigger
+Same live, interactive session as the entry immediately below (continued
+conversation with the account holder, samer.zakaria@gmail.com).
+
+**b25ce80 direct-to-main-push finding:** the owner reviewed the
+2026-09-18 QUEUE.md item about commit `b25ce80` ("Control plane: FTF-R017
+CERTIFIED") landing directly on `main` instead of through a PR merge, and
+explicitly accepted it — no issue for that PR, no history rewrite wanted.
+Removed the item from QUEUE.md's "Owner actions — current" block per
+CLAUDE.md's "remove it the moment the owner responds... never leave
+resolved asks in item history" rule; this entry is the durable record.
+No code or certification state changed — the underlying FTF-R017
+certification was already correct and independently verified; only the
+push mechanism had deviated, and every shift since has used the normal
+PR flow per `CLAUDE.md`'s current instruction.
+
+**CronCreate checked and found insufficient:** asked directly "how to fix
+the trigger issue," this session checked its own available tooling
+(`ToolSearch`) and found a `CronCreate` tool — the only trigger-shaped
+tool exposed to any session in this environment. Read its own
+description closely rather than assuming it was the missing piece:
+"Jobs live only in this Claude session — nothing is written to disk, and
+the job is gone when Claude exits," and recurring jobs auto-expire after
+7 days regardless. This rules it out as the mechanism producing the
+relay shifts and the 08:30/19:30 report emails (both persist across
+sessions and days, which `CronCreate` structurally cannot do). Updated
+CLAUDE.md's "Setup gaps" entry and QUEUE.md's matching "Owner actions —
+current" item to record this: the remaining gap cannot be closed by
+granting any session a tool, since durable cross-session/cross-container
+scheduling is a platform/account-level capability, not something exposed
+to an agent's toolset or fixable via a repo change. What would actually
+close it is the owner stating what mechanism is really configured.
+Recomputed `CLAUDE.md.sha256` again to match the further edit.
+
+Both changes pushed as an additional commit to the same open PR (#94)
+that recorded the report-cadence confirmation, rather than opening a
+second PR for the same live conversation.
+
+## 2026-09-18 — Control plane: report-cadence half of the 2026-09-15 trigger-tooling setup gap resolved by live owner confirmation
+This is a live, interactive Claude Code session with the account holder
+(samer.zakaria@gmail.com) — not a scheduled/automated turn. Same
+qualifying condition the 2026-09-18T00:00:00Z FTF-0102 entry above this
+one required before treating any approval/confirmation as real: a live
+conversation, or a GitHub comment/review from the owner's own account.
+This entry is the former.
+
+Background: CLAUDE.md's "Setup gaps" and QUEUE.md's "Owner actions —
+current" both carried a 2026-09-15 item stating no session had
+independently confirmed the watchdog trigger and the 08:30/19:30
+Asia/Riyadh report cadence were actually configured as designed in
+S0.3/S1.7/S1.8 — only that *some* scheduling mechanism existed, evidenced
+indirectly by scheduled sessions firing at all (including this session's
+own certifier turn earlier today, invoked by a GitHub webhook rather than
+a time-based trigger).
+
+The owner, live in this conversation, was asked directly what the two
+emails they mentioned receiving actually were, and confirmed: two
+summary emails landing around 08:30 and 19:30 (Asia/Riyadh) — matching
+S1.8's documented report cadence exactly. This is real, first-hand
+confirmation the report cadence is configured and delivering as
+designed, not an inference from indirect signals.
+
+What this does and does not resolve, kept precise per Law 2 (never
+inflate tracker beyond what evidence supports):
+- RESOLVED: the report-cadence half of the gap — the 08:30/19:30
+  Asia/Riyadh emails are real and confirmed by the owner directly.
+- STILL OPEN, narrower than before: no `create_trigger`/`fire_trigger`
+  tooling has been confirmed available to any session. The owner
+  confirming they receive the emails is evidence the schedule works
+  today; it is not the same as any session having the access needed to
+  independently inspect the live trigger config (confirm the 2h relay
+  cadence specifically, not just that shifts keep firing) or to recreate
+  it if it ever silently stops or drifts. That access gap is unchanged.
+
+Actions taken this turn:
+- Updated CLAUDE.md's "Setup gaps" entry from "STILL OPEN" to
+  "PARTIALLY RESOLVED", recording the owner's confirmation and the
+  narrowed remaining gap. Recomputed `CLAUDE.md.sha256` to match (CI
+  fails the build otherwise).
+- Updated QUEUE.md's "Owner actions — current" 2026-09-15 item to match,
+  dated 2026-09-18. Not removed outright, per "remove it the moment the
+  owner responds... never leave resolved asks in item history" — only
+  the resolved half is closed out in the text; the still-open half stays
+  as a live, current ask.
+- Opened as a pull request per CLAUDE.md's `BRANCH_PROTECTION`
+  instruction (docs-only, no code/gate changes).
+
+No source code changed this turn — decision-recording and partial
+owner-ask resolution only, same category CLAUDE.md's "Do without asking"
+list already covers for tracking-file edits.
 
 ## 2026-09-18 — Relay shift: PR #90's structural blocker already fixed by a prior shift, confirmed live; nothing new for relay to work — stopped per STEP 4(a)/(e)
 
