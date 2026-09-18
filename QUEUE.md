@@ -122,9 +122,20 @@ not just GitHub's status field). This shift merged current `main` into
 `claude/wizardly-fermat-e9tyvg` and resolved the two tracking-doc
 conflicts (this file and `PROGRESS.md`) per that instruction — no code
 rework, `docs/certifications/queue.md`'s own three-way conflict resolved
-the same way (all three prior entries kept, nothing dropped). Pushed;
-awaiting confirmation CI stays green on the new head before this is
-ready for re-certification. Full review: docs/certifications/queue.md's
+the same way (all three prior entries kept, nothing dropped). Before
+pushing, unshallowed the clone and re-ran the full regression suite on
+the merged tree (`ruff`/`format`/`mypy` with `uv sync --all-packages`,
+`pnpm lint`/`typecheck`/`format:check`, `tests/tasks`+`tests/unit`
+(209 passed), `vitest` (2 passed), `validate_spec.py --strict` (clean
+once unshallowed — a `stale_commit` false positive from the shallow
+clone, not a real defect), `status.py`/`product_truth_check.py`
+(18/300 · 0 product-true, unchanged), `verify_release.py` (18/300, zero
+FAILED, matching `main`'s pre-existing state) — all clean, confirming
+this merge changed no evidence, only resolved doc conflicts. Pushed as
+merge commit `9ec50fc` (`f104ef6` + `origin/main`'s `1e6cd77`); CI
+(run 35371223072) started fresh on the new head — awaiting confirmation
+it stays green before this is ready for re-certification. Full review:
+docs/certifications/queue.md's
 "2026-09-18 — NOT CERTIFIED (structural blocker, content sound)" entry.
 Do not re-claim FTF-1601 as a new task — this is a continuation of the
 same PR #90.)

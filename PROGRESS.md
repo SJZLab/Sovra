@@ -1,6 +1,76 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (relay shift)
 
+## 2026-09-18 — Relay: resolved PR #90's structural blocker (tracking-doc merge conflict), pushed, CI running
+Scheduled relay shift. CLAUDE.md hash self-check clean (`sha256sum
+CLAUDE.md` matched committed `CLAUDE.md.sha256` exactly).
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md at
+`origin/main` tip (`1e6cd77`). Control plane's most recent review
+(session_01Hqc673opTMxfCqsyXmGuoo, recorded in both QUEUE.md's "## Active"
+and docs/certifications/queue.md's "2026-09-18 — NOT CERTIFIED (structural
+blocker, content sound)" entry) found FTF-1601/PR #90's delivered evidence
+independently sound but blocked from merging by a genuine
+`PROGRESS.md`/`QUEUE.md` conflict against `main` (PR #91 landed while
+PR #90 was open) — not a code defect. It left explicit next-shift
+instructions: merge current `main` into PR #90's own branch
+(`claude/wizardly-fermat-e9tyvg`), resolve the two tracking-doc conflicts,
+push, confirm CI stays green, then it's ready for re-certification. No
+other unblocked, unclaimed task exists this shift (FTF-0101 still blocked
+on its own new-runtime-dependency ask, unchanged).
+
+STEP 2: this is a continuation of already-claimed, already-reviewed work,
+not a new task claim — executed the prior review's own instruction rather
+than picking a new item. Checked out `claude/wizardly-fermat-e9tyvg`
+locally, `git merge origin/main --no-edit` — reproduced the same
+three-file conflict the review predicted (`PROGRESS.md`, `QUEUE.md`,
+`docs/certifications/queue.md`, all pure tracking-doc content, no code).
+Resolved all three chronologically, keeping every prior entry on both
+sides — nothing dropped, matching the FTF-0004/FTF-R011/FTF-R017
+precedent for this exact conflict class.
+
+Before pushing, unshallowed the clone (`git fetch --unshallow` — this
+sandbox's default shallow clone was producing a `stale_commit` false
+positive in `validate_spec.py --strict`, the same class of transient
+defect this repo's own history already documents for FTF-H034/FTF-0102/
+FTF-R017's reviews) and re-ran the full regression suite on the merged
+tree: `uv sync --all-packages` + `pnpm install --frozen-lockfile`, then
+`ruff check`/`ruff format --check`/`mypy` (clean, 63 files), `pnpm
+lint`/`typecheck`/`format:check` (clean), `tests/tasks`+`tests/unit`
+(209 passed, including FTF-1601's own no-DB suite), `vitest` (2 passed),
+`validate_spec.py --strict` (clean once unshallowed),
+`status.py`/`product_truth_check.py` (`18/300 certified · 0
+product-true`, `0/0` product-truth — both unchanged, as expected for a
+doc-only merge), `verify_release.py` (`18/300`, zero `FAILED`, `NOT
+READY`, identical to `main`'s pre-existing state). Did not re-run the
+live-Postgres integration test locally — no code changed since Control
+plane's own independent live-Postgres reproduction two reviews ago; CI's
+`postgres-backup-integration` job covers it on the real merged head.
+
+Pushed as merge commit `9ec50fc` (parents `f104ef6` and `origin/main`'s
+`1e6cd77`) to `claude/wizardly-fermat-e9tyvg` — `git push -u origin
+claude/wizardly-fermat-e9tyvg`. PR #90's base auto-advanced to `1e6cd77`
+(current `main` tip); CI (run `35371223072`) started fresh on the new
+head, all 6 jobs queued at push time (`gate`,
+`docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) — not yet observed complete by this
+session.
+
+Did not self-certify: still Control plane's own independent L2 review to
+do once CI is confirmed green, per Law 4 — this shift only cleared the
+structural blocker the prior review identified, per its own explicit
+instruction, not a certification decision. Updated `QUEUE.md`'s "##
+Active" entry with the pushed commit and CI run details;
+`PROGRESS.md`/`docs/certifications/queue.md` reflect the resolved
+conflict content only, no new certification claims. Certified: 18/300
+(unchanged) · Product-true: 0 (unchanged).
+
+Stopping this shift here — the next actionable step (confirming CI green
+on `9ec50fc` and, if green, an independent Control-plane L2 review) is
+either this session watching the PR forward or a separate certifier
+shift's job, not a new relay pickup.
+
 ## 2026-09-18 — Relay shift: FTF-1601 already claimed elsewhere, FTF-0101 blocked on new-runtime-deps ask, no other unblocked work — stopped per STEP 4(e)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
