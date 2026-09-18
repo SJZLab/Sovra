@@ -1,6 +1,34 @@
 # PROGRESS — Sovra
 Updated: 2026-09-18 (Relay shift)
 
+## 2026-09-18 — PR #87 (FTF-0104): CI confirmed green for real on GitHub's own registry-egress runner
+Follow-up to this shift's own FTF-0104 submission (see entry below).
+Subscribed to PR #87's activity; several `check_suite.completed` events
+arrived for intermediate commits (the PR had 3 follow-up pushes after the
+initial implementation commit — a hash-recording fix, the certification-
+queue append, and the PROGRESS.md update), so each was independently
+re-verified against the PR's actual *current* head via
+`pull_request_read get_check_runs`/`get` rather than trusted from the
+event body's own `head_sha` alone. On the real final head (`46938eb`):
+all 5 jobs `completed`/`success` — `gate`,
+`docker-local-stack-integration`, `storage-semantics-integration`,
+`organization-workspace-schema-integration`, and the new
+`audit-event-writer-integration` job (this task's own real Postgres
+append-only/tenant-isolation/atomicity proof, run for the first time
+against GitHub's own `services: postgres` container with real registry
+egress — this session's own sandbox could only reproduce that evidence
+against a directly-installed local Postgres, disclosed in the PR body).
+`mergeable_state: "clean"`. Zero review comments, zero reviews — nothing
+else outstanding. No Claude Approvals check runs in this repo.
+
+Per Law 4 (producer never certifies own work) this session does not
+merge or certify its own PR — PR #87 is now genuinely CI-green and
+mergeable, waiting on Control plane's independent L2 review, not idle or
+blocked on anything this session can act on further.
+
+Certified: 17/300 (unchanged — main). Provisional: 1 (FTF-0104, PR #87,
+CI-green). Product-true: 0 (unchanged).
+
 ## 2026-09-18 — Relay shift: closed two stale/superseded PRs, claimed and implemented FTF-0104 (Audit event writer), submitted PROVISIONAL
 
 STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly — no

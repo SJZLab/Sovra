@@ -1,7 +1,10 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-18 (Relay shift) — claimed and implemented FTF-0104
-  (Audit event writer), submitted PROVISIONAL. Closed two stale/superseded
-  PRs (#82, #84) left open from before FTF-0102's real certification. See
+  (Audit event writer), submitted PROVISIONAL, PR #87 confirmed CI-green
+  for real on GitHub's own registry-egress runner (all 5 jobs, including
+  the new audit-event-writer-integration job), now awaiting Control
+  plane's independent L2 review. Closed two stale/superseded PRs (#82,
+  #84) left open from before FTF-0102's real certification. See
   "## Provisional" below and PROGRESS.md for full evidence.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
