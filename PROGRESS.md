@@ -178,10 +178,24 @@ added).
 STEP 3: this entry itself, written before any compaction, per the
 standing instruction.
 
-STEP 4: not a stop condition yet — will push this branch and open a PR
-(`[relay] FTF-0104: ...`) as PROVISIONAL and append to
-`docs/certifications/queue.md` before stopping at the STEP 4(a)-equivalent
-(L1-PROVEN, awaiting Control plane L2 certification and the L4 gate).
+Pushed this branch and opened PR #87
+(https://github.com/SJZLab/Sovra/pull/87, `[relay] FTF-0104: Audit event
+writer`), appended the full evidence writeup to
+`docs/certifications/queue.md`, and subscribed to PR #87's activity — at
+the time of writing all 5 CI jobs (`gate`,
+`audit-event-writer-integration`, `organization-workspace-schema-
+integration`, `docker-local-stack-integration`,
+`storage-semantics-integration`) were `queued` on run `35337831088`, not
+yet confirmed green on GitHub's own real registry-egress runner (this
+session's own local evidence was produced against a directly-installed
+PostgreSQL 16 instead, disclosed above and in the PR body). Will watch
+for the completion event and push a fix if CI surfaces a real defect this
+session's own local evidence didn't catch.
+
+STEP 4: stopping per STEP 4(a)-equivalent — L1-PROVEN, awaiting CI
+confirmation then Control plane L2 certification and the L4 gate. Not a
+true blocker, not stuck, not a usage-limit heartbeat, not an ask-first
+item (FTF-0104 needed no new runtime dependency).
 
 Certified: 17/300 (unchanged — this shift's own work is PROVISIONAL, not
 yet certified). Provisional: 1 (FTF-0104, this shift). Product-true: 0
