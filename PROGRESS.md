@@ -1,5 +1,113 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (relay shift)
+Updated: 2026-09-18 (Control plane, scheduled CERTIFY-mode session)
+
+## 2026-09-18 — Control plane: FTF-1601 (PR #96) NOT CERTIFIED — real Law 1 gap, restoration completeness never proven able to fail
+Scheduled CERTIFY-mode session, triggered by PR #96's own
+`pull_request.opened` webhook. Swept `docs/certifications/queue.md` for
+anything PROVISIONAL: `main`'s own copy showed nothing pending (last
+entry was PR #90's review, still not held-up), and PR #96 (not yet
+merged) carried a fresh FTF-1601 resubmission on its own branch — same
+"lives on the branch until merged" shape as prior precedent.
+
+Session-ID check first: PR #96's 11 commits carry
+`Claude-Session: .../session_01B9eYtKy6gPX3Ym8Cvx3X9c`,
+`.../session_01TkFfAaPq6htuVNNLXU9G2b`, or
+`.../session_01RDefDg12JGVTtU732EEARs`; this session's own ID
+(`session_01DPo17mjXAspEDoRvGvwtgn`) matches none of them — independent.
+
+PR #96 supersedes closed PR #90 (which itself had been independently
+reviewed as content-sound but structurally blocked by a recurring
+`PROGRESS.md`/`QUEUE.md` tracking-doc merge conflict across three relay
+shifts). Confirmed the structural blocker genuinely resolved this time:
+`git merge-tree --write-tree origin/main <pr-96-head>` — clean, no
+conflict markers; `mergeable_state: "clean"` on the live PR. The PR's
+head advanced twice more mid-review (both tracking-doc-only commits, no
+code delta); re-fetched and re-checked CI on the real final head
+(`902139b`) each time rather than trusting the PR's own "CI reconfirmed
+green" note, which named an intermediate, since-superseded head. CI:
+`get_workflow_run` on the real final run (`35404112803`) confirms its own
+`head_sha` is `902139b`, matching the PR's live head — all 6 jobs
+(`gate`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) `completed`/`success`.
+
+Read the real diff directly in a dedicated worktree — identical to PR
+#90's own already-reviewed delivery, confirmed via `git diff --stat`
+against `origin/main`. Re-pulled the task contract
+(`tools/r1_handoff.py packet FTF-1601 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 ends "...and
+restoration test"; Section 71.2 states "a backup that has never been
+restored does not count as validated." `RestoreRecord.restoration_validated`
+is this code's own chosen mechanism for that clause — a boolean
+conjunction of checksum verification plus three schema/RLS
+survival-subset checks.
+
+Re-ran both `tests/tasks/test_ftf_1601.py` (14/14) and
+`tests/integration/test_postgres_backup.py` against a real, freshly
+provisioned local PostgreSQL 16 cluster — both pass cleanly on the actual
+PR content.
+
+**Own fault injection, distinct from both this PR's own test suite and
+PR #90's prior review's fault injection (which targeted the
+`create_backup` self-verification encrypt/decrypt path):** built a real
+scenario against the live cluster — took a genuine encrypted backup of a
+migrated database (real tables, real `tenant_isolation` RLS policies),
+`pg_restore`'d it into a second scratch database, then manually
+`DROP POLICY tenant_isolation ON organizations` on that scratch copy — a
+real, physically incomplete restoration. Called `restore_backup()`
+against it with a no-op `restore_fn` and the real `metadata_fn`:
+
+- Unpatched code (as shipped): `restoration_validated` correctly comes
+  back `False` — the shipped logic genuinely works.
+- With the RLS-policy-survival term deleted from the conjunction,
+  everything else unchanged: the identical real scenario now reports
+  `restoration_validated: True` — a silent false positive for a real
+  incomplete restore. Re-ran both test suites against this faulted
+  code — **neither detects the fault.** Restored the file byte-for-byte
+  from a pre-edit copy (`diff` confirmed empty) immediately after.
+
+Root cause of the gap: the no-DB suite never exercises the
+restore-verification arithmetic's happy-path branch at all (only the
+tamper/wrong-key *rejection* paths, which are genuinely covered by
+`pg_restore`/`openssl`'s own checksum-before-decrypt gates). The live
+integration test's restore always restores the *intact* backup, so it
+only ever exercises the conjunction's all-`True` branch; its one direct
+reference to `restoration_validated` only proves the field is a real
+boolean, not that the comparison logic producing it can independently
+fail and be caught. The same gap applies symmetrically to the `tables`
+and `rls_forced_tables` subset terms.
+
+Per CLAUDE.md Law 1 ("Nothing proven until test shown able to fail"),
+this specific, load-bearing behavior — exactly what Section 71.2 exists
+to require — has never been shown able to fail by any test this PR
+ships. The shipped code is correct; only the negative-path proof is
+missing. `certification_state` for FTF-1601 is not yet `PROVISIONAL` on
+`main` (PR #96 is unmerged, nothing to downgrade there); PR #96's own
+branch keeps its submitted PROVISIONAL entry unaltered, since the code
+itself is sound. Full finding: `docs/certifications/queue.md`, "Control
+plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap: restoration
+completeness never proven able to fail)". `QUEUE.md`'s "Active" section
+records the fix needed for the next relay shift (one no-DB negative test
+per subset term, pushed to PR #96's own branch, no code change expected).
+
+Everything else checked out clean: `ruff`/`mypy`/`eslint`/`tsc`/
+`prettier` clean (63 source files); full existing regression (FTF-0002
+through FTF-R017, FTF-1810, FTF-H001/H002/H028/H034/R001, FTF-0102's and
+FTF-0104's own live integration tests) re-run with no regression;
+`validate_spec.py --strict` clean; `product_truth_check.py
+--fail-on-unwired` legitimately `0/0`; `verify_release.py` — `18/300`,
+zero `FAILED`, matching `main`'s pre-existing state (confirmed via a
+from-scratch `uv sync --all-packages` + `pnpm install --frozen-lockfile`
+re-run, after an initial partial-environment run showed 3 false `FAILED`
+entries from missing `node_modules` — resolved before relying on the
+result, not reported as a real regression). PR #90 confirmed genuinely
+`closed`/`merged: false`. Contract files confirmed to match the real
+dataclasses field-for-field.
+
+Did not merge PR #96, did not certify, did not touch anything outside
+certification (no code fix attempted, no other task work, no queue
+reprioritization beyond recording the finding and the fix needed).
 
 ## 2026-09-18 — Relay: PR #90's recurring structural blocker resolved for real, via this session's own branch instead of a fourth stall
 Scheduled relay shift (branch `claude/wizardly-fermat-vmg0oc`). STEP 0 hash

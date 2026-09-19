@@ -1,42 +1,43 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (relay shift, branch `claude/wizardly-fermat-vmg0oc`) —
-  PR #90's tracking-doc conflict recurred a third consecutive time
-  (`mergeable_state` re-verified live via `pull_request_read` +
-  independently reproduced with `git merge-tree origin/main
-  origin/claude/wizardly-fermat-e9tyvg` against current `main` tip
-  `fea3262`: genuine `CONFLICT (content)` in both `PROGRESS.md` and
-  `QUEUE.md` now). The last three shifts each correctly declined to push a
-  fix to `claude/wizardly-fermat-e9tyvg` (not this session's designated
-  branch, and CLAUDE.md's "never push to a different branch without
-  explicit permission" is a hard stop with no live user present in a
-  scheduled shift to grant it) — but three consecutive shifts recording
-  the same finding with no resolution is the "stuck, 3x" condition, not a
-  reason to record a fourth time. This shift merged FTF-1601's actual code
-  from `claude/wizardly-fermat-e9tyvg` into this session's own designated
-  branch instead (a read of that branch's content, not a push to it),
-  resolved the tracking-doc conflicts, full regression clean, pushed, and
-  opened PR https://github.com/SJZLab/Sovra/pull/96
-  (`claude/wizardly-fermat-vmg0oc` → `main`) to supersede #90. CI
-  reconfirmed green on the real final head `2a98c9d` (all 6 jobs, run
-  `35403943528`; CI also ran and stayed green on the intermediate head
-  `20aa4e5`, run `35403729104`), `mergeable_state: "clean"` — PR #90 closed with an
-  explanatory comment linking to #96. FTF-1601/PR #96 is ready for a
-  fresh, independent Control-plane L2 review; see "## Active" below.
-  Recomputed the dependency frontier independently via
-  `scripts/task_claim.load_tasks()`/`load_certification_states()` (not
-  just QUEUE.md's own prose): still only FTF-1601 and FTF-0101 (blocked on
-  a new-runtime-dependency ask, no owner response found — repo has zero
-  GitHub issues on record) are dependency-ready; no other unblocked,
-  unclaimed work exists. See "## Owner actions — current" and "## Blocked"
-  below.
-Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
+Updated: 2026-09-18 (Control plane, scheduled CERTIFY-mode session
+  triggered by PR #96's own `pull_request.opened` webhook) — PR #90's
+  structural blocker (recurring `PROGRESS.md`/`QUEUE.md` tracking-doc
+  merge conflict) is resolved for real: a relay shift merged FTF-1601's
+  actual code into its own designated branch and opened PR #96
+  (`claude/wizardly-fermat-vmg0oc` → `main`), which closed PR #90 and
+  reached `mergeable_state: "clean"` with CI green (6/6) on its real
+  final head (`902139b`), independently reconfirmed here via
+  `get_workflow_run` matching `head_sha`, not a stale claim. **Not
+  certified anyway:** independent review found a real Law 1 gap — the
+  `restoration_validated` boolean's schema/RLS-survival subset terms
+  (the code's own mechanism for Section 71.2's "a backup that has never
+  been restored does not count as validated") have never been shown able
+  to fail by any test in this PR. Proved this concretely against a real
+  live Postgres cluster (a real restore missing one RLS policy silently
+  reports `restoration_validated: True` once that one term is removed
+  from the conjunction; neither existing test suite catches it) — full
+  writeup: `docs/certifications/queue.md`, "Control plane review —
+  2026-09-18 — NOT CERTIFIED (real Law 1 gap: restoration completeness
+  never proven able to fail)". The shipped code itself is correct
+  (unpatched, it already returns `False` for this exact real scenario) —
+  only a negative test is missing. `certification_state` for FTF-1601 is
+  not yet `PROVISIONAL` on `main` (PR #96 is unmerged); nothing to
+  downgrade. **Action for the next relay shift:** push one no-DB negative
+  test to PR #96's own branch (`claude/wizardly-fermat-vmg0oc`) proving
+  `restoration_validated` goes `False` when a `metadata_fn` reports a
+  restored state missing a table / `FORCE ROW LEVEL SECURITY` flag /
+  RLS policy the original backup had, confirm CI stays green, then
+  resubmit for certification — no other rework needed. Recomputed the
+  dependency frontier: still only FTF-1601 (this PR, now blocked on the
+  above) and FTF-0101 (blocked on a new-runtime-dependency ask); no other
+  unblocked, unclaimed work exists. See "## Owner actions — current" and
+  "## Blocked" below.Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
 `c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #96,
-FTF-1601 (supersedes closed #90), is open, CI green, but not yet
-merged/certified — see "## Active" below) ·
-Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
+FTF-1601, is open, CI green, but NOT CERTIFIED — real Law 1 test-coverage
+gap found, see banner above and "## Active" below) ·Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
 "## Owner actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
@@ -110,9 +111,50 @@ without counting toward product-true).
   ready items, and FTF-1601 is already in flight). Per STEP 4(e),
   stopping this shift here.
 ## Active (relay works this)
-(empty — FTF-1601/PR #96 is done from the relay's side and now sits in
-"## Provisional" below, awaiting Control plane L2 certification.)
+FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102, both CERTIFIED) — open
+PR https://github.com/SJZLab/Sovra/pull/96 (supersedes closed PR #90),
+head `902139b` on branch `claude/wizardly-fermat-vmg0oc`.
 
+History: PR #90's recurring `PROGRESS.md`/`QUEUE.md` tracking-doc merge
+conflict against a moving `main` stalled for three consecutive relay
+shifts (each correctly declined to push a fix to a branch it wasn't
+assigned). A later shift broke the stall by merging FTF-1601's actual
+delivered code from `claude/wizardly-fermat-e9tyvg` into its own
+designated branch (`claude/wizardly-fermat-vmg0oc`) instead, resolved the
+tracking-doc conflicts there, and opened PR #96 to supersede #90 (closed
+with an explanatory comment).
+
+**This shift (Control plane, scheduled CERTIFY-mode, triggered by PR
+#96's own `pull_request.opened` webhook):** confirmed CI green (6/6) on
+the real final head `902139b` via `get_workflow_run` matching `head_sha`
+directly (the PR advanced through two more tracking-doc-only commits
+mid-review; re-checked each time rather than trusting a stale claim), and
+`mergeable_state: "clean"` — the structural blocker is genuinely resolved.
+**Did not certify anyway:** independent fault injection against a real
+live Postgres cluster found that `restore_backup()`'s
+`restoration_validated` result — the code's own mechanism for Section
+71.2's "a backup that has never been restored does not count as
+validated" — has never been shown able to fail by any test in this PR
+(Law 1). Proved it concretely: took a real encrypted backup, restored it
+into a scratch database, manually dropped one RLS policy from that
+restored copy (a real, physically incomplete restore), and confirmed the
+shipped code correctly reports `restoration_validated: False` for it —
+but removing just that one term from the boolean conjunction makes the
+identical real scenario silently report `True`, and neither
+`tests/tasks/test_ftf_1601.py` nor `tests/integration/test_postgres_backup.py`
+catches the difference. Full writeup: `docs/certifications/queue.md`,
+"Control plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap:
+restoration completeness never proven able to fail)".
+
+**Fix needed (relay, same PR #96 branch, no code change expected):** add
+a no-DB test — the existing `dump_fn`/`metadata_fn`-injection pattern
+already used elsewhere in `tests/tasks/test_ftf_1601.py` is sufficient —
+that calls `restore_backup()` with a `metadata_fn` reporting a restored
+state missing a table, a `FORCE ROW LEVEL SECURITY` flag, or an RLS
+policy the original backup recorded, and asserts
+`restoration_validated is False` for each of the three subset terms
+independently. Push to `claude/wizardly-fermat-vmg0oc`, confirm CI stays
+green, resubmit for certification.
 ## Provisional (awaiting Control plane L2 certification)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third
 structural-blocker recurrence resolved via a new PR rather than a fourth
