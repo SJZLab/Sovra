@@ -91,6 +91,20 @@ None currently.
   package ask above; (2) "revoked membership... denied" is proven only via
   an injected fake lookup, not a real Membership table (doesn't exist yet).
   Full evidence: docs/certifications/queue.md.
+  **Control plane independent review, 2026-09-19 (PR #103): NOT CERTIFIED.**
+  Session-ID clean, real diff read, CI confirmed green on the real final
+  head (`513538e`, run 35429139124, 6/6), and this session's own three
+  independently-chosen fault injections (alg=none, CSRF/origin, membership)
+  all genuinely caught. Item (2) above is accepted as an out-of-scope gap
+  (Membership is a different task's deliverable) and does not block
+  certification on its own. Item (1) does: acceptance clause 1 is this
+  task's *primary* clause and has never been exercised against a real OIDC
+  provider, only a fake stdlib stand-in — not proven. Stays `PROVISIONAL`/
+  `L1-PROVEN` (not downgraded further). **Blocked on:** the owner decision
+  already tracked in "Owner actions — current" above (approve
+  `oidc-provider` or `idpy-oidc`); once approved, next shift adds real
+  integration evidence against that actual provider before resubmitting.
+  Full review: docs/certifications/queue.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
