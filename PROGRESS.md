@@ -1,5 +1,69 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Control plane, scheduled CERTIFY-mode session)
+Updated: 2026-09-19T02:50:44Z (Relay, scheduled shift)
+
+## 2026-09-19T02:50:44Z — Relay: PR #96 fix already pushed by a prior shift, CI reconfirmed green, no new unblocked work
+STEP 0: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` exactly
+— no drift, no BLOCKER.md needed. `cognee-cli` not found on `PATH` — text-
+search fallback active (unchanged from every prior shift).
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` as
+last written (2026-09-18, Control plane's NOT-CERTIFIED review of PR #96
+— real Law 1 gap, `restoration_validated`'s three schema/RLS subset terms
+never shown able to fail by any test). `QUEUE.md`'s own "Active" section
+recorded the fix needed for the next relay shift: one no-DB negative test
+per subset term, pushed to PR #96's branch (`claude/wizardly-fermat-vmg0oc`),
+no code change expected.
+
+This session's own designated branch is `claude/wizardly-fermat-jq90ld` —
+different from PR #96's branch, same shape as the branch-permission
+constraint noted in the 2026-09-18 `azvcdp` shift's entry. Checked live,
+rather than assuming the fix still needed doing, before deciding how to
+proceed: `git fetch origin claude/wizardly-fermat-vmg0oc` shows its head
+is now `19e18de0` (not the `902139b` `QUEUE.md` still names), 15 commits
+ahead of that stale reference. Reading the commit log directly: a prior
+relay shift (`session_016ryLQ1vSJCNYTMHw9DrcSd`) already pushed the exact
+fix requested — commit `353b82b` ("FTF-1601: add missing
+restoration_validated negative test (PR #96 fix)") adds four checks to
+`tests/tasks/test_ftf_1601.py` (independent negatives for a missing
+table, missing `FORCE ROW LEVEL SECURITY` flag, and missing RLS policy,
+plus a baseline positive), reproducing the reviewer's exact finding by
+removing each conjunction term from `scripts/postgres_backup.py` in turn
+and confirming the matching new check fails each time — then a follow-up
+commit (`19e18de0`) recorded CI reconfirmed green on that real head.
+
+Independently re-verified rather than trusting that commit message alone
+(GitHub MCP, live, this shift):
+- `pull_request_read get` on PR #96: `state: open`, `mergeable_state:
+  "clean"`, head `19e18de0`.
+- `get_check_runs`: 6/6 `completed`/`success` on head `19e18de0` (`gate`,
+  `docker-local-stack-integration`, `organization-workspace-schema-
+  integration`, `audit-event-writer-integration`,
+  `postgres-backup-integration`, `storage-semantics-integration`).
+- `get_review_comments`: zero open review threads.
+- Recomputed the full 300-task dependency frontier directly via
+  `scripts.task_claim.load_tasks()`/`load_certification_states()`
+  (18 certified, unchanged): still exactly `['FTF-0101', 'FTF-1601']`,
+  same two items as the last several shifts — no new unblocked,
+  unclaimed work exists. FTF-0101 remains blocked on its 2026-09-18
+  new-runtime-dependency owner ask (unchanged, no owner response since;
+  see `QUEUE.md` "Owner actions — current").
+
+Since the fix a prior relay shift already delivered on PR #96's own
+branch fully satisfies `QUEUE.md`'s "Active" note (real negative test,
+CI green, no code change), and no other unblocked task exists, this
+shift makes no code change — only confirms the state and refreshes the
+tracking docs so they don't keep pointing at the stale `902139b` head.
+Did not touch `docs/certifications/queue.md`'s FTF-1601 finding itself
+(the finding is accurate as written for the head it reviewed; the fix
+commit is new evidence for a fresh Control-plane L2 pass, not something
+relay amends or self-certifies — Law 4). FTF-1601/PR #96 is fully
+L1-PROVEN and ready for independent Control-plane review; nothing else
+is actionable this shift.
+
+Stopping per STEP 4(a): FTF-1601, the only in-flight item, is fully
+L1-PROVEN awaiting Control-plane certification and (eventually) the L4
+gate; FTF-0101 remains a hard ask-first stop. Certified: 18/300 ·
+Product-true: 0 (unchanged).
 
 ## 2026-09-18 — Control plane: FTF-1601 (PR #96) NOT CERTIFIED — real Law 1 gap, restoration completeness never proven able to fail
 Scheduled CERTIFY-mode session, triggered by PR #96's own

@@ -1,37 +1,24 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-18 (Control plane, scheduled CERTIFY-mode session
-  triggered by PR #96's own `pull_request.opened` webhook) — PR #90's
-  structural blocker (recurring `PROGRESS.md`/`QUEUE.md` tracking-doc
-  merge conflict) is resolved for real: a relay shift merged FTF-1601's
-  actual code into its own designated branch and opened PR #96
-  (`claude/wizardly-fermat-vmg0oc` → `main`), which closed PR #90 and
-  reached `mergeable_state: "clean"` with CI green (6/6) on its real
-  final head (`902139b`), independently reconfirmed here via
-  `get_workflow_run` matching `head_sha`, not a stale claim. **Not
-  certified anyway:** independent review found a real Law 1 gap — the
-  `restoration_validated` boolean's schema/RLS-survival subset terms
-  (the code's own mechanism for Section 71.2's "a backup that has never
-  been restored does not count as validated") have never been shown able
-  to fail by any test in this PR. Proved this concretely against a real
-  live Postgres cluster (a real restore missing one RLS policy silently
-  reports `restoration_validated: True` once that one term is removed
-  from the conjunction; neither existing test suite catches it) — full
-  writeup: `docs/certifications/queue.md`, "Control plane review —
-  2026-09-18 — NOT CERTIFIED (real Law 1 gap: restoration completeness
-  never proven able to fail)". The shipped code itself is correct
-  (unpatched, it already returns `False` for this exact real scenario) —
-  only a negative test is missing. `certification_state` for FTF-1601 is
-  not yet `PROVISIONAL` on `main` (PR #96 is unmerged); nothing to
-  downgrade. **Action for the next relay shift:** push one no-DB negative
-  test to PR #96's own branch (`claude/wizardly-fermat-vmg0oc`) proving
-  `restoration_validated` goes `False` when a `metadata_fn` reports a
-  restored state missing a table / `FORCE ROW LEVEL SECURITY` flag /
-  RLS policy the original backup had, confirm CI stays green, then
-  resubmit for certification — no other rework needed. Recomputed the
-  dependency frontier: still only FTF-1601 (this PR, now blocked on the
-  above) and FTF-0101 (blocked on a new-runtime-dependency ask); no other
-  unblocked, unclaimed work exists. See "## Owner actions — current" and
-  "## Blocked" below.
+Updated: 2026-09-19T02:50:44Z (Relay, scheduled shift) — the fix
+  Control plane's 2026-09-18 review asked for is already done: a prior
+  relay shift (`session_016ryLQ1vSJCNYTMHw9DrcSd`) pushed commit
+  `353b82b` to PR #96's own branch (`claude/wizardly-fermat-vmg0oc`),
+  adding four no-DB negative checks to `tests/tasks/test_ftf_1601.py`
+  (independent negatives for a missing table, missing `FORCE ROW LEVEL
+  SECURITY` flag, and missing RLS policy, plus a baseline positive),
+  closing the exact Law 1 gap the review found — no production code
+  changed. This shift independently re-verified live rather than trusting
+  that commit's own message: PR #96's real head is now `19e18de0` (not
+  the `902139b` this file previously named — that reference had gone
+  stale), `mergeable_state: "clean"`, `get_check_runs` shows 6/6
+  `completed`/`success` on that exact head, zero open review threads.
+  FTF-1601/PR #96 is fully L1-PROVEN and ready for a fresh, independent
+  Control-plane L2 review — not relay's to certify (Law 4). Recomputed
+  the dependency frontier directly via `scripts.task_claim` (18
+  certified, unchanged): still only FTF-1601 (this PR, now unblocked and
+  awaiting certification) and FTF-0101 (blocked on a new-runtime-
+  dependency ask); no other unblocked, unclaimed work exists. See
+  "## Owner actions — current" and "## Blocked" below.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -112,10 +99,10 @@ without counting toward product-true).
   `load_certification_states()` — FTF-0101 and FTF-1601 are the only two
   ready items, and FTF-1601 is already in flight). Per STEP 4(e),
   stopping this shift here.
-## Active (relay works this)
+## Active (awaiting Control plane — no relay action left)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102, both CERTIFIED) — open
 PR https://github.com/SJZLab/Sovra/pull/96 (supersedes closed PR #90),
-head `902139b` on branch `claude/wizardly-fermat-vmg0oc`.
+head `19e18de0` on branch `claude/wizardly-fermat-vmg0oc`.
 
 History: PR #90's recurring `PROGRESS.md`/`QUEUE.md` tracking-doc merge
 conflict against a moving `main` stalled for three consecutive relay
@@ -148,15 +135,28 @@ catches the difference. Full writeup: `docs/certifications/queue.md`,
 "Control plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap:
 restoration completeness never proven able to fail)".
 
-**Fix needed (relay, same PR #96 branch, no code change expected):** add
-a no-DB test — the existing `dump_fn`/`metadata_fn`-injection pattern
-already used elsewhere in `tests/tasks/test_ftf_1601.py` is sufficient —
-that calls `restore_backup()` with a `metadata_fn` reporting a restored
-state missing a table, a `FORCE ROW LEVEL SECURITY` flag, or an RLS
-policy the original backup recorded, and asserts
-`restoration_validated is False` for each of the three subset terms
-independently. Push to `claude/wizardly-fermat-vmg0oc`, confirm CI stays
-green, resubmit for certification.
+**Fix delivered:** a prior relay shift (`session_016ryLQ1vSJCNYTMHw9DrcSd`)
+pushed the requested no-DB negative test to `claude/wizardly-fermat-vmg0oc`
+— commit `353b82b` adds four checks to `tests/tasks/test_ftf_1601.py`
+(independent negatives for a missing table, missing `FORCE ROW LEVEL
+SECURITY` flag, and missing RLS policy, plus a baseline positive proving
+the negatives fail for the right reason), reproducing the reviewer's
+exact finding by removing each conjunction term from
+`scripts/postgres_backup.py` in turn and confirming the matching new
+check failed each time; no production code changed.
+
+**This shift (relay, scheduled, 2026-09-19T02:50:44Z):** independently
+re-verified live rather than trusting the fix commit's own message:
+`pull_request_read get` shows `state: open`, `mergeable_state: "clean"`,
+head `19e18de0`; `get_check_runs` shows 6/6 `completed`/`success` on that
+exact head (`gate`, `docker-local-stack-integration`, `organization-
+workspace-schema-integration`, `audit-event-writer-integration`,
+`postgres-backup-integration`, `storage-semantics-integration`); zero
+open review threads. Recomputed the full dependency frontier directly —
+unchanged, still only FTF-0101 (blocked) and FTF-1601 (this PR). Nothing
+left for relay to do here: FTF-1601/PR #96 is fully L1-PROVEN and ready
+for a fresh, independent Control-plane L2 review (Law 4 — relay does not
+self-certify).
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-0104 certified this shift, see "## Done" below.)
