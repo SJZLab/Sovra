@@ -1,18 +1,31 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19 (Control plane — live, interactive session with the
-  account holder, samer.zakaria@gmail.com, not a scheduled/automated
-  turn) — the owner directly confirmed, live in conversation, **option
-  1** for FTF-0101's 2026-09-18 new-runtime-dependency ask: FastAPI +
-  uvicorn + authlib + itsdangerous (Python) and Next.js + React +
-  react-dom (TypeScript) — the implied default stack already assumed by
-  the architecture docs for `apps/api`/`apps/web`. This resolves the core
-  web-framework/auth-library piece of the ask; FTF-0101 is dependency-
-  ready for the next relay shift (moved out of "## Blocked"). The
-  separate local-OIDC-test-provider package decision (needed later for
-  this task's own real-integration-evidence acceptance clause, Section
-  65.3) was **not** part of this confirmation and remains a fresh, open
-  ask below — not assumed resolved by the same answer. No source code
-  changed this turn; full record: PROGRESS.md's matching entry.
+Updated: 2026-09-19 (live, interactive session with the account holder,
+  samer.zakaria@gmail.com — not a scheduled/automated turn) — the owner
+  directly instructed, live in conversation, a standing default-resolution
+  rule (now recorded in CLAUDE.md "Ask owner first": match the
+  architecture docs by default, never reopen a decision already written
+  into them as a fresh ask, escalate only for a genuine critique/conflict
+  with the architecture itself) and applied it to close the one open ask
+  below: FTF-0101's local-OIDC-test-provider package choice. Resolved as
+  **idpy-oidc** (Python, dev/test-only dependency) — the architecture docs
+  don't name a specific package for this, but the language matches the
+  already-owner-confirmed `apps/api` Python/FastAPI stack (the same
+  2026-09-19 confirmation referenced below) rather than adding a new Node
+  dev-tooling dependency into what is otherwise a Python-native backend
+  test suite (`tests/tasks/test_ftf_0101.py`). No source code changed this
+  turn; the next relay/control-plane shift adds real integration evidence
+  against a real local `idpy-oidc` instance to a PR #103 follow-up before
+  resubmitting for certification. Full record: PROGRESS.md's matching
+  entry.
+
+  Earlier the same date: the owner directly confirmed, live in
+  conversation, **option 1** for FTF-0101's 2026-09-18
+  new-runtime-dependency ask: FastAPI + uvicorn + authlib + itsdangerous
+  (Python) and Next.js + React + react-dom (TypeScript) — the implied
+  default stack already assumed by the architecture docs for
+  `apps/api`/`apps/web`. This resolved the core web-framework/auth-library
+  piece of the ask; FTF-0101 became dependency-ready that same shift
+  (moved out of "## Blocked").
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -20,10 +33,10 @@ Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
 `f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
 PR #103 — open, unmerged, independently reviewed 2026-09-19 and **not**
 certified; see "## Provisional" below) · Blocked: 0 (FTF-0101's
-web-framework/auth-stack approval resolved 2026-09-19 by live owner
-confirmation — dependency-ready, not yet claimed; its own
-local-OIDC-test-provider sub-decision is still open, see "## Owner
-actions — current")
+web-framework/auth-stack approval and its own local-OIDC-test-provider
+package choice were both resolved 2026-09-19 by live owner
+instruction/confirmation — see "## Blocked" history below; no open owner
+ask remains)
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -62,28 +75,10 @@ a live-wired product-runtime path, so all nineteen are CERTIFIED without
 counting toward product-true).
 
 ## Owner actions — current
-- 2026-09-19 (fresh ask, scoped down after this same date's live owner
-  confirmation resolved the web-framework/auth-library half — see the
-  banner above and PROGRESS.md): FTF-0101 (OIDC login) still needs one
-  further decision before its acceptance criteria can be fully closed out.
-  Section 65.3 requires real integration evidence against "a real local
-  OIDC provider" (never a bypass/test-token login) — running that for
-  real needs a local OIDC test-provider package, e.g. the Node
-  `oidc-provider` package or the Python `idpy-oidc` package, and neither
-  is installed or approved yet. This is a separate new-runtime-dependency
-  ask-first item from the now-approved FastAPI/Next.js/authlib stack — it
-  was never part of that confirmation and is not assumed resolved by it.
-  Not blocking the start of FTF-0101's implementation work (the
-  `oidc_login.tsx` component and the callback/session API can be built
-  and unit-tested first); it only blocks closing out the task's real-
-  integration-evidence clause, so the next relay shift can claim and
-  start FTF-0101 now and should raise this specific choice again once it
-  reaches that clause rather than picking a package unilaterally.
-  **2026-09-19 update:** this is that point — FTF-0101 was implemented and
-  submitted PROVISIONAL as PR #103, independently reviewed the same day,
-  and NOT certified specifically because this clause is still open (see
-  "## Provisional" below). Still awaiting an owner decision; PR #103 stays
-  open until one lands and a follow-up adds real integration evidence.
+None currently. The one open ask (FTF-0101's local-OIDC-test-provider
+package choice) was resolved 2026-09-19 by live owner instruction — see
+the banner above and "## Blocked" history below.
+
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
 independently reviewed and CERTIFIED this shift via PR #100 (merge commit
@@ -107,15 +102,18 @@ full history and evidence.
   Acceptance clause 1 ("Real OIDC provider login/refresh/logout") is this
   task's *primary* clause and has only ever been exercised against a fake
   stdlib HTTP stand-in, not a real OIDC provider — as the PR itself
-  discloses (Section 65.3 needs the still-open local-test-provider-package
-  ask above). The "revoked membership" negative_acceptance gap is accepted
-  as out-of-scope (Membership is a different task's deliverable,
+  discloses (Section 65.3 needed the local-test-provider-package ask,
+  resolved below). The "revoked membership" negative_acceptance gap is
+  accepted as out-of-scope (Membership is a different task's deliverable,
   FTF-0103/FTF-0105) and does not block on its own. `certification_state`
   stays `PROVISIONAL`/`L1-PROVEN` on the PR's own branch (PR #103 stays
-  open — not merged, since it is not certified). **Blocked on:** the owner
-  decision above; once approved, a follow-up adds real integration
-  evidence against that actual provider before resubmitting. Full review:
-  `docs/certifications/queue.md`.
+  open — not merged, since it is not certified). **Blocked on:** nothing
+  owner-side now — the local-OIDC-test-provider package choice was
+  resolved 2026-09-19 (`idpy-oidc`, Python) by live owner instruction (see
+  banner above and "## Blocked" history); the next relay/control-plane
+  shift adds real integration evidence against a real local `idpy-oidc`
+  instance to a PR #103 follow-up before resubmitting for certification.
+  Full review: `docs/certifications/queue.md`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -541,17 +539,30 @@ to get its real DoD — read the generated
 not merely because the task looked title-only elsewhere.
 
 ## Blocked
-(no task currently blocked — both entries below are resolved history,
+(no task currently blocked — all three entries below are resolved history,
 kept for the record.)
 - (FTF-0101's 2026-09-18 new-runtime-dependency ask — no live FastAPI app,
   no Next.js/React runtime, no OIDC/JWT client or session library — was
   resolved 2026-09-19 by live owner confirmation (option 1: FastAPI +
   uvicorn + authlib + itsdangerous, and Next.js + React + react-dom,
   matching the architecture docs' implied default) — see PROGRESS.md's
-  matching entry for the full record. FTF-0101 is now dependency-ready
-  for the next relay shift to claim; not yet implemented. Its own
-  narrower local-OIDC-test-provider package decision remains open — see
-  "## Owner actions — current" — but does not block starting the task.)
+  matching entry for the full record. FTF-0101 was then implemented and
+  submitted as PR #103.)
+- (FTF-0101's own narrower local-OIDC-test-provider-package ask — Section
+  65.3's real-integration-evidence clause needs a real local OIDC
+  provider, and neither the Node `oidc-provider` package nor the Python
+  `idpy-oidc` package was installed or approved — was resolved 2026-09-19
+  by a live owner instruction: apply a new standing default-resolution
+  rule, now recorded in CLAUDE.md "Ask owner first," rather than treat
+  every architecture-adjacent choice as a fresh hard stop. Applied that
+  rule here: resolved as `idpy-oidc` (Python, dev/test-only dependency),
+  matching the already-owner-confirmed `apps/api` Python/FastAPI stack
+  (the entry above) rather than adding a new Node dev-tooling dependency
+  into a Python-native backend test suite. See CLAUDE.md and PROGRESS.md's
+  matching entry for the full record. PR #103's follow-up still needs to
+  add real integration evidence against a real local `idpy-oidc` instance
+  before resubmitting for certification — that implementation work is
+  unblocked, not yet done.)
 - (FTF-0102's own 2026-09-16 new-runtime-dependency ask was resolved
   2026-09-18 by live owner confirmation (option 1: SQLAlchemy + Alembic +
   a Postgres driver, matching the master architecture table as written) —
