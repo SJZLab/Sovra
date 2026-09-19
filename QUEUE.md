@@ -571,10 +571,10 @@ kept for the record.)
   matching the already-owner-confirmed `apps/api` Python/FastAPI stack
   (the entry above) rather than adding a new Node dev-tooling dependency
   into a Python-native backend test suite. See CLAUDE.md and PROGRESS.md's
-  matching entry for the full record. PR #103's follow-up still needs to
-  add real integration evidence against a real local `idpy-oidc` instance
-  before resubmitting for certification — that implementation work is
-  unblocked, not yet done.)
+  matching entry for the full record. That follow-up implementation work
+  is now done: real integration evidence against a real local `idpyoidc`
+  instance was added and resubmitted as PR #112, superseding PR #103 — see
+  "## Provisional" above.)
 - (FTF-0102's own 2026-09-16 new-runtime-dependency ask was resolved
   2026-09-18 by live owner confirmation (option 1: SQLAlchemy + Alembic +
   a Postgres driver, matching the master architecture table as written) —
