@@ -116,7 +116,8 @@ full history and evidence.
   and does not count toward product-true (product_truth_check.py stays
   `1/1`). Full submission report: docs/certifications/queue.md.
   `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` in
-  docs/spec-matrix.yaml. PR link to be recorded once opened.
+  docs/spec-matrix.yaml. **PR:** https://github.com/SJZLab/Sovra/pull/118
+  (`claude/wizardly-fermat-vpmo65` → `main`).
 
 Prior item: FTF-0101 (OIDC login) was independently reviewed and
 CERTIFIED this shift via PR #114 (merge commit `5de1c58`) — see "## Done"
