@@ -1,7 +1,42 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T21:30:00Z (Relay — scheduled autonomous shift; merged
-  one overlooked doc-only PR (#108), no actionable item found otherwise,
-  stopped per STEP 4(a)/(e))
+Updated: 2026-09-19T16:51:04Z (Relay — scheduled autonomous shift; no
+  actionable item found, no overlooked PRs this time, stopped per STEP
+  4(a)/(e))
+
+## 2026-09-19T16:51:04Z — Relay shift: no unblocked work, no overlooked PRs (STEP 4a/4e)
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md, and
+BLOCKER.md (both entries resolved history) against `origin/main`'s actual
+tip (`4693d1a`, PR #109 — the prior shift's own doc-only PROGRESS.md
+write). Local working branch (`claude/wizardly-fermat-ldnrh2`) matched
+`origin/main` exactly before this shift's own edits — nothing had landed
+since the prior shift.
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: QUEUE.md Active is empty. Independently re-derived the dependency
+graph with a fresh script (parsed `docs/TASK_INDEX.md`'s 300-row table
+directly, not reused from any prior shift's claim) against the current
+certified set (19 tasks: FTF-0001–0006, H001, R001, H002, H028, H034,
+1810, R014, R015, R011, R017, 0102, 0104, 1601) plus the one PROVISIONAL
+task (FTF-0101): zero of the remaining 280 tasks have every dependency in
+the certified set — FTF-0101 remains the only task whose deps are fully
+satisfied, and every other task depends on it (directly or transitively,
+chiefly through FTF-0103). Confirmed via GitHub MCP (read-only): PR #103
+(FTF-0101) is unchanged since its 2026-09-19 NOT-CERTIFIED review — same 5
+commits (07:19–07:25Z), same head SHA `3e8006f`, zero reviews, zero review
+comments, zero issue comments; CI still green (6/6 checks, run
+`35429281103`). `list_pull_requests(state=open)` returned only PR #103 —
+no overlooked/stray PRs this time (unlike the last three shifts, which
+each found one). No new owner response anywhere this session can see; the
+QUEUE.md "Owner actions — current" ask (local OIDC test-provider package
+approval) is unchanged and still accurately dated 2026-09-19.
+No source, spec-matrix, or certification-queue change this shift. Nothing
+to merge. This PROGRESS.md update is the only diff, opened as a doc-only
+PR per the established pattern (routine housekeeping, "Do without asking"
+→ merge on green).
+Stopping per STEP 4(e) (ask-first item, unchanged) and STEP 4(a) (FTF-0101
+fully L1-PROVEN, awaiting Control plane certification + owner decision).
 
 ## 2026-09-19T21:30:00Z — Relay shift: merged overlooked doc-only PR #108, no unblocked work otherwise (STEP 4a/4e)
 STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
