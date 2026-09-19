@@ -126,6 +126,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0104.py
       - name: FTF-1601 negative-test proof (postgres backup catches real defects, no DB required)
         run: python3 tests/tasks/test_ftf_1601.py
+      - name: FTF-0101 negative-test proof (OIDC login catches real defects, real local sockets, no DB required)
+        # uv run: this is the first task requiring FastAPI/authlib/itsdangerous/uvicorn
+        # (owner-approved 2026-09-19), the same reason FTF-0102 first needed `uv run`.
+        run: uv run python3 tests/tasks/test_ftf_0101.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -285,3 +289,21 @@ jobs:
         run: pip install pyyaml --quiet
       - name: Prove the real storage semantics against the live S3 fixture
         run: python3 tests/integration/test_storage_semantics.py
+
+  oidc-provider-integration:
+    # FTF-0101 acceptance clause 1 ("Real OIDC provider login/refresh/logout
+    # validates issuer+audience+subject and secure session"): real
+    # authorization-code + PKCE flow against a real, owner-approved
+    # `idpyoidc` OpenID Provider (Section 65.3) -- not the stdlib stand-in
+    # tests/tasks/test_ftf_0101.py itself discloses as insufficient for this
+    # specific clause. No external service/container needed -- the real OP
+    # runs in-process as its own real HTTP server.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member + idpyoidc dev dependency)
+        run: uv sync --all-packages
+      - name: Prove the real OIDC-provider login evidence
+        run: uv run python3 tests/integration/test_oidc_login_real_provider.py

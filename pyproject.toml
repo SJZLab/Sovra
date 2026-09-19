@@ -20,6 +20,10 @@ dev = [
   "pyyaml>=6.0.1,<6.1",
   "types-PyYAML>=6.0.12,<6.1",
   "pytest>=9.1.1,<9.2",
+  # FTF-0101: real local OIDC provider for tests/integration/test_oidc_login_real_provider.py
+  # (owner-approved 2026-09-19, QUEUE.md "Blocked" history) -- dev/test-only, never imported
+  # by any production apps/api runtime path.
+  "idpyoidc>=5.0.0,<5.1",
 ]
 
 [tool.pytest.ini_options]

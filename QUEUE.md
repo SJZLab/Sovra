@@ -31,10 +31,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 ## Status
 Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
 `f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
-PR #112 (supersedes PR #103, closed) — open, unmerged, independently
-reviewed 2026-09-19 and **not** certified (real-provider login/logout
-evidence proven; "refresh" is unimplemented, untested and undisclosed);
-see "## Provisional" below) · Blocked: 0 (FTF-0101's
+PR #114 (supersedes PR #112, closed) — open, unmerged, real server-side
+refresh now implemented and proven against the real local provider (the
+one gap PR #112's Control-plane review found), awaiting a fresh
+independent review; see "## Provisional" below) · Blocked: 0 (FTF-0101's
 web-framework/auth-stack approval and its own local-OIDC-test-provider
 package choice were both resolved 2026-09-19 by live owner
 instruction/confirmation — see "## Blocked" history below; no open owner
@@ -126,6 +126,37 @@ full history and evidence.
   decision explicitly in the module docstring, `docs/spec-matrix.yaml`,
   and the next PR body — then resubmit. No other part of PR #112 needs
   rework. Full review: `docs/certifications/queue.md`.
+  **Relay, 2026-09-19: real server-side refresh implemented, submitted as
+  PR #114** (`claude/wizardly-fermat-3il8f6` → `main`), superseding PR
+  #112 (closed as superseded — its login/logout commits carried forward
+  unchanged). Took the "implement it for real" branch of the review's own
+  two options, since acceptance clause 1 names "refresh" as a required
+  flow and Section 45 requires "refresh handled server-side" outright — a
+  disclosed re-login-only scope would not satisfy either. Confirmed
+  empirically, via a standalone scratch script against the real `idpyoidc`
+  OP before writing any app code, that a real provider requires
+  `offline_access` scope + `prompt=consent` before it will mint a
+  `refresh_token` at all — `build_authorization_redirect_url` now requests
+  both. New `POST /auth/refresh`: exchanges the session's server-held
+  `refresh_token` for a new id_token against the real provider's own token
+  endpoint, validates it the same way `callback()` does, confirms
+  subject/issuer continuity, then rotates the session (old session id
+  revoked, new one issued) — the raw refresh_token is never sent to the
+  browser (new in-memory `_RefreshTokenStore`, mirroring the existing
+  `_SessionRevocationStore`). `tests/integration/
+  test_oidc_login_real_provider.py` gained 2 new tests proving this
+  against the real OP end to end (real new id_token, real rotation with
+  the pre-refresh cookie genuinely revoked and a replay denied, real CSRF
+  enforcement); `tests/tasks/test_ftf_0101.py` gained 6 new unit/fault
+  tests. Own fault injection (removed the rotation revoke) caught for real
+  by both files, restored byte-identical. `certification_state` stays
+  `PROVISIONAL`/`L1-PROVEN` — not self-certified (Law 4), pending a fresh
+  independent Control-plane review. Full regression clean (ruff/mypy,
+  pnpm lint/typecheck/format:check, vitest, pytest, all 16 existing
+  `tests/tasks/test_ftf_*.py` files, `validate_spec.py --strict`,
+  `product_truth_check.py` still 1/1). Full entry:
+  `docs/certifications/queue.md`; PROGRESS.md's matching entry has the
+  full PEV record.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -571,10 +602,10 @@ kept for the record.)
   matching the already-owner-confirmed `apps/api` Python/FastAPI stack
   (the entry above) rather than adding a new Node dev-tooling dependency
   into a Python-native backend test suite. See CLAUDE.md and PROGRESS.md's
-  matching entry for the full record. PR #103's follow-up still needs to
-  add real integration evidence against a real local `idpy-oidc` instance
-  before resubmitting for certification — that implementation work is
-  unblocked, not yet done.)
+  matching entry for the full record. That follow-up implementation work
+  is now done: real integration evidence against a real local `idpyoidc`
+  instance was added and resubmitted as PR #112, superseding PR #103 — see
+  "## Provisional" above.)
 - (FTF-0102's own 2026-09-16 new-runtime-dependency ask was resolved
   2026-09-18 by live owner confirmation (option 1: SQLAlchemy + Alembic +
   a Postgres driver, matching the master architecture table as written) —

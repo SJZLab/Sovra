@@ -1,7 +1,120 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #112: independent CERTIFY review
-  of FTF-0101 — NOT CERTIFIED; see below)
+Updated: 2026-09-19T23:59:00Z (scheduled relay shift: implemented and
+  proved real server-side OIDC refresh, the one gap that blocked PR #112's
+  Control-plane review; submitted as PR #114, superseding PR #112)
+
+## 2026-09-19T23:59:00Z — Relay shift: FTF-0101 real server-side refresh implemented, submitted as PR #114
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md
+against `origin/main`'s actual tip (`5012396`) before starting. QUEUE.md's
+"## Provisional" entry for FTF-0101 (PR #112) recorded the prior
+Control-plane review's exact finding and its own "Next step (relay)":
+either implement and prove a real server-side refresh mechanism against
+the real provider, or explicitly disclose refresh-by-re-login as the
+intended scope. This was the one unblocked item — no open owner ask, no
+other Active/Provisional item.
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: `python tools/r1_handoff.py packet FTF-0101 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled to re-confirm acceptance
+clause 1's exact text ("Real OIDC provider login/refresh/logout validates
+issuer+audience+subject and secure session") and Section 45's "refresh
+handled server-side" requirement — both point at implementing real
+refresh, not disclosing a re-login-only scope, so that was the path taken.
+STEP 2 (PEV):
+- **P:** read `apps/api/app/auth/oidc_login.py` and both FTF-0101 test
+  files in full. Before writing any app code, wrote a standalone scratch
+  script driving a real `idpyoidc.server.Server` OP directly (not through
+  the app) to find out what a real provider actually requires before it
+  will mint a `refresh_token`: confirmed empirically that `offline_access`
+  scope plus `prompt=consent` are both required (the OP silently omits
+  `refresh_token` from the token response otherwise, and errors on
+  `offline_access` without `prompt=consent`), and that a refreshed
+  id_token needs the OP's own `refresh_token` grant_config to list
+  `id_token` in `supports_minting` (not on by default in PR #112's own OP
+  config) or no id_token comes back on refresh at all.
+- **E:** `apps/api/app/auth/oidc_login.py` — `build_authorization_redirect_url`
+  now requests `offline_access scope` + `prompt=consent`;
+  `validate_id_token`'s `expected_nonce` is now `str | None` (OIDC Core
+  12.2 permits omitting nonce on a refreshed id_token); new
+  `exchange_refresh_token()` (real `grant_type=refresh_token` POST); new
+  `_RefreshTokenStore` (in-memory, keyed by session `jti`, mirrors the
+  existing `_SessionRevocationStore` — the raw refresh_token is never sent
+  to the browser, matching the module's own pre-existing docstring claim
+  that was previously false); new `POST /auth/refresh` — validates the new
+  id_token the same way `callback()` does, confirms subject/issuer
+  continuity (fails closed and ends the session if a refresh would swap
+  identity), then rotates the session (old `jti` revoked, new session
+  cookie issued). CSRF-protected the same double-submit way as `logout()`
+  (factored the shared Origin+token check into `_csrf_error()`).
+  `tests/tasks/test_ftf_0101.py`: extended the stdlib fake-provider
+  stand-in to also serve a `refresh_token` grant; added 6 new test
+  functions (no-stored-token denial, CSRF origin/token denial, happy-path
+  rotation with subject continuity and pre-refresh-cookie revocation, a
+  provider identity-mismatch denial, a provider-rejected-refresh_token
+  denial) — 58 checks total in this file now (was 24).
+  `tests/integration/test_oidc_login_real_provider.py`: updated the real
+  OP's `grant_config` (`id_token` added to `refresh_token`'s
+  `supports_minting`) and client `cdb` (`offline_access` in
+  `allowed_scopes`, `grant_types` including `refresh_token`); added 2 new
+  tests proving a real refresh grant end to end against the real OP — a
+  real new id_token, real session rotation (the pre-refresh cookie is
+  genuinely revoked, a replay of `/auth/refresh` with it is denied), real
+  CSRF enforcement — 20 checks total across 5 tests now (was 3 tests).
+  Own fault injection this shift (removed the rotation revoke in
+  `refresh()`, a break distinct from anything the prior Control-plane
+  review or PR #112 exercised): both the unit test and the real-provider
+  integration test genuinely failed on exactly the rotation checks;
+  restored byte-identical, re-ran clean.
+- **V:** full regression in this sandbox (after `uv sync --all-packages`,
+  `pnpm install --frozen-lockfile`, and `git fetch --unshallow`, all
+  needed once — this sandbox starts with none of them, matching prior
+  shifts' documented environment-artifact note, not a real defect): `ruff
+  check .` / `ruff format --check .` / `mypy .` clean (69 files); `pnpm
+  run lint` / `typecheck` / `format:check` clean; `pnpm exec vitest run`
+  — 5/5; `uv run pytest tests/unit` — 3/3; all 16 existing
+  `tests/tasks/test_ftf_*.py` files re-run clean; both updated FTF-0101
+  test files clean; `python3 scripts/validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` — `1/1 product-true`
+  (unchanged, `build_oidc_login_router` is still the one live-wired
+  symbol). `scripts/verify_task.py --task FTF-0101 --stage task` still
+  reports `BLOCKED — no merged verification evidence yet`, expected
+  pre-merge/pre-certification.
+  Updated `docs/spec-matrix.yaml`'s FTF-0101 notes to record all three of
+  login/refresh/logout as MET (previously only login/logout), with
+  `evidence_hash` filled to this shift's own implementation commit
+  (`e2c5423`) once created — same two-commit pattern as PR #103/#112's own
+  evidence.
+STEP 3 (this write): merged PR #112's own branch
+(`origin/claude/wizardly-fermat-qdxfc4`) into this shift's designated
+branch (`claude/wizardly-fermat-3il8f6`) first, so the refresh fix sits on
+top of the *same* login/logout implementation Control plane already
+reviewed twice, rather than reimplementing it — the only merge conflicts
+were the three tracking docs (`PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`), resolved by keeping both sides'
+chronological entries (PR #112's own submission record, then the
+Control-plane review that followed it, in that order — this file's own
+append-only convention) rather than discarding either, confirmed zero
+code delta lost by diffing PR #112's branch against `main`'s already-
+merged dependencies first. Submitted as **PR #114**, explicitly
+superseding PR #112 (which is being closed as superseded, per the same
+precedent as FTF-0104's PR #82/#84 closures and PR #103→#112 before it) —
+QUEUE.md's "## Provisional"/"## Status" sections updated accordingly. Did
+not self-certify (Law 4) — `certification_state` stays
+`PROVISIONAL`/`L1-PROVEN`, appended to `docs/certifications/queue.md` for
+a fresh, independent Control-plane review. Certified: 19/300 · Product-true:
+1/300 (unchanged this shift — FTF-0101 is not yet certified).
+
+## Next shift
+Top item: FTF-0101 (PR #114) awaiting independent Control-plane L2
+certification. **CI reconfirmed green after this shift's own final push**
+(commit `734068b`, all 7 jobs `success` including `oidc-provider-integration` —
+the job running the new real-provider refresh tests); `mergeable_state:
+"clean"`, no open review threads. Once certified and merged, every other
+`NOT_STARTED` task's dependency graph unblocks starting with
+FTF-0103/FTF-0105/FTF-0106.
+Blocked: no.
 
 ## 2026-09-19 — Control plane: FTF-0101 (PR #112) reviewed, NOT CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md):
@@ -26,6 +139,117 @@ without disclosing that gap. `certification_state` stays
 **Validated-by:** session
 https://claude.ai/code/session_01CR9tW5L6fqoUJHfCyeEhVT (independent —
 no session-ID match on any PR #112 commit).
+
+## 2026-09-19T23:40:00Z — Relay shift: FTF-0101 real idpyoidc provider integration evidence added, resubmitted as PR #112
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md
+against `origin/main`'s actual tip (`12c5cec`, PR #111) before starting —
+the prior (live, interactive) entry directly above recorded the owner's
+resolution of FTF-0101's local-OIDC-test-provider-package ask (`idpyoidc`,
+Python) and explicitly left the real-integration-evidence implementation
+itself for "the next relay/control-plane shift."
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: FTF-0101 (PR #103, `PROVISIONAL`/`L1-PROVEN`, NOT CERTIFIED
+2026-09-19 pending exactly this evidence) is the one unblocked item. Ran
+`python tools/r1_handoff.py packet FTF-0101 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` again to re-confirm the exact acceptance
+clause text before touching anything.
+STEP 2 (PEV):
+- **P:** read `apps/api/app/auth/oidc_login.py`/`oidc_settings.py` and
+  `tests/tasks/test_ftf_0101.py` in full. Confirmed `build_oidc_login_router`
+  is already generic (injectable `http_opener`, real HTTP calls via
+  `urllib.request`) — no code change needed to the module under test itself,
+  only a real provider to exercise it against. Resolved the owner's
+  "idpy-oidc" naming to the real PyPI package `idpyoidc` (no hyphen; `idpy-`
+  with a hyphen does not exist on PyPI) by querying `pypi.org/simple/`
+  directly rather than guessing. Downloaded the package's own sdist test
+  suite (`test_server_24_oidc_authorization_endpoint.py`,
+  `test_server_33_oauth2_pkce.py`, `test_server_35_oidc_token_endpoint.py`)
+  to derive a real, working `idpyoidc.server.Server` OP configuration
+  (RSA signing key, real PKCE add-on, real id_token minting, `NoAuthn` test
+  authentication) rather than inventing one — verified it end-to-end in a
+  scratch script before touching the repo (real authorization code, real
+  RS256 id_token with correct iss/aud/nonce, real JWKS).
+- **E:** added `tests/integration/test_oidc_login_real_provider.py` — three
+  real-flow tests, each over real HTTP sockets with zero test doubles in
+  the request path: (1) full login→callback→session round trip against a
+  real `idpyoidc` OP wrapped in a stdlib `ThreadingHTTPServer`, ending with
+  a real-code replay against the real OP's own `/token` endpoint genuinely
+  rejected (`max_usage: 1` enforced by `idpyoidc` itself, not this repo's
+  code); (2) a real PKCE-verifier mismatch rejected by the real OP with a
+  real `invalid_grant`; (3) direct decode of a real minted id_token proving
+  real RS256 signing, a real `kid` present in the real OP's own JWKS, and
+  real iss/aud/nonce. Failure shown first: before wiring the real OP's
+  `NoAuthn`/PKCE/id_token config correctly, the script raised
+  (`TypeError: 'NoneType' object is not iterable` from a missing
+  `key_defs`/`jwks_file` pairing) — fixed by dropping the unused JWT
+  access/refresh token classes (opaque tokens are fine; only `id_token`
+  needs to be a real JWT for this module's own verification path) rather
+  than guessing at a `jwks_file` path. Added `idpyoidc>=5.0.0,<5.1` to root
+  `pyproject.toml`'s `[dependency-groups] dev` (dev/test-only, per the
+  owner's own resolution — never imported by any production `apps/api`
+  path) and re-ran `uv lock`.
+  Surfaced and fixed one real regression unrelated to the OIDC code itself:
+  `idpyoidc` pulls in `requests`→`urllib3`, whose wheel ships a vendored
+  emscripten `.js` worker file inside `.venv/site-packages`; `eslint.config.mjs`
+  had no `.venv/**` ignore (never needed before, since no prior dependency
+  pulled anything into `.venv` that ESLint's blanket `.` scan would reach),
+  so `pnpm run lint` broke for real (`urllib3/contrib/emscripten/...js`: 6
+  `no-undef` errors) the moment `uv sync` created `.venv` locally. Fixed by
+  adding `.venv/**` to the existing `ignores` list alongside
+  `node_modules`/`dist`/`.next` (same vendored-content category, same fix
+  shape) — confirmed this is a real fix, not gate-weakening, by reverting it
+  once and reproducing the same 6 errors, then restoring.
+- **V:** full regression in this sandbox (after `pnpm install
+  --frozen-lockfile` and `git fetch --unshallow`, both needed once — this
+  sandbox starts with neither, matching prior shifts' documented
+  environment-artifact note, not a real defect): `ruff check .` / `ruff
+  format --check .` / `mypy .` clean (69 files); `pnpm run lint` /
+  `typecheck` / `format:check` clean; `pnpm exec vitest run` — 5/5;
+  `uv run pytest tests/unit` — 3/3; every existing `tests/tasks/
+  test_ftf_*.py` (16 files) re-run clean and unmodified in behavior (only
+  `test_ftf_0101.py`'s own top docstring was edited, to point at the new
+  integration test instead of re-claiming acceptance clause 1 for the
+  stdlib stand-in); the new `tests/integration/
+  test_oidc_login_real_provider.py` — all 3 tests pass; `python3
+  scripts/validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` — `1/1 product-true` (unchanged, `build_oidc_login_router`
+  is still the one live-wired symbol). `scripts/verify_task.py --task
+  FTF-0101 --stage task` still reports `BLOCKED — no merged verification
+  evidence yet`, expected pre-merge/pre-certification, same as it was for
+  PR #103 at review time.
+  Updated `apps/api/app/auth/oidc_login.py`'s own docstring and
+  `docs/spec-matrix.yaml`'s FTF-0101 notes to record acceptance clause 1 as
+  now MET (previously DISCLOSED/NOT MET), with `evidence_hash` filled to
+  this shift's own implementation commit (`9acf116`) once created — same
+  two-commit pattern (implement, then fill the hash) as the original PR
+  #103's own `9b85fa7`.
+STEP 3 (this write): merged PR #103's own branch
+(`origin/claude/wizardly-fermat-c0i7xl`) into this shift's designated
+branch (`claude/wizardly-fermat-qdxfc4`) first, so the new evidence sits on
+top of the *same* implementation commits Control plane already reviewed
+once, rather than reimplementing them — the only merge conflicts were the
+three tracking docs (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`),
+resolved by keeping `main`'s own fuller, already-current history (same
+resolution precedent as the FTF-R017/FTF-R011/FTF-1601 merge-conflict
+entries above), confirmed zero code delta lost by diffing PR #103's branch
+against `main`'s already-merged dependencies first. Submitted as **PR
+#112**, explicitly superseding PR #103 (which is being closed as
+superseded, per the same precedent as FTF-0104's PR #82/#84 closures) —
+QUEUE.md's "## Provisional"/"## Status"/"## Blocked" sections updated
+accordingly. Did not self-certify (Law 4) — `certification_state` stays
+`PROVISIONAL`/`L1-PROVEN`, appended to `docs/certifications/queue.md` for
+a fresh, independent Control-plane review. Certified: 19/300 · Product-true:
+1/300 (unchanged this shift — FTF-0101 is not yet certified).
+
+## Next shift
+Top item: FTF-0101 (PR #112) awaiting independent Control-plane L2
+certification — CI needs to confirm green on the real PR #112 head first.
+Once certified and merged, every other `NOT_STARTED` task's dependency
+graph unblocks starting with FTF-0103/FTF-0105/FTF-0106.
+Blocked: no.
 
 ## 2026-09-19T22:15:00Z — Live owner instruction: default-resolution rule recorded, FTF-0101's OIDC-test-provider ask closed
 Not a scheduled/automated relay shift — a live, interactive turn with the
