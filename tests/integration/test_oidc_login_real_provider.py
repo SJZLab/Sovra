@@ -71,7 +71,11 @@ from idpyoidc.server.user_info import UserInfo
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.auth.oidc_login import MembershipStatus, build_oidc_login_router  # noqa: E402
+from app.auth.oidc_login import (  # noqa: E402
+    MembershipStatus,
+    build_oidc_login_router,
+    read_session_cookie,
+)
 from app.auth.oidc_settings import OidcSettings  # noqa: E402
 
 FAILURES: list[str] = []
@@ -161,7 +165,7 @@ def _build_real_op(*, issuer: str, redirect_uri: str) -> OidcServer:
                         "access_token": {"expires_in": 600},
                         "refresh_token": {
                             "expires_in": 86400,
-                            "supports_minting": ["access_token", "refresh_token"],
+                            "supports_minting": ["access_token", "refresh_token", "id_token"],
                         },
                     },
                     "expires_in": 43200,
@@ -186,7 +190,8 @@ def _build_real_op(*, issuer: str, redirect_uri: str) -> OidcServer:
         "client_secret": CLIENT_SECRET,
         "redirect_uris": [(redirect_uri, None)],
         "response_types": ["code"],
-        "allowed_scopes": ["openid", "profile", "email"],
+        "allowed_scopes": ["openid", "profile", "email", "offline_access"],
+        "grant_types": ["authorization_code", "refresh_token"],
     }
     return server
 
@@ -457,6 +462,177 @@ def test_full_login_flow_against_a_real_idpyoidc_provider() -> None:
                 "FTF-0101",
                 "the real OP rejects a replayed (already-consumed) authorization code",
                 replay_resp.status == 400,
+            )
+
+
+def test_refresh_grant_mints_a_new_real_id_token_and_rotates_the_session() -> None:
+    """FTF-0101 acceptance clause 1's "refresh" third -- proven the same
+    way login was above: real HTTP round trips, no test doubles. `login()`
+    now requests `offline_access` + `prompt=consent` (required by the OIDC
+    spec and enforced for real by this real `idpyoidc` OP before it will
+    ever mint a refresh_token -- verified directly against this OP before
+    this module was written); `POST /auth/refresh` then exchanges that
+    real, server-held refresh_token for a real new id_token against the
+    real OP's own `/token` endpoint (`grant_type=refresh_token`), and
+    rotates the session cookie."""
+    api_port = free_port()
+    redirect_uri = f"http://127.0.0.1:{api_port}/auth/callback"
+    with _run_real_op(redirect_uri=redirect_uri) as (issuer, _op):
+        env = _base_env(issuer=issuer, api_port=api_port)
+        settings = OidcSettings.from_env(env, production=False)
+
+        with _run_api_app(settings) as api_base:
+            login_resp = _request(api_base, "GET", "/auth/login")
+            txn_cookies = login_resp.set_cookies()
+            op_resp = _request(
+                issuer.rstrip("/"), "GET", login_resp.location()[len(issuer.rstrip("/")) :]
+            )
+            callback_url = urllib.parse.urlparse(op_resp.location())
+            callback_resp = _request(
+                api_base,
+                "GET",
+                f"/auth/callback?{callback_url.query}",
+                headers={"Cookie": _cookie_header(*txn_cookies)},
+            )
+            session_cookie = next(
+                (c for c in callback_resp.set_cookies() if c.startswith("sovra_session=")), None
+            )
+            assert session_cookie is not None, "setup: real login must succeed first"
+            original_subject = _request(
+                api_base, "GET", "/auth/session", headers={"Cookie": _cookie_header(session_cookie)}
+            ).json()["sub"]
+
+            # This test's own frontend stand-in has to read the session's csrf
+            # claim the same way a real double-submit SPA would need to -- no
+            # GET /auth/csrf-token route exists yet, same disclosed gap as the
+            # logout test in tests/tasks/test_ftf_0101.py.
+            cookie_value = session_cookie.split(";", 1)[0].split("=", 1)[1]
+            session_data = read_session_cookie(
+                SIGNING_KEY, cookie_value, max_age=settings.session_ttl_seconds
+            )
+            assert session_data is not None
+            csrf_token = session_data["csrf"]
+
+            # 1. POST /auth/refresh: our app exchanges the real, server-held
+            #    refresh_token for a real new id_token against the real OP's
+            #    own /token endpoint (grant_type=refresh_token) -- no test
+            #    double anywhere in this request path.
+            refresh_resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": _cookie_header(session_cookie),
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": csrf_token,
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "a real refresh against the real provider succeeds",
+                refresh_resp.status == 200 and refresh_resp.json()["status"] == "refreshed",
+            )
+            new_session_cookie = next(
+                (c for c in refresh_resp.set_cookies() if c.startswith("sovra_session=")), None
+            )
+            check(
+                "FTF-0101",
+                "refresh issues a brand-new session cookie, distinct from the pre-refresh one",
+                new_session_cookie is not None and new_session_cookie != session_cookie,
+            )
+            check(
+                "FTF-0101",
+                "no refresh token is ever set as a browser-visible cookie by /auth/refresh",
+                all("refresh" not in c.lower() for c in refresh_resp.set_cookies()),
+            )
+            assert new_session_cookie is not None
+
+            # 2. The refreshed session still reflects the same real subject
+            #    the real provider originally authenticated.
+            new_session_resp = _request(
+                api_base,
+                "GET",
+                "/auth/session",
+                headers={"Cookie": _cookie_header(new_session_cookie)},
+            )
+            check(
+                "FTF-0101",
+                "the refreshed session carries the same real subject as before",
+                new_session_resp.status == 200
+                and new_session_resp.json()["sub"] == original_subject,
+            )
+
+            # 3. Rotation: the pre-refresh session id must not still work --
+            #    reusing the old cookie after a real refresh is denied.
+            old_session_resp = _request(
+                api_base, "GET", "/auth/session", headers={"Cookie": _cookie_header(session_cookie)}
+            )
+            check(
+                "FTF-0101",
+                "the pre-refresh session cookie is revoked once refreshed (real rotation)",
+                old_session_resp.status == 401,
+            )
+
+            # 4. Replaying /auth/refresh with that same now-revoked old
+            #    session cookie is denied too -- not just /auth/session.
+            replay_refresh_resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": _cookie_header(session_cookie),
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": csrf_token,
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "refreshing again with the old, already-rotated session cookie is denied",
+                replay_refresh_resp.status == 401,
+            )
+
+
+def test_refresh_without_csrf_token_is_denied_by_the_real_flow() -> None:
+    api_port = free_port()
+    redirect_uri = f"http://127.0.0.1:{api_port}/auth/callback"
+    with _run_real_op(redirect_uri=redirect_uri) as (issuer, _op):
+        env = _base_env(issuer=issuer, api_port=api_port)
+        settings = OidcSettings.from_env(env, production=False)
+
+        with _run_api_app(settings) as api_base:
+            login_resp = _request(api_base, "GET", "/auth/login")
+            txn_cookies = login_resp.set_cookies()
+            op_resp = _request(
+                issuer.rstrip("/"), "GET", login_resp.location()[len(issuer.rstrip("/")) :]
+            )
+            callback_url = urllib.parse.urlparse(op_resp.location())
+            callback_resp = _request(
+                api_base,
+                "GET",
+                f"/auth/callback?{callback_url.query}",
+                headers={"Cookie": _cookie_header(*txn_cookies)},
+            )
+            session_cookie = next(
+                (c for c in callback_resp.set_cookies() if c.startswith("sovra_session=")), None
+            )
+            assert session_cookie is not None, "setup: real login must succeed first"
+
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": _cookie_header(session_cookie),
+                    "Origin": "http://localhost:3000",
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "refresh without a CSRF token header is denied even with a real, valid session",
+                resp.status == 403 and resp.json()["error"] == "csrf_token_mismatch",
             )
 
 

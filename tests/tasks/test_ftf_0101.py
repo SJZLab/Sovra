@@ -2,11 +2,12 @@
 """FTF-0101 -- OIDC login.
 
 Proves `apps/api/app/auth/oidc_login.py`'s real authorization-code + PKCE
-flow, ID-token validation, secure session cookie and CSRF enforcement --
-this is the first task in this repository with a live FastAPI app
-(`apps/api/app/main.py`), so every negative case here runs against the
-real, running app over a real local socket (uvicorn in a background
-thread), not an in-process function call or a mocked request object.
+flow, ID-token validation, secure session cookie, server-side refresh and
+CSRF enforcement -- this is the first task in this repository with a live
+FastAPI app (`apps/api/app/main.py`), so every negative case here runs
+against the real, running app over a real local socket (uvicorn in a
+background thread), not an in-process function call or a mocked request
+object.
 
 Two real local HTTP servers are used together for the full-flow test:
   1. a real uvicorn server hosting the actual `app.main` router
@@ -68,6 +69,7 @@ from app.auth.oidc_login import (  # noqa: E402
     build_oidc_login_router,
     default_membership_lookup,
     generate_pkce_pair,
+    read_session_cookie,
     validate_id_token,
 )
 from app.auth.oidc_settings import OidcConfigurationError, OidcSettings  # noqa: E402
@@ -368,6 +370,7 @@ def test_oidc_settings_requires_https_in_production() -> None:
 @dataclass
 class _ProviderState:
     token_responses: dict[str, dict]
+    refresh_responses: dict[str, dict]
 
 
 class _FakeProviderHandler(BaseHTTPRequestHandler):
@@ -397,9 +400,14 @@ class _FakeProviderHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length)
         form = urllib.parse.parse_qs(raw.decode("ascii"))
-        code = (form.get("code") or [""])[0]
         state: _ProviderState = self.server.state  # type: ignore[attr-defined]
-        response = state.token_responses.get(code)
+        grant_type = (form.get("grant_type") or [""])[0]
+        if grant_type == "refresh_token":
+            refresh_token = (form.get("refresh_token") or [""])[0]
+            response = state.refresh_responses.get(refresh_token)
+        else:
+            code = (form.get("code") or [""])[0]
+            response = state.token_responses.get(code)
         if response is None:
             self._write_json(400, {"error": "invalid_grant"})
             return
@@ -415,7 +423,7 @@ class _FakeProviderServer(ThreadingHTTPServer):
 @contextlib.contextmanager
 def _run_fake_provider() -> Iterator[tuple[str, _ProviderState]]:
     port = free_port()
-    state = _ProviderState(token_responses={})
+    state = _ProviderState(token_responses={}, refresh_responses={})
     server = _FakeProviderServer(("127.0.0.1", port), state)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -742,6 +750,46 @@ def _establish_session(api_base: str, settings: OidcSettings, state: _ProviderSt
     return _cookie_header(session_cookie)
 
 
+def _establish_session_with_refresh_token(
+    api_base: str,
+    settings: OidcSettings,
+    state: _ProviderState,
+    *,
+    subject: str = "user-refreshable",
+    refresh_token: str = "real-refresh-token-1",
+) -> tuple[str, str]:
+    """Same real login flow as `_establish_session`, but the provider also
+    returns a `refresh_token` in the token response -- proving what
+    `callback()` does with one when a real provider actually issues it.
+    Returns (session-cookie-header, csrf-token) -- the csrf token read the
+    same way a real double-submit frontend would have to (see
+    `test_logout_with_valid_csrf_succeeds`'s own note on that disclosed
+    gap)."""
+    login_resp = _request(api_base, "GET", "/auth/login")
+    txn_cookies = login_resp.set_cookies()
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(login_resp.location()).query)
+    state_value, nonce_value = query["state"][0], query["nonce"][0]
+    code = f"authz-code-refreshable-{subject}"
+    state.token_responses[code] = {
+        "id_token": make_id_token(
+            iss=settings.issuer, aud=settings.client_id, nonce=nonce_value, sub=subject
+        ),
+        "refresh_token": refresh_token,
+    }
+    resp = _request(
+        api_base,
+        "GET",
+        f"/auth/callback?code={code}&state={state_value}",
+        headers={"Cookie": _cookie_header(*txn_cookies)},
+    )
+    session_cookie = next((c for c in resp.set_cookies() if c.startswith("sovra_session=")), None)
+    assert session_cookie is not None
+    cookie_value = session_cookie.split(";", 1)[0].split("=", 1)[1]
+    data = read_session_cookie(SIGNING_KEY, cookie_value, max_age=settings.session_ttl_seconds)
+    assert data is not None
+    return _cookie_header(session_cookie), data["csrf"]
+
+
 def test_logout_without_csrf_header_is_denied() -> None:
     with _run_fake_provider() as (provider_base, state):
         provider_port = int(provider_base.rsplit(":", 1)[1])
@@ -816,8 +864,6 @@ def test_logout_with_valid_csrf_succeeds() -> None:
             # obtain the value a real double-submit frontend needs. This gap
             # (no route to hand the SPA its own CSRF token) is disclosed in
             # docs/certifications/queue.md, not hidden.
-            from app.auth.oidc_login import read_session_cookie
-
             cookie_value = session_cookie_header.split("=", 1)[1]
             data = read_session_cookie(
                 SIGNING_KEY, cookie_value, max_age=settings.session_ttl_seconds
@@ -854,6 +900,283 @@ def test_logout_with_valid_csrf_succeeds() -> None:
                 "FTF-0101",
                 "the identity cannot use the terminated session afterwards",
                 session_resp.status == 401,
+            )
+
+
+def test_refresh_without_a_stored_refresh_token_is_denied() -> None:
+    """A session established without the provider ever returning a
+    refresh_token (`_establish_session`, unchanged from before this
+    module's own refresh support) has nothing for `/auth/refresh` to
+    exchange -- denied, not silently treated as still-valid forever."""
+    with _run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = free_port()
+        settings = OidcSettings.from_env(
+            _base_settings_env(provider_port, api_port), production=False
+        )
+        with _run_api_app(
+            settings, membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE
+        ) as api_base:
+            session_cookie_header = _establish_session(api_base, settings, state)
+            cookie_value = session_cookie_header.split("=", 1)[1]
+            data = read_session_cookie(
+                SIGNING_KEY, cookie_value, max_age=settings.session_ttl_seconds
+            )
+            assert data is not None
+
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": session_cookie_header,
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": data["csrf"],
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "refresh with no stored refresh_token is denied",
+                resp.status == 401 and resp.json()["error"] == "no_refresh_token",
+            )
+
+
+def test_refresh_without_csrf_token_is_denied() -> None:
+    with _run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = free_port()
+        settings = OidcSettings.from_env(
+            _base_settings_env(provider_port, api_port), production=False
+        )
+        with _run_api_app(
+            settings, membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE
+        ) as api_base:
+            session_cookie_header, _csrf_token = _establish_session_with_refresh_token(
+                api_base, settings, state
+            )
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={"Cookie": session_cookie_header, "Origin": "http://localhost:3000"},
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "refresh without a CSRF token header is denied",
+                resp.status == 403 and resp.json()["error"] == "csrf_token_mismatch",
+            )
+
+
+def test_refresh_wrong_origin_is_denied() -> None:
+    with _run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = free_port()
+        settings = OidcSettings.from_env(
+            _base_settings_env(provider_port, api_port), production=False
+        )
+        with _run_api_app(
+            settings, membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE
+        ) as api_base:
+            session_cookie_header, csrf_token = _establish_session_with_refresh_token(
+                api_base, settings, state
+            )
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": session_cookie_header,
+                    "Origin": "https://attacker.example",
+                    "X-CSRF-Token": csrf_token,
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "refresh from an unapproved Origin is denied even with a valid CSRF token",
+                resp.status == 403 and resp.json()["error"] == "csrf_origin_mismatch",
+            )
+
+
+def test_refresh_with_valid_csrf_succeeds_and_rotates_the_session() -> None:
+    with _run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = free_port()
+        settings = OidcSettings.from_env(
+            _base_settings_env(provider_port, api_port), production=False
+        )
+        with _run_api_app(
+            settings, membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE
+        ) as api_base:
+            session_cookie_header, csrf_token = _establish_session_with_refresh_token(
+                api_base, settings, state, subject="user-77", refresh_token="rt-happy-path"
+            )
+            state.refresh_responses["rt-happy-path"] = {
+                "id_token": make_id_token(
+                    iss=settings.issuer,
+                    aud=settings.client_id,
+                    sub="user-77",
+                    nonce="unused-on-refresh",
+                ),
+                "refresh_token": "rt-rotated",
+            }
+
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": session_cookie_header,
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": csrf_token,
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "refresh with a valid session and CSRF token succeeds",
+                resp.status == 200 and resp.json()["status"] == "refreshed",
+            )
+            new_cookies = resp.set_cookies()
+            new_session_cookie = next(
+                (c for c in new_cookies if c.startswith("sovra_session=")), None
+            )
+            check(
+                "FTF-0101",
+                "refresh issues a brand-new session cookie",
+                new_session_cookie is not None,
+            )
+            check(
+                "FTF-0101",
+                "no refresh token is ever set as a browser-visible cookie by /auth/refresh",
+                all("refresh" not in c.lower() for c in new_cookies),
+            )
+            assert new_session_cookie is not None
+            new_session_cookie_header = _cookie_header(new_session_cookie)
+            check(
+                "FTF-0101",
+                "the refreshed session cookie differs from the pre-refresh one",
+                new_session_cookie_header != session_cookie_header,
+            )
+
+            new_session_resp = _request(
+                api_base, "GET", "/auth/session", headers={"Cookie": new_session_cookie_header}
+            )
+            check(
+                "FTF-0101",
+                "the refreshed session still reflects the same real subject",
+                new_session_resp.status == 200 and new_session_resp.json()["sub"] == "user-77",
+            )
+
+            old_session_resp = _request(
+                api_base, "GET", "/auth/session", headers={"Cookie": session_cookie_header}
+            )
+            check(
+                "FTF-0101",
+                "the pre-refresh session id is revoked (rotation), not reusable afterwards",
+                old_session_resp.status == 401,
+            )
+
+
+def test_refresh_identity_mismatch_is_denied() -> None:
+    """A real provider should never swap subjects mid-refresh for the same
+    refresh_token -- if it somehow did, this app must fail closed and end
+    the session rather than silently accept the new identity."""
+    with _run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = free_port()
+        settings = OidcSettings.from_env(
+            _base_settings_env(provider_port, api_port), production=False
+        )
+        with _run_api_app(
+            settings, membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE
+        ) as api_base:
+            session_cookie_header, csrf_token = _establish_session_with_refresh_token(
+                api_base, settings, state, subject="user-original", refresh_token="rt-mismatch"
+            )
+            state.refresh_responses["rt-mismatch"] = {
+                "id_token": make_id_token(
+                    iss=settings.issuer,
+                    aud=settings.client_id,
+                    sub="user-DIFFERENT",
+                    nonce="unused-on-refresh",
+                )
+            }
+
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": session_cookie_header,
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": csrf_token,
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "a refresh that would swap the session's subject is denied",
+                resp.status == 401 and resp.json()["error"] == "refresh_identity_mismatch",
+            )
+
+            old_session_resp = _request(
+                api_base, "GET", "/auth/session", headers={"Cookie": session_cookie_header}
+            )
+            check(
+                "FTF-0101",
+                "the session is ended, not left usable, after a denied identity-mismatch refresh",
+                old_session_resp.status == 401,
+            )
+
+
+def test_refresh_rejected_by_provider_ends_the_session() -> None:
+    """The provider's own /token endpoint rejecting the refresh_token grant
+    (expired/revoked refresh_token) must end this app's session too --
+    never silently keep the old session alive with no way to renew it."""
+    with _run_fake_provider() as (provider_base, state):
+        provider_port = int(provider_base.rsplit(":", 1)[1])
+        api_port = free_port()
+        settings = OidcSettings.from_env(
+            _base_settings_env(provider_port, api_port), production=False
+        )
+        with _run_api_app(
+            settings, membership_lookup=lambda iss, sub: MembershipStatus.ACTIVE
+        ) as api_base:
+            session_cookie_header, csrf_token = _establish_session_with_refresh_token(
+                api_base, settings, state, subject="user-x", refresh_token="rt-will-be-rejected"
+            )
+            # Deliberately never registered in state.refresh_responses ->
+            # the fake provider's /token endpoint returns a real 400
+            # invalid_grant, exactly like a real provider would for an
+            # expired/revoked refresh_token.
+
+            resp = _request(
+                api_base,
+                "POST",
+                "/auth/refresh",
+                headers={
+                    "Cookie": session_cookie_header,
+                    "Origin": "http://localhost:3000",
+                    "X-CSRF-Token": csrf_token,
+                },
+                body=b"",
+            )
+            check(
+                "FTF-0101",
+                "a refresh_token rejected by the provider is denied",
+                resp.status == 401 and resp.json()["error"] == "refresh_failed",
+            )
+
+            old_session_resp = _request(
+                api_base, "GET", "/auth/session", headers={"Cookie": session_cookie_header}
+            )
+            check(
+                "FTF-0101",
+                "the session is ended, not left usable, after the provider rejects refresh",
+                old_session_resp.status == 401,
             )
 
 
