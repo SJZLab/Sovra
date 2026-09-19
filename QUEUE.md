@@ -29,28 +29,22 @@ Updated: 2026-09-19 (live, interactive session with the account holder,
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
-`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
-PR #114 (supersedes PR #112, closed) — **merged to `main`** as merge
-commit `5de1c58` (green-on-CI merge, per CLAUDE.md's own "Do without
-asking" list — merging on green with L1-PROVEN evidence does not require
-prior Control-plane sign-off; `certification_state` was NOT flipped to
-CERTIFIED by this merge and stays `PROVISIONAL`/`L1-PROVEN` on `main`
-itself, confirmed by direct read of `docs/spec-matrix.yaml` on `main`
-post-merge — no tracker inflation). Real server-side refresh now
-implemented and proven against the real local provider (the one gap PR
-#112's Control-plane review found), awaiting a fresh independent L2
-review directly against `main`; see "## Provisional" below) · Blocked: 0
+Certified: 20/300 (main; FTF-0101 CERTIFIED 2026-09-19, PR #114 merged as
+`5de1c58` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (FTF-0101's
 web-framework/auth-stack approval and its own local-OIDC-test-provider
 package choice were both resolved 2026-09-19 by live owner
 instruction/confirmation — see "## Blocked" history below; no open owner
 ask remains)
-Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
-FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
-FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
-FTF-0104 and FTF-1601 all have no proving_symbol; FTF-0001 is structural
-layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004
+Product-true (Law 16): 1 — FTF-0101 (`build_oidc_login_router`, imported
+and called unconditionally by apps/api/app/main.py's `create_app()` — a
+genuine live-wired caller, confirmed directly by `product_truth_check.py
+--fail-on-unwired` reporting `1/1`, not a 0/0 pass). The other 19 CERTIFIED
+tasks have no proving_symbol yet and so don't count toward this figure
+(FTF-0001, FTF-0002, FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001,
+FTF-R001, FTF-H002, FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015,
+FTF-R017, FTF-0102, FTF-0104 and FTF-1601 all have no proving_symbol;
+FTF-0001 is structural layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004
 is local-stack bootstrap/health tooling, FTF-0005 is a configuration
 module with no live caller yet, FTF-0006 is an observability seam with no
 live FastAPI app or Temporal workflow to instrument yet, FTF-H001 is the
@@ -80,7 +74,7 @@ importing `organization_workspace_schema.py` yet, FTF-0104 is the audit
 event writer with no live FastAPI app importing `audit_event_writer.py`
 yet, and FTF-1601 is the Postgres backup/restore tooling with no live
 FastAPI app or Temporal workflow importing `postgres_backup.py` yet — none
-a live-wired product-runtime path, so all nineteen are CERTIFIED without
+a live-wired product-runtime path, so all 19 are CERTIFIED without
 counting toward product-true).
 
 ## Owner actions — current
@@ -96,6 +90,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+None currently. FTF-0101 (OIDC login) was the only item here; it was
+independently reviewed and CERTIFIED 2026-09-19 via PR #114 (merge commit
+`5de1c58`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
+### FTF-0101 history (kept for the record; certified — see "## Done")
 - FTF-0101 (OIDC login) — originally submitted 2026-09-19 as PR #103
   (`claude/wizardly-fermat-c0i7xl` → `main`); **Control plane review,
   2026-09-19: NOT CERTIFIED** (acceptance clause 1's "Real OIDC provider"
@@ -574,6 +575,37 @@ full history and evidence.
   reproduced by two prior, distinct Control-plane sessions, and CI's own
   job re-confirmed the same real backup/restore path green on this exact
   head. Full entry: docs/certifications/ledger.md.
+- FTF-0101 — OIDC login. CERTIFIED 2026-09-19, PR #114 (merge commit
+  `5de1c58832ea7e34d0c91f3083654b1fa46e909a`; supersedes PR #112 and PR
+  #103) — third and final PR in the #103→#112→#114 supersession chain,
+  closing the one real gap (server-side refresh, unimplemented and
+  undisclosed in PR #112) the 2026-09-19 review of PR #112 found.
+  Independent re-verification (session-ID clean against every PR #114
+  commit: session_015u9WhWDyzkFgkk74HzHJ9d, session_01Un2BpAFyPcvY7zUpk7ZHbe,
+  session_01BaakM658Kz9nuZXKF53kc1 — none match this reviewing session's
+  own ID): read the real diff (`git show e2c5423`) — `POST /auth/refresh`
+  really exchanges a server-held `refresh_token` against the real
+  provider's token endpoint, re-validates the new id_token, confirms
+  subject/issuer continuity, and rotates the session; CI reconfirmed 7/7
+  green on the real PR head (`40ef553`); own fault injection — bypassed
+  the refresh identity-continuity check (a different break than the
+  producer's own rotation-revoke break) — genuinely caught, but only via
+  this file's real CI invocation (`uv run python3
+  tests/tasks/test_ftf_0101.py`, which calls `sys.exit(1)` on failure);
+  running it under bare `pytest` is misleading and reports every test
+  "passed" regardless, since this file's own `check()` helper only
+  records failures to a list and never raises — noted for future
+  reviewers. `product_truth_check.py` 1/1 confirmed a real live wiring
+  (`main.py` imports and calls `build_oidc_login_router` unconditionally).
+  Full regression clean in a fresh worktree at the real merged head
+  (ruff/mypy, pnpm lint/typecheck/format:check, vitest 5/5, pytest 3/3,
+  all 16 pre-existing `tests/tasks/test_ftf_*.py` scripts, the real
+  `idpyoidc`-provider integration test 5/5, `validate_spec.py --strict`).
+  `tools/r1_handoff.py packet FTF-0101` confirmed acceptance clause 1
+  (login/refresh/logout, all three now met against a real provider) and
+  the negative_acceptance clause (forged issuer/audience, expired token,
+  nonce mismatch, revoked membership, CSRF — all still denied, no
+  regression). Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

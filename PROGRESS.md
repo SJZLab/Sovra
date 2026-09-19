@@ -1,9 +1,105 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T23:59:00Z (scheduled relay shift: implemented and
-  proved real server-side OIDC refresh, the one gap that blocked PR #112's
-  Control-plane review; submitted as PR #114, superseding PR #112; PR #114
-  went 7/7 green and was merged to `main` as `5de1c58` — see the note
-  below the shift entry)
+Updated: 2026-09-20T00:20:00Z (scheduled Control-plane certifier shift:
+  independently reviewed PR #114 (FTF-0101 real server-side OIDC refresh)
+  against the real merged head on `main` — CERTIFIED, L2-CERTIFIED. Full
+  record below and in docs/certifications/ledger.md.)
+
+## 2026-09-20T00:20:00Z — FTF-0101 (PR #114) — Control plane independent review: CERTIFIED
+
+Triggered by the `pull_request.opened` webhook for PR #115 (a relay
+doc-only follow-up recording PR #114's merge, not itself a certification
+target — its own body makes no certification claim and its author session
+`session_01BaakM658Kz9nuZXKF53kc1` also authored PR #114's own refresh
+commits). Per this session's standing certifier instructions, the actual
+work was the one PROVISIONAL item in `docs/certifications/queue.md`:
+FTF-0101 / PR #114, already merged to `main` as `5de1c58` but still
+awaiting independent L2 review.
+
+**Session-independence check (done first):** compared this session's own
+ID (`https://claude.ai/code/session_01WAkuax7dCnhgdpMBSQaa3a`) against
+every commit on PR #114 — `session_015u9WhWDyzkFgkk74HzHJ9d` (PR #103's
+carried-forward login/logout commits), `session_01Un2BpAFyPcvY7zUpk7ZHbe`
+(PR #112's real-provider-evidence commits), `session_01BaakM658Kz9nuZXKF53kc1`
+(this PR's own refresh commits). No match — independent.
+
+**CI reconfirmed for real** on the actual PR #114 head (`40ef553`, not a
+stale claim): all 7 jobs (`gate`, `oidc-provider-integration`,
+`docker-local-stack-integration`, `organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) `completed`/`success`.
+
+**Diff read directly** (`git show e2c5423`, the refresh-implementation
+commit): a real, working `POST /auth/refresh` — exchanges the session's
+server-held `refresh_token` against the real provider's token endpoint,
+re-validates the new id_token (signature/issuer/audience, with
+`expected_nonce=None` since OIDC Core 12.2 permits a provider to omit
+`nonce` on a refreshed id_token), confirms subject/issuer continuity
+(fails closed on mismatch), then rotates the session (old `jti` revoked,
+new session cookie + new `_RefreshTokenStore` entry issued). CSRF-protected
+via the same `_csrf_error()` double-submit check factored out of
+`logout()`. This closes, for real, the exact gap the 2026-09-19 review of
+PR #112 found (refresh unimplemented and claimed MET without disclosure).
+
+**Own fault injection**, independent of the producer's own break (removed
+rotation-revoke): in a dedicated `git worktree` off the real merged head
+(after `uv sync --all-packages`, `pnpm install --frozen-lockfile`,
+`git fetch --unshallow`), bypassed the refresh identity-continuity check
+(`if claims.subject != data["sub"] or claims.issuer != data["iss"]:` →
+`if False:`). Running `tests/tasks/test_ftf_0101.py` under bare `pytest`
+misleadingly reported all 28 test functions "passed" even with the break
+in place — this file's own `check()` helper only appends to a
+module-level `FAILURES` list and never raises, so pytest cannot see it.
+Running it the way CI's `gate` job actually does (`uv run python3
+tests/tasks/test_ftf_0101.py`, confirmed in `.github/workflows/ci.yml`
+line 132) correctly reported `1 check(s) failed — FAIL [FTF-0101] a
+refresh that would swap the session's subject is denied` and exited 1.
+Reverted (`git diff` byte-identical), re-ran clean. The real-provider
+integration test (`tests/integration/test_oidc_login_real_provider.py`)
+stayed green through this particular break, as expected and disclosed —
+it has no identity-mismatch case since a real provider can't be coerced
+into swapping subjects on a live grant.
+
+**`product_truth_check.py` confirmed legitimate:** `--fail-on-unwired`
+reports `1/1`; `grep -n build_oidc_login_router apps/api/app/main.py`
+confirms it is imported and called unconditionally from `create_app()` —
+a genuine live-caller wiring, not a 0/0 pass.
+
+**Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+("Real OIDC provider login/refresh/logout validates issuer+audience+subject
+and secure session") now independently confirmed met for all three named
+flows; acceptance clause 2 ("Independent review... recorded") satisfied by
+this review itself; negative_acceptance ("Forged issuer/audience, expired
+token, state/nonce mismatch, revoked membership and CSRF are denied")
+re-run clean, no regression.
+
+**Full regression** independently reproduced in the same worktree: ruff/
+mypy clean (69 files); pnpm lint/typecheck/format:check clean; vitest 5/5;
+pytest tests/unit 3/3; all 16 pre-existing `tests/tasks/test_ftf_*.py`
+scripts clean via their real CI invocation (an initial run of 3 of them
+failed purely because `pnpm install` hadn't been run yet in this fresh
+worktree — resolved, not a real regression); `tests/integration/
+test_oidc_login_real_provider.py` 5/5; `validate_spec.py --strict` clean
+(an initial `stale_commit` failure was this worktree's own shallow-clone
+artifact, resolved by `git fetch --unshallow`, not a real defect).
+
+**Certifying-commit bookkeeping:** `docs/spec-matrix.yaml` FTF-0101 set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+(`evidence_hash` kept at the implementation commit `e2c5423`, matching
+`spec/verification-map.json`'s own new `commit` field — same convention as
+FTF-0102/FTF-0104/FTF-1601). Added FTF-0101's own entry to
+`spec/verification-map.json`. Ran `scripts.task_claim.sync_certified_status()`
+— diff limited to exactly FTF-0101's own `status`/`evidence` fields in
+`spec/tasks.json` and `docs/implementation/TRACKER.json`. `verify_task.py
+--task FTF-0101 --stage task` → `PASS` (was `BLOCKED` pre-certification, as
+expected — no verification-map entry existed until this commit added one).
+`python3 scripts/status.py` → `20/300 certified · 1 product-true`, no
+other regression. Appended the full record to
+`docs/certifications/ledger.md` and `docs/certifications/queue.md`;
+updated `QUEUE.md`'s Status/Provisional/Done/Product-true sections.
+
+**Conclusion:** CERTIFIED, L2-CERTIFIED. Full entry:
+`docs/certifications/ledger.md`.
 
 ## 2026-09-19T23:59:00Z — PR #114 merged to `main` (still PROVISIONAL — not certified by this merge)
 `merged_by` shows `samerzakaria` (the git identity every Code CLI session

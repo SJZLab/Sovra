@@ -2166,3 +2166,143 @@ corrected 2026-09-15.
   resolution against current `main`, independently confirmed to introduce
   zero code change and to stay green on real CI at its actual final head.
   No blocking defect. Certified L2-CERTIFIED.
+
+## FTF-0101 — OIDC login (login/refresh/logout, all three met)
+- Criterion ID: FTF-0101
+- PR: https://github.com/SJZLab/Sovra/pull/114 (superseded PR #112, which
+  superseded PR #103)
+- Merge commit: 5de1c58832ea7e34d0c91f3083654b1fa46e909a
+- Evidence (implementation) commit: e2c54235584445f7e062f3b1b21a7b98f47308c2
+  (kept as `evidence_hash` — same two-commit convention as
+  FTF-0102/FTF-0104/FTF-1601: a commit cannot embed its own hash, so
+  `evidence_hash` points at the implementation commit, matching
+  `spec/verification-map.json`'s own `commit` field, not the merge commit)
+- Validated-by: session https://claude.ai/code/session_01WAkuax7dCnhgdpMBSQaa3a
+  (session-ID comparison performed and recorded before this entry:
+  compared against every PR #114 commit's own session —
+  session_015u9WhWDyzkFgkk74HzHJ9d (PR #103's carried-forward commits),
+  session_01Un2BpAFyPcvY7zUpk7ZHbe (PR #112's real-provider-evidence
+  commits), session_01BaakM658Kz9nuZXKF53kc1 (this PR's own refresh
+  commits) — no match, independent of all three)
+- Date: 2026-09-19
+- Evidence independently re-verified this session, not taken on the
+  producer's word:
+  1. Read PR #114's own diff and commit history directly (`get_commits`,
+     `git show e2c5423`) — the refresh implementation is a real,
+     server-side `POST /auth/refresh`: exchanges the session's
+     server-held `refresh_token` for a new id_token via a real
+     `grant_type=refresh_token` POST (`exchange_refresh_token`),
+     re-validates the new id_token the same way `callback()` does
+     (signature/issuer/audience via `validate_id_token`, with
+     `expected_nonce=None` — OIDC Core 12.2 permits a provider to omit
+     `nonce` on a refreshed id_token, since there is no fresh
+     authentication transaction to bind it to), confirms subject/issuer
+     continuity (fails closed and revokes the session on mismatch rather
+     than silently swapping identity), then rotates the session (old
+     `jti` revoked via the existing `_SessionRevocationStore`, new
+     session cookie issued, new refresh_token stored under the new `jti`
+     in a new `_RefreshTokenStore` that never sends the raw refresh_token
+     to the browser). CSRF-protected via the same double-submit
+     Origin+token check factored out of `logout()` into `_csrf_error()`.
+     This is a real fix for the exact, only gap the prior 2026-09-19
+     review of PR #112 found (refresh unimplemented and claimed MET
+     without disclosure) — not a re-scoping or a disclosure-only patch.
+  2. CI re-confirmed for real on the actual final head: `get_check_runs`
+     on PR #114 showed all 7 jobs (`gate`, `oidc-provider-integration`,
+     `docker-local-stack-integration`,
+     `organization-workspace-schema-integration`,
+     `audit-event-writer-integration`, `postgres-backup-integration`,
+     `storage-semantics-integration`) `completed`/`success` on the PR's
+     real head commit `40ef553`, not taken from the PR body's own
+     unconfirmed checklist.
+  3. Own fault injection, independent of anything the producer's own
+     shift exercised (which had removed the rotation-revoke call): in a
+     dedicated `git worktree` off the real merged head (`40ef553`, after
+     `uv sync --all-packages`, `pnpm install --frozen-lockfile`,
+     `git fetch --unshallow`), bypassed the refresh identity-continuity
+     check (`if claims.subject != data["sub"] or claims.issuer !=
+     data["iss"]:` replaced with `if False:`), leaving the rotation logic
+     itself intact — a different code path than the producer's own break.
+     Running the test file under bare `pytest` (`uv run pytest
+     tests/tasks/test_ftf_0101.py`) misleadingly reported all 28 test
+     functions "passed" even with the break in place: this file's own
+     `check()` helper only appends to a module-level `FAILURES` list and
+     never raises, so pytest — which considers a test function "passed"
+     if it doesn't raise — cannot see the failure. Only this file's own
+     `main()` (`if FAILURES: ... sys.exit(1)`), which is how CI's `gate`
+     job actually invokes it (`uv run python3 tests/tasks/test_ftf_0101.py`,
+     confirmed directly in `.github/workflows/ci.yml` line 132), correctly
+     reports `FTF-0101 OIDC login: 1 check(s) failed — FAIL [FTF-0101] a
+     refresh that would swap the session's subject is denied` and exits
+     1. Reverted (`git diff` confirmed byte-identical), re-ran clean —
+     `uv run python3 tests/tasks/test_ftf_0101.py` → "all checks passed";
+     `uv run python3 tests/integration/test_oidc_login_real_provider.py`
+     (real idpyoidc OP, unaffected by this particular break since the
+     real-provider test file has no identity-mismatch case — a real
+     provider cannot be coerced into swapping subjects on a live grant;
+     consistent with the producer's own disclosed test-coverage split) →
+     "all checks passed", 5/5.
+  4. `product_truth_check.py --fail-on-unwired` result confirmed
+     legitimate: `1/1 product-true`; `grep -n build_oidc_login_router
+     apps/api/app/main.py` confirms it is imported and called
+     unconditionally from `create_app()` — a genuine live-caller wiring,
+     not a 0/0 pass (this task's `proving_symbol` is filled in).
+  5. Task contract re-pulled directly: `python tools/r1_handoff.py packet
+     FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause
+     1 ("Real OIDC provider login/refresh/logout validates
+     issuer+audience+subject and secure session") — all three flows now
+     independently confirmed met: login and logout as already
+     established under the PR #112 review, refresh now real and proven
+     against the same real `idpyoidc` OP (session rotation, CSRF,
+     identity continuity). Acceptance clause 2 ("Independent review,
+     exact merged commit, real relevant integration and negative-test
+     evidence recorded") is satisfied by this entry itself.
+     negative_acceptance ("Forged issuer/audience, expired token,
+     state/nonce mismatch, revoked membership and CSRF are denied") — all
+     independently re-run clean this session (unchanged for
+     login/logout; refresh adds its own CSRF-origin/token-denial and
+     provider-rejected-refresh_token-denial coverage), no regression.
+  6. Full regression independently reproduced in the same worktree at the
+     real merged head: `ruff check .` / `mypy .` clean (69 files); `pnpm
+     run lint` / `typecheck` clean; `pnpm exec vitest run` — 5/5 (3 test
+     files); `uv run pytest tests/unit` — 3/3; all 16 pre-existing
+     `tests/tasks/test_ftf_*.py` scripts re-run clean via their real CI
+     invocation (`uv run python3 <file>`) — an initial run of 3 of them
+     (`test_ftf_0002.py`, `test_ftf_0003.py`, `test_ftf_h001.py`) failed
+     before `pnpm install --frozen-lockfile` was run in this fresh
+     worktree (they shell out to `pnpm run lint`/`typecheck`/`vitest
+     run`, which need `node_modules`) — reran clean immediately after,
+     confirmed as the same documented environment artifact this file's
+     own history repeatedly notes, not a real regression;
+     `python3 scripts/validate_spec.py --strict` — an initial
+     `stale_commit` failure on 9 unrelated tasks was traced to this
+     worktree's own shallow (`git fetch --unshallow` not yet run) clone,
+     resolved immediately after, not a real defect.
+  7. Certifying-commit bookkeeping, done here rather than by the
+     producer (Law 4): set `docs/spec-matrix.yaml` FTF-0101 to
+     `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+     (`evidence_hash` kept at the implementation commit `e2c5423`,
+     matching `spec/verification-map.json`'s own new `commit` field —
+     same convention as FTF-0102/FTF-0104/FTF-1601). Added FTF-0101's own
+     entry to `spec/verification-map.json` (the no-DB `tests/tasks/
+     test_ftf_0101.py` command — the real idpyoidc-provider login/
+     refresh/logout evidence is `tests/integration/
+     test_oidc_login_real_provider.py`, run separately in CI's
+     `oidc-provider-integration` job, disclosed as not re-executable by
+     `verify_task.py` in this sandbox the same way, same resource_gate
+     rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-1601). Ran
+     `scripts.task_claim.sync_certified_status()` — diff limited to
+     exactly FTF-0101's own `status`/`evidence` fields in
+     `spec/tasks.json` and `docs/implementation/TRACKER.json`.
+  8. `verify_task.py --task FTF-0101 --stage task` → `PASS` (was
+     `BLOCKED` pre-certification, as expected — no verification-map entry
+     existed until step 7 above added one). `python3 scripts/status.py`
+     confirmed no other regression once this ledger entry existed.
+- Conclusion: the delivered OIDC login/refresh/logout is real and proven
+  against a real, independent `idpyoidc` OpenID Provider for all three
+  named flows, including the one gap (refresh) the prior 2026-09-19
+  review of PR #112 correctly found unimplemented and undisclosed — this
+  PR closes it for real rather than disclosing a scope-out, with its own
+  distinct fault injection (identity-continuity bypass, not the
+  producer's own rotation-revoke break) genuinely caught by the real CI
+  invocation path. No blocking defect. Certified L2-CERTIFIED.
