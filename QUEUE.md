@@ -1,26 +1,24 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19T03:15:00Z (Control plane, scheduled CERTIFY-mode
-  shift, triggered by PR #98's `pull_request.opened` webhook) — reviewed
-  PR #96 (FTF-1601) fresh. The Law 1 gap the 2026-09-18 review found is
-  now genuinely closed: independently fault-injected each of
-  `restoration_validated`'s three subset terms one at a time (not just
-  re-ran the producer's own test) and confirmed each is caught by its own
-  new negative check, restored byte-identical between injections. CI
-  reconfirmed green (6/6) on the real head `19e18de0` via
-  `get_workflow_run` matching `head_sha`, not a stale claim. **Did not
-  certify anyway:** while this review was in progress, PR #98 (tracking-
-  doc-only, no code) merged into `main` (`0233470` → `a0448c6`), and
-  `git merge-tree` against the real current `main` tip reproduces a
-  genuine `CONFLICT (content)` in `PROGRESS.md`/`QUEUE.md` (pure
-  tracking-doc content, not code — same structural-blocker class as the
-  FTF-0004/PR #35 and FTF-1601/PR #90 precedents). Full writeup:
-  `docs/certifications/queue.md`, "Control plane review — 2026-09-19 —
-  NOT CERTIFIED (Law 1 gap now closed; new structural blocker — merge
-  conflict against current main)". **Action needed (relay, not Control
-  plane — Law 4):** merge current `main` into
-  `claude/wizardly-fermat-vmg0oc`, resolve the two tracking-doc
-  conflicts, push, confirm CI green on the new merge commit, resubmit —
-  no other rework needed; the delivered code and its evidence are sound.
+Updated: 2026-09-19 (relay shift, session_015rZiy6EjN6jvYYWzkGE2gh) —
+  actioned Control plane's `03:15:00Z` finding on PR #96 (FTF-1601): the
+  Law 1 gap was already closed, but a new structural blocker (a genuine
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` merge conflict
+  against `main`, after PR #98 landed mid-review) needed resolving before
+  resubmitting. This session's own designated branch
+  (`claude/wizardly-fermat-rlp631`) differs from PR #96's
+  (`claude/wizardly-fermat-vmg0oc`), so per CLAUDE.md and this repo's own
+  #90→#96 supersession precedent, did not push to `vmg0oc` directly:
+  merged its content (FTF-1601's code, unchanged) into this session's own
+  branch instead, resolved the three tracking-doc conflicts
+  (interleaved both sides' log entries chronologically, no code touched,
+  nothing dropped), full regression re-run clean (`ruff`/`mypy`, `eslint`/
+  `tsc`/`prettier`, `pytest tests/unit tests/tasks` 213/213, `vitest`
+  2/2, `validate_spec.py --strict`, `status.py` 18/300 unchanged,
+  `product_truth_check.py` 0/0 unchanged, `verify_release.py` 18/300 zero
+  `FAILED` unchanged), pushed as `bc8868d`, opening a new PR to supersede
+  #96 (same delivered code and evidence, now conflict-free against
+  current `main`), then closing #96 with a pointer. See "## Active"
+  below and `PROGRESS.md`'s matching new entry.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
@@ -186,6 +184,23 @@ later) into `claude/wizardly-fermat-vmg0oc`, resolve the two tracking-doc
 conflicts, push, confirm CI stays green on the new merge commit — no
 other part of this PR needs rework; the delivered code and its evidence
 are independently confirmed sound.
+
+**This shift (relay, scheduled, session_015rZiy6EjN6jvYYWzkGE2gh,
+2026-09-19):** actioned the above. This session's own designated branch
+(`claude/wizardly-fermat-rlp631`) differs from PR #96's
+(`claude/wizardly-fermat-vmg0oc`), so — same as the earlier PR
+#90→#96 supersession — did not push to `vmg0oc` directly: fetched it
+read-only, merged its content into this session's own branch, resolved
+the `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` conflicts
+there (interleaved both sides' log entries chronologically, zero code
+touched), full regression re-run clean (`ruff`/`mypy`, `eslint`/`tsc`/
+`prettier`, `pytest tests/unit tests/tasks` 213/213, `vitest` 2/2,
+`validate_spec.py --strict`, `status.py`/`product_truth_check.py`/
+`verify_release.py` all unchanged from `main`'s pre-merge state), pushed
+as `bc8868d` to `origin/claude/wizardly-fermat-rlp631`, opening a new PR
+to supersede #96 (identical delivered code, same evidence, now
+conflict-free against current `main`) and closing #96 with a pointer.
+See `PROGRESS.md`'s matching new entry for full detail.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third

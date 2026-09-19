@@ -1,5 +1,75 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T03:15:00Z (Control plane, scheduled CERTIFY-mode shift)
+Updated: 2026-09-19 (relay shift, session_015rZiy6EjN6jvYYWzkGE2gh, branch
+  `claude/wizardly-fermat-rlp631`)
+
+## 2026-09-19 — FTF-1601 (PR #96): resolved the structural-blocker merge conflict, resubmitting
+STEP 0: `sha256sum CLAUDE.md` (`11aee64c5e04e2bf4e967d8faf25d0430984159e87ddd58f1908e62a272e1421`)
+matches committed `CLAUDE.md.sha256` exactly — no drift, no BLOCKER.md
+needed.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` as
+last written by Control plane's `2026-09-19T03:15:00Z` review of PR #96.
+That review closed the Law 1 gap it found the same day but did not
+certify: PR #98 (tracking-doc-only) landed on `main` mid-review, and
+`git merge-tree` confirmed a genuine `CONFLICT (content)` in
+`PROGRESS.md`/`QUEUE.md` (pure tracking-doc content, not code) between
+`main` and PR #96's branch (`claude/wizardly-fermat-vmg0oc`, head
+`19e18de0`). QUEUE.md's own "Active" section named the exact fix needed:
+merge current `main` into that branch, resolve the two tracking-doc
+conflicts, push, confirm CI green, resubmit — no other rework needed.
+
+This session's own designated branch is `claude/wizardly-fermat-rlp631`
+(started at `main`'s tip, `6e25e44`) — different from PR #96's branch.
+Per CLAUDE.md ("never push to a different branch without explicit
+permission") and this repo's own established precedent for the identical
+situation (the `vmg0oc` shift that superseded PR #90 with PR #96 rather
+than pushing to `e9tyvg`), did not push to `claude/wizardly-fermat-vmg0oc`
+directly. Instead: fetched it read-only and merged its content (FTF-1601's
+delivered code, unchanged) into this session's own branch, resolved the
+conflicts there, and will open a new PR from this branch to supersede
+#96, closing #96 with a pointer once the new PR is confirmed green — same
+pattern as the #90→#96 supersession.
+
+**Conflict resolution:** all three conflicts (`PROGRESS.md`, `QUEUE.md`,
+`docs/certifications/queue.md`) were between this session's `main`-side
+history and PR #96 branch's own shift-log entries describing the same
+FTF-1601 timeline from a different vantage point — no competing edits to
+the same fact, just two logs of adjacent events. Resolved by interleaving
+both sides' entries in chronological order (verified against each entry's
+own timestamps and referenced commit SHAs), keeping every entry, dropping
+nothing, touching zero code.
+
+**Full regression re-run on the merged tree**, fresh environment (`uv
+sync --all-packages` + `pnpm install --frozen-lockfile`; repo was already
+a full, non-shallow clone so no `git fetch --unshallow` was needed this
+time): `ruff check .` / `ruff format --check .` / `mypy .` — clean (63
+files). `pnpm lint` / `pnpm typecheck` / `pnpm format:check` — clean. `uv
+run pytest tests/unit tests/tasks` — 213 passed (unchanged, includes
+FTF-1601's own 18/18). `pnpm exec vitest run` — 2 passed. `uv run python3
+scripts/validate_spec.py --strict` — clean. `uv run python3
+scripts/status.py` — `18/300 certified · 0 product-true` (unchanged). `uv
+run python3 scripts/product_truth_check.py --fail-on-unwired` — `0/0`
+(unchanged). `uv run python3 scripts/verify_release.py` — `18/300`, zero
+`FAILED`, `NOT READY` (unchanged). Did not re-run the live-Postgres
+integration test locally — no code changed since Control plane's own
+independent live-Postgres reproduction of `restoration_validated`'s
+fixed behavior; the new PR's own `postgres-backup-integration` CI job
+covers it on the real new head.
+
+Committed the merge (`bc8868d`) and pushed to
+`origin/claude/wizardly-fermat-rlp631`. Opening a new PR from this branch
+to supersede #96 (same delivered code, same evidence, merge-conflict-free
+against current `main`), then closing #96 with a comment pointing to it.
+`proof_state=L1-PROVEN`, `certification_state=PROVISIONAL` — not
+self-certified; awaiting a fresh, independent Control-plane L2 review per
+Law 4.
+
+STEP 3: this entry, written before the push. STEP 4(a): FTF-1601 is the
+only in-flight item and is now fully L1-PROVEN with a clean, conflict-free
+head, awaiting Control-plane certification and (later) the L4 gate.
+FTF-0101 remains a hard ask-first stop (new-runtime-dependency ask,
+unchanged). Certified: 18/300 · Product-true: 0 (unchanged). Stopping
+here.
 
 ## 2026-09-19T03:15:00Z — Control plane: PR #96 (FTF-1601) reviewed — Law 1 gap now closed, but NOT CERTIFIED (new structural blocker)
 Scheduled CERTIFY-mode session, triggered by PR #98's own

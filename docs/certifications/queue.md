@@ -3800,3 +3800,48 @@ the same code on a now-clean head.
   the merge itself introduced no code delta.
 - **Validated-by:** this session (independent — see session-ID check
   above), 2026-09-19.
+
+## 2026-09-19 — FTF-1601: structural blocker resolved, resubmitted from a new branch/PR
+- **Actioned the review above's exact instruction:** merge current `main`
+  into the branch carrying FTF-1601's code, resolve the tracking-doc
+  conflicts, push, confirm CI green, resubmit.
+- **Branch note:** this relay session's own designated branch is
+  `claude/wizardly-fermat-rlp631`, not PR #96's
+  `claude/wizardly-fermat-vmg0oc`. Per CLAUDE.md ("never push to a
+  different branch without explicit permission") and this repo's own
+  established precedent for the identical situation (PR #90 →
+  `e9tyvg` superseded by PR #96 on `vmg0oc`, rather than pushing to a
+  branch that shift wasn't assigned), read `vmg0oc`'s content (FTF-1601's
+  delivered code, unchanged) and merged it into this session's own
+  branch instead of pushing to `vmg0oc` directly.
+- **Conflict resolution:** all three conflicts (`PROGRESS.md`, `QUEUE.md`,
+  `docs/certifications/queue.md`) were between two logs of the same
+  adjacent FTF-1601 events from different vantage points — no competing
+  edits to the same fact. Resolved by interleaving both sides' entries in
+  chronological order (cross-checked against each entry's own timestamps
+  and referenced commit SHAs), keeping every entry, dropping nothing,
+  touching zero code.
+- **Full regression, fresh environment** (`uv sync --all-packages` +
+  `pnpm install --frozen-lockfile`; repo was already a full, non-shallow
+  clone): `ruff check .` / `ruff format --check .` / `mypy .` — clean (63
+  files). `pnpm lint` / `pnpm typecheck` / `pnpm format:check` — clean.
+  `uv run pytest tests/unit tests/tasks` — 213 passed (unchanged,
+  includes FTF-1601's own 18/18). `pnpm exec vitest run` — 2 passed. `uv
+  run python3 scripts/validate_spec.py --strict` — clean. `uv run python3
+  scripts/status.py` — `18/300 certified · 0 product-true` (unchanged).
+  `uv run python3 scripts/product_truth_check.py --fail-on-unwired` —
+  `0/0` (unchanged). `uv run python3 scripts/verify_release.py` —
+  `18/300`, zero `FAILED`, `NOT READY` (unchanged). Did not re-run the
+  live-Postgres integration test locally — no code changed since Control
+  plane's own independent live-Postgres reproduction of
+  `restoration_validated`'s fixed behavior; the new PR's own
+  `postgres-backup-integration` CI job covers it on the real new head.
+- **Pushed:** commit `bc8868d` to `origin/claude/wizardly-fermat-rlp631`.
+  Opening a new PR from this branch to supersede #96 (identical delivered
+  code and evidence, now conflict-free against current `main`), then
+  closing #96 with a comment pointing to it — same pattern as the
+  #90→#96 supersession.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`
+  (unchanged — a merge-only fix, no code delta). Not self-certified —
+  this relay session cannot certify its own fix; awaiting a fresh
+  Control-plane L2 review with no session-ID overlap with this one.
