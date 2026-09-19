@@ -4068,3 +4068,110 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01VNPVrAHoQTUFSmfhV4UkCU (independent —
   see session-ID check above), 2026-09-19.
+
+## 2026-09-19 — FTF-0101 (PR #112) — Control plane independent review: NOT CERTIFIED (PR stays open, unmerged)
+- **Trigger:** `pull_request.opened` webhook, PR #112
+  (`claude/wizardly-fermat-qdxfc4` → `main`, head `a8f013d`), which
+  supersedes PR #103 above with the one fix that review asked for: real
+  `idpyoidc`-provider integration evidence for acceptance clause 1.
+- **Session-independence check (done first, per procedure):** compared
+  this reviewing session's own ID
+  (`https://claude.ai/code/session_01CR9tW5L6fqoUJHfCyeEhVT`) against all
+  9 commits on PR #112 — `session_015u9WhWDyzkFgkk74HzHJ9d` (PR #103's
+  carried-forward commits) and `session_01Un2BpAFyPcvY7zUpk7ZHbe` (this
+  PR's own new commits). No match — independent.
+- **CI reconfirmed for real on the actual current head:** at first poll
+  (webhook delivery time) 3 of 7 checks on `a8f013d` were still
+  `in_progress`; re-polled rather than trusting the PR body's own
+  "to be confirmed independently" line — all 7 (`gate`,
+  `oidc-provider-integration`, `docker-local-stack-integration`,
+  `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`) completed `success` on `a8f013d`
+  itself.
+- **Own fault injection, independent of the producer's claim:** in a fresh
+  `git worktree` off `origin/claude/wizardly-fermat-qdxfc4`
+  (`uv sync --all-packages`), ran the new
+  `tests/integration/test_oidc_login_real_provider.py` directly — clean,
+  "all checks passed" — then edited `apps/api/app/auth/oidc_login.py`'s
+  `callback()` to pass a deliberately wrong `expected_audience` into
+  `validate_id_token(...)` (this session's own chosen break), re-ran the
+  same file: the real-provider login test genuinely failed
+  (`AssertionError` on `session_cookie is not None` — the real,
+  correctly-issued token from the real `idpyoidc` OP was correctly
+  rejected once the app's own audience check was broken). Reverted
+  (`git checkout --`) and re-confirmed clean. Real, live-wired validation,
+  not a rubber stamp.
+- **`product_truth_check.py` result confirmed legitimate:** `--fail-on-unwired`
+  reports `1/1 product-true`; `grep` on `apps/api/app/main.py` confirms
+  `build_oidc_login_router` is imported and called unconditionally from
+  `create_app()` — a genuine live-caller wiring, not a 0/0 pass.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  reads exactly: **"Real OIDC provider login/refresh/logout validates
+  issuer+audience+subject and secure session."** Three named flows:
+  - **login:** now genuinely proven against a real `idpyoidc` OpenID
+    Provider (this PR's own new evidence, independently fault-injected
+    above) — **met**.
+  - **logout:** local session-cookie revocation, independently
+    fault-injectable (reviewed under PR #103), matches Section 65.3's
+    actual requirement ("logout/session revocation"), which does not call
+    for an OP round-trip — **adequately proven** for this task's own
+    scope, unchanged from the prior review.
+  - **refresh: not met, and not disclosed.** `apps/api/app/auth/oidc_login.py`'s
+    own module docstring asserts "refresh handled server-side (no refresh
+    token is ever sent to the browser)" as a delivered capability.
+    `grep -i refresh` across that module, `oidc_settings.py`, and
+    `main.py` turns up zero lines implementing it: no `refresh_token` is
+    ever stored, exchanged, or used to mint a new access/id token anywhere
+    in this codebase — the session simply expires after
+    `session_ttl_seconds` with no renewal path. Neither the new real
+    `idpyoidc`-backed test nor the pre-existing stdlib stand-in exercises
+    any refresh behavior — there is nothing to exercise. This is not
+    Section 84.4's allowed fake-double-for-unit-coverage pattern (used
+    correctly for `login`/`logout`); it is a named acceptance-clause
+    element with no implementation and no test at all, real or fake.
+  - This differs from this task's other, already-disclosed gaps
+    (revoked-membership fail-closed default, missing Next.js app shell, no
+    secret-manager integration) in the one respect that matters for
+    certification: it is **not disclosed anywhere** — not in
+    `oidc_login.py`'s own "Disclosed, not hidden, gaps" docstring section,
+    not in PR #112's body, not in this shift's own
+    `docs/certifications/queue.md` entry above, not in
+    `docs/spec-matrix.yaml`'s FTF-0101 notes (which this PR edits to read
+    "MET (2026-09-19 follow-up, previously DISCLOSED/NOT MET) --
+    acceptance clause 1's 'Real OIDC provider' integration evidence" with
+    no qualification). The producer's own record represents clause 1 as
+    now fully satisfied; it is not.
+- **Conclusion:** everything this PR itself set out to prove, it proves for
+  real — CI is green on the actual head, the new real-provider test is
+  genuinely fault-injectable, and `product_truth_check.py`'s 1/1 is a real
+  live-caller wiring. But acceptance clause 1 is a three-part compound
+  requirement (login **and** refresh **and** logout), and the "refresh"
+  third was never implemented, never tested, and is now claimed MET
+  without disclosure. Per Law 1 (inapplicable here since refresh was never
+  exercised at all, real or fake) and this file's own 2026-09-19 precedent
+  on PR #103 (an unmet acceptance-clause element blocks certification even
+  when every written test passes and every *other* element is disclosed)
+  — an *undisclosed* unmet element is at least as disqualifying. This is
+  not a rejection of the login-flow work, which is real and solid.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN` on PR #112's own branch. PR #112 is left open, unmerged —
+  nothing from it is promoted to `main` by this review.
+  **Fix needed:** either (a) implement a real server-side refresh
+  mechanism — store the OP's `refresh_token` server-side per session,
+  exchange it for a new access/id token against the real OP before/at
+  session-TTL expiry, and add real-provider test coverage proving it,
+  mirroring this PR's own login-flow pattern — or (b) if server-side
+  refresh is deliberately out of scope given this task's session-TTL
+  design (e.g. forcing re-login on expiry is the intended behavior), that
+  scoping decision needs to be made explicit and disclosed — in the module
+  docstring (replacing the current unqualified "refresh handled
+  server-side" claim), in `docs/spec-matrix.yaml`'s notes, and in the next
+  PR body — not silently assumed. Either way, clause 1 cannot be marked
+  MET in full until the record matches reality. No other change requested
+  — the rest of PR #112's evidence, including its login-flow real-provider
+  evidence, stands as submitted and does not need to be redone.
+- **Validated-by:** session
+  https://claude.ai/code/session_01CR9tW5L6fqoUJHfCyeEhVT (independent —
+  see session-ID check above), 2026-09-19.

@@ -1,7 +1,31 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T22:15:00Z (live, interactive session with the account
-  holder — recorded a new standing default-resolution rule in CLAUDE.md
-  and applied it to close the one open owner ask)
+Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #112: independent CERTIFY review
+  of FTF-0101 — NOT CERTIFIED; see below)
+
+## 2026-09-19 — Control plane: FTF-0101 (PR #112) reviewed, NOT CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md):
+session-ID independence confirmed against all 9 PR #112 commits; CI
+re-polled to completion and confirmed 7/7 green on the real head
+(`a8f013d`); independent fault injection (own chosen break: a wrong
+`expected_audience` in `callback()`) confirmed the new real-`idpyoidc`
+-provider integration test genuinely fails when the app's own validation
+is broken; `product_truth_check.py`'s `1/1 product-true` confirmed
+legitimate (`build_oidc_login_router` genuinely, unconditionally wired
+into `main.py`); task contract re-pulled via `tools/r1_handoff.py`.
+Result: acceptance clause 1 ("Real OIDC provider login/refresh/logout...")
+is a three-part requirement. PR #112 genuinely closes the "login" gap that
+blocked PR #103's own review, and "logout" was already adequately proven.
+But "refresh" is neither implemented nor tested anywhere in this
+codebase — `oidc_login.py`'s docstring claims it is "handled server-side"
+with no backing code, and this PR's own record (docstring,
+`docs/spec-matrix.yaml` notes, PR body) claims clause 1 fully "MET"
+without disclosing that gap. `certification_state` stays
+`PROVISIONAL`/`L1-PROVEN`; PR #112 stays open, unmerged. Full write-up:
+`docs/certifications/queue.md`; queue status updated in `QUEUE.md`.
+**Validated-by:** session
+https://claude.ai/code/session_01CR9tW5L6fqoUJHfCyeEhVT (independent —
+no session-ID match on any PR #112 commit).
 
 ## 2026-09-19T22:15:00Z — Live owner instruction: default-resolution rule recorded, FTF-0101's OIDC-test-provider ask closed
 Not a scheduled/automated relay shift — a live, interactive turn with the
