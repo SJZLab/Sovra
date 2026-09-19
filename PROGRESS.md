@@ -1,7 +1,125 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (scheduled relay shift: FTF-0103 RBAC middleware
-  submitted, PROVISIONAL, PR #118, CI green 7/7 on the real final head;
-  see below)
+Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #118: FTF-0103 RBAC middleware
+  independently reviewed and CERTIFIED; see below)
+
+## 2026-09-19 — Control plane: FTF-0103 (PR #118) reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #118.
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-0103, PR #118 (this shift's own relay submission). FTF-0101 (the only
+other item ever in "## Provisional") was already CERTIFIED by a prior
+shift (PR #114, merge commit `5de1c58`, confirmed via `git log`/QUEUE.md
+before starting this review) — not re-reviewed here, out of scope.
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01XZVCzf4rTC7QTXUCMwP65Q`) against all 5
+commits on PR #118 — all five carry
+`Claude-Session: .../session_012jXC2eTsD2Vx47hmtLLiBu`. No match —
+independent.
+
+Re-read the full diff in a dedicated `git worktree` at the real PR head
+(`801e2d0`): `apps/api/app/auth/rbac_middleware.py` (`Role` enum, `require_role`
+dependency factory — organization resolved strictly from the URL path,
+denies outright on a disagreeing body `organization_id`, denies unless
+`role_lookup` returns a role in `allowed_roles`; both `principal_resolver`
+and `role_lookup` fail-closed by default) and `tests/tasks/test_ftf_0103.py`
+(a real uvicorn demonstration app over a real local socket).
+
+Re-ran `uv run python3 tests/tasks/test_ftf_0103.py` clean in a fresh `uv
+sync --all-packages` sandbox (`git fetch --unshallow` needed once, this
+sandbox starts shallow, same documented environment-artifact note as every
+prior shift).
+
+CI reconfirmed for real on the actual current head — the PR head moved
+once during this review (`da86a068` → `801e2d0`, a doc-only
+`PROGRESS.md`-only commit; `git diff --stat` between the two heads
+confirmed no code delta): all 7 checks (`gate`, `oidc-provider-integration`,
+`docker-local-stack-integration`, `organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) completed `success` on `801e2d0` itself,
+waited for completion rather than trusting a mid-run snapshot or the
+producer's own unchecked test-plan box.
+
+Two own independent fault injections, distinct from the producer's own two
+(body-tenant-mismatch disable; unknown-membership-to-viewer downgrade):
+(1) flipped the body-tenant-mismatch condition's `!=` to `==` — exactly
+the two expected body-tenant checks failed, reverted clean (`git diff
+--stat` confirmed no residual change); (2) changed
+`role = role_lookup(...)` to `role = role_lookup(...) or Role.VIEWER` —
+exactly the two expected guessed-UUID/no-membership checks failed,
+reverted clean the same way.
+
+Full regression, this sandbox: `uv run ruff check .` / `uv run ruff format
+--check .` / `uv run mypy .` clean (the plain, non-`uv run` `ruff` on this
+machine reports 7 UP042 findings from a newer, unpinned ruff version
+across pre-existing enum classes repo-wide — not this PR's own defect,
+confirmed by re-running the actual pinned/CI invocation); `pnpm install
+--frozen-lockfile` then `pnpm run lint` / `typecheck` / `format:check`
+clean; `pnpm exec vitest run` 5/5; `uv run pytest tests/unit` 3/3; all 17
+existing `tests/tasks/test_ftf_*.py` files re-run clean;
+`python3 scripts/validate_spec.py --strict` clean (first run, before `git
+fetch --unshallow`, showed 9 stale-commit findings — a shallow-clone
+artifact of this worktree, not a real defect).
+
+`product_truth_check.py --fail-on-unwired` reports `1/1 product-true`;
+`docs/spec-matrix.yaml` FTF-0103's `proving_symbol` is empty — this
+criterion makes no live-wiring claim (no `/api/v1` route exists anywhere
+in this repository yet), so the unchanged `1/1` is FTF-0101's own wiring,
+not an inflated or fabricated pass for FTF-0103.
+
+Task contract re-pulled directly: `python tools/r1_handoff.py packet
+FTF-0103 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1
+("every route/operation maps to explicit role and scoped project policy on
+server") is read as applying to the routes that actually exist — currently
+zero, since no `/api/v1` product route exists anywhere in this repository
+yet (confirmed via `grep` on `apps/api/app/main.py`) — so it is vacuously
+and disclosedly satisfied at this point in the dependency graph, the same
+treatment already given to FTF-0102's own zero-OpenAPI-paths scope; the
+module's own enforcement mechanism is independently proven end to end
+against three representative routes in a real demonstration app.
+Acceptance clause 2 (independent review + merged commit + real relevant
+integration + negative-test evidence) is satisfied by this review itself.
+The negative_acceptance clause (guessed UUID, body-selected tenant) is
+independently proven above. `docs/spec-matrix.yaml`'s FTF-0103 notes read
+accurately against all of the above — every disclosed gap (no live
+`Membership` table, no live `/api/v1` caller yet, organization-level-only
+scoping, `principal_resolver` decoupling from FTF-0101) matches the real
+repository state.
+
+**Conclusion:** the delivered RBAC enforcement primitive is real,
+independently reproduced against a real local uvicorn demonstration
+server, genuinely fault-injectable via two independent, this-session-chosen
+breaks covering both named negative_acceptance vectors, and CI is green on
+the real final merged head. **FTF-0103 is CERTIFIED.** Merged PR #118
+(merge commit `b4b47c0678422dace8e5994af5929586e9301166`). Set
+`docs/spec-matrix.yaml` FTF-0103 to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED` (`evidence_hash` kept at the implementation
+commit `9d9e536`, matching the new `spec/verification-map.json` `commit`
+field — same two-commit convention as FTF-0102/FTF-0104/FTF-1601/FTF-0101).
+Added FTF-0103's own entry to `spec/verification-map.json`. Full ledger
+entry: `docs/certifications/ledger.md`. QUEUE.md updated: Certified 20 ->
+21/300, Provisional 1 -> 0, "## Provisional" and "## Done" sections
+updated accordingly. Product-true stays 1/300 (FTF-0103 has no
+`proving_symbol`, same disclosed no-live-caller-yet class as
+FTF-0102/FTF-0104/FTF-1601 before it).
+
+**Validated-by:** session
+https://claude.ai/code/session_01XZVCzf4rTC7QTXUCMwP65Q (independent — see
+session-ID check above), 2026-09-19.
+
+## Next shift
+Top item: none blocked or provisional. FTF-0101/FTF-0102/FTF-0103/FTF-0104
+are all now CERTIFIED, unblocking FTF-0105 (Tenant-isolation query guards)
+and FTF-0106's own dependency graph — the next relay shift should claim
+the highest-priority ready item per QUEUE.md's "## Queue (ordered by
+dependency)" section (FTF-0105 already has its task packet pulled and
+recorded — `docs/implementation/task-packets/FTF-0105.md`, from PR #118's
+own scoping pass — but that is not proof of completion, just a head
+start).
+Blocked: no.
 
 ## 2026-09-19 — Relay shift: FTF-0103 (RBAC middleware) implemented and submitted, PROVISIONAL
 STEP 0.1: read PROGRESS.md, QUEUE.md and docs/certifications/queue.md

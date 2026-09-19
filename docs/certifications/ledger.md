@@ -2303,3 +2303,116 @@ corrected 2026-09-15.
   evidence, then unimplemented/undisclosed refresh — are closed for real,
   not merely disclosed around. No blocking defect. Certified
   L2-CERTIFIED.
+
+## FTF-0103 — RBAC middleware
+- Criterion ID: FTF-0103
+- PR: https://github.com/SJZLab/Sovra/pull/118
+- Merge commit: b4b47c0 (`b4b47c0678422dace8e5994af5929586e9301166`)
+- Validated-by: session https://claude.ai/code/session_01XZVCzf4rTC7QTXUCMwP65Q
+  (session-ID comparison performed and recorded before this entry: all 5
+  commits on PR #118 — 9d9e536, fcfa2fc, da86a068, 54dad4b, 801e2d0 —
+  carry `Claude-Session: .../session_012jXC2eTsD2Vx47hmtLLiBu`; none match
+  this reviewing session's own ID, so this is an independent
+  certification, not self-certification.)
+- Steps performed:
+  1. Task contract pulled fresh via `python tools/r1_handoff.py packet
+     FTF-0103 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, not taken from the
+     PR body alone: acceptance = ["Every route/operation maps to explicit
+     role and scoped project policy on server.", "Independent review,
+     exact merged commit, real relevant integration and negative-test
+     evidence recorded."]; negative_acceptance = ["Guessed UUID or
+     body-selected tenant cannot bypass viewer/evaluator/approver
+     boundaries."]; `database_changes` reads "No independent schema
+     change... any required change is a separately claimed migration
+     prerequisite" — confirmed directly (`organization_workspace_schema.py`
+     has only `Organization`/`Workspace`; no `Membership` table or frozen
+     contract for one exists anywhere in this repository).
+  2. Read the full delivered diff directly, including a dedicated `git
+     worktree` at the real PR head (`801e2d0`):
+     `apps/api/app/auth/rbac_middleware.py` (`Role` enum matching Section
+     6.4's exact role set; `require_role(allowed_roles, ...)` — a FastAPI
+     dependency factory resolving the organization strictly from the URL
+     path via `organization_id_from_path()`, denying outright
+     (`tenant_mismatch`, 403) if a mutating request's own JSON body names
+     a disagreeing `organization_id`, then denying unless `role_lookup`
+     returns a role in `allowed_roles`; `principal_resolver`/`role_lookup`
+     both injectable and fail-closed by default), and
+     `tests/tasks/test_ftf_0103.py` (a real uvicorn demonstration app over
+     a real local socket, driven via `http.client`, not an in-process call
+     or mocked request).
+  3. Re-ran `uv run python3 tests/tasks/test_ftf_0103.py` in a fresh `uv
+     sync --all-packages` environment (after `git fetch --unshallow`,
+     needed once in this sandbox) — all checks pass.
+  4. **Two own independent fault injections** (distinct vectors from the
+     producer's own two, reproduced independently rather than trusted):
+     (a) flipped the body-tenant-mismatch condition's `!=` to `==` in
+     `require_role`'s dependency closure — exactly the two expected
+     body-tenant checks failed
+     (`negative_acceptance: a body-selected tenant ... is denied
+     outright`, `a body tenant field that agrees with the URL path does
+     not itself cause a denial`); reverted, `git diff --stat` confirmed no
+     residual change, re-ran clean. (b) changed
+     `role = role_lookup(...)` to `role = role_lookup(...) or
+     Role.VIEWER`, auto-downgrading any unknown membership instead of
+     denying — exactly the two expected guessed-UUID/no-membership checks
+     failed (`a guessed org UUID is denied for a read too`, `a principal
+     with no Membership row anywhere is denied`); reverted, confirmed
+     clean the same way.
+  5. Full regression, this sandbox (`uv run ruff check .` / `uv run ruff
+     format --check .` / `uv run mypy .` clean — the plain, non-`uv run`
+     `ruff` on this machine reports 7 UP042 findings from a newer,
+     unpinned ruff version across pre-existing enum classes repo-wide, not
+     just this PR's own `Role` enum; the actual CI/pinned invocation
+     (`uv run ruff check .`) reports 0, confirmed directly, not a real
+     defect); `pnpm install --frozen-lockfile` then `pnpm run lint` /
+     `typecheck` / `format:check` clean; `pnpm exec vitest run` 5/5; `uv
+     run pytest tests/unit` 3/3; all 17 existing `tests/tasks/
+     test_ftf_*.py` files re-run clean; `python3 scripts/validate_spec.py
+     --strict` clean (the first run, before `git fetch --unshallow`,
+     showed 9 stale-commit findings — a shallow-clone artifact of this
+     worktree, not a real defect, resolved by unshallowing and re-running
+     clean).
+  6. CI reconfirmed for real on the actual current head: at first poll 5
+     of 7 checks on the original head (`da86a068`) were queued/running; a
+     doc-only `PROGRESS.md` commit then moved the head to `801e2d0`
+     (`git diff --stat` between the two heads confirmed only `PROGRESS.md`
+     changed, no code delta) — re-polled the new head rather than trusting
+     the producer's own "to be confirmed independently" checkbox, waited
+     for completion rather than a snapshot mid-run: all 7 checks (`gate`,
+     `oidc-provider-integration`, `docker-local-stack-integration`,
+     `organization-workspace-schema-integration`,
+     `audit-event-writer-integration`, `postgres-backup-integration`,
+     `storage-semantics-integration`) completed `success` on `801e2d0`
+     itself.
+  7. `product_truth_check.py --fail-on-unwired` result confirmed
+     legitimate: `1/1` — `docs/spec-matrix.yaml`'s FTF-0103
+     `proving_symbol` is empty, so this criterion claims no live wiring at
+     all (no `/api/v1` route exists yet in this repository to wire it
+     into); the `1/1` is the unchanged FTF-0101 `build_oidc_login_router`
+     wiring, not an inflated or fabricated pass for this task's own,
+     disclosedly-unwired module.
+  8. Acceptance clause 1 ("every route/operation maps to explicit role and
+     scoped project policy on server") is read as applying to the real
+     routes that exist — currently zero, since no `/api/v1` product route
+     exists anywhere in this repository yet (confirmed by grep against
+     `apps/api/app/main.py`, which only wires FTF-0101's `/auth/*`
+     router) — so it is vacuously and disclosedly satisfied at this point
+     in the dependency graph, the same treatment already given to
+     FTF-0102's own zero-OpenAPI-paths scope. The module's own enforcement
+     mechanism is proven end to end against three representative routes
+     in a real demonstration app, which is the strongest evidence
+     available before a real product route exists to wire it into.
+     Acceptance clause 2 and the negative_acceptance clause are both met
+     in full, per steps 2-4 above. `docs/spec-matrix.yaml`'s notes read
+     accurately against all of the above — every disclosed gap (no live
+     Membership table, no live `/api/v1` caller yet, organization-level-
+     only scoping, `principal_resolver` decoupling from FTF-0101's
+     concrete session implementation) matches the real repository state,
+     not silently expanded past what the submission itself disclosed.
+- Conclusion: the delivered RBAC enforcement primitive is real,
+  independently reproduced against a real local uvicorn demonstration
+  server (not an in-process call or mock), genuinely fault-injectable via
+  two independent, this-session-chosen breaks covering both named
+  negative_acceptance vectors (guessed UUID, body-selected tenant), and CI
+  is green on the real final merged head. No blocking defect. Certified
+  L2-CERTIFIED.

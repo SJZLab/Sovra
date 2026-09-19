@@ -176,6 +176,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real local-OIDC-provider login/refresh/logout evidence (acceptance clause 1, all three flows) is tests/integration/test_oidc_login_real_provider.py, run separately in CI (oidc-provider-integration job) against a real idpyoidc.server.Server OpenID Provider over real HTTP sockets — not re-executable by verify_task.py in this sandbox (no container-registry egress needed, but a separate, dedicated CI job by established convention), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-1601. Certified after two resubmissions (PR #103 -> real-provider integration evidence missing entirely; PR #112 -> refresh unimplemented, untested and undisclosed; PR #114 -> real server-side refresh implemented and proven against the same real provider, closed both prior gaps) — the underlying implementation commit is unchanged since e2c5423."
+    },
+    "FTF-0103": {
+      "commit": "9d9e53642e937de6a1242012323ae586c2135d49",
+      "commands": [["python3", "tests/tasks/test_ftf_0103.py"]],
+      "expected_output_contains": "FTF-0103 RBAC middleware: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. tests/tasks/test_ftf_0103.py is the full evidence for this task (no separate live-integration CI job): its own real, locally-hosted demonstration FastAPI app over a real local socket is a no-DB, no-network proof, fully re-executable by verify_task.py in this sandbox — unlike FTF-0101/FTF-0102/FTF-0104/FTF-1601, this task has no real external/GPU/DB prerequisite to gate on (no live Membership table or /api/v1 route exists yet; both are disclosed, not hidden, per docs/spec-matrix.yaml's own FTF-0103 notes). Certified on first submission (PR #118) — the underlying implementation commit is unchanged since 9d9e536."
     }
   }
 }
