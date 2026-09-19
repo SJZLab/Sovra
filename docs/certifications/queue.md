@@ -3672,6 +3672,18 @@ the same code on a now-clean head.
   `restoration_validated` behavior is already independently recorded in
   the review above; PR #96's own `postgres-backup-integration` CI job
   re-covers it on the real new head regardless.
+- **Pushed:** commit `353b82bab5827ad95998644f1151d98c1dcaf541` on branch
+  `claude/wizardly-fermat-vmg0oc` (PR #96 unchanged, new commit; base
+  merge landed first as `f3a3b49`).
+- **CI reconfirmed green on that exact head, checked directly (not
+  inferred from the `check_suite.completed` webhook alone):**
+  `get_check_runs` against PR #96 — all 6 jobs `completed`/`success`
+  (`gate`, `docker-local-stack-integration`,
+  `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`), run `35411323316`.
+  `pull_request_read get` confirms `mergeable_state: "clean"`;
+  `get_comments` returns zero open review comments.
 - **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`
   (unchanged — a scoped test-only fix per the review's own instruction,
   "no code change expected/needed"). Not self-certified — this relay

@@ -80,19 +80,25 @@ STEP 2 (PEV):
   `postgres-backup-integration` CI job re-covers it on the real new head
   regardless.
 
-Pushed to `claude/wizardly-fermat-vmg0oc`; PR #96 unchanged (same PR, new
-commit) at https://github.com/SJZLab/Sovra/pull/96 — see
-`docs/certifications/queue.md`'s matching new entry for the real pushed
-commit SHA and CI confirmation once green. `proof_state=L1-PROVEN`,
+Pushed as commit `353b82b` to `claude/wizardly-fermat-vmg0oc`; PR #96
+unchanged (same PR, new commit) at
+https://github.com/SJZLab/Sovra/pull/96. Subscribed to the PR's activity
+and confirmed CI directly once the `check_suite.completed` webhook fired
+(not trusted alone): `get_check_runs` against the real head
+`353b82bab5827ad95998644f1151d98c1dcaf541` — all 6 jobs
+`completed`/`success` (`gate`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`), run `35411323316`. `mergeable_state:
+"clean"`, zero open review comments. `proof_state=L1-PROVEN`,
 `certification_state=PROVISIONAL` (unchanged — this is a test-only fix
 per the review's own instruction, "no code change expected/needed").
 
-STEP 3: this entry. STEP 4: no stop condition applies yet — a fresh
-Control-plane L2 review is the next unblocked action once CI confirms
-green on the new head; this relay session does not certify its own fix
-(same producer session cannot certify per Law 4), so it stops here per
-STEP 4(a)'s spirit (nothing left this session can safely do beyond
-confirming CI itself, next).
+STEP 3: this entry. STEP 4(a): FTF-1601 is the only workable item this
+shift and it is now fully L1-PROVEN with CI-confirmed green evidence,
+awaiting Control-plane L2 certification and (later) the L4 gate — this
+relay session cannot certify its own fix per Law 4, so there is nothing
+further this session can safely do. Reporting and stopping here.
 
 
 ## 2026-09-18 — Control plane: FTF-1601 (PR #96) NOT CERTIFIED — real Law 1 gap, restoration completeness never proven able to fail

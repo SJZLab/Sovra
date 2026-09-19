@@ -48,9 +48,14 @@ Updated: 2026-09-19 (relay shift) — pushed the exact fix the review above
   `product_truth_check.py` 0/0 unchanged, `verify_release.py` 18/300 zero
   FAILED unchanged). Merged current `main` into this branch first (pure
   tracking-doc conflict against the review itself; resolved
-  chronologically, no code touched). See "## Active" below and
-  `docs/certifications/queue.md`'s matching new entry for the pushed
-  commit SHA and CI confirmation.
+  chronologically, no code touched). Pushed as commit `353b82b` on
+  `claude/wizardly-fermat-vmg0oc`; CI reconfirmed green on that exact head
+  (all 6 jobs `completed`/`success`, run `35411323316`, including
+  `postgres-backup-integration`), `mergeable_state: "clean"`, zero open
+  review comments. FTF-1601/PR #96 is ready for a fresh, independent
+  Control-plane L2 review — this relay session cannot certify its own fix
+  per Law 4. See "## Active" below and `docs/certifications/queue.md`'s
+  matching new entry.
 
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
@@ -132,84 +137,12 @@ without counting toward product-true).
   ready items, and FTF-1601 is already in flight). Per STEP 4(e),
   stopping this shift here.
 ## Active (relay works this)
-FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102, both CERTIFIED) — open
-PR https://github.com/SJZLab/Sovra/pull/96 (supersedes closed PR #90),
-head `902139b` on branch `claude/wizardly-fermat-vmg0oc`.
+(empty — FTF-1601/PR #96's requested fix is pushed and CI-confirmed green
+on commit `353b82b`; it now sits in "## Provisional" below, awaiting a
+fresh, independent Control-plane L2 review. No other dependency-ready,
+unclaimed task exists this shift — see "## Owner actions — current" for
+FTF-0101's standing new-runtime-dependency block.)
 
-History: PR #90's recurring `PROGRESS.md`/`QUEUE.md` tracking-doc merge
-conflict against a moving `main` stalled for three consecutive relay
-shifts (each correctly declined to push a fix to a branch it wasn't
-assigned). A later shift broke the stall by merging FTF-1601's actual
-delivered code from `claude/wizardly-fermat-e9tyvg` into its own
-designated branch (`claude/wizardly-fermat-vmg0oc`) instead, resolved the
-tracking-doc conflicts there, and opened PR #96 to supersede #90 (closed
-with an explanatory comment).
-
-**This shift (Control plane, scheduled CERTIFY-mode, triggered by PR
-#96's own `pull_request.opened` webhook):** confirmed CI green (6/6) on
-the real final head `902139b` via `get_workflow_run` matching `head_sha`
-directly (the PR advanced through two more tracking-doc-only commits
-mid-review; re-checked each time rather than trusting a stale claim), and
-`mergeable_state: "clean"` — the structural blocker is genuinely resolved.
-**Did not certify anyway:** independent fault injection against a real
-live Postgres cluster found that `restore_backup()`'s
-`restoration_validated` result — the code's own mechanism for Section
-71.2's "a backup that has never been restored does not count as
-validated" — has never been shown able to fail by any test in this PR
-(Law 1). Proved it concretely: took a real encrypted backup, restored it
-into a scratch database, manually dropped one RLS policy from that
-restored copy (a real, physically incomplete restore), and confirmed the
-shipped code correctly reports `restoration_validated: False` for it —
-but removing just that one term from the boolean conjunction makes the
-identical real scenario silently report `True`, and neither
-`tests/tasks/test_ftf_1601.py` nor `tests/integration/test_postgres_backup.py`
-catches the difference. Full writeup: `docs/certifications/queue.md`,
-"Control plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap:
-restoration completeness never proven able to fail)".
-
-**Fix needed (relay, same PR #96 branch, no code change expected):** add
-a no-DB test — the existing `dump_fn`/`metadata_fn`-injection pattern
-already used elsewhere in `tests/tasks/test_ftf_1601.py` is sufficient —
-that calls `restore_backup()` with a `metadata_fn` reporting a restored
-state missing a table, a `FORCE ROW LEVEL SECURITY` flag, or an RLS
-policy the original backup recorded, and asserts
-`restoration_validated is False` for each of the three subset terms
-independently. Push to `claude/wizardly-fermat-vmg0oc`, confirm CI stays
-green, resubmit for certification.
-
-**This shift (relay):** added exactly that fix, no code change. Four new
-`tests/tasks/test_ftf_1601.py` checks: three independent no-DB negative
-cases (a `metadata_fn` reporting the restored state missing a table / a
-FORCE ROW LEVEL SECURITY flag / an RLS policy the original backup
-recorded, each asserting `restoration_validated is False`) plus one
-baseline positive case (a genuinely complete restore still reports
-`True`, proving the three negatives fail for the right reason and not
-because the scaffold can never report `True`). `restore_backup()`'s own
-row-count step still queries a live DB directly for any table both the
-original and restored metadata agree exists, unrelated to
-`restoration_validated` itself — worked around the same way
-`test_create_backup_self_verification_catches_a_broken_encrypt_path`
-already does, by monkeypatching `_psql_rows` for the scaffold's own scope
-only. Reproduced the reviewer's exact finding three times over, once per
-subset term (removed the `tables` / `rls_forced_tables` / `rls_policies`
-conjunction term from `scripts/postgres_backup.py` in turn) — each time
-exactly the matching new check failed and no other check did, restored
-byte-identical from a pre-edit copy (`diff` confirmed empty) after each,
-re-ran clean between injections. Merged current `main` into this branch
-first (pure tracking-doc conflict against the review itself landing on
-`main`; resolved chronologically, no code touched — see this file's
-"Updated" banner). Full regression on the resulting tree: `ruff check .`/
-`ruff format --check .`/`mypy .` clean (63 files); `pnpm lint`/
-`typecheck`/`format:check` clean; `uv run pytest tests/unit tests/tasks` —
-213 passed (was 209; +4 new checks, all in `test_ftf_1601.py`, now 18);
-`pnpm exec vitest run` — 2 passed; `validate_spec.py --strict` clean;
-`status.py` — `18/300 certified · 0 product-true` (unchanged);
-`product_truth_check.py --fail-on-unwired` — `0/0` (unchanged);
-`verify_release.py` — `18/300`, zero `FAILED`, `NOT READY` (unchanged).
-Pushed to `claude/wizardly-fermat-vmg0oc`; CI to be reconfirmed on the new
-head before resubmitting for certification — see this file's "Updated"
-banner and `docs/certifications/queue.md`'s matching new entry for the
-real commit SHA and CI run.
 ## Provisional (awaiting Control plane L2 certification)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third
 structural-blocker recurrence resolved via a new PR rather than a fourth
@@ -241,6 +174,26 @@ session can actually push to, and it is now ready for a fresh,
 independent Control-plane L2 review — see `docs/certifications/queue.md`'s
 matching continuation entry. `proof_state=L1-PROVEN`,
 `certification_state=PROVISIONAL`.
+
+**2026-09-18, Control plane review:** NOT CERTIFIED — a real Law 1 gap
+(`restoration_validated`'s three subset terms never shown able to fail by
+any test). Shipped code confirmed correct; only test coverage missing.
+Full writeup: `docs/certifications/queue.md`.
+
+**2026-09-19, relay shift:** pushed exactly the fix requested — four new
+no-DB checks in `tests/tasks/test_ftf_1601.py` (three independent
+`restoration_validated is False` negatives, one per subset term, plus one
+baseline positive), no code change. Reproduced the reviewer's finding
+three times over via fault injection; each matching new check failed and
+was restored byte-identical. Commit `353b82b` on
+`claude/wizardly-fermat-vmg0oc`. **CI reconfirmed green on that exact
+head:** all 6 jobs `completed`/`success`, run `35411323316`
+(`postgres-backup-integration` included), `mergeable_state: "clean"`,
+zero open review comments. Full regression clean (see PROGRESS.md's
+matching entry). `proof_state=L1-PROVEN`,
+`certification_state=PROVISIONAL` — ready for a fresh, independent
+Control-plane L2 review; this relay session cannot certify its own fix
+per Law 4.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
