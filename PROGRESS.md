@@ -108,9 +108,12 @@ a fresh, independent Control-plane review. Certified: 19/300 · Product-true:
 
 ## Next shift
 Top item: FTF-0101 (PR #114) awaiting independent Control-plane L2
-certification — CI needs to confirm green on the real PR #114 head first.
-Once certified and merged, every other `NOT_STARTED` task's dependency
-graph unblocks starting with FTF-0103/FTF-0105/FTF-0106.
+certification. **CI reconfirmed green after this shift's own final push**
+(commit `734068b`, all 7 jobs `success` including `oidc-provider-integration` —
+the job running the new real-provider refresh tests); `mergeable_state:
+"clean"`, no open review threads. Once certified and merged, every other
+`NOT_STARTED` task's dependency graph unblocks starting with
+FTF-0103/FTF-0105/FTF-0106.
 Blocked: no.
 
 ## 2026-09-19 — Control plane: FTF-0101 (PR #112) reviewed, NOT CERTIFIED
