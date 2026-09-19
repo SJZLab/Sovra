@@ -1,7 +1,130 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #114: independent CERTIFY review
-  of FTF-0101 — CERTIFIED; see below)
+Updated: 2026-09-19 (scheduled relay shift: FTF-0103 RBAC middleware
+  submitted, PROVISIONAL; see below)
+
+## 2026-09-19 — Relay shift: FTF-0103 (RBAC middleware) implemented and submitted, PROVISIONAL
+STEP 0.1: read PROGRESS.md, QUEUE.md and docs/certifications/queue.md
+(all current as of the prior shift's own FTF-0101/PR #114 certification).
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed
+`CLAUDE.md.sha256` exactly — no drift. `BLOCKER.md` has no open blocker
+(both entries are resolved history). No open PR needed attention this
+shift beyond the usual: PR #115 (a doc-only "record PR #114 merge"
+follow-up opened by a prior shift, based on `main` before FTF-0101's own
+certification landed) is now superseded by `main`'s actual state — left
+alone, not this shift's task to close.
+
+STEP 1: QUEUE.md "## Active" and "## Provisional" were both empty. Per
+the prior shift's own "## Next shift" note ("FTF-0101/FTF-0102/FTF-0104
+are all now CERTIFIED, unblocking FTF-0103/FTF-0105/FTF-0106's dependency
+graph — the next relay shift should claim ... FTF-0103 RBAC middleware
+first"), pulled its real DoD: `python tools/r1_handoff.py packet
+FTF-0103 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Confirmed via GitHub
+MCP: no existing open PR or branch already covers FTF-0103 (only open PR
+was #115, unrelated).
+
+**Real constraint found before writing code:** FTF-0103's own
+`database_changes` field reads "No independent schema change. Consume
+frozen contract; any required change is a separately claimed migration
+prerequisite" (confirmed against every other task packet's own field —
+this is the genuine per-task value, not boilerplate; FTF-0102/FTF-0104
+instead carry "Own forward Alembic migration for this resource").
+Verified directly: no `Membership` table exists anywhere in this
+repository (`organization_workspace_schema.py` has only
+`Organization`/`Workspace`), no frozen contract defines one
+(`packages/contracts/jsonschema/01-domain.schema.json`'s own
+`definitions` are `Slug`/`EntityName`/`EntityStatus`/`Organization`/
+`Workspace`), and no task anywhere in `docs/TASK_INDEX.md`/
+`docs/spec-matrix.yaml` owns creating it — FTF-0105 ("Tenant-isolation
+query guards") is a different DB/query-layer concern and itself depends
+on FTF-0103, so it cannot be the creator. This is not a fresh ambiguity
+requiring a BLOCKER.md stop: FTF-0101's own module docstring already
+named exactly this gap ("Membership is FTF-0103/FTF-0105's concern") and
+already established the resolution pattern this shift follows —
+`default_membership_lookup` proves a real, fail-closed enforcement point
+via an injected fake lookup rather than a live table. FTF-0103 follows
+the identical, already-accepted pattern: build the real enforcement
+primitive now, prove it fail-closed and correct via injected test
+doubles (Section 84.4 permits this for isolated proof), and disclose the
+missing live table rather than fabricate a schema change this task's own
+contract forbids.
+
+STEP 2 (PEV):
+- **P:** read `apps/api/app/auth/oidc_login.py` (session cookie shape —
+  carries only `sub`/`iss`/`email`/`csrf`/`jti`, no role or org) and
+  `organization_workspace_schema.py` (confirmed above) before writing
+  anything. Formed the design: `require_role(allowed_roles, ...)`, a
+  FastAPI dependency factory taking an injectable `principal_resolver`
+  (who) and `role_lookup` (what role, scoped to one organization) —
+  decoupled from FTF-0101's own concrete session implementation so that
+  module's already-certified evidence is never put at risk by this task's
+  changes. Organization ID for the authorization decision is resolved
+  strictly from the URL path, never the request body — this task's own
+  negative_acceptance clause names a body-selected tenant explicitly as a
+  bypass vector.
+- **E:** wrote `apps/api/app/auth/rbac_middleware.py` (`Role` enum
+  matching Section 6.4 exactly; `organization_id_from_path`;
+  `require_role`) and `tests/tasks/test_ftf_0103.py` (12 checks: `Role`
+  enum shape, both fail-closed defaults, path-UUID parsing, and a real
+  end-to-end proof against a locally-hosted demonstration FastAPI app —
+  real uvicorn server over a real local socket, the same pattern
+  `tests/tasks/test_ftf_0101.py` established — covering all three roles
+  this task's own negative_acceptance clause names: a viewer denied
+  creating an evaluation, an evaluator denied approving a promotion, a
+  guessed org UUID denied even for a caller who holds that exact role in
+  a different real organization, a principal with no membership anywhere
+  denied, and a body-selected tenant mismatch denied outright). Ran
+  `uv run python3 tests/tasks/test_ftf_0103.py` clean, then proved the
+  suite is not decorative with two distinct own fault injections: (1)
+  disabling the body-tenant mismatch check — caught for real, exactly the
+  one expected check failed; (2) silently downgrading an unknown
+  membership to `Role.VIEWER` instead of denying — caught for real,
+  exactly the 5 expected role/tenant-boundary checks failed. Both
+  reverted, confirmed byte-identical via `diff`, re-ran clean.
+- **V:** `ruff check .` / `ruff format --check .` / `mypy .` clean (72
+  files, after fixing a ruff B008 finding — `Depends(require_role(...))`
+  moved out of parameter defaults into module-level singletons in the
+  test file's own demo app, no behavioral change); `pnpm run lint` /
+  `typecheck` / `format:check` clean; `pnpm exec vitest run` — 5/5; `uv
+  run pytest tests/unit` — 3/3; all 17 existing `tests/tasks/
+  test_ftf_*.py` files plus `tests/implementation/*.py` re-run clean and
+  unmodified in behavior (this sandbox needed `uv sync --all-packages`,
+  `pnpm install --frozen-lockfile` and `git fetch --unshallow` once —
+  same documented environment-artifact note as every prior shift, not a
+  real defect: the shallow clone made `validate_spec.py --strict`
+  spuriously report `stale_commit` for three already-certified tasks
+  until unshallowed, then clean). `python3 scripts/validate_spec.py
+  --strict` clean. `product_truth_check.py --fail-on-unwired` still
+  `1/1` — unchanged; this module has no live product caller yet (no
+  `/api/v1` route exists in this repository at all, `apps/api/app/main.py`
+  only wires FTF-0101's `/auth/*` router), same disclosed class already
+  accepted for FTF-0005/FTF-0006/FTF-0102/FTF-0104 before each one's own
+  first live caller existed — not falsely inflated. `scripts/status.py`
+  still `20/300 certified · 1 product-true`. `verify_task.py --task
+  FTF-0103 --stage task` reports `BLOCKED — no merged verification
+  evidence yet` (expected pre-merge; its `spec/verification-map.json`
+  entry is added by Control plane at certification time, per established
+  convention — not touched by this submission).
+
+Set `docs/spec-matrix.yaml` FTF-0103 to `certification_state: PROVISIONAL`
+/ `implementation_state: IMPLEMENTED` / `proof_state: L1-PROVEN` /
+`proving_test: tests/tasks/test_ftf_0103.py` (`proving_symbol` stays `''`
+— no live caller yet); `evidence_hash` to be filled with this shift's own
+implementation commit SHA in a follow-up commit (two-commit pattern, same
+as every prior task). Added new CI step `FTF-0103 negative-test proof` to
+`.github/workflows/ci.yml`'s `gate` job. Appended the full submission
+report to `docs/certifications/queue.md`. Updated `QUEUE.md`'s Status
+(Provisional 0 -> 1) and "## Provisional" section.
+
+Opening a PR as PROVISIONAL per Law 4 (producer never certifies own
+work) and CLAUDE.md's Definition of Done.
+
+## Next shift
+Top item: FTF-0103 is submitted and awaiting independent Control-plane L2
+certification — do not re-touch it pending that review. If nothing else
+is unblocked when a relay shift next fires, confirm CI is green on the
+real PR head and stop per STEP 4(a)/(e), the same pattern prior "no
+unblocked work" shifts have already used repeatedly this project.
+Blocked: no.
 
 ## 2026-09-19 — Control plane: FTF-0101 (PR #114) reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md).
