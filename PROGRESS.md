@@ -1,6 +1,51 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (Control plane — live, interactive session with the
-  account holder, samer.zakaria@gmail.com)
+Updated: 2026-09-19 (Control plane — scheduled CERTIFY-mode session,
+  triggered by PR #103's own `pull_request.opened` webhook)
+
+## 2026-09-19 — Control plane: PR #103 (FTF-0101) reviewed — NOT CERTIFIED, stays open/unmerged
+Scheduled CERTIFY-mode session, triggered by PR #103's own
+`pull_request.opened` webhook. Task: check `docs/certifications/queue.md`
+for anything PROVISIONAL and not yet certified — PR #103 (FTF-0101, OIDC
+login) was the only pending item.
+
+**Session-ID check:** this session's own ID
+(`session_01VNPVrAHoQTUFSmfhV4UkCU`) matches none of the four commits
+unique to PR #103 (all carry `Claude-Session` trailers for
+session_015u9WhWDyzkFgkk74HzHJ9d) — independent, proceeded.
+
+Re-read the diff in a dedicated worktree at the PR's real final head
+(`513538e`, after it advanced mid-review with a confirmed doc-only fix);
+re-checked CI for real on that exact head (run `35429139124`, 6/6 jobs
+`success`); ran three of this session's own fault injections (disabling
+the `alg` allowlist check, the CSRF/Origin check on logout, and the
+membership-active check), each genuinely caught by the existing 24-check
+test suite; confirmed `product_truth_check.py`'s `1/1 product-true` is
+legitimate (`build_oidc_login_router` is a real, unconditional live
+caller in `apps/api/app/main.py`); re-pulled the task's real contract via
+`tools/r1_handoff.py packet FTF-0101`.
+
+**Conclusion:** acceptance clause 1 ("Real OIDC provider login/refresh/
+logout") — this task's primary clause — has only ever been exercised
+against a fake stdlib stand-in, not a real OIDC provider, exactly as the
+PR itself discloses (blocked on the still-open QUEUE.md ask to approve a
+local OIDC test-provider package). Not proven, so **not certified**. The
+"revoked membership" negative_acceptance gap is accepted as genuinely
+out-of-scope (a different task's deliverable) and does not block on its
+own. `certification_state` stays `PROVISIONAL`/`L1-PROVEN` on PR #103's
+own branch; did not merge it — nothing is promoted to `main` from an
+unmet primary acceptance clause. Full review recorded on `main` in
+`docs/certifications/queue.md` and `QUEUE.md` (written self-contained
+there, since PR #103's own submission writeup lives only on its own
+unmerged branch, not on `main`).
+
+**Housekeeping note:** this session's designated branch
+(`claude/sleepy-pasteur-osak8v`) was provisioned already pointing at PR
+#103's own implementation commits (the workspace was seeded from that
+PR's webhook event) — an initial push of tracker-doc updates on top of
+that accidentally carried the entire un-certified OIDC implementation
+into a PR against `main` (PR #104). Caught before merging, closed PR #104
+unmerged, and rewrote this review as a clean, self-contained update
+against `main`'s actual current state instead.
 
 ## 2026-09-19 — Control plane: FTF-0101 new-runtime-dependency ask (web framework/auth stack) resolved by live owner confirmation
 This is a live, interactive Claude Code session with the account holder
