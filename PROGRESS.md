@@ -1,7 +1,119 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T23:59:00Z (scheduled relay shift: implemented and
-  proved real server-side OIDC refresh, the one gap that blocked PR #112's
-  Control-plane review; submitted as PR #114, superseding PR #112)
+Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #114: independent CERTIFY review
+  of FTF-0101 — CERTIFIED; see below)
+
+## 2026-09-19 — Control plane: FTF-0101 (PR #114) reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md).
+
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift. `BLOCKER.md` has no open blocker;
+`docs/certifications/watchdog-findings.md` has no unreviewed finding.
+`docs/certifications/queue.md` had one PROVISIONAL item: FTF-0101, PR #114
+(submitted by the prior relay shift, with a follow-up commit — 734068b —
+adding the entry itself, since the initial `pull_request.opened` trigger
+fired before that entry existed in `docs/certifications/queue.md`, which
+this review confirmed and re-polled for rather than treating as "nothing
+pending").
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01TbPTaVC6QZGU54fpkSakxE`) against all 15
+commits on PR #114 — `session_01BaakM658Kz9nuZXKF53kc1` (this PR's own new
+commits, including the two mid-review head-moves), `session_01Un2BpAFyPcvY7zUpk7ZHbe`
+(PR #112's carried-forward commits) and `session_015u9WhWDyzkFgkk74HzHJ9d`
+(PR #103's, carried forward further back). No match — independent.
+
+Re-read the full diff on the real PR #114 head: `apps/api/app/auth/oidc_login.py`'s
+new `exchange_refresh_token()`, `_RefreshTokenStore` (in-memory, keyed by
+session `jti`, mirrors `_SessionRevocationStore` — the raw refresh_token
+is never sent to the browser), and `POST /auth/refresh` (validates the new
+id_token the same way `callback()` does, confirms subject/issuer
+continuity — fails closed on a mismatch — then rotates the session: old
+`jti` revoked, new signed cookie issued; CSRF double-submit protected the
+same way as `logout()`); plus `offline_access`/`prompt=consent` added to
+`build_authorization_redirect_url` (a real provider requires both before
+it will ever mint a `refresh_token`, confirmed empirically by the producer
+against the real OP before writing app code).
+
+CI reconfirmed for real on the actual current head — twice, since the PR
+head moved twice during this review (734068b, adding the missing
+`docs/certifications/queue.md` PROVISIONAL entry; then 40ef553, a
+`PROGRESS.md`-only commit): all 7 checks (`gate`,
+`oidc-provider-integration`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) completed `success` on the real final
+head (40ef553) that was actually merged.
+
+Own independent fault injection, distinct from the producer's own (which
+removed the rotation-revoke call): in a fresh `uv sync --all-packages`
+sandbox, disabled `refresh()`'s own subject/issuer-continuity check
+(`if claims.subject != data["sub"] or claims.issuer != data["iss"]:`
+forced to `if False:`). A `pytest -k` invocation of the affected test
+misleadingly reported PASSED — `tests/tasks/test_ftf_0101.py` uses a soft
+`check()`/`FAILURES` pattern that only becomes a real assertion via its
+own `main()` (`sys.exit(1)` if `FAILURES`), exactly how
+`.github/workflows/ci.yml` actually invokes it (`uv run python3
+tests/tasks/test_ftf_0101.py`, not pytest) — re-ran it that way and the
+break was caught for real: `FAIL [FTF-0101] a refresh that would swap the
+session's subject is denied`, exit 1. Reverted (confirmed byte-identical
+via `git diff`), re-ran clean (exit 0); the real-provider integration
+suite also re-confirmed clean and unaffected (its own tests don't exercise
+this particular path).
+
+`product_truth_check.py --fail-on-unwired` reports `1/1 product-true`;
+`grep` on `apps/api/app/main.py` confirms `build_oidc_login_router` is
+imported and called unconditionally from `create_app()` — a genuine
+live-caller wiring, not a 0/0 pass.
+
+Task contract re-pulled directly: `python tools/r1_handoff.py packet
+FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1
+("Real OIDC provider login/refresh/logout validates issuer+audience+subject
+and secure session") is now met in full: login and logout were already
+proven against the real `idpyoidc` OP by PR #112's own (independently
+reviewed) evidence, carried forward unchanged; refresh is newly proven the
+same way by this PR's two new real-provider tests. Acceptance clause 2
+(independent review + merged commit + real integration + negative-test
+evidence) is satisfied by this review itself. The negative_acceptance
+clause (forged issuer/audience, expired token, state/nonce mismatch,
+revoked membership, CSRF all denied) was already independently proven in
+the PR #112 review and is unchanged here. `docs/spec-matrix.yaml`'s
+FTF-0101 notes read accurately against all of the above — every remaining
+gap (revoked-membership fail-closed default, in-memory
+refresh-token/session stores, no RFC 7009 provider-revocation on logout,
+no Next.js app shell, no secret-manager integration) is disclosed, not
+silently expanded past what the PR #112 review already accepted.
+
+**Conclusion:** both gaps the two prior Control-plane reviews found this
+same date — PR #103's real-provider evidence missing entirely, then PR
+#112's refresh unimplemented/untested/undisclosed — are closed for real in
+PR #114, not merely disclosed around. CI is green on the real final merged
+head, the new fault injection is genuinely caught (using the suite's real
+invocation, not a misleading `pytest -k` shortcut), and
+`product_truth_check.py`'s `1/1` is a real live-caller wiring. **FTF-0101
+is CERTIFIED.** Merged PR #114 (merge commit `5de1c58832ea7e34d0c91f3083654b1fa46e909a`).
+Set `docs/spec-matrix.yaml` FTF-0101 to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED` (`evidence_hash` kept at the implementation
+commit `e2c5423`, matching the new `spec/verification-map.json` `commit`
+field — same two-commit convention as FTF-0102/FTF-0104/FTF-1601). Added
+FTF-0101's own entry to `spec/verification-map.json`. Full ledger entry:
+`docs/certifications/ledger.md`. QUEUE.md updated: Certified 19 -> 20/300,
+Product-true 0 -> 1/300 (FTF-0101 is the first certified task with a real
+live-wired `proving_symbol`), Provisional 1 -> 0, "## Provisional" and
+"## Done" sections updated accordingly.
+
+**Validated-by:** session
+https://claude.ai/code/session_01TbPTaVC6QZGU54fpkSakxE (independent — see
+session-ID check above), 2026-09-19.
+
+## Next shift
+Top item: none blocked or provisional. FTF-0101/FTF-0102/FTF-0104 are all
+now CERTIFIED, unblocking FTF-0103/FTF-0105/FTF-0106's dependency graph —
+the next relay shift should claim the highest-priority ready item per
+QUEUE.md's "## Queue (ordered by dependency)" section (FTF-0103 RBAC
+middleware first, per that ordering).
+Blocked: no.
 
 ## 2026-09-19T23:59:00Z — Relay shift: FTF-0101 real server-side refresh implemented, submitted as PR #114
 STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`

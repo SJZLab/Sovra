@@ -1,22 +1,23 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19 (live, interactive session with the account holder,
-  samer.zakaria@gmail.com — not a scheduled/automated turn) — the owner
-  directly instructed, live in conversation, a standing default-resolution
-  rule (now recorded in CLAUDE.md "Ask owner first": match the
-  architecture docs by default, never reopen a decision already written
-  into them as a fresh ask, escalate only for a genuine critique/conflict
-  with the architecture itself) and applied it to close the one open ask
-  below: FTF-0101's local-OIDC-test-provider package choice. Resolved as
-  **idpy-oidc** (Python, dev/test-only dependency) — the architecture docs
-  don't name a specific package for this, but the language matches the
-  already-owner-confirmed `apps/api` Python/FastAPI stack (the same
-  2026-09-19 confirmation referenced below) rather than adding a new Node
-  dev-tooling dependency into what is otherwise a Python-native backend
-  test suite (`tests/tasks/test_ftf_0101.py`). No source code changed this
-  turn; the next relay/control-plane shift adds real integration evidence
-  against a real local `idpy-oidc` instance to a PR #103 follow-up before
-  resubmitting for certification. Full record: PROGRESS.md's matching
-  entry.
+Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #114) — independent CERTIFY
+  review of FTF-0101 (OIDC login, real server-side refresh follow-up):
+  **CERTIFIED**. Both gaps the two prior 2026-09-19 reviews found (PR #103:
+  real-provider evidence missing entirely; PR #112: refresh unimplemented,
+  untested and undisclosed) are closed for real in PR #114 — session-ID
+  clean, CI reconfirmed green (7/7) on the real final head after two
+  mid-review head-moves, own independent fault injection (disabling the
+  refresh identity-mismatch check, re-run the way CI actually invokes this
+  suite — `python3 tests/tasks/test_ftf_0101.py`, not pytest — since a bare
+  `pytest -k` run of this file misleadingly reports PASSED regardless of
+  its soft `check()`/`FAILURES` results) caught the break for real,
+  `product_truth_check.py`'s `1/1` confirmed a genuine live-caller wiring,
+  and the real task contract (`tools/r1_handoff.py packet FTF-0101`)
+  confirms acceptance clause 1 (login+refresh+logout against a real OIDC
+  provider) and the negative_acceptance clause are both met. Merged PR
+  #114 (merge commit `5de1c58`); `docs/spec-matrix.yaml` set to
+  `CERTIFIED`/`L2-CERTIFIED`; full entry in `docs/certifications/ledger.md`.
+  Full review history for PR #103/#112/#114: `docs/certifications/queue.md`.
 
   Earlier the same date: the owner directly confirmed, live in
   conversation, **option 1** for FTF-0101's 2026-09-18
@@ -29,17 +30,17 @@ Updated: 2026-09-19 (live, interactive session with the account holder,
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
-`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
-PR #114 (supersedes PR #112, closed) — open, unmerged, real server-side
-refresh now implemented and proven against the real local provider (the
-one gap PR #112's Control-plane review found), awaiting a fresh
-independent review; see "## Provisional" below) · Blocked: 0 (FTF-0101's
-web-framework/auth-stack approval and its own local-OIDC-test-provider
-package choice were both resolved 2026-09-19 by live owner
-instruction/confirmation — see "## Blocked" history below; no open owner
-ask remains)
-Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
+Certified: 20/300 (main; FTF-0101 CERTIFIED 2026-09-19, PR #114 merged as
+`5de1c58` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+(FTF-0101's web-framework/auth-stack approval and its own
+local-OIDC-test-provider package choice were both resolved 2026-09-19 by
+live owner instruction/confirmation — see "## Blocked" history below; no
+open owner ask remains)
+Product-true (Law 16): 1 — must match certified (FTF-0101 is the one
+live-wired product-runtime path: `build_oidc_login_router` is imported and
+called unconditionally from `apps/api/app/main.py`'s `create_app()`,
+confirmed via `product_truth_check.py --fail-on-unwired` -> `1/1` and a
+direct `grep` on `main.py`, not merely asserted. FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
 FTF-0104 and FTF-1601 all have no proving_symbol; FTF-0001 is structural
@@ -89,74 +90,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0101 (OIDC login) — originally submitted 2026-09-19 as PR #103
-  (`claude/wizardly-fermat-c0i7xl` → `main`); **Control plane review,
-  2026-09-19: NOT CERTIFIED** (acceptance clause 1's "Real OIDC provider"
-  integration evidence was only ever exercised against a fake stdlib
-  stand-in). PR #103 was closed as superseded by **PR #112**
-  (`claude/wizardly-fermat-qdxfc4` → `main`, open/unmerged), which carries
-  PR #103's commits forward unchanged and adds
-  `tests/integration/test_oidc_login_real_provider.py`: the real
-  `build_oidc_login_router` driven against a real `idpyoidc.server.Server`
-  OpenID Provider over real HTTP sockets — real PKCE-bound authorization
-  code, real RS256-signed id_token from the OP's own key, real `/jwks`
-  fetch, real single-use-code and PKCE-mismatch rejection by the real OP.
-  CI green on the real PR #112 head (7/7 jobs, independently reconfirmed
-  after a mid-review re-poll). Independent fault injection this review
-  (breaking `callback()`'s own `expected_audience` check, this session's
-  own chosen break) confirmed the new real-provider test is genuinely
-  wired, not a rubber stamp.
-  **Control plane independent review, 2026-09-19 (PR #112): NOT
-  CERTIFIED, still.** Acceptance clause 1 names three flows — "login /
-  refresh / logout" — each required to validate issuer+audience+subject
-  and secure session against a real provider. PR #112 proves **login**
-  for real (as above) and **logout** was already adequately proven
-  (local session revocation, matches Section 65.3's actual requirement).
-  **Refresh is neither implemented nor tested anywhere in this codebase**
-  — `oidc_login.py`'s own docstring claims "refresh handled server-side"
-  but no `refresh_token` is ever stored or exchanged by any code path; the
-  session just expires with no renewal. This gap is **not disclosed** in
-  the module's own "Disclosed, not hidden, gaps" section, the PR body, or
-  `docs/spec-matrix.yaml`'s notes (which this PR edits to claim clause 1
-  is fully "MET"). `certification_state` stays `PROVISIONAL`/`L1-PROVEN`
-  on PR #112's own branch (stays open — not merged). **Next step (relay):**
-  either implement and prove a real server-side refresh mechanism against
-  the real provider (mirroring PR #112's own login-flow pattern), or, if
-  refresh-by-re-login is the intended design, disclose that scoping
-  decision explicitly in the module docstring, `docs/spec-matrix.yaml`,
-  and the next PR body — then resubmit. No other part of PR #112 needs
-  rework. Full review: `docs/certifications/queue.md`.
-  **Relay, 2026-09-19: real server-side refresh implemented, submitted as
-  PR #114** (`claude/wizardly-fermat-3il8f6` → `main`), superseding PR
-  #112 (closed as superseded — its login/logout commits carried forward
-  unchanged). Took the "implement it for real" branch of the review's own
-  two options, since acceptance clause 1 names "refresh" as a required
-  flow and Section 45 requires "refresh handled server-side" outright — a
-  disclosed re-login-only scope would not satisfy either. Confirmed
-  empirically, via a standalone scratch script against the real `idpyoidc`
-  OP before writing any app code, that a real provider requires
-  `offline_access` scope + `prompt=consent` before it will mint a
-  `refresh_token` at all — `build_authorization_redirect_url` now requests
-  both. New `POST /auth/refresh`: exchanges the session's server-held
-  `refresh_token` for a new id_token against the real provider's own token
-  endpoint, validates it the same way `callback()` does, confirms
-  subject/issuer continuity, then rotates the session (old session id
-  revoked, new one issued) — the raw refresh_token is never sent to the
-  browser (new in-memory `_RefreshTokenStore`, mirroring the existing
-  `_SessionRevocationStore`). `tests/integration/
-  test_oidc_login_real_provider.py` gained 2 new tests proving this
-  against the real OP end to end (real new id_token, real rotation with
-  the pre-refresh cookie genuinely revoked and a replay denied, real CSRF
-  enforcement); `tests/tasks/test_ftf_0101.py` gained 6 new unit/fault
-  tests. Own fault injection (removed the rotation revoke) caught for real
-  by both files, restored byte-identical. `certification_state` stays
-  `PROVISIONAL`/`L1-PROVEN` — not self-certified (Law 4), pending a fresh
-  independent Control-plane review. Full regression clean (ruff/mypy,
-  pnpm lint/typecheck/format:check, vitest, pytest, all 16 existing
-  `tests/tasks/test_ftf_*.py` files, `validate_spec.py --strict`,
-  `product_truth_check.py` still 1/1). Full entry:
-  `docs/certifications/queue.md`; PROGRESS.md's matching entry has the
-  full PEV record.
+None currently. FTF-0101 (OIDC login) was the only item here; it was
+independently reviewed and CERTIFIED this shift via PR #114 (merge commit
+`5de1c58`) — see "## Done" for the full narrative and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+complete review history (PR #103 → NOT CERTIFIED, PR #112 → NOT CERTIFIED,
+PR #114 → CERTIFIED).
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -558,6 +497,43 @@ full history and evidence.
   reproduced by two prior, distinct Control-plane sessions, and CI's own
   job re-confirmed the same real backup/restore path green on this exact
   head. Full entry: docs/certifications/ledger.md.
+- FTF-0101 — OIDC login. CERTIFIED 2026-09-19, PR #114 (merge commit
+  `5de1c58832ea7e34d0c91f3083654b1fa46e909a`) — third and final PR in the
+  #103→#112→#114 supersession chain. PR #103 (2026-09-19 review): NOT
+  CERTIFIED — acceptance clause 1's "Real OIDC provider" evidence rested
+  only on a fake stdlib stand-in. PR #112 (2026-09-19 review): NOT
+  CERTIFIED — login/logout newly proven for real against a real `idpyoidc`
+  OpenID Provider, but "refresh" (a named third of the same compound
+  acceptance clause) was neither implemented nor tested anywhere, and
+  claimed MET without disclosure. PR #114 closes that exact gap: real
+  `exchange_refresh_token()` / `POST /auth/refresh` against the real OP's
+  own token endpoint, real session rotation, real CSRF enforcement — proven
+  end to end by two new tests in
+  `tests/integration/test_oidc_login_real_provider.py` and six new
+  unit/fault tests in `tests/tasks/test_ftf_0101.py`. Independent
+  re-verification this shift (session-ID clean against all 15 commits
+  unique to PR #114 — session_01BaakM658Kz9nuZXKF53kc1,
+  session_01Un2BpAFyPcvY7zUpk7ZHbe, session_015u9WhWDyzkFgkk74HzHJ9d — none
+  match this reviewing session's own ID): CI reconfirmed green (7/7) on the
+  real final head after two mid-review head-moves (a missing
+  `docs/certifications/queue.md` PROVISIONAL entry added, then a
+  `PROGRESS.md`-only commit); own independent fault injection distinct
+  from the producer's own (disabled `refresh()`'s subject/issuer-continuity
+  check) — a `pytest -k` run of the affected test misleadingly reported
+  PASSED (this file's own soft `check()`/`FAILURES` pattern only becomes a
+  real assertion via its `main()`, exactly how CI actually invokes it:
+  `python3 tests/tasks/test_ftf_0101.py`, not pytest) — re-run that way,
+  the break was caught for real, reverted clean. `product_truth_check.py`
+  `--fail-on-unwired` confirmed legitimately `1/1` (`grep` on
+  `apps/api/app/main.py` shows `build_oidc_login_router` called
+  unconditionally from `create_app()`). `tools/r1_handoff.py packet
+  FTF-0101` confirmed acceptance clause 1 (login+refresh+logout, all three
+  against a real provider) and the negative_acceptance clause both met; the
+  remaining disclosed gaps (revoked-membership fail-closed default,
+  in-memory refresh-token/session stores, no RFC 7009 provider-revocation
+  on logout, no Next.js app shell, no secret-manager integration) are
+  unchanged from the PR #112 review and accurately recorded in
+  `docs/spec-matrix.yaml`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
@@ -604,8 +580,9 @@ kept for the record.)
   into a Python-native backend test suite. See CLAUDE.md and PROGRESS.md's
   matching entry for the full record. That follow-up implementation work
   is now done: real integration evidence against a real local `idpyoidc`
-  instance was added and resubmitted as PR #112, superseding PR #103 — see
-  "## Provisional" above.)
+  instance was added and resubmitted as PR #112, superseding PR #103, and
+  (after a further real-server-side-refresh follow-up, PR #114,
+  superseding PR #112) CERTIFIED — see "## Done" above.)
 - (FTF-0102's own 2026-09-16 new-runtime-dependency ask was resolved
   2026-09-18 by live owner confirmation (option 1: SQLAlchemy + Alembic +
   a Postgres driver, matching the master architecture table as written) —
