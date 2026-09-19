@@ -4097,8 +4097,12 @@ the same code on a now-clean head.
   `spec/verification-map.json` deliberately has no FTF-0101 entry yet,
   matching the FTF-0102/FTF-1601 precedent noted in-file ("this entry is
   added in the certifying commit, once the implementation commit it
-  points to already exists in history") — `evidence_hash` in
-  `docs/spec-matrix.yaml` is a placeholder (`PENDING_COMMIT`) for the same
-  reason (a commit cannot embed its own hash; the real merge-commit value
-  is filled once this PR actually merges, same two-commit pattern used
-  throughout this repo's history).
+  points to already exists in history") — added by Control plane once
+  this PR's final commit is known. `evidence_hash` in
+  `docs/spec-matrix.yaml` was filled, in a same-PR follow-up commit, with
+  this implementation commit's own real SHA
+  (`6b4c8aba80fc3141d7d1112ac13e8cd8cc31bedc`) rather than left as a
+  placeholder — a commit can't embed its own hash, so a fixup commit was
+  needed either way (same two-commit pattern used throughout this repo's
+  history); Control plane updates it to the actual merge commit upon
+  certification, per existing convention.
