@@ -1,6 +1,53 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (Control plane — scheduled CERTIFY-mode session,
-  triggered by PR #103's own `pull_request.opened` webhook)
+Updated: 2026-09-19T15:00:00Z (Relay — scheduled autonomous shift; no
+  actionable item found, stopped per STEP 4(a)/(e))
+
+## 2026-09-19T15:00:00Z — Relay shift: no unblocked work, confirmed and stopped (STEP 4a/4e)
+STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md —
+all consistent with `origin/main`'s actual current tip (`d635565`; the
+last content commit is `c00b61e`, the prior Control-plane session's PR
+#103 review) — nothing has landed since the last write.
+STEP 0 hash check: `sha256sum CLAUDE.md` matches the committed
+`CLAUDE.md.sha256` exactly — no drift, no BLOCKER.md needed. Read
+`BLOCKER.md` directly: both entries are resolved history, confirmed no
+live blocker.
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(per S1.9), same as every prior shift.
+STEP 1: QUEUE.md Active is empty. Rather than assume the queue's prose,
+walked the full 300-task dependency graph in `spec/tasks.json`
+programmatically (each NOT_STARTED task's `dependencies` vs the actual
+CERTIFIED set): exactly one task — FTF-0101 itself — currently has every
+dependency (FTF-0004, FTF-0005, FTF-0102) at status CERTIFIED. Every
+other NOT_STARTED task (FTF-0103, FTF-0105, FTF-0106, FTF-0201, and all
+tasks downstream of them) depends transitively on FTF-0101 being
+certified/merged, which it is not. FTF-0101 is already implemented and
+submitted as PR #103 (`certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN`), independently reviewed 2026-09-19 and **NOT
+CERTIFIED** (see this file's own matching entry above and
+`docs/certifications/queue.md`) — blocked on the still-open QUEUE.md
+owner ask (approve `oidc-provider` or `idpy-oidc` as a new dev/test-only
+runtime dependency, needed for real local-OIDC-provider integration
+evidence against acceptance clause 1).
+Checked for an owner response before treating the ask as still current,
+rather than assuming staleness: `list_pull_requests` shows PR #103
+(`claude/wizardly-fermat-c0i7xl`) still open, `updated_at`
+`2026-09-19T07:25:20Z` (the prior review's own commit, nothing newer);
+`pull_request_read get_comments` on PR #103 returns zero comments — no
+owner response has landed anywhere this session can see. QUEUE.md's
+"Owner actions — current" ask is current, dated, and unresolved; left
+as-is per "Owner actions live in ONE place" (no duplicate entry added,
+nothing removed).
+Conclusion: no relay-actionable item exists this shift. FTF-0101, the
+only dependency-ready task in the entire graph, is already fully
+implemented and is awaiting an owner decision plus a follow-up
+certification cycle, not awaiting relay work; nothing else is unblocked.
+Per "Relay is execution-only," did not improvise a substitute task or
+pick the local-OIDC-provider package unilaterally. No source,
+spec-matrix, QUEUE.md, or certification-queue change made this shift —
+nothing was actionable. Stopping per STEP 4(e) (ask-first item is a hard
+stop; the existing dated ask stands unchanged) and STEP 4(a) (FTF-0101 is
+fully L1-PROVEN, awaiting Control plane certification once the owner ask
+resolves and real-provider evidence is added).
 
 ## 2026-09-19 — Control plane: PR #103 (FTF-0101) reviewed — NOT CERTIFIED, stays open/unmerged
 Scheduled CERTIFY-mode session, triggered by PR #103's own
