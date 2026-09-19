@@ -1,7 +1,43 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T19:30:00Z (Relay — scheduled autonomous shift; merged
-  one overlooked doc-only PR, no actionable item found otherwise, stopped
-  per STEP 4(a)/(e))
+Updated: 2026-09-19T21:30:00Z (Relay — scheduled autonomous shift; merged
+  one overlooked doc-only PR (#108), no actionable item found otherwise,
+  stopped per STEP 4(a)/(e))
+
+## 2026-09-19T21:30:00Z — Relay shift: merged overlooked doc-only PR #108, no unblocked work otherwise (STEP 4a/4e)
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md;
+cross-checked against live repo state rather than trusting the docs alone
+(`git fetch origin main` — local tip matched `origin/main` exactly at
+`17b8d8a` before this shift's own action, confirming nothing had landed
+since the prior shift's PROGRESS.md write).
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: QUEUE.md Active is empty. `list_pull_requests` surfaced one open PR
+not yet reflected in PROGRESS.md: **PR #108** ("[relay] Merge overlooked PR
+#89, reconfirm no unblocked work", branch `claude/wizardly-fermat-5bgg7s`),
+opened by a parallel same-day relay shift. Verified independently rather
+than trusting its own writeup: `get_files` confirmed the diff touches only
+`PROGRESS.md` (+35/-2, pure doc content, matching what it claims to
+record); `get_check_runs` confirmed 6/6 CI jobs green on its actual head
+(`12da37f`); `get` confirmed `mergeable_state: "clean"` and its base
+(`17b8d8a`) matched `origin/main`'s real current tip exactly. This is
+routine doc-only housekeeping (recording an already-merged, doc-only
+watchdog-log PR, not a criterion certification), matching the same pattern
+the 2026-09-19T17:30:00Z shift used for PR #106 — merged as-is
+(`738ac8e`) rather than opening a fourth duplicate confirmation PR.
+Re-verified FTF-0101 (PR #103) has had zero owner activity since
+`2026-09-19T07:25:20Z` (`get_comments` empty, `updated_at` unchanged) —
+still the only dependency-ready task in the 300-task graph (independently
+re-derived from `docs/spec-matrix.yaml` on `main`: every other `ABSENT`
+task depends on FTF-0101 transitively), still blocked on the same open
+QUEUE.md owner ask (local OIDC test-provider package approval). No new
+owner response anywhere this session can see.
+No code, spec-matrix, or certification-queue change this shift beyond
+merging PR #108. Reset this session's own working branch to the new
+`origin/main` tip (`738ac8e`) after the merge; nothing else to push.
+Stopping per STEP 4(e) (ask-first item, unchanged) and STEP 4(a) (FTF-0101
+fully L1-PROVEN, awaiting Control plane certification + owner decision).
 
 ## 2026-09-19T19:30:00Z — Relay shift: merged overlooked PR #89, no unblocked work otherwise (STEP 4a/4e)
 STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
