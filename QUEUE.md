@@ -1,27 +1,23 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19 (Control plane — live, interactive session with the
-  account holder, samer.zakaria@gmail.com, not a scheduled/automated
-  turn) — the owner directly confirmed, live in conversation, **option
-  1** for FTF-0101's 2026-09-18 new-runtime-dependency ask: FastAPI +
-  uvicorn + authlib + itsdangerous (Python) and Next.js + React +
-  react-dom (TypeScript) — the implied default stack already assumed by
-  the architecture docs for `apps/api`/`apps/web`. This resolves the core
-  web-framework/auth-library piece of the ask; FTF-0101 is dependency-
-  ready for the next relay shift (moved out of "## Blocked"). The
-  separate local-OIDC-test-provider package decision (needed later for
-  this task's own real-integration-evidence acceptance clause, Section
-  65.3) was **not** part of this confirmation and remains a fresh, open
-  ask below — not assumed resolved by the same answer. No source code
-  changed this turn; full record: PROGRESS.md's matching entry.
+Updated: 2026-09-19 (scheduled relay shift) — claimed and implemented
+  FTF-0101 (OIDC login), the first dependency-ready item once the owner's
+  same-day web-framework/auth-stack confirmation landed. Submitted as
+  PROVISIONAL with two disclosed, not-yet-met items flagged for Control
+  plane: acceptance clause 1's real-OIDC-provider integration evidence
+  stays BLOCKED_EXTERNAL pending the still-open local-test-provider-
+  package ask below (this PR is the point that ask said to "raise again"),
+  and the "revoked membership" negative_acceptance case is proven only via
+  an injected fake lookup (no Membership table exists yet — FTF-0103/
+  FTF-0105's concern). Full record: docs/certifications/queue.md and
+  PROGRESS.md's matching entry.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
-`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked:
-0 (FTF-0101's web-framework/auth-stack approval resolved 2026-09-19 by
-live owner confirmation — dependency-ready, not yet claimed; its own
-local-OIDC-test-provider sub-decision is still open, see "## Owner
-actions — current")
+`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
+this shift — see "## Provisional" below) · Blocked: 0 (FTF-0101's own
+local-OIDC-test-provider sub-decision is still open but does not block the
+implementation already submitted, see "## Owner actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -74,19 +70,27 @@ counting toward product-true).
   Not blocking the start of FTF-0101's implementation work (the
   `oidc_login.tsx` component and the callback/session API can be built
   and unit-tested first); it only blocks closing out the task's real-
-  integration-evidence clause, so the next relay shift can claim and
-  start FTF-0101 now and should raise this specific choice again once it
-  reaches that clause rather than picking a package unilaterally.
+  integration-evidence clause. **2026-09-19 update:** this relay shift
+  reached that clause — FTF-0101's implementation is now submitted as
+  PROVISIONAL (see "## Provisional" below) with that clause explicitly
+  disclosed as unmet rather than picking a package unilaterally. This ask
+  is otherwise unchanged; still awaiting an owner decision.
 ## Active (awaiting Control plane — no relay action left)
-None currently. FTF-1601 (Postgres backup) was the only item here; it was
-independently reviewed and CERTIFIED this shift via PR #100 (merge commit
-`f4e9b39`) — see "## Done" for the certification summary and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full history and evidence.
+None currently.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-1601 (Postgres backup) was the only item here; see
-"## Active" above and "## Done" below.
+- FTF-0101 (OIDC login) — submitted 2026-09-19. Real authorization-code +
+  PKCE flow, JWT/JWKS signature+issuer+audience+expiry+nonce validation,
+  signed HttpOnly/Secure/SameSite session + CSRF-token cookie, real
+  in-memory logout/session-revocation, CSRF Origin+token enforcement on
+  the one mutation; first live FastAPI app (`apps/api/app/main.py`) and
+  first live React component (`oidc_login.tsx`) in this repository.
+  **Two items disclosed as not yet met, flagged for Control plane before
+  certifying:** (1) acceptance clause 1's real-OIDC-provider integration
+  evidence is BLOCKED_EXTERNAL pending the still-open local-test-provider-
+  package ask above; (2) "revoked membership... denied" is proven only via
+  an injected fake lookup, not a real Membership table (doesn't exist yet).
+  Full evidence: docs/certifications/queue.md.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

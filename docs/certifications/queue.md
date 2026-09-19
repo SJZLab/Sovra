@@ -3947,3 +3947,158 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01BpsxwNZKMCes4UuKAnRvSG (independent —
   see session-ID check above), 2026-09-19.
+
+## 2026-09-19 — FTF-0101 — OIDC login
+- **PR:** (branch `claude/wizardly-fermat-c0i7xl` → `main`)
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  Dependencies FTF-0004/FTF-0005/FTF-0102 all `CERTIFIED` — unblocked.
+  This task's 2026-09-18 new-runtime-dependency ask (FastAPI/uvicorn/authlib/
+  itsdangerous, Next.js/React/react-dom) was resolved 2026-09-19 by live
+  owner confirmation (option 1) — see QUEUE.md/PROGRESS.md for that record.
+  This is the first task requiring a live FastAPI app and a live React
+  component in this repository.
+- **Delivered:**
+  - `apps/api/app/auth/oidc_login.py`: real authorization-code + PKCE
+    (S256) flow. `validate_id_token` verifies signature via JWKS (rejects
+    `alg=none` and any alg outside `{RS256, ES256}` *before* touching a
+    key), then `iss`/`aud`/`exp`/`sub` as essential claims via authlib's
+    own `claims_options`/`validate()` (not hand-rolled comparisons), then
+    checks `nonce` against the signed login-transaction cookie. Session is
+    a signed (itsdangerous `URLSafeTimedSerializer`), HttpOnly/Secure/
+    SameSite=Lax cookie carrying `sub`/`iss`/`email`/a CSRF token/a `jti`;
+    no refresh token is ever set as a cookie ("refresh handled
+    server-side" per Section 45). `POST /auth/logout` requires both an
+    Origin match and a matching `X-CSRF-Token` header, then adds the
+    session's `jti` to a real (in-memory, per-process) revocation store so
+    a copied session cookie stops working immediately, not just at TTL
+    expiry — disclosed limitation: this store does not survive a restart
+    or span multiple API instances; a shared store (e.g. Redis) is a
+    tracked follow-up, not a database schema change (out of this task's
+    scope per its own `database_changes` contract).
+  - `apps/api/app/auth/oidc_settings.py`: a **separate** fail-fast
+    settings loader (own `SOVRA_OIDC_*`/`SOVRA_SESSION_*` env vars),
+    deliberately not merged into FTF-0005's certified
+    `configuration_system.py` — adding new required env vars there would
+    make every existing, already-certified `test_ftf_0005.py` fixture
+    invalid, regressing certified evidence for a task that doesn't touch
+    OIDC (Law 15). Same idioms reused (fail-fast, secret-ref-only,
+    redacted `__repr__`), not duplicated logic.
+  - `apps/api/app/main.py`: the first live FastAPI app in this repository
+    — wires `build_oidc_login_router` in for real (`create_app()`,
+    factory pattern so settings are only resolved at actual process
+    startup, never as an import side effect a test/type-checker would
+    trip over).
+  - `apps/web/components/identity-and-tenancy/oidc_login.tsx`: a real
+    top-level-navigation `<a href="{api}/auth/login">` (not a JS
+    fetch/onClick — the OAuth redirect flow requires actual browser
+    navigation).
+  - Frontend/tooling additions needed to support the above: `react`/
+    `react-dom` (owner-approved runtime deps) plus `@testing-library/
+    react`/`jsdom`/`@types/react(-dom)` (dev/test tooling, same category
+    as FTF-0003's own un-asked `vitest` addition); `apps/web/tsconfig.json`
+    widened to cover `components/`/`tests/` (previously `src/`-only) with
+    `jsx`/`dom` lib support added; `vitest.config.ts`'s `include` glob
+    extended (additive) to also cover `apps/web/tests/**/*.spec.ts`.
+- **Test:** `tests/tasks/test_ftf_0101.py` — 24 checks, `uv run` (first
+  task needing FastAPI/authlib/itsdangerous/uvicorn, same reason FTF-0102
+  first needed `uv run`) — plus `apps/web/tests/ftf_0101.spec.ts` (3
+  Vitest+RTL component checks, exact packet-named path).
+- **Evidence — shown able to fail (Law 1):**
+  1. Pure-function `validate_id_token` evidence (no server needed): a
+     genuinely valid token is accepted; a forged issuer, forged audience,
+     expired token, nonce mismatch, unknown `kid`, and — critically — a
+     token signed by a **different key claiming the real `kid`** (proving
+     the signature is actually cryptographically checked against the real
+     JWKS public key, not merely that a matching `kid` string exists) are
+     each independently denied with the expected reason code. An
+     `alg=none` unsigned token (hand-crafted, no authlib) is rejected
+     before any signature check is attempted.
+  2. Full-stack evidence: a real uvicorn server hosting the actual
+     `app.main` router, driven over a real local socket via
+     `http.client.HTTPConnection` (deliberately not `urllib.request`,
+     which auto-follows redirects and would hide the very redirect/cookie
+     behavior under test), paired with a bespoke stdlib
+     `ThreadingHTTPServer` standing in for the provider's `/jwks`/`/token`
+     endpoints (test infrastructure per Section 84.4, not this task's own
+     acceptance-clause-1 evidence — see below). Proves for real: a missing
+     login-transaction cookie is denied (400); a `state` mismatch is
+     denied (400, CSRF); a revoked membership is denied (403) even with an
+     otherwise-valid token; the real, *unmodified default*
+     `membership_lookup` denies every login today (403) — proving the
+     fail-closed default is genuinely wired, not just documented; logout
+     without a CSRF header is denied (403); logout from an unapproved
+     Origin is denied (403) even with a token header present; logout with
+     the correct Origin+CSRF token succeeds (200) and the session cookie
+     is actually cleared (`Max-Age=0`); and a full login→session→logout
+     round trip succeeds end-to-end with a real session cookie
+     (HttpOnly/Secure/SameSite=lax) and zero refresh-token exposure.
+- **DISCLOSED, NOT MET — do not certify without addressing (per this
+  session's own reading; Control plane makes the actual call, Law 4):**
+  1. **Acceptance clause 1** ("Real OIDC provider login/refresh/logout")
+     is `BLOCKED_EXTERNAL`. Section 65.3 requires exercising "a real local
+     OIDC provider" — the owner-approved local test-provider package
+     (Node `oidc-provider` or Python `idpy-oidc`) is still an **open ask**
+     in QUEUE.md "Owner actions — current" as of 2026-09-19. This PR's own
+     stdlib fake-provider test server proves this module's own
+     validation/session/CSRF logic against a real request over a real
+     socket; it is explicitly documented (module docstring, spec-matrix
+     notes) as **not** satisfying this clause. Per QUEUE.md's own
+     instruction ("should raise this specific choice again once it
+     reaches that clause") — this PR is that point. Recommend: do not
+     mark this clause proven until that package is approved and a follow-
+     up wires real integration evidence against it.
+  2. **Negative_acceptance "revoked membership... denied"** is proven only
+     via an injected fake `membership_lookup` in tests. No `Membership`
+     table exists anywhere in this repository (FTF-0102 delivered only
+     Organization/Workspace; Membership is FTF-0103/FTF-0105's concern per
+     `spec/tasks.json`) — creating one here would violate this task's own
+     `database_changes` contract ("No independent schema change...
+     separately claimed migration prerequisite"). `default_membership_lookup`
+     fails closed (denies every real login) until a real DB-backed lookup
+     replaces it — a real, working, tested enforcement point, not a
+     bypassed check, but real end users cannot complete login until that
+     follow-up lands.
+  3. No Next.js app shell exists yet (no `next.config`, no `app/page.tsx`)
+     to mount `oidc_login.tsx` into a real page/route, and no Playwright
+     browser E2E was added — a genuine end-to-end browser OIDC flow needs
+     the same blocked real-provider dependency as (1). Follow-up for
+     whichever task first builds `apps/web`'s app shell (same precedent as
+     FTF-0004 excluding `apps/web`'s server runtime).
+  4. `client_secret`/session-signing-key are resolved from two directly-
+     injected environment variables in `apps/api/app/main.py`
+     (`SOVRA_OIDC_CLIENT_SECRET_VALUE`/`SOVRA_SESSION_SIGNING_KEY_VALUE`),
+     not a real secret-manager integration — none exists anywhere in this
+     repository yet (same disclosed gap FTF-0005/FTF-R017 already carry).
+- **Regression check:** `uv run ruff check .`/`ruff format --check .`/
+  `mypy .` clean (67 source files); `pnpm run lint`/`format:check`/
+  `typecheck` clean; `uv run pytest tests/unit` (3 passed); `pnpm exec
+  vitest run` (5 passed — the 2 pre-existing plus this task's 3);
+  `scripts/check_test_harness.py` clean on both reports; every existing
+  `tests/tasks/test_ftf_*.py`/`tests/test_ftf_0001_monorepo_layout.py`/
+  `tests/implementation/*.py`/`tests/security/*.py` re-run clean and
+  unmodified; `scripts/validate_spec.py --strict` clean (repo was
+  re-fetched unshallowed first — a shallow clone was making every prior
+  certified commit spuriously read `stale_commit`, same transient finding
+  prior reviews already documented, not a real defect);
+  `scripts/release_scope_lock.py`/`validate_profile_scope.py`/
+  `validate_component_maintenance.py`/`validate_storage_profile.py` all
+  clean; `product_truth_check.py --fail-on-unwired` now reports **`1/1
+  product-true`** — `build_oidc_login_router` is a real, non-test symbol
+  referenced from `apps/api/app/main.py`, the first live product-runtime
+  caller any task in this repository has ever had.
+  `scripts/status.py` unchanged at `19/300 certified · 0 product-true`
+  (correct — `certification_state: PROVISIONAL` and `proof_state:
+  L1-PROVEN` both correctly exclude this task from either count until an
+  independent L2 certification).
+- **State:** `implementation_state=IMPLEMENTED`,
+  `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `spec/verification-map.json` deliberately has no FTF-0101 entry yet,
+  matching the FTF-0102/FTF-1601 precedent noted in-file ("this entry is
+  added in the certifying commit, once the implementation commit it
+  points to already exists in history") — `evidence_hash` in
+  `docs/spec-matrix.yaml` is a placeholder (`PENDING_COMMIT`) for the same
+  reason (a commit cannot embed its own hash; the real merge-commit value
+  is filled once this PR actually merges, same two-commit pattern used
+  throughout this repo's history).

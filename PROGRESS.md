@@ -1,6 +1,103 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (Control plane — live, interactive session with the
-  account holder, samer.zakaria@gmail.com)
+Updated: 2026-09-19 (scheduled relay shift)
+
+## 2026-09-19 (later shift) — Relay: FTF-0101 (OIDC login) implemented, submitted PROVISIONAL
+STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md. CLAUDE.md
+hash verified (`sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`).
+No open BLOCKER.md. QUEUE.md Active/Provisional both empty; Blocked empty.
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: highest-priority unblocked item is FTF-0101 (OIDC login) — its
+2026-09-18 new-runtime-dependency ask was resolved earlier today by a live
+owner conversation (see the entry immediately below this one), making it
+dependency-ready and unclaimed. Ran `tools/r1_handoff.py packet FTF-0101`
+for its real DoD (deps FTF-0004/FTF-0005/FTF-0102, all CERTIFIED).
+
+STEP 2 (PEV):
+- **P:** read the real DoD packet and the current repo state. Found:
+  `apps/api` has no `main.py` (no live FastAPI app anywhere yet — this task
+  is the first to need one); `apps/web` has no Next.js/React runtime;
+  FTF-0102 delivered only Organization/Workspace (no `Membership`/`User`
+  tables exist, needed for this task's own "revoked membership" negative
+  case but out of this task's own `database_changes` scope to create); and
+  Section 65.3's real-local-OIDC-provider requirement needs an
+  owner-approved test-provider package that is a **separate, still-open**
+  ask (QUEUE.md), distinct from the now-resolved web-framework/auth-stack
+  approval. Decided, before writing code: implement the full real
+  login/callback/session/logout flow and every negative case that doesn't
+  require a live third-party/local-test provider or a not-yet-existing
+  Membership table, and disclose — not silently narrow — the two clauses
+  that do.
+- **E:** implemented `apps/api/app/auth/oidc_login.py` (authorization-code
+  + PKCE, real JWT/JWKS signature+issuer+audience+expiry+nonce validation
+  via authlib, signed HttpOnly/Secure/SameSite session + CSRF-token cookie
+  via itsdangerous, real in-memory per-process logout/session-revocation,
+  CSRF Origin+token enforcement), `apps/api/app/auth/oidc_settings.py`
+  (separate fail-fast settings loader — deliberately not merged into
+  FTF-0005's certified `configuration_system.py`, to avoid invalidating
+  its certified evidence with new required env vars, Law 15),
+  `apps/api/app/main.py` (first live FastAPI app), and
+  `apps/web/components/identity-and-tenancy/oidc_login.tsx` (first live
+  React component). `tests/tasks/test_ftf_0101.py` (24 checks) shown able
+  to fail first at each step (forged issuer/audience, expired token,
+  forged-signature-same-`kid`, `alg=none`, nonce/state mismatch, missing
+  login-transaction cookie, revoked/unwired membership, missing/wrong-
+  Origin CSRF token all independently reproduced as real failures before
+  being fixed/asserted clean) — full detail in
+  docs/certifications/queue.md. `apps/web/tests/ftf_0101.spec.ts` (3
+  Vitest+RTL checks) added at the exact packet-named path.
+- **V:** `product_truth_check.py --fail-on-unwired` now reports **1/1
+  product-true** — `build_oidc_login_router` is the first real,
+  non-test-referenced symbol any task in this repo has had a live caller
+  for (`apps/api/app/main.py`). Not a TRACKER: a genuine caller exists.
+  Full regression clean: `uv run ruff check/format --check/mypy` (67
+  files), `pnpm run lint/format:check/typecheck`, `uv run pytest
+  tests/unit` (3 passed), `pnpm exec vitest run` (5 passed),
+  `scripts/check_test_harness.py` clean, every existing
+  `tests/tasks/test_ftf_*.py`/`tests/implementation/*.py`/
+  `tests/security/*.py` re-run clean and unmodified,
+  `scripts/validate_spec.py --strict` clean (repo re-fetched unshallowed
+  first — a shallow clone was making every prior certified commit
+  spuriously read `stale_commit`, the same transient finding prior reviews
+  already documented, not a real defect), `scripts/status.py` unchanged at
+  `19/300 certified · 0 product-true` (correct — `PROVISIONAL`/
+  `L1-PROVEN` both correctly exclude this task from either count pending
+  independent L2 certification).
+
+Two items disclosed, not hidden, as **not yet met** (see
+docs/certifications/queue.md for the full writeup) and flagged explicitly
+for Control plane rather than silently claimed proven:
+1. Acceptance clause 1's "Real OIDC provider login/refresh/logout" stays
+   `BLOCKED_EXTERNAL` — Section 65.3 needs the still-open, owner-approved
+   local-test-provider package (QUEUE.md "Owner actions — current"); this
+   shift's own stdlib fake-provider test server is documented as test
+   infrastructure only, not a substitute for that clause's evidence.
+2. "Revoked membership... denied" is proven only via an injected fake
+   `membership_lookup` — no `Membership` table exists yet (FTF-0103/
+   FTF-0105's concern); the real, shipped default fails closed (denies
+   every real login today), proven by test, not bypassed.
+
+Updated `docs/spec-matrix.yaml` (FTF-0101:
+`implementation_state=IMPLEMENTED`, `proof_state=L1-PROVEN`,
+`certification_state=PROVISIONAL`, `proving_symbol=build_oidc_login_router`,
+`proving_test=tests/tasks/test_ftf_0101.py`, `evidence_hash=PENDING_COMMIT`
+— filled with the real merge commit once this PR actually merges, same
+two-commit convention used throughout this repo's history since a commit
+cannot embed its own hash), `docs/certifications/queue.md` (full entry),
+QUEUE.md (moved FTF-0101 to "## Provisional", updated the still-open
+local-OIDC-test-provider ask to note this shift reached that clause),
+`.github/workflows/ci.yml` (new `uv run python3 tests/tasks/test_ftf_0101.py`
+gate step). Not self-certified (Law 4) — awaiting a fresh Control-plane
+session with no session-ID overlap with this one.
+
+STEP 3: this entry, written before compaction.
+STEP 4: stopping per (a) — FTF-0101 is L1-PROVEN with two disclosed,
+unmet clauses spelled out for Control plane; report awaiting Control
+plane certification and the L4 gate (release-only, not dispatched here).
+Certified: 19/300 (unchanged — PROVISIONAL is not certified) · Provisional:
+1 (FTF-0101) · Product-true: 0 (unchanged; would become 1 once FTF-0101 is
+independently L2-certified, since it has a real proving_symbol with a real
+caller for the first time in this repo).
 
 ## 2026-09-19 — Control plane: FTF-0101 new-runtime-dependency ask (web framework/auth stack) resolved by live owner confirmation
 This is a live, interactive Claude Code session with the account holder
