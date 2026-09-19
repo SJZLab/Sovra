@@ -1,5 +1,12 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-19 (scheduled relay shift) — picked up the next
+  unblocked item per the prior shift's own "Next shift" note (FTF-0103,
+  RBAC middleware — FTF-0101/0102/0104 all CERTIFIED, unblocking
+  FTF-0103/0105/0106's dependency graph). Full submission report:
+  docs/certifications/queue.md; see "## Provisional" below for the
+  summary.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #114) — independent CERTIFY
   review of FTF-0101 (OIDC login, real server-side refresh follow-up):
   **CERTIFIED**. Both gaps the two prior 2026-09-19 reviews found (PR #103:
@@ -31,7 +38,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 20/300 (main; FTF-0101 CERTIFIED 2026-09-19, PR #114 merged as
-`5de1c58` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`5de1c58` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0103, RBAC middleware — submitted this shift, awaiting independent
+Control-plane L2 certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -90,12 +99,31 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0101 (OIDC login) was the only item here; it was
-independently reviewed and CERTIFIED this shift via PR #114 (merge commit
-`5de1c58`) — see "## Done" for the full narrative and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-complete review history (PR #103 → NOT CERTIFIED, PR #112 → NOT CERTIFIED,
-PR #114 → CERTIFIED).
+- FTF-0103 — RBAC middleware. Submitted this shift (relay, scheduled,
+  non-interactive): `apps/api/app/auth/rbac_middleware.py` (`require_role`
+  — a FastAPI dependency enforcing an explicit role, scoped to the
+  organization ID resolved strictly from the URL path; a body-selected
+  tenant that disagrees with the path is denied outright) +
+  `tests/tasks/test_ftf_0103.py` (12 checks, including a real end-to-end
+  proof against a locally-hosted demonstration FastAPI app over a real
+  local socket — the same pattern FTF-0101's own suite established — and
+  two independent own fault injections, both caught for real). Disclosed,
+  not hidden: no live `Membership` table exists yet (this task's own
+  `database_changes` contract forbids adding one — "No independent schema
+  change... any required change is a separately claimed migration
+  prerequisite"), so the default role lookup fails closed; no live
+  `/api/v1` product route exists yet either, so this has no live caller
+  and does not count toward product-true (product_truth_check.py stays
+  `1/1`). Full submission report: docs/certifications/queue.md.
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` in
+  docs/spec-matrix.yaml. **PR:** https://github.com/SJZLab/Sovra/pull/118
+  (`claude/wizardly-fermat-vpmo65` → `main`).
+
+Prior item: FTF-0101 (OIDC login) was independently reviewed and
+CERTIFIED this shift via PR #114 (merge commit `5de1c58`) — see "## Done"
+for the full narrative and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the complete review history (PR #103 →
+NOT CERTIFIED, PR #112 → NOT CERTIFIED, PR #114 → CERTIFIED).
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

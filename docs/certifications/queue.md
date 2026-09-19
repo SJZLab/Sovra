@@ -4338,3 +4338,133 @@ the same code on a now-clean head.
   / `proof_state` stays `L1-PROVEN`.
 - **Submitted-by:** this relay shift (scheduled, non-interactive),
   2026-09-19.
+
+## 2026-09-19 — FTF-0103 (RBAC middleware) — Relay: real role/tenant-scoped enforcement dependency submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-0103, RBAC middleware. Dependencies FTF-0101 (OIDC login)
+  and FTF-0102 (Organization/workspace schema) are both CERTIFIED; DoD
+  pulled fresh via `python tools/r1_handoff.py packet FTF-0103 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from the task title
+  alone.
+- **Real constraint checked before writing any code:** this task's own
+  `database_changes` contract reads "No independent schema change.
+  Consume frozen contract; any required change is a separately claimed
+  migration prerequisite" — not the schema-owning boilerplate FTF-0102/
+  FTF-0104 carried ("Own forward Alembic migration for this resource").
+  Confirmed directly: no `Membership` table exists anywhere in this
+  repository (`apps/api/app/auth/organization_workspace_schema.py` has
+  only `Organization`/`Workspace`), no frozen contract defines one either
+  (`packages/contracts/jsonschema/01-domain.schema.json`'s own
+  `definitions` are `Slug`/`EntityName`/`EntityStatus`/`Organization`/
+  `Workspace` only), and no task in `docs/TASK_INDEX.md`/
+  `docs/spec-matrix.yaml` owns creating it (FTF-0105 is "Tenant-isolation
+  query guards" — DB/query-layer RLS enforcement, a different concern —
+  and itself depends on FTF-0103, so it cannot be the schema's creator
+  either). This is not a hidden gap: FTF-0101's own module docstring
+  already named it ("Membership is FTF-0103/FTF-0105's concern") and its
+  `default_membership_lookup` already established the precedent this
+  submission follows — build the real enforcement primitive now, prove it
+  fail-closed via an injected lookup, and disclose the missing live table
+  rather than fabricate one this task is not permitted to create.
+- **`apps/api/app/auth/rbac_middleware.py`:** `Role` enum matching
+  Section 6.4's exact `Membership.role` set; `require_role(allowed_roles,
+  ...)` — a FastAPI dependency factory that resolves the authenticated
+  principal (`principal_resolver`, injectable, fail-closed default),
+  resolves the target organization strictly from the URL path
+  (`organization_id_from_path()`, never the JSON body), denies outright
+  if a mutating request's own body also carries a disagreeing
+  `organization_id` (`tenant_mismatch`, 403 — the body is never trusted
+  to select or override the path-resolved tenant), then looks up a real
+  role for `(issuer, subject, organization_id)` (`role_lookup`,
+  injectable, fail-closed default) and denies unless it is in
+  `allowed_roles`. Deliberately decoupled from FTF-0101's own concrete
+  session-cookie implementation (a separate `principal_resolver`
+  injection point, not a direct import of `oidc_login`'s internals) so
+  that module's already-certified evidence is never put at risk by this
+  task's own changes.
+- **`tests/tasks/test_ftf_0103.py`:** unit coverage of the `Role` enum's
+  exact value set, both fail-closed defaults, `organization_id_from_path`
+  (valid/missing/malformed), and `require_role`'s own empty-allowed-roles
+  guard — plus a real end-to-end proof against a locally-hosted
+  demonstration FastAPI app: a real uvicorn server over a real local
+  socket (the same pattern `tests/tasks/test_ftf_0101.py` established),
+  driven over real HTTP via `http.client`, not an in-process function call
+  or a mocked request object. The demo app's own principal resolution
+  (`X-Test-Principal` header) and role lookup (a plain dict Membership
+  fixture) are test doubles standing in for a real session reader and a
+  real DB-backed lookup — Section 84.4 permits test doubles for exactly
+  this isolated proof; neither exists live in this repository yet (see
+  above). 12 checks total, covering this task's own negative_acceptance
+  clause for all three roles it names: a viewer is denied creating an
+  evaluation; an evaluator is denied approving a promotion; a guessed
+  organization UUID the caller has no membership in is denied even though
+  they hold that exact elevated role in a different real organization
+  (proven for both a read and a mutating route); a principal with no
+  Membership row anywhere is denied; a body-selected tenant that
+  disagrees with the URL path is denied outright even though the path
+  alone would have been permitted (and the same field, agreeing with the
+  path, does not itself cause a denial); and a malformed path organization
+  id is rejected with 400, not passed through.
+- **Own fault injection (two, distinct vectors):** (1) disabled the
+  body-tenant mismatch check (`if body_tenant is not _NO_BODY_TENANT and
+  body_tenant != organization_id: raise ...` replaced with `pass`) —
+  caught for real, exactly the one expected check failed
+  (`negative_acceptance: a body-selected tenant ... is denied outright`);
+  (2) replaced the `role not in allowed` denial with silently downgrading
+  any unknown membership to `Role.VIEWER` instead of denying — caught for
+  real, exactly the 5 expected role/tenant-boundary checks failed (viewer
+  cannot create an evaluation; evaluator cannot approve a promotion; two
+  guessed-UUID checks; no-membership-anywhere). Both reverted, confirmed
+  byte-identical via `diff` against the pre-injection copy, re-ran clean.
+- **Full regression, this sandbox** (`uv sync --all-packages`, `pnpm
+  install --frozen-lockfile`, `git fetch --unshallow` — all needed once,
+  this sandbox starts with none of them, same documented environment-
+  artifact note as every prior shift, not a real defect): `ruff check .` /
+  `ruff format --check .` / `mypy .` clean (72 files); `pnpm run lint` /
+  `typecheck` / `format:check` clean; `pnpm exec vitest run` — 5/5; `uv
+  run pytest tests/unit` — 3/3; all 17 existing `tests/tasks/
+  test_ftf_*.py` files plus `tests/implementation/*.py` re-run clean and
+  unmodified in behavior; `python3 scripts/validate_spec.py --strict`
+  clean; `product_truth_check.py --fail-on-unwired` still `1/1`
+  (unchanged — this module has no live product caller yet, see below);
+  `scripts/status.py` still `20/300 certified · 1 product-true`.
+  `verify_task.py --task FTF-0103 --stage task` reports `BLOCKED — no
+  merged verification evidence yet`, expected pre-merge (its
+  `spec/verification-map.json` entry is added by Control plane at
+  certification time, per established convention — not touched by this
+  submission).
+- **Disclosed, not hidden (both already anticipated by FTF-0101's own
+  module docstring and this task's own `database_changes` contract):** no
+  live `Membership` table exists, so `default_role_lookup` fails closed
+  until a DB-backed lookup is supplied by a separately claimed
+  prerequisite — this task is not permitted to add that schema itself.
+  No live `/api/v1` product route exists anywhere in this repository yet
+  (`apps/api/app/main.py` only wires FTF-0101's `/auth/*` router), so this
+  module has no live product caller and legitimately does not count
+  toward product-true yet — same disclosed class already accepted for
+  FTF-0005/FTF-0006/FTF-0102/FTF-0104 before each one's own first live
+  caller existed. Role/tenant scoping is organization-level only;
+  `Membership.workspace_id` (Section 6.4, nullable) and the `Project`
+  entity (Section 6.8) are not live tables yet either.
+- **Doc updates:** `docs/spec-matrix.yaml` FTF-0103 set to
+  `certification_state: PROVISIONAL` / `implementation_state: IMPLEMENTED`
+  / `proof_state: L1-PROVEN` / `proving_test:
+  tests/tasks/test_ftf_0103.py` (`proving_symbol` stays `''` — no live
+  caller yet, see above); `evidence_hash` filled to this shift's own
+  implementation commit in a follow-up commit once it existed, same
+  two-commit pattern as every prior task's own evidence. New CI step
+  `FTF-0103 negative-test proof` (`uv run python3
+  tests/tasks/test_ftf_0103.py`) added to `.github/workflows/ci.yml`'s
+  `gate` job, immediately after FTF-0101's own step.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID check
+  against this submission's own commits; CI has not yet been confirmed
+  green on the real PR head by an independent session; no independent
+  fault injection beyond the two performed above.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-19.
+
+## 2026-09-19 — FTF-0103 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/118
+  (`claude/wizardly-fermat-vpmo65` → `main`).
