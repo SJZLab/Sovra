@@ -115,6 +115,18 @@ new runtime deps · keyed external services · copy in the above-listed owner-ap
 any of the seven reused components (Axolotl/Inspect AI/MLflow/vLLM/Temporal/LiteLLM/Argilla)
 being swapped, forked, or having its integration form changed from docs/architecture/REFERENCE_REPOSITORIES.md
 
+Default resolution rule (owner instruction, 2026-09-19, live): before treating any of the above
+as an open ask, check whether docs/architecture/REFERENCE_REPOSITORIES.md, SPEC.md, or
+FINE_TUNING_FACTORY_RELEASE_1.md already fixes or clearly implies the answer — including a stack,
+language, or package already decided elsewhere in the architecture, or an already-recorded live
+owner confirmation. If so, match it and resolve without asking. Never reopen a decision already
+written into the architecture as a fresh owner ask — only escalate when you have a genuine
+critique of the architecture doc itself (a real internal conflict, gap, or risk), never merely
+because a choice was not spelled out to the letter. When nothing in the architecture fixes the
+exact answer, pick whichever option is most consistent with what is already decided elsewhere
+(e.g. an already-approved language/stack split) and record that reasoning in
+QUEUE.md/PROGRESS.md — do not default to a hard stop just because the point is novel.
+
 ## Owner actions live in ONE place
 Every open owner ask lives ONLY in QUEUE.md "Owner actions — current" block, dated.
 Remove it the moment the owner responds. Never leave resolved asks in item history.

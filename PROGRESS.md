@@ -1,7 +1,81 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T16:51:04Z (Relay — scheduled autonomous shift; no
-  actionable item found, no overlooked PRs this time, stopped per STEP
-  4(a)/(e))
+Updated: 2026-09-19T22:15:00Z (live, interactive session with the account
+  holder — recorded a new standing default-resolution rule in CLAUDE.md
+  and applied it to close the one open owner ask)
+
+## 2026-09-19T22:15:00Z — Live owner instruction: default-resolution rule recorded, FTF-0101's OIDC-test-provider ask closed
+Not a scheduled/automated relay shift — a live, interactive turn with the
+account holder (samer.zakaria@gmail.com). The owner had, in their own
+words, already told "one of the sessions" to record a standing rule: match
+the architecture document by default, never reopen a decision already
+written into it as a fresh ask, and only escalate when there's an actual
+critique/conflict to raise — but that instruction never made it into any
+file. Checked before acting, not assumed: `get_comments` on PR #103 (zero),
+the last 15 PRs (nothing recording this rule anywhere), and QUEUE.md/
+CLAUDE.md on `origin/main`'s current tip (`9a8a83d`) — genuinely nowhere.
+
+**Action 1 — recorded the rule at the durable, repo-wide location.**
+QUEUE.md's "Owner actions — current" is explicitly single-item/gets-cleared
+(CLAUDE.md's own "Owner actions live in ONE place" rule); the rule itself
+needed to live somewhere every future relay/control-plane shift reads
+unconditionally. Added a new paragraph to CLAUDE.md's existing "## Ask
+owner first (hard stops)" section (not a new section — it qualifies that
+one directly): before treating a new-dependency/stack-choice item as an
+open ask, check whether docs/architecture/REFERENCE_REPOSITORIES.md,
+SPEC.md, or FINE_TUNING_FACTORY_RELEASE_1.md already fixes or implies the
+answer (including an already-recorded live owner confirmation elsewhere in
+QUEUE.md/PROGRESS.md) — if so, match it and resolve without asking; only
+escalate for a genuine critique of the architecture doc itself, never
+because a choice wasn't spelled out to the letter; when nothing fixes the
+exact answer, pick whichever option is most consistent with what's already
+decided elsewhere and record the reasoning instead of defaulting to a hard
+stop. Regenerated `CLAUDE.md.sha256` (`sha256sum CLAUDE.md`) immediately
+after the edit — `sha256sum -c` confirmed clean before committing, so
+CI's integrity gate won't flag drift.
+
+**Action 2 — applied the rule to the one currently open ask.** FTF-0101's
+local-OIDC-test-provider-package choice (Section 65.3's real-integration-
+evidence clause: Node `oidc-provider` vs Python `idpy-oidc`, neither
+installed/approved). Checked the architecture docs directly rather than
+assume: `docs/architecture/REFERENCE_REPOSITORIES.md` doesn't mention a
+test-provider package at all (it only covers the seven reused components
+and other supporting sources); `FINE_TUNING_FACTORY_RELEASE_1.md` §65.3
+says "read-only local setup may use a real local OIDC provider" but names
+no package or language either. So the architecture docs don't fix the
+exact answer — per the rule's second clause, resolved by consistency with
+what's already decided elsewhere: the same-day, already-recorded live
+owner confirmation that `apps/api` is Python/FastAPI (not Node). FTF-0101's
+own real-integration test suite is Python (`tests/tasks/test_ftf_0101.py`,
+pytest-based, per PR #103's own test plan) — picking `idpy-oidc` matches
+that already-decided stack; picking the Node `oidc-provider` package would
+add a new Node dev-tooling dependency into an otherwise Python-native
+backend test suite, which is the less-consistent option. Resolved:
+**`idpy-oidc`** (Python, dev/test-only — never imported by any production
+`apps/api` runtime path, matching FTF-0102's own precedent of keeping
+dev/test-only tooling separate from the certified production surface).
+
+Updated QUEUE.md: banner records both actions with the reasoning above;
+"## Owner actions — current" is now empty (the ask removed per CLAUDE.md's
+own "remove it the moment the owner responds" rule — this counts, since
+the owner directly authorized the resolution live); "## Provisional"'s
+FTF-0101 entry's "Blocked on" note updated to reflect nothing owner-side
+remains, only the follow-up implementation work (real integration evidence
+against a real local `idpy-oidc` instance, still to be added to PR #103
+before resubmitting); "## Status" line updated to "no open owner ask
+remains"; "## Blocked" history section gained a third entry recording this
+resolution, following the same pattern as the two earlier resolved
+new-runtime-dependency asks (FTF-0101's own web-framework/auth-stack ask,
+FTF-0102's SQLAlchemy/Alembic ask).
+
+**Not done this turn:** did not implement the `idpy-oidc` integration
+itself or touch PR #103's code — this turn is the owner-decision record
+only, per the same division of labor as every other resolved-ask entry in
+this file (e.g. the 2026-09-18 FTF-0102 dependency resolution). The next
+relay/control-plane shift picks up FTF-0101's real-integration-evidence
+follow-up now that it's unblocked. No certified/product-true count change
+(0 source files touched — CLAUDE.md, CLAUDE.md.sha256, QUEUE.md,
+PROGRESS.md only).
+
 
 ## 2026-09-19T16:51:04Z — Relay shift: no unblocked work, no overlooked PRs (STEP 4a/4e)
 STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
