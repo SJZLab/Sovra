@@ -1,6 +1,39 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T17:30:00Z (Relay — scheduled autonomous shift; no
-  actionable item found, stopped per STEP 4(a)/(e))
+Updated: 2026-09-19T19:30:00Z (Relay — scheduled autonomous shift; merged
+  one overlooked doc-only PR, no actionable item found otherwise, stopped
+  per STEP 4(a)/(e))
+
+## 2026-09-19T19:30:00Z — Relay shift: merged overlooked PR #89, no unblocked work otherwise (STEP 4a/4e)
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md
+against `origin/main`'s actual tip (`4ddd4ed`, PR #107) before starting.
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active.
+STEP 1: Re-verified via a dedicated check (GitHub MCP tools) that nothing
+changed on PR #103 (FTF-0101) since the last shift: still open, `updated_at`
+unchanged since `2026-09-19T07:25:20Z`, zero comments, zero reviews — no
+owner response. Also listed all open PRs while checking, which surfaced
+**PR #89** ("Watchdog: log direct-push-to-main recurrence (b25ce80)"),
+opened 2026-09-18, that had fallen off the last several shifts' radar
+(never mentioned once QUEUE.md's related direct-push item was cleared).
+Verified before acting: pure doc-only change (+44/-0,
+`docs/certifications/watchdog-findings.md` only, no code/test/CI-config
+touched), CI green (5/5 checks, completed 2026-09-18), `mergeable_state:
+"clean"` confirmed directly via `pull_request_read`, zero open comments or
+review threads, head SHA confirmed (`82e6434`) before merging with
+`expectedHeadSha` set. This is routine housekeeping (an out-of-band
+watchdog audit-log append, not a criterion certification — "producer
+never certifies own work" doesn't apply to an audit ledger entry), and
+falls under "Do without asking" → merge on green. Merged as merge commit
+`17b8d8a`.
+No other relay-actionable item exists: the dependency graph is unchanged
+(FTF-0101 remains the only task with all dependencies CERTIFIED, and it
+remains blocked on the same open QUEUE.md owner ask — approval of a local
+OIDC test-provider package). Did not touch FTF-0101 or the owner ask
+itself. No certified/product-true count change (PR #89 was doc-only, no
+proving_symbol, no criterion involved).
+Stopping per STEP 4(e) (ask-first item, unchanged) and STEP 4(a) (FTF-0101
+fully L1-PROVEN, awaiting Control plane certification + owner decision).
 
 ## 2026-09-19T17:30:00Z — Relay shift: no unblocked work, independently reconfirmed (STEP 4a/4e)
 STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
