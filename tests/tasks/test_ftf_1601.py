@@ -28,6 +28,13 @@ database. It proves:
    is never left on disk either on success or on failure.
 6. `restore_backup()` rejects a tampered backup file and a wrong key
    before ever attempting `pg_restore`.
+6b. `restore_backup()`'s `restoration_validated` result -- the mechanism
+   for Section 71.2's "a backup that has never been restored does not
+   count as validated" -- genuinely goes `False`, independently, for each
+   of its three subset terms (a missing table, a missing FORCE ROW LEVEL
+   SECURITY flag, a missing RLS policy) when the post-restore `metadata_fn`
+   reports a physically incomplete restore, with a baseline case proving
+   the same scaffold reports `True` for a genuinely complete one.
 7. The frozen contract files
    (`packages/contracts/{jsonschema,openapi}/16-*`) parse, declare zero
    paths (Law 11 -- no live FastAPI app exists yet), and a real
@@ -436,6 +443,140 @@ def test_restore_backup_rejects_the_wrong_key() -> None:
                 "negative_acceptance: restoring with the wrong key is rejected",
                 True,
             )
+
+
+def _restore_with_incomplete_metadata(restored_metadata_fn) -> RestoreRecord:
+    """Shared scaffold for the three `restoration_validated` subset-term
+    checks below: makes a real backup with the full `_fake_metadata`
+    content, then restores it with a no-op `restore_fn` (pg_restore's own
+    exit code is irrelevant here -- `restoration_validated` is computed
+    entirely from comparing the *original* backup metadata against what
+    `metadata_fn` reports the *restored* state to be) and the given,
+    deliberately incomplete, post-restore `metadata_fn`.
+
+    `restore_backup()`'s own row-count step still queries the live
+    database directly for any table both the original backup and the
+    (possibly incomplete) restored metadata agree exists -- unrelated to
+    `restoration_validated` itself, which is computed purely from the
+    metadata comparison below -- so `_psql_rows` is monkeypatched the same
+    way `test_create_backup_self_verification_catches_a_broken_encrypt_path`
+    above patches `_encrypt_file`, to keep this suite genuinely DB-free.
+    """
+    import tempfile
+
+    import scripts.postgres_backup as backup_module
+
+    original_psql_rows = backup_module._psql_rows
+
+    def fake_psql_rows(dsn: str, sql: str, *, separator: str = "|") -> list[list[str]]:
+        return [["0"]]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp)
+        record = create_backup(
+            "postgresql://unused/unused",
+            output_dir,
+            "a-real-backup-key",
+            database_name="ftf1601_fake",
+            dump_fn=_fake_dump,
+            metadata_fn=_fake_metadata,
+        )
+        ciphertext_path = output_dir / f"{record.backup_id}.sql.enc"
+        metadata_path = output_dir / f"{record.backup_id}.metadata.json"
+
+        def noop_restore(dsn: str, dump_path: Path) -> None:
+            pass
+
+        backup_module._psql_rows = fake_psql_rows
+        try:
+            return restore_backup(
+                "postgresql://unused/unused",
+                ciphertext_path,
+                metadata_path,
+                "a-real-backup-key",
+                database_name="ftf1601_fake",
+                restore_fn=noop_restore,
+                metadata_fn=restored_metadata_fn,
+            )
+        finally:
+            backup_module._psql_rows = original_psql_rows
+
+
+def test_restore_backup_reports_invalid_when_a_table_is_missing_from_the_restore() -> None:
+    """A physically incomplete restore missing one of the original
+    backup's tables must never silently report `restoration_validated:
+    True` (Section 71.2: 'a backup that has never been restored does not
+    count as validated')."""
+
+    def incomplete_metadata(dsn: str, *, database_name: str) -> dict[str, object]:
+        full = _fake_metadata(dsn, database_name=database_name)
+        return {**full, "tables": ["organizations"]}  # "workspaces" missing
+
+    result = _restore_with_incomplete_metadata(incomplete_metadata)
+    check(
+        "FTF-1601",
+        "restoration_validated is False when the restored database is "
+        "missing a table the original backup recorded",
+        result.restoration_validated is False,
+    )
+
+
+def test_restore_backup_reports_invalid_when_an_rls_forced_table_is_missing_from_the_restore() -> (
+    None
+):
+    """Same Section 71.2 guarantee for the FORCE ROW LEVEL SECURITY subset
+    term: a restore that recreates every table but loses the FORCE RLS
+    flag on one of them is a real, physically incomplete restore and must
+    not be reported as validated."""
+
+    def incomplete_metadata(dsn: str, *, database_name: str) -> dict[str, object]:
+        full = _fake_metadata(dsn, database_name=database_name)
+        return {**full, "rls_forced_tables": ["organizations"]}  # "workspaces" missing
+
+    result = _restore_with_incomplete_metadata(incomplete_metadata)
+    check(
+        "FTF-1601",
+        "restoration_validated is False when the restored database is "
+        "missing a FORCE ROW LEVEL SECURITY flag the original backup recorded",
+        result.restoration_validated is False,
+    )
+
+
+def test_restore_backup_reports_invalid_when_an_rls_policy_is_missing_from_the_restore() -> None:
+    """Same Section 71.2 guarantee for the RLS policy subset term: a
+    restore that recreates every table and every FORCE RLS flag but loses
+    one recorded RLS policy is still a real, physically incomplete restore
+    and must not be reported as validated."""
+
+    def incomplete_metadata(dsn: str, *, database_name: str) -> dict[str, object]:
+        full = _fake_metadata(dsn, database_name=database_name)
+        return {
+            **full,
+            # Only "organizations"' policy survives; "workspaces"'
+            # "tenant_isolation" policy the original backup recorded is gone.
+            "rls_policies": [{"table": "organizations", "policy": "tenant_isolation"}],
+        }
+
+    result = _restore_with_incomplete_metadata(incomplete_metadata)
+    check(
+        "FTF-1601",
+        "restoration_validated is False when the restored database is "
+        "missing an RLS policy the original backup recorded",
+        result.restoration_validated is False,
+    )
+
+
+def test_restore_backup_reports_valid_for_a_genuinely_complete_restore() -> None:
+    """Baseline for the three checks above: proves they fail for the right
+    reason (a real gap in the restored state), not because the scaffold
+    itself can never report `True`."""
+    result = _restore_with_incomplete_metadata(_fake_metadata)
+    check(
+        "FTF-1601",
+        "restoration_validated is True when the restored state matches "
+        "the original backup exactly",
+        result.restoration_validated is True,
+    )
 
 
 # -- 7. Frozen shared contract files (this task's own acceptance clause 1) --

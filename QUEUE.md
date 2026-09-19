@@ -31,7 +31,28 @@ Updated: 2026-09-18 (Control plane, scheduled CERTIFY-mode session
   dependency frontier: still only FTF-1601 (this PR, now blocked on the
   above) and FTF-0101 (blocked on a new-runtime-dependency ask); no other
   unblocked, unclaimed work exists. See "## Owner actions — current" and
-  "## Blocked" below.Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
+  "## Blocked" below.
+
+Updated: 2026-09-19 (relay shift) — pushed the exact fix the review above
+  asked for: four new no-DB checks in `tests/tasks/test_ftf_1601.py`
+  (three independent `restoration_validated is False` negatives, one for
+  each subset term — missing table / missing FORCE ROW LEVEL SECURITY
+  flag / missing RLS policy — plus one baseline `True` case proving the
+  negatives fail for the right reason). No code change. Reproduced the
+  reviewer's exact finding three times over (removed each conjunction
+  term from `scripts/postgres_backup.py` in turn) — each time exactly the
+  matching new check failed, restored byte-identical between injections.
+  Full regression clean (`ruff`/`mypy`/`eslint`/`tsc`/`prettier`,
+  `pytest tests/unit tests/tasks` 213/213 including the new checks,
+  `vitest` 2/2, `validate_spec.py --strict`, `status.py` 18/300 unchanged,
+  `product_truth_check.py` 0/0 unchanged, `verify_release.py` 18/300 zero
+  FAILED unchanged). Merged current `main` into this branch first (pure
+  tracking-doc conflict against the review itself; resolved
+  chronologically, no code touched). See "## Active" below and
+  `docs/certifications/queue.md`'s matching new entry for the pushed
+  commit SHA and CI confirmation.
+
+Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
@@ -155,6 +176,40 @@ policy the original backup recorded, and asserts
 `restoration_validated is False` for each of the three subset terms
 independently. Push to `claude/wizardly-fermat-vmg0oc`, confirm CI stays
 green, resubmit for certification.
+
+**This shift (relay):** added exactly that fix, no code change. Four new
+`tests/tasks/test_ftf_1601.py` checks: three independent no-DB negative
+cases (a `metadata_fn` reporting the restored state missing a table / a
+FORCE ROW LEVEL SECURITY flag / an RLS policy the original backup
+recorded, each asserting `restoration_validated is False`) plus one
+baseline positive case (a genuinely complete restore still reports
+`True`, proving the three negatives fail for the right reason and not
+because the scaffold can never report `True`). `restore_backup()`'s own
+row-count step still queries a live DB directly for any table both the
+original and restored metadata agree exists, unrelated to
+`restoration_validated` itself — worked around the same way
+`test_create_backup_self_verification_catches_a_broken_encrypt_path`
+already does, by monkeypatching `_psql_rows` for the scaffold's own scope
+only. Reproduced the reviewer's exact finding three times over, once per
+subset term (removed the `tables` / `rls_forced_tables` / `rls_policies`
+conjunction term from `scripts/postgres_backup.py` in turn) — each time
+exactly the matching new check failed and no other check did, restored
+byte-identical from a pre-edit copy (`diff` confirmed empty) after each,
+re-ran clean between injections. Merged current `main` into this branch
+first (pure tracking-doc conflict against the review itself landing on
+`main`; resolved chronologically, no code touched — see this file's
+"Updated" banner). Full regression on the resulting tree: `ruff check .`/
+`ruff format --check .`/`mypy .` clean (63 files); `pnpm lint`/
+`typecheck`/`format:check` clean; `uv run pytest tests/unit tests/tasks` —
+213 passed (was 209; +4 new checks, all in `test_ftf_1601.py`, now 18);
+`pnpm exec vitest run` — 2 passed; `validate_spec.py --strict` clean;
+`status.py` — `18/300 certified · 0 product-true` (unchanged);
+`product_truth_check.py --fail-on-unwired` — `0/0` (unchanged);
+`verify_release.py` — `18/300`, zero `FAILED`, `NOT READY` (unchanged).
+Pushed to `claude/wizardly-fermat-vmg0oc`; CI to be reconfirmed on the new
+head before resubmitting for certification — see this file's "Updated"
+banner and `docs/certifications/queue.md`'s matching new entry for the
+real commit SHA and CI run.
 ## Provisional (awaiting Control plane L2 certification)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third
 structural-blocker recurrence resolved via a new PR rather than a fourth

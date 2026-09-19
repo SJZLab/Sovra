@@ -1,5 +1,99 @@
 # PROGRESS — Sovra
-Updated: 2026-09-18 (Control plane, scheduled CERTIFY-mode session)
+Updated: 2026-09-19 (relay shift)
+
+## 2026-09-19 — FTF-1601 (PR #96): pushed the missing negative test, resubmitting
+Scheduled relay shift, branch `claude/wizardly-fermat-po62sh` (rebased onto
+current `main`, `0233470`). STEP 0 hash check: `sha256sum CLAUDE.md`
+(`11aee64c5e04e2bf4e967d8faf25d0430984159e87ddd58f1908e62a272e1421`)
+matched the committed `CLAUDE.md.sha256` exactly — no drift. STEP 0.2:
+`cognee-cli` not on PATH — text-search fallback in effect this shift.
+
+STEP 1: read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`. QUEUE.md
+"## Active" names exactly one workable item: FTF-1601, PR #96, blocked on
+a real Law 1 gap Control plane found the same day — `restore_backup()`'s
+`restoration_validated` boolean has never been shown able to fail by any
+test in the PR, even though the shipped logic is already correct. The
+fix needed was fully specified (no DoD ambiguity, nothing to improvise):
+add a no-DB negative test proving `restoration_validated is False` for
+each of the boolean's three subset terms independently, reusing the
+existing `dump_fn`/`metadata_fn`-injection pattern already in
+`tests/tasks/test_ftf_1601.py`. FTF-0101 stays blocked on its own
+new-runtime-dependency ask (unchanged, no owner response in QUEUE.md).
+
+STEP 2 (PEV):
+- **P:** read `scripts/postgres_backup.py`'s `restore_backup()` (the
+  `restoration_validated` conjunction: ciphertext/plaintext checksum
+  verification plus three schema/RLS survival-subset checks against
+  whatever `metadata_fn` reports post-restore) and the existing
+  `tests/tasks/test_ftf_1601.py` fixture pattern (`_fake_metadata`/
+  `_fake_dump`, and the `broken_encrypt`-style monkeypatch precedent in
+  `test_create_backup_self_verification_catches_a_broken_encrypt_path`).
+  No changes yet.
+- **E:** added a shared no-DB scaffold
+  (`_restore_with_incomplete_metadata`) that makes a real backup via
+  `create_backup()` with the full `_fake_metadata` content, then restores
+  it with a no-op `restore_fn` and a deliberately incomplete post-restore
+  `metadata_fn`. Discovered along the way that `restore_backup()`'s own
+  row-count step (`for table in row_count_tables or record["tables"]:
+  ... _psql_rows(...)`) still queries a live database directly for any
+  table both the original and restored metadata agree exists — an empty
+  `row_count_tables=[]` doesn't skip it (`[] or record["tables"]`
+  evaluates truthy on the fallback, a real falsy-empty-list quirk in the
+  existing signature) — so the scaffold monkeypatches `_psql_rows` the
+  same way the existing suite already patches `_encrypt_file`, keeping
+  the suite genuinely DB-free without touching `restoration_validated`
+  itself. Four new checks: three independent negatives (missing table /
+  missing FORCE ROW LEVEL SECURITY flag / missing RLS policy, each
+  asserting `restoration_validated is False`) and one baseline positive
+  (a genuinely complete restore still reports `True`).
+  **Shown able to fail (Law 1), reproducing the reviewer's exact finding
+  three times over:** removed each of the three conjunction terms from
+  `scripts/postgres_backup.py` in turn (`record["tables"]`,
+  `record["rls_forced_tables"]`, `record["rls_policies"]`) — each time
+  exactly the one matching new check failed (`FAIL [FTF-1601]
+  restoration_validated is False when the restored database is missing a
+  table/... FORCE ROW LEVEL SECURITY flag/... RLS policy the original
+  backup recorded`) and no other check did; restored the file
+  byte-identical from a pre-edit copy (`diff` confirmed empty) after each
+  injection, re-ran clean between them.
+- **V:** merged current `main` (`0233470`) into
+  `claude/wizardly-fermat-vmg0oc` first — a pure tracking-doc conflict in
+  `QUEUE.md`/`docs/certifications/queue.md` against the review itself
+  landing on `main` while this branch stayed on the pre-review head;
+  resolved chronologically (kept both sides' content: this branch's own
+  "resubmitted under new PR #96" entry, then `main`'s newer "NOT
+  CERTIFIED" review entry), zero code touched. Full regression on the
+  resulting tree, all via `uv run`/`pnpm` after `uv sync --all-packages` +
+  `pnpm install --frozen-lockfile` + `git fetch --unshallow`: `ruff
+  check .`/`ruff format --check .`/`mypy .` clean (63 files); `pnpm
+  lint`/`typecheck`/`format:check` clean; `uv run pytest tests/unit
+  tests/tasks` — 213 passed (was 209 before this shift; +4, all in
+  `test_ftf_1601.py`, now 18/18); `pnpm exec vitest run` — 2 passed;
+  `validate_spec.py --strict` clean; `status.py` — `18/300 certified · 0
+  product-true` (unchanged); `product_truth_check.py --fail-on-unwired` —
+  `0/0` (unchanged); `verify_release.py` — `18/300`, zero `FAILED`, `NOT
+  READY` (unchanged from `main`'s own pre-this-shift state). No live
+  Postgres re-run needed — no code changed, and the live-Postgres
+  evidence for the shipped `restoration_validated` logic is already
+  independently reproduced in Control plane's own prior review (recorded
+  in `docs/certifications/queue.md`); PR #96's own
+  `postgres-backup-integration` CI job re-covers it on the real new head
+  regardless.
+
+Pushed to `claude/wizardly-fermat-vmg0oc`; PR #96 unchanged (same PR, new
+commit) at https://github.com/SJZLab/Sovra/pull/96 — see
+`docs/certifications/queue.md`'s matching new entry for the real pushed
+commit SHA and CI confirmation once green. `proof_state=L1-PROVEN`,
+`certification_state=PROVISIONAL` (unchanged — this is a test-only fix
+per the review's own instruction, "no code change expected/needed").
+
+STEP 3: this entry. STEP 4: no stop condition applies yet — a fresh
+Control-plane L2 review is the next unblocked action once CI confirms
+green on the new head; this relay session does not certify its own fix
+(same producer session cannot certify per Law 4), so it stops here per
+STEP 4(a)'s spirit (nothing left this session can safely do beyond
+confirming CI itself, next).
+
 
 ## 2026-09-18 — Control plane: FTF-1601 (PR #96) NOT CERTIFIED — real Law 1 gap, restoration completeness never proven able to fail
 Scheduled CERTIFY-mode session, triggered by PR #96's own

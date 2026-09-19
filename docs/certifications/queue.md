@@ -3596,3 +3596,84 @@ the same code on a now-clean head.
   before resubmitting.
 - **Validated-by:** this session (independent — see session-ID check
   above), 2026-09-18.
+
+## 2026-09-19 — FTF-1601 (PR #96) — negative test added, no code change, resubmitted
+- **Fixes exactly what the review above found:** four new checks in
+  `tests/tasks/test_ftf_1601.py` — three independent negatives, one per
+  `restoration_validated` subset term, plus one baseline positive:
+  1. `test_restore_backup_reports_invalid_when_a_table_is_missing_from_the_restore`
+  2. `test_restore_backup_reports_invalid_when_an_rls_forced_table_is_missing_from_the_restore`
+  3. `test_restore_backup_reports_invalid_when_an_rls_policy_is_missing_from_the_restore`
+  4. `test_restore_backup_reports_valid_for_a_genuinely_complete_restore` (baseline)
+- **Scaffold:** `_restore_with_incomplete_metadata()` makes a real backup
+  via `create_backup()` with the full `_fake_metadata` content, then
+  restores it with a no-op `restore_fn` and a deliberately incomplete
+  post-restore `metadata_fn` — the same `dump_fn`/`metadata_fn`-injection
+  pattern this suite already uses elsewhere, per the review's own
+  instruction.
+- **A real wrinkle found and worked around, not silently avoided:**
+  `restore_backup()`'s row-count step
+  (`for table in row_count_tables or record["tables"]: ...
+  _psql_rows(...)`) queries a live database directly for any table both
+  the original backup and the restored metadata agree exists —
+  unconditionally, regardless of `restoration_validated`'s own result,
+  and unrelated to it (a separate reporting field). Passing
+  `row_count_tables=[]` does **not** skip this — `[] or record["tables"]`
+  evaluates to `record["tables"]` because an empty list is falsy in
+  Python, a real quirk of the existing default-argument pattern, not a
+  new one introduced by this fix. Worked around by monkeypatching
+  `_psql_rows` for the scaffold's own scope only, the same way
+  `test_create_backup_self_verification_catches_a_broken_encrypt_path`
+  (already in this file, from the original PR) monkeypatches
+  `_encrypt_file` — save the original, patch, restore in `finally`. This
+  does not touch `restoration_validated`'s own computation in any way; it
+  only avoids a network call this no-DB suite cannot make.
+- **Evidence — shown able to fail (Law 1), reproducing the reviewer's
+  exact finding three times over, once per subset term:** temporarily
+  removed each of the three conjunction terms from
+  `scripts/postgres_backup.py`'s `restoration_validated` in turn —
+  `set(record["tables"]).issubset(set(tables_restored))`,
+  `set(record["rls_forced_tables"]).issubset(set(rls_forced_tables_verified))`,
+  and the `rls_policies` subset check — re-running the full suite after
+  each single-term removal:
+  - Removing the `tables` term: exactly
+    `test_restore_backup_reports_invalid_when_a_table_is_missing_from_the_restore`
+    failed (`FAIL [FTF-1601] restoration_validated is False when the
+    restored database is missing a table the original backup recorded`);
+    no other check failed.
+  - Removing the `rls_forced_tables` term: exactly
+    `test_restore_backup_reports_invalid_when_an_rls_forced_table_is_missing_from_the_restore`
+    failed; no other check failed.
+  - Removing the `rls_policies` term: exactly
+    `test_restore_backup_reports_invalid_when_an_rls_policy_is_missing_from_the_restore`
+    failed; no other check failed.
+  Restored the file byte-identical from a pre-edit copy (`diff` confirmed
+  empty) after each injection, re-ran clean (all 18 `test_ftf_1601.py`
+  checks pass) before moving to the next.
+- **Merge, not a fresh conflict:** current `main` (`0233470`) had moved
+  past this branch's base while the review above was landing there;
+  merged it into `claude/wizardly-fermat-vmg0oc` — conflicts confined to
+  `QUEUE.md`/`docs/certifications/queue.md` (both pure tracking-doc
+  prose, resolved chronologically, keeping both sides' entries, nothing
+  dropped), zero conflict or drift in any code file.
+- **Full regression on the merged-and-fixed tree** (`uv sync
+  --all-packages` + `pnpm install --frozen-lockfile` + `git fetch
+  --unshallow` first): `ruff check .`/`ruff format --check .`/`mypy .`
+  clean (63 files); `pnpm lint`/`typecheck`/`format:check` clean; `uv run
+  pytest tests/unit tests/tasks` — 213 passed (209 before this fix; +4,
+  all in `test_ftf_1601.py`, now 18/18); `pnpm exec vitest run` — 2
+  passed; `uv run python3 scripts/validate_spec.py --strict` clean; `uv
+  run python3 scripts/status.py` — `18/300 certified · 0 product-true`
+  (unchanged); `uv run python3 scripts/product_truth_check.py
+  --fail-on-unwired` — `0/0` (unchanged); `uv run python3
+  scripts/verify_release.py` — `18/300`, zero `FAILED`, `NOT READY`
+  (unchanged). Did not re-run the live-Postgres integration test locally
+  — no code changed, and the live-Postgres reproduction of this exact
+  `restoration_validated` behavior is already independently recorded in
+  the review above; PR #96's own `postgres-backup-integration` CI job
+  re-covers it on the real new head regardless.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`
+  (unchanged — a scoped test-only fix per the review's own instruction,
+  "no code change expected/needed"). Not self-certified — this relay
+  session cannot certify its own fix; awaiting a fresh Control-plane L2
+  review with no session-ID overlap with this one.
