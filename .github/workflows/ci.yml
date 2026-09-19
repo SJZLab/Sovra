@@ -124,6 +124,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0102.py
       - name: FTF-0104 negative-test proof (audit event writer catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0104.py
+      - name: FTF-1601 negative-test proof (postgres backup catches real defects, no DB required)
+        run: python3 tests/tasks/test_ftf_1601.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -221,6 +223,50 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real append-only/tenant-isolation/atomicity evidence against the live database
         run: uv run python3 tests/integration/test_audit_event_writer.py
+
+  postgres-backup-integration:
+    # FTF-1601: real pg_dump/openssl/pg_restore encrypted-backup-and-
+    # restoration evidence (Section 48/71.2) --
+    # tests/integration/test_postgres_backup.py. Same real
+    # `services: postgres` container pattern as
+    # organization-workspace-schema-integration/audit-event-writer-
+    # integration (this repo's interactive dev sandbox has no
+    # container-registry egress; that evidence was instead produced
+    # locally against a directly-installed PostgreSQL 16 -- see this
+    # task's docs/certifications/queue.md entry). Unlike those two jobs,
+    # this one shells out to the `pg_dump`/`pg_restore`/`psql` client
+    # binaries directly, so the runner (not just the service container)
+    # needs a matching Postgres client installed.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1601
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1601"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1601
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+      SOVRA_BACKUP_ENCRYPTION_KEY: sovra_backup_encryption_key_ci_only
+      PGPASSWORD: sovra_migrate_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install Postgres client (pg_dump/pg_restore/psql matching the service's major version)
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y postgresql-client-16
+      - name: Prove the real encrypted-backup/restoration evidence against the live database
+        run: uv run python3 tests/integration/test_postgres_backup.py
 
   storage-semantics-integration:
     # FTF-R017: real multipart/checksum/versioning/immutable-publication/
