@@ -1,6 +1,33 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T15:00:00Z (Relay — scheduled autonomous shift; no
+Updated: 2026-09-19T17:30:00Z (Relay — scheduled autonomous shift; no
   actionable item found, stopped per STEP 4(a)/(e))
+
+## 2026-09-19T17:30:00Z — Relay shift: no unblocked work, independently reconfirmed (STEP 4a/4e)
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, docs/certifications/queue.md, and
+BLOCKER.md (both entries resolved history) against `origin/main`'s actual
+tip. Found a prior relay shift today (PR #106, branch
+`claude/wizardly-fermat-bth2ol`) had already reached this exact same
+conclusion by the same method (programmatic walk of `docs/TASK_INDEX.md`'s
+dependency graph against `docs/spec-matrix.yaml`'s `implementation_state`)
+and opened it as an open, unmerged, CI-green (6/6), doc-only PR. Rather
+than open a duplicate third PR with identical content, verified its
+diff/conclusion independently (own script, same result: FTF-0101 is the
+only task with all dependencies IMPLEMENTED, out of 300; every other
+`ABSENT` task depends on it transitively), confirmed all 6 checks green,
+confirmed no new owner response on PR #103 (`get_comments` → empty) or in
+QUEUE.md, then merged PR #106 as-is (merge commit `1a5fcd5`) rather than
+duplicating its record.
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active.
+STEP 1: Confirmed FTF-0101 (PR #103, `PROVISIONAL`/`L1-PROVEN`) remains
+the only dependency-ready task and remains blocked on the same open
+QUEUE.md owner ask (local OIDC test-provider package approval) — no owner
+response yet. Nothing else is relay-actionable.
+No source, spec-matrix, or certification-queue change this shift beyond
+merging PR #106. Stopping per STEP 4(e) (ask-first item, unchanged) and
+STEP 4(a) (FTF-0101 fully L1-PROVEN, awaiting Control plane
+certification + owner decision).
 
 ## 2026-09-19T15:00:00Z — Relay shift: no unblocked work, confirmed and stopped (STEP 4a/4e)
 STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md —
