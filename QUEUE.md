@@ -15,18 +15,26 @@ Updated: 2026-09-19 (relay shift, session_015rZiy6EjN6jvYYWzkGE2gh) —
   `tsc`/`prettier`, `pytest tests/unit tests/tasks` 213/213, `vitest`
   2/2, `validate_spec.py --strict`, `status.py` 18/300 unchanged,
   `product_truth_check.py` 0/0 unchanged, `verify_release.py` 18/300 zero
-  `FAILED` unchanged), pushed as `bc8868d`, opening a new PR to supersede
-  #96 (same delivered code and evidence, now conflict-free against
-  current `main`), then closing #96 with a pointer. See "## Active"
-  below and `PROGRESS.md`'s matching new entry.
+  `FAILED` unchanged), pushed as `bc8868d`+`8496133`, opened PR #100
+  (`claude/wizardly-fermat-rlp631` → `main`, same delivered code and
+  evidence, now conflict-free against current `main`) to supersede #96,
+  confirmed CI green (6/6) directly on the real head `8496133` via
+  `get_check_runs`/`get_workflow_run` (not a stale claim — an early poll
+  round showed 3/6 jobs stuck `in_progress` for several minutes;
+  `get_workflow_run` on the run itself already reported
+  `status: "completed", conclusion: "success"`, and a fresh
+  `get_check_runs` poll then matched — a caching lag in the check-runs
+  listing, not a real hang), `mergeable_state: "clean"`, then closed #96
+  with a pointer comment. See "## Active" below and `PROGRESS.md`'s
+  matching new entry.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
-`c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #96,
-FTF-1601, is open, CI green, content evidence sound and Law 1 gap closed,
-but NOT CERTIFIED — new tracking-doc-only merge conflict against current
-`main`, see banner above and "## Active" below) ·
+`c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #100,
+FTF-1601, is open, CI green (6/6), content evidence sound, Law 1 gap
+closed, structural blocker resolved (supersedes closed PR #96) — awaiting
+Control-plane L2 review, see banner above and "## Active" below) ·
 Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
 "## Owner actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
@@ -102,8 +110,10 @@ without counting toward product-true).
   stopping this shift here.
 ## Active (awaiting Control plane — no relay action left)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102, both CERTIFIED) — open
-PR https://github.com/SJZLab/Sovra/pull/96 (supersedes closed PR #90),
-head `19e18de0` on branch `claude/wizardly-fermat-vmg0oc`.
+PR https://github.com/SJZLab/Sovra/pull/100 (supersedes closed PR #96,
+which itself supersedes closed PR #90), head `8496133` on branch
+`claude/wizardly-fermat-rlp631`. CI green (6/6), `mergeable_state:
+"clean"`, no open review threads.
 
 History: PR #90's recurring `PROGRESS.md`/`QUEUE.md` tracking-doc merge
 conflict against a moving `main` stalled for three consecutive relay
@@ -197,10 +207,12 @@ touched), full regression re-run clean (`ruff`/`mypy`, `eslint`/`tsc`/
 `prettier`, `pytest tests/unit tests/tasks` 213/213, `vitest` 2/2,
 `validate_spec.py --strict`, `status.py`/`product_truth_check.py`/
 `verify_release.py` all unchanged from `main`'s pre-merge state), pushed
-as `bc8868d` to `origin/claude/wizardly-fermat-rlp631`, opening a new PR
-to supersede #96 (identical delivered code, same evidence, now
-conflict-free against current `main`) and closing #96 with a pointer.
-See `PROGRESS.md`'s matching new entry for full detail.
+as `bc8868d` then `8496133` to `origin/claude/wizardly-fermat-rlp631`,
+opened PR #100 to supersede #96 (identical delivered code, same
+evidence, now conflict-free against current `main`), confirmed CI green
+(6/6) directly on the real head `8496133` and `mergeable_state: "clean"`,
+then closed #96 with a pointer comment. See `PROGRESS.md`'s matching new
+entry for full detail.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third

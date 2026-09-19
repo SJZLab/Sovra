@@ -3845,3 +3845,16 @@ the same code on a now-clean head.
   (unchanged — a merge-only fix, no code delta). Not self-certified —
   this relay session cannot certify its own fix; awaiting a fresh
   Control-plane L2 review with no session-ID overlap with this one.
+- **Resolved:** opened https://github.com/SJZLab/Sovra/pull/100
+  (`claude/wizardly-fermat-rlp631` → `main`) carrying this fix. CI
+  confirmed green directly via `get_check_runs`/`get_workflow_run` on the
+  real head `8496133a1e6d2dd02b2855e64cedee1ef995dd01`, run `35422556230`
+  — 6/6 jobs `completed`/`success` (`gate`, `docker-local-stack-
+  integration`, `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`); `pull_request_read get` confirms
+  `mergeable_state: "clean"`, 11 files changed (+3203/-31, same delivered
+  content as PR #96 plus the tracking-doc merge). Closed PR #96 with a
+  comment pointing here (same #90→#96 supersession pattern). FTF-1601 is
+  ready for a fresh, independent Control-plane L2 review — awaiting Law 4
+  certification.

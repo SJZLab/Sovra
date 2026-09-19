@@ -56,20 +56,34 @@ independent live-Postgres reproduction of `restoration_validated`'s
 fixed behavior; the new PR's own `postgres-backup-integration` CI job
 covers it on the real new head.
 
-Committed the merge (`bc8868d`) and pushed to
-`origin/claude/wizardly-fermat-rlp631`. Opening a new PR from this branch
-to supersede #96 (same delivered code, same evidence, merge-conflict-free
-against current `main`), then closing #96 with a comment pointing to it.
+Committed the merge (`bc8868d`, plus a doc-only follow-up `8496133`
+recording this shift in `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` before pushing) and pushed to
+`origin/claude/wizardly-fermat-rlp631`. Opened
+https://github.com/SJZLab/Sovra/pull/100 from this branch to supersede
+#96 (same delivered code, same evidence, merge-conflict-free against
+current `main`). Confirmed CI green directly on the real head `8496133`,
+run `35422556230`: `get_check_runs` — 6/6 jobs `completed`/`success`
+(`gate`, `docker-local-stack-integration`, `organization-workspace-
+schema-integration`, `audit-event-writer-integration`, `postgres-backup-
+integration`, `storage-semantics-integration`); `pull_request_read get`
+— `mergeable_state: "clean"`, 11 files changed (+3203/-31). (An early
+poll round showed 3 of 6 check runs stuck `in_progress` for several
+minutes after the others had already finished — cross-checked with
+`get_workflow_run` on the run itself, which already reported
+`status: "completed", conclusion: "success"`; a fresh `get_check_runs`
+poll then matched. Caching lag in the check-runs listing, not a real
+hang — noted for any future shift that sees the same pattern.) Closed
+#96 with a comment pointing to #100 (same #90→#96 supersession pattern).
 `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL` — not
 self-certified; awaiting a fresh, independent Control-plane L2 review per
 Law 4.
 
-STEP 3: this entry, written before the push. STEP 4(a): FTF-1601 is the
-only in-flight item and is now fully L1-PROVEN with a clean, conflict-free
-head, awaiting Control-plane certification and (later) the L4 gate.
-FTF-0101 remains a hard ask-first stop (new-runtime-dependency ask,
-unchanged). Certified: 18/300 · Product-true: 0 (unchanged). Stopping
-here.
+STEP 3: this entry. STEP 4(a): FTF-1601 is the only in-flight item and is
+now fully L1-PROVEN with a clean, conflict-free, CI-green head (PR #100),
+awaiting Control-plane certification and (later) the L4 gate. FTF-0101
+remains a hard ask-first stop (new-runtime-dependency ask, unchanged).
+Certified: 18/300 · Product-true: 0 (unchanged). Stopping here.
 
 ## 2026-09-19T03:15:00Z — Control plane: PR #96 (FTF-1601) reviewed — Law 1 gap now closed, but NOT CERTIFIED (new structural blocker)
 Scheduled CERTIFY-mode session, triggered by PR #98's own
