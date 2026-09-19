@@ -62,15 +62,15 @@ FTF-0006:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0006.py
 FTF-0101:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: OIDC login
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-33; scenarios=Q01, Q24; deps=FTF-0004, FTF-0005, FTF-0102
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 6b4c8aba80fc3141d7d1112ac13e8cd8cc31bedc
+  implementation_state: IMPLEMENTED
+  notes: kind=retained_feature; requirements=AF-33; scenarios=Q01, Q24; deps=FTF-0004, FTF-0005, FTF-0102 (all CERTIFIED); first live FastAPI app in this repository (apps/api/app/main.py) -- FastAPI/uvicorn/authlib/itsdangerous owner-approved 2026-09-19; apps/api/app/auth/oidc_login.py (authorization-code+PKCE, real JWT/JWKS signature+issuer+audience+expiry+nonce validation via authlib, signed HttpOnly/Secure/SameSite session+CSRF-token cookie via itsdangerous, in-memory per-process logout/session-revocation store, CSRF Origin+token check on the one mutation) + apps/api/app/auth/oidc_settings.py (separate fail-fast settings loader, deliberately not merged into FTF-0005's certified Settings to avoid invalidating its certified evidence) + apps/web/components/identity-and-tenancy/oidc_login.tsx (real top-level-navigation login link, React/react-dom owner-approved 2026-09-19); tests/tasks/test_ftf_0101.py (24 checks -- forged issuer/audience, expired token, unknown-kid, forged-signature-same-kid, alg=none, nonce mismatch, missing subject all denied at the pure-function level; a real uvicorn app + a real stdlib fake-provider HTTP server together prove state-mismatch/CSRF/missing-txn-cookie denial, membership-revoked denial, the fail-closed default-membership-lookup denial, and a full real-local-server login->session->logout round trip) + apps/web/tests/ftf_0101.spec.ts (3 Vitest+RTL component checks). DISCLOSED, NOT MET -- acceptance clause 1's "Real OIDC provider" integration evidence is BLOCKED_EXTERNAL. Section 65.3 requires a real local OIDC provider (owner-approved Node oidc-provider or Python idpy-oidc package), still an open ask in QUEUE.md "Owner actions -- current" as of 2026-09-19; this task's own stdlib fake-provider test server proves this module's own validation/session/CSRF logic over a real socket but is explicitly documented as not satisfying that clause. DISCLOSED, NOT MET -- "revoked membership... denied" (negative_acceptance) is proven only via an injected fake membership_lookup -- no Membership table exists anywhere in this repository yet (FTF-0102 delivered only Organization/Workspace; Membership is FTF-0103/FTF-0105's concern per spec/tasks.json); default_membership_lookup fails closed (denies every real login) until a DB-backed lookup replaces it, proven fail-closed by test, not hidden. DISCLOSED -- no Next.js app shell exists yet to mount oidc_login.tsx into a real page/route; a true Playwright browser E2E is deferred alongside the same blocked real-provider dependency. DISCLOSED -- client_secret/session-signing-key are resolved from directly-injected env vars in apps/api/app/main.py, not a real secret-manager integration (none exists anywhere in this repo yet, same class of gap as FTF-0005/FTF-R017).
+  proof_state: L1-PROVEN
+  proving_symbol: build_oidc_login_router
+  proving_test: tests/tasks/test_ftf_0101.py
 FTF-0102:
   certification_state: CERTIFIED
   criticality: MUST

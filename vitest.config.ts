@@ -5,7 +5,11 @@ import { defineConfig } from "vitest/config";
 // fails validation rather than silently reporting success.
 export default defineConfig({
   test: {
-    include: ["apps/web/src/**/*.test.ts", "packages/shared/src/**/*.test.ts"],
+    include: [
+      "apps/web/src/**/*.test.ts",
+      "packages/shared/src/**/*.test.ts",
+      "apps/web/tests/**/*.spec.ts",
+    ],
     passWithNoTests: false,
   },
 });

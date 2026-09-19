@@ -126,6 +126,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0104.py
       - name: FTF-1601 negative-test proof (postgres backup catches real defects, no DB required)
         run: python3 tests/tasks/test_ftf_1601.py
+      - name: FTF-0101 negative-test proof (OIDC login catches real defects, real local sockets, no DB required)
+        # uv run: this is the first task requiring FastAPI/authlib/itsdangerous/uvicorn
+        # (owner-approved 2026-09-19), the same reason FTF-0102 first needed `uv run`.
+        run: uv run python3 tests/tasks/test_ftf_0101.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
