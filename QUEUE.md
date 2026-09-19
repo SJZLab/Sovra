@@ -31,10 +31,17 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 ## Status
 Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
 `f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
-PR #114 (supersedes PR #112, closed) — open, unmerged, real server-side
-refresh now implemented and proven against the real local provider (the
-one gap PR #112's Control-plane review found), awaiting a fresh
-independent review; see "## Provisional" below) · Blocked: 0 (FTF-0101's
+PR #114 (supersedes PR #112, closed) — **merged to `main`** as merge
+commit `5de1c58` (green-on-CI merge, per CLAUDE.md's own "Do without
+asking" list — merging on green with L1-PROVEN evidence does not require
+prior Control-plane sign-off; `certification_state` was NOT flipped to
+CERTIFIED by this merge and stays `PROVISIONAL`/`L1-PROVEN` on `main`
+itself, confirmed by direct read of `docs/spec-matrix.yaml` on `main`
+post-merge — no tracker inflation). Real server-side refresh now
+implemented and proven against the real local provider (the one gap PR
+#112's Control-plane review found), awaiting a fresh independent L2
+review directly against `main`; see "## Provisional" below) · Blocked: 0
+(FTF-0101's
 web-framework/auth-stack approval and its own local-OIDC-test-provider
 package choice were both resolved 2026-09-19 by live owner
 instruction/confirmation — see "## Blocked" history below; no open owner
@@ -157,6 +164,15 @@ full history and evidence.
   `product_truth_check.py` still 1/1). Full entry:
   `docs/certifications/queue.md`; PROGRESS.md's matching entry has the
   full PEV record.
+  **CI reconfirmed 7/7 green** on the real final PR head (`40ef553`), no
+  merge conflict, no open review threads — then **merged to `main`** as
+  `5de1c58` (green-on-CI merge, authorized without prior Control-plane
+  sign-off by CLAUDE.md's own "Do without asking" list). Merging did
+  **not** certify the work: `docs/spec-matrix.yaml` on `main` still reads
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` for
+  FTF-0101 (verified by direct read post-merge, not assumed) — no tracker
+  inflation. A fresh independent Control-plane L2 review is still needed,
+  now directly against `main` rather than an open PR branch.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

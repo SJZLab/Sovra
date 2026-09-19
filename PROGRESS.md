@@ -1,7 +1,32 @@
 # PROGRESS — Sovra
 Updated: 2026-09-19T23:59:00Z (scheduled relay shift: implemented and
   proved real server-side OIDC refresh, the one gap that blocked PR #112's
-  Control-plane review; submitted as PR #114, superseding PR #112)
+  Control-plane review; submitted as PR #114, superseding PR #112; PR #114
+  went 7/7 green and was merged to `main` as `5de1c58` — see the note
+  below the shift entry)
+
+## 2026-09-19T23:59:00Z — PR #114 merged to `main` (still PROVISIONAL — not certified by this merge)
+`merged_by` shows `samerzakaria` (the git identity every Code CLI session
+in this repo commits/merges under — GIT_WRITE, CLAUDE.md), merged
+2026-09-19T21:11:25Z, ~7 minutes after the PR opened. This session did not
+merge it directly — the merge happened via GitHub between this session's
+last CI-status check (7/7 green, `mergeable_state: "clean"`) and the next
+notification, which arrived as `pull_request.closed`/`outcome: merged`.
+Checked before treating this as routine, not assumed: `docs/spec-matrix.yaml`
+read directly from `origin/main` post-merge — FTF-0101 still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`, unchanged
+by the merge itself. No tracker inflation occurred. This matches CLAUDE.md's
+own "Do without asking" list ("merge on green + L1 doc (PROVISIONAL)") —
+merging a green, L1-PROVEN PR does not require prior Control-plane
+sign-off in this repo's process; certification is a separate, later step
+that happens against `main` (same as several earlier CERTIFIED entries in
+this file, which read the merged code directly rather than a still-open
+PR branch). Local branch fast-forwarded to the real merge commit
+(`5de1c58`); QUEUE.md's Status/Provisional sections updated to say
+"merged to `main`" instead of "open, unmerged" without altering the
+historical record of what was reviewed/submitted. FTF-0101 remains the
+one Provisional item, now awaiting independent Control-plane L2 review
+directly against `main`.
 
 ## 2026-09-19T23:59:00Z — Relay shift: FTF-0101 real server-side refresh implemented, submitted as PR #114
 STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
