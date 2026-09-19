@@ -1,7 +1,117 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T22:15:00Z (live, interactive session with the account
-  holder — recorded a new standing default-resolution rule in CLAUDE.md
-  and applied it to close the one open owner ask)
+Updated: 2026-09-19T23:40:00Z (scheduled relay shift: implemented FTF-0101's
+  real-provider integration-evidence follow-up, submitted PR #112)
+
+## 2026-09-19T23:40:00Z — Relay shift: FTF-0101 real idpyoidc provider integration evidence added, resubmitted as PR #112
+STEP 0 hash check: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256`
+exactly — no drift.
+STEP 0.1: read PROGRESS.md, QUEUE.md, and docs/certifications/queue.md
+against `origin/main`'s actual tip (`12c5cec`, PR #111) before starting —
+the prior (live, interactive) entry directly above recorded the owner's
+resolution of FTF-0101's local-OIDC-test-provider-package ask (`idpyoidc`,
+Python) and explicitly left the real-integration-evidence implementation
+itself for "the next relay/control-plane shift."
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(unchanged from every prior shift).
+STEP 1: FTF-0101 (PR #103, `PROVISIONAL`/`L1-PROVEN`, NOT CERTIFIED
+2026-09-19 pending exactly this evidence) is the one unblocked item. Ran
+`python tools/r1_handoff.py packet FTF-0101 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` again to re-confirm the exact acceptance
+clause text before touching anything.
+STEP 2 (PEV):
+- **P:** read `apps/api/app/auth/oidc_login.py`/`oidc_settings.py` and
+  `tests/tasks/test_ftf_0101.py` in full. Confirmed `build_oidc_login_router`
+  is already generic (injectable `http_opener`, real HTTP calls via
+  `urllib.request`) — no code change needed to the module under test itself,
+  only a real provider to exercise it against. Resolved the owner's
+  "idpy-oidc" naming to the real PyPI package `idpyoidc` (no hyphen; `idpy-`
+  with a hyphen does not exist on PyPI) by querying `pypi.org/simple/`
+  directly rather than guessing. Downloaded the package's own sdist test
+  suite (`test_server_24_oidc_authorization_endpoint.py`,
+  `test_server_33_oauth2_pkce.py`, `test_server_35_oidc_token_endpoint.py`)
+  to derive a real, working `idpyoidc.server.Server` OP configuration
+  (RSA signing key, real PKCE add-on, real id_token minting, `NoAuthn` test
+  authentication) rather than inventing one — verified it end-to-end in a
+  scratch script before touching the repo (real authorization code, real
+  RS256 id_token with correct iss/aud/nonce, real JWKS).
+- **E:** added `tests/integration/test_oidc_login_real_provider.py` — three
+  real-flow tests, each over real HTTP sockets with zero test doubles in
+  the request path: (1) full login→callback→session round trip against a
+  real `idpyoidc` OP wrapped in a stdlib `ThreadingHTTPServer`, ending with
+  a real-code replay against the real OP's own `/token` endpoint genuinely
+  rejected (`max_usage: 1` enforced by `idpyoidc` itself, not this repo's
+  code); (2) a real PKCE-verifier mismatch rejected by the real OP with a
+  real `invalid_grant`; (3) direct decode of a real minted id_token proving
+  real RS256 signing, a real `kid` present in the real OP's own JWKS, and
+  real iss/aud/nonce. Failure shown first: before wiring the real OP's
+  `NoAuthn`/PKCE/id_token config correctly, the script raised
+  (`TypeError: 'NoneType' object is not iterable` from a missing
+  `key_defs`/`jwks_file` pairing) — fixed by dropping the unused JWT
+  access/refresh token classes (opaque tokens are fine; only `id_token`
+  needs to be a real JWT for this module's own verification path) rather
+  than guessing at a `jwks_file` path. Added `idpyoidc>=5.0.0,<5.1` to root
+  `pyproject.toml`'s `[dependency-groups] dev` (dev/test-only, per the
+  owner's own resolution — never imported by any production `apps/api`
+  path) and re-ran `uv lock`.
+  Surfaced and fixed one real regression unrelated to the OIDC code itself:
+  `idpyoidc` pulls in `requests`→`urllib3`, whose wheel ships a vendored
+  emscripten `.js` worker file inside `.venv/site-packages`; `eslint.config.mjs`
+  had no `.venv/**` ignore (never needed before, since no prior dependency
+  pulled anything into `.venv` that ESLint's blanket `.` scan would reach),
+  so `pnpm run lint` broke for real (`urllib3/contrib/emscripten/...js`: 6
+  `no-undef` errors) the moment `uv sync` created `.venv` locally. Fixed by
+  adding `.venv/**` to the existing `ignores` list alongside
+  `node_modules`/`dist`/`.next` (same vendored-content category, same fix
+  shape) — confirmed this is a real fix, not gate-weakening, by reverting it
+  once and reproducing the same 6 errors, then restoring.
+- **V:** full regression in this sandbox (after `pnpm install
+  --frozen-lockfile` and `git fetch --unshallow`, both needed once — this
+  sandbox starts with neither, matching prior shifts' documented
+  environment-artifact note, not a real defect): `ruff check .` / `ruff
+  format --check .` / `mypy .` clean (69 files); `pnpm run lint` /
+  `typecheck` / `format:check` clean; `pnpm exec vitest run` — 5/5;
+  `uv run pytest tests/unit` — 3/3; every existing `tests/tasks/
+  test_ftf_*.py` (16 files) re-run clean and unmodified in behavior (only
+  `test_ftf_0101.py`'s own top docstring was edited, to point at the new
+  integration test instead of re-claiming acceptance clause 1 for the
+  stdlib stand-in); the new `tests/integration/
+  test_oidc_login_real_provider.py` — all 3 tests pass; `python3
+  scripts/validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` — `1/1 product-true` (unchanged, `build_oidc_login_router`
+  is still the one live-wired symbol). `scripts/verify_task.py --task
+  FTF-0101 --stage task` still reports `BLOCKED — no merged verification
+  evidence yet`, expected pre-merge/pre-certification, same as it was for
+  PR #103 at review time.
+  Updated `apps/api/app/auth/oidc_login.py`'s own docstring and
+  `docs/spec-matrix.yaml`'s FTF-0101 notes to record acceptance clause 1 as
+  now MET (previously DISCLOSED/NOT MET), with `evidence_hash` filled to
+  this shift's own implementation commit (`9acf116`) once created — same
+  two-commit pattern (implement, then fill the hash) as the original PR
+  #103's own `9b85fa7`.
+STEP 3 (this write): merged PR #103's own branch
+(`origin/claude/wizardly-fermat-c0i7xl`) into this shift's designated
+branch (`claude/wizardly-fermat-qdxfc4`) first, so the new evidence sits on
+top of the *same* implementation commits Control plane already reviewed
+once, rather than reimplementing them — the only merge conflicts were the
+three tracking docs (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`),
+resolved by keeping `main`'s own fuller, already-current history (same
+resolution precedent as the FTF-R017/FTF-R011/FTF-1601 merge-conflict
+entries above), confirmed zero code delta lost by diffing PR #103's branch
+against `main`'s already-merged dependencies first. Submitted as **PR
+#112**, explicitly superseding PR #103 (which is being closed as
+superseded, per the same precedent as FTF-0104's PR #82/#84 closures) —
+QUEUE.md's "## Provisional"/"## Status"/"## Blocked" sections updated
+accordingly. Did not self-certify (Law 4) — `certification_state` stays
+`PROVISIONAL`/`L1-PROVEN`, appended to `docs/certifications/queue.md` for
+a fresh, independent Control-plane review. Certified: 19/300 · Product-true:
+1/300 (unchanged this shift — FTF-0101 is not yet certified).
+
+## Next shift
+Top item: FTF-0101 (PR #112) awaiting independent Control-plane L2
+certification — CI needs to confirm green on the real PR #112 head first.
+Once certified and merged, every other `NOT_STARTED` task's dependency
+graph unblocks starting with FTF-0103/FTF-0105/FTF-0106.
+Blocked: no.
 
 ## 2026-09-19T22:15:00Z — Live owner instruction: default-resolution rule recorded, FTF-0101's OIDC-test-provider ask closed
 Not a scheduled/automated relay shift — a live, interactive turn with the

@@ -31,8 +31,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 ## Status
 Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
 `f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
-PR #103 — open, unmerged, independently reviewed 2026-09-19 and **not**
-certified; see "## Provisional" below) · Blocked: 0 (FTF-0101's
+PR #103 was reviewed 2026-09-19 and **not** certified, then superseded by
+PR #112 — real local-provider integration evidence added, open/unmerged,
+awaiting a fresh Control-plane review; see "## Provisional" below) ·
+Blocked: 0 (FTF-0101's
 web-framework/auth-stack approval and its own local-OIDC-test-provider
 package choice were both resolved 2026-09-19 by live owner
 instruction/confirmation — see "## Blocked" history below; no open owner
@@ -87,33 +89,38 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0101 (OIDC login) — submitted 2026-09-19 as PR #103
-  (`claude/wizardly-fermat-c0i7xl` → `main`, open/unmerged). Real
+- FTF-0101 (OIDC login) — originally submitted 2026-09-19 as PR #103
+  (`claude/wizardly-fermat-c0i7xl` → `main`). **Control plane independent
+  review, 2026-09-19: NOT CERTIFIED** — acceptance clause 1 ("Real OIDC
+  provider login/refresh/logout") had only ever been exercised against a
+  fake stdlib HTTP stand-in, not a real OIDC provider, pending the
+  local-test-provider-package ask. That ask was resolved the same day
+  (`idpyoidc`, Python — see "## Blocked" history). This relay shift
+  implemented the follow-up on top of PR #103's own commits: real
   authorization-code + PKCE flow, JWT/JWKS signature+issuer+audience+
   expiry+nonce validation, signed HttpOnly/Secure/SameSite session +
   CSRF-token cookie, real in-memory logout/session-revocation, CSRF
-  Origin+token enforcement on the one mutation; first live FastAPI app
-  (`apps/api/app/main.py`) and first live React component
-  (`oidc_login.tsx`) in this repository. CI green on the real final head
-  (6/6 jobs); own fault injection during review (disabling the `alg`
-  allowlist, the CSRF/Origin check, and the membership-active check, one
-  at a time) genuinely caught by the existing test suite each time.
-  **Control plane independent review, 2026-09-19: NOT CERTIFIED.**
-  Acceptance clause 1 ("Real OIDC provider login/refresh/logout") is this
-  task's *primary* clause and has only ever been exercised against a fake
-  stdlib HTTP stand-in, not a real OIDC provider — as the PR itself
-  discloses (Section 65.3 needed the local-test-provider-package ask,
-  resolved below). The "revoked membership" negative_acceptance gap is
-  accepted as out-of-scope (Membership is a different task's deliverable,
-  FTF-0103/FTF-0105) and does not block on its own. `certification_state`
-  stays `PROVISIONAL`/`L1-PROVEN` on the PR's own branch (PR #103 stays
-  open — not merged, since it is not certified). **Blocked on:** nothing
-  owner-side now — the local-OIDC-test-provider package choice was
-  resolved 2026-09-19 (`idpy-oidc`, Python) by live owner instruction (see
-  banner above and "## Blocked" history); the next relay/control-plane
-  shift adds real integration evidence against a real local `idpy-oidc`
-  instance to a PR #103 follow-up before resubmitting for certification.
-  Full review: `docs/certifications/queue.md`.
+  Origin+token enforcement — unchanged from PR #103 — plus new real
+  local-provider integration evidence (`tests/integration/
+  test_oidc_login_real_provider.py`, new CI job
+  `oidc-provider-integration`): the real `build_oidc_login_router` driven
+  against a real `idpyoidc.server.Server` OpenID Provider over real HTTP
+  sockets — real PKCE-bound authorization code, real RS256-signed
+  id_token from the OP's own key, real `/jwks` fetch, real
+  single-use-authorization-code rejection (replay), real PKCE-mismatch
+  rejection, all genuinely enforced by the real, independent `idpyoidc`
+  dependency, not this repo's own code. Submitted as **PR #112**
+  (`claude/wizardly-fermat-qdxfc4` → `main`), superseding PR #103, which
+  is closed as superseded (its commits are carried forward unchanged into
+  #112's history via a merge). `certification_state` stays
+  `PROVISIONAL`/`L1-PROVEN` pending a fresh, independent Control-plane
+  review — this relay shift is the producer of the new evidence and does
+  not certify its own work (Law 4). **Blocked on:** nothing — full local
+  regression (ruff/mypy/pytest, eslint/tsc/prettier/vitest,
+  `validate_spec.py --strict`, `product_truth_check.py`,
+  `tests/tasks/test_ftf_0101.py`, the new real-provider integration test)
+  passes clean; CI still needs to confirm green on the real PR #112 head
+  before certification. Full prior review: `docs/certifications/queue.md`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -559,10 +566,10 @@ kept for the record.)
   matching the already-owner-confirmed `apps/api` Python/FastAPI stack
   (the entry above) rather than adding a new Node dev-tooling dependency
   into a Python-native backend test suite. See CLAUDE.md and PROGRESS.md's
-  matching entry for the full record. PR #103's follow-up still needs to
-  add real integration evidence against a real local `idpy-oidc` instance
-  before resubmitting for certification — that implementation work is
-  unblocked, not yet done.)
+  matching entry for the full record. That follow-up implementation work
+  is now done: real integration evidence against a real local `idpyoidc`
+  instance was added and resubmitted as PR #112, superseding PR #103 — see
+  "## Provisional" above.)
 - (FTF-0102's own 2026-09-16 new-runtime-dependency ask was resolved
   2026-09-18 by live owner confirmation (option 1: SQLAlchemy + Alembic +
   a Postgres driver, matching the master architecture table as written) —

@@ -4068,3 +4068,54 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01VNPVrAHoQTUFSmfhV4UkCU (independent —
   see session-ID check above), 2026-09-19.
+
+## 2026-09-19 — FTF-0101 (PR #112) — Relay: real idpyoidc provider integration evidence submitted, PROVISIONAL (awaiting independent Control plane review)
+- **PR:** https://github.com/SJZLab/Sovra/pull/112
+  (`claude/wizardly-fermat-qdxfc4` → `main`), superseding PR #103
+  (`claude/wizardly-fermat-c0i7xl` → `main`, now closed as superseded).
+  PR #103's own four commits are carried forward unchanged (merged into
+  this branch first, confirmed zero code delta lost) — this submission
+  adds new commits on top, it does not reimplement anything already
+  reviewed above.
+- **What's new relative to PR #103's own (not-certified) review:** the one
+  fix that review asked for and nothing else. `tests/integration/
+  test_oidc_login_real_provider.py` drives the same, unchanged
+  `build_oidc_login_router` against a real `idpyoidc.server.Server` OpenID
+  Provider over real HTTP sockets (a stdlib `ThreadingHTTPServer` wrapping
+  the real `idpyoidc` endpoint objects — no OIDC logic of its own): a real
+  PKCE-bound authorization code, a real RS256 id_token signed by the OP's
+  own real key, a real `/jwks` fetch, real single-use-authorization-code
+  enforcement (a replay of an already-consumed code against the real OP's
+  own `/token` endpoint is genuinely rejected), and a real PKCE-verifier
+  mismatch genuinely rejected by the real OP with a real `invalid_grant`.
+  `idpyoidc>=5.0.0,<5.1` added to root `pyproject.toml`'s
+  `[dependency-groups] dev` (dev/test-only, matching the owner's own
+  2026-09-19 resolution — `grep`-confirmed not imported anywhere under
+  `apps/api/app/`). New CI job `oidc-provider-integration`.
+- **Unrelated regression found and fixed in the same PR:** `idpyoidc`
+  transitively pulls in `requests`/`urllib3`, whose wheel ships a vendored
+  emscripten `.js` file inside `.venv/site-packages`; `eslint.config.mjs`
+  had no `.venv/**` ignore (never needed before this dependency), so
+  `pnpm run lint` broke for real once `.venv` existed locally (6
+  `no-undef` errors against vendored third-party JS, not this repo's own
+  source). Fixed by adding `.venv/**` to the existing ignore list
+  alongside `node_modules`/`dist`/`.next`.
+- **Self-reported regression check (producer, not yet independently
+  re-verified — see "Not done" below):** full local regression after
+  `pnpm install --frozen-lockfile` + `git fetch --unshallow` (this
+  sandbox starts with neither): `ruff check .` / `ruff format --check .` /
+  `mypy .` clean; `pnpm run lint`/`typecheck`/`format:check` clean;
+  `pnpm exec vitest run` 5/5; `uv run pytest tests/unit` 3/3; all 16
+  existing `tests/tasks/test_ftf_*.py` files re-run clean; the 3 new
+  real-provider integration tests pass; `validate_spec.py --strict`
+  clean; `product_truth_check.py --fail-on-unwired` still `1/1`.
+  `verify_task.py --task FTF-0101 --stage task` still reports `BLOCKED —
+  no merged verification evidence yet`, expected pre-merge.
+- **Not done this submission (left for the reviewing session, per "producer
+  never certifies own work"):** CI has not yet been confirmed green on the
+  real PR #112 head by an independent session; no independent fault
+  injection against the new real-provider test; no independent
+  session-ID check. `certification_state` stays `PROVISIONAL` /
+  `proof_state` stays `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-19.
