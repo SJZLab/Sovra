@@ -1,5 +1,89 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19T02:50:44Z (Relay, scheduled shift)
+Updated: 2026-09-19T03:15:00Z (Control plane, scheduled CERTIFY-mode shift)
+
+## 2026-09-19T03:15:00Z — Control plane: PR #96 (FTF-1601) reviewed — Law 1 gap now closed, but NOT CERTIFIED (new structural blocker)
+Scheduled CERTIFY-mode session, triggered by PR #98's own
+`pull_request.opened` webhook. Task: check `docs/certifications/queue.md`
+for anything PROVISIONAL and not yet certified. PR #98 itself is a
+tracking-doc-only relay shift (no code) confirming PR #96's fix was
+already pushed and CI-green — not itself a certification submission.
+PR #96 (FTF-1601, supersedes closed PR #90) is the live PROVISIONAL item.
+
+**Session-ID check:** compared this session's own ID
+(`session_01Ua5bz7foHCUWqcMhr5zSei`) against all 14 commits on PR #96 —
+no match (`session_01B9eYtKy6gPX3Ym8Cvx3X9c`,
+`session_01TkFfAaPq6htuVNNLXU9G2b`, `session_016ryLQ1vSJCNYTMHw9DrcSd`)
+— independent, proceeded.
+
+**Re-read the diff** in a dedicated worktree (`git fetch origin
+claude/wizardly-fermat-vmg0oc` + `git worktree add`) at the real head
+`19e18de0`: 11 files, +3081/-53, identical to the already-reviewed
+PR #90/#96 delivery plus the 353b82b fix (141 lines, tests only, no
+production code).
+
+**Re-checked CI on the real head:** `get_workflow_run` on run
+`35411607447` confirms `head_sha: 19e18de0` matches the PR's live head —
+6/6 jobs `completed`/`success`.
+
+**Re-confirmed the Law 1 fix genuinely closes the 2026-09-18 gap:** ran
+`tests/tasks/test_ftf_1601.py` the way CI actually invokes it (bare
+`python3`, not `pytest` — this file sits outside `pyproject.toml`'s
+`testpaths` and its `check()` helper only appends to a `FAILURES` list
+that `main()` inspects at the end, so a plain `pytest` run trivially
+"passes" every `test_*` function regardless of the real outcome; caught
+this before trusting an initial `pytest -v` run that looked clean for
+the wrong reason). 18/18 pass. Then fault-injected each of
+`restoration_validated`'s three subset terms in
+`scripts/postgres_backup.py` one at a time (distinct from re-running the
+producer's own fault case, which targeted the encrypt/self-verify path):
+removing `tables`, `rls_policies`, and `rls_forced_tables` each fails
+exactly its own matching new negative check, and nothing else — restored
+byte-identical (`diff` empty) between injections, clearing `__pycache__`
+each time (a first pass without clearing bytecode cache produced a
+misleading stale-`.pyc` failure on the pristine baseline, caught and
+corrected before relying on any result). Pristine code re-passes 18/18
+before and after. The Law 1 gap the 2026-09-18 review found is genuinely
+closed.
+
+**Task contract re-pulled:** `tools/r1_handoff.py packet FTF-1601 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1, Section 71.2,
+and the negative_acceptance clause all map to specific tests/fault
+injections above plus the encrypt/self-verification evidence the
+2026-09-18 review already reproduced against a live Postgres cluster
+(code unchanged since) — confirmed met.
+
+**Full regression, fresh environment:** `uv sync --all-packages` +
+`pnpm install --frozen-lockfile` + `git fetch --unshallow` (a first
+`validate_spec.py --strict` run showed 7 `stale_commit` false positives
+from this worktree's shallow clone — reproduced, then confirmed clean
+after unshallowing, the same known artifact this repo's history already
+documents repeatedly). `ruff`/`mypy` clean (63 files); every existing
+`tests/tasks/test_ftf_*.py` re-run exactly as CI invokes each, no
+regression; `product_truth_check.py --fail-on-unwired` legitimately
+`0/0` (`proving_symbol: ''` in `docs/spec-matrix.yaml`).
+
+**New structural blocker found — real, not a content defect:** while
+this review was in progress, PR #98 (tracking-doc-only, no code) merged
+into `main` (`0233470` → `a0448c6`). `pull_request_read get` on PR #96
+now shows `mergeable_state: "unknown"`; reproduced independently via
+`git merge-tree --write-tree origin/main <PR-96-head>` against the real
+current `main` — genuine `CONFLICT (content)` in `PROGRESS.md`/
+`QUEUE.md` only (pure tracking-doc content; the 11 real delivery files
+carry no conflict). Same structural-blocker class as this repo's own
+FTF-0004/PR #35 and FTF-1601/PR #90 precedents.
+
+**Conclusion:** not merging, not certifying. `certification_state` for
+FTF-1601 stays `NONE` on `main` (unchanged — nothing to downgrade; `main`
+never carried a PROVISIONAL entry for this task). Recorded the finding
+and the exact fix needed (merge current main, resolve the two
+tracking-doc conflicts, push, confirm CI green, resubmit — no other
+rework needed) in `docs/certifications/queue.md` and `QUEUE.md` for the
+next relay shift. Full writeup: `docs/certifications/queue.md`, "Control
+plane review — 2026-09-19 — NOT CERTIFIED (Law 1 gap now closed; new
+structural blocker — merge conflict against current main)".
+
+No source code changed this shift (certification review only, per Law 4
+— Control plane never fixes the producer's branch itself).
 
 ## 2026-09-19T02:50:44Z — Relay: PR #96 fix already pushed by a prior shift, CI reconfirmed green, no new unblocked work
 STEP 0: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` exactly
