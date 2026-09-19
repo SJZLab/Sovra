@@ -4226,3 +4226,115 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01CR9tW5L6fqoUJHfCyeEhVT (independent —
   see session-ID check above), 2026-09-19.
+
+## 2026-09-19 — FTF-0101 (PR #114) — Relay: real server-side refresh implemented and proven, PROVISIONAL (awaiting independent Control plane review)
+- **PR:** https://github.com/SJZLab/Sovra/pull/114
+  (`claude/wizardly-fermat-3il8f6` → `main`), superseding PR #112
+  (`claude/wizardly-fermat-qdxfc4` → `main`, now closed as superseded).
+  PR #112's own login/logout commits are carried forward unchanged (merged
+  into this branch first, confirmed zero code delta lost) — this
+  submission adds new commits on top.
+- **What's new relative to PR #112's own (not-certified) review:** exactly
+  the gap that review named — a real, working server-side refresh, not a
+  disclosed scope-out. Acceptance clause 1 names "refresh" as a required
+  flow and Section 45 requires "refresh handled server-side" outright, so
+  the "implement it for real" branch of the review's own two named options
+  was taken.
+- **Empirical groundwork before writing app code:** a standalone scratch
+  script drove a real `idpyoidc.server.Server` OP directly (not through
+  the app under test) to find out what a real provider actually requires
+  before it will mint a `refresh_token`. Confirmed for real: the OP
+  silently omits `refresh_token` from the token response unless the
+  authorization request includes `offline_access` scope, and errors
+  (`"consent in prompt"`) if `offline_access` is requested without
+  `prompt=consent`; separately, a refreshed id_token only comes back if
+  the OP's own `refresh_token` grant_config lists `id_token` in
+  `supports_minting` (PR #112's own OP config didn't). All three findings
+  are now reflected in both the app code and the real-provider test's OP
+  config.
+- **App changes (`apps/api/app/auth/oidc_login.py`):**
+  `build_authorization_redirect_url` now requests `offline_access` scope +
+  `prompt=consent`; `validate_id_token`'s `expected_nonce` parameter is
+  now `str | None` (OIDC Core 12.2 permits a provider to omit `nonce`
+  entirely on a refreshed id_token — there's no fresh authentication
+  transaction to bind it to); new `exchange_refresh_token()` (a real
+  `grant_type=refresh_token` POST to the token endpoint, same shape as the
+  existing `exchange_code_for_tokens`); new `_RefreshTokenStore`
+  (in-memory, keyed by session `jti`, mirrors the existing
+  `_SessionRevocationStore` structurally — the raw refresh_token is never
+  sent to, or readable by, the browser); new `POST /auth/refresh` —
+  validates the new id_token the same way `callback()` does, confirms the
+  refreshed subject/issuer still match the session being refreshed (fails
+  closed and ends the session if they don't, rather than silently
+  swapping identity), then rotates the session: the old session id (`jti`)
+  is revoked and a brand-new signed session cookie is issued. CSRF
+  double-submit protected the same way as `logout()` (the shared
+  Origin+token check was factored into a small `_csrf_error()` helper used
+  by both routes).
+- **Test changes:** `tests/tasks/test_ftf_0101.py` — the stdlib
+  fake-provider stand-in now also serves a `refresh_token` grant (a new
+  `refresh_responses` field on `_ProviderState`); 6 new test functions
+  (`test_refresh_without_a_stored_refresh_token_is_denied`,
+  `test_refresh_without_csrf_token_is_denied`,
+  `test_refresh_wrong_origin_is_denied`,
+  `test_refresh_with_valid_csrf_succeeds_and_rotates_the_session`,
+  `test_refresh_identity_mismatch_is_denied`,
+  `test_refresh_rejected_by_provider_ends_the_session`) — 58 checks total
+  in this file now (was 24). `tests/integration/
+  test_oidc_login_real_provider.py` — the real OP's `grant_config` now
+  lists `id_token` in `refresh_token`'s `supports_minting`, and the client
+  `cdb` entry now allows `offline_access` scope and the `refresh_token`
+  grant type; 2 new tests
+  (`test_refresh_grant_mints_a_new_real_id_token_and_rotates_the_session`,
+  `test_refresh_without_csrf_token_is_denied_by_the_real_flow`) drive a
+  real refresh grant end to end against the real, independent `idpyoidc`
+  OP: a real new id_token minted by the real OP's own `/token` endpoint,
+  real session rotation (the pre-refresh session cookie is genuinely
+  revoked once refreshed — proven by both a direct `/auth/session` call
+  and a replayed `/auth/refresh` call with it, both denied), and real CSRF
+  enforcement — 20 checks total across 5 tests now (was 3 tests).
+- **Own fault injection, independent of anything the prior review
+  exercised:** removed the rotation `revoked_jtis.revoke(data["jti"])`
+  call from `refresh()`'s happy path (leaving everything else intact) and
+  re-ran both test files: `tests/tasks/test_ftf_0101.py` failed exactly
+  `"the pre-refresh session id is revoked (rotation), not reusable
+  afterwards"`; `tests/integration/test_oidc_login_real_provider.py`
+  failed exactly `"the pre-refresh session cookie is revoked once
+  refreshed (real rotation)"` — against the real provider, not a
+  stand-in. Reverted (`git diff` confirmed byte-identical), re-ran both
+  files clean.
+- **Full regression, this sandbox** (after `uv sync --all-packages`,
+  `pnpm install --frozen-lockfile`, and `git fetch --unshallow` — all
+  needed once, this sandbox starts with none of them, matching every
+  prior shift's documented environment-artifact note, not a real defect):
+  `ruff check .` / `ruff format --check .` / `mypy .` clean (69 files);
+  `pnpm run lint` / `typecheck` / `format:check` clean; `pnpm exec vitest
+  run` — 5/5; `uv run pytest tests/unit` — 3/3; all 16 existing
+  `tests/tasks/test_ftf_*.py` files re-run clean and unmodified in
+  behavior; both updated FTF-0101 test files clean;
+  `python3 scripts/validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` still `1/1` (unchanged,
+  `build_oidc_login_router` is still the one live-wired symbol).
+  `verify_task.py --task FTF-0101 --stage task` still reports `BLOCKED —
+  no merged verification evidence yet`, expected pre-merge.
+- **Doc updates:** `docs/spec-matrix.yaml`'s FTF-0101 notes now record all
+  three of login/refresh/logout as MET (previously only login/logout,
+  refresh DISCLOSED/NOT MET), with the new refresh evidence described and
+  its own new disclosed gaps recorded (`_RefreshTokenStore` is
+  in-memory/single-process like `_SessionRevocationStore`; this app does
+  not call the provider's own RFC 7009 token-revocation endpoint on
+  logout, matching the same session-local scope already accepted for
+  logout/session-revocation itself); `evidence_hash` filled to this
+  shift's own implementation commit (`e2c5423`) in a follow-up commit
+  once it existed — same two-commit pattern as PR #103/#112's own
+  evidence.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID check
+  against this submission's own commits; CI has not yet been confirmed
+  green on the real PR #114 head by an independent session; no
+  independent fault injection beyond the one performed above (a second,
+  differently-chosen break would still be valuable, per this file's own
+  established review pattern). `certification_state` stays `PROVISIONAL`
+  / `proof_state` stays `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-19.
