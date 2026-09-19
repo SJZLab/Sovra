@@ -2056,3 +2056,113 @@ corrected 2026-09-15.
   acceptance/negative_acceptance clauses are met item by item against the
   task's real resolved contract, and CI is genuinely green on the actual
   merged head. No blocking defect. Certified L2-CERTIFIED.
+
+## FTF-1601 — Postgres backup
+- Criterion ID: FTF-1601
+- PR: https://github.com/SJZLab/Sovra/pull/100 (supersedes closed PR #96,
+  which itself superseded closed PR #90 — same underlying implementation
+  commit `f5d3aee` throughout, unchanged since PR #90)
+- Merge commit: f4e9b39 (`f4e9b39b5cb9e8cc1222dde8e03f9e4d6cf9dbf4`)
+- Validated-by: session https://claude.ai/code/session_01BpsxwNZKMCes4UuKAnRvSG
+  (session-ID comparison performed and recorded before this entry: every
+  commit unique to PR #100 over `origin/main` — `f5d3aee`, `33f4cb5`,
+  `e8ca71d`, `f104ef6`, `6c90f80`, `20aa4e5`, `2a98c9d`, `902139b`,
+  `f3a3b49`, `353b82b`, `19e18de`, `bc8868d`, `8496133`, `4a2f3d3` — carries
+  `Claude-Session` trailers for session_01B9eYtKy6gPX3Ym8Cvx3X9c,
+  session_01RDefDg12JGVTtU732EEARs, session_01TkFfAaPq6htuVNNLXU9G2b,
+  session_016ryLQ1vSJCNYTMHw9DrcSd, or session_015rZiy6EjN6jvYYWzkGE2gh;
+  none match this reviewing session's own ID — independent, not
+  self-certification.)
+- Steps performed:
+  1. Confirmed this is a resubmission, not new work: `git log
+     origin/main..origin/claude/wizardly-fermat-rlp631` showed the exact
+     same implementation commit `f5d3aee` (Postgres backup: encrypted,
+     self-verified, RLS-surviving restore) and fix commit `353b82b` (adds
+     the missing `restoration_validated` negative test) already
+     independently reviewed by two prior Control-plane sessions on
+     2026-09-18 (PR #90, structural-blocker-only, content sound) and
+     2026-09-19 (PR #96, Law 1 gap on `restoration_validated`'s three
+     subset terms — closed by `353b82b`, independently re-verified via
+     fresh fault injection removing each subset term one at a time against
+     the real script, each caught by the new negative test, each restored
+     byte-identical), both already recorded above/in
+     `docs/certifications/queue.md`.
+  2. `git diff 19e18de 8496133 --stat` (PR #96's own already-certified-sound
+     head vs. this PR's pre-final-doc-commit head) — confirmed the only
+     changes are `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+     (tracking-doc merge-conflict resolution); zero production code, test,
+     or contract files touched. Re-confirmed no drift after the PR's own
+     final doc-only commit (`4a2f3d3`, "record PR #100 opened, CI green,
+     PR #96 closed").
+  3. Re-checked CI for real on the actual current head, not a stale claim:
+     `pull_request_read get` on PR #100 initially returned head `8496133`;
+     the PR advanced mid-review to `4a2f3d3` (a further doc-only commit) —
+     re-fetched and re-checked. `actions_get get_workflow_run` on run
+     `35422662189` confirmed its own `head_sha` is `4a2f3d3`, matching the
+     PR's live head exactly: all 6 jobs (`gate`,
+     `docker-local-stack-integration`,
+     `organization-workspace-schema-integration`,
+     `audit-event-writer-integration`, `postgres-backup-integration`,
+     `storage-semantics-integration`) `completed`/`success`, including the
+     real live-Postgres `postgres-backup-integration` job on GitHub's own
+     registry-egress runner. Zero open review comment threads.
+     `mergeable_state: clean`.
+  4. Task contract re-pulled directly: `tools/r1_handoff.py packet
+     FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause
+     1 ("...restoration test"), Section 71.2 ("a backup that has never
+     been restored does not count as validated"), and the
+     negative_acceptance clause ("Backup command success without
+     verifiable usable data/key path is not done") all map to the specific
+     tests and fault injections the 2026-09-18/2026-09-19 reviews already
+     independently reproduced against a live Postgres cluster and a real
+     no-DB fault injection — confirmed met, not asserted, and unaffected
+     by this PR's tracking-doc-only delta.
+  5. Own regression in a dedicated worktree at the real merged head
+     (`f4e9b39`), fresh `uv sync --all-packages` + `pnpm install
+     --frozen-lockfile` + `git fetch --unshallow`: `ruff check .` / `mypy
+     .` clean (63 files); `pnpm run lint`/`typecheck`/`format:check`
+     clean; `uv run python3 tests/tasks/test_ftf_1601.py` — "all checks
+     passed" (18/18, exactly as CI invokes it, bare `python3` under the
+     `uv` venv); `uv run pytest tests/unit` — 3 passed; `pnpm exec vitest
+     run` — 2 passed; `uv run python3 scripts/validate_spec.py --strict`
+     clean; `product_truth_check.py --fail-on-unwired` legitimately `0/0`
+     (`proving_symbol: ''` — no live FastAPI app imports
+     `postgres_backup.py` yet, same established disclosed pattern as every
+     prior non-product-true certified task). Did not re-run the
+     live-Postgres integration test or repeat the encrypt/self-verification
+     and `restoration_validated` fault injections locally — no code
+     changed since the two prior independent Control-plane reviews already
+     reproduced them against a live cluster and CI's own
+     `postgres-backup-integration` job re-confirmed the same real
+     `pg_dump`/`pg_restore`/`openssl` path green on this exact head; a
+     third redundant reproduction of unchanged code was judged unnecessary
+     effort, not skipped diligence.
+  6. Noted a real, environment-specific artifact while re-running
+     `verify_release.py` bare (no `uv run` prefix) in a fresh worktree with
+     no local Postgres cluster running: it reported `FTF-0102`/`FTF-0104`
+     as `FAILED` with `ModuleNotFoundError: No module named 'sqlalchemy'`.
+     Reproduced this is purely a bare-`python3`-vs-`uv`-venv PATH artifact
+     of this sandbox, not a real regression: `uv run python3
+     tests/tasks/test_ftf_0102.py` and `tests/tasks/test_ftf_0104.py` both
+     independently re-run clean once invoked the same way CI/the `uv`
+     venv actually does. Not this PR's concern (touches neither task's
+     files) and not acted on beyond this note.
+  7. Set `docs/spec-matrix.yaml` FTF-1601 to `certification_state:
+     CERTIFIED` / `proof_state: L2-CERTIFIED` (`evidence_hash` kept at the
+     implementation commit `f5d3aee`, matching
+     `spec/verification-map.json`'s own new `commit` field). Added
+     FTF-1601's own entry to `spec/verification-map.json` (the no-DB
+     `tests/tasks/test_ftf_1601.py` command — the live-Postgres
+     encrypted-backup/restore/RLS-survival evidence is disclosed as
+     CI-only/not locally re-executable in this sandbox, same as
+     FTF-0004/FTF-R017/FTF-0102/FTF-0104).
+- Conclusion: the delivered encrypted, self-verified, RLS-surviving
+  Postgres backup/restore tooling is real, was already independently
+  reproduced against a live Postgres cluster and adversarially
+  fault-injected (encrypt/self-verification path, and separately each of
+  `restoration_validated`'s three subset terms) by two prior, distinct
+  Control-plane sessions across PR #90 and PR #96, and this PR's only
+  delta over that already-sound content is a tracking-doc merge-conflict
+  resolution against current `main`, independently confirmed to introduce
+  zero code change and to stay green on real CI at its actual final head.
+  No blocking defect. Certified L2-CERTIFIED.

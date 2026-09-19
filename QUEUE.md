@@ -1,76 +1,67 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19 (relay shift, session_015rZiy6EjN6jvYYWzkGE2gh) —
-  actioned Control plane's `03:15:00Z` finding on PR #96 (FTF-1601): the
-  Law 1 gap was already closed, but a new structural blocker (a genuine
-  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` merge conflict
-  against `main`, after PR #98 landed mid-review) needed resolving before
-  resubmitting. This session's own designated branch
-  (`claude/wizardly-fermat-rlp631`) differs from PR #96's
-  (`claude/wizardly-fermat-vmg0oc`), so per CLAUDE.md and this repo's own
-  #90→#96 supersession precedent, did not push to `vmg0oc` directly:
-  merged its content (FTF-1601's code, unchanged) into this session's own
-  branch instead, resolved the three tracking-doc conflicts
-  (interleaved both sides' log entries chronologically, no code touched,
-  nothing dropped), full regression re-run clean (`ruff`/`mypy`, `eslint`/
-  `tsc`/`prettier`, `pytest tests/unit tests/tasks` 213/213, `vitest`
-  2/2, `validate_spec.py --strict`, `status.py` 18/300 unchanged,
-  `product_truth_check.py` 0/0 unchanged, `verify_release.py` 18/300 zero
-  `FAILED` unchanged), pushed as `bc8868d`+`8496133`, opened PR #100
-  (`claude/wizardly-fermat-rlp631` → `main`, same delivered code and
-  evidence, now conflict-free against current `main`) to supersede #96,
-  confirmed CI green (6/6) directly on the real head `8496133` via
-  `get_check_runs`/`get_workflow_run` (not a stale claim — an early poll
-  round showed 3/6 jobs stuck `in_progress` for several minutes;
-  `get_workflow_run` on the run itself already reported
-  `status: "completed", conclusion: "success"`, and a fresh
-  `get_check_runs` poll then matched — a caching lag in the check-runs
-  listing, not a real hang), `mergeable_state: "clean"`, then closed #96
-  with a pointer comment. See "## Active" below and `PROGRESS.md`'s
-  matching new entry.
+Updated: 2026-09-19 (Control plane, scheduled CERTIFY-mode,
+  session_01BpsxwNZKMCes4UuKAnRvSG, triggered by PR #100's own
+  `pull_request.opened` webhook) — independently certified FTF-1601
+  (Postgres backup). PR #100 carried only a tracking-doc merge-conflict
+  resolution over PR #96's own already-independently-reviewed-sound
+  content (implementation `f5d3aee` and Law-1 fix `353b82b`, both
+  previously live-Postgres-reproduced and fault-injected by two distinct
+  prior Control-plane sessions); confirmed that directly via `git diff`
+  against PR #96's final head (zero production/test/contract delta), CI
+  green (6/6, including `postgres-backup-integration`) on the PR's actual
+  final head `4a2f3d3` (re-checked after it advanced mid-review), and a
+  fresh own regression (lint/typecheck/mypy, the no-DB suite 18/18,
+  `validate_spec.py --strict`, `product_truth_check.py` 0/0). Session-ID
+  clean against every commit on the PR. Merged PR #100 as `f4e9b39`, set
+  `docs/spec-matrix.yaml` FTF-1601 to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, added its `spec/verification-map.json`
+  entry, appended a full ledger entry. See "## Done" below,
+  `docs/certifications/ledger.md`, and `docs/certifications/queue.md`'s
+  "Control plane review — 2026-09-19 — CERTIFIED" section for the
+  complete evidence trail.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
-`c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #100,
-FTF-1601, is open, CI green (6/6), content evidence sound, Law 1 gap
-closed, structural blocker resolved (supersedes closed PR #96) — awaiting
-Control-plane L2 review, see banner above and "## Active" below) ·
-Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
-"## Owner actions — current")
+Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
+`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked:
+1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and "## Owner
+actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
-FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017 and FTF-0102
-all have no proving_symbol; FTF-0001 is structural layout, FTF-0002 is CI
-tooling, FTF-0003 is test-harness tooling, FTF-0004 is local-stack
-bootstrap/health tooling, FTF-0005 is a configuration module with no live
-caller yet, FTF-0006 is an observability seam with no live FastAPI app or
-Temporal workflow to instrument yet, FTF-H001 is the spec/gate verifier
-tooling itself, FTF-R001 is an architecture/version-lock schema freeze
-with no live product-runtime caller yet, FTF-H002 is a preflight/release-
-scope-freeze layer with no live product-runtime caller yet, FTF-H028 is
-the release-evidence-gate/CI-aggregator tooling itself, `workflow_dispatch`-
-only and never run by the relay, FTF-H034 is the task-claim scheduler/
-tracker-sync tooling itself, with no live multi-agent dispatch harness
-wiring it into a running caller yet, FTF-1810 is the release-qualification
-aggregator tooling itself — run against the real repo it honestly reports
-NOT READY (every one of the 43 required scenarios missing evidence,
-image/profile bindings BLOCKED_EXTERNAL), `workflow_dispatch`-only and
-never run by the relay, FTF-R014 is build/implementation tooling binding
-the selected coding executor to Section 84's controls, with no Factory
-production service importing it, and FTF-R015 is the safe-parallel-
-execution/orchestration tooling itself (workspace manager, executor
-adapter, task orchestrator), with no live multi-agent dispatch harness
-wiring it into a running caller yet, FTF-R011 is a release-matrix
-governance/validator layer with no Factory production service importing
-it, FTF-R017 is a storage/OSS-dependency-lifecycle qualification layer
-(SigV4 client, component-maintenance inventory, storage-profile
-qualification) with no live Factory production service importing
-`storage_semantics_client.py` yet, FTF-0102 is the Organization/
-Workspace ORM/migration/RLS layer with no live FastAPI app importing
-`organization_workspace_schema.py` yet, and FTF-0104 is the audit event
-writer with no live FastAPI app importing `audit_event_writer.py` yet —
-none a live-wired product-runtime path, so all eighteen are CERTIFIED
-without counting toward product-true).
+FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
+FTF-0104 and FTF-1601 all have no proving_symbol; FTF-0001 is structural
+layout, FTF-0002 is CI tooling, FTF-0003 is test-harness tooling, FTF-0004
+is local-stack bootstrap/health tooling, FTF-0005 is a configuration
+module with no live caller yet, FTF-0006 is an observability seam with no
+live FastAPI app or Temporal workflow to instrument yet, FTF-H001 is the
+spec/gate verifier tooling itself, FTF-R001 is an architecture/version-lock
+schema freeze with no live product-runtime caller yet, FTF-H002 is a
+preflight/release-scope-freeze layer with no live product-runtime caller
+yet, FTF-H028 is the release-evidence-gate/CI-aggregator tooling itself,
+`workflow_dispatch`-only and never run by the relay, FTF-H034 is the
+task-claim scheduler/tracker-sync tooling itself, with no live multi-agent
+dispatch harness wiring it into a running caller yet, FTF-1810 is the
+release-qualification aggregator tooling itself — run against the real
+repo it honestly reports NOT READY (every one of the 43 required scenarios
+missing evidence, image/profile bindings BLOCKED_EXTERNAL),
+`workflow_dispatch`-only and never run by the relay, FTF-R014 is
+build/implementation tooling binding the selected coding executor to
+Section 84's controls, with no Factory production service importing it,
+and FTF-R015 is the safe-parallel-execution/orchestration tooling itself
+(workspace manager, executor adapter, task orchestrator), with no live
+multi-agent dispatch harness wiring it into a running caller yet, FTF-R011
+is a release-matrix governance/validator layer with no Factory production
+service importing it, FTF-R017 is a storage/OSS-dependency-lifecycle
+qualification layer (SigV4 client, component-maintenance inventory,
+storage-profile qualification) with no live Factory production service
+importing `storage_semantics_client.py` yet, FTF-0102 is the
+Organization/Workspace ORM/migration/RLS layer with no live FastAPI app
+importing `organization_workspace_schema.py` yet, FTF-0104 is the audit
+event writer with no live FastAPI app importing `audit_event_writer.py`
+yet, and FTF-1601 is the Postgres backup/restore tooling with no live
+FastAPI app or Temporal workflow importing `postgres_backup.py` yet — none
+a live-wired product-runtime path, so all nineteen are CERTIFIED without
+counting toward product-true).
 
 ## Owner actions — current
 - 2026-09-18 (this shift, relay): FTF-0101 (OIDC login) is the only other
@@ -109,162 +100,15 @@ without counting toward product-true).
   ready items, and FTF-1601 is already in flight). Per STEP 4(e),
   stopping this shift here.
 ## Active (awaiting Control plane — no relay action left)
-FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102, both CERTIFIED) — open
-PR https://github.com/SJZLab/Sovra/pull/100 (supersedes closed PR #96,
-which itself supersedes closed PR #90), head `8496133` on branch
-`claude/wizardly-fermat-rlp631`. CI green (6/6), `mergeable_state:
-"clean"`, no open review threads.
-
-History: PR #90's recurring `PROGRESS.md`/`QUEUE.md` tracking-doc merge
-conflict against a moving `main` stalled for three consecutive relay
-shifts (each correctly declined to push a fix to a branch it wasn't
-assigned). A later shift broke the stall by merging FTF-1601's actual
-delivered code from `claude/wizardly-fermat-e9tyvg` into its own
-designated branch (`claude/wizardly-fermat-vmg0oc`) instead, resolved the
-tracking-doc conflicts there, and opened PR #96 to supersede #90 (closed
-with an explanatory comment).
-
-**This shift (Control plane, scheduled CERTIFY-mode, triggered by PR
-#96's own `pull_request.opened` webhook):** confirmed CI green (6/6) on
-the real final head `902139b` via `get_workflow_run` matching `head_sha`
-directly (the PR advanced through two more tracking-doc-only commits
-mid-review; re-checked each time rather than trusting a stale claim), and
-`mergeable_state: "clean"` — the structural blocker is genuinely resolved.
-**Did not certify anyway:** independent fault injection against a real
-live Postgres cluster found that `restore_backup()`'s
-`restoration_validated` result — the code's own mechanism for Section
-71.2's "a backup that has never been restored does not count as
-validated" — has never been shown able to fail by any test in this PR
-(Law 1). Proved it concretely: took a real encrypted backup, restored it
-into a scratch database, manually dropped one RLS policy from that
-restored copy (a real, physically incomplete restore), and confirmed the
-shipped code correctly reports `restoration_validated: False` for it —
-but removing just that one term from the boolean conjunction makes the
-identical real scenario silently report `True`, and neither
-`tests/tasks/test_ftf_1601.py` nor `tests/integration/test_postgres_backup.py`
-catches the difference. Full writeup: `docs/certifications/queue.md`,
-"Control plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap:
-restoration completeness never proven able to fail)".
-
-**Fix delivered:** a prior relay shift (`session_016ryLQ1vSJCNYTMHw9DrcSd`)
-pushed the requested no-DB negative test to `claude/wizardly-fermat-vmg0oc`
-— commit `353b82b` adds four checks to `tests/tasks/test_ftf_1601.py`
-(independent negatives for a missing table, missing `FORCE ROW LEVEL
-SECURITY` flag, and missing RLS policy, plus a baseline positive proving
-the negatives fail for the right reason), reproducing the reviewer's
-exact finding by removing each conjunction term from
-`scripts/postgres_backup.py` in turn and confirming the matching new
-check failed each time; no production code changed.
-
-**This shift (relay, scheduled, 2026-09-19T02:50:44Z):** independently
-re-verified live rather than trusting the fix commit's own message:
-`pull_request_read get` shows `state: open`, `mergeable_state: "clean"`,
-head `19e18de0`; `get_check_runs` shows 6/6 `completed`/`success` on that
-exact head (`gate`, `docker-local-stack-integration`, `organization-
-workspace-schema-integration`, `audit-event-writer-integration`,
-`postgres-backup-integration`, `storage-semantics-integration`); zero
-open review threads. Recomputed the full dependency frontier directly —
-unchanged, still only FTF-0101 (blocked) and FTF-1601 (this PR). Nothing
-left for relay to do here: FTF-1601/PR #96 is fully L1-PROVEN and ready
-for a fresh, independent Control-plane L2 review (Law 4 — relay does not
-self-certify).
-
-**Control plane, scheduled CERTIFY-mode, 2026-09-19T03:15:00Z (triggered
-by PR #98's `pull_request.opened` webhook):** independently re-verified
-the fix commit (353b82b) closes the Law 1 gap for real — fault-injected
-each of `restoration_validated`'s three subset terms (missing table,
-missing FORCE ROW LEVEL SECURITY flag, missing RLS policy) one at a time
-in a fresh worktree, clearing `__pycache__` between injections (a first
-pass without clearing bytecode cache produced a misleading stale-`.pyc`
-false failure on the pristine baseline — caught before relying on it),
-and confirmed each injection is caught by exactly its matching new check,
-restored byte-identical each time. CI reconfirmed green (6/6) on the real
-head `19e18de0`. **Did not certify:** while this review was in progress,
-PR #98 (tracking-doc-only, no code) merged into `main`
-(`0233470` → `a0448c6`); `git merge-tree --write-tree origin/main
-<PR-96-head>` against the real current `main` reproduces a genuine
-`CONFLICT (content)` in `PROGRESS.md`/`QUEUE.md` only — pure tracking-doc
-content, not code, same structural-blocker class as the FTF-0004/PR #35
-and FTF-1601/PR #90 precedents. Full writeup:
-`docs/certifications/queue.md`, "Control plane review — 2026-09-19 —
-NOT CERTIFIED (Law 1 gap now closed; new structural blocker — merge
-conflict against current main)". **Action needed before resubmitting
-(relay, not Control plane — Law 4):** merge current `main` (`a0448c6` or
-later) into `claude/wizardly-fermat-vmg0oc`, resolve the two tracking-doc
-conflicts, push, confirm CI stays green on the new merge commit — no
-other part of this PR needs rework; the delivered code and its evidence
-are independently confirmed sound.
-
-**This shift (relay, scheduled, session_015rZiy6EjN6jvYYWzkGE2gh,
-2026-09-19):** actioned the above. This session's own designated branch
-(`claude/wizardly-fermat-rlp631`) differs from PR #96's
-(`claude/wizardly-fermat-vmg0oc`), so — same as the earlier PR
-#90→#96 supersession — did not push to `vmg0oc` directly: fetched it
-read-only, merged its content into this session's own branch, resolved
-the `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` conflicts
-there (interleaved both sides' log entries chronologically, zero code
-touched), full regression re-run clean (`ruff`/`mypy`, `eslint`/`tsc`/
-`prettier`, `pytest tests/unit tests/tasks` 213/213, `vitest` 2/2,
-`validate_spec.py --strict`, `status.py`/`product_truth_check.py`/
-`verify_release.py` all unchanged from `main`'s pre-merge state), pushed
-as `bc8868d` then `8496133` to `origin/claude/wizardly-fermat-rlp631`,
-opened PR #100 to supersede #96 (identical delivered code, same
-evidence, now conflict-free against current `main`), confirmed CI green
-(6/6) directly on the real head `8496133` and `mergeable_state: "clean"`,
-then closed #96 with a pointer comment. See `PROGRESS.md`'s matching new
-entry for full detail.
+None currently. FTF-1601 (Postgres backup) was the only item here; it was
+independently reviewed and CERTIFIED this shift via PR #100 (merge commit
+`f4e9b39`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1601 (Postgres backup, deps FTF-0004/FTF-0102) — third
-structural-blocker recurrence resolved via a new PR rather than a fourth
-stall. History: claimed by a relay shift 2026-09-18 via PR #90
-(`claude/wizardly-fermat-e9tyvg`); first structural blocker (PR #91's
-merge into `main` conflicting on tracking docs) reviewed NOT CERTIFIED by
-Control plane, fixed by that branch merging `main` back in (`8f8484a`, CI
-green, run `35371593078`); blocker recurred a second time (`main` moved
-again via `71914f2`/`02b1ed2`/`d2780c1`/`4f6c031`) and was left unfixed for
-one shift under the branch-permission constraint (this session's
-designated branch differs from PR #90's own branch, and CLAUDE.md forbids
-pushing to a branch this session wasn't assigned without explicit
-permission — no live user exists in a scheduled shift to grant it).
-
-**This shift:** rather than record the same finding a third time, merged
-FTF-1601's actual delivered code from `claude/wizardly-fermat-e9tyvg`
-(a read of that branch, never a push to it) into this session's own
-designated branch `claude/wizardly-fermat-vmg0oc`, resolved the
-tracking-doc conflicts there, ran the full regression suite (clean — see
-PROGRESS.md's matching entry), pushed, and opened
-https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
-→ `main`) to supersede #90. CI reconfirmed green on the real final head
-`2a98c9d` (all 6 jobs, run `35403943528`; also green on the intermediate
-head `20aa4e5`, run `35403729104`), `mergeable_state: "clean"`.
-PR #90 closed with an explanatory comment linking to #96, avoiding two
-open PRs for the same task. Not re-claiming FTF-1601 as a new task — this
-is a continuation of the same item, just retargeted to a branch this
-session can actually push to, and it is now ready for a fresh,
-independent Control-plane L2 review — see `docs/certifications/queue.md`'s
-matching continuation entry. `proof_state=L1-PROVEN`,
-`certification_state=PROVISIONAL`.
-
-**2026-09-18, Control plane review:** NOT CERTIFIED — a real Law 1 gap
-(`restoration_validated`'s three subset terms never shown able to fail by
-any test). Shipped code confirmed correct; only test coverage missing.
-Full writeup: `docs/certifications/queue.md`.
-
-**2026-09-19, relay shift:** pushed exactly the fix requested — four new
-no-DB checks in `tests/tasks/test_ftf_1601.py` (three independent
-`restoration_validated is False` negatives, one per subset term, plus one
-baseline positive), no code change. Reproduced the reviewer's finding
-three times over via fault injection; each matching new check failed and
-was restored byte-identical. Commit `353b82b` on
-`claude/wizardly-fermat-vmg0oc`. **CI reconfirmed green on that exact
-head:** all 6 jobs `completed`/`success`, run `35411323316`
-(`postgres-backup-integration` included), `mergeable_state: "clean"`,
-zero open review comments. Full regression clean (see PROGRESS.md's
-matching entry). `proof_state=L1-PROVEN`,
-`certification_state=PROVISIONAL` — ready for a fresh, independent
-Control-plane L2 review; this relay session cannot certify its own fix
-per Law 4.
+None currently. FTF-1601 (Postgres backup) was the only item here; see
+"## Active" above and "## Done" below.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
@@ -635,6 +479,37 @@ per Law 4.
   to exactly FTF-0104's own `status`/`evidence` fields. `verify_release.py`
   non-inflated (`17/300` before, `18/300`/zero FAILED after). Full entry:
   docs/certifications/ledger.md.
+- FTF-1601 — Postgres backup. CERTIFIED 2026-09-19, PR #100 (merge commit
+  `f4e9b39b5cb9e8cc1222dde8e03f9e4d6cf9dbf4`) — third and final PR in the
+  #90→#96→#100 supersession chain, same underlying implementation commit
+  `f5d3aee` throughout. Independent re-verification (session-ID clean
+  against every commit unique to this PR: session_01B9eYtKy6gPX3Ym8Cvx3X9c,
+  session_01RDefDg12JGVTtU732EEARs, session_01TkFfAaPq6htuVNNLXU9G2b,
+  session_016ryLQ1vSJCNYTMHw9DrcSd, session_015rZiy6EjN6jvYYWzkGE2gh — none
+  match this reviewing session's own ID): `git log origin/main..PR-100`
+  and `git diff` against PR #96's own already-reviewed-sound head confirmed
+  this PR's only delta is a tracking-doc merge-conflict resolution
+  (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`) — zero
+  production code, test, or contract change since the implementation
+  (`f5d3aee`, independently live-Postgres-reproduced and fault-injected on
+  the encrypt/self-verification path by the 2026-09-18/PR #90 review) and
+  its fix (`353b82b`, independently fault-injection-reproduced on each of
+  `restoration_validated`'s three subset terms by the 2026-09-19/PR #96
+  review). CI reconfirmed green (6/6, including `postgres-backup-integration`
+  on a real Postgres 16 container) directly on the PR's actual final head
+  (`4a2f3d3`, not a stale earlier commit — the PR advanced mid-review with
+  one further doc-only commit), `mergeable_state: "clean"`, zero open
+  review threads. Own regression in a fresh worktree at the real merged
+  head: `ruff`/`mypy`/`pnpm lint`/`typecheck`/`format:check` clean, the
+  no-DB suite (18/18) and full existing test suite clean, `validate_spec.py
+  --strict` clean, `product_truth_check.py` legitimately `0/0`.
+  `tools/r1_handoff.py packet FTF-1601` confirmed both acceptance clauses
+  and the negative_acceptance clause map to the already-reproduced evidence
+  above. Did not repeat the live-Postgres integration test or the two
+  fault injections locally — no code changed since they were independently
+  reproduced by two prior, distinct Control-plane sessions, and CI's own
+  job re-confirmed the same real backup/restore path green on this exact
+  head. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

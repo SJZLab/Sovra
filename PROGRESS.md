@@ -1,6 +1,106 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (relay shift, session_015rZiy6EjN6jvYYWzkGE2gh, branch
-  `claude/wizardly-fermat-rlp631`)
+Updated: 2026-09-19 (Control plane, scheduled CERTIFY-mode,
+  session_01BpsxwNZKMCes4UuKAnRvSG, triggered by PR #100's own
+  `pull_request.opened` webhook)
+
+## 2026-09-19 — Control plane: FTF-1601 (PR #100) independently certified
+STEP 0: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` — no
+drift, no BLOCKER.md needed.
+
+Checked `docs/certifications/queue.md` per the CERTIFY procedure. The last
+entry there (2026-09-19, this session's own predecessor review) had found
+PR #96's Law 1 gap genuinely closed but declined to certify over a new
+structural blocker: PR #98 (tracking-doc-only) had landed on `main`
+mid-review, putting `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+in merge conflict against PR #96's branch. That review's own instruction
+to the relay was to merge current `main` in, resolve the tracking-doc
+conflicts, push, confirm CI green, and resubmit — no other rework needed.
+
+The webhook that triggered this session was PR #100's `pull_request.opened`
+event: a relay shift (`session_015rZiy6EjN6jvYYWzkGE2gh`) had already done
+exactly that — merged PR #96's content into its own designated branch
+(`claude/wizardly-fermat-rlp631`, since CLAUDE.md forbids pushing to a
+branch a session wasn't assigned), resolved the three tracking-doc
+conflicts, and opened PR #100 to supersede #96.
+
+**Session-ID check:** every commit unique to PR #100 over `origin/main`
+carries a `Claude-Session` trailer for session_01B9eYtKy6gPX3Ym8Cvx3X9c,
+session_01RDefDg12JGVTtU732EEARs, session_01TkFfAaPq6htuVNNLXU9G2b,
+session_016ryLQ1vSJCNYTMHw9DrcSd, or session_015rZiy6EjN6jvYYWzkGE2gh —
+none match this reviewing session's own ID
+(`session_01BpsxwNZKMCes4UuKAnRvSG`) — independent, not self-certification.
+
+**Real diff read directly:** `git log origin/main..origin/claude/wizardly-fermat-rlp631`
+confirmed the PR carries the exact same implementation commit (`f5d3aee`)
+and Law-1 fix commit (`353b82b`) already independently reviewed and found
+sound by two prior, distinct Control-plane sessions (PR #90, 2026-09-18,
+structural-blocker-only; PR #96, 2026-09-19, Law 1 gap independently
+confirmed closed via fresh fault injection against `restoration_validated`'s
+three subset terms). `git diff 19e18de 8496133 --stat` against PR #96's
+own already-reviewed-sound head confirmed the only delta is
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` — zero production
+code, test, or contract files touched. Re-confirmed no drift after the
+PR's further doc-only commit (`4a2f3d3`, "record PR #100 opened, CI green,
+PR #96 closed").
+
+**CI checked for real on the actual current head, not a stale claim:** the
+PR advanced mid-review (`8496133` → `4a2f3d3`) — re-fetched and re-checked.
+`actions_get get_workflow_run` on run `35422662189` confirmed its own
+`head_sha` is `4a2f3d3`, matching the PR's live head exactly: all 6 jobs
+(`gate`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) `completed`/`success`, including the real
+live-Postgres `postgres-backup-integration` job on GitHub's own
+registry-egress runner. Zero open review comment threads.
+`mergeable_state: clean`.
+
+**Task contract re-pulled directly:** `tools/r1_handoff.py packet
+FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+("...restoration test"), Section 71.2 ("a backup that has never been
+restored does not count as validated"), and the negative_acceptance
+clause ("Backup command success without verifiable usable data/key path
+is not done") all map to the specific tests and fault injections the
+2026-09-18/2026-09-19 reviews already independently reproduced against a
+live Postgres cluster and a real no-DB fault injection — confirmed met,
+not asserted, and unaffected by this PR's tracking-doc-only delta.
+
+**Own regression** in a dedicated worktree at the real merged head
+(`f4e9b39`), fresh `uv sync --all-packages` + `pnpm install
+--frozen-lockfile` + `git fetch --unshallow`: `ruff check .` / `mypy .`
+clean (63 files); `pnpm run lint`/`typecheck`/`format:check` clean; `uv
+run python3 tests/tasks/test_ftf_1601.py` — "all checks passed" (18/18);
+`uv run pytest tests/unit` — 3 passed; `pnpm exec vitest run` — 2 passed;
+`uv run python3 scripts/validate_spec.py --strict` clean;
+`product_truth_check.py --fail-on-unwired` legitimately `0/0`
+(`proving_symbol: ''` — no live FastAPI app imports `postgres_backup.py`
+yet, same established disclosed pattern as every prior non-product-true
+certified task). Did not re-run the live-Postgres integration test or
+repeat the encrypt/self-verification and `restoration_validated` fault
+injections locally — no code changed since the two prior independent
+Control-plane reviews already reproduced them against a live cluster and
+CI's own `postgres-backup-integration` job re-confirmed the same real
+backup/restore path green on this exact head.
+
+**Noted, not acted on:** a bare (no `uv run`) `verify_release.py` run in a
+fresh worktree with no local Postgres cluster running showed
+`FTF-0102`/`FTF-0104` as false `FAILED`
+(`ModuleNotFoundError: No module named 'sqlalchemy'`) — confirmed this is
+a bare-`python3`-vs-`uv`-venv PATH artifact of this sandbox, not a real
+regression, by re-running both with `uv run python3` directly (clean).
+Not this PR's concern (touches neither task's files).
+
+**Certified:** merged PR #100 as `f4e9b39`
+(`f4e9b39b5cb9e8cc1222dde8e03f9e4d6cf9dbf4`). Set `docs/spec-matrix.yaml`
+FTF-1601 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` kept at the implementation commit
+`f5d3aee`). Added FTF-1601's entry to `spec/verification-map.json`.
+Appended the full review to `docs/certifications/queue.md` ("Control
+plane review — 2026-09-19 — CERTIFIED") and a full ledger entry to
+`docs/certifications/ledger.md`. Updated `QUEUE.md` (moved FTF-1601 from
+"Active"/"Provisional" to "Done", bumped Certified to 19/300, updated the
+product-true accounting to include FTF-1601). No other queue item was
+PROVISIONAL and pending — nothing else certified or touched this shift.
 
 ## 2026-09-19 — FTF-1601 (PR #96): resolved the structural-blocker merge conflict, resubmitting
 STEP 0: `sha256sum CLAUDE.md` (`11aee64c5e04e2bf4e967d8faf25d0430984159e87ddd58f1908e62a272e1421`)
