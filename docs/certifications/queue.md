@@ -3949,7 +3949,7 @@ the same code on a now-clean head.
   see session-ID check above), 2026-09-19.
 
 ## 2026-09-19 — FTF-0101 — OIDC login
-- **PR:** (branch `claude/wizardly-fermat-c0i7xl` → `main`)
+- **PR:** https://github.com/SJZLab/Sovra/pull/103 (`claude/wizardly-fermat-c0i7xl` → `main`)
 - **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
   `python tools/r1_handoff.py packet FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
   Dependencies FTF-0004/FTF-0005/FTF-0102 all `CERTIFIED` — unblocked.
