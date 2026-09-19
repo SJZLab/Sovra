@@ -19,11 +19,11 @@ Server (2) is test infrastructure for isolated fault/unit tests only
 module's *own* validation/session/CSRF logic against a real request over
 a real socket. It does NOT satisfy this task's own acceptance clause 1
 ("Real OIDC provider login/refresh/logout") -- Section 65.3 requires
-exercising "a real local OIDC provider", which needs an owner-approved
-local test-provider package (Node `oidc-provider` or Python `idpy-oidc`)
-that is not yet approved (open ask, QUEUE.md "Owner actions -- current",
-2026-09-19). That specific acceptance clause stays BLOCKED_EXTERNAL until
-that package is approved and wired in a follow-up.
+exercising "a real local OIDC provider". That clause is proven separately,
+against a real, owner-approved local `idpyoidc` OpenID Provider (resolved
+2026-09-19, see QUEUE.md "Blocked" history), in
+`tests/integration/test_oidc_login_real_provider.py` -- this file's own
+fake stand-in was never meant to, and still does not, stand in for that.
 
 "Revoked membership... denied" (this task's own negative_acceptance) is
 proven here via an injected fake `membership_lookup` -- no `Membership`

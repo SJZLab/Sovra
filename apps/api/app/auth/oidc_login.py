@@ -22,13 +22,14 @@ docs/spec-matrix.yaml for the full record):
     real DB-backed lookup replaces it -- proven by injecting a fake lookup
     in tests, not by skipping the check.
   - real-OIDC-provider integration evidence (this task's own acceptance
-    clause 1) is BLOCKED_EXTERNAL: Section 65.3 requires exercising "a real
-    local OIDC provider", which needs an owner-approved local test-provider
-    package (Node `oidc-provider` or Python `idpy-oidc`) that is not yet
-    approved (open ask, QUEUE.md "Owner actions -- current"). The stdlib
-    HTTP server used by this module's own tests proves this module's own
-    validation/session/CSRF logic against a real request over a real
-    socket; it does not stand in for that acceptance clause.
+    clause 1): proven in tests/integration/test_oidc_login_real_provider.py
+    against a real, owner-approved local `idpyoidc` OpenID Provider
+    (Section 65.3, resolved 2026-09-19 -- see QUEUE.md "Blocked" history).
+    tests/tasks/test_ftf_0101.py's own stdlib HTTP stand-in remains in
+    place for isolated unit/fault-injection coverage of this module's own
+    validation/session/CSRF logic (Section 84.4 permits test doubles for
+    exactly that); it is the separate real-provider test, not this one,
+    that satisfies acceptance clause 1 itself.
   - client_secret / session signing key: `OidcSettings` only carries
     *references* (`vault://`, ...); no secret-manager resolver exists
     anywhere in this repository yet (same disclosed gap as FTF-0005/
