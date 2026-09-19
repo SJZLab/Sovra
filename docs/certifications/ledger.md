@@ -2280,6 +2280,20 @@ corrected 2026-09-15.
      re-executable by `verify_task.py` in this sandbox, same established
      pattern as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-1601). Merged PR
      #114 (`5de1c58`).
+  8. This certification's own PR (#116) first failed CI's `gate` job for
+     real: `test_ftf_h034.py` genuinely failed 2 checks ("spec/tasks.json's
+     status field genuinely reflects every currently-CERTIFIED task",
+     "TRACKER.json's status field genuinely reflects every currently-
+     CERTIFIED task") because setting `docs/spec-matrix.yaml` to CERTIFIED
+     without also running `scripts/task_claim.py`'s `sync_certified_status()`
+     left `spec/tasks.json`/`docs/implementation/TRACKER.json` still saying
+     `NOT_STARTED`/no evidence for FTF-0101 — a real, disclosed process gap
+     in this review's own first push, not silently worked around: ran
+     `sync_certified_status()` directly, which updated exactly FTF-0101's
+     own `status`/`evidence` fields in both files (diff confirmed
+     minimal), re-ran `test_ftf_h034.py` and the full gate command sequence
+     locally end to end (all pass), then pushed the fix as a second commit
+     on the same certification PR before re-merging.
 - Conclusion: the delivered OIDC login/refresh/logout machinery is real,
   independently reproduced against a real local `idpyoidc` OpenID
   Provider for all three named flows, genuinely fault-injectable (this
