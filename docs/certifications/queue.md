@@ -3366,3 +3366,114 @@ PR: https://github.com/SJZLab/Sovra/pull/87
   before resubmitting.
 - **Validated-by:** this session (independent — see session-ID check
   above), 2026-09-18.
+
+### Control plane review — 2026-09-19 — NOT CERTIFIED (Law 1 gap now closed; new structural blocker — merge conflict against current main)
+- **PR:** https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
+  → `main`), reviewed at real head `19e18de098df77f5898e8bbaab9bec090f9ef1d2`.
+  Triggered as a scheduled CERTIFY-mode session by PR #98's own
+  `pull_request.opened` webhook (PR #98 itself is a tracking-doc-only
+  relay shift confirming PR #96's fix was already pushed — no code, not
+  itself a certification submission).
+- **Session-ID check:** PR #96's 14 commits carry
+  `Claude-Session: .../session_01B9eYtKy6gPX3Ym8Cvx3X9c`,
+  `.../session_01TkFfAaPq6htuVNNLXU9G2b`, or
+  `.../session_016ryLQ1vSJCNYTMHw9DrcSd`; this reviewing session's own ID
+  (`session_01Ua5bz7foHCUWqcMhr5zSei`) matches none of them — independent,
+  not self-certification.
+- **Real diff read directly** in a dedicated git worktree at the real PR
+  head (`git fetch origin claude/wizardly-fermat-vmg0oc` +
+  `git worktree add`): 11 files, +3081/-53 against `origin/main`, content
+  identical to the already-reviewed PR #90/#96 delivery plus the new
+  353b82b fix commit (141 lines added to `tests/tasks/test_ftf_1601.py`
+  only — four new checks, no production code touched, confirmed via
+  `git show 353b82b --stat`).
+- **CI checked for real on the actual head, not a stale claim:**
+  `actions_get get_workflow_run` on run `35411607447` confirms its own
+  `head_sha` is `19e18de0` — matching the PR's real head exactly: all 6
+  jobs (`gate`, `docker-local-stack-integration`,
+  `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`) `completed`/`success`.
+  `get_review_comments` — zero open threads.
+- **The prior review's exact Law 1 gap, independently re-verified as
+  closed, not merely re-run:** the 353b82b fix adds a no-DB negative test
+  per `restoration_validated` subset term (missing table, missing FORCE
+  ROW LEVEL SECURITY flag, missing RLS policy) plus a baseline positive.
+  Ran `tests/tasks/test_ftf_1601.py` as CI actually invokes it (bare
+  `python3 tests/tasks/test_ftf_1601.py`, not `pytest` — this file is
+  outside `pyproject.toml`'s `testpaths` and its own `check()` helper
+  only appends to a module-level `FAILURES` list that `main()` checks at
+  the end; running it under plain `pytest` trivially "passes" every
+  `test_*` function regardless of the actual condition, which would have
+  been a false-negative verification if not caught): 18/18 checks pass.
+  Then performed a genuine fault injection distinct from re-running the
+  producer's own: removed each of the three subset terms from
+  `restoration_validated`'s boolean conjunction in
+  `scripts/postgres_backup.py` **one at a time** (not the encrypt/decrypt
+  path the PR #90 review already exercised) and re-ran the real script
+  after clearing `__pycache__` each time (a first pass without clearing
+  bytecode cache produced a misleading stale-`.pyc` false failure on the
+  pristine baseline — caught and corrected before relying on any result):
+  removing the `tables` term fails exactly
+  `test_restore_backup_reports_invalid_when_a_table_is_missing_from_the_restore`;
+  removing the `rls_policies` term fails exactly
+  `test_restore_backup_reports_invalid_when_an_rls_policy_is_missing_from_the_restore`;
+  removing the `rls_forced_tables` term fails exactly
+  `test_restore_backup_reports_invalid_when_an_rls_forced_table_is_missing_from_the_restore`.
+  Each injection restored byte-identical (`diff` empty) before the next,
+  and the pristine file re-passes 18/18 both before and after the series.
+  This is the same real defect class the 2026-09-18 review demonstrated
+  against a live Postgres cluster, now independently confirmed caught by
+  a no-DB unit test — the Law 1 gap is genuinely closed.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("...restoration test"), Section 71.2's "a backup that has never been
+  restored does not count as validated", and the negative_acceptance
+  clause ("Backup command success without verifiable usable data/key path
+  is not done") all map to the specific tests and fault injections above
+  and to the encrypt/self-verification evidence the 2026-09-18 review
+  already independently reproduced against a live Postgres cluster (code
+  unchanged since then) — confirmed met, not asserted.
+- **Full regression, fresh environment:** `uv sync --all-packages` +
+  `pnpm install --frozen-lockfile` + `git fetch --unshallow` (this
+  sandbox's shallow clone otherwise produces spurious `stale_commit`
+  defects in `validate_spec.py --strict` — reproduced the false positive
+  first, then confirmed clean after unshallowing, same known artifact
+  this repo's own history already documents repeatedly). `ruff check .` /
+  `mypy .` clean (63 files). Every existing `tests/tasks/test_ftf_*.py`
+  and `tests/test_ftf_0001_monorepo_layout.py` re-run exactly as CI
+  invokes each (bare `python3` or `uv run python3` per file) — all pass,
+  no regression. `product_truth_check.py --fail-on-unwired` — `0/0`,
+  confirmed legitimate via `docs/spec-matrix.yaml`'s own
+  `proving_symbol: ''` for FTF-1601 (no live FastAPI app imports
+  `postgres_backup.py` yet, same established disclosed pattern as every
+  prior non-product-true certified task).
+- **New structural blocker found — real, not a content defect:** while
+  this review was in progress, PR #98 (a same-day relay tracking-doc-only
+  shift, no code changes) merged into `main` (`0233470` → `a0448c6`).
+  `pull_request_read get` on PR #96 now reports `mergeable_state:
+  "unknown"` (GitHub recomputing); reproduced independently via
+  `git fetch --unshallow origin && git fetch origin main && git
+  merge-tree --write-tree origin/main <PR-96-head>` against the real
+  current `main` tip — genuine `CONFLICT (content)` markers in exactly
+  `PROGRESS.md` and `QUEUE.md` (pure tracking-doc content, not code; the
+  11 real delivery files carry no conflict). Same structural-blocker class
+  as this file's own FTF-0004/PR #35 and FTF-1601/PR #90 precedents.
+- **Conclusion:** not merging, not certifying. `certification_state` for
+  FTF-1601 stays `NONE` on `main` (unchanged — `main` never carried a
+  PROVISIONAL entry for this task; nothing to downgrade). On PR #96's own
+  branch the PROVISIONAL entry stands as submitted, and nothing found
+  here contradicts it — the previously-identified Law 1 gap is now
+  genuinely closed and every other check holds up under fresh, adversarial
+  fault injection. **Action needed before resubmitting (relay, not
+  Control plane — Law 4):** merge current `main` (`a0448c6` or later)
+  into `claude/wizardly-fermat-vmg0oc`, resolve the `PROGRESS.md`/
+  `QUEUE.md` conflicts (both pure tracking-doc conflicts, not code), push,
+  and confirm CI stays green on the new merge commit before requesting
+  certification again — no other part of this PR needs rework. On the
+  next review, Control plane should not need to re-run the live-Postgres
+  fault injection or the encrypt/self-verification checks again absent a
+  code change — only re-confirm CI green on the new merge commit and that
+  the merge itself introduced no code delta.
+- **Validated-by:** this session (independent — see session-ID check
+  above), 2026-09-19.

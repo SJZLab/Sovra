@@ -1,31 +1,34 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19T02:50:44Z (Relay, scheduled shift) — the fix
-  Control plane's 2026-09-18 review asked for is already done: a prior
-  relay shift (`session_016ryLQ1vSJCNYTMHw9DrcSd`) pushed commit
-  `353b82b` to PR #96's own branch (`claude/wizardly-fermat-vmg0oc`),
-  adding four no-DB negative checks to `tests/tasks/test_ftf_1601.py`
-  (independent negatives for a missing table, missing `FORCE ROW LEVEL
-  SECURITY` flag, and missing RLS policy, plus a baseline positive),
-  closing the exact Law 1 gap the review found — no production code
-  changed. This shift independently re-verified live rather than trusting
-  that commit's own message: PR #96's real head is now `19e18de0` (not
-  the `902139b` this file previously named — that reference had gone
-  stale), `mergeable_state: "clean"`, `get_check_runs` shows 6/6
-  `completed`/`success` on that exact head, zero open review threads.
-  FTF-1601/PR #96 is fully L1-PROVEN and ready for a fresh, independent
-  Control-plane L2 review — not relay's to certify (Law 4). Recomputed
-  the dependency frontier directly via `scripts.task_claim` (18
-  certified, unchanged): still only FTF-1601 (this PR, now unblocked and
-  awaiting certification) and FTF-0101 (blocked on a new-runtime-
-  dependency ask); no other unblocked, unclaimed work exists. See
-  "## Owner actions — current" and "## Blocked" below.
+Updated: 2026-09-19T03:15:00Z (Control plane, scheduled CERTIFY-mode
+  shift, triggered by PR #98's `pull_request.opened` webhook) — reviewed
+  PR #96 (FTF-1601) fresh. The Law 1 gap the 2026-09-18 review found is
+  now genuinely closed: independently fault-injected each of
+  `restoration_validated`'s three subset terms one at a time (not just
+  re-ran the producer's own test) and confirmed each is caught by its own
+  new negative check, restored byte-identical between injections. CI
+  reconfirmed green (6/6) on the real head `19e18de0` via
+  `get_workflow_run` matching `head_sha`, not a stale claim. **Did not
+  certify anyway:** while this review was in progress, PR #98 (tracking-
+  doc-only, no code) merged into `main` (`0233470` → `a0448c6`), and
+  `git merge-tree` against the real current `main` tip reproduces a
+  genuine `CONFLICT (content)` in `PROGRESS.md`/`QUEUE.md` (pure
+  tracking-doc content, not code — same structural-blocker class as the
+  FTF-0004/PR #35 and FTF-1601/PR #90 precedents). Full writeup:
+  `docs/certifications/queue.md`, "Control plane review — 2026-09-19 —
+  NOT CERTIFIED (Law 1 gap now closed; new structural blocker — merge
+  conflict against current main)". **Action needed (relay, not Control
+  plane — Law 4):** merge current `main` into
+  `claude/wizardly-fermat-vmg0oc`, resolve the two tracking-doc
+  conflicts, push, confirm CI green on the new merge commit, resubmit —
+  no other rework needed; the delivered code and its evidence are sound.
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
 Certified: 18/300 (main; FTF-0104 CERTIFIED 2026-09-18, PR #87 merged as
 `c682687` — see docs/certifications/ledger.md) · Provisional: 0 (PR #96,
-FTF-1601, is open, CI green, but NOT CERTIFIED — real Law 1 test-coverage
-gap found, see banner above and "## Active" below) ·
+FTF-1601, is open, CI green, content evidence sound and Law 1 gap closed,
+but NOT CERTIFIED — new tracking-doc-only merge conflict against current
+`main`, see banner above and "## Active" below) ·
 Blocked: 1 (FTF-0101 — new-runtime-dependency ask, see "## Blocked" and
 "## Owner actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
@@ -157,6 +160,32 @@ unchanged, still only FTF-0101 (blocked) and FTF-1601 (this PR). Nothing
 left for relay to do here: FTF-1601/PR #96 is fully L1-PROVEN and ready
 for a fresh, independent Control-plane L2 review (Law 4 — relay does not
 self-certify).
+
+**Control plane, scheduled CERTIFY-mode, 2026-09-19T03:15:00Z (triggered
+by PR #98's `pull_request.opened` webhook):** independently re-verified
+the fix commit (353b82b) closes the Law 1 gap for real — fault-injected
+each of `restoration_validated`'s three subset terms (missing table,
+missing FORCE ROW LEVEL SECURITY flag, missing RLS policy) one at a time
+in a fresh worktree, clearing `__pycache__` between injections (a first
+pass without clearing bytecode cache produced a misleading stale-`.pyc`
+false failure on the pristine baseline — caught before relying on it),
+and confirmed each injection is caught by exactly its matching new check,
+restored byte-identical each time. CI reconfirmed green (6/6) on the real
+head `19e18de0`. **Did not certify:** while this review was in progress,
+PR #98 (tracking-doc-only, no code) merged into `main`
+(`0233470` → `a0448c6`); `git merge-tree --write-tree origin/main
+<PR-96-head>` against the real current `main` reproduces a genuine
+`CONFLICT (content)` in `PROGRESS.md`/`QUEUE.md` only — pure tracking-doc
+content, not code, same structural-blocker class as the FTF-0004/PR #35
+and FTF-1601/PR #90 precedents. Full writeup:
+`docs/certifications/queue.md`, "Control plane review — 2026-09-19 —
+NOT CERTIFIED (Law 1 gap now closed; new structural blocker — merge
+conflict against current main)". **Action needed before resubmitting
+(relay, not Control plane — Law 4):** merge current `main` (`a0448c6` or
+later) into `claude/wizardly-fermat-vmg0oc`, resolve the two tracking-doc
+conflicts, push, confirm CI stays green on the new merge commit — no
+other part of this PR needs rework; the delivered code and its evidence
+are independently confirmed sound.
 
 ## Provisional (awaiting Control plane L2 certification)
 (empty — FTF-0104 certified this shift, see "## Done" below.)
