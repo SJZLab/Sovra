@@ -3947,3 +3947,124 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01BpsxwNZKMCes4UuKAnRvSG (independent —
   see session-ID check above), 2026-09-19.
+
+## 2026-09-19 — FTF-0101 (PR #103) — Control plane review: NOT CERTIFIED (PR stays open, unmerged)
+- **PR:** https://github.com/SJZLab/Sovra/pull/103
+  (`claude/wizardly-fermat-c0i7xl` → `main`), triggered for review by that
+  PR's own `pull_request.opened` webhook. This entry is written on `main`
+  because PR #103 itself is not certified and stays open/unmerged — its
+  own submission writeup (delivered code, evidence, and disclosed gaps)
+  lives on its own branch, not here; this entry only records this
+  session's independent review and verdict.
+- **Session-ID check:** all four commits unique to PR #103 over
+  `origin/main` (`6b4c8ab`, `9b85fa7`, `a3817fe`, `513538e`) carry a
+  `Claude-Session` trailer for session_015u9WhWDyzkFgkk74HzHJ9d; this
+  reviewing session's own ID (`session_01VNPVrAHoQTUFSmfhV4UkCU`) matches
+  none of them — independent, not self-certification.
+- **Real diff read directly:** read `apps/api/app/auth/oidc_login.py`,
+  `apps/api/app/auth/oidc_settings.py`, and `apps/api/app/main.py` in full
+  in a dedicated worktree at the PR's real head (`513538e`, which the PR
+  advanced to mid-review — a doc-only fix to a stale evidence_hash note in
+  this same file on that branch; `git diff a3817fe 513538e -- .
+  ':!docs/certifications/queue.md'` confirmed empty, zero code delta).
+  Confirms the PR's own description: real signature verification via JWKS
+  (`alg` allowlisted to `{RS256, ES256}` and checked *before* key lookup),
+  authlib `claims_options`/`validate()` for `iss`/`aud`/`exp`/`sub`, nonce
+  checked against a signed txn cookie, itsdangerous-signed HttpOnly/
+  Secure/SameSite=Lax session cookie, real in-memory per-process logout
+  revocation keyed by `jti`, and CSRF Origin+token enforcement on
+  `POST /auth/logout`. `apps/api/app/main.py` wires
+  `build_oidc_login_router` in unconditionally (not behind a flag) — a
+  real product-runtime caller.
+- **CI checked for real on the actual current head:** re-fetched after the
+  PR advanced mid-review rather than trusting a stale claim.
+  `actions_get get_workflow_run` on run `35429139124` confirms
+  `head_sha: 513538e0e7da77401d82ea363580163f4ba05a22` — matches the PR's
+  live head exactly, `conclusion: success`; all 6 jobs (`gate`,
+  `docker-local-stack-integration`,
+  `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`) `completed`/`success`.
+- **Own fault injection, independent of the producer's own tests:** in a
+  dedicated worktree (unshallowed; `uv sync --all-packages` +
+  `pnpm install --frozen-lockfile`), ran `tests/tasks/test_ftf_0101.py`
+  clean (24/24), then separately disabled (a) the `alg` allowlist check in
+  `validate_id_token`, (b) the Origin/CSRF-token check in `/auth/logout`,
+  and (c) the membership-active check in `/auth/callback`, one at a time,
+  re-running the same test file after each: all three genuinely caught the
+  induced break (`an unsigned alg=none token is denied before any
+  signature check`; `logout without a CSRF token header is denied` +
+  `logout from an unapproved Origin is denied`; `a revoked membership
+  denies login...` + `the real, unmodified default denies login absent a
+  wired Membership lookup`), then reverted and re-confirmed clean
+  (24/24). Not a rubber-stamped re-run of the producer's own claim — this
+  session's own independently-chosen breaks.
+- **`product_truth_check.py` result confirmed legitimate:** `--fail-on-unwired`
+  reports `1/1 product-true`; `build_oidc_login_router` is a real, non-test
+  symbol imported and called unconditionally from `apps/api/app/main.py`'s
+  `create_app()` — a genuine live-caller wiring, not a 0/0 pass with no
+  proving_symbol.
+- **Full regression, fresh environment:** `ruff check .` / `mypy .` clean
+  (67 files); `pnpm run lint` / `typecheck` clean; `pnpm exec vitest run`
+  — 5 passed; `uv run pytest tests/unit` — 3 passed; every existing
+  `tests/tasks/test_ftf_*.py` re-run clean and unmodified (`0002`/`0003`/
+  `h001` initially showed spurious failures traced to two environment
+  artifacts, not defects: `pnpm install` not yet run in the fresh worktree,
+  and a shallow clone — same `stale_commit` transient this file has
+  documented before; `pnpm install --frozen-lockfile` + `git fetch
+  --unshallow` resolved both and all three re-ran clean); `uv run python3
+  scripts/validate_spec.py --strict` clean.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — this task has exactly
+  two acceptance clauses and one negative_acceptance clause:
+  1. **Acceptance clause 1** ("Real OIDC provider login/refresh/logout
+     validates issuer+audience+subject and secure session") is **not
+     met**. The PR's own test evidence exercises a bespoke stdlib
+     `ThreadingHTTPServer` standing in for the provider's `/jwks`/`/token`
+     endpoints, not a real OIDC provider — exactly as the PR itself
+     discloses, citing Section 65.3 ("never a bypass/test-token login")
+     and the still-open QUEUE.md ask for an owner-approved local
+     test-provider package (`oidc-provider`/`idpy-oidc`). This is this
+     task's *primary* acceptance clause (the whole point of "OIDC login"
+     is exercising a real provider), not a peripheral or out-of-scope
+     edge case — unlike, e.g., FTF-0102's Membership-table exclusion,
+     which is a genuinely different task's scope. Per Law 1 ("nothing
+     proven until test shown able to fail" — inapplicable here since the
+     real dependency was never exercised at all) and this repo's own
+     precedent that an unaddressed acceptance-clause element blocks
+     certification even when every written test passes and the gap is
+     disclosed (see this file's 2026-09-17 review of the safe-parallel-
+     execution PR's undisclosed "commits" gap, which drew the same line
+     between disclosed-and-accepted peripheral BLOCKED_EXTERNAL items and
+     an unmet clause element that blocks certification) — this clause
+     cannot be marked proven from a fake in-process test double, however
+     well that double exercises this module's own logic.
+  2. **Negative_acceptance** ("revoked membership... denied") *is*
+     adequately proven for this task's own real scope: `default_membership_lookup`
+     is a genuine fail-closed enforcement point (verified above via fault
+     injection, not merely asserted), and no `Membership` table exists
+     anywhere in this repository yet because it is a different task's
+     (FTF-0103/FTF-0105) deliverable, not this one's — a disclosed,
+     out-of-scope gap in the same accepted category as FTF-0102's own
+     Membership exclusion, not a reason on its own to withhold
+     certification.
+- **Conclusion:** the delivered signature/session/CSRF/logout machinery is
+  real, independently reproduced against a real local HTTP server, and
+  genuinely fault-injectable (three independent, this-session-chosen
+  breaks all caught) — this is not a rejection of the module's core
+  design, and CI is green on the real final head. But acceptance clause 1
+  — this task's central, load-bearing requirement — has never been
+  exercised against a real OIDC provider, only a fake stand-in, exactly as
+  the submitter itself discloses. That is not proven, so this task is
+  **not certified**. `certification_state` stays `PROVISIONAL` /
+  `proof_state` stays `L1-PROVEN` on PR #103's own branch (that PR is left
+  open, unmerged — nothing from it is promoted to `main` by this review).
+  **Fix needed:** the still-open QUEUE.md "Owner actions — current" ask
+  (approve `oidc-provider` or `idpy-oidc` as a new dev/test-only runtime
+  dependency) needs an owner decision; once approved, a follow-up must add
+  real integration evidence against that actual local provider before this
+  clause can be marked proven and this task certified. No other change
+  requested — the rest of PR #103's evidence stands as submitted.
+- **Validated-by:** session
+  https://claude.ai/code/session_01VNPVrAHoQTUFSmfhV4UkCU (independent —
+  see session-ID check above), 2026-09-19.

@@ -17,9 +17,11 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 19/300 (main; FTF-1601 CERTIFIED 2026-09-19, PR #100 merged as
-`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked:
-0 (FTF-0101's web-framework/auth-stack approval resolved 2026-09-19 by
-live owner confirmation — dependency-ready, not yet claimed; its own
+`f4e9b39` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0101,
+PR #103 — open, unmerged, independently reviewed 2026-09-19 and **not**
+certified; see "## Provisional" below) · Blocked: 0 (FTF-0101's
+web-framework/auth-stack approval resolved 2026-09-19 by live owner
+confirmation — dependency-ready, not yet claimed; its own
 local-OIDC-test-provider sub-decision is still open, see "## Owner
 actions — current")
 Product-true (Law 16): 0 — must match certified (FTF-0001, FTF-0002,
@@ -77,6 +79,11 @@ counting toward product-true).
   integration-evidence clause, so the next relay shift can claim and
   start FTF-0101 now and should raise this specific choice again once it
   reaches that clause rather than picking a package unilaterally.
+  **2026-09-19 update:** this is that point — FTF-0101 was implemented and
+  submitted PROVISIONAL as PR #103, independently reviewed the same day,
+  and NOT certified specifically because this clause is still open (see
+  "## Provisional" below). Still awaiting an owner decision; PR #103 stays
+  open until one lands and a follow-up adds real integration evidence.
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
 independently reviewed and CERTIFIED this shift via PR #100 (merge commit
@@ -85,8 +92,30 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-1601 (Postgres backup) was the only item here; see
-"## Active" above and "## Done" below.
+- FTF-0101 (OIDC login) — submitted 2026-09-19 as PR #103
+  (`claude/wizardly-fermat-c0i7xl` → `main`, open/unmerged). Real
+  authorization-code + PKCE flow, JWT/JWKS signature+issuer+audience+
+  expiry+nonce validation, signed HttpOnly/Secure/SameSite session +
+  CSRF-token cookie, real in-memory logout/session-revocation, CSRF
+  Origin+token enforcement on the one mutation; first live FastAPI app
+  (`apps/api/app/main.py`) and first live React component
+  (`oidc_login.tsx`) in this repository. CI green on the real final head
+  (6/6 jobs); own fault injection during review (disabling the `alg`
+  allowlist, the CSRF/Origin check, and the membership-active check, one
+  at a time) genuinely caught by the existing test suite each time.
+  **Control plane independent review, 2026-09-19: NOT CERTIFIED.**
+  Acceptance clause 1 ("Real OIDC provider login/refresh/logout") is this
+  task's *primary* clause and has only ever been exercised against a fake
+  stdlib HTTP stand-in, not a real OIDC provider — as the PR itself
+  discloses (Section 65.3 needs the still-open local-test-provider-package
+  ask above). The "revoked membership" negative_acceptance gap is accepted
+  as out-of-scope (Membership is a different task's deliverable,
+  FTF-0103/FTF-0105) and does not block on its own. `certification_state`
+  stays `PROVISIONAL`/`L1-PROVEN` on the PR's own branch (PR #103 stays
+  open — not merged, since it is not certified). **Blocked on:** the owner
+  decision above; once approved, a follow-up adds real integration
+  evidence against that actual provider before resubmitting. Full review:
+  `docs/certifications/queue.md`.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
