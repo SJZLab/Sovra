@@ -80,15 +80,25 @@ for Control plane rather than silently claimed proven:
 Updated `docs/spec-matrix.yaml` (FTF-0101:
 `implementation_state=IMPLEMENTED`, `proof_state=L1-PROVEN`,
 `certification_state=PROVISIONAL`, `proving_symbol=build_oidc_login_router`,
-`proving_test=tests/tasks/test_ftf_0101.py`, `evidence_hash=PENDING_COMMIT`
-— filled with the real merge commit once this PR actually merges, same
-two-commit convention used throughout this repo's history since a commit
-cannot embed its own hash), `docs/certifications/queue.md` (full entry),
-QUEUE.md (moved FTF-0101 to "## Provisional", updated the still-open
-local-OIDC-test-provider ask to note this shift reached that clause),
-`.github/workflows/ci.yml` (new `uv run python3 tests/tasks/test_ftf_0101.py`
-gate step). Not self-certified (Law 4) — awaiting a fresh Control-plane
-session with no session-ID overlap with this one.
+`proving_test=tests/tasks/test_ftf_0101.py`, `evidence_hash` filled with
+this shift's own implementation commit `6b4c8ab` in a same-PR follow-up
+commit, per the two-commit convention used throughout this repo's history
+since a commit cannot embed its own hash — Control plane updates it to the
+real merge commit upon certification, per existing convention),
+`docs/certifications/queue.md` (full entry), QUEUE.md (moved FTF-0101 to
+"## Provisional", updated the still-open local-OIDC-test-provider ask to
+note this shift reached that clause), `.github/workflows/ci.yml` (new
+`uv run python3 tests/tasks/test_ftf_0101.py` gate step). Not
+self-certified (Law 4) — awaiting a fresh Control-plane session with no
+session-ID overlap with this one.
+
+PR opened: https://github.com/SJZLab/Sovra/pull/103. CI reconfirmed green
+on the actual final PR head (`513538e`, after a doc-only follow-up commit
+corrected a stale note) — all 6 jobs (`gate`,
+`docker-local-stack-integration`, `organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`) `success`, `mergeable_state: clean` —
+confirmed directly via the GitHub API, not a self-reported claim.
 
 STEP 3: this entry, written before compaction.
 STEP 4: stopping per (a) — FTF-0101 is L1-PROVEN with two disclosed,
