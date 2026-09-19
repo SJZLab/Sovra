@@ -3858,3 +3858,92 @@ the same code on a now-clean head.
   comment pointing here (same #90→#96 supersession pattern). FTF-1601 is
   ready for a fresh, independent Control-plane L2 review — awaiting Law 4
   certification.
+
+### Control plane review — 2026-09-19 — CERTIFIED
+- **PR:** https://github.com/SJZLab/Sovra/pull/100 (`claude/wizardly-fermat-rlp631`
+  → `main`), reviewed at real final head `4a2f3d38038ad70a93e8a1c6fd8c02a8dbfd0ee1`,
+  merged as `f4e9b39` (`f4e9b39b5cb9e8cc1222dde8e03f9e4d6cf9dbf4`).
+- **Session-ID check:** every commit unique to this PR over `origin/main`
+  carries a `Claude-Session` trailer for session_01B9eYtKy6gPX3Ym8Cvx3X9c,
+  session_01RDefDg12JGVTtU732EEARs, session_01TkFfAaPq6htuVNNLXU9G2b,
+  session_016ryLQ1vSJCNYTMHw9DrcSd, or session_015rZiy6EjN6jvYYWzkGE2gh;
+  this reviewing session's own ID (`session_01BpsxwNZKMCes4UuKAnRvSG`)
+  matches none of them — independent, not self-certification.
+- **Real diff read directly:** `git log origin/main..origin/claude/wizardly-fermat-rlp631`
+  shows this PR carries the exact same implementation commit `f5d3aee`
+  (encrypted, self-verified, RLS-surviving Postgres backup/restore) and
+  fix commit `353b82b` (missing `restoration_validated` negative test)
+  already independently reviewed and found sound by two prior, distinct
+  Control-plane sessions — PR #90 (2026-09-18, structural-blocker-only,
+  content sound) and PR #96 (2026-09-19, Law 1 gap on
+  `restoration_validated`'s three subset terms, independently confirmed
+  closed by `353b82b` via fresh fault injection against a live check).
+  `git diff 19e18de 8496133 --stat` and a re-check against the PR's final
+  head (`4a2f3d3`) confirm the only delta beyond that already-reviewed
+  content is `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+  (tracking-doc merge-conflict resolution) — zero production code, test,
+  or contract files touched.
+- **CI checked for real on the actual current head, not a stale claim:**
+  the PR advanced mid-review (`8496133` → `4a2f3d3`, a further doc-only
+  commit) — re-fetched and re-checked rather than trusting the PR's own
+  self-reported "CI green" note, which named the superseded head.
+  `actions_get get_workflow_run` on run `35422662189` confirms its own
+  `head_sha` is `4a2f3d3` — matching the PR's live head exactly: all 6
+  jobs (`gate`, `docker-local-stack-integration`,
+  `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`) `completed`/`success`, including the
+  real live-Postgres `postgres-backup-integration` job on GitHub's own
+  registry-egress runner. `get_review_comments` — zero open threads.
+  `mergeable_state: clean`.
+- **Task contract re-pulled directly:** `tools/r1_handoff.py packet
+  FTF-1601 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("...restoration test"), Section 71.2 ("a backup that has never been
+  restored does not count as validated"), and the negative_acceptance
+  clause ("Backup command success without verifiable usable data/key path
+  is not done") all map to the specific tests and fault injections the
+  2026-09-18/2026-09-19 reviews already independently reproduced against a
+  live Postgres cluster and a real no-DB fault injection — confirmed met,
+  not asserted, and unaffected by this PR's tracking-doc-only delta.
+- **Own regression** in a dedicated worktree at the real merged head
+  (`f4e9b39`), fresh `uv sync --all-packages` + `pnpm install
+  --frozen-lockfile` + `git fetch --unshallow`: `ruff check .` / `mypy .`
+  clean (63 files); `pnpm run lint`/`typecheck`/`format:check` clean; `uv
+  run python3 tests/tasks/test_ftf_1601.py` — "all checks passed" (18/18,
+  exactly as CI invokes it); `uv run pytest tests/unit` — 3 passed; `pnpm
+  exec vitest run` — 2 passed; `uv run python3 scripts/validate_spec.py
+  --strict` clean; `product_truth_check.py --fail-on-unwired` legitimately
+  `0/0` (`proving_symbol: ''` — no live FastAPI app imports
+  `postgres_backup.py` yet, same established disclosed pattern as every
+  prior non-product-true certified task). Did not re-run the live-Postgres
+  integration test or repeat the encrypt/self-verification and
+  `restoration_validated` fault injections locally — no code changed since
+  the two prior independent Control-plane reviews already reproduced them
+  against a live cluster and CI's own `postgres-backup-integration` job
+  re-confirmed the same real `pg_dump`/`pg_restore`/`openssl` path green
+  on this exact head.
+- **Environment artifact noted, not a regression:** a bare (no `uv run`)
+  `verify_release.py` run in a fresh worktree with no local Postgres
+  cluster running showed `FTF-0102`/`FTF-0104` as false `FAILED`
+  (`ModuleNotFoundError: No module named 'sqlalchemy'` — bare `python3`
+  isn't the `uv` venv in this sandbox). `uv run python3
+  tests/tasks/test_ftf_0102.py`/`test_ftf_0104.py` both independently
+  re-run clean once invoked the way CI/the `uv` venv actually does. Not
+  this PR's concern (touches neither task's files); noted for the record,
+  not acted on further.
+- **Conclusion:** the delivered encrypted, self-verified, RLS-surviving
+  Postgres backup/restore tooling is real, was already independently
+  reproduced against a live Postgres cluster and adversarially
+  fault-injected by two prior, distinct Control-plane sessions across PR
+  #90 and PR #96, and this PR's only delta over that already-sound content
+  is a tracking-doc merge-conflict resolution against current `main`,
+  confirmed here to introduce zero code change and to stay green on real
+  CI at its actual final head. Merged PR #100 as `f4e9b39`.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED` (`evidence_hash` kept at the implementation
+  commit `f5d3aee`, matching `spec/verification-map.json`'s own new
+  `commit` field). Added FTF-1601's entry to `spec/verification-map.json`.
+  Full ledger entry: `docs/certifications/ledger.md`.
+- **Validated-by:** session
+  https://claude.ai/code/session_01BpsxwNZKMCes4UuKAnRvSG (independent —
+  see session-ID check above), 2026-09-19.

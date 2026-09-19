@@ -158,6 +158,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102 and its own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres append-only/tenant-isolation/atomicity evidence is tests/integration/test_audit_event_writer.py, run separately in CI (audit-event-writer-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102."
+    },
+    "FTF-1601": {
+      "commit": "f5d3aee56da747f52c335813fc03677052bf8949",
+      "commands": [["python3", "tests/tasks/test_ftf_1601.py"]],
+      "expected_output_contains": "FTF-1601 postgres backup: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres encrypted-backup/restore/RLS-survival evidence is tests/integration/test_postgres_backup.py, run separately in CI (postgres-backup-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104. Certified after two resubmissions (PR #90 -> structural merge-conflict blocker; PR #96 -> real Law 1 gap on restoration_validated's subset terms, closed by commit 353b82b; PR #100 -> final tracking-doc-only merge-conflict resolution against current main, no further code delta) — the underlying implementation commit is unchanged since f5d3aee."
     }
   }
 }
