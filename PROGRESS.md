@@ -1,7 +1,70 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (Control plane, scheduled CERTIFY-mode,
-  session_01BpsxwNZKMCes4UuKAnRvSG, triggered by PR #100's own
-  `pull_request.opened` webhook)
+Updated: 2026-09-19 (Control plane — live, interactive session with the
+  account holder, samer.zakaria@gmail.com)
+
+## 2026-09-19 — Control plane: FTF-0101 new-runtime-dependency ask (web framework/auth stack) resolved by live owner confirmation
+This is a live, interactive Claude Code session with the account holder
+(samer.zakaria@gmail.com) — not a scheduled/automated turn. Per this
+repo's own established rule (see the FTF-0102 precedent below and the
+2026-09-17 relay entries' handling of PR #67's self-reported, uncorrob-
+orated approval claim), only a live conversation like this one, or an
+independently verifiable GitHub comment/review from the owner's own
+account, can make a new-runtime-dependency approval official — never an
+AI-authored commit message asserting it happened elsewhere.
+
+Background: the 2026-09-18 FTF-0101 (OIDC login) new-runtime-dependency
+ask (QUEUE.md's own "Owner actions — current") required an owner decision
+before this repo's first live web framework and auth libraries could be
+added, per CLAUDE.md's "new runtime deps" ask-first hard stop — this repo
+has no live FastAPI app anywhere yet and no Next.js/React runtime in
+`apps/web`. The relay had asked, in effect: approve the implied default
+stack the architecture docs already assume for `apps/api`/`apps/web`, or
+something else, or split the decision (approve the web framework now,
+defer the local-OIDC-test-provider package separately), or decline/defer.
+
+The owner, live in this conversation, was shown the concrete options and
+explicitly confirmed **option 1 — the implied default stack**:
+- **Python (`apps/api`):** `fastapi` + `uvicorn` (ASGI server) +
+  `authlib` (OIDC/OAuth2 client + JWT/JWKS validation) + `itsdangerous`
+  (session signing).
+- **TypeScript (`apps/web`):** `next` + `react` + `react-dom` (+ types).
+
+This matches the master architecture table
+(`FINE_TUNING_FACTORY_RELEASE_1.md`, "binding architecture") as already
+written — not a new, unreviewed technology choice.
+
+**Explicitly not part of this confirmation:** the separate local-OIDC-
+test-provider package FTF-0101 will also need for its own real-
+integration-evidence acceptance clause (Section 65.3 — "a real local OIDC
+provider," never a bypass/test-token login), e.g. the Node
+`oidc-provider` package or the Python `idpy-oidc` package. The owner was
+only asked about, and only confirmed, the core web-framework/auth-library
+stack; treating that same answer as also covering the test-provider
+package would be exactly the kind of silent substitution CLAUDE.md's
+"Relay is execution-only" / ask-first rule exists to prevent. That piece
+is filed as a fresh, narrowly-scoped, still-open ask in QUEUE.md's "Owner
+actions — current," dated today rather than left over from the old entry.
+
+Actions taken this turn:
+- Removed the resolved 2026-09-18 FTF-0101 ask from QUEUE.md's "Owner
+  actions — current" block in full, per CLAUDE.md's "remove it the moment
+  the owner responds... never leave resolved asks in item history" rule,
+  and replaced it with a fresh, narrower 2026-09-19 ask covering only the
+  still-open local-OIDC-test-provider package decision.
+- Moved FTF-0101 out of `## Blocked` (now empty of active blockers) with
+  a resolved-history note mirroring the existing FTF-0102 precedent
+  already in that section. FTF-0101 is dependency-ready (deps
+  FTF-0004/FTF-0005/FTF-0102, all CERTIFIED) for the next relay shift to
+  claim, but not claimed or implemented by this turn — no dependency has
+  actually been added to `pyproject.toml`/`package.json` yet; that
+  remains real implementation work (installing the packages, building
+  `oidc_login.tsx` and the callback/session API, proving the negative-
+  acceptance clauses) for whichever shift picks it up.
+- Updated QUEUE.md's `Status`/`Updated` header accordingly (Blocked: 0).
+
+No source code changed this turn — this is a decision-recording and
+owner-ask resolution only, same category of action CLAUDE.md's "Do
+without asking" list already covers for tracking-file edits.
 
 ## 2026-09-19 — Control plane: FTF-1601 (PR #100) independently certified
 STEP 0: `sha256sum CLAUDE.md` matches committed `CLAUDE.md.sha256` — no
