@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-16/domain.schema.json",
+  "title": "Sovra Phase 16 Domain Schemas (FTF-1601 — Postgres backup)",
+  "description": "Frozen shared domain schemas for the backup/restore evidence records (Section 48/71.2). Field shapes are copied verbatim from the single real enforcing source, scripts/postgres_backup.py's BackupRecord/RestoreRecord dataclasses, and tested against it directly in tests/tasks/test_ftf_1601.py so this file cannot silently drift from the code that actually produces these records.",
+  "$defs": {
+    "Sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "RlsPolicy": {
+      "type": "object",
+      "properties": {
+        "table": { "type": "string", "minLength": 1 },
+        "policy": { "type": "string", "minLength": 1 }
+      },
+      "required": ["table", "policy"],
+      "additionalProperties": false
+    },
+    "BackupRecord": {
+      "type": "object",
+      "description": "One encrypted, self-verified PostgreSQL backup and the role/schema/RLS/version metadata captured at backup time (Section 48).",
+      "properties": {
+        "backup_id": { "type": "string", "format": "uuid" },
+        "database_name": { "type": "string", "minLength": 1 },
+        "postgres_version": { "type": "string", "minLength": 1 },
+        "migration_head_revision": { "type": ["string", "null"] },
+        "tables": { "type": "array", "items": { "type": "string" } },
+        "rls_forced_tables": { "type": "array", "items": { "type": "string" } },
+        "rls_policies": { "type": "array", "items": { "$ref": "#/$defs/RlsPolicy" } },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": "string", "format": "date-time" },
+        "plaintext_sha256": { "$ref": "#/$defs/Sha256Hex" },
+        "ciphertext_sha256": { "$ref": "#/$defs/Sha256Hex" },
+        "cipher": { "type": "string", "enum": ["aes-256-cbc"] },
+        "key_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "ciphertext_size_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "required": [
+        "backup_id",
+        "database_name",
+        "postgres_version",
+        "tables",
+        "rls_forced_tables",
+        "rls_policies",
+        "roles",
+        "created_at",
+        "plaintext_sha256",
+        "ciphertext_sha256",
+        "cipher",
+        "key_fingerprint",
+        "ciphertext_size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "RestoreRecord": {
+      "type": "object",
+      "description": "The result of restoring one BackupRecord's artifact into a target database, with independently re-derived metadata proving the restored copy actually carries the backed-up schema/RLS/data (Section 71.2 — a backup that has never been restored does not count as validated).",
+      "properties": {
+        "backup_id": { "type": "string", "format": "uuid" },
+        "database_name": { "type": "string", "minLength": 1 },
+        "restored_at": { "type": "string", "format": "date-time" },
+        "tables_restored": { "type": "array", "items": { "type": "string" } },
+        "rls_forced_tables_verified": { "type": "array", "items": { "type": "string" } },
+        "rls_policies_verified": { "type": "array", "items": { "$ref": "#/$defs/RlsPolicy" } },
+        "row_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "ciphertext_sha256_verified": { "type": "boolean" },
+        "plaintext_sha256_verified": { "type": "boolean" },
+        "restoration_validated": { "type": "boolean" }
+      },
+      "required": [
+        "backup_id",
+        "database_name",
+        "restored_at",
+        "tables_restored",
+        "rls_forced_tables_verified",
+        "rls_policies_verified",
+        "row_counts",
+        "ciphertext_sha256_verified",
+        "plaintext_sha256_verified",
+        "restoration_validated"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

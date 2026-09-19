@@ -3114,6 +3114,166 @@ PR: https://github.com/SJZLab/Sovra/pull/87
   see session-ID check above), 2026-09-18. Full ledger entry:
   `docs/certifications/ledger.md`.
 
+## FTF-1601 — Postgres backup — PROVISIONAL submission (2026-09-18)
+
+**PR:** https://github.com/SJZLab/Sovra/pull/90 (`[relay] FTF-1601: Postgres
+backup`), head commit `33f4cb5` (implementation commit `f5d3aee`).
+**Producer session:** https://claude.ai/code/session_01B9eYtKy6gPX3Ym8Cvx3X9c.
+**Dependencies:** FTF-0004, FTF-0102 — both CERTIFIED. This was QUEUE.md's
+own flagged dependency-ready frontier item from the prior shift ("not
+claimed this shift, certification-only"); claimed this shift.
+
+**What was delivered:**
+- `scripts/postgres_backup.py` — a stdlib-only backup/restore tool (no new
+  pip dependency: `cryptography`/`pynacl` do not appear anywhere in this
+  repo's `pyproject.toml`/`uv.lock`, confirmed by grep before starting;
+  adding either would itself be an unapproved new-runtime-dependency
+  ask-first item). Shells out to `pg_dump`/`pg_restore`/`psql`/`openssl`
+  — OS binaries already present in this repo's Postgres tooling and CI
+  environment (confirmed present via `which` before relying on them),
+  never a new dependency.
+  - `create_backup()`: real `pg_dump --format=custom` logical backup;
+    `capture_metadata()` records the real server version, the live
+    Alembic `alembic_version` head revision, public-schema table names,
+    `pg_class.relforcerowsecurity` tables, `pg_policies` rows, and
+    distinct `information_schema.role_table_grants` grantees (the
+    "role/schema/RLS/version metadata" this task's acceptance clause
+    requires); encrypts with `openssl enc -aes-256-cbc -pbkdf2` under
+    `SOVRA_BACKUP_ENCRYPTION_KEY` (no development fallback, same rule as
+    `SOVRA_APP_DB_PASSWORD`); then immediately self-verifies by
+    decrypting the fresh ciphertext back and checksumming it against the
+    original plaintext dump *before* ever returning a `BackupRecord` —
+    this is this task's own negative_acceptance clause ("backup command
+    success without verifiable usable data/key path is not done") made
+    structural, not just tested for. The plaintext dump and the
+    self-check scratch file are unlinked in a `finally` block regardless
+    of success or failure; a failed self-verification also deletes the
+    ciphertext/metadata sidecar so no half-verified artifact looks like a
+    successful backup.
+  - `restore_backup()`: verifies the backup file's own recorded
+    `ciphertext_sha256` before ever decrypting, and the decrypted
+    plaintext's `plaintext_sha256` before ever invoking `pg_restore` — a
+    tampered file or the wrong key is rejected by checksum, never reaches
+    `pg_restore`. After restoring, re-runs the identical metadata capture
+    against the restored database plus real `SELECT count(*)` row counts,
+    and computes `restoration_validated` as a real boolean conjunction of
+    every one of those checks, not a bare exit-code pass-through.
+  - Disclosed scope limit (not hidden): "role...metadata" means the role
+    names this database's own `GRANT`s reference, not a `CREATE ROLE`
+    capture — Postgres roles are cluster-wide, not per-database, and a
+    full role-definition dump needs `pg_dumpall --roles-only` against
+    privileges this per-database tool does not assume. Both this repo's
+    local dev stack and its CI integration jobs run every task inside one
+    already-provisioned cluster where `sovra_app`/`sovra_migrate` already
+    exist cluster-wide, so this scope limit does not block the actual
+    restoration test below.
+- `packages/contracts/jsonschema/16-domain.schema.json` +
+  `packages/contracts/openapi/16-interface.yaml`: frozen `BackupRecord`/
+  `RestoreRecord` schemas, field shapes copied verbatim from the real
+  enforcing dataclasses and tested against them directly (same
+  discipline as FTF-0102's `01-*` contract files). This task's own
+  acceptance clause 1 ("Freeze the minimum shared phase interface and
+  domain schemas at the declared owner paths") and
+  `contract_owner: FTF-1601` / `shared_lock_required: contracts:16`
+  explicitly require this — unlike FTF-0104, where the same
+  `shared_lock_required: contracts:01` boilerplate was disclosed as not
+  literally applicable to that task's own concrete acceptance clauses.
+  The OpenAPI file declares zero `paths` (Law 11 — no live FastAPI app
+  exists yet), same disclosed pattern as every prior contract file in
+  this repo.
+- `tests/tasks/test_ftf_1601.py` — no Postgres required. Exercises the
+  *real* `openssl` binary for genuine encrypt/decrypt round trips
+  (correct-key round-trip and a wrong-key negative case), `sha256_file`/
+  `key_fingerprint`/`_libpq_dsn`/`required_env` unit checks, and
+  `create_backup()`/`restore_backup()`'s own control-flow logic via
+  injected fake `dump_fn`/`metadata_fn` callables — including one fault
+  injection that monkeypatches `_encrypt_file` to encrypt under a
+  silently different key than the one used for self-verification (
+  reproducing "the encrypt step used the wrong key" as a real code path,
+  not a hypothetical) and confirms `create_backup()` genuinely raises and
+  leaves no artifact behind, not merely that the encrypt call returned
+  zero. Also validates real `BackupRecord`/`RestoreRecord` instances
+  against the frozen contract files via a hand-rolled, stdlib-only
+  structural validator (deliberately not the third-party `jsonschema`
+  package — would itself be a second unapproved dependency, same
+  reasoning FTF-0102's own suite already established), and confirms the
+  validator genuinely rejects an unsupported cipher value and a
+  non-boolean `restoration_validated` value (not a decorative
+  always-pass check).
+- `tests/integration/test_postgres_backup.py` — requires a real Postgres.
+  Seeds one real `Organization` row through FTF-0102's own schema, takes
+  a real encrypted backup of the live database, proves the wrong key and
+  a tampered backup file (one flipped byte) are both rejected by
+  `restore_backup()` before any `pg_restore` attempt against a real
+  target database, then restores into a second, freshly created scratch
+  database in the same cluster and proves the restored copy genuinely
+  carries the `organizations` table, `FORCE ROW LEVEL SECURITY`, the
+  `tenant_isolation` policy, and the exact seeded row (by primary key,
+  name intact) — "a backup that has never been restored does not count
+  as validated" (Section 71.2). Cleans up its own scratch database at the
+  end.
+
+**Local verification performed before opening the PR** (this sandbox has
+no container-registry egress — same finding as
+FTF-0004/FTF-R017/FTF-0102/FTF-0104 — so live evidence was produced
+locally against a directly-installed PostgreSQL 16 cluster, `sovra_migrate`
+granted `SUPERUSER` locally to match the `postgres:16-alpine` image's own
+bootstrap-superuser `CREATE DATABASE` privilege the restore step needs):
+- `uv run ruff check .` / `ruff format --check .` / `uv run mypy .` — all
+  clean (63 source files).
+- `pnpm run lint` / `format:check` / `typecheck` — all clean.
+- Every `tests/tasks/test_ftf_*.py` run individually, including
+  FTF-0102/FTF-0104's own no-DB suites — all pass, no regression.
+- `tests/integration/test_organization_workspace_schema.py` and
+  `tests/integration/test_audit_event_writer.py` re-run against the same
+  local Postgres cluster this task's own integration test used — both
+  pass, no regression to FTF-0102/FTF-0104's own live evidence.
+- `tests/integration/test_postgres_backup.py` — passes for real against
+  the live local cluster (see above).
+- `uv run pytest tests/unit` (3 passed) + `pnpm exec vitest run` (2
+  passed) + `scripts/check_test_harness.py` — clean.
+- `python3 scripts/product_truth_check.py --fail-on-unwired` —
+  legitimately `0/0` (`proving_symbol: ''`, no live FastAPI app imports
+  `postgres_backup.py`, same established pattern as every non-product-true
+  certified task).
+- `python3 scripts/status.py` — `18/300 certified · 0 product-true`
+  (unchanged; this PR is PROVISIONAL, not yet certified).
+- `python3 scripts/validate_spec.py --strict` — clean (also caught and
+  fixed a real defect this shift's own first draft of the
+  `docs/spec-matrix.yaml` notes text introduced: two bare `word: `
+  sequences inside an unquoted YAML plain scalar broke `yaml.safe_load`
+  for the whole file — same class of defect FTF-0104's own history
+  already hit once; fixed before this PR was opened, not left for
+  review to catch).
+- `python3 scripts/verify_task.py --task FTF-1601 --stage task` →
+  `BLOCKED` ("no merged verification evidence yet") — correct and
+  expected at this stage; `spec/verification-map.json` gets its FTF-1601
+  entry from Control plane's own two-commit pattern at certification
+  time, once the implementation commit already exists in history (same
+  as every prior task).
+- `python3 scripts/verify_release.py` — confirmed non-inflated: `18/300`,
+  zero `FAILED`, `NOT READY`, identical to `main`'s own pre-existing
+  state before this PR (verified by `git stash` + re-run on the
+  unmodified tree) — this PR does not change the certified count on its
+  own.
+- CI on the actual PR head not yet observed by this producer session (PR
+  just opened); Control plane's independent review should reconfirm
+  green on the real head, per this repo's own established practice, and
+  should specifically watch the new `postgres-backup-integration` job's
+  `apt-get install postgresql-client-16` step, since it is the first job
+  in this repo to install a Postgres client on the runner itself (every
+  prior DB-integration job only ever spoke to Postgres via
+  `psycopg`/SQLAlchemy).
+
+**Not yet done (left for Control plane, per Law 4 — never self-certified):**
+independent review of the diff, independent re-run of both the no-DB
+suite and the live-Postgres integration test (ideally in a fresh worktree
+against the actual PR head), an own fault injection distinct from the
+ones in this PR's own test suite, confirmation CI is genuinely green on
+the real merged head (not just this producer's local re-run), and — if
+certified — `spec/verification-map.json`/`spec/tasks.json`/
+`docs/implementation/TRACKER.json` updates via `sync_certified_status()`.
+
 ### Control plane review — 2026-09-18 — NOT CERTIFIED (structural blocker, content sound)
 - **PR:** https://github.com/SJZLab/Sovra/pull/90 (`claude/wizardly-fermat-e9tyvg`
   → `main`), reviewed at head `f104ef60d16fbb009587c41c37bdadea6d8465e8`.
@@ -3225,6 +3385,76 @@ PR: https://github.com/SJZLab/Sovra/pull/87
 - **Validated-by:** session
   https://claude.ai/code/session_01Hqc673opTMxfCqsyXmGuoo (independent —
   see session-ID check above), 2026-09-18.
+
+## FTF-1601 — Postgres backup — resubmitted under new PR #96, structural blocker resolved for real (2026-09-18)
+
+**Background:** the resolution above (merging `main` into PR #90's own
+branch, `claude/wizardly-fermat-e9tyvg`) worked once but the same
+tracking-doc conflict recurred twice more over the following shifts as
+`main` kept moving. Each of those shifts correctly declined to push
+another fix directly to `e9tyvg`, since it was never their own designated
+branch and CLAUDE.md forbids pushing to an unassigned branch without
+explicit permission (no live user exists in a scheduled/automated shift to
+grant it) — recorded in QUEUE.md/PROGRESS.md rather than worked around.
+
+**This shift's action:** rather than record the same structural finding a
+fourth time, merged FTF-1601's actual delivered code from
+`claude/wizardly-fermat-e9tyvg` (a read of that branch's content, never a
+push to it) into this session's own designated branch
+(`claude/wizardly-fermat-vmg0oc`), confirmed via `git diff --stat` that
+the code itself (`scripts/postgres_backup.py`,
+`tests/integration/test_postgres_backup.py`, `tests/tasks/test_ftf_1601.py`,
+the `16-*` contracts, the CI job, the task packet — 2,151 lines across 7
+files) is byte-identical to what's already documented and reviewed above;
+only `PROGRESS.md`/`QUEUE.md` needed manual conflict resolution.
+
+**PR:** https://github.com/SJZLab/Sovra/pull/96 (supersedes #90, now
+closed), real final head commit `2a98c9d4ed04c82cbd60b8640de0387d30a1a6fe`
+on branch `claude/wizardly-fermat-vmg0oc` (the implementation-plus-merge
+commit itself is `20aa4e5704d1c0da9d973c1b9f931d531324c63a`; one further
+tracking-doc-only commit recording CI confirmation and PR #90's closure
+followed).
+
+**Regression re-run on the merged tree before pushing** (`uv sync
+--all-packages` + `pnpm install --frozen-lockfile` + `git fetch
+--unshallow` first, to avoid this sandbox's known shallow-clone
+`stale_commit` false positive): `ruff check .` / `ruff format --check .` /
+`mypy .` clean (63 files); `pnpm lint`/`typecheck`/`format:check` clean;
+`uv run pytest tests/unit tests/tasks` — 209 passed, including FTF-1601's
+own 14-check no-DB suite; `pnpm exec vitest run` — 2 passed; `uv run
+python3 scripts/validate_spec.py --strict` clean; `uv run python3
+scripts/status.py` — `18/300 certified · 0 product-true` (unchanged); `uv
+run python3 scripts/product_truth_check.py --fail-on-unwired` — `0/0`
+(unchanged); `uv run python3 scripts/verify_release.py` — `18/300`, zero
+`FAILED` (unchanged). Did not re-run the live-Postgres integration test
+locally — no code changed since the independent live-Postgres
+reproduction already recorded above for this exact delivered code; PR
+#96's own `postgres-backup-integration` CI job covers it on the real new
+head.
+
+**CI on the real final head (`2a98c9d`), confirmed directly via
+`get_check_runs` (not inferred from a stale field):** all 6 jobs
+`completed`/`success` (`gate`, `docker-local-stack-integration`,
+`organization-workspace-schema-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`storage-semantics-integration`, run `35403943528`; also green on the
+intermediate head `20aa4e5`, run `35403729104`, confirmed the same way
+before the final doc-only commit landed). `pull_request_read get`
+confirms `mergeable_state: "clean"`. PR #90 closed with an explanatory
+comment linking here, rather than leaving two open PRs for the same task.
+
+**Not self-certified, not merged:** this shift only unblocked the
+structural conflict that had stalled three consecutive shifts and
+resubmitted the exact same already-independently-reviewed-sound evidence
+under a mergeable head — it did not certify or merge, per Law 4.
+`certification_state` stays `PROVISIONAL`. **FTF-1601/PR #96 is ready for
+a fresh, independent Control-plane L2 review** — the delivered evidence
+itself needs no new content review (it is byte-identical to what a prior
+Control-plane session already independently reproduced against a live
+Postgres cluster, recorded above), only confirmation that this is in fact
+the same code on a now-clean head.
+- **Producer session (this continuation only — not the original
+  implementation):** https://claude.ai/code/session_01RDefDg12JGVTtU732EEARs.
 
 ### Control plane review — 2026-09-18 — NOT CERTIFIED (real Law 1 gap: restoration completeness never proven able to fail)
 - **PR:** https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
@@ -3366,6 +3596,99 @@ PR: https://github.com/SJZLab/Sovra/pull/87
   before resubmitting.
 - **Validated-by:** this session (independent — see session-ID check
   above), 2026-09-18.
+
+## 2026-09-19 — FTF-1601 (PR #96) — negative test added, no code change, resubmitted
+- **Fixes exactly what the review above found:** four new checks in
+  `tests/tasks/test_ftf_1601.py` — three independent negatives, one per
+  `restoration_validated` subset term, plus one baseline positive:
+  1. `test_restore_backup_reports_invalid_when_a_table_is_missing_from_the_restore`
+  2. `test_restore_backup_reports_invalid_when_an_rls_forced_table_is_missing_from_the_restore`
+  3. `test_restore_backup_reports_invalid_when_an_rls_policy_is_missing_from_the_restore`
+  4. `test_restore_backup_reports_valid_for_a_genuinely_complete_restore` (baseline)
+- **Scaffold:** `_restore_with_incomplete_metadata()` makes a real backup
+  via `create_backup()` with the full `_fake_metadata` content, then
+  restores it with a no-op `restore_fn` and a deliberately incomplete
+  post-restore `metadata_fn` — the same `dump_fn`/`metadata_fn`-injection
+  pattern this suite already uses elsewhere, per the review's own
+  instruction.
+- **A real wrinkle found and worked around, not silently avoided:**
+  `restore_backup()`'s row-count step
+  (`for table in row_count_tables or record["tables"]: ...
+  _psql_rows(...)`) queries a live database directly for any table both
+  the original backup and the restored metadata agree exists —
+  unconditionally, regardless of `restoration_validated`'s own result,
+  and unrelated to it (a separate reporting field). Passing
+  `row_count_tables=[]` does **not** skip this — `[] or record["tables"]`
+  evaluates to `record["tables"]` because an empty list is falsy in
+  Python, a real quirk of the existing default-argument pattern, not a
+  new one introduced by this fix. Worked around by monkeypatching
+  `_psql_rows` for the scaffold's own scope only, the same way
+  `test_create_backup_self_verification_catches_a_broken_encrypt_path`
+  (already in this file, from the original PR) monkeypatches
+  `_encrypt_file` — save the original, patch, restore in `finally`. This
+  does not touch `restoration_validated`'s own computation in any way; it
+  only avoids a network call this no-DB suite cannot make.
+- **Evidence — shown able to fail (Law 1), reproducing the reviewer's
+  exact finding three times over, once per subset term:** temporarily
+  removed each of the three conjunction terms from
+  `scripts/postgres_backup.py`'s `restoration_validated` in turn —
+  `set(record["tables"]).issubset(set(tables_restored))`,
+  `set(record["rls_forced_tables"]).issubset(set(rls_forced_tables_verified))`,
+  and the `rls_policies` subset check — re-running the full suite after
+  each single-term removal:
+  - Removing the `tables` term: exactly
+    `test_restore_backup_reports_invalid_when_a_table_is_missing_from_the_restore`
+    failed (`FAIL [FTF-1601] restoration_validated is False when the
+    restored database is missing a table the original backup recorded`);
+    no other check failed.
+  - Removing the `rls_forced_tables` term: exactly
+    `test_restore_backup_reports_invalid_when_an_rls_forced_table_is_missing_from_the_restore`
+    failed; no other check failed.
+  - Removing the `rls_policies` term: exactly
+    `test_restore_backup_reports_invalid_when_an_rls_policy_is_missing_from_the_restore`
+    failed; no other check failed.
+  Restored the file byte-identical from a pre-edit copy (`diff` confirmed
+  empty) after each injection, re-ran clean (all 18 `test_ftf_1601.py`
+  checks pass) before moving to the next.
+- **Merge, not a fresh conflict:** current `main` (`0233470`) had moved
+  past this branch's base while the review above was landing there;
+  merged it into `claude/wizardly-fermat-vmg0oc` — conflicts confined to
+  `QUEUE.md`/`docs/certifications/queue.md` (both pure tracking-doc
+  prose, resolved chronologically, keeping both sides' entries, nothing
+  dropped), zero conflict or drift in any code file.
+- **Full regression on the merged-and-fixed tree** (`uv sync
+  --all-packages` + `pnpm install --frozen-lockfile` + `git fetch
+  --unshallow` first): `ruff check .`/`ruff format --check .`/`mypy .`
+  clean (63 files); `pnpm lint`/`typecheck`/`format:check` clean; `uv run
+  pytest tests/unit tests/tasks` — 213 passed (209 before this fix; +4,
+  all in `test_ftf_1601.py`, now 18/18); `pnpm exec vitest run` — 2
+  passed; `uv run python3 scripts/validate_spec.py --strict` clean; `uv
+  run python3 scripts/status.py` — `18/300 certified · 0 product-true`
+  (unchanged); `uv run python3 scripts/product_truth_check.py
+  --fail-on-unwired` — `0/0` (unchanged); `uv run python3
+  scripts/verify_release.py` — `18/300`, zero `FAILED`, `NOT READY`
+  (unchanged). Did not re-run the live-Postgres integration test locally
+  — no code changed, and the live-Postgres reproduction of this exact
+  `restoration_validated` behavior is already independently recorded in
+  the review above; PR #96's own `postgres-backup-integration` CI job
+  re-covers it on the real new head regardless.
+- **Pushed:** commit `353b82bab5827ad95998644f1151d98c1dcaf541` on branch
+  `claude/wizardly-fermat-vmg0oc` (PR #96 unchanged, new commit; base
+  merge landed first as `f3a3b49`).
+- **CI reconfirmed green on that exact head, checked directly (not
+  inferred from the `check_suite.completed` webhook alone):**
+  `get_check_runs` against PR #96 — all 6 jobs `completed`/`success`
+  (`gate`, `docker-local-stack-integration`,
+  `organization-workspace-schema-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `storage-semantics-integration`), run `35411323316`.
+  `pull_request_read get` confirms `mergeable_state: "clean"`;
+  `get_comments` returns zero open review comments.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`
+  (unchanged — a scoped test-only fix per the review's own instruction,
+  "no code change expected/needed"). Not self-certified — this relay
+  session cannot certify its own fix; awaiting a fresh Control-plane L2
+  review with no session-ID overlap with this one.
 
 ### Control plane review — 2026-09-19 — NOT CERTIFIED (Law 1 gap now closed; new structural blocker — merge conflict against current main)
 - **PR:** https://github.com/SJZLab/Sovra/pull/96 (`claude/wizardly-fermat-vmg0oc`
