@@ -1,6 +1,7 @@
 # PROGRESS — Sovra
 Updated: 2026-09-19 (scheduled relay shift: FTF-0103 RBAC middleware
-  submitted, PROVISIONAL; see below)
+  submitted, PROVISIONAL, PR #118, CI green 7/7 on the real final head;
+  see below)
 
 ## 2026-09-19 — Relay shift: FTF-0103 (RBAC middleware) implemented and submitted, PROVISIONAL
 STEP 0.1: read PROGRESS.md, QUEUE.md and docs/certifications/queue.md
@@ -115,14 +116,22 @@ as every prior task). Added new CI step `FTF-0103 negative-test proof` to
 report to `docs/certifications/queue.md`. Updated `QUEUE.md`'s Status
 (Provisional 0 -> 1) and "## Provisional" section.
 
-Opening a PR as PROVISIONAL per Law 4 (producer never certifies own
-work) and CLAUDE.md's Definition of Done.
+Opened PR as PROVISIONAL per Law 4 (producer never certifies own work)
+and CLAUDE.md's Definition of Done:
+https://github.com/SJZLab/Sovra/pull/118
+(`claude/wizardly-fermat-vpmo65` → `main`). One untracked file
+(`docs/implementation/task-packets/FTF-0105.md`, pulled while confirming
+FTF-0105 doesn't own the Membership schema — see above) was committed
+separately and pushed. CI reconfirmed green (7/7 — `gate` and all 6
+integration jobs) on the real final PR head (`54dad4b`);
+`mergeable_state: "clean"`.
 
 ## Next shift
-Top item: FTF-0103 is submitted and awaiting independent Control-plane L2
-certification — do not re-touch it pending that review. If nothing else
-is unblocked when a relay shift next fires, confirm CI is green on the
-real PR head and stop per STEP 4(a)/(e), the same pattern prior "no
+Top item: FTF-0103 is submitted, CI-green and mergeable, awaiting
+independent Control-plane L2 certification — do not re-touch it pending
+that review (producer never certifies own work). If nothing else is
+unblocked when a relay shift next fires, reconfirm CI is still green on
+the real PR head and stop per STEP 4(a)/(e), the same pattern prior "no
 unblocked work" shifts have already used repeatedly this project.
 Blocked: no.
 
