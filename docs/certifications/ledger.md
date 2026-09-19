@@ -2166,3 +2166,126 @@ corrected 2026-09-15.
   resolution against current `main`, independently confirmed to introduce
   zero code change and to stay green on real CI at its actual final head.
   No blocking defect. Certified L2-CERTIFIED.
+
+## FTF-0101 — OIDC login
+- Criterion ID: FTF-0101
+- PR: https://github.com/SJZLab/Sovra/pull/114 (supersedes #112, which
+  superseded #103 — both closed, neither merged)
+- Merge commit: 5de1c58 (`5de1c58832ea7e34d0c91f3083654b1fa46e909a`)
+- Evidence commit (`evidence_hash`, `spec/verification-map.json`
+  `commit`): e2c5423 (`e2c54235584445f7e062f3b1b21a7b98f47308c2`) — the
+  real refresh-implementation commit, per this repo's established
+  two-commit pattern (implementation, then a hash-fixup commit pointing
+  at it).
+- Validated-by: session https://claude.ai/code/session_01TbPTaVC6QZGU54fpkSakxE
+  (session-ID comparison performed and recorded before this entry: all 15
+  commits on PR #114 carry either `Claude-Session:
+  .../session_01BaakM658Kz9nuZXKF53kc1` (this PR's own new commits),
+  `.../session_01Un2BpAFyPcvY7zUpk7ZHbe` (PR #112's carried-forward
+  commits), or `.../session_015u9WhWDyzkFgkk74HzHJ9d` (PR #103's, carried
+  forward further back); none match this reviewing session's own ID, so
+  this is an independent certification, not self-certification.)
+- Steps performed:
+  1. Confirmed no prior Control-plane review had certified this task:
+     `docs/certifications/queue.md`'s two prior 2026-09-19 reviews of
+     PR #103 and PR #112 both concluded NOT CERTIFIED — PR #103 for
+     acceptance clause 1's "Real OIDC provider" evidence resting only on a
+     fake stdlib stand-in; PR #112 for implementing login/logout against a
+     real provider but leaving "refresh" (a named third of the same
+     compound clause) unimplemented, untested, and claimed MET without
+     disclosure.
+  2. Read the full delivered diff directly on the real PR #114 head:
+     `apps/api/app/auth/oidc_login.py`'s new `exchange_refresh_token()`,
+     `_RefreshTokenStore` (in-memory, keyed by session `jti`, mirrors the
+     existing `_SessionRevocationStore`; the raw refresh_token is never
+     sent to the browser), and `POST /auth/refresh` (validates the new
+     id_token the same way `callback()` does, confirms subject/issuer
+     continuity — fails closed and ends the session on a mismatch — then
+     rotates the session: old `jti` revoked, new signed cookie issued;
+     CSRF double-submit protected the same way as `logout()`); plus the
+     `offline_access`/`prompt=consent` additions to
+     `build_authorization_redirect_url` that a real provider requires
+     before it will ever mint a `refresh_token` (confirmed empirically by
+     the producer against the real OP before writing app code, per the
+     module's own docstring and this shift's `queue.md`/`PROGRESS.md`
+     entries).
+  3. **CI reconfirmed for real on the actual current head, twice** — the
+     PR head moved twice during this review (734068b, adding the missing
+     `docs/certifications/queue.md` PROVISIONAL entry the initial
+     `pull_request.opened` trigger caught before it existed; then
+     40ef553, a `PROGRESS.md`-only commit) — re-polled rather than
+     trusting the PR body's own "to be confirmed independently" line each
+     time: all 7 checks (`gate`, `oidc-provider-integration`,
+     `docker-local-stack-integration`,
+     `organization-workspace-schema-integration`,
+     `audit-event-writer-integration`, `postgres-backup-integration`,
+     `storage-semantics-integration`) completed `success` on the real
+     final head (40ef553) that was actually merged.
+  4. **Own independent fault injection, distinct from the producer's own**
+     (which removed the rotation-revoke call): in this sandbox, after
+     `uv sync --all-packages`, disabled `refresh()`'s own
+     subject/issuer-continuity check (`if claims.subject != data["sub"]
+     or claims.issuer != data["iss"]:` forced to `if False:`). A `pytest
+     -k` invocation of the affected test misleadingly reported PASSED —
+     `tests/tasks/test_ftf_0101.py` uses a soft `check()`/`FAILURES`
+     pattern that only becomes a real assertion via its own `main()`
+     (`sys.exit(1)` if `FAILURES`), exactly how `.github/workflows/ci.yml`
+     actually invokes it (`uv run python3 tests/tasks/test_ftf_0101.py`,
+     not pytest) — re-ran it that way and the break was caught for real:
+     `FAIL [FTF-0101] a refresh that would swap the session's subject is
+     denied`, exit 1. Reverted (`cp` from a pre-edit backup, confirmed
+     byte-identical via `git diff`), re-ran clean (exit 0, "all checks
+     passed"); `tests/integration/test_oidc_login_real_provider.py` also
+     re-confirmed clean and unaffected by the revert (its own tests don't
+     exercise this particular path).
+  5. **`product_truth_check.py` result confirmed legitimate:**
+     `--fail-on-unwired` reports `1/1 product-true`; `grep` on
+     `apps/api/app/main.py` confirms `build_oidc_login_router` is imported
+     and called unconditionally from `create_app()` — a genuine
+     live-caller wiring, not a 0/0 pass (this task's `proving_symbol` is
+     filled in).
+  6. Task contract re-pulled directly: `python tools/r1_handoff.py packet
+     FTF-0101 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause
+     1 ("Real OIDC provider login/refresh/logout validates
+     issuer+audience+subject and secure session") is now met in full:
+     login and logout were already proven against the real `idpyoidc` OP
+     by PR #112's own (independently reviewed) evidence, carried forward
+     unchanged; refresh is newly proven the same way by this PR's two new
+     tests in `tests/integration/test_oidc_login_real_provider.py`
+     (`test_refresh_grant_mints_a_new_real_id_token_and_rotates_the_session`,
+     `test_refresh_without_csrf_token_is_denied_by_the_real_flow`) — read
+     directly: a real login against the real OP, then a real `POST
+     /auth/refresh` exchanging the real, server-held refresh_token for a
+     real new id_token against the real OP's own `/token` endpoint
+     (`grant_type=refresh_token`), with real session rotation and CSRF
+     enforcement. Acceptance clause 2 (independent review + merged commit
+     + real integration + negative-test evidence) is satisfied by this
+     entry itself. The negative_acceptance clause (forged issuer/audience,
+     expired token, state/nonce mismatch, revoked membership, CSRF all
+     denied) was already independently proven in the PR #112 review and is
+     unchanged here. `docs/spec-matrix.yaml`'s FTF-0101 notes read
+     accurately against all of the above — every remaining gap (revoked-
+     membership fail-closed default, in-memory refresh-token/session
+     stores, no RFC 7009 provider-revocation call on logout, no Next.js
+     app shell, no secret-manager integration) is disclosed, not silently
+     expanded past what was already accepted in the PR #112 review.
+  7. Set `docs/spec-matrix.yaml` FTF-0101 to `certification_state:
+     CERTIFIED` / `proof_state: L2-CERTIFIED` (`evidence_hash` kept at the
+     implementation commit `e2c5423`, matching the new
+     `spec/verification-map.json` `commit` field, same convention as
+     FTF-0102/FTF-0104/FTF-1601). Added FTF-0101's own entry to
+     `spec/verification-map.json` (the no-DB
+     `tests/tasks/test_ftf_0101.py` command — the live-provider
+     login/refresh/logout evidence is disclosed as CI-only/not locally
+     re-executable by `verify_task.py` in this sandbox, same established
+     pattern as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-1601). Merged PR
+     #114 (`5de1c58`).
+- Conclusion: the delivered OIDC login/refresh/logout machinery is real,
+  independently reproduced against a real local `idpyoidc` OpenID
+  Provider for all three named flows, genuinely fault-injectable (this
+  review's own chosen break, distinct from both prior reviews' and the
+  producer's own), and CI is green on the real final merged head. Both
+  gaps the two prior Control-plane reviews found — missing real-provider
+  evidence, then unimplemented/undisclosed refresh — are closed for real,
+  not merely disclosed around. No blocking defect. Certified
+  L2-CERTIFIED.
