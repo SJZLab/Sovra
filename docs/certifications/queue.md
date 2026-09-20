@@ -5510,3 +5510,191 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01RLyWKThYBPJkaqeDp2HZsN (independent —
   see session-ID check above), 2026-09-20.
+
+## 2026-09-20 — FTF-0202 (Secret-manager integration) — Relay: found ask-first, not implemented
+- **Trigger:** scheduled relay shift, next item in CAP-01 dependency/
+  numeric order (deps FTF-0005/FTF-0103/FTF-0201, all CERTIFIED).
+- **Task contract pulled fresh:** `python tools/r1_handoff.py packet
+  FTF-0202 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  is "Store/resolve/rotate short-lived secret refs through the actual
+  selected secret backend."
+- **Default-resolution rule checked first** (CLAUDE.md, owner instruction
+  2026-09-19): `FINE_TUNING_FACTORY_RELEASE_1.md` line 301 is the only
+  relevant text — "Secrets | Existing approved internal secret manager,
+  such as OpenBao where qualified | Scoped references/workload
+  credentials; review exact license and deployment." This names OpenBao
+  only as an example, explicitly conditioned on a qualification step that
+  has not happened anywhere in this repository — unlike FTF-0101's
+  web-framework/auth-stack pick, which had a direct, live, owner-confirmed
+  instruction on record (QUEUE.md, 2026-09-18), this is not a decision the
+  architecture already fixes or clearly implies.
+- **Confirmed genuinely ask-first, not merely novel:** `grep`-checked
+  every `pyproject.toml`/lockfile in this repository for `hvac`/`vault`/
+  `openbao` — no secret-manager client library exists anywhere.
+  `infra/docker/docker-compose.yml` has no secret-manager service in the
+  local stack. `docs/TASK_INDEX.md` has no separate "qualify secret
+  manager" task gating FTF-0202 the way FTF-0203 gates on FTF-H006 — this
+  is genuinely the first task in the queue that needs this decision, not
+  one already answered elsewhere and merely unread.
+- **Both required inputs are individually named** in CLAUDE.md's own "Ask
+  owner first (hard stops)" list: a new runtime dependency (a Python
+  Vault/OpenBao client, e.g. `hvac`) and a keyed external service (a real,
+  reachable, deployed secret-manager instance with real credentials —
+  Section 77.1's own framing is "existing approved internal secret
+  manager," i.e. organizationally pre-existing, not something a relay
+  session stands up itself the way a disposable local Postgres/SeaweedFS
+  container is for other tasks).
+- **Action taken:** logged one dated item in `QUEUE.md`'s "Owner actions —
+  current" block (STEP 4(e)). Did not implement, guess a backend, or
+  fabricate a mock secret manager (Law 11). Did not stop the whole shift
+  on this alone — Section 84.1/84.10 ("continue other available
+  authorized work when one dependency is blocked") directs picking up the
+  next genuinely unblocked, non-ask-first item instead, which this shift
+  did (FTF-0301, see the following entry).
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.
+
+## 2026-09-20 — FTF-0301 (TrainableArtifact schema/API) — Relay: implemented, PROVISIONAL
+- **Trigger:** scheduled relay shift, continuing after FTF-0202 was found
+  ask-first (see the entry immediately above). FTF-0301's own deps
+  (FTF-0103 RBAC middleware, FTF-0104 audit event writer) are both
+  CERTIFIED and it has no dependency on FTF-0202.
+- **Task contract pulled fresh:** `python tools/r1_handoff.py packet
+  FTF-0301 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance: "Register
+  versioned artifact URI/revision/license with source grants and
+  immutable identity after resolution." Negative_acceptance: "Unsafe URI,
+  unknown owner or mutable unresolved revision cannot enter training as
+  ready." Read Sections 6.7 (domain model), 13, 34 and 68 before writing
+  any code.
+- **Scope decision (disclosed, matching the FTF-0201 precedent):**
+  implements registration/storage/validation of the Section 6.7 identity
+  fields plus a pure ready-transition gate. Deliberately does NOT resolve
+  `source_uri` against a real Hugging Face Hub/S3 bucket/local
+  filesystem/private registry (FTF-0302/FTF-0303/FTF-0304's own, later,
+  separately dependency-gated tasks), and does NOT compute/verify
+  `weights_digest` from real bytes (FTF-0306's own task) — declaring that
+  surface here without a real backing call would be exactly the
+  "placeholder endpoint" Law 11 forbids. `weights_digest` is exposed only
+  as a PATCH-accepted, shape-validated field for a later resolver task to
+  write through.
+- **Files path refined** from the packet's own suggested
+  `packages/model-catalog/trainableartifact_schema_api.py` to
+  `apps/api/app/artifacts/` — same reasoning FTF-0201 already recorded
+  (no Python `packages/` workspace member exists; every prior live-app
+  domain module lives under `apps/api/app/`).
+- **What was built:**
+  - `apps/api/app/artifacts/artifact_schema.py` — the `trainable_artifacts`
+    domain model. `validate_source_uri` dispatches Section-65.4-style
+    shape safety per `source_type`: a bare `org/repo` id for
+    `huggingface`, `s3://bucket/key` (AWS-shaped bucket, no `..` key
+    traversal) for `private_s3`, a relative path with no `..`/absolute/
+    home-relative escape for `local_filesystem`, an `https://` URL with
+    no userinfo/fragment for `private_registry`. `is_pinned_revision`
+    rejects a named set of floating aliases (main/master/head/latest/
+    stable/nightly/trunk/default, case-insensitive).
+  - `apps/api/alembic/versions/0004_trainable_artifacts.py` — FORCE ROW
+    LEVEL SECURITY, `sovra_app` granted SELECT/INSERT/UPDATE only, never
+    DELETE (archive is a soft `status='archived'` transition).
+  - `apps/api/app/artifacts/artifact_crud.py` — create/get/list/edit/
+    accept-license/mark-ready/archive, composed entirely from
+    already-certified primitives (`TenantContext`/`authorize_resource_
+    ownership` (FTF-H003), `execute_tenant_scoped` (FTF-0105),
+    `write_audit_event` (FTF-0104)). `apply_mark_ready` makes the
+    negative_acceptance executable as three independently-checked gates:
+    unsafe source_uri (re-validated defensively), unknown owner
+    (`license_accepted_by`/`_at` both required, and `license_accepted_by`
+    is always the real authenticated actor's own `subject`, server-derived,
+    never a client-supplied field), and mutable/unresolved revision
+    (`weights_digest` resolved AND `base_model_revision` pinned).
+    `apply_edits` refuses anything but a `registered` artifact — this
+    task's own "immutable identity after resolution" clause, matching the
+    FTF-0201 revoked-connection precedent of a fully closed record.
+  - `apps/api/app/artifacts/artifact_routes.py` — the real
+    `/api/v1/organizations/{organization_id}/artifacts` router (plus
+    `/accept-license` and `/mark-ready` action routes), wired
+    unconditionally into `apps/api/app/main.py`'s `create_app()` — the
+    THIRD live-wired product-runtime path in this repository. Role gating
+    follows FTF-0106's own wide-read/narrow-write precedent (Section 45
+    names no single restrictive sentence for artifacts): reads open to
+    every named role; create/edit/accept-license/mark-ready/archive
+    require `{ml_engineer, organization_admin}` (Section 45's own
+    "ml_engineer: datasets/training, no production approval" is the only
+    sentence naming a role for this class of work).
+  - `packages/contracts/openapi/03-interface.yaml` +
+    `packages/contracts/jsonschema/03-domain.schema.json` — the
+    `contracts:03` freeze.
+  - `tests/tasks/test_ftf_0301.py` (no-DB unit/fault tests) and
+    `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`
+    (real live-Postgres tests).
+- **Own fault-injection evidence (Law 1):** widened `is_pinned_revision`
+  to unconditionally return `True`. Caught for real by the no-DB suite (8
+  checks failed: every `is_pinned_revision` named case plus the
+  mark-ready mutable-revision negative test). The integration suite's
+  *first* version did not catch it, because it resolved
+  `base_model_revision` and `weights_digest` together in one PATCH, so
+  the still-unresolved-digest gate alone produced the same 409 with or
+  without the fault. Rather than accept "not caught, for an understood
+  reason" the way FTF-0201's own defense-in-depth finding was disclosed,
+  this was treated as a real integration-suite coverage gap and fixed:
+  the suite now resolves `weights_digest` alone first, asserts mark-ready
+  is *still* refused while `base_model_revision` is still `'main'`, then
+  resolves the revision. Re-ran with the fault still injected: 2
+  live-Postgres checks failed for real (the isolated mutable-revision
+  refusal, and the following edit). Both reverted byte-identical
+  (`git diff --stat` clean) and both suites re-ran clean.
+- **Real live-Postgres evidence** (a directly-installed local PostgreSQL
+  16 cluster, `sovra_migrate`/`sovra_ftf0301` — no container-registry
+  egress in this sandbox, same finding as every prior integration-tested
+  task): two real organizations; unsafe source_uri rejected at creation
+  (400); the mark-ready negative_acceptance gate proven with three
+  separate real HTTP round-trips isolating each of its three conditions
+  in turn before the all-satisfied success; "immutable identity after
+  resolution" (PATCH against a `ready` artifact refused, 409); the core
+  IDOR case (a real artifact ID belonging to org1, requested/mutated
+  under org2's own path by a real org2 `ml_engineer`, denied identically
+  to missing (404) for GET/PATCH/DELETE alike, confirmed genuinely
+  untouched afterward); archive idempotency; mark-ready refused on an
+  archived artifact; a session with no tenant context ever bound refused
+  via `TenantContextError`; `sovra_app` confirmed unable to issue a raw
+  DELETE against `trainable_artifacts` directly; the real DB unique
+  constraint on `(organization_id, display_name)` rejecting a duplicate.
+  An alembic `downgrade -1`/`upgrade head` round-trip also confirmed
+  clean.
+- **Disclosed, not hidden:** a duplicate-`display_name` create surfaces
+  as an unhandled `IntegrityError` (HTTP 500) rather than a clean
+  400/409 — the exact same, already-CERTIFIED gap FTF-0201 carries for
+  its own analogous unique constraint; a 500 is a real failure, never a
+  fabricated success (Law 11). License-acceptance "workflow" (real
+  license text, an org-wide catalog/policy) is FTF-0305's own later task.
+- **Full regression, this sandbox:** `git fetch --unshallow` first (same
+  pre-existing shallow-clone `stale_commit` artifact every certifying
+  session's own ledger entry already documents — confirmed transient,
+  `validate_spec.py --strict` clean afterward). `ruff check .`/`ruff
+  format --check .`/`mypy .` clean (98 files); `pnpm install
+  --frozen-lockfile` then `pnpm run lint`/`typecheck`/`format:check`
+  clean; every existing `tests/tasks/test_ftf_*.py` file re-run clean;
+  `python3 scripts/validate_spec.py --strict` clean; `sha256sum CLAUDE.md`
+  matches the committed `CLAUDE.md.sha256`; `scripts/status.py` confirmed
+  non-inflated (`25/300` unchanged — FTF-0301 is PROVISIONAL, not counted
+  until certified; "Product-true" stays `2` until then, matching
+  FTF-0201's own PROVISIONAL-stage behavior).
+- **`product_truth_check.py --fail-on-unwired`:** `3/3` (adds
+  `build_trainable_artifact_router`, confirmed genuinely imported and
+  called unconditionally from `apps/api/app/main.py`'s `create_app()` by
+  direct source read).
+- **Task contract cross-checked:** `python tools/r1_handoff.py packet
+  FTF-0301` confirmed both acceptance clauses and the negative_acceptance
+  clause map to the delivered scope and the disclosed resolver/digest
+  exclusion is genuinely justified (FTF-0302/0303/0304/0306 are later,
+  separately dependency-gated tasks, not a hidden cut). All dependencies
+  (FTF-0103/FTF-0104) confirmed genuinely CERTIFIED in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID
+  check against this submission's own commits; CI has not yet been
+  confirmed green on the real PR head by an independent session; no
+  independent fault injection beyond the one performed above.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.

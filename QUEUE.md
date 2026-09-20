@@ -1,5 +1,16 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — FTF-0202 (Secret-manager
+  integration) found genuinely ask-first (new runtime dependency + a
+  keyed external service, neither fixed by the architecture the way
+  FTF-0101's stack pick was) and logged below under "Owner actions —
+  current" rather than implemented or guessed. Per Section 84.1/84.10,
+  continued with the next unblocked, non-ask-first item instead: FTF-0301
+  (TrainableArtifact schema/API, deps FTF-0103/FTF-0104 both CERTIFIED)
+  implemented and submitted PROVISIONAL. Full narrative: `PROGRESS.md`.
+  Certified: 25/300 (unchanged this shift — FTF-0301 is PROVISIONAL, not
+  yet independently certified). Awaiting Control-plane review of FTF-0301.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #133) — independent CERTIFY
   review of FTF-0201 (LiteLLM connection CRUD): **CERTIFIED**. Session-ID
   clean against all 7 commits on PR #133 (session_01MV1wn1CJHoHmds4eRKKVaV,
@@ -195,7 +206,8 @@ which the top banner and "## Done" section both already reflect
 correctly. Corrected here rather than left for a future shift to notice.
 
 Certified: 25/300 (main; FTF-0201 CERTIFIED 2026-09-20, PR #133 merged as
-`3588e4e` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`3588e4e` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0301,
+this shift, awaiting Control-plane L2 review) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -274,22 +286,42 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. The one open ask (FTF-0101's local-OIDC-test-provider
-package choice) was resolved 2026-09-19 by live owner instruction — see
-the banner above and "## Blocked" history below.
+**Dated 2026-09-20 (relay shift).** FTF-0202 (Secret-manager integration)
+needs an owner decision before it can be implemented for real:
+1. Which actual secret-manager backend to integrate against.
+   `FINE_TUNING_FACTORY_RELEASE_1.md` line 301 names OpenBao only as an
+   example ("such as OpenBao where qualified"), explicitly conditioned on
+   a qualification step that has not happened — unlike FTF-0101's
+   web-framework/auth-stack pick, this is not a decision already fixed or
+   clearly implied elsewhere in the architecture, so it is not resolved
+   by CLAUDE.md's own default-resolution rule.
+2. A real, reachable, deployed instance of that backend (with real
+   credentials) to prove store/resolve/rotate against — Section 77.1's
+   own framing is "existing approved internal secret manager," i.e. this
+   is expected to already exist organizationally, not something a relay
+   session stands up itself the way a disposable local Postgres/SeaweedFS
+   container is for other tasks.
+3. Confirmation that adding the corresponding Python client library
+   (e.g. `hvac` for Vault/OpenBao) as a new runtime dependency is
+   approved — no such library exists in any `pyproject.toml`/lockfile in
+   this repository today.
+
+Both (2) and (3) are named individually in CLAUDE.md's own "Ask owner
+first (hard stops)" list ("new runtime deps" / "keyed external
+services"). This did not stop the whole shift — per Section 84.1/84.10,
+work continued on the next unblocked, non-ask-first item (FTF-0301, see
+"## Done" below) instead of leaving the shift idle. Remove this item the
+moment the owner responds (see "Owner actions live in ONE place" above).
 
 ## Active (awaiting Control plane — no relay action left)
-None currently. FTF-1601 (Postgres backup) was the only item here; it was
-independently reviewed and CERTIFIED this shift via PR #100 (merge commit
-`f4e9b39`) — see "## Done" for the certification summary and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full history and evidence.
+None currently.
 
 ## Provisional (awaiting Control plane L2 certification)
-(none — FTF-0201 was independently reviewed and CERTIFIED this shift via
-PR #133, merge commit `3588e4e`; see "## Done" below for the certification
-summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
-for the full history and evidence.)
+FTF-0301 (TrainableArtifact schema/API) — implemented and submitted
+PROVISIONAL this shift (deps FTF-0103/FTF-0104 both CERTIFIED). See
+`PROGRESS.md`'s own "2026-09-20 — Relay shift: FTF-0301..." entry and
+`docs/certifications/queue.md` for the full submission report. Not
+self-certified (Law 4) — awaiting independent Control-plane review.
 
 Prior item: FTF-0106 (RBAC/IDOR security tests) was independently
 reviewed and CERTIFIED a prior shift via PR #127, merge commit

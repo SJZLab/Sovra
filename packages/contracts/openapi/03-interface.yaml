@@ -1,0 +1,390 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 03 Interface (TrainableArtifact)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and real live routes for the
+    organization-scoped TrainableArtifact resource (Section
+    6.7/13/34/45/65/68/77/81, FTF-0301). `paths` declares exactly the
+    surface this task actually implements and wires into
+    `apps/api/app/main.py` -- create/get/list/edit/accept-license/
+    mark-ready/archive -- and nothing else. It deliberately does NOT
+    declare any route that resolves `source_uri` against a real Hugging
+    Face Hub, S3 bucket, local filesystem or private registry, nor one
+    that computes/verifies `weights_digest` from real bytes: those are
+    FTF-0302 ("Hugging Face artifact resolver")/FTF-0303 ("Private S3
+    artifact resolver")/FTF-0304 ("Local artifact resolver")/FTF-0306
+    ("Base model revision/digest resolver")'s own, later, separately
+    dependency-gated acceptance criteria (see docs/TASK_INDEX.md).
+    Declaring that surface here without a real backing handler would be
+    exactly the "placeholder endpoint" Law 11 and this task's own
+    acceptance clause ("no placeholder endpoints") forbid. Whichever of
+    those later tasks adds its own real route extends this same file
+    under this same contract-owner lock (shared_lock_required:
+    contracts:03).
+paths:
+  /api/v1/organizations/{organization_id}/artifacts:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the organization's trainable artifacts.
+      operationId: listTrainableArtifacts
+      responses:
+        '200':
+          description: The organization's artifacts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrainableArtifact'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: Register a new trainable artifact (always starts `registered`, never `ready`).
+      operationId: createTrainableArtifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainableArtifactCreateRequest'
+      responses:
+        '201':
+          description: The created artifact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainableArtifact'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+  /api/v1/organizations/{organization_id}/artifacts/{artifact_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one trainable artifact.
+      operationId: getTrainableArtifact
+      responses:
+        '200':
+          description: The artifact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainableArtifact'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical in both cases.
+    patch:
+      summary: Edit a `registered` artifact's fields. Refused once `ready` or `archived`.
+      operationId: updateTrainableArtifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainableArtifactUpdateRequest'
+      responses:
+        '200':
+          description: The updated artifact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainableArtifact'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+        '409':
+          description: The artifact is not `registered` (already `ready` or `archived`).
+    delete:
+      summary: Archive (soft-delete) an artifact. Idempotent.
+      operationId: archiveTrainableArtifact
+      responses:
+        '200':
+          description: >-
+            The artifact in its archived state -- returned unchanged, with
+            no new audit event, if it was already archived.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainableArtifact'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+  /api/v1/organizations/{organization_id}/artifacts/{artifact_id}/accept-license:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Accept this artifact's license as the real authenticated caller.
+        `license_accepted_by` is always server-derived from the
+        authenticated principal -- never a client-supplied field.
+        Idempotent once accepted.
+      operationId: acceptTrainableArtifactLicense
+      responses:
+        '200':
+          description: The artifact with license acceptance recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainableArtifact'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+        '409':
+          description: The artifact is archived and cannot accept a license.
+  /api/v1/organizations/{organization_id}/artifacts/{artifact_id}/mark-ready:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Transition `registered` -> `ready`. Refused (409) unless
+        source_uri is safe, the license has been accepted by a known
+        authenticated actor, and base_model_revision/weights_digest name
+        a pinned, resolved identity (this task's own negative_acceptance).
+      operationId: markTrainableArtifactReady
+      responses:
+        '200':
+          description: The artifact, now `ready` (or already `ready`, unchanged).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainableArtifact'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+        '409':
+          description: >-
+            negative_acceptance: unsafe URI, unknown owner (no accepted
+            license) or a mutable/unresolved revision -- named in the
+            response detail.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: reads are open to every named
+        role; create/edit/accept-license/mark-ready/archive require
+        ml_engineer or organization_admin).
+    ValidationFailed:
+      description: The request body failed schema/policy validation.
+  schemas:
+    ArtifactStatus:
+      type: string
+      enum: [registered, ready, archived]
+    SourceType:
+      type: string
+      enum: [huggingface, private_s3, local_filesystem, private_registry]
+    SourceUri:
+      type: string
+      description: >-
+        Shape-validated per source_type (Section 65.4-style safety): a
+        bare 'org/repo' id for huggingface, s3://bucket/key for
+        private_s3, a relative path with no '..' traversal for
+        local_filesystem, or an https:// URL for private_registry. This
+        task never resolves it against a real upstream.
+      maxLength: 2048
+    WeightsDigest:
+      type: [string, 'null']
+      description: >-
+        'sha256:' followed by 64 hex characters once resolved by FTF-0306;
+        null until then. A mutable/unresolved value blocks the mark-ready
+        transition (this task's own negative_acceptance).
+      pattern: '^sha256:[0-9a-f]{64}$'
+      maxLength: 128
+    TrainableArtifactCreateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        source_type:
+          $ref: '#/components/schemas/SourceType'
+        source_uri:
+          $ref: '#/components/schemas/SourceUri'
+        model_family:
+          type: string
+          minLength: 1
+          maxLength: 200
+        base_model_revision:
+          type: string
+          minLength: 1
+          maxLength: 200
+        license_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        trust_remote_code_allowed:
+          type: boolean
+          default: false
+        required_python_packages:
+          type: array
+          items:
+            type: string
+          default: []
+        minimum_gpu_profile:
+          type: object
+          default: {}
+      required: [display_name, source_type, source_uri, model_family, base_model_revision, license_id]
+      additionalProperties: false
+    TrainableArtifactUpdateRequest:
+      type: object
+      description: >-
+        Any non-empty subset of the mutable fields. Refused (409) unless
+        the artifact is still `registered`.
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        source_uri:
+          $ref: '#/components/schemas/SourceUri'
+        base_model_revision:
+          type: string
+          minLength: 1
+          maxLength: 200
+        model_family:
+          type: string
+          minLength: 1
+          maxLength: 200
+        weights_digest:
+          $ref: '#/components/schemas/WeightsDigest'
+        license_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        trust_remote_code_allowed:
+          type: boolean
+        required_python_packages:
+          type: array
+          items:
+            type: string
+        minimum_gpu_profile:
+          type: object
+      additionalProperties: false
+    TrainableArtifact:
+      type: object
+      description: The read-facing representation.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        source_type:
+          $ref: '#/components/schemas/SourceType'
+        source_uri:
+          $ref: '#/components/schemas/SourceUri'
+        model_family:
+          type: string
+        base_model_revision:
+          type: string
+        weights_digest:
+          $ref: '#/components/schemas/WeightsDigest'
+        license_id:
+          type: string
+        license_accepted_by:
+          type: [string, 'null']
+        license_accepted_at:
+          type: [string, 'null']
+          format: date-time
+        trust_remote_code_allowed:
+          type: boolean
+        required_python_packages:
+          type: array
+          items:
+            type: string
+        minimum_gpu_profile:
+          type: object
+        status:
+          $ref: '#/components/schemas/ArtifactStatus'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: [string, 'null']
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - display_name
+        - source_type
+        - source_uri
+        - model_family
+        - base_model_revision
+        - license_id
+        - status
+        - created_at
+        - updated_at
+      additionalProperties: false
