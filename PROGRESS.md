@@ -1,7 +1,44 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled relay shift) — FTF-0105 (Tenant-isolation
-  query guards) implemented and submitted PROVISIONAL, awaiting
-  independent Control-plane L2 certification; see below.
+Updated: 2026-09-20 (same relay shift, follow-up) — PR #120 was merged
+  directly by the repo owner on green CI, ~6 minutes after opening,
+  before any independent Control-plane review. See below.
+
+## 2026-09-20 — Relay follow-up: PR #120 merged by owner, FTF-0105 still PROVISIONAL (not certified)
+
+While this session stayed subscribed to PR #120 watching for CI/review
+activity, a `pull_request.closed` event (`outcome: merged`) arrived.
+Checked before assuming anything: `pull_request_read` on PR #120 shows
+`merged: true`, `merged_by: samerzakaria` — the repo owner merged it
+directly, not a Control-plane certifier session (no
+`Control plane: FTF-0105 ... CERTIFIED` commit exists on the PR branch or
+`main`, unlike every prior certified task's own history — e.g. FTF-0103's
+`1873f17` landed *before* its merge commit `b4b47c0`). `git fetch origin
+main` + `git show origin/main:docs/spec-matrix.yaml` confirms FTF-0105 on
+`main` still reads `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN` — merging did not change it, and this session did
+not change it either.
+
+This is a legitimate owner action (CLAUDE.md's own "Do without asking"
+list names "merge on green + L1 doc (PROVISIONAL)" as something any
+session could have done unasked; the owner doing the equivalent directly
+is not a governance gap) and Law 4 ("Merge = PROVISIONAL only") — the code
+is now on `main`, but it is not certified. Restarted this session's
+designated branch from the newly-updated `main` per the standing
+instruction for a branch whose PR has already merged
+(`git fetch origin main && git checkout -B claude/wizardly-fermat-daazqp
+origin/main`) before making this documentation-only update, since the old
+branch tip is now stale history.
+
+Updated QUEUE.md's banner/Status/Provisional sections to record the merge
+accurately (merged ≠ certified) so the next shift doesn't mistake `main`
+having the code for FTF-0105 being CERTIFIED. Not claiming FTF-0106 this
+shift: its own dependency list names FTF-0105 directly, and every prior
+task in this queue's history was claimed only after its dependencies were
+independently CERTIFIED, not merely merged — no reason found to deviate
+from that precedent here. No BLOCKER — this is bookkeeping, not a stop
+condition; continuing to hold per STEP 4(a) (awaiting Control-plane
+certification) until either that happens or a new event/next scheduled
+fire picks up other work.
 
 ## 2026-09-20 — Relay: FTF-0105 (Tenant-isolation query guards) implemented, submitted PROVISIONAL
 

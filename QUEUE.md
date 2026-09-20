@@ -1,5 +1,21 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+Updated: 2026-09-20 (same relay shift, follow-up) — PR #120 (FTF-0105)
+  was merged directly by the repo owner (`merged_by: samerzakaria`,
+  confirmed via `pull_request_read`) 6 minutes after opening, on green CI
+  (8/8), before any independent Control-plane L2 review ran. This is an
+  owner action, not a session action, and does not itself certify the
+  work: `docs/spec-matrix.yaml` on `main` still reads
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` for
+  FTF-0105 (confirmed directly against `origin/main` after the merge, not
+  assumed). Matches CLAUDE.md's own "Do without asking" allowance ("merge
+  on green + L1 doc (PROVISIONAL)") and Law 4 ("Merge = PROVISIONAL
+  only") — merged code is not certified code. FTF-0106 still lists
+  FTF-0105 as a direct dependency and is not claimed this shift; per this
+  session's own prior "Next shift" note, a dependent task on FTF-0105
+  waits for it to be independently CERTIFIED, not merely merged, matching
+  every prior task's own established precedent in this queue's history.
+
+Earlier the same date (scheduled relay shift) — picked up the next
   unblocked item per the prior shift's own dependency graph (FTF-0105,
   Tenant-isolation query guards — FTF-0102/FTF-0103 both CERTIFIED,
   unblocking FTF-0105/0106's own dependency chain). Full submission
@@ -60,8 +76,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 ## Status
 Certified: 21/300 (main; FTF-0103 CERTIFIED 2026-09-19, PR #118 merged as
 `b4b47c0` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0105, Tenant-isolation query guards — submitted this shift, awaiting
-independent Control-plane L2 certification) · Blocked: 0
+(FTF-0105, Tenant-isolation query guards — submitted this shift; PR #120
+merged directly by the repo owner on green CI before independent review,
+still awaiting Control-plane L2 certification — merged is not certified,
+see banner above) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
