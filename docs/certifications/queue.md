@@ -6675,3 +6675,117 @@ review — `docs/spec-matrix.yaml` and the PR body itself carried the full
 PROVISIONAL evidence — but the next relay/producer shift should restore
 that precedent rather than let tracking docs drift further out of sync
 with `docs/spec-matrix.yaml`.
+
+## Control plane review — 2026-09-20 — FTF-0406 (PR #153) — NOT CERTIFIED (real CI gate failure: `mypy .` fails on the PR's own new test file)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #153
+  (https://github.com/SJZLab/Sovra/pull/153, `claude/wizardly-fermat-coeg4t`
+  → `main`).
+- **Session-ID check:** all 3 commits on PR #153 (`6723131`, `33b3bf7`,
+  `2885a40`) carry `Claude-Session: .../session_01WFunvdUFkEnkkpFRCVm2ga`;
+  this reviewing session's own ID is `session_01GtkZi1xVFgaMfPbXjiPPz4` —
+  no match, independent per Law 4.
+- **Diff read directly:** 8 files, +2730/-25
+  (`apps/api/app/services/side_effect_classification.py` — new,
+  `apps/api/app/tools/tool_definition_schema.py` — wiring,
+  `tests/tasks/test_ftf_0406.py` — new, plus `PROGRESS.md`/`QUEUE.md`/
+  `docs/spec-matrix.yaml`/`docs/certifications/queue.md`/
+  `docs/implementation/task-packets/FTF-0406.md` tracking docs). Confirmed
+  directly in `apps/api/app/tools/tool_definition_schema.py`:
+  `enforce_side_effect_classification` is called from
+  `ToolDefinition.__init__`, the real live-wiring point this task's own
+  submission claims.
+- **CI checked on the real head, not a stale/self-reported claim:** the
+  PR's own head commit (`2885a40`) was still running when this review
+  began (`gate` job `in_progress`/`queued`, only ~1 minute after opening —
+  subscribed to the PR's activity to get the real completion event rather
+  than certifying against an in-progress snapshot). The `check_run.completed`
+  event for the `gate` job (run `35543754037`, job
+  `106165929697`) reported **`conclusion: "failure"`** — a real CI failure
+  on the actual PR head, not a stale or self-reported "all checks passed"
+  claim.
+- **Root cause, read directly from the job log
+  (`get_job_logs`, job `106165929697`):** the gate job's own `uv run mypy .`
+  step (run after `ruff check .`/`ruff format --check .`, both of which
+  passed) reports:
+  ```
+  tests/tasks/test_ftf_0406.py:110: error: Argument 1 to
+  "enforce_side_effect_classification" has incompatible type
+  "**dict[str, object]"; expected "str"  [arg-type]
+  tests/tasks/test_ftf_0406.py:110: error: Argument 1 to
+  "enforce_side_effect_classification" has incompatible type
+  "**dict[str, object]"; expected "str | None"  [arg-type]
+  tests/tasks/test_ftf_0406.py:110: error: Argument 1 to
+  "enforce_side_effect_classification" has incompatible type
+  "**dict[str, object]"; expected "bool"  [arg-type]
+  Found 3 errors in 1 file (checked 122 source files)
+  ##[error]Process completed with exit code 1.
+  ```
+  `tests/tasks/test_ftf_0406.py`'s own `_enforce(**overrides: object)`
+  helper builds `kwargs: dict[str, object]` and calls
+  `enforce_side_effect_classification(**kwargs)`. The real function
+  (`apps/api/app/services/side_effect_classification.py:279`) is
+  keyword-only with heterogeneous parameter types (`name: str`,
+  `description: str | None`, `input_schema_json: object`,
+  `output_schema_json: object`, `claimed_class: str`,
+  `requires_confirmation: bool`) — mypy cannot verify a `**dict[str,
+  object]` unpack against non-`object`-typed keyword parameters, so it
+  reports one error per non-`object` parameter (3, matching exactly:
+  `name`/`description`/`requires_confirmation`; `input_schema_json`/
+  `output_schema_json` are typed `object` so they draw no error). This is
+  a real, deterministic type error in the PR's own new test helper, not a
+  flake and not pre-existing drift in code this PR doesn't touch.
+- **Own reproduction, this sandbox:** `uv run mypy .` over the full repo
+  reproduces the identical 3 errors at the identical line
+  (`tests/tasks/test_ftf_0406.py:110`), word-for-word matching the CI log.
+  The same run also reports 7 pre-existing `alembic`
+  ("Module has no attribute op/context") errors in
+  `apps/api/alembic/versions/000{1..6}_*.py`/`apps/api/alembic/env.py` —
+  none of those files are touched by this PR's diff (confirmed against the
+  8-file diff list above), so they are pre-existing drift unrelated to
+  this task, not counted against it; CI's own `Found 10 errors in 8 files`
+  total is consistent with 3 new (this PR's) + 7 pre-existing.
+- **This directly contradicts the submission's own claim:** the PR body
+  and this file's own FTF-0406 submission entry both state "`mypy` clean
+  on every touched file and across the full `apps/api/app` tree (40
+  source files, zero errors)" — that claim is accurate only for the
+  narrower `apps/api/app` scope it names; it does not cover
+  `tests/tasks/test_ftf_0406.py`, which is exactly what the gate job's
+  real `uv run mypy .` command checks (the whole repository, tests
+  included) and exactly where the real failure is.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0406 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 2
+  reads exactly "Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded." A red CI gate means
+  there is no exact merged commit to review — this clause cannot be met
+  while the gate fails, independent of whether the underlying
+  `side_effect_classification.py` logic is itself sound. All three
+  dependencies (FTF-0401, FTF-0404, FTF-0405) confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Not a defect in the shipped production logic:** `mypy` reports the
+  error only in the test file's own generic `**overrides` helper, not in
+  `side_effect_classification.py` or `tool_definition_schema.py`
+  themselves — no fault injection was warranted or run, since step 2 of
+  the CERTIFY procedure (CI must actually pass) already fails before
+  reaching that step, and running one against code that cannot even merge
+  would not change the outcome here.
+- **Action needed before re-requesting certification:** fix
+  `tests/tasks/test_ftf_0406.py`'s `_enforce` helper so mypy can verify
+  the unpack — e.g. give the helper individually-typed keyword parameters
+  with `object`-typed defaults threaded straight through to
+  `enforce_side_effect_classification`, or drop the generic
+  `**overrides: object` pattern for a small number of explicit optional
+  parameters — then confirm `uv run mypy .` passes locally and CI's
+  `gate` job goes green on the pushed commit before resubmitting. No
+  production code change is expected or needed.
+- **Not merged, not certified, per Law 4/Law 1:** `docs/spec-matrix.yaml`
+  for FTF-0406 stays `certification_state: NONE` /
+  `implementation_state: ABSENT` on `main` — PR #153 is unmerged, so
+  nothing to downgrade there. On PR #153's own branch the PROVISIONAL
+  entry stands as submitted; this review does not alter it, since what's
+  missing is a red CI gate on the test file, not a defect in the
+  submission's own tracking-doc claims about `certification_state`/
+  `proof_state`. PR #153 stays open, unmerged.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01GtkZi1xVFgaMfPbXjiPPz4,
+  2026-09-20.

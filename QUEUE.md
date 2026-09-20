@@ -1,5 +1,35 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #153) — independent CERTIFY
+  review of FTF-0406 (Side-effect classification): **NOT CERTIFIED**.
+  Session-ID clean against all 3 commits on PR #153
+  (session_01WFunvdUFkEnkkpFRCVm2ga, not matching this reviewing session's
+  own ID). CI checked on the real head (not a stale/in-progress snapshot —
+  subscribed to the PR's own activity and waited for the real
+  `check_run.completed` event): the `gate` job's own `uv run mypy .` step
+  **failed for real**, 3 errors at `tests/tasks/test_ftf_0406.py:110`
+  (`enforce_side_effect_classification` called via a `**dict[str,
+  object]` unpack that mypy cannot verify against the function's own
+  heterogeneous keyword types). Reproduced identically in this sandbox
+  (`uv run mypy .`, word-for-word matching the CI log); the job's other 7
+  errors are pre-existing `alembic` drift in files this PR does not touch,
+  not counted against it. This directly contradicts the submission's own
+  "`mypy` clean... across the full `apps/api/app` tree" claim, which was
+  accurate only for that narrower scope and never covered the new test
+  file the gate job's real, whole-repo `mypy .` command also checks. Not a
+  defect in the shipped production logic (`side_effect_classification.py`/
+  `tool_definition_schema.py` draw no mypy errors) — a test-helper typing
+  gap in the PR's own new file. Not merged, not certified, per Law 4/Law
+  1. `docs/spec-matrix.yaml` for FTF-0406 stays `NONE` on `main` (PR #153
+  unmerged, nothing to downgrade). **Action needed:** fix
+  `tests/tasks/test_ftf_0406.py`'s `_enforce(**overrides: object)` helper
+  so mypy can verify the unpack (e.g. explicit, individually-typed
+  optional keyword parameters instead of a generic `dict[str, object]`
+  unpack) — no production code change expected or needed — confirm `uv
+  run mypy .` passes locally and CI's `gate` job goes green on the pushed
+  commit before resubmitting. Full review: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #148) — independent CERTIFY
   review of FTF-0405 (JSON Schema tool validation): **CERTIFIED**.
   Session-ID clean against the sole commit on PR #148

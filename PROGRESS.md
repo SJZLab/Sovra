@@ -1,7 +1,79 @@
 # PROGRESS — Sovra
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #146) — independent CERTIFY
-  review of FTF-0404 (Tool schema CRUD): **CERTIFIED**. Session-ID check
+  the `pull_request.opened` webhook for PR #153) — independent CERTIFY
+  review of FTF-0406 (Side-effect classification): **NOT CERTIFIED** — the
+  `gate` job's real `uv run mypy .` step fails on the PR's own new
+  `tests/tasks/test_ftf_0406.py`; see the new section directly below and
+  `docs/certifications/queue.md`/`QUEUE.md` for the full review.
+
+## 2026-09-20 — Control plane: FTF-0406 (PR#153) independently reviewed, NOT CERTIFIED
+Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
+triggered by the `pull_request.opened` webhook for PR #153.
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-0406, PR #153 (a relay shift's own submission on
+`claude/wizardly-fermat-coeg4t`).
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01GtkZi1xVFgaMfPbXjiPPz4`) against all 3
+commits on PR #153 (`6723131`, `33b3bf7`, `2885a40`) — all carry
+`Claude-Session: .../session_01WFunvdUFkEnkkpFRCVm2ga`. No match —
+independent.
+
+Read the diff directly (8 files, +2730/-25): the new
+`apps/api/app/services/side_effect_classification.py`,
+`apps/api/app/tools/tool_definition_schema.py`'s wiring change, the new
+`tests/tasks/test_ftf_0406.py`, and tracking docs. Confirmed
+`enforce_side_effect_classification` is a real live caller inside
+`ToolDefinition.__init__`.
+
+CI check, on the real head, not a stale claim: the PR's `gate` job was
+still `in_progress`/`queued` when this review began, ~1 minute after the
+PR opened. Subscribed to the PR's own activity and waited for the real
+`check_run.completed` event rather than certifying against that
+in-progress snapshot — it reported `conclusion: "failure"` for the `gate`
+job (run `35543754037`, job `106165929697`).
+
+Root cause, read directly from the job log: `uv run mypy .` (run after a
+clean `ruff check .`/`ruff format --check .`) reports 3 errors, all at
+`tests/tasks/test_ftf_0406.py:110` — `enforce_side_effect_classification`
+called via `**kwargs` where `kwargs: dict[str, object]`, which mypy
+cannot verify against the function's own heterogeneous keyword-only
+parameter types (`name: str`, `description: str | None`,
+`requires_confirmation: bool`, plus two `object`-typed params that draw
+no error). Reproduced identically in this sandbox (`uv run mypy .`,
+byte-for-byte matching error text and line number). The job's other 7
+errors are pre-existing `alembic` "Module has no attribute op/context"
+drift in migration files this PR does not touch — confirmed against the
+diff's own file list — so they are not counted against this PR.
+
+This directly contradicts the submission's own claim ("`mypy` clean on
+every touched file and across the full `apps/api/app` tree... zero
+errors") — true only for that narrower scope, never covering the new test
+file that the gate job's real, whole-repository `mypy .` command also
+checks. The shipped production logic itself
+(`side_effect_classification.py`/`tool_definition_schema.py`) draws no
+mypy errors — this is a test-helper typing gap in the PR's own new file,
+not a defect in the guard it tests.
+
+Task contract re-pulled directly via `tools/r1_handoff.py packet
+FTF-0406 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 2
+("Independent review, exact merged commit, real relevant integration and
+negative-test evidence recorded") cannot be met while the gate is red —
+no fault injection was run, since CI must actually pass before that step
+even applies (CERTIFY procedure step 2 precedes step 3).
+
+Not merged, not certified, per Law 4/Law 1. `docs/spec-matrix.yaml` for
+FTF-0406 stays `NONE` on `main` (PR #153 unmerged, nothing to downgrade).
+Exact fix needed (retype `_enforce`'s generic `**overrides: object`
+unpack into explicit, individually-typed optional keyword parameters,
+confirm `uv run mypy .` passes, push to PR #153's own branch, confirm CI
+green, resubmit — no production code change expected) is specified in
+`docs/certifications/queue.md`'s own FTF-0406 NOT CERTIFIED entry for the
+next relay shift to execute.
+
+## 2026-09-20 (earlier) — independent CERTIFY review of FTF-0404 (Tool schema CRUD): **CERTIFIED**
   clean against all 3 PR #146 commits (session_01Erh4hdf73yUo4Q36YKTshz,
   no match to this reviewing session, `session_01NRVmAUpr7iauXiySAFGGXh`).
   Diff read directly: `apps/api/app/tools/{tool_definition_schema,
