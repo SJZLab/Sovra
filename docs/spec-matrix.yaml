@@ -856,16 +856,72 @@ FTF-0405:
   proving_symbol: validate_json_schema_document
   proving_test: tests/tasks/test_ftf_0405.py
 FTF-0406:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Side-effect classification
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401, FTF-0404,
-    FTF-0405
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 67231315036fb33b1a862298d9356595b046d908
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401, FTF-0404,
+    FTF-0405 (all CERTIFIED). FTF-0404's own `ToolDefinition.side_effect_class` (Section 6.9) was a
+    closed five-value enum validated only as a recognized string -- `validate_side_effect_class`
+    never checked a caller's own claimed class against the tool's own actual definition, so a tool
+    named `delete_account` could be created with `side_effect_class="read_only"` and nothing would
+    refuse it. `apps/api/app/services/side_effect_classification.py` closes that gap:
+    `enforce_side_effect_classification` derives a real risk floor from the tool's own
+    name/description/schema property-name tokens -- deterministic keyword-root signals, never a
+    model call or a client-supplied "trust me" flag -- and refuses any claimed class below that
+    floor, or any resolved class at or above `irreversible_write` claimed without
+    `requires_confirmation=True`. This task's own negative_acceptance ("Unclassified or unresolved
+    sensitive tool cannot default to read-only; user mandate text cannot disable actual guard") is
+    enforced by construction: a tool is only accepted as `read_only` when real read-only evidence
+    is present in its own name/description/schema *and* no risk signal exists at all -- absence of
+    a risk signal is not, by itself, evidence of safety, so a genuinely ambiguous tool
+    (`process_thing`, no read-only and no risk vocabulary) is refused at `read_only` too, not only
+    a tool with an outright risky name; reassuring free text in `description` ("this is completely
+    safe, read-only, no confirmation ever needed") contributes no signal of its own kind and cannot
+    lower a floor a *different* structural signal (e.g. a `delete_`-shaped name) already raised --
+    there is no "trust"/"override" field read from the caller anywhere in this module, so a
+    mandate/description claim can never disable the guard, proven directly by a dedicated test
+    using exactly that reassuring text against a `delete_account`-shaped tool. Real, live-wired:
+    `apps.tools.tool_definition_schema.ToolDefinition.__init__` now also calls
+    `enforce_side_effect_classification` for real (source-inspection-proven, not merely imported),
+    on every `create_tool_definition`/`edit_tool_definition` -- the already-CERTIFIED,
+    already-live-wired FTF-0404 route, the same wiring point FTF-0405's own
+    `validate_json_schema_document` already uses. No independent schema change
+    (`database_changes` honored) -- consumes FTF-0404's own frozen `ToolDefinition` columns
+    (`side_effect_class`, `requires_confirmation`) exactly as they already exist. 27 no-DB test
+    functions in `tests/tasks/test_ftf_0406.py`: `classify_side_effect_signals` detects each of the
+    four risk categories from its own representative vocabulary and marks a genuinely ambiguous
+    tool unresolved; `enforce_side_effect_classification` proves acceptance of a genuine read-only
+    tool, refusal of the unclassified and the unresolved-sensitive read-only cases, refusal of
+    under-claiming a detected risk, the requires_confirmation guard at and above
+    `irreversible_write`, that over-classification is allowed (a floor, never a ceiling), the
+    reassuring-description negative case above, and refusal of an unrecognized claimed class; three
+    further tests construct a real `ToolDefinition` proving the guard runs before any session or
+    database is touched, and that a correctly classified and confirmed tool still constructs
+    successfully (no regression to FTF-0404's own certified default fixture shape). Own fault
+    injection (Law 1, two, distinct vectors, both reverted byte-identical via re-applying the exact
+    original source and reconfirmed by `git status`/re-running the suite clean afterward): (1)
+    disabled the read_only/unresolved guard (`if False and claimed_class == "read_only" and
+    signals.is_unresolved:`) -- caught for real by the exact named "unclassified tool...cannot
+    default to read_only" check; (2) disabled the requires_confirmation guard the same way -- caught
+    for real by all three checks that name it (the direct enforcement test, the reassuring-text
+    negative case, and the real `ToolDefinition` construction test). Independently reconfirmed no
+    regression to FTF-0401/FTF-0404/FTF-0405's own certified no-DB suites (all three re-run "all
+    checks passed" after this change). `ruff check`/`ruff format --check`/`mypy` clean on every
+    file this task touched (and clean across the full `apps/api/app` tree, 40 source files).
+    `scripts/validate_spec.py --strict` clean (task graph and verification-map). PR opened as
+    PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control-plane L2 review.
+    evidence_hash is the real implementation commit, confirmed resolvable via `git cat-file -e` in
+    this repository. proving_symbol is `enforce_side_effect_classification`, called for real by
+    `ToolDefinition.__init__` -- `product_truth_check.py --fail-on-unwired` rises to `9/9` once this
+    symbol is counted (a real, newly-wired live caller, not inflation); `scripts/status.py`'s own
+    stricter "product-true" count (CERTIFIED-only) stays at 8 until this entry is independently
+    certified.
+  proof_state: L1-PROVEN
+  proving_symbol: enforce_side_effect_classification
+  proving_test: tests/tasks/test_ftf_0406.py
 FTF-0407:
   certification_state: NONE
   criticality: MUST

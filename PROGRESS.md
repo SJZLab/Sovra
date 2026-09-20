@@ -9303,3 +9303,144 @@ future shift's attention if it recurs — not urgent on its own, since
 `docs/spec-matrix.yaml`/`docs/certifications/ledger.md` remained the real
 source of truth throughout and nothing was found certified without
 genuine evidence.
+
+## 2026-09-20T23:05:45Z — Relay shift: FTF-0406 (Side-effect classification) implemented, PROVISIONAL
+**STEP 0.1:** Read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`
+fresh (never assumed state from prior context; PROGRESS.md/QUEUE.md read
+in offset chunks, both exceed the single-read size limit). CLAUDE.md.sha256
+self-check: `sha256sum CLAUDE.md` matched the committed hash — no
+BLOCKER. Confirmed this session's own branch (`claude/wizardly-fermat-coeg4t`)
+started from the current `main` tip (`012aec4`, matching `git rev-parse
+origin/main`) before making any change.
+
+**STEP 0.2:** No `cognee-cli` available in this environment — text-search
+fallback active for this shift (declared, per STEP 0.2).
+
+**STEP 1:** Checked GitHub directly for ground truth on open PRs before
+picking work: PR #152 (a doc-only "Next shift" catch-up, unmerged, base
+matches current `main` tip) claims FTF-0406 is now the lowest-CAP
+dependency-ready item; PR #143 (FTF-0202 backend-selection claim) remains
+unmerged and is the same unverified claim already flagged in this file's
+own history — not acted on. Independently recomputed the dependency-ready
+frontier from scratch (never trusted PR #152's own claim, or any prior
+shift's list, as proof by itself): parsed `docs/TASK_INDEX.md`'s own
+`deps`/CAP columns and checked every dependency against
+`docs/spec-matrix.yaml`'s live `certification_state`. Confirmed FTF-0401/
+FTF-0404/FTF-0405 are all genuinely `CERTIFIED`, and that FTF-0406
+(CAP-05) and FTF-1501 (CAP-14) are the only two dependency-ready items —
+independently arriving at the same answer PR #152 claims. Picked FTF-0406
+(Side-effect classification). Stated "Working: FTF-0406."
+
+**STEP 2 (PEV):**
+- **P:** Pulled the exact task contract via `python tools/r1_handoff.py
+  packet FTF-0406 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (files:
+  `apps/api/app/services/side_effect_classification.py`,
+  `tests/tasks/test_ftf_0406.py`; `database_changes`: "No independent
+  schema change. Consume frozen contract"). Read
+  `apps/api/app/tools/tool_definition_schema.py` (FTF-0404, CERTIFIED) in
+  full: `side_effect_class` is already a real, closed, DB-checked
+  five-value enum (Section 6.9), but `validate_side_effect_class` only
+  checks that the caller's own claimed value is one of the five
+  recognized strings — nothing checks that claim against the tool's own
+  actual name/description/schema. That is the real gap this task closes.
+  Read every existing `ToolDefinition(...)` construction site
+  (`tool_definition_crud.py`'s `create_tool_definition`/
+  `apply_new_version`, and both `tests/tasks/test_ftf_0404.py`'s/
+  `test_ftf_0405.py`'s own fixtures) to design a keyword-root heuristic
+  that would not spuriously break any already-CERTIFIED evidence — every
+  existing certified construction site either uses a tool named
+  `lookup_order` (genuine read-only evidence in the name itself) or is
+  short-circuited by role/project-ownership checks before a
+  `ToolDefinition` is ever constructed at all.
+- **E:** Wrote `apps/api/app/services/side_effect_classification.py`
+  (`classify_side_effect_signals`/`enforce_side_effect_classification`,
+  keyword-root signals for `reversible_write`/`irreversible_write`/
+  `financial`/`privileged`, plus a distinct read-only-evidence check) and
+  wired it into `ToolDefinition.__init__` (`apps/api/app/tools/
+  tool_definition_schema.py`), the same wiring point FTF-0405's own
+  `validate_json_schema_document` already uses. Wrote
+  `tests/tasks/test_ftf_0406.py` (27 test functions) and ran it —
+  "all checks passed" on the first clean run once the implementation was
+  in place (this task's own PEV order was P → implement-with-tests → run
+  → fault-inject; the two required fault injections below are this
+  task's own Law 1 evidence that the suite is capable of failing, applied
+  directly to the delivered code and reverted byte-identical afterward).
+  **Failure output shown by fault injection (Law 1):** (1) disabled the
+  read_only/unresolved guard
+  (`if False and claimed_class == "read_only" and signals.is_unresolved:`) —
+  `uv run python3 tests/tasks/test_ftf_0406.py` failed with exactly
+  `FAIL [FTF-0406] negative_acceptance: an unclassified tool (no
+  read-only, no risk evidence) cannot default to read_only`; (2) disabled
+  the `requires_confirmation` guard the same way — failed with exactly
+  the 3 checks that name it (`constructing an irreversible_write tool
+  without requires_confirmation=True fails`; the reassuring-description
+  negative case; the direct enforcement negative case). Both reverted
+  (re-applied the exact original source, confirmed via `grep -n "False
+  and"` finding no match), re-ran clean.
+- **V:** `python3 scripts/product_truth_check.py --fail-on-unwired` — was
+  `8/8` before this shift, now `9/9` (this task's own `proving_symbol`,
+  `enforce_side_effect_classification`, has a real caller in
+  `ToolDefinition.__init__` — not a TRACKER, no diagnosis needed).
+
+**Full regression, this sandbox:** installed API dependencies into an
+isolated venv (`uv venv`/`uv pip install` — no pre-installed
+`sqlalchemy`/`fastapi`/etc. in this sandbox's system Python). `git fetch
+--unshallow origin` first (this sandbox's own clone is shallow by
+default — the same pre-existing `stale_commit`-on-`validate_spec.py
+--strict` artifact every prior relay/certifying session has already
+documented; cleared, then `validate_spec.py --strict` reported clean).
+`ruff check`/`ruff format --check` clean on every file this task touched;
+repo-wide `ruff check`/`ruff format --check` over `apps/api`/`tests`
+found only pre-existing, unrelated drift (6 `UP042` StrEnum suggestions
+in files this task never touched, 14 files reformatted per a newer local
+`ruff` version than CI's own pin) — not this task's own regression.
+`mypy` clean on every file this task touched, and clean across the full
+`apps/api/app` tree (40 source files, zero errors). Re-ran
+`tests/tasks/test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py` —
+all three still "all checks passed" (no regression to FTF-0401/FTF-0404/
+FTF-0405's own certified no-DB evidence).
+`python3 scripts/status.py` — `31/300 certified · 8 product-true`
+(unchanged, correct — FTF-0406 is PROVISIONAL, not yet CERTIFIED).
+`python3 scripts/verify_task.py --task FTF-0406 --stage task` reports
+`BLOCKED` ("no merged verification evidence yet") — expected at this
+PROVISIONAL stage, not a defect; it will resolve once an independent
+Control-plane review merges this submission.
+
+**Disclosed, not hidden:** this is a deterministic, closed-vocabulary
+keyword-root heuristic, not a learned classifier or an LLM call — a tool
+whose name/description/schema uses vocabulary genuinely outside this
+task's own closed root lists (e.g. a domain-specific jargon verb this
+task's own lists do not cover) would be treated as "unclassified" and
+refused at `read_only`, which is this task's own intended fail-closed
+behavior (forcing explicit classification), not a false negative on the
+guard's own affirmative promise. `input_schema_json`/`output_schema_json`
+property names are read as plain strings, not interpreted through
+FTF-0405's own JSON Schema semantics — sufficient for this task's own
+signal purpose (a property named `refund_amount` is real evidence
+regardless of its own declared `type`).
+
+**STEP 3 metrics after this shift:** 31/300 certified (unchanged — this
+shift implements, it does not certify); 1 provisional (FTF-0406, this
+shift); `scripts/status.py`'s own authoritative "product-true" count
+stays 8; `product_truth_check.py --fail-on-unwired` — `9/9`. PR opened as
+PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/`docs/certifications/queue.md`
+all updated in a second, tracking-doc-only commit on the same branch,
+restoring the two-commit precedent PR #148 (FTF-0405) skipped.
+
+**STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+reporting and stopping to await independent Control-plane L2
+certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+An independent Control-plane CERTIFY review of FTF-0406 (this shift's own
+PR) is the natural next action, matching the established relay/certifier
+alternation. If a certifier session is not what fires next, the only
+other dependency-ready item as of this shift is FTF-1501 (CAP-14, no
+external-service ask of its own) — recompute the frontier fresh rather
+than assuming this shift's own list is still current, since FTF-0406
+reaching CERTIFIED will newly unblock FTF-0407 (per `docs/TASK_INDEX.md`,
+once its own other dependencies are also met). Separately: PR #143
+(FTF-0202 backend-selection claim) and PR #152 (a doc-only "Next shift"
+catch-up, now superseded by this shift's own more current update to that
+same section) both remain open/unmerged — a Control-plane/owner judgment
+call, not a relay one.
