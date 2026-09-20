@@ -1,7 +1,174 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled relay shift) — FTF-0105 (Tenant-isolation
-  query guards) implemented and submitted PROVISIONAL, awaiting
-  independent Control-plane L2 certification; see below.
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR#120) — FTF-0105 (Tenant-isolation
+  query guards) independently reviewed and CERTIFIED; see below.
+
+## 2026-09-20 — Control plane: FTF-0105 (PR#120) reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR#120.
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-0105, PR#120 (a prior shift's own relay submission). No other item was
+in "## Provisional."
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01WAStZmrW1dFrLLivEgcmxN`) against all 3
+commits on PR#120 (`e5df228`, `aa1cc7c`, `5590ae6`) — all three carry
+`Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`. No match —
+independent.
+
+Re-read the full diff directly (`git diff origin/main..origin/claude/
+wizardly-fermat-daazqp`, 8 files/+1419/-20) in a dedicated `git worktree`
+at the real PR head (`5590ae6`): `apps/api/app/auth/
+tenant_isolation_query_guards.py` (`tenant_scoped_session` — fails closed
+before a session is even created when `organization_id` is not a real
+`uuid.UUID`, binds FTF-0102's own `set_tenant_context()` immediately,
+always commits-or-rolls-back and closes; `execute_tenant_scoped` — reads
+back the session's own live transaction-local context via
+`require_tenant_context()` and refuses to run a raw statement at all on
+mismatch or absence; `install_tenant_pool_reset_guard` — a real SQLAlchemy
+pool `checkin` event listener force-clearing the tenant GUID on every
+connection returned to the pool), plus `tests/tasks/test_ftf_0105.py` (30
+no-DB checks) and `tests/integration/test_tenant_isolation_query_guards.py`
+(the real live-Postgres proof).
+
+Stood up a real, directly-installed local PostgreSQL 16 cluster in this
+sandbox (`pg_ctlcluster 16 main start`; no container-registry egress here,
+same documented finding as FTF-0004/FTF-0102/FTF-0104/FTF-R017/FTF-1601):
+created the `sovra_migrate` superuser role and `sovra_ftf0105` database,
+then ran `tests/integration/test_tenant_isolation_query_guards.py`
+directly against it — all checks pass, including both Law-1
+pool-reset-guard runs (leaks without the guard, does not leak with it,
+against the same real pool configuration). Re-ran `uv run python3
+tests/tasks/test_ftf_0105.py` clean in a fresh `uv sync --all-packages`
+sandbox (`git fetch --unshallow` needed once, this sandbox starts
+shallow, same documented environment-artifact note as every prior shift).
+
+**Own independent fault injection**, distinct from the producer's own two
+(`organization_id` `uuid.UUID`-validation removal; checkin-reset
+`set_config` no-op): edited `execute_tenant_scoped` on disk to replace
+`if active != organization_id:` with `if False:`, so the mismatch check
+can never fire. The no-DB suite's own fault-injection check (which greps
+for an exact source snippet to mutate) correctly reported its expected
+snippet missing — an artifact of this being a different mutation than the
+one it looks for, not a false pass — so this fault was instead proven
+against the real, live-Postgres integration suite: re-ran it against the
+same real database with the break in place, and exactly the expected
+negative_acceptance check failed (`a raw SQL query whose caller claims a
+different tenant than the session's real live context is refused
+outright...`); reverted byte-identical (`git diff --stat` confirmed no
+residual change), re-ran both suites clean.
+
+CI reconfirmed for real on the actual current head — the PR head moved
+once during submission (`aa1cc7c` -> `5590ae6`, a tracking-doc-only
+commit): all 8 checks (`gate`, `tenant-isolation-query-guards-integration`,
+`organization-workspace-schema-integration`, `oidc-provider-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`docker-local-stack-integration`, `storage-semantics-integration`)
+completed `success` on `5590ae6` itself; read the new
+`tenant-isolation-query-guards-integration` job's own step log directly,
+confirmed `success`, not merely inferred from the green check.
+
+Full regression, this sandbox: `uv run ruff check .` / `uv run ruff format
+--check .` / `uv run mypy .` clean; `pnpm install --frozen-lockfile` then
+`pnpm run lint` / `typecheck` / `format:check` clean; `pnpm run test`
+(Vitest) 5/5; `uv run pytest tests/unit` 3/3; all 17 existing
+`tests/tasks/test_ftf_*.py` files re-run clean (including
+`test_ftf_h001.py`, whose first run showed 3 failures traced directly to
+`validate_spec.py --strict` reporting 9 `stale_commit` findings against
+FTF-0001/0002/0003/0004/0005/0006/H001/R001/H002 — a shallow-clone
+artifact of this review's own worktree, not a real defect, confirmed
+cleared by `git fetch --unshallow`).
+
+`product_truth_check.py --fail-on-unwired` reports `1/1 product-true`;
+`docs/spec-matrix.yaml` FTF-0105's `proving_symbol` is empty — this
+criterion makes no live-wiring claim (no FastAPI route or
+background-worker service anywhere in this repository imports the module
+yet), so the unchanged `1/1` is FTF-0101's own wiring, not an inflated or
+fabricated pass for FTF-0105.
+
+Task contract re-pulled directly: `python tools/r1_handoff.py packet
+FTF-0105 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1
+("Repository/query layer consistently applies authenticated
+tenant/workspace and transaction-local context") is proven for real
+against FTF-0102's own two tenant-scoped tables (the only ones that exist
+in this repository yet), via genuine DBAPI connection-identity equality
+across two independent units of work drawn from a pool forced to reuse
+one connection. Acceptance clause 2 (independent review + merged commit +
+real relevant integration + negative-test evidence) is satisfied by this
+review itself. The negative_acceptance clause (connection-pool reuse,
+background job, raw SQL — all three named vectors) is independently
+proven above. `docs/spec-matrix.yaml`'s FTF-0105 notes read accurately
+against all of the above — every disclosed gap (no live product caller,
+positive-path evidence scoped to FTF-0102's own two tables, pool-reset
+guard not yet wired to a real application engine's startup) matches the
+real repository state.
+
+While writing the certification note into `docs/spec-matrix.yaml`,
+independently reproduced the PyYAML plain-scalar truncation the prior
+relay shift had already disclosed (a space followed by `#`, as in `(PR
+#120, ...)`, silently ends an unquoted `notes` scalar early with no parse
+error): this review's first draft note truncated the same way (6908 ->
+1914 chars against `Independently certified 2026-09-20 (PR #120,
+...`). Fixed by writing `PR#120` (no space before `#`) throughout this
+review's own new note text and verifying the full 6908-char note
+round-trips through `yaml.safe_load` unchanged before committing — same
+per-shift workaround the producer's own PROVISIONAL submission already
+used, not a fix to the pre-existing already-certified entries' own
+truncation (still open, tracked in `docs/certifications/queue.md`).
+
+**Conclusion:** the delivered tenant-isolation query-layer guard is real,
+independently reproduced against a real local PostgreSQL 16 cluster (not
+a mock or SQLite stand-in, which has no row-level security at all),
+genuinely fault-injectable via an own, this-session-chosen break distinct
+from the producer's own two and caught for real by the live-Postgres
+integration suite, and CI is green on the real final merged head (8/8).
+**FTF-0105 is CERTIFIED.** Merged PR#120 (merge commit
+`14f785c688cd1134dfe110edd73bf71f5df6d708`). Set `docs/spec-matrix.yaml`
+FTF-0105 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` kept at the implementation commit
+`e5df228`, matching the new `spec/verification-map.json` `commit` field —
+same two-commit convention as FTF-0102/FTF-0104/FTF-1601/FTF-0101/
+FTF-0103). Added FTF-0105's own entry to `spec/verification-map.json`.
+Ran `sync_certified_status()` — diff limited to exactly FTF-0105's own
+`status`/`evidence` fields in `spec/tasks.json`/`TRACKER.json`. Full
+ledger entry: `docs/certifications/ledger.md`. QUEUE.md updated: Certified
+21 -> 22/300, Provisional 1 -> 0, "## Provisional" and "## Done" sections
+updated accordingly. Product-true stays 1/300 (FTF-0105 has no
+`proving_symbol`, same disclosed no-live-caller-yet class as
+FTF-0102/FTF-0103/FTF-0104/FTF-1601 before it). `verify_release.py`
+confirmed non-inflated (`21/300` before, `22/300`/zero FAILED after — the
+FAILED entries surfaced mid-review for FTF-0002/FTF-0003/FTF-H001 were
+traced to this sandbox's Python venv not yet having `pnpm install`/`uv
+sync --all-packages` run against it, not a real regression; both
+installed, all three re-ran `PASS`).
+
+**Validated-by:** session
+https://claude.ai/code/session_01WAStZmrW1dFrLLivEgcmxN (independent — see
+session-ID check above), 2026-09-20.
+
+## Next shift
+Top item: none blocked or provisional. FTF-0102/FTF-0103/FTF-0105 are all
+now CERTIFIED, unblocking FTF-0106 (RBAC/IDOR security tests) — the next
+relay shift should check FTF-H003's own real DoD/status before claiming
+FTF-0106 ready (its dependency list names FTF-0102, FTF-0103, FTF-0104,
+FTF-0105, FTF-H003), per QUEUE.md's "## Queue (ordered by dependency)"
+section.
+Blocked: no.
+
+## Metrics
+Certified / denominator: 22/300 (FTF-0105 CERTIFIED this shift, PR#120
+merged as `14f785c`)
+Product-true (Law 16): 1 — unchanged; FTF-0105 has no live product caller
+yet, does not count either way
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
+
+## Open owner asks
+None. See QUEUE.md "Owner actions — current" for the authoritative,
+current list (empty as of this shift).
 
 ## 2026-09-20 — Relay: FTF-0105 (Tenant-isolation query guards) implemented, submitted PROVISIONAL
 
