@@ -462,28 +462,17 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
-backend selected before it can be implemented for real.** Its own
-acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
-through the actual selected secret backend") names no concrete system
-anywhere in this repository's architecture docs
-(`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's
-own Section 77/81 seven-reused-component list — a secret manager is not
-one of the seven). The only existing artifact is a `vault://`/
-`openbao://`/`secret://` reference-string *shape* convention (already
-used by two CERTIFIED tasks, FTF-0201/FTF-0101, to validate how a
-`secret_ref` value must look) — it fixes the shape, not the backend.
-Standing up a real resolver means selecting and deploying a real external
-secret-management system: both a "new runtime dep" and a "keyed external
-service," explicit "Ask owner first" hard stops. Options observed in the
-existing `vault://`/`openbao://` scheme names (not a recommendation,
-just what the naming already anticipates): (1) self-hosted HashiCorp
-Vault, (2) self-hosted OpenBao (Vault's OSS fork), (3) a cloud provider
-secret manager reachable from Railway (AWS Secrets Manager / GCP Secret
-Manager / etc.), (4) some other backend entirely. Per CLAUDE.md's default
-resolution rule this was checked against the architecture first — it
-genuinely does not fix the answer, so this is a real open ask, not a
-reopened decision. Remove this item the moment the owner responds.
+None. All prior asks resolved.
+
+## Owner decisions — recorded
+2026-09-20: **FTF-0202 ("Secret-manager integration") backend selected:
+OpenBao (self-hosted, Vault OSS fork).** Owner decision received and
+confirmed. FTF-0202 is now unblocked and dependency-ready for relay
+implementation. Acceptance clause 1 ("Store/resolve/rotate short-lived
+secret refs through the actual selected secret backend") will be
+implemented against a real OpenBao cluster. The `vault://`/`openbao://`/
+`secret://` reference-string *shape* convention (already validated by
+two CERTIFIED tasks, FTF-0201/FTF-0101) will resolve against this backend.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was

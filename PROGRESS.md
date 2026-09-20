@@ -1,5 +1,9 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (owner decision recorded) — **FTF-0202 unblocked:**
+  owner confirmed selection of OpenBao (self-hosted, Vault OSS fork) as the
+  secret-manager backend. FTF-0202 now dependency-ready for next relay shift.
+
+Prior (same day, scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #141) — independent CERTIFY
   review of FTF-0402 (Project security profile): **CERTIFIED**. Session-ID
   check clean against all 3 PR #141 commits (session_01YLCGLfbyuEcZGJTe7LWQAL,
