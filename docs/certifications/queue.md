@@ -5842,3 +5842,116 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01MWFKEi3BV8s5pzu4uymi5v (independent —
   see session-ID check above), 2026-09-20.
+
+## 2026-09-20 — FTF-0401 — Project schema/API/UI
+- **PR:** opened against `main` from branch `claude/wizardly-fermat-wc06b1`
+  (title `[relay] FTF-0401: Project schema/API/UI`).
+- **Commit:** 141be0f381a00f4c68664c9358404922837c1d29 (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch.
+- **Dependency-ready pick reasoning:** FTF-0202 ("Secret-manager
+  integration") became dependency-ready this shift (FTF-0005/FTF-0103/
+  FTF-0201 all CERTIFIED), but its own acceptance clause 1 ("Store/
+  resolve/rotate short-lived secret refs through the actual selected
+  secret backend") names no concrete backend anywhere in this
+  repository's architecture docs — grepped
+  `docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md` and this
+  plan's own Section 77/81 seven-component list; a secret manager is not
+  one of the seven reused components. Only a `vault://`/`openbao://`/
+  `secret://` reference-string *shape* convention already exists
+  (`apps/api/app/litellm/connection_schema.py`,
+  `apps/api/app/auth/oidc_settings.py`), which fixes the shape of a
+  stored reference, not the backend it resolves against. Standing up a
+  real resolver means selecting and deploying a real external
+  secret-management system — a new runtime dependency and a keyed
+  external service, both explicit "Ask owner first" hard stops per
+  CLAUDE.md — so this shift logged the ask in `QUEUE.md`'s "Owner
+  actions — current" (matching the FTF-0101 new-runtime-deps precedent)
+  and picked the next dependency-ready item with no such block instead.
+  Of the remaining dependency-ready items (FTF-0401/CAP-05, FTF-0305/
+  CAP-06, FTF-1501/CAP-14), FTF-0401 has the lowest CAP number and no
+  external-service ask of its own.
+- **Test:** `tests/tasks/test_ftf_0401.py` (no-DB, 22 test functions / 45
+  `check()` assertions) + `tests/integration/test_ftf_0401_project_schema_api.py`
+  (real live-Postgres, 32 `check()` assertions) +
+  `apps/web/tests/ftf_0401.spec.ts` (real component/DOM, 9 tests, Vitest +
+  React Testing Library).
+- **Evidence:** all three suites ran clean in this sandbox (no
+  container-registry egress here — same documented finding as every
+  prior integration-tested task; produced against a directly-installed
+  local PostgreSQL 16 cluster, wired into CI's new dedicated
+  `project-schema-api-integration` job for real registry egress on the
+  hosted runner). Own fault injections (Law 1, three, distinct vectors,
+  all reverted byte-identical via `git diff --stat` and all affected
+  suites re-run clean afterward):
+  1. Commented out the workspace-ownership `authorize_resource_ownership`
+     call in `create_project` — caught for real by the live-Postgres
+     suite (the cross-org `workspace_id` case, expecting 404, failed).
+  2. Widened `initial_status_for` to unconditionally return `"active"` —
+     caught for real by both the no-DB suite (the exact named
+     agentic-always-`setup_incomplete` check) and the live-Postgres suite
+     (3 checks, including the immutability-under-PATCH and
+     untouched-after-IDOR checks whose expected values assume
+     `setup_incomplete`).
+  3. (Frontend) leaked `project_type` into the edit-mode PATCH request
+     body — caught for real by the UI spec's own "never project_type"
+     assertion.
+  Also reconfirmed no regression: re-ran every other live-Postgres
+  integration suite sharing this migrated database
+  (`test_organization_workspace_schema`, `test_audit_event_writer`,
+  `test_tenant_isolation_query_guards`, `test_ftf_h003_cross_layer_isolation`,
+  `test_ftf_0106_rbac_idor_security`, `test_ftf_0201_litellm_connection_crud`,
+  `test_ftf_0301_trainable_artifact_schema_api`) — all clean. Full
+  regression: `uv run ruff check .`/`ruff format --check .`/`mypy .`
+  clean (105 source files); `pnpm run lint`/`typecheck`/`format:check`
+  clean; `pnpm exec vitest run` — 14/14 (5 pre-existing + 9 new);
+  `uv run pytest tests/unit` — 3/3; every existing
+  `tests/tasks/test_ftf_*.py` re-run clean (`git fetch --unshallow` first
+  — same pre-existing shallow-clone `stale_commit` artifact every prior
+  certifying/relay session has already documented);
+  `python3 scripts/validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` — `4/4` (this entry's own
+  `proving_symbol`, `build_project_router`, set at this PROVISIONAL
+  submission — see State below — matching the FTF-0201/FTF-0301
+  producer-shift precedent; a real caller found: `apps/api/app/main.py`'s
+  `create_app()`).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `build_project_router` (`proving_test`
+  `tests/tasks/test_ftf_0401.py`) at this PROVISIONAL submission, matching
+  the FTF-0201/FTF-0301 producer-shift precedent — only
+  `certification_state`/`proof_state`'s `CERTIFIED`/`L2-CERTIFIED` values
+  are the certifying session's own to set, confirmed genuinely,
+  unconditionally wired into `apps/api/app/main.py`'s `create_app()` —
+  the fourth live-wired product-runtime path in this repository.
+  `scripts/status.py`'s own stricter "product-true" count (which also
+  requires `certification_state in (CERTIFIED, PROMOTED)`) correctly
+  stays 3 until an independent Control-plane review certifies this task.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Create/edit agentic or generic project with versioned security/
+  budget/owner settings and saved UI state") — create/edit implemented
+  for both `project_type` values; `security_profile`/`created_by` are the
+  "settings/owner" fields Section 6.8 names; `row_version` is the
+  versioning Section 6's own preamble requires; `ui_state_json` plus the
+  dedicated `POST .../ui-state` route is the "saved UI state" this task's
+  own file list and the React component both implement for real (a
+  genuine backend round-trip, not client-only storage). Acceptance clause
+  2 (independent review/evidence) is this submission's own job to enable,
+  not to satisfy itself (Law 4). negative_acceptance ("Agentic project
+  without approved target/runtime remains setup-incomplete; no silent
+  generic downgrade") is enforced by construction — `project_type` is
+  immutable (`apply_edits`'s own signature has no such parameter) and
+  `initial_status_for` makes an agentic project always start (and, within
+  this task's own surface, always stay) `setup_incomplete` — proven both
+  at the pure-function level and over a real HTTP round-trip attempting
+  to smuggle `project_type` through a PATCH.
+- **Disclosed, not hidden:** a duplicate-name create within the same
+  workspace is rejected by the real database unique constraint but
+  surfaces as an unhandled `IntegrityError` (HTTP 500) rather than a
+  clean 400/409, matching FTF-0201/FTF-0301's own identical, already-
+  CERTIFIED precedent; `/requirements`/`/tools` routes and real
+  security-profile/budget-policy enforcement are explicitly NOT this
+  task's scope (FTF-0402/FTF-0403/FTF-0404/FTF-0407/FTF-0408's own,
+  later, separately dependency-gated tasks); `principal_resolver`/
+  `role_lookup` stay at their fail-closed defaults, the same disclosed
+  gap FTF-0103/FTF-0106/FTF-0201/FTF-0301 already carry.
