@@ -97,17 +97,23 @@ _ORDER_OUTPUT_SCHEMA: dict[str, object] = {
 }
 
 
-def _enforce(**overrides: object):
-    kwargs: dict[str, object] = {
-        "name": "lookup_order",
-        "description": "Looks up an order by ID.",
-        "input_schema_json": _ORDER_INPUT_SCHEMA,
-        "output_schema_json": _ORDER_OUTPUT_SCHEMA,
-        "claimed_class": "read_only",
-        "requires_confirmation": False,
-    }
-    kwargs.update(overrides)
-    return enforce_side_effect_classification(**kwargs)
+def _enforce(
+    *,
+    name: str = "lookup_order",
+    description: str | None = "Looks up an order by ID.",
+    input_schema_json: object = _ORDER_INPUT_SCHEMA,
+    output_schema_json: object = _ORDER_OUTPUT_SCHEMA,
+    claimed_class: str = "read_only",
+    requires_confirmation: bool = False,
+):
+    return enforce_side_effect_classification(
+        name=name,
+        description=description,
+        input_schema_json=input_schema_json,
+        output_schema_json=output_schema_json,
+        claimed_class=claimed_class,
+        requires_confirmation=requires_confirmation,
+    )
 
 
 # -- 1. classify_side_effect_signals --------------------------------------
