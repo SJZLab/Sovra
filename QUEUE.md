@@ -1,16 +1,35 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — picked up the exact "Action
-  needed" item from the prior Control-plane certifier shift's own FTF-0301
-  (PR #135) NOT CERTIFIED review below: added the one missing isolated
-  live-Postgres negative case for the license-acceptance ("unknown owner")
-  leg of `apply_mark_ready`, matching the review's own named fix exactly.
-  Own reproduction of the certifier's exact fault injection confirmed the
-  new case is the only one that catches it (1 FAIL), reverted
-  byte-identical. No production code changed. This session's own harness
-  assigns a fresh branch per shift and does not permit pushing to a
-  different branch, so — matching this repo's own established
-  supersession precedent (FTF-1601's #90→#96→#100 chain, FTF-0101's
-  #103→#112→#114 chain) — the fix landed as a new commit
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #137) — independent CERTIFY
+  review of FTF-0301 (TrainableArtifact schema/API): **CERTIFIED**.
+  Session-ID clean against all 6 commits on PR #137 (session_01UFUfcwwet85jUWc3BNVoJZ/
+  session_011RJ3Ct8ASzprr1uy78r6po, neither matching this reviewing
+  session's own ID), CI reconfirmed green (12/12) on the real final head
+  `9bc4923`, own reproduction against a real local PostgreSQL 16 cluster
+  (both suites "all checks passed"), own fault injection reproducing the
+  prior NOT CERTIFIED review's exact fault caught for real by the new
+  isolated case in both suites and reverted byte-identical,
+  `product_truth_check.py --fail-on-unwired` reconfirmed `3/3`, task
+  contract cross-checked via `tools/r1_handoff.py packet FTF-0301`. Merged
+  PR #137 (merge commit `634d59775253600a83fb0ff7c94793fa4fbb89de`),
+  closed PR #135 (the superseded first submission) with a comment.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Certified: 26/300, Product-true: 3/3. Full
+  review: `docs/certifications/ledger.md` (FTF-0301 entry) and
+  `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — picked up the exact
+  "Action needed" item from the prior Control-plane certifier shift's own
+  FTF-0301 (PR #135) NOT CERTIFIED review below: added the one missing
+  isolated live-Postgres negative case for the license-acceptance
+  ("unknown owner") leg of `apply_mark_ready`, matching the review's own
+  named fix exactly. Own reproduction of the certifier's exact fault
+  injection confirmed the new case is the only one that catches it (1
+  FAIL), reverted byte-identical. No production code changed. This
+  session's own harness assigns a fresh branch per shift and does not
+  permit pushing to a different branch, so — matching this repo's own
+  established supersession precedent (FTF-1601's #90→#96→#100 chain,
+  FTF-0101's #103→#112→#114 chain) — the fix landed as a new commit
   (`86397f123998a251ea7c459770290807f00c86da`) on this shift's own branch,
   built on PR #135's real head merged cleanly with `main`, and opened as a
   new PR superseding PR #135 (left open, to be closed on merge). Full
@@ -231,28 +250,20 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-CORRECTION (this shift, 2026-09-20): the block below had gone stale
-relative to this file's own top banner — it still showed
-"Certified: 23/300" / "Provisional: 1 (FTF-0106...)" after FTF-0106 was
-already independently CERTIFIED via PR #127 (merge commit `e21df28`),
-which the top banner and "## Done" section both already reflect
-correctly. Corrected here rather than left for a future shift to notice.
-
-Certified: 25/300 (main; FTF-0201 CERTIFIED 2026-09-20, PR #133 merged as
-`3588e4e` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0301
-fix resubmitted this shift, PR pending — not yet on `main`, nothing to
-count until independently certified) · Blocked: 0
+Certified: 26/300 (main; FTF-0301 CERTIFIED 2026-09-20, PR #137 merged as
+`634d5977` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
 open owner ask remains)
-Product-true (Law 16): 2 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 3 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
-`proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` — FTF-0101's
-`build_oidc_login_router` and FTF-0201's `build_litellm_connection_router`
-now both meet all three, matching `product_truth_check.py
---fail-on-unwired`'s own `2/2`, independently reconfirmed by the
-certifying session).
+`proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
+FTF-0101's `build_oidc_login_router`, FTF-0201's
+`build_litellm_connection_router` and FTF-0301's
+`build_trainable_artifact_router` now all meet all three, matching
+`product_truth_check.py --fail-on-unwired`'s own `3/3`, independently
+reconfirmed by the certifying session).
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -332,12 +343,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0301 (TrainableArtifact schema/API) — fix for the NOT CERTIFIED gap
-found in PR #135's own review (the license-acceptance/"unknown owner"
-isolation case), resubmitted this shift as a new PR superseding #135 (see
-top banner and `docs/certifications/queue.md`'s "Relay follow-up" entry).
-Awaiting a fresh, independent Control-plane L2 review — not self-certified
-(Law 4).
+None currently. FTF-0301 (TrainableArtifact schema/API) was the only item
+here; it was independently reviewed and CERTIFIED this shift via PR #137
+(merge commit `634d5977`, superseding the NOT CERTIFIED PR #135) — see
+"## Done" below for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0201 was independently reviewed and CERTIFIED a prior
 shift via PR #133, merge commit `3588e4e`; see "## Done" below for the
@@ -986,6 +997,42 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
+- FTF-0301 — TrainableArtifact schema/API. CERTIFIED 2026-09-20, PR #137
+  (superseding the NOT CERTIFIED PR #135), merge commit `634d5977`.
+  First submission (PR #135) was independently reviewed and found NOT
+  CERTIFIED — a real Law 1 gap, not a production defect: the live-Postgres
+  suite's own mark-ready sequence never isolated the "unknown owner"
+  (license-acceptance) leg of the three-part negative_acceptance clause
+  from the other two, so a fault there was invisible to it. Fixed with
+  exactly one additional isolated live-Postgres case (no production code
+  changed) and resubmitted as PR #137. This certification: session-ID
+  clean against all 6 commits on PR #137 (neither
+  session_01UFUfcwwet85jUWc3BNVoJZ nor session_011RJ3Ct8ASzprr1uy78r6po
+  matches this reviewing session's own ID); CI reconfirmed green (12/12)
+  on the real final head `9bc4923`; own reproduction in this sandbox
+  against a real, directly-installed local PostgreSQL 16 cluster (both
+  suites "all checks passed"); own fault injection reproducing the prior
+  review's exact fault (wrapped the license_accepted_by/at check in
+  `False and (...)`) caught for real by exactly the new isolated case (1
+  FAIL) in both suites, reverted byte-identical, both re-ran clean; the
+  five other live-Postgres integration suites sharing this migrated
+  database all re-ran clean, confirming no regression from the merge.
+  `product_truth_check.py --fail-on-unwired` reconfirmed `3/3`.
+  `tools/r1_handoff.py packet FTF-0301` confirmed the acceptance clauses
+  and the full three-condition negative_acceptance are met, including the
+  previously-gapped "unknown owner" leg now isolated against live
+  Postgres. Dependencies FTF-0103/FTF-0104 confirmed genuinely `CERTIFIED`
+  before relying on them. Added FTF-0301's entry to
+  `spec/verification-map.json` (pointing at the fix commit `86397f1`;
+  `verify_task.py --task FTF-0301 --stage task` reconfirmed `PASS`); ran
+  `sync_certified_status()` — diff limited to exactly FTF-0301's own
+  `status`/`evidence` fields; `scripts/status.py` confirmed non-inflated
+  (`25/300` before, `26/300`/zero FAILED after; "Product-true" `2` before,
+  `3` after, matching `product_truth_check.py`'s own `3/3`). PR #135
+  closed with a comment pointing to this certification. This
+  certification's own doc updates were pushed on a branch and opened as a
+  PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+  Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
