@@ -194,6 +194,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres connection-pool-reuse/raw-SQL/background-job tenant-isolation evidence is tests/integration/test_tenant_isolation_query_guards.py, run separately in CI (tenant-isolation-query-guards-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-1601. Certified on first submission (PR #120) — the underlying implementation commit is unchanged since e5df228."
+    },
+    "FTF-H003": {
+      "commit": "62424123a05706c944eb0557ac935556e7a8a60b",
+      "commands": [["python3", "tests/tasks/test_ftf_h003.py"]],
+      "expected_output_contains": "FTF-H003 cross-layer tenant isolation: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres cross-tenant read/write/download/job/route-denial evidence is tests/integration/test_ftf_h003_cross_layer_isolation.py, run separately in CI (ftf-h003-cross-layer-isolation-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601. Certified on first submission (PR #125) — the underlying implementation commit is unchanged since 6242412."
     }
   }
 }

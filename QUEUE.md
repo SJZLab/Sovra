@@ -1,5 +1,27 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — picked up the next unblocked
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #125) — independent CERTIFY
+  review of FTF-H003 (Cross-layer tenant isolation and relational
+  identity): **CERTIFIED**. Session-ID clean against all 3 commits on PR
+  #125, CI reconfirmed green (9/9, including the new
+  `ftf-h003-cross-layer-isolation-integration` job) on the real final
+  head, two own independent fault injections (storage-key foreign-tenant
+  equality bypass, caught for real; `authorize_resource_ownership`'s
+  app-layer row-ownership check dropped, confirmed as defense-in-depth
+  behind FTF-0102's own FORCE-RLS rather than a coverage gap),
+  `product_truth_check.py`'s `1/1` confirmed legitimate (empty
+  `proving_symbol`, no live-wiring claim), and the real task contract
+  (`tools/r1_handoff.py packet FTF-H003`) confirms both the acceptance
+  clause and the negative_acceptance clause are met for this task's own
+  scope. Merged PR #125 (merge commit `9407710`);
+  `docs/spec-matrix.yaml` set to `CERTIFIED`/`L2-CERTIFIED`; full entry in
+  `docs/certifications/ledger.md`. This certification's own doc updates
+  are pushed on a branch and opened as a PR against `main`, not pushed
+  directly, per `BRANCH_PROTECTION` — see the ledger entry's step 10 for
+  why that's noted explicitly this time. Full review history:
+  `docs/certifications/queue.md`.
+
+Earlier the same date (2026-09-20, scheduled relay shift) — picked up the next unblocked
   item per the prior shift's own dependency graph. FTF-0106 (RBAC/IDOR
   security tests) is next in CAP-01 order but depends on FTF-H003
   (Cross-layer tenant isolation and relational identity), which was still
@@ -95,11 +117,8 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 22/300 (main; FTF-0105 CERTIFIED 2026-09-20, PR #120 merged as
-`14f785c` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-H003, Cross-layer tenant isolation and relational identity — submitted
-this shift, PROVISIONAL/L1-PROVEN, awaiting independent Control plane
-review; see "## Provisional" below) · Blocked: 0
+Certified: 23/300 (main; FTF-H003 CERTIFIED 2026-09-20, PR #125 merged as
+`9407710` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -144,10 +163,14 @@ yet, FTF-1601 is the Postgres backup/restore tooling with no live
 FastAPI app or Temporal workflow importing `postgres_backup.py` yet, and
 FTF-0103 is the RBAC middleware enforcement primitive with no live
 `/api/v1` route anywhere in this repository yet to wire `require_role`
-into, and FTF-0105 is the tenant-isolation query-layer guard with no live
+into, FTF-0105 is the tenant-isolation query-layer guard with no live
 FastAPI route or background-worker service anywhere in this repository
-yet importing `tenant_isolation_query_guards.py` — none a live-wired
-product-runtime path, so all twenty-one are CERTIFIED without counting
+yet importing `tenant_isolation_query_guards.py`, and FTF-H003 is the
+cross-layer IDOR guard/tenant-context type/storage-key policy with no live
+FastAPI route, background-worker job runner, cache or model-alias layer
+anywhere in this repository yet constructing a `TenantContext` or calling
+`authorize_resource_ownership`/`tenant_policy.py` — none a live-wired
+product-runtime path, so all twenty-two are CERTIFIED without counting
 toward product-true).
 
 ## Owner actions — current
@@ -163,13 +186,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-H003 (Cross-layer tenant isolation and relational identity) —
-submitted this shift as PROVISIONAL/L1-PROVEN. PR:
-https://github.com/SJZLab/Sovra/pull/125
-(`claude/wizardly-fermat-hb5qby` → `main`). Full submission entry
-(modules, tests, real live-Postgres evidence, disclosed gaps):
-`docs/certifications/queue.md`. Not self-certified (Law 4) — awaiting an
-independent Control plane review session.
+None currently. FTF-H003 (Cross-layer tenant isolation and relational
+identity) was the only item here; it was independently reviewed and
+CERTIFIED this shift via PR #125 (merge commit `9407710`) — see "## Done"
+for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0105 (Tenant-isolation query guards) was independently
 reviewed and CERTIFIED a prior shift via PR #120 (merge commit `14f785c`)
@@ -672,6 +694,49 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `status`/`evidence` fields. `verify_release.py` confirmed non-inflated
   (`21/300` before, `22/300`/zero FAILED after). Full entry:
   docs/certifications/ledger.md.
+- FTF-H003 — Cross-layer tenant isolation and relational identity.
+  CERTIFIED 2026-09-20, PR #125 (merge commit
+  `94077104515f85e0ba776a38a2d058413d2fcaed`) — certified on first
+  submission, no resubmission needed. Independent review this shift
+  (session-ID clean against all 3 commits on PR #125 —
+  session_013xKMdEcTrkvS1WEQUwDWxV — none match this reviewing session's
+  own ID): CI reconfirmed green (9/9, including the new
+  `ftf-h003-cross-layer-isolation-integration` job) on the real final head
+  (`312e9de`); own live-Postgres reproduction against a real, directly
+  installed local PostgreSQL 16 cluster (no container-registry egress in
+  this sandbox, same FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-R017/FTF-1601
+  finding) — both delivered suites clean (read/write/download/job/route
+  denial, plus missing context); two own fault injections distinct from
+  the producer's own one — (1) flipped
+  `validate_object_key_belongs_to_tenant`'s foreign-tenant equality check
+  to always return `True`, caught for real by the no-DB suite's own
+  negative test; (2) dropped `authorize_resource_ownership`'s app-layer
+  `row[0] != organization_id` half and re-ran the live-Postgres suite —
+  this did not flip any check, traced directly to FTF-0102's own
+  `FORCE ROW LEVEL SECURITY` already filtering the foreign-tenant row out
+  of the query result before the app-layer comparison runs, confirming
+  genuine defense-in-depth rather than a coverage gap — both reverted
+  byte-identical, re-ran clean. `product_truth_check.py --fail-on-unwired`
+  confirmed legitimately `1/1` (`docs/spec-matrix.yaml` FTF-H003's
+  `proving_symbol` is empty — no live-wiring claim, since no FastAPI
+  route/worker/cache/alias layer anywhere in this repository constructs a
+  `TenantContext` yet). `tools/r1_handoff.py packet FTF-H003` confirmed
+  acceptance clause 1 (two real organizations, pooled sessions, cross-
+  tenant read/write/download/job/route denial including guessed IDs and
+  missing context) and the negative_acceptance clause (migration-role/
+  app-role separation — every live-suite check runs as `sovra_app` — and
+  background-activity denial) are met for this task's own scope; the
+  negative_acceptance clause's "object presigned URLs" phrase is honestly
+  scoped down to storage-key ownership validation only, since no live
+  presigned-URL-issuing route exists anywhere in this repository yet —
+  disclosed accurately in `docs/spec-matrix.yaml`, the same disclosed-gap
+  class already accepted for FTF-0105. Ran `sync_certified_status()` —
+  diff limited to exactly FTF-H003's own `status`/`evidence` fields.
+  `verify_release.py` confirmed non-inflated (`22/300` before,
+  `23/300`/zero FAILED after). This certification's own doc updates were
+  pushed on a branch and opened as a PR against `main` rather than pushed
+  directly — see `docs/certifications/ledger.md`'s FTF-H003 entry, step
+  10, for why that matters here. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
