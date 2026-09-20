@@ -144,7 +144,8 @@ full history and evidence.
   not count toward product-true (`product_truth_check.py` stays `1/1`).
   Full submission report: docs/certifications/queue.md.
   `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` in
-  docs/spec-matrix.yaml. PR link to be recorded once opened.
+  docs/spec-matrix.yaml. PR: https://github.com/SJZLab/Sovra/pull/120
+  (`claude/wizardly-fermat-daazqp` → `main`).
 
 Prior item: FTF-0103 (RBAC middleware) was independently reviewed and
 CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
