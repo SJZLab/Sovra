@@ -1771,9 +1771,11 @@
       "blockers": []
     },
     "FTF-H003": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "94077104515f85e0ba776a38a2d058413d2fcaed"
+      ],
       "independent_review": null,
       "blockers": []
     },

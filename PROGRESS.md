@@ -1,8 +1,206 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20T03:05:22Z (scheduled relay shift) — FTF-H003
-  (Cross-layer tenant isolation and relational identity) implemented and
-  submitted as PROVISIONAL, awaiting independent Control plane review; see
-  below.
+Updated: 2026-09-20 (scheduled Control-plane certifier shift) — FTF-H003
+  (Cross-layer tenant isolation and relational identity) independently
+  reviewed and CERTIFIED via PR #125 (merge commit `9407710`); see below.
+
+## 2026-09-20 — Control plane: FTF-H003 (PR#125) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #125.
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-H003, PR #125 (a prior shift's own relay submission). No other item
+was in "## Provisional."
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01Xpih2RaGXTP37K2PM6JYAV`) against all 3
+commits on PR #125 (`6242412`, `04ad18b`, `312e9de`) — all three carry
+`Claude-Session: .../session_013xKMdEcTrkvS1WEQUwDWxV`. No match —
+independent.
+
+Re-read the full diff directly (`git diff origin/main...origin/claude/
+wizardly-fermat-hb5qby`, 15 files/+3778/-16) in a dedicated `git worktree`
+at the real PR head (`312e9de`): `apps/api/app/db/tenant_context.py`
+(`TenantContext`, only ever built from a real `AuthorizedContext` via
+`from_authorized_context()`, never a bare client-supplied UUID),
+`apps/api/app/auth/resource_authorization.py`
+(`authorize_resource_ownership` — the IDOR guard, querying through
+FTF-0105's own `execute_tenant_scoped`, denying identically whether a row
+is missing or foreign-tenant), and `packages/storage/tenant_policy.py`
+(`build_tenant_scoped_object_key`/`validate_object_key_belongs_to_tenant`
+— tenant-scoped object-key build/validate, fail-closed on
+path-traversal/foreign-tenant keys), plus `tests/tasks/test_ftf_h003.py`
+(no-DB unit/fail-closed suite with its own fault injection) and
+`tests/integration/test_ftf_h003_cross_layer_isolation.py` (the real
+live-Postgres proof).
+
+Stood up a real, directly-installed local PostgreSQL 16 cluster in this
+sandbox (`pg_ctlcluster 16 main start`; no container-registry egress here,
+same documented finding as FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-R017/
+FTF-1601): created the `sovra_migrate` superuser role and `sovra_ftfh003`
+database, then ran `tests/integration/test_ftf_h003_cross_layer_isolation.py`
+directly against it — all checks pass (read/write/download/job/route
+denial, each against two real seeded organizations, plus missing-context
+denial). Re-ran `uv run python3 tests/tasks/test_ftf_h003.py` clean in a
+fresh `uv sync --all-packages` sandbox (`git fetch --unshallow` needed
+once, this sandbox starts shallow, same documented environment-artifact
+note as every prior shift).
+
+**Own independent fault injection, two vectors distinct from the
+producer's own one** (a no-DB source-mutation fault against
+`resource_authorization.py`'s own foreign-tenant-row check):
+(1) edited `packages/storage/tenant_policy.py`'s
+`validate_object_key_belongs_to_tenant` to `return True` unconditionally
+instead of `return key_organization_id == organization_id` —
+`tests/tasks/test_ftf_h003.py`'s own
+`test_validate_object_key_denies_a_guessed_foreign_tenant_prefix`
+negative check correctly failed; reverted byte-identical (`git diff
+--stat` confirmed no residual change), re-ran clean.
+(2) edited `apps/api/app/auth/resource_authorization.py`'s own `if row is
+None or row[0] != context.organization_id:` down to `if row is None:`
+(dropping the app-layer foreign-tenant-row half only) and re-ran the
+live-Postgres integration suite with the break in place — this did
+**not** flip any check. Traced directly rather than waved off: with
+`authorize_resource_ownership` querying through FTF-0105's own
+`execute_tenant_scoped`, and FTF-0102's tables under `FORCE ROW LEVEL
+SECURITY`, a foreign-tenant row is filtered out of the query result by
+Postgres itself before the row ever reaches the app-layer comparison —
+`row is None` alone still denies it. This confirms the dropped comparison
+is genuine defense-in-depth (the disclosed "inheriting FTF-0102's
+FORCE-RLS enforcement" framing already in this task's own notes), not a
+coverage gap: it is the literal branch the no-DB mocked suite (and the
+producer's own no-DB fault injection) exercises, for the scenario where
+RLS itself is bypassed or misconfigured — a live-RLS-backed integration
+run cannot itself simulate that scenario. Reverted byte-identical,
+re-ran both suites clean. Also tried removing
+`validate_object_key_belongs_to_tenant`'s leading path-traversal/
+absolute-path/backslash/null-byte reject line as a third vector, and
+confirmed it is genuinely redundant given the function's later
+segment-count/UUID/regex checks (every existing `bad_keys` negative case
+is still rejected without it) — recorded for transparency, not treated as
+a finding, since no acceptance/negative_acceptance clause depends on that
+one line alone.
+
+CI reconfirmed for real on the actual current head — at first poll `gate`
+and `docker-local-stack-integration` were still `in_progress`; polled
+again after completion: all 9 checks (`gate`,
+`ftf-h003-cross-layer-isolation-integration`,
+`tenant-isolation-query-guards-integration`,
+`organization-workspace-schema-integration`, `oidc-provider-integration`,
+`audit-event-writer-integration`, `postgres-backup-integration`,
+`docker-local-stack-integration`, `storage-semantics-integration`)
+completed `success` on `312e9de` itself; `mergeable_state` confirmed
+`clean` before merge.
+
+Full regression, this sandbox: `uv run ruff check .` / `uv run mypy .`
+clean (81 source files); `pnpm install` then `pnpm run lint` /
+`typecheck` / `format:check` clean; `uv run pytest tests/unit` 3/3; all 20
+existing `tests/tasks/test_ftf_*.py` files re-run clean
+(`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py` first showed
+failures traced directly to this sandbox's `node_modules` not yet
+installed, cleared by `pnpm install`, all three re-ran `PASS`);
+`validate_spec.py --strict` first showed 10 `stale_commit` defects, a
+shallow-clone artifact of this review's own worktree (same class already
+documented for FTF-0105's own review), cleared by `git fetch
+--unshallow`.
+
+`product_truth_check.py --fail-on-unwired` reports `1/1 product-true`;
+`docs/spec-matrix.yaml` FTF-H003's `proving_symbol` is empty — this
+criterion makes no live-wiring claim (no FastAPI route, background-worker
+job runner, cache or model-alias layer anywhere in this repository
+constructs a `TenantContext` or calls these new modules yet), so the
+unchanged `1/1` is FTF-0101's own wiring, not an inflated or fabricated
+pass for FTF-H003.
+
+Task contract re-pulled directly: `python tools/r1_handoff.py packet
+FTF-H003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1
+("Use two actual organizations and pooled DB sessions to prove
+cross-tenant read/write/download/job/route denial including guessed IDs
+and missing context") is proven for real, live against Postgres — read,
+write (rejected by FTF-0102's own RLS `WITH CHECK` policy, a real
+database error), download (storage-key ownership validation), job (a
+naively-opened session bypassing `tenant_scoped_session_for`) and route (a
+real uvicorn server combining `require_role` +
+`authorize_resource_ownership`) denial, each including guessed IDs, plus
+missing-context denial via FTF-0105's own `require_tenant_context`.
+Acceptance clause 2 makes no full-release claim here (single-task L2
+certification, not a release gate). The negative_acceptance clause
+("Migration role cannot be used by the API or worker; test views,
+background activities and object presigned URLs, not API guards alone")
+is met for the migration-role/app-role separation (every check in the
+live suite runs as `sovra_app`; only seeding uses the migration-owner
+role) and for background-activity denial (the "job" case above); its
+"object presigned URLs" phrase is honestly scoped down to storage-key
+ownership validation only, since no live presigned-URL-issuing route
+exists anywhere in this repository yet — disclosed accurately in
+`docs/spec-matrix.yaml`, the same disclosed-gap class already accepted
+for FTF-0105's own no-live-caller scope.
+
+**Conclusion:** the delivered cross-layer IDOR guard (`TenantContext`,
+`authorize_resource_ownership`, tenant-scoped storage-key policy) is real,
+independently reproduced against a real local PostgreSQL 16 cluster under
+real `FORCE ROW LEVEL SECURITY`, genuinely fault-injectable via two own,
+this-session-chosen breaks distinct from the producer's own one and each
+correctly caught or explained, and CI is green on the real final merged
+head (9/9). **FTF-H003 is CERTIFIED.** Merged PR #125 (merge commit
+`94077104515f85e0ba776a38a2d058413d2fcaed`). Set `docs/spec-matrix.yaml`
+FTF-H003 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` set to the merge commit, matching the
+FTF-0001/FTF-0002/FTF-0003 convention; `spec/verification-map.json`'s own
+`commit` field keeps the implementation commit `6242412`, same two-commit
+convention as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105).
+Added FTF-H003's own entry to `spec/verification-map.json`. Ran
+`sync_certified_status()` — diff limited to exactly FTF-H003's own
+`status`/`evidence` fields in `spec/tasks.json`/`TRACKER.json`. Full
+ledger entry: `docs/certifications/ledger.md`. QUEUE.md updated: Certified
+22 -> 23/300, Provisional 1 -> 0, "## Provisional" and "## Done" sections
+updated accordingly. Product-true stays 1/300 (FTF-H003 has no
+`proving_symbol`, same disclosed no-live-caller-yet class as
+FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-1601 before it). `verify_release.py`
+confirmed non-inflated (`22/300` before, `23/300`/zero FAILED after — the
+`ModuleNotFoundError: sqlalchemy` seen on one run was traced directly to
+invoking `python3` instead of the `uv`-managed venv's own interpreter,
+this sandbox's own shell-state artifact, not a real regression; resolved
+by activating `.venv`, re-ran `PASS`).
+
+This certification's own doc updates (this PROGRESS.md entry,
+`docs/certifications/ledger.md`, `docs/spec-matrix.yaml`, `QUEUE.md`,
+`spec/verification-map.json`, `spec/tasks.json`,
+`docs/implementation/TRACKER.json`) are pushed on a branch and opened as
+a PR against `main`, not pushed directly. `docs/certifications/
+watchdog-findings.md` records two prior direct-push-to-main findings
+(2026-09-15, 2026-09-18) that led `CLAUDE.md` to adopt its
+`BRANCH_PROTECTION` norm; this review found that every certification-
+record commit since (FTF-0101/FTF-0103/FTF-0105's own — `d4a2280`,
+`1873f17`, `8c602f8`, each a single-parent commit with no enclosing PR)
+repeated the same pattern without a new watchdog finding being logged.
+Not remediated here (outside this session's CERTIFY-only scope), but
+recorded in this entry and in the ledger for visibility rather than
+silently repeated a fourth time.
+
+**Validated-by:** session
+https://claude.ai/code/session_01Xpih2RaGXTP37K2PM6JYAV (independent —
+see session-ID check above), 2026-09-20.
+
+## Next shift
+Top item: none blocked or provisional. FTF-0102/FTF-0103/FTF-0104/
+FTF-0105/FTF-H003 are all now CERTIFIED, unblocking FTF-0106 (RBAC/IDOR
+security tests) — the next relay shift should pick that up per QUEUE.md's
+"## Queue (ordered by dependency)" section.
+Blocked: no.
+
+## Metrics
+Certified / denominator: 23/300 (FTF-H003 CERTIFIED this shift, PR #125
+merged as `9407710`)
+Product-true (Law 16): 1 — unchanged; FTF-H003 has no live product caller
+yet, does not count either way
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
+
+## Open owner asks
+None. See QUEUE.md "Owner actions — current" for the authoritative,
+current list (empty as of this shift).
 
 ## 2026-09-20T03:05:22Z — Relay shift: FTF-H003 implemented, PROVISIONAL (awaiting Control plane review)
 
