@@ -115,7 +115,7 @@ FTF-0106:
   certification_state: PROVISIONAL
   criticality: MUST
   description: RBAC/IDOR security tests
-  evidence_hash: ''
+  evidence_hash: 4e4053b223f98ebaf5e4ff52fd47c02e9fd623f9
   implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-01; scenarios=Q01, Q24; deps=FTF-0102, FTF-0103, FTF-0104,
     FTF-0105, FTF-H003 (all CERTIFIED); apps/api/app/auth/rbac_idor_security_tests.py (a
