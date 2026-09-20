@@ -177,18 +177,21 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0404's own independent Control-plane CERTIFY review is now done
-(CERTIFIED, PR #146, merge commit `d061996` — see "## Done"). Before
+FTF-0405's own independent Control-plane CERTIFY review is now done
+(CERTIFIED, PR #148, merge commit `82e2851` — see the top of this file
+and "## Done"); a real CI-wiring gap and an evidence-count slip found
+after that certification were independently closed via PR #151. Before
 merging PR #143, verify a genuine owner confirmation exists for
 FTF-0202's own backend selection (see the flagged note above) — do not
 treat that PR's own bare claim as sufficient by itself. Otherwise the
 next relay-workable item is whichever of
-FTF-0403/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest CAP number
-and no external-service ask of its own at that time — recompute the
-frontier fresh rather than assuming this shift's own list is
-still current, since FTF-0404 reaching CERTIFIED would newly unblock
-FTF-0407/FTF-0408 (per `docs/TASK_INDEX.md`, once their own other
-dependencies are also met).
+FTF-0403/FTF-0406/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest CAP
+number and no external-service ask of its own at that time — recompute
+the frontier fresh rather than assuming this note is still current,
+since FTF-0405 reaching CERTIFIED newly unblocks FTF-0406 (deps
+FTF-0401/FTF-0404/FTF-0405 — per `docs/TASK_INDEX.md` — all now
+CERTIFIED; FTF-0406 is CAP-05, the lowest CAP number among the current
+frontier as of this recomputation).
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
