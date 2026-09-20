@@ -548,7 +548,7 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-0305 (License acceptance workflow) — submitted PROVISIONAL this
-shift. PR: opened this shift
+shift. PR: https://github.com/SJZLab/Sovra/pull/144
 (`claude/wizardly-fermat-34mau8` → `main`). Not self-certified (Law 4) —
 awaiting an independent Control-plane L2 review. Full submission report:
 `docs/certifications/queue.md`.

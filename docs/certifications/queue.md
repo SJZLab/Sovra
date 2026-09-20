@@ -6180,8 +6180,9 @@ the same code on a now-clean head.
   task's scope — see Scope decision above.
 
 ## 2026-09-20 — FTF-0305 — License acceptance workflow
-- **PR:** opened this shift (`claude/wizardly-fermat-34mau8` → `main`,
-  title `[relay] FTF-0305: License acceptance workflow`).
+- **PR:** https://github.com/SJZLab/Sovra/pull/144
+  (`claude/wizardly-fermat-34mau8` → `main`, title
+  `[relay] FTF-0305: License acceptance workflow`).
 - **Commit:** 66aff8b6f8b81846891d5da43c3d1eb1e11f708a (implementation);
   `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
   second, tracking-doc-only commit on the same branch, matching the
