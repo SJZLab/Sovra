@@ -337,9 +337,11 @@
       "blockers": []
     },
     "FTF-0406": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "80dcd4b2a66c700e64e7c997b693f68a05103784"
+      ],
       "independent_review": null,
       "blockers": []
     },
