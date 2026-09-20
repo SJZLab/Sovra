@@ -5067,3 +5067,74 @@ the same code on a now-clean head.
 ## 2026-09-20 — FTF-0106 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/127
   (`claude/wizardly-fermat-daazqp` → `main`).
+
+## 2026-09-20 — FTF-0106 (PR #127) — Control plane: independently reviewed, CERTIFIED
+- **Trigger:** `pull_request.opened` webhook for PR #128 (a docs-only
+  relay follow-up recording that PR #127 had already been merged by the
+  owner). PR #128 is not itself a certification target -- the actual
+  pending item was FTF-0106 in this file's own PROVISIONAL entry above.
+- **Session-independence:** this reviewing session
+  (`session_01FvMpeD5hSLcrorrAFJTrNu`) compared against all 4 commits on
+  PR #127 (`9fe1957`/`ea8e963`/`ba8b3fe`/`6b226ee`, all carrying
+  `Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`) -- no match,
+  independent.
+- **CI:** reconfirmed green on the real PR head (`6b226ee`) directly via
+  `pull_request_read`/`get_check_runs` -- 10/10 `completed`/`success`,
+  including the new `rbac-idor-security-integration` job -- not a stale
+  or self-reported claim.
+- **Own fault injection** (distinct from the producer's own three):
+  aliased `approve_dependency`'s allowed-role set from `APPROVE_ROLES` to
+  `READ_ROLES`. Caught for real by both suites -- 2 no-DB checks failed
+  (with a genuine `TenantContextError` traceback), 16 live-Postgres
+  checks flipped from the expected `403` to `200`/`404` across every
+  disallowed role and both organizations. Reverted byte-identical
+  (`diff` clean against a pre-injection copy), both suites re-ran clean.
+- **Own independent check of the negative_acceptance claim:** `psql \du`
+  confirms `sovra_app` carries no `Superuser`/`Bypass RLS` attribute, and
+  `organizations`/`workspaces` both carry real `FORCE ROW LEVEL SECURITY`
+  -- backing the integration suite's own engine-username assertion with
+  an independent look at the underlying role/RLS state, not just
+  accepting the suite's own claim about it.
+- **product_truth_check.py:** confirmed legitimately `1/1` (FTF-0106's
+  `proving_symbol` stays empty in `docs/spec-matrix.yaml` -- no
+  live-wiring claim, so `1/1` unchanged is correct, not an inflated
+  pass).
+- **Real task contract** pulled fresh via `tools/r1_handoff.py packet
+  FTF-0106 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (not taken from the
+  PR body alone): acceptance clause 1 met by the full 2 orgs × 6 roles ×
+  3 operations × 2 targets live-Postgres matrix, "artifacts/approvals"
+  honestly scoped to the existing `workspaces` table per the disclosed
+  no-artifact-table-yet limitation; negative_acceptance met -- the
+  membership *lookup* is a disclosed fixture, but the tenant-boundary
+  *decision* itself always runs a real query through FTF-0105's own
+  `execute_tenant_scoped` guard against the restricted connection, and no
+  authorization test exclusively uses the privileged migration-owner
+  connection.
+- **Full regression:** clean after this review's own `git fetch
+  --unshallow` (cleared an initial shallow-clone `stale_commit` set of
+  `validate_spec.py --strict` defects, a sandbox artifact, not a real
+  regression) and `pnpm install` (cleared missing `node_modules`) --
+  ruff/mypy/pnpm lint/typecheck/format:check/vitest/pytest all clean, all
+  20 existing `tests/tasks/test_ftf_*.py` clean, `verify_task.py --task
+  FTF-0106 --stage task` → `PASS`, `verify_release.py` confirmed
+  non-inflated (`23/300` before, `24/300`/zero `FAILED` after).
+- **Result:** `docs/spec-matrix.yaml` FTF-0106 set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED` /
+  `evidence_hash` = merge commit `e21df287193bebe0feaa4ad77ad0b030d28c3a4f`.
+  `docs/certifications/ledger.md` entry appended (session-ID comparison
+  stated explicitly). `spec/verification-map.json` entry added.
+  `scripts.task_claim.sync_certified_status()` run -- diff limited to
+  exactly FTF-0106's own fields. `QUEUE.md`/`PROGRESS.md` updated
+  (23/300 → 24/300; FTF-0106 moved to "## Done").
+- **Noted, not remediated here (outside CERTIFY-only scope):** PR #127's
+  own GitHub merge-commit message ("independently reviewed and
+  certified, see docs/certifications/ledger.md") was written before any
+  ledger.md entry for FTF-0106 existed -- an unearned status claim baked
+  into permanent git history, the same class
+  `docs/certifications/watchdog-findings.md` already tracks for
+  direct-to-main pushes. This certification makes that claim true after
+  the fact; the premature wording itself is not correctable (git
+  history) and is recorded here for visibility. This certification's own
+  doc updates are opened as a PR against `main` rather than pushed
+  directly, per `CLAUDE.md`'s `BRANCH_PROTECTION` norm.
+- **Certified-by:** this Control-plane certifier session, 2026-09-20.

@@ -1,7 +1,141 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (same relay shift, follow-up) — PR #127 was merged
-  directly by the repo owner on green CI, ~6 minutes after opening,
-  before any independent Control-plane review. See below.
+Updated: 2026-09-20 (scheduled Control-plane certifier shift) — FTF-0106
+  (RBAC/IDOR security tests) independently reviewed and CERTIFIED via
+  PR #127 (merge commit `e21df28`); see below.
+
+## 2026-09-20 — Control plane: FTF-0106 (PR#127) independently reviewed, CERTIFIED
+
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #128 (a docs-only
+relay follow-up recording that PR #127 had already been merged by the
+owner — not itself a certification target; the actual pending item was
+FTF-0106 in `docs/certifications/queue.md`).
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-0106, PR #127 (a prior relay shift's own submission, merged directly
+by the repo owner on green CI before this review ran).
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01FvMpeD5hSLcrorrAFJTrNu`) against all 4
+commits on PR #127 (`9fe1957`, `ea8e963`, `ba8b3fe`, `6b226ee`) — all four
+carry `Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`. No match —
+independent.
+
+Re-read the full diff directly (`git show e21df28 --stat`,
+8 files/+1242/-23): `apps/api/app/auth/rbac_idor_security_tests.py`
+(`TwoTenantRoleMatrixFixture` — twelve distinct real (org, role)
+principals across two real organizations; `build_two_tenant_security_demo_app`
+wiring `require_role`/`authorize_resource_ownership` across read/write/
+approve routes), `tests/tasks/test_ftf_0106.py` (23 no-DB checks) and
+`tests/integration/test_ftf_0106_rbac_idor_security.py` (75 real
+live-Postgres checks). No production mock, fake integration or
+placeholder route found.
+
+Confirmed CI actually ran on the real PR head (`6b226ee`): 10/10 check
+runs `completed`/`success`, including `gate` and the new
+`rbac-idor-security-integration` job — read directly via
+`pull_request_read` (`get_check_runs`), not a stale or self-reported
+claim.
+
+Stood up a real, directly-installed local PostgreSQL 16 cluster in this
+sandbox (`service postgresql start`; no container-registry egress here,
+same documented finding as FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/
+FTF-R017): created the `sovra_migrate` superuser role and `sovra_ftf0106`
+database, then ran `tests/integration/test_ftf_0106_rbac_idor_security.py`
+directly against it — all 75 checks pass. Re-ran
+`uv run python3 tests/tasks/test_ftf_0106.py` clean (23/23) after this
+review's own fresh `uv sync --all-packages`/`git fetch --unshallow`/
+`pnpm install`.
+
+Own fault injection, distinct from the producer's own three: aliased
+`approve_dependency`'s allowed-role set from `APPROVE_ROLES` to
+`READ_ROLES` in the tracked module on disk (widening approval to every
+member). Genuinely caught by both suites — the no-DB suite failed 2
+checks with a real `TenantContextError` traceback confirming the fault
+reached a live code path; the live-Postgres suite flipped 16 checks
+(every disallowed role's approve attempt, both organizations, own and
+foreign workspace) from the expected `403` to `200`/`404`. Reverted;
+`diff` against a pre-injection copy confirmed byte-identical; both
+suites re-ran clean.
+
+Independently confirmed the negative_acceptance clause is genuinely
+enforced, not merely asserted by the test's own code: `sudo -u postgres
+psql \du` shows `sovra_app` carries no `Superuser`/`Bypass RLS`
+attribute (unlike `sovra_migrate`), and a direct query confirms
+`organizations`/`workspaces` both carry `relrowsecurity=t`/
+`relforcerowsecurity=t` — backing the integration suite's own
+engine-username assertion with an independent check of the underlying
+role/RLS state.
+
+Full regression in this sandbox (after `git fetch --unshallow` cleared an
+initial shallow-clone `validate_spec.py --strict` `stale_commit` set of
+defects and transient `test_ftf_0002.py`/`test_ftf_0003.py`/
+`test_ftf_h001.py` failures, and `pnpm install` cleared missing
+`node_modules` — both sandbox artifacts, not real regressions): `ruff
+check .`/`ruff format --check .`/`mypy .` clean (84 source files); `pnpm
+run lint`/`typecheck`/`format:check` clean; `vitest run` 5/5; `pytest
+tests/unit` 3/3; all 20 existing `tests/tasks/test_ftf_*.py` files clean;
+`product_truth_check.py --fail-on-unwired` confirmed legitimately `1/1`
+(FTF-0106's `proving_symbol` stays empty, no live-wiring claim);
+`validate_spec.py --strict` clean; `verify_task.py --task FTF-0106
+--stage task` → `PASS`; `verify_release.py` confirmed non-inflated
+(`23/300` before, `24/300`/zero `FAILED` after).
+
+Pulled the task's real contract fresh via `tools/r1_handoff.py packet
+FTF-0106 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1
+("Full real two-tenant role matrix exercises reads/writes/artifacts/
+approvals with guessed IDs") is met by the full 2 organizations × 6
+roles × 3 operations × 2 targets live-Postgres matrix, with "artifacts/
+approvals" honestly scoped to a real approval-shaped role gate over the
+existing `workspaces` table since no live `ModelVersion`/
+`PromotionDecision` table exists yet and this task's own
+`database_changes` contract forbids adding one — the same disclosed
+scoping precedent FTF-0105/FTF-H003 already established and were
+certified against. negative_acceptance ("No authorization test
+exclusively uses privileged DB connection or mocked membership result")
+is met: the membership *lookup* is necessarily a disclosed fixture (no
+live `Membership` table exists yet, same disclosed limitation FTF-0103/
+FTF-H003 were already certified against), but the tenant-boundary
+*decision* itself is never mocked — it always runs a real query through
+FTF-0105's own `execute_tenant_scoped` guard against the real, restricted
+`sovra_app` connection, and no authorization test in the suite
+exclusively uses the privileged migration-owner connection (seeding
+alone uses it).
+
+Merged already (PR #127, merge commit `e21df28`, merged directly by the
+repo owner on green CI before this review ran — a legitimate owner
+action per CLAUDE.md's "Do without asking" list; Law 4 still held until
+this independent review actually ran). Set `docs/spec-matrix.yaml`
+FTF-0106 to `CERTIFIED`/`L2-CERTIFIED`, `evidence_hash` to the merge
+commit SHA. Appended `docs/certifications/ledger.md`. Added the
+`spec/verification-map.json` entry. Ran
+`scripts.task_claim.sync_certified_status()` — diff limited to exactly
+FTF-0106's own `status`/`evidence` fields in `spec/tasks.json`/
+`docs/implementation/TRACKER.json`, confirmed via `git diff`. Updated
+`QUEUE.md`/`PROGRESS.md` (23/300 → 24/300 certified; FTF-0106 moved to
+"## Done").
+
+Noted for the record, not remediated here (outside this session's
+CERTIFY-only scope): PR #127's own GitHub merge-commit message
+("independently reviewed and certified, see docs/certifications/
+ledger.md") was written by the merge action before any ledger.md entry
+for FTF-0106 existed — an unearned status claim baked into permanent git
+history, the same class `docs/certifications/watchdog-findings.md`
+already tracks for direct-to-main pushes. This certification is what
+makes that claim true after the fact; the premature wording itself is
+not correctable (git history) and is recorded here for visibility. This
+certification's own doc updates are, per the prior FTF-H003 review's own
+established correction, opened as a PR against `main` rather than pushed
+directly, per `CLAUDE.md`'s `BRANCH_PROTECTION` norm.
+
+Conclusion: the delivered full six-role, two-tenant RBAC/IDOR
+security-test harness is real, independently reproduced against a real
+local PostgreSQL 16 cluster, genuinely fault-injectable via an own,
+this-session-chosen break distinct from the producer's own three and
+caught for real by both delivered suites, and CI is green on the real
+final merged head (10/10). No blocking defect. **Certified
+L2-CERTIFIED.**
 
 ## 2026-09-20 — Relay follow-up: PR #127 merged by owner, FTF-0106 still PROVISIONAL (not certified)
 
