@@ -283,7 +283,7 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 FTF-0201 (LiteLLM connection CRUD) — submitted this shift, PR opened
 against `main`, `docs/spec-matrix.yaml` set to `PROVISIONAL`/`L1-PROVEN`,
-`evidence_hash` = `2ed384b06c387be413d9ff41ebb2f88b85cdee0a`. Full
+`evidence_hash` = `1815080980fb0280f33a864b5f9ad4850ce997de`. Full
 submission report: `docs/certifications/queue.md`. Not self-certified
 (Law 4) — awaiting independent Control-plane L2 review.
 
