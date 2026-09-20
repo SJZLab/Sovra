@@ -1,5 +1,33 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0201
+  (LiteLLM connection CRUD, deps FTF-0103/FTF-0104/FTF-0005 all
+  CERTIFIED, DoD pulled fresh via `tools/r1_handoff.py packet FTF-0201`).
+  Scope narrowed honestly to create/get/list/edit/revoke only (no
+  `validate`/`sync-models`/`syncs`/`/models`/`/models/{id}/probe` route,
+  even as a stub — those are FTF-0203/FTF-0204/FTF-0210's own, later,
+  separately dependency-gated tasks; declaring that surface with no real
+  backing handler would be a placeholder endpoint, Law 11). Real,
+  live-wired `/api/v1/organizations/{organization_id}/connections/litellm`
+  routes (`apps/api/app/litellm/connection_routes.py`), gated
+  `organization_admin`-only per Section 45's own literal role table;
+  domain schema + FORCE-RLS migration
+  (`apps/api/app/litellm/connection_schema.py`,
+  `apps/api/alembic/versions/0003_litellm_connections.py`); CRUD module
+  composed entirely from already-certified primitives
+  (`TenantContext`/`tenant_scoped_session_for`/`authorize_resource_ownership`/
+  `execute_tenant_scoped`/`write_audit_event`); `contracts:02` frozen
+  (`packages/contracts/{openapi,jsonschema}/02-*`). 48 no-DB checks +
+  28 real live-Postgres checks, two own fault injections (widened
+  `CONNECTION_ADMIN_ROLES`; `secret_ref` leaked back into the response
+  serializer), both genuinely caught by both suites and reverted
+  byte-identical. `product_truth_check.py --fail-on-unwired` now
+  `2/2` — this is the SECOND live-wired product-runtime path in this
+  repository, after FTF-0101. PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-0201 set to `PROVISIONAL`/`L1-PROVEN`.
+  Awaiting independent Control plane certification — not self-certified
+  (Law 4). Full submission report: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #127) — independent CERTIFY
   review of FTF-0106 (RBAC/IDOR security tests): **CERTIFIED**. Session-ID
   clean against all 4 commits on PR #127, CI reconfirmed green (10/10,
@@ -142,19 +170,39 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 23/300 (main; FTF-H003 CERTIFIED 2026-09-20, PR #125 merged as
-`9407710` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0106, RBAC/IDOR security tests — submitted this shift, awaiting
+CORRECTION (this shift, 2026-09-20): the block below had gone stale
+relative to this file's own top banner — it still showed
+"Certified: 23/300" / "Provisional: 1 (FTF-0106...)" after FTF-0106 was
+already independently CERTIFIED via PR #127 (merge commit `e21df28`),
+which the top banner and "## Done" section both already reflect
+correctly. Corrected here rather than left for a future shift to notice.
+
+Certified: 24/300 (main; FTF-0106 CERTIFIED 2026-09-20, PR #127 merged as
+`e21df28` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0201, LiteLLM connection CRUD — submitted this shift, awaiting
 independent Control-plane L2 certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
 open owner ask remains)
-Product-true (Law 16): 1 — must match certified (FTF-0101 is the one
-live-wired product-runtime path: `build_oidc_login_router` is imported and
-called unconditionally from `apps/api/app/main.py`'s `create_app()`,
-confirmed via `product_truth_check.py --fail-on-unwired` -> `1/1` and a
-direct `grep` on `main.py`, not merely asserted. FTF-0001, FTF-0002,
+Product-true (Law 16): 1 (`scripts/status.py`'s own authoritative count,
+which requires `certification_state in (CERTIFIED, PROMOTED)` AND
+`proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` — FTF-0101's
+`build_oidc_login_router` is the one entry meeting all three; unchanged
+this shift). Distinct, narrower-scoped signal worth disclosing precisely
+rather than conflating (Law 2: never inflate the tracker):
+`product_truth_check.py --fail-on-unwired` — which only checks "does
+this claimed `proving_symbol` have a confirmed live caller," with no
+certification-state requirement at all — now reports `2/2`, because this
+shift's own FTF-0201 genuinely wires `build_litellm_connection_router`
+into `apps/api/app/main.py`'s `create_app()` unconditionally (confirmed
+via a direct `grep` on `main.py`, not merely asserted), even though
+FTF-0201's own `certification_state` stays `PROVISIONAL` /
+`proof_state` stays `L1-PROVEN` (Law 4: not self-certified). Once
+FTF-0201 is independently CERTIFIED at L2, `scripts/status.py`'s own
+"Product-true" count will correctly become 2 to match; it is
+deliberately still 1 until then.
+FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
 FTF-0104, FTF-1601 and FTF-0105 all have no proving_symbol; FTF-0001 is structural
@@ -200,6 +248,26 @@ anywhere in this repository yet constructing a `TenantContext` or calling
 product-runtime path, so all twenty-two are CERTIFIED without counting
 toward product-true).
 
+NOTICED, NOT REMEDIATED this shift (flagged for the next Control-plane
+review, not silently decided either way by the producer): the sentence
+above about FTF-0103/FTF-0104/FTF-0105/FTF-H003 having "no live
+FastAPI route... anywhere in this repository yet" importing their own
+module is now stale in one narrow sense — `apps/api/app/litellm/
+connection_crud.py` and `connection_routes.py` (this shift's own
+FTF-0201) genuinely import and call `require_role` (FTF-0103),
+`write_audit_event` (FTF-0104), `execute_tenant_scoped` (FTF-0105) and
+`authorize_resource_ownership`/`TenantContext` (FTF-H003) for real, from
+a route that is itself unconditionally wired into `main.py`. None of
+those four already-CERTIFIED tasks' own `docs/spec-matrix.yaml` entries
+carry a `proving_symbol`, so `product_truth_check.py` does not itself
+flip them to product-true (the tool only evaluates entries that claim a
+symbol) — this shift did not add one to any of their entries, since
+that would be editing already-certified evidence for tasks this shift
+did not implement, outside a single-task producer's own write set.
+Whether to retroactively fill `proving_symbol` for those four entries
+(reflecting that they are, in fact, now transitively exercised by a
+real live route) is a Control-plane judgment call, not a relay one.
+
 ## Owner actions — current
 None currently. The one open ask (FTF-0101's local-OIDC-test-provider
 package choice) was resolved 2026-09-19 by live owner instruction — see
@@ -213,12 +281,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-(none — FTF-0106 independently reviewed and CERTIFIED this shift via
-PR #127, merge commit `e21df28`; see "## Done" below for the certification
-summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
-for the full history and evidence.)
+FTF-0201 (LiteLLM connection CRUD) — submitted this shift, PR opened
+against `main`, `docs/spec-matrix.yaml` set to `PROVISIONAL`/`L1-PROVEN`,
+`evidence_hash` = `2ed384b06c387be413d9ff41ebb2f88b85cdee0a`. Full
+submission report: `docs/certifications/queue.md`. Not self-certified
+(Law 4) — awaiting independent Control-plane L2 review.
 
-Prior item: FTF-H003 (Cross-layer tenant isolation and relational
+Prior item: FTF-0106 (RBAC/IDOR security tests) was independently
+reviewed and CERTIFIED a prior shift via PR #127, merge commit
+`e21df28`; see "## Done" below for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
+Earlier item: FTF-H003 (Cross-layer tenant isolation and relational
 identity) was independently reviewed and CERTIFIED a prior shift via
 PR #125 (merge commit `9407710`) — see "## Done" for the certification
 summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
