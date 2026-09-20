@@ -1,5 +1,46 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0402
+  (Project security profile, dep FTF-0401, CERTIFIED). Of the 8
+  dependency-ready items this shift found (FTF-0202 already logged as an
+  owner ask below; FTF-0305/FTF-0402/FTF-0403/FTF-0404/FTF-1001/FTF-1401/
+  FTF-1501), FTF-0402 has the lowest CAP number with no external-service
+  ask of its own and unblocks the most downstream work (FTF-0408/0500D/
+  0514/0617/0901/0902/1206 all name it as a dependency). Section 6.1/6.8's
+  own `default_security_profile`/`security_profile` columns were typed as
+  opaque strings with zero enforcement; `apps/api/app/services/
+  project_security_profile.py` makes that real with a closed, ordered
+  taxonomy (`standard < zero_egress < air_gapped`, grounded in this
+  specification's own text — Law 17/Section 11.1's ZERO_EGRESS, and
+  AIR_GAPPED explicitly described as adding "a deployment constraint to
+  the existing ZERO_EGRESS policy" — not invented) plus
+  `enforce_security_profile_selection`, this task's own
+  negative_acceptance ("User cannot relax inherited organization policy
+  by changing a project field or using direct API") made real.
+  `apps/api/app/projects/project_crud.py`'s `create_project`/
+  `update_project` (FTF-0401, already CERTIFIED) now fetch the calling
+  organization's own real `default_security_profile` and call it before
+  a project's `security_profile` is ever persisted, at both creation and
+  edit — closing the exact gap `project_routes.py`'s own module docstring
+  already disclosed. `apply_edits` itself is untouched, so this adds no
+  regression to FTF-0401's own certified evidence (independently
+  reconfirmed: its own no-DB and live-Postgres suites both still "all
+  checks passed" after this change). 15 no-DB test functions (23 checks,
+  including source-inspection proof the new primitive is genuinely called,
+  not merely imported) + 15 real live-Postgres checks (two organizations
+  seeded with two different real `default_security_profile` values,
+  proving the negative_acceptance case at both creation and edit against
+  a real uvicorn server over FTF-0401's own `build_project_router`); two
+  own fault injections, both caught for real, reverted byte-identical.
+  PR opened as PROVISIONAL; `docs/spec-matrix.yaml` FTF-0402 set to
+  `PROVISIONAL`/`L1-PROVEN`, `proving_symbol`
+  `enforce_security_profile_selection` (matching the FTF-0201/FTF-0301/
+  FTF-0401 producer-shift precedent). Awaiting independent Control plane
+  certification — not self-certified (Law 4). Certified stays 27/300;
+  `product_truth_check.py --fail-on-unwired`: `5/5`; `scripts/status.py`'s
+  own stricter "product-true" count (CERTIFIED-only) stays 4. Full
+  submission report: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #139) — independent CERTIFY
   review of FTF-0401 (Project schema/API/UI): **CERTIFIED**. Session-ID
   clean against all 3 commits on PR #139 (session_01HCDh4VoHfgGL9NkLs6Q4YG,
@@ -306,7 +347,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 27/300 (main; FTF-0401 CERTIFIED 2026-09-20, PR #139 merged as
-`59e14e7` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`59e14e7` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0402,
+this shift, PR opened, awaiting independent Control-plane L2 review) ·
+Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
@@ -319,8 +362,14 @@ which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 FTF-0101's `build_oidc_login_router`, FTF-0201's
 `build_litellm_connection_router`, FTF-0301's
 `build_trainable_artifact_router` and FTF-0401's own `build_project_router`
-all meet all three, independently reconfirmed by this certifying session;
-`product_truth_check.py --fail-on-unwired` matches at `4/4`).
+all meet all three, independently reconfirmed by this certifying session.
+This shift's own FTF-0402 (`enforce_security_profile_selection`, called
+for real by FTF-0401's already-CERTIFIED `create_project`/
+`update_project`) also now carries a `proving_symbol`, so
+`product_truth_check.py --fail-on-unwired` itself reports `5/5` — but
+`scripts/status.py`'s own stricter authoritative count above correctly
+stays 4 until an independent Control-plane review certifies FTF-0402
+(PROVISIONAL, not yet CERTIFIED).
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -419,8 +468,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0401 (Project schema/API/UI) was independently
-reviewed and CERTIFIED this shift via PR #139 (merge commit `59e14e7`) —
+FTF-0402 (Project security profile) — submitted PROVISIONAL this shift.
+PR opened (see this shift's own entry at the top of this file and the
+full submission report in `docs/certifications/queue.md`). Not
+self-certified (Law 4) — awaiting an independent Control-plane L2 review.
+
+Prior item: FTF-0401 (Project schema/API/UI) was independently
+reviewed and CERTIFIED a prior shift via PR #139 (merge commit `59e14e7`) —
 see "## Done" below for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.

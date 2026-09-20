@@ -540,15 +540,61 @@ FTF-0401:
   proving_symbol: build_project_router
   proving_test: tests/tasks/test_ftf_0401.py
 FTF-0402:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Project security profile
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 99a63b0b7413c75d36707ef928a2de2b3a33a01d
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401
+    (CERTIFIED). apps/api/app/services/project_security_profile.py -- Section 6.1/6.8's own
+    default_security_profile/security_profile columns are typed as opaque strings; this task
+    makes that real with a closed, ordered taxonomy (standard < zero_egress < air_gapped),
+    grounded in this specification's own text (Law 17/Section 11.1's ZERO_EGRESS, and the
+    AIR_GAPPED profile explicitly described as adding "a deployment constraint to the existing
+    ZERO_EGRESS policy") rather than invented. enforce_security_profile_selection is this task's
+    own negative_acceptance ("User cannot relax inherited organization policy by changing a
+    project field or using direct API") made real: refuses a requested security_profile strictly
+    less restrictive than the calling organization's own default_security_profile, accepts an
+    equal or stricter one unchanged. resolve_effective_security_profile always resolves to the
+    more restrictive of an organization's default and a project's own selection.
+    require_profile_at_least is the general-purpose minimum-profile guard this task's own
+    acceptance clause 1 ("Enforce selected privacy profile across datasets, source, worker,
+    models, judges and telemetry") points at for those six future, separately dependency-gated
+    surfaces (FTF-0500s/0600s/0800s/FTF-0901) -- disclosed, not hidden: none of the six exist as
+    live modules yet in this repository, so require_profile_at_least has no live caller of its
+    own, the same disclosed-gap precedent FTF-0103/FTF-0104/FTF-0105/FTF-H003 already established
+    before FTF-0201 gave each of them a first real caller. What DOES have a real live caller
+    today is enforce_security_profile_selection: apps/api/app/projects/project_crud.py's
+    create_project/update_project (FTF-0401, already CERTIFIED) fetch the calling organization's
+    own real default_security_profile through execute_tenant_scoped (the same guard every other
+    query in that module already uses) and call enforce_security_profile_selection before a
+    project's security_profile is ever persisted, at both creation and edit -- closing the exact
+    gap project_routes.py's own module docstring already disclosed ("nor real security-profile
+    enforcement (FTF-0402)"). apply_edits itself is left unchanged (still FTF-0401's own pure,
+    DB-free core), so this task adds no regression to FTF-0401's own certified evidence.
+    tests/tasks/test_ftf_0402.py (no-DB -- the taxonomy/ordering/relaxation/minimum-profile rules
+    at the pure-function level, plus source-inspection proving project_crud.py genuinely calls
+    the new primitive, not merely imports it unused) + tests/integration/test_ftf_0402_project_security_profile.py
+    (real live-Postgres -- two real organizations seeded with two different real
+    default_security_profile values ("standard"/"air_gapped"); a real uvicorn server over
+    FTF-0401's own build_project_router proves the negative_acceptance case both at creation
+    (explicit relaxation, and the client-side "standard" default silently relaxing an
+    "air_gapped" floor when security_profile is omitted entirely) and at edit (a PATCH cannot
+    relax an existing project's profile, and the project is confirmed genuinely untouched
+    afterward), that matching or exceeding the organization's own floor succeeds, and that an
+    unrecognized profile name is refused -- run in CI's new dedicated
+    project-security-profile-integration job (this repo's interactive dev sandbox has no
+    container-registry egress; this evidence was instead produced locally against a
+    directly-installed PostgreSQL 16 cluster). Own fault injections (Law 1, two, distinct
+    vectors, both reverted byte-identical): disabled the relaxation check inside
+    enforce_security_profile_selection itself (3 no-DB checks failed for real, the exact named
+    negative_acceptance cases); removed the enforcement call from create_project (3 live-Postgres
+    checks failed for real, the exact named creation-time negative_acceptance cases). Submitted
+    PROVISIONAL -- not self-certified (Law 4). Awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
+  proving_symbol: enforce_security_profile_selection
+  proving_test: tests/tasks/test_ftf_0402.py
 FTF-0403:
   certification_state: NONE
   criticality: MUST

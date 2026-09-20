@@ -6039,3 +6039,141 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01Jnn617YvqzzmxdTV1RgiFD (independent —
   see session-ID check above), 2026-09-20.
+
+## 2026-09-20 — FTF-0402 — Project security profile
+- **PR:** opened this shift (`claude/wizardly-fermat-dj7v5w` → `main`,
+  title `[relay] FTF-0402: Project security profile`).
+- **Commit:** 99a63b0b7413c75d36707ef928a2de2b3a33a01d (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  FTF-0401 two-commit precedent.
+- **Dependency-ready pick reasoning:** this shift found 8 dependency-ready
+  items (FTF-0202, FTF-0305, FTF-0402, FTF-0403, FTF-0404, FTF-1001,
+  FTF-1401, FTF-1501 — computed from `spec/tasks.json`'s own dependency
+  graph against `docs/spec-matrix.yaml`'s live certification state).
+  FTF-0202 stays logged as an owner ask below (unchanged this shift — no
+  concrete secret backend is named anywhere in this repository's
+  architecture docs, same finding as the prior shift that first raised
+  it). Of the remaining seven, FTF-0402 has the lowest CAP number (CAP-05,
+  tied with FTF-0404) with no external-service ask of its own, and
+  unblocks the most downstream work once CERTIFIED: FTF-0408, FTF-0500D,
+  FTF-0514, FTF-0617, FTF-0901, FTF-0902 and FTF-1206 all name FTF-0402 as
+  a dependency (`docs/TASK_INDEX.md`).
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0402 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Enforce
+  selected privacy profile across datasets, source, worker, models,
+  judges and telemetry"), negative_acceptance ("User cannot relax
+  inherited organization policy by changing a project field or using
+  direct API"), `database_changes: "No independent schema change"`,
+  `files: [apps/api/app/services/project_security_profile.py,
+  tests/tasks/test_ftf_0402.py]`. Six of the acceptance clause's own
+  named surfaces (datasets/source/worker/models/judges/telemetry) do not
+  exist as live modules in this repository yet — they are FTF-0500s/
+  0600s/0800s/FTF-0901's own, later, separately dependency-gated tasks
+  (`docs/TASK_INDEX.md`). Neither Section 6 (Organization/Project) nor
+  any other section this packet cites fixes a concrete security-profile
+  enumeration or ordering — `Organization.default_security_profile`/
+  `Project.security_profile` are both typed as opaque strings today
+  (FTF-0102/FTF-0401, both already CERTIFIED). This task's own job is to
+  make that real.
+- **Scope decision (disclosed, matching the FTF-0301/FTF-0401 precedent
+  of an explicit, non-hidden scope narrowing):** implements the real,
+  closed, ordered taxonomy and the org-inheritance/no-relaxation rule at
+  the one surface that already exists today — project creation and edit
+  (FTF-0401's own `create_project`/`update_project`). Does NOT implement
+  enforcement inside datasets/source/worker/models/judges/telemetry
+  themselves (those six surfaces do not exist as live code yet);
+  `require_profile_at_least` is shipped as the general-purpose primitive
+  those later tasks will call once they exist, matching the disclosed-gap
+  precedent FTF-0103/FTF-0104/FTF-0105/FTF-H003 already established.
+  Taxonomy naming (`standard`/`zero_egress`/`air_gapped`) is grounded
+  directly in this specification's own text — Law 17/Section 11.1 names
+  `ZERO_EGRESS` as a real enforced posture, and the spec's own `AIR_GAPPED`
+  description ("adds a deployment constraint to the existing ZERO_EGRESS
+  policy") fixes it as strictly more restrictive — not invented; `standard`
+  is this task's own least-restrictive floor, matching both columns' own
+  existing `"standard"` server default.
+- **Test:** `tests/tasks/test_ftf_0402.py` (no-DB, 8 test functions / 23
+  `check()` assertions) + `tests/integration/test_ftf_0402_project_security_profile.py`
+  (real live-Postgres, 15 `check()` assertions).
+- **Evidence:** both suites ran clean in this sandbox (no
+  container-registry egress here — same documented finding as every
+  prior integration-tested task; the live-Postgres suite was produced
+  against a directly-installed local PostgreSQL 16 cluster, and is wired
+  into CI's new dedicated `project-security-profile-integration` job for
+  real registry egress on the hosted runner). Own fault injections (Law
+  1, two, distinct vectors, both reverted byte-identical via `diff`/`git
+  diff --stat` and both affected suites re-run clean afterward):
+  1. Replaced the `if requested_rank < org_rank:` relaxation check inside
+     `enforce_security_profile_selection` with `if False:` — caught for
+     real by the no-DB suite (exactly the 3 named negative_acceptance
+     checks failed: org=air_gapped/requested=standard,
+     org=zero_egress/requested=standard, org=air_gapped/requested=
+     zero_egress).
+  2. Removed the `enforce_security_profile_selection(...)` call from
+     `create_project` (leaving the fetched
+     `organization_default_security_profile` unused) — caught for real
+     by the live-Postgres suite (exactly the 3 named creation-time
+     negative_acceptance checks failed: the omitted-field/client-default
+     case, the explicit-relaxation case, and the unrecognized-profile-
+     name case).
+  Also reconfirmed no regression: re-ran FTF-0401's own no-DB
+  (`tests/tasks/test_ftf_0401.py`) and live-Postgres
+  (`tests/integration/test_ftf_0401_project_schema_api.py`) suites after
+  this change — both still "all checks passed" (this task's own
+  `apply_edits` core is untouched; only the impure `create_project`/
+  `update_project` wrappers gained a new check). Full regression: `uv run
+  ruff check .`/`ruff format --check .`/`mypy .` clean (108 source
+  files); `pnpm run lint`/`typecheck`/`format:check` clean; `pnpm exec
+  vitest run` — 14/14 (unchanged, no frontend files touched); `uv run
+  pytest tests/unit` — 3/3; every existing `tests/tasks/test_ftf_*.py`
+  re-run clean (`git fetch --unshallow` first — same pre-existing
+  shallow-clone `stale_commit` artifact every prior certifying/relay
+  session has already documented); `python3 scripts/validate_spec.py
+  --strict` clean; `product_truth_check.py --fail-on-unwired` — `5/5`
+  (this entry's own `proving_symbol`, `enforce_security_profile_selection`,
+  set at this PROVISIONAL submission — see State below — matching the
+  FTF-0201/FTF-0301/FTF-0401 producer-shift precedent; real callers
+  found in both `apps/api/app/services/project_security_profile.py`
+  itself and `apps/api/app/projects/project_crud.py`'s
+  `create_project`/`update_project`).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `enforce_security_profile_selection`
+  (`proving_test` `tests/tasks/test_ftf_0402.py`) at this PROVISIONAL
+  submission, matching the FTF-0201/FTF-0301/FTF-0401 producer-shift
+  precedent — only `certification_state`/`proof_state`'s
+  `CERTIFIED`/`L2-CERTIFIED` values are the certifying session's own to
+  set. `scripts/status.py`'s own stricter "product-true" count (which
+  also requires `certification_state in (CERTIFIED, PROMOTED)`) correctly
+  stays 4 until an independent Control-plane review certifies this task.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Enforce selected privacy profile across datasets, source, worker,
+  models, judges and telemetry") is implemented at the one surface that
+  exists today (project creation/edit); the other six named surfaces are
+  disclosed as later, separately dependency-gated tasks above, not
+  claimed here. Acceptance clause 2 (independent review/evidence) is this
+  submission's own job to enable, not to satisfy itself (Law 4).
+  negative_acceptance ("User cannot relax inherited organization policy
+  by changing a project field or using direct API") is proven both at the
+  pure-function level (`enforce_security_profile_selection` itself) and
+  over real HTTP round-trips against a real Postgres database, at both
+  project creation (including the "omitted field defaults to standard,
+  which is itself checked" case — a client cannot bypass the floor merely
+  by not naming a profile) and project edit (a PATCH cannot relax an
+  existing project's profile; the project is confirmed genuinely
+  untouched after a refused attempt).
+- **Disclosed, not hidden:** enforcement lives in `project_crud.py`'s
+  impure `create_project`/`update_project` wrappers, not inside
+  `apply_edits` itself — `apply_edits` is FTF-0401's own certified pure,
+  DB-free core, and adding a DB-derived organization-default parameter to
+  it would have required editing FTF-0401's own already-certified no-DB
+  test file's calls to match a new required argument; keeping the
+  enforcement in the impure layer (where the organization lookup already
+  naturally belongs) avoids that regression risk entirely while still
+  covering both real call sites. `validate_security_profile`
+  (`project_schema.py`, shape-only: non-empty, ≤64 chars) is left
+  unchanged — this task's own enum+relaxation check in the new module is
+  additional, not a replacement, defense-in-depth. Datasets/source/
+  worker/models/judges/telemetry enforcement is explicitly NOT this
+  task's scope — see Scope decision above.
