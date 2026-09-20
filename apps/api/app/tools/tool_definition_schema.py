@@ -21,6 +21,16 @@ exists -- there is no code path anywhere in this module or
 `requires_confirmation`/`is_critical` fields after creation, editable or
 not.
 
+`validate_side_effect_class` only checks that a claimed value is one of
+Section 6.9's own five recognized strings; it does not check that claim
+against the tool's own actual definition. FTF-0406
+(`app.services.side_effect_classification`) closes that gap:
+`ToolDefinition.__init__` now also calls
+`enforce_side_effect_classification` for real, refusing a claimed
+`side_effect_class`/`requires_confirmation` pair that the tool's own
+name/description/schema evidence does not justify -- see that module's
+own docstring for the full rationale.
+
 Real forward Alembic migration
 (`apps/api/alembic/versions/0006_tool_definitions.py`) FORCEs row-level
 security on `tool_definitions` scoped to the same
@@ -59,6 +69,10 @@ from app.auth.organization_workspace_schema import Base
 from app.services.json_schema_tool_validation import (
     JsonSchemaValidationError,
     validate_json_schema_document,
+)
+from app.services.side_effect_classification import (
+    SideEffectClassificationError,
+    enforce_side_effect_classification,
 )
 
 __all__ = [
@@ -263,4 +277,22 @@ class ToolDefinition(Base):
             )
         if "side_effect_class" in kwargs:
             kwargs["side_effect_class"] = validate_side_effect_class(kwargs["side_effect_class"])
+        if (
+            "name" in kwargs
+            and "input_schema_json" in kwargs
+            and "output_schema_json" in kwargs
+            and "side_effect_class" in kwargs
+        ):
+            description_value = kwargs.get("description")
+            try:
+                enforce_side_effect_classification(
+                    name=str(kwargs["name"]),
+                    description=str(description_value) if description_value is not None else None,
+                    input_schema_json=kwargs["input_schema_json"],
+                    output_schema_json=kwargs["output_schema_json"],
+                    claimed_class=str(kwargs["side_effect_class"]),
+                    requires_confirmation=bool(kwargs.get("requires_confirmation", False)),
+                )
+            except SideEffectClassificationError as exc:
+                raise ToolDefinitionValidationError(str(exc)) from exc
         super().__init__(**kwargs)
