@@ -6677,10 +6677,9 @@ that precedent rather than let tracking docs drift further out of sync
 with `docs/spec-matrix.yaml`.
 
 ## 2026-09-20 — FTF-0406 — Side-effect classification
-- **PR:** opened from branch `claude/wizardly-fermat-coeg4t` → `main`,
-  title `[relay] FTF-0406: Side-effect classification` (link recorded in
-  a follow-up commit on this same branch once opened, matching the
-  FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201 producer-shift precedent).
+- **PR:** https://github.com/SJZLab/Sovra/pull/153
+  (`claude/wizardly-fermat-coeg4t` → `main`, title
+  `[relay] FTF-0406: Side-effect classification`).
 - **Commit:** `6723131` (implementation); `docs/spec-matrix.yaml`/
   `PROGRESS.md`/`QUEUE.md`/this entry pushed as a second,
   tracking-doc-only commit on the same branch — restoring the
