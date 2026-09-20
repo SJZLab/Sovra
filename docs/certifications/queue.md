@@ -5716,3 +5716,129 @@ the same code on a now-clean head.
   fresh independent Control-plane L2 review of this specific fix (not the
   same reviewing session that found the gap, and not this producing
   session).
+
+### Control plane review — 2026-09-20 — FTF-0301 (PR #137) — CERTIFIED
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #137 (https://github.com/SJZLab/Sovra/pull/137,
+  `claude/wizardly-fermat-t8m4ps` → `main`).
+- **Session-ID check:** all 6 commits on PR #137 (`0f50c1e`, `30ba359`,
+  `0dd3473`, `d0bba9b`, `86397f1`, `9bc4923`) carry `Claude-Session:
+  .../session_01UFUfcwwet85jUWc3BNVoJZ` or
+  `.../session_011RJ3Ct8ASzprr1uy78r6po`; this reviewing session's own ID
+  is `session_01MWFKEi3BV8s5pzu4uymi5v` — no match with either producing
+  session, independent per Law 4.
+- **Diff read directly** against the real PR head `9bc4923`
+  (workspace already checked out to it by the triggering event): 18
+  files, +6610/-19. Confirmed the one actual behavioral change from PR
+  #135's own head is exactly the claimed new isolated case in
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`
+  (separate artifact, `weights_digest` resolved and `base_model_revision`
+  pinned via two independent `PATCH` calls, `accept-license` never
+  called, `mark-ready` asserted refused (409), then license accepted and
+  `mark-ready` asserted to succeed (200)); `apps/api/app/artifacts/artifact_crud.py`
+  (including `apply_mark_ready`) confirmed byte-identical to PR #135's
+  own head — no production code touched by this fix. Confirmed directly
+  in `apps/api/app/main.py`: `build_trainable_artifact_router` wired
+  unconditionally via `app.include_router(...)` in `create_app()`.
+  Confirmed directly in `apps/api/alembic/versions/0004_trainable_artifacts.py`:
+  real `GRANT SELECT, INSERT, UPDATE` (no DELETE), `FORCE ROW LEVEL
+  SECURITY`, and a real `CREATE POLICY tenant_isolation`.
+- **Merge-readiness confirmed before merge:** PR #137 up to date with
+  `main` (base `257a0a0` an ancestor of the PR head), `mergeable_state:
+  clean`.
+- **CI reconfirmed on the real final head:** `get_check_runs` on PR #137
+  — 12/12 `completed`/`success` (run `35506579292`), including
+  `trainable-artifact-schema-api-integration`.
+- **Own reproduction, this sandbox:** `git fetch --unshallow` first
+  (shallow clone, same pre-existing artifact every prior certifying
+  session's own ledger entry already documents). Stood up a real,
+  directly-installed local PostgreSQL 16 cluster
+  (`sovra_migrate_cert`/`sovra_ftf0301_cert` — no container-registry
+  egress in this sandbox, same finding as every prior integration-tested
+  task). `uv run python3 tests/tasks/test_ftf_0301.py` → "all checks
+  passed"; `uv run python3
+  tests/integration/test_ftf_0301_trainable_artifact_schema_api.py` →
+  "all checks passed" against the real cluster.
+- **Own fault injection, reproducing the certifier's exact fault from the
+  prior PR #135 NOT CERTIFIED review** (the point of this review is to
+  confirm the *named* gap is actually closed, not to find a new one): in
+  `apply_mark_ready`, wrapped the `license_accepted_by is None or
+  license_accepted_at is None` check in `False and (...)`. Re-ran both
+  suites with the fault in place:
+  1. **Live-Postgres suite:** exactly 1 check failed — the new isolated
+     case itself ("negative_acceptance: mark-ready is refused (409) with
+     a resolved digest and a pinned revision but no license
+     acceptance..."). This is the exact leg the prior review found
+     uncaught.
+  2. **No-DB suite:** 1 check failed (the pre-existing "mark_ready is
+     refused with no license acceptance and no resolved weights_digest"
+     case — this suite already caught the fault before this fix; the fix
+     closes the live-Postgres gap specifically).
+  Reverted byte-identical (`git diff --stat` empty), both suites re-ran
+  clean (0 failures each) afterward. **This confirms the exact Law 1 gap
+  the prior review identified is now genuinely closed.**
+- **Full regression, this sandbox** (matching CI's own tool invocations
+  exactly — `uv run ruff`/`uv run mypy`, not a bare global install; an
+  earlier bare `ruff check .`/`mypy .` in this sandbox surfaced 7/18
+  false-positive errors from a different, non-project toolchain on
+  `PATH`, resolved by using `uv run`): `uv run ruff check .` / `uv run
+  ruff format --check .` / `uv run mypy .` clean (98 files); `pnpm
+  install --frozen-lockfile` then `pnpm run lint` / `typecheck` /
+  `format:check` clean; `pnpm exec vitest run` 5/5; `uv run pytest
+  tests/unit` 3/3; all 22 `tests/tasks/test_ftf_*.py` scripts re-run
+  clean (`uv run python3` for the FastAPI/SQLAlchemy-dependent ones); the
+  five other live-Postgres integration suites sharing this migrated
+  database (`test_organization_workspace_schema`, `test_audit_event_writer`,
+  `test_tenant_isolation_query_guards`, `test_ftf_h003_cross_layer_isolation`,
+  `test_ftf_0106_rbac_idor_security`, `test_ftf_0201_litellm_connection_crud`)
+  all re-ran clean, confirming no regression from the merge;
+  `validate_spec.py --strict` clean (after unshallowing); `sha256sum
+  CLAUDE.md` matches the committed `CLAUDE.md.sha256`; `scripts/status.py`
+  confirmed non-inflated (`25/300` before, `26/300`/zero FAILED after;
+  "Product-true" `2` before, `3` after).
+- **`product_truth_check.py --fail-on-unwired`:** independently
+  reconfirmed `3/3` (`build_oidc_login_router`,
+  `build_litellm_connection_router`, `build_trainable_artifact_router`,
+  all confirmed genuinely imported and called unconditionally from
+  `apps/api/app/main.py`'s `create_app()` by direct source read).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0301 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  clause 1 ("Register versioned artifact URI/revision/license with
+  source grants and immutable identity after resolution") met by the
+  delivered CRUD module (unchanged from PR #135's own already-reviewed
+  shipped logic); acceptance clause 2 satisfied by this review itself;
+  negative_acceptance ("Unsafe URI, unknown owner or mutable unresolved
+  revision cannot enter training as ready") — all three conditions now
+  independently confirmed isolated against live Postgres, closing the
+  specific gap the prior review named. Both dependencies (FTF-0103,
+  FTF-0104) confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+  before relying on them.
+- **Conclusion:** the delivered organization-scoped TrainableArtifact
+  schema/API (register/get/list/edit/accept-license/mark-ready/archive)
+  is real, live-wired into `apps/api/app/main.py`, independently
+  reproduced against a real local PostgreSQL 16 cluster, and the specific
+  Law 1 gap the prior independent review found (the "unknown owner"
+  negative_acceptance leg never isolated against live Postgres) is now
+  genuinely closed — confirmed by this session's own fault injection
+  reproducing that exact gap and observing it caught. CI green on the
+  real final merged head (12/12) and `product_truth_check.py` legitimately
+  reporting `3/3`. No blocking defect.
+- **Action taken:** merged PR #137 (merge commit
+  `634d59775253600a83fb0ff7c94793fa4fbb89de`). Closed PR #135 (the
+  superseded first submission) with a comment pointing to this
+  certification. Set `docs/spec-matrix.yaml` FTF-0301 to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` kept at the fix's real commit SHA `86397f1`, matching
+  the new `spec/verification-map.json` entry's `commit` field). Added
+  FTF-0301's own entry to `spec/verification-map.json`. Ran
+  `sync_certified_status()` — diff limited to exactly FTF-0301's own
+  `status`/`evidence` fields in `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`. Full ledger entry appended to
+  `docs/certifications/ledger.md`. `QUEUE.md` updated (Certified
+  25 → 26, Product-true 2 → 3). `PROGRESS.md` updated with the full
+  review narrative. This certification's own doc updates are pushed on a
+  branch and opened as a PR against `main`, not pushed directly, per
+  `BRANCH_PROTECTION`.
+- **Validated-by:** session
+  https://claude.ai/code/session_01MWFKEi3BV8s5pzu4uymi5v (independent —
+  see session-ID check above), 2026-09-20.

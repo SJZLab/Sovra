@@ -346,6 +346,20 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/get/list/edit/revoke, IDOR and TenantContextError evidence is tests/integration/test_ftf_0201_litellm_connection_crud.py, run separately in CI (litellm-connection-crud-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601/FTF-H003/FTF-0106. Certified on first submission (PR #133) -- the underlying implementation commit is unchanged since 1815080 (the lint-fix commit; evidence_hash matches docs/spec-matrix.yaml's own convention of pointing at the final lint-clean implementation revision, per Section 84.7)."
+    },
+    "FTF-0301": {
+      "commit": "86397f123998a251ea7c459770290807f00c86da",
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0301.py"
+        ]
+      ],
+      "expected_output_contains": "FTF-0301 TrainableArtifact schema/API tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/get/list/edit/accept-license/mark-ready/archive, IDOR, TenantContextError and DELETE-privilege evidence is tests/integration/test_ftf_0301_trainable_artifact_schema_api.py, run separately in CI (trainable-artifact-schema-api-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601/FTF-H003/FTF-0106/FTF-0201. NOT certified on first submission (PR #135) -- an independent Control-plane review found a real Law 1 gap (the live-Postgres suite never isolated the 'unknown owner'/license-acceptance leg of mark-ready's negative_acceptance from the other two conditions); fixed with one additional isolated live-Postgres case and certified on the resubmission (PR #137, superseding #135). evidence_hash/commit here point at PR #137's own fix commit (86397f1), not PR #135's original implementation commit (30ba359), since that is the commit whose diff was actually independently re-verified end to end."
     }
   }
 }
