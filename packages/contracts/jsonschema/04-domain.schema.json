@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-04/domain.schema.json",
+  "title": "Sovra Phase 04 Domain Schemas (FTF-0401 — Project schema/API/UI)",
+  "description": "Frozen shared domain schemas for the workspace-scoped Project resource (Section 6.8/7A/22/45/65-66/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source, apps/api/app/projects/project_schema.py, and tested against it directly in tests/tasks/test_ftf_0401.py so this file cannot silently drift from the code that actually validates these shapes.",
+  "$defs": {
+    "ProjectType": {
+      "type": "string",
+      "enum": ["agentic_product", "generic_model_tuning"]
+    },
+    "ProjectStatus": {
+      "type": "string",
+      "enum": ["setup_incomplete", "active", "archived"]
+    },
+    "Name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "ProjectCreateRequest": {
+      "type": "object",
+      "properties": {
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/Name" },
+        "project_type": { "$ref": "#/$defs/ProjectType" },
+        "description": { "type": ["string", "null"], "maxLength": 4000 },
+        "agent_objective": { "type": ["string", "null"], "maxLength": 4000 },
+        "security_profile": { "type": "string", "minLength": 1, "maxLength": 64, "default": "standard" }
+      },
+      "required": ["workspace_id", "name", "project_type"],
+      "additionalProperties": false
+    },
+    "ProjectUpdateRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of the mutable fields, plus the required expected_row_version. Refused unless the project is not archived and expected_row_version matches.",
+      "properties": {
+        "name": { "$ref": "#/$defs/Name" },
+        "description": { "type": ["string", "null"], "maxLength": 4000 },
+        "agent_objective": { "type": ["string", "null"], "maxLength": 4000 },
+        "security_profile": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_row_version": { "type": "integer" }
+      },
+      "required": ["expected_row_version"],
+      "additionalProperties": false
+    },
+    "ProjectUiStateSaveRequest": {
+      "type": "object",
+      "properties": {
+        "ui_state": { "type": "object" }
+      },
+      "required": ["ui_state"],
+      "additionalProperties": false
+    },
+    "Project": {
+      "type": "object",
+      "description": "Section 6.8 — the read-facing representation.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/Name" },
+        "description": { "type": ["string", "null"] },
+        "project_type": { "$ref": "#/$defs/ProjectType" },
+        "agent_objective": { "type": ["string", "null"] },
+        "security_profile": { "type": "string" },
+        "budget_policy_id": { "type": ["string", "null"], "format": "uuid" },
+        "status": { "$ref": "#/$defs/ProjectStatus" },
+        "ui_state": { "type": "object" },
+        "row_version": { "type": "integer" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "archived_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": [
+        "id", "organization_id", "workspace_id", "name", "project_type",
+        "security_profile", "status", "row_version", "created_by",
+        "created_at", "updated_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
