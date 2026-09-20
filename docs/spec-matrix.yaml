@@ -748,15 +748,69 @@ FTF-0404:
   proving_symbol: build_tool_definition_router
   proving_test: tests/tasks/test_ftf_0404.py
 FTF-0405:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: JSON Schema tool validation
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401, FTF-0404
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401,
+    FTF-0404 (both CERTIFIED). `apps/api/app/services/json_schema_tool_validation.py`
+    closes the gap `tool_definition_schema.py`'s own `validate_schema_object`
+    (FTF-0404) explicitly disclaimed as "a later task's own scope": schema
+    documents are now validated as instances of a pinned, safe subset of
+    JSON Schema Draft 2020-12, not merely "some bounded JSON object" as
+    before. Design choice, not an oversight -- only intra-document `$ref`
+    (`#/$defs/<name>`) is supported at all, no remote `$ref`/`$dynamicRef`/
+    `$recursiveRef`, which makes this task's own two named attack classes
+    structurally impossible rather than merely detected: "remote schema
+    SSRF" (this module never performs network I/O for any reason, under
+    any input -- proven by a fault-injection test that patches
+    `socket.socket` to raise and confirms it is never called even for a
+    schema built to provoke it) and "recursive/reference bombs" (the
+    `$defs` reference graph is walked for cycles at schema-validation
+    time, independent of a separate node-count/depth ceiling that also
+    catches non-`$ref` schema bombs, plus a `MAX_REF_HOPS` budget at
+    instance-validation time as defense-in-depth). "invalid required/type
+    constraints" and "excess arguments" (this task's own remaining two
+    named negative_acceptance cases) are enforced by a closed `type`
+    vocabulary, `required`-vs-`properties` consistency checking, and
+    `additionalProperties: false` enforcement on real instance data. Real,
+    live-wired: `tool_definition_schema.py`'s own `validate_schema_object`
+    (called by `ToolDefinition.__init__` on every
+    `create_tool_definition`/`edit_tool_definition`, the already-CERTIFIED
+    FTF-0404 live route) now calls `validate_json_schema_document` for
+    both `input_schema_json` and `output_schema_json`, before either value
+    ever reaches the database -- source-inspection-proven, not merely
+    imported. `validate_instance` (real call-time tool-argument
+    validation) has no live caller yet -- disclosed, not hidden, matching
+    the same disclosed-gap precedent already independently CERTIFIED for
+    FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 (there is no
+    tool-invocation/agent-runtime anywhere in this repository yet to feed
+    it). No independent schema change (`database_changes` honored) --
+    consumes FTF-0404's own frozen `ToolDefinition` columns. 25 no-DB test
+    functions in `tests/tasks/test_ftf_0405.py`, plus two own fault
+    injections against the delivered code (disabling the `$ref`-locality
+    guard; disabling `$defs` cycle detection, which crashes with a real
+    Python `RecursionError` on a cyclic schema) both caught for real and
+    reverted byte-identical. Independently reconfirmed no regression to
+    FTF-0404's own certified no-DB suite after this change -- one FTF-0404
+    test's own filler schema data (`{"type": "different"}`, used only to
+    prove "editing never mutates the historical row", not schema
+    correctness) was updated to a valid-but-still-different type
+    (`{"type": "boolean"}`) since this task's own stricter validation now
+    runs on every `ToolDefinition` construction; the test's own assertions
+    and coverage are unchanged. `product_truth_check.py --fail-on-unwired`
+    unchanged at `7/7` before this submission's own `proving_symbol` is
+    counted by an independent reviewer. Full repo-wide regression clean in
+    this sandbox: `ruff check`/`ruff format --check`/`mypy .` (120 source
+    files), `pnpm run lint`/`typecheck`, every `tests/tasks/test_ftf_*.py`
+    file, `validate_spec.py --strict`. PR opened as PROVISIONAL; not
+    self-certified (Law 4) -- awaiting independent Control-plane L2
+    review.
+  proof_state: L1-PROVEN
+  proving_symbol: validate_json_schema_document
+  proving_test: tests/tasks/test_ftf_0405.py
 FTF-0406:
   certification_state: NONE
   criticality: MUST

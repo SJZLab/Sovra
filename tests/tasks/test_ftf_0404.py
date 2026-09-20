@@ -318,8 +318,8 @@ def test_apply_new_version_never_mutates_the_historical_row_content() -> None:
     apply_new_version(
         current,
         description="a completely different description",
-        input_schema_json={"type": "object", "properties": {"totally": {"type": "different"}}},
-        output_schema_json={"type": "object", "properties": {"also": {"type": "different"}}},
+        input_schema_json={"type": "object", "properties": {"totally": {"type": "boolean"}}},
+        output_schema_json={"type": "object", "properties": {"also": {"type": "boolean"}}},
         side_effect_class="irreversible_write",
         requires_confirmation=True,
         is_critical=True,
