@@ -540,10 +540,10 @@ FTF-0401:
   proving_symbol: build_project_router
   proving_test: tests/tasks/test_ftf_0401.py
 FTF-0402:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Project security profile
-  evidence_hash: 99a63b0b7413c75d36707ef928a2de2b3a33a01d
+  evidence_hash: a6ef1d9ad9657cb3a07e1959f4be00a1fb3e14ff
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401
@@ -591,8 +591,38 @@ FTF-0402:
     enforce_security_profile_selection itself (3 no-DB checks failed for real, the exact named
     negative_acceptance cases); removed the enforcement call from create_project (3 live-Postgres
     checks failed for real, the exact named creation-time negative_acceptance cases). Submitted
-    PROVISIONAL -- not self-certified (Law 4). Awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    PROVISIONAL -- not self-certified (Law 4).
+    CERTIFIED by independent Control-plane review (session
+    https://claude.ai/code/session_01Q7biCQJD6yp7d2H75r4uxk, independent of the producer session
+    01YLCGLfbyuEcZGJTe7LWQAL -- session-ID comparison confirmed no match across all three PR #141
+    commits). Re-verified directly: PR #141 diff re-read; CI green 14/14 on the real merged head
+    (workflow run 35518567334, including the new project-security-profile-integration job);
+    both suites reproduced independently against a fresh local PostgreSQL 16 cluster in this
+    sandbox (uv sync --all-packages; no container-registry egress here, same documented finding
+    as every prior integration-tested task); own fault injections, two, distinct vectors, both
+    reproduced the exact failures the PR claims and both reverted clean: (1) `if requested_rank <
+    org_rank:` replaced with `if False:` in project_security_profile.py -- no-DB suite, exactly
+    the 3 named negative_acceptance checks failed; (2) the enforce_security_profile_selection
+    call removed from create_project -- live-Postgres suite, exactly the 3 named creation-time
+    negative_acceptance checks failed. No regression: FTF-0401's own no-DB and live-Postgres
+    suites re-run clean. Full regression clean in this sandbox: ruff/mypy (108 files)/pnpm
+    lint+typecheck+format:check/vitest (14/14)/pytest tests/unit (3/3)/all 24
+    tests/tasks/test_ftf_*.py/validate_spec.py --strict (clean once unshallowed -- the
+    stale_commit warnings before that are the same pre-existing shallow-clone artifact every
+    prior session has documented, not a real defect); CLAUDE.md.sha256 matches sha256sum
+    CLAUDE.md. product_truth_check.py --fail-on-unwired reconfirmed 5/5, proving_symbol
+    enforce_security_profile_selection has real, live callers in project_crud.py's
+    create_project/update_project (not 0/0). Task contract re-pulled via
+    tools/r1_handoff.py packet FTF-0402 --plan FINE_TUNING_FACTORY_RELEASE_1.md: negative_acceptance
+    ("User cannot relax inherited organization policy by changing a project field or using direct
+    API") fully met, proven pure and over real HTTP round-trips. Acceptance clause 1's six named
+    future surfaces (datasets/source/worker/models/judges/telemetry) do not exist as live modules
+    in this repository yet -- the disclosed scope narrowing to today's one real surface (project
+    creation/edit) plus the general-purpose require_profile_at_least primitive for those six
+    matches the same disclosed-gap precedent already CERTIFIED for FTF-0103/FTF-0104/FTF-0105/
+    FTF-H003/FTF-0301/FTF-0401, not a new or hidden shortcut. Merged as PR #141, merge commit
+    a6ef1d9ad9657cb3a07e1959f4be00a1fb3e14ff.
+  proof_state: L2-CERTIFIED
   proving_symbol: enforce_security_profile_selection
   proving_test: tests/tasks/test_ftf_0402.py
 FTF-0403:

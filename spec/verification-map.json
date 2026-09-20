@@ -374,6 +374,20 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/get/list/edit/save-ui-state/archive, IDOR, optimistic-concurrency and setup_incomplete-negative_acceptance evidence is tests/integration/test_ftf_0401_project_schema_api.py, run separately in CI (project-schema-api-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as every prior integration-tested task above. Certified on first submission (PR #139) -- independent Control-plane review reproduced both suites against a real local PostgreSQL 16 cluster and ran two of its own fault injections (initial_status_for always 'active'; workspace-ownership authorization removed from create_project), both caught for real. evidence_hash/commit here point at the implementation commit (141be0f) unchanged from PR #139's own head (5b4dc4c only added tracking-doc commits on top)."
+    },
+    "FTF-0402": {
+      "commit": "99a63b0b7413c75d36707ef928a2de2b3a33a01d",
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0402.py"
+        ]
+      ],
+      "expected_output_contains": "FTF-0402 Project security profile tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres two-organization inheritance/no-relaxation evidence is tests/integration/test_ftf_0402_project_security_profile.py, run separately in CI (project-security-profile-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as every prior integration-tested task above. Certified on first submission (PR #141) -- independent Control-plane review reproduced both suites against a real local PostgreSQL 16 cluster and ran two of its own fault injections (the relaxation check in enforce_security_profile_selection disabled; the enforcement call removed from create_project), both caught for real, matching the exact cases the PR claims. evidence_hash/commit here point at the implementation commit (99a63b0) unchanged from PR #141's own head (b8cd86d only added tracking-doc commits on top)."
     }
   }
 }

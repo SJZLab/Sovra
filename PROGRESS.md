@@ -1,5 +1,146 @@
 # PROGRESS — Sovra
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #141) — independent CERTIFY
+  review of FTF-0402 (Project security profile): **CERTIFIED**. Session-ID
+  check clean against all 3 PR #141 commits (session_01YLCGLfbyuEcZGJTe7LWQAL,
+  no match to this reviewing session, `session_01Q7biCQJD6yp7d2H75r4uxk`).
+  Diff read directly confirming `create_project`/`update_project` both
+  call `enforce_security_profile_selection` against the calling
+  organization's own real `default_security_profile` before a project's
+  `security_profile` is ever persisted, and `apply_edits` itself
+  untouched. CI reconfirmed green (14/14) on the real final head `b8cd86d`
+  (polled to genuine completion rather than the in-progress snapshot from
+  when the PR first opened). Own reproduction against a real local
+  PostgreSQL 16 cluster — both `tests/tasks/test_ftf_0402.py` and
+  `tests/integration/test_ftf_0402_project_security_profile.py` "all
+  checks passed". Two own fault injections, matching the producer's own
+  claimed two (the relaxation check in `enforce_security_profile_selection`
+  disabled; the enforcement call removed from `create_project`), each
+  caught for real by the relevant suite — exactly the named
+  negative_acceptance cases — and reverted byte-identical. No regression
+  in FTF-0401's own suites. `product_truth_check.py --fail-on-unwired`
+  reconfirmed `5/5`. Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-0402` — negative_acceptance independently confirmed met; the
+  disclosed narrowing of acceptance clause 1's six future consuming
+  surfaces confirmed to match the same disclosed-gap precedent already
+  independently `CERTIFIED` for FTF-0103/FTF-0104/FTF-0105/FTF-H003/
+  FTF-0301/FTF-0401. No blocking defect. Merged PR #141 (merge commit
+  `a6ef1d9ad9657cb3a07e1959f4be00a1fb3e14ff`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Certified: 28/300 (27 → 28); Product-true: 5/5 (4 → 5), matching
+  `product_truth_check.py`'s own `5/5`. Full entry:
+  `docs/certifications/ledger.md`.
+
+## 2026-09-20 — Control plane: FTF-0402 (PR#141) independently reviewed, CERTIFIED
+
+STEP 0 (MODE declaration): `docs/certifications/queue.md` had exactly one
+pending PROVISIONAL item not yet certified — FTF-0402 (Project security
+profile), submitted this same date via PR #141
+(`claude/wizardly-fermat-dj7v5w` → `main`). CERTIFY mode.
+
+STEP 1 (session-ID check, Law 4): pulled all 3 commits on PR #141
+(`99a63b0`, `2dac521`, `b8cd86d`) — every one carries `Claude-Session:
+.../session_01YLCGLfbyuEcZGJTe7LWQAL`. This reviewing session's own ID is
+`session_01Q7biCQJD6yp7d2H75r4uxk` — no match. Independent per Law 4.
+
+STEP 2 (diff read directly): 10 files, +2787/-15 against the real PR head
+`b8cd86d`. `apps/api/app/services/project_security_profile.py` confirmed
+as a new, pure, DB-free module (no SQLAlchemy import at all) implementing
+a closed, ordered taxonomy (`standard < zero_egress < air_gapped`).
+`apps/api/app/projects/project_crud.py` confirmed: `create_project` calls
+the new `_organization_default_security_profile` helper (routed through
+`execute_tenant_scoped`, the same guard every other query in the module
+uses) and then `enforce_security_profile_selection` before ever
+constructing the `Project` row; `update_project` performs the identical
+check before `apply_edits` runs, only when `security_profile` is being
+changed; `apply_edits` itself is untouched. `.github/workflows/ci.yml`
+confirmed a genuine new `project-security-profile-integration` job with a
+real `services: postgres` container, same pattern as
+`project-schema-api-integration`.
+
+STEP 3 (CI + merge-readiness): polled GitHub Actions run `35518567334` to
+genuine completion (it was still `in_progress` when PR #141 first opened)
+— 14/14 `completed`/`success`, including the new
+`project-security-profile-integration` job and `gate`.
+
+STEP 4 (own reproduction): `git worktree add` against the real PR head.
+`uv sync --all-packages`. Started a real local PostgreSQL 16 cluster (no
+container-registry egress in this sandbox, same finding as every prior
+integration-tested task; run as the unprivileged `ubuntu` OS user since
+`postgres`/`initdb` refuse to run as root). `uv run python3
+tests/tasks/test_ftf_0402.py` → "all checks passed" (exit 0); `uv run
+python3 tests/integration/test_ftf_0402_project_security_profile.py` →
+"all checks passed" (exit 0) against the real cluster.
+
+STEP 5 (own fault injection, Law 1, two distinct vectors — reproducing
+and independently re-confirming the producer's own claimed fault
+injections rather than trusting the log):
+1. `if requested_rank < org_rank:` replaced with `if False:` inside
+   `enforce_security_profile_selection`: no-DB suite — exactly 3
+   failures, the named negative_acceptance cases (`air_gapped`/
+   `standard`, `zero_egress`/`standard`, `air_gapped`/`zero_egress`).
+2. The `_organization_default_security_profile`/
+   `enforce_security_profile_selection` call sequence removed from
+   `create_project` (`update_project`'s own call left untouched):
+   live-Postgres suite — exactly 3 failures, the named creation-time
+   negative_acceptance cases.
+Both reverted byte-identical (`diff` empty); both suites re-ran clean
+afterward, and FTF-0401's own no-DB/live-Postgres suites re-ran clean too
+(no regression).
+
+STEP 6 (full regression): `uv run ruff check .` clean; `uv run mypy .`
+clean (108 source files); `pnpm install --frozen-lockfile` then `pnpm run
+lint` / `typecheck` / `format:check` clean; `pnpm exec vitest run` —
+14/14 (unchanged, no frontend files touched); `uv run pytest tests/unit`
+— 3/3; all 24 `tests/tasks/test_ftf_*.py` re-ran clean;
+`validate_spec.py --strict` clean once unshallowed (`git fetch
+--unshallow` first — the `stale_commit` warnings beforehand are the same
+pre-existing shallow-clone artifact every prior certifying/relay session
+has already documented); `sha256sum CLAUDE.md` matches `CLAUDE.md.sha256`.
+`product_truth_check.py --fail-on-unwired` independently reconfirmed
+`5/5`.
+
+STEP 7 (task contract): `python tools/r1_handoff.py packet FTF-0402
+--plan FINE_TUNING_FACTORY_RELEASE_1.md` — `negative_acceptance`
+independently confirmed met, both at the pure-function level and over
+real HTTP round-trips at creation and edit. Acceptance clause 1's six
+named consuming surfaces (datasets/source/worker/models/judges/telemetry)
+confirmed genuinely absent as live modules in this repository today
+(`docs/TASK_INDEX.md` gates each behind its own later, separately
+dependency-gated task) — the disclosed narrowing to today's one real
+surface matches the same disclosed-gap precedent already independently
+`CERTIFIED` for FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0301/FTF-0401
+(spot-checked directly in `docs/spec-matrix.yaml`), not a hidden gap.
+`database_changes: "No independent schema change"` confirmed — no
+migration files in the diff.
+
+STEP 8 (action taken): merged PR #141 (merge commit
+`a6ef1d9ad9657cb3a07e1959f4be00a1fb3e14ff`). Set `docs/spec-matrix.yaml`
+FTF-0402 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` set to the merge commit). Added FTF-0402's
+own entry to `spec/verification-map.json`. Ran `sync_certified_status()`
+— diff limited to exactly FTF-0402's own `status`/`evidence` fields in
+`spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/status.py`
+confirmed non-inflated (`27/300` before, `28/300` after; "Product-true"
+`4` before, `5` after). Full ledger entry appended to
+`docs/certifications/ledger.md`. `QUEUE.md` updated (Certified 27 → 28,
+Product-true 4 → 5, moved FTF-0402 out of "Provisional" into "Certified").
+This certification's own doc updates are pushed on a branch and opened as
+a PR against `main`, not pushed directly, per `BRANCH_PROTECTION`.
+
+Conclusion: the delivered org-inherited, no-relaxation Project
+security-profile enforcement is real, live-wired into both
+`create_project` and `update_project`, independently reproduced against
+a real local PostgreSQL 16 cluster, and this task's own
+negative_acceptance is confirmed enforced by construction — proven by
+two independent fault injections, both caught for real, matching the
+exact failures the PR itself claims. CI green on the real final merged
+head (14/14) and `product_truth_check.py` legitimately reporting `5/5`.
+The disclosed narrowing of acceptance clause 1 to today's one real
+surface is consistent with an established, already-certified repository
+precedent, not a new gap. No blocking defect. Certified L2-CERTIFIED.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #139) — independent CERTIFY
   review of FTF-0401 (Project schema/API/UI): **CERTIFIED**. Session-ID
   check clean against all 3 PR #139 commits (session_01HCDh4VoHfgGL9NkLs6Q4YG,

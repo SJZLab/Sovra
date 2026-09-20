@@ -1,5 +1,34 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0402
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #141) — independent CERTIFY
+  review of FTF-0402 (Project security profile): **CERTIFIED**. Session-ID
+  clean against all 3 commits on PR #141 (session_01YLCGLfbyuEcZGJTe7LWQAL,
+  not matching this reviewing session's own ID), diff read directly
+  confirming `create_project`/`update_project` both call
+  `enforce_security_profile_selection` against the calling organization's
+  own real `default_security_profile` before a project's `security_profile`
+  is ever persisted, and `apply_edits` itself untouched. CI reconfirmed
+  green (14/14) on the real final head `b8cd86d` (polled to genuine
+  completion, not the in-progress snapshot from when the PR first opened).
+  Own reproduction against a real local PostgreSQL 16 cluster (both suites
+  "all checks passed"), two own fault injections (the relaxation check in
+  `enforce_security_profile_selection` disabled; the enforcement call
+  removed from `create_project`) each caught for real — matching the exact
+  named negative_acceptance cases — and reverted byte-identical, no
+  regression in FTF-0401's own suites, `product_truth_check.py
+  --fail-on-unwired` reconfirmed `5/5`, task contract cross-checked via
+  `tools/r1_handoff.py packet FTF-0402` (confirming the disclosed
+  narrowing of acceptance clause 1's six future consuming surfaces matches
+  the same disclosed-gap precedent already independently `CERTIFIED` for
+  FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0301/FTF-0401, not a hidden
+  gap). Merged PR #141 (merge commit
+  `a6ef1d9ad9657cb3a07e1959f4be00a1fb3e14ff`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Certified: 28/300, Product-true: 5/5. Full review:
+  `docs/certifications/ledger.md` (FTF-0402 entry) and
+  `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — implemented FTF-0402
   (Project security profile, dep FTF-0401, CERTIFIED). Of the 8
   dependency-ready items this shift found (FTF-0202 already logged as an
   owner ask below; FTF-0305/FTF-0402/FTF-0403/FTF-0404/FTF-1001/FTF-1401/
@@ -346,9 +375,8 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 27/300 (main; FTF-0401 CERTIFIED 2026-09-20, PR #139 merged as
-`59e14e7` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0402,
-this shift, PR opened, awaiting independent Control-plane L2 review) ·
+Certified: 28/300 (main; FTF-0402 CERTIFIED 2026-09-20, PR #141 merged as
+`a6ef1d9` — see docs/certifications/ledger.md) · Provisional: 0 ·
 Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
@@ -356,20 +384,17 @@ live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
 work continued this shift on FTF-0401 instead of stopping)
-Product-true (Law 16): 4 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 5 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
 `build_litellm_connection_router`, FTF-0301's
-`build_trainable_artifact_router` and FTF-0401's own `build_project_router`
-all meet all three, independently reconfirmed by this certifying session.
-This shift's own FTF-0402 (`enforce_security_profile_selection`, called
-for real by FTF-0401's already-CERTIFIED `create_project`/
-`update_project`) also now carries a `proving_symbol`, so
-`product_truth_check.py --fail-on-unwired` itself reports `5/5` — but
-`scripts/status.py`'s own stricter authoritative count above correctly
-stays 4 until an independent Control-plane review certifies FTF-0402
-(PROVISIONAL, not yet CERTIFIED).
+`build_trainable_artifact_router`, FTF-0401's own `build_project_router`
+and now FTF-0402's own `enforce_security_profile_selection` (called for
+real by FTF-0401's `create_project`/`update_project`) all meet all three,
+independently reconfirmed by this certifying session.
+`product_truth_check.py --fail-on-unwired` and `scripts/status.py` now
+agree at `5/5`/`5`.
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,

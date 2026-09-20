@@ -301,9 +301,11 @@
       "blockers": []
     },
     "FTF-0402": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "a6ef1d9ad9657cb3a07e1959f4be00a1fb3e14ff"
+      ],
       "independent_review": null,
       "blockers": []
     },
