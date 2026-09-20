@@ -3930,3 +3930,96 @@ findings are captured here and in the working tree instead; its own
 since-superseded `PROVISIONAL` state, are not applied). No change to the
 certification verdict itself: still CERTIFIED L2-CERTIFIED, for the
 reasons given above.
+
+## FTF-0406 — Side-effect classification
+- Criterion ID: FTF-0406
+- PR: https://github.com/SJZLab/Sovra/pull/153 (`claude/wizardly-fermat-coeg4t` → `main`)
+- Merge commit: 80dcd4b2a66c700e64e7c997b693f68a05103784
+- Implementation commit: 67231315036fb33b1a862298d9356595b046d908 (fix
+  commit: e61bd45a79f5dd0d4d5c4523c52b2d53657856b7)
+- Validated-by: session https://claude.ai/code/session_01GtkZi1xVFgaMfPbXjiPPz4
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #153)
+- Date: 2026-09-20
+- **Session-ID check:** all 4 commits on PR #153 carry `Claude-Session:
+  .../session_01WFunvdUFkEnkkpFRCVm2ga`; this reviewing session's own ID
+  is `session_01GtkZi1xVFgaMfPbXjiPPz4` — no match, independent per Law 4.
+- **First pass — real CI failure, filed NOT CERTIFIED:** CI checked on
+  the PR's real head, not a stale claim (subscribed to the PR's own
+  activity rather than certifying against the in-progress snapshot from
+  when the PR opened): the `gate` job's `uv run mypy .` step genuinely
+  failed on `2885a40` — 3 errors at `tests/tasks/test_ftf_0406.py:110`
+  (`_enforce`'s own `**dict[str, object]` unpack could not be verified by
+  mypy against `enforce_side_effect_classification`'s heterogeneous
+  keyword-only parameter types). Confirmed from the real CI job log
+  (`get_job_logs`, not a self-report) and reproduced identically in this
+  session's own sandbox (byte-for-byte matching error text/line). Not a
+  defect in the shipped production logic — a test-helper typing gap.
+- **Superseded before that review's own tracking PR finished CI:** while
+  the NOT CERTIFIED review was being written, the same producer session
+  independently found and fixed the identical gap on PR #153's own branch
+  (commit `e61bd45`, ~5 minutes after the first head): retyped `_enforce`
+  to explicit, individually-typed optional keyword parameters instead of
+  the generic `**overrides: object` unpack — no behavior change, every
+  call site already passed only recognized keyword names.
+- **Re-reviewed the fixed head (`e61bd45`) directly, from scratch:**
+  - **CI reconfirmed on the real final head:** GitHub Actions run
+    `35543916766` — all 16 check runs `completed`/`success`, including
+    `gate`. Pulled the real job log for the `gate` job directly (not a
+    self-report): `uv run ruff check .`/`ruff format --check .` both
+    clean, `uv run mypy .` → "Success: no issues found in 122 source
+    files" (zero errors, the prior 3 gone), `product_truth_check.py
+    --fail-on-unwired` → "Product-truth: 9/9 product-true".
+  - **Diff of the fix commit read directly:** touches only
+    `tests/tasks/test_ftf_0406.py` (17 insertions/11 deletions,
+    `_enforce`'s own signature) — `apps/api/app/services/
+    side_effect_classification.py` and `apps/api/app/tools/
+    tool_definition_schema.py` (the shipped production logic and its live
+    wiring) are byte-identical to the first head.
+  - **Own reproduction, this sandbox** (`git worktree add` on the real PR
+    head, `uv sync --all-packages`): `uv run mypy .` — 0 errors in
+    `test_ftf_0406.py` (only 7 pre-existing `alembic` "no attribute
+    op/context" errors remain, in migration files this PR does not touch
+    and that CI's own real run above does not report at all — a
+    sandbox/CI environment difference, not a real gate failure).
+  - **Own fault injection, distinct from the producer's own two** (which
+    targeted the `read_only`/unresolved guard and the
+    `requires_confirmation` guard): disabled the risk-floor check itself
+    (`if False and claimed_rank < signals.minimum_required_rank:` in
+    `enforce_side_effect_classification`) — caught for real, 4 checks
+    failed (`constructing a ToolDefinition with a risky name claimed as
+    read_only fails...`, `negative_acceptance: reassuring free text...
+    cannot override a real risk signal...`, `a financial-risk tool
+    claimed only as reversible_write... is refused`,
+    `negative_acceptance: a tool with real risk evidence in its own
+    name cannot be claimed as read_only`). Reverted byte-identical
+    (`git diff --stat` empty); `tests/tasks/test_ftf_0406.py`/
+    `test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py` all
+    re-run "all checks passed" afterward — no regression.
+  - **Live wiring confirmed by direct source read:**
+    `apps/api/app/tools/tool_definition_schema.py`'s `ToolDefinition.
+    __init__` calls `enforce_side_effect_classification` and raises
+    `ToolDefinitionValidationError` on failure, all before
+    `super().__init__(**kwargs)` runs — before any session or database
+    is touched, exactly as claimed.
+  - **Task contract re-pulled directly:** `python tools/r1_handoff.py
+    packet FTF-0406 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+    clause 1 ("Map real tool operations to read/write/financial/privileged
+    risk with reviewed enforcement proof") met by the code confirmed
+    above; clause 2 ("Independent review, exact merged commit, real
+    relevant integration and negative-test evidence recorded") met by
+    this review itself, now that CI is genuinely green on the merged
+    commit; negative_acceptance ("Unclassified or unresolved sensitive
+    tool cannot default to read-only; user mandate text cannot disable
+    actual guard") proven both directly (dedicated tests for each half,
+    confirmed present) and by both this review's own and the producer's
+    fault injections. Dependencies FTF-0401/FTF-0404/FTF-0405 confirmed
+    genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on
+    them.
+- No blocking defect found in the fixed head. Merged PR #153 (merge
+  commit `80dcd4b2a66c700e64e7c997b693f68a05103784`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Certified: 32/300, Product-true: 9/9.
+
+**Conclusion:** Certified L2-CERTIFIED.

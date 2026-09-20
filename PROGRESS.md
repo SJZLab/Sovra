@@ -1,7 +1,101 @@
 # PROGRESS — Sovra
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #146) — independent CERTIFY
-  review of FTF-0404 (Tool schema CRUD): **CERTIFIED**. Session-ID check
+  the `pull_request.opened` webhook for PR #153) — independent CERTIFY
+  review of FTF-0406 (Side-effect classification): **CERTIFIED**. See the
+  new section directly below for the full review, including the initial
+  NOT CERTIFIED finding this review superseded once the producer session
+  independently fixed it. `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` carry the complete evidence.
+
+## 2026-09-20 — Control plane: FTF-0406 (PR#153) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
+triggered by the `pull_request.opened` webhook for PR #153.
+
+Session-independence check: this reviewing session's own ID is
+`https://claude.ai/code/session_01GtkZi1xVFgaMfPbXjiPPz4`; all 4 commits
+on PR #153 carry `Claude-Session: .../session_01WFunvdUFkEnkkpFRCVm2ga` —
+no match, independent per Law 4.
+
+**First pass, NOT CERTIFIED:** CI checked on the PR's real head, not a
+stale claim (subscribed to the PR's own activity rather than trusting the
+in-progress snapshot from when it opened): the `gate` job's `uv run mypy
+.` step genuinely failed on head `2885a40` — 3 real errors at
+`tests/tasks/test_ftf_0406.py:110`, where `_enforce`'s own generic
+`**dict[str, object]` unpack could not be verified by mypy against
+`enforce_side_effect_classification`'s heterogeneous keyword-only
+parameter types (`str`/`str | None`/`bool`). Confirmed from the real CI
+job log (`get_job_logs`, not a self-report) and reproduced identically in
+this session's own sandbox, byte-for-byte matching the CI error text and
+line. Not a defect in the shipped production logic
+(`side_effect_classification.py`/`tool_definition_schema.py` drew no
+mypy errors) — a test-helper typing gap in the PR's own new file.
+
+**Superseded before that review's own tracking PR (#154) finished CI:**
+while writing the NOT CERTIFIED review, the same producer session
+independently found and fixed the identical gap on PR #153's own branch
+(commit `e61bd45`, pushed ~3 minutes after the first head) — retyped
+`_enforce` to explicit, individually-typed optional keyword parameters
+instead of the generic unpack, no behavior change (every call site
+already passed only recognized keyword names). Closed PR #154 without
+merging (superseded, and it would otherwise have conflicted with PR
+#153's own tracking-doc commit on the same file sections) and re-reviewed
+the fixed head from scratch instead.
+
+**Re-review of the fixed head (`e61bd45`):**
+- **CI reconfirmed on the real final head:** GitHub Actions run
+  `35543916766` — all 16 check runs `completed`/`success`, including
+  `gate`. Pulled the real `gate` job log directly: `uv run ruff check
+  .`/`ruff format --check .` clean, `uv run mypy .` → "Success: no issues
+  found in 122 source files" (the prior 3 errors gone),
+  `product_truth_check.py --fail-on-unwired` → "Product-truth: 9/9
+  product-true".
+- **Diff of the fix commit read directly:** touches only
+  `tests/tasks/test_ftf_0406.py` (17 insertions/11 deletions) —
+  `side_effect_classification.py`/`tool_definition_schema.py` (the
+  shipped logic and its live wiring) are byte-identical to the first
+  head.
+- **Own reproduction, this sandbox** (`git worktree add` on the real PR
+  head, `uv sync --all-packages`): `uv run mypy .` shows 0 errors in
+  `test_ftf_0406.py` (only 7 pre-existing `alembic` "no attribute
+  op/context" errors remain, in migration files this PR does not touch,
+  and that CI's own real run above does not report at all — a
+  sandbox/CI environment difference, not a real gate failure).
+- **Own fault injection, distinct from the producer's own two** (which
+  targeted the `read_only`/unresolved guard and the
+  `requires_confirmation` guard): disabled the risk-floor check itself
+  (`if False and claimed_rank < signals.minimum_required_rank:`) —
+  caught for real, 4 checks failed, all naming the risk floor. Reverted
+  byte-identical (`git diff --stat` empty);
+  `test_ftf_0406.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/
+  `test_ftf_0405.py` all re-run "all checks passed" afterward — no
+  regression.
+- **Live wiring confirmed by direct source read:** `ToolDefinition.
+  __init__` (`apps/api/app/tools/tool_definition_schema.py`) calls
+  `enforce_side_effect_classification` and raises
+  `ToolDefinitionValidationError` on failure, before
+  `super().__init__(**kwargs)` runs — before any session or database is
+  touched, exactly as claimed.
+- **Task contract re-pulled directly** via `tools/r1_handoff.py packet
+  FTF-0406 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1
+  met by the code confirmed above; clause 2 (independent review, exact
+  merged commit, real relevant integration and negative-test evidence)
+  met by this review now that CI is genuinely green on the merged commit;
+  negative_acceptance proven both directly (dedicated tests for each
+  half) and by both this review's own and the producer's fault
+  injections. Dependencies FTF-0401/FTF-0404/FTF-0405 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+No blocking defect found in the fixed head. Merged PR #153 (merge commit
+`80dcd4b2a66c700e64e7c997b693f68a05103784`). `docs/spec-matrix.yaml` set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit. Appended
+`docs/certifications/ledger.md` (FTF-0406 entry). Updated `QUEUE.md`
+(moved FTF-0406 to Done, Certified 31→32/300). `scripts/status.py`'s own
+stricter "product-true" count: 8→9, matching `product_truth_check.py`'s
+own `9/9`.
+
+## 2026-09-20 (earlier) — independent CERTIFY review of FTF-0404 (Tool schema CRUD): **CERTIFIED**
+Session-ID check
   clean against all 3 PR #146 commits (session_01Erh4hdf73yUo4Q36YKTshz,
   no match to this reviewing session, `session_01NRVmAUpr7iauXiySAFGGXh`).
   Diff read directly: `apps/api/app/tools/{tool_definition_schema,

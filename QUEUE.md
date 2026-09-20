@@ -1,5 +1,19 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0406
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #153) — independent CERTIFY
+  review of FTF-0406 (Side-effect classification): **CERTIFIED**. First
+  pass found CI's real `gate` job genuinely failing on mypy in the PR's
+  own new test helper — filed NOT CERTIFIED — but the producer session
+  independently fixed the identical gap on the same PR branch before that
+  review's own tracking PR finished CI; re-reviewed the fixed head from
+  scratch (session-ID clean, CI reconfirmed green on the real job log,
+  own fault injection distinct from the producer's own two, task contract
+  re-pulled) and certified. Merged PR #153 (merge commit `80dcd4b2`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Certified: 32/300, Product-true: 9/9. Full
+  review: `docs/certifications/ledger.md`/`docs/certifications/queue.md`.
+
+Previously, 2026-09-20 (scheduled relay shift) — implemented FTF-0406
   (Side-effect classification, deps FTF-0401/FTF-0404/FTF-0405 all
   CERTIFIED). Recomputed the dependency-ready frontier fresh against
   `docs/spec-matrix.yaml`'s live certification state (never trusted a
@@ -868,9 +882,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0404 (Tool schema CRUD) was the only item here; it
-was independently reviewed and CERTIFIED this shift via PR #146 (merge
-commit `d061996`) — see "## Done" for the certification summary and
+None currently. FTF-0406 (Side-effect classification) was the only item
+here; it was independently reviewed and CERTIFIED this shift via PR #153
+(merge commit `80dcd4b2`) — see "## Done" for the certification summary
+and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
+the full history and evidence.
+
+Prior item: FTF-0404 (Tool schema CRUD) was independently reviewed and
+CERTIFIED a prior shift via PR #146 (merge commit `d061996`) — see
+"## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 
@@ -1727,6 +1747,46 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-0406 — Side-effect classification. CERTIFIED 2026-09-20, PR #153,
+  merge commit `80dcd4b2`. Independent Control-plane review triggered by
+  the `pull_request.opened` webhook: session-ID check clean against all 4
+  PR #153 commits (session_01WFunvdUFkEnkkpFRCVm2ga, no match to this
+  reviewing session). First pass found CI's real `gate` job genuinely
+  failing on the PR's first head (`2885a40`) — `uv run mypy .` reported 3
+  real errors in the PR's own new `_enforce` test helper (a
+  `**dict[str, object]` unpack mypy could not verify against
+  `enforce_side_effect_classification`'s heterogeneous keyword types),
+  confirmed from the real CI job log and reproduced identically in this
+  session's own sandbox — filed NOT CERTIFIED. Before that review's own
+  tracking PR finished CI, the same producer session independently found
+  and fixed the identical gap on the same PR branch (commit `e61bd45`,
+  retyping `_enforce` to explicit keyword parameters, no behavior
+  change). Re-reviewed the fixed head from scratch: CI reconfirmed
+  genuinely green on the real final head (16/16, `gate`'s own `uv run
+  mypy .` — "Success: no issues found in 122 source files", pulled from
+  the real job log); diff of the fix commit confirmed it touches only the
+  test helper, not the shipped `side_effect_classification.py`/
+  `tool_definition_schema.py`. Own fault injection, distinct from the
+  producer's own two (which targeted the `read_only`/unresolved guard and
+  the `requires_confirmation` guard): disabled the risk-floor check
+  itself — caught for real (4 checks failed, all naming the risk floor),
+  reverted byte-identical, `test_ftf_0406.py`/`test_ftf_0401.py`/
+  `test_ftf_0404.py`/`test_ftf_0405.py` all re-run "all checks passed"
+  afterward. Source-read confirmed `enforce_side_effect_classification`
+  runs inside `ToolDefinition.__init__` before `super().__init__()` —
+  before any session or database is touched.
+  `product_truth_check.py --fail-on-unwired` reconfirmed `9/9` in this
+  sandbox. Task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-0406`, confirming the acceptance/negative_acceptance clauses are
+  genuinely met and that all three dependencies (FTF-0401/FTF-0404/
+  FTF-0405) are genuinely `CERTIFIED`. No blocking defect in the fixed
+  head. `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. `scripts/status.py`'s own stricter
+  "product-true" count: `31/300` certified before, `32/300` after;
+  "Product-true" `8` before, `9` after, matching `product_truth_check.py`'s
+  own `9/9`. This certification's own doc updates were pushed on a branch
+  and opened as a PR against `main` rather than pushed directly, per
+  `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
