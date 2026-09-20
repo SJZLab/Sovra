@@ -8395,3 +8395,134 @@ review of FTF-0201 (this shift's own PR), or (b) picking up a different,
 already dependency-ready item elsewhere in the DAG if one exists that
 this shift did not scan for (this shift deliberately stayed scoped to
 FTF-0201 alone, per its own mandate).
+
+## 2026-09-20 — Relay shift: FTF-0402 (Project security profile) implemented, PROVISIONAL
+
+**STEP 0:** `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+— no hash-mismatch stop needed. Read PROGRESS.md/QUEUE.md/
+`docs/certifications/queue.md` fresh this shift (no state assumed from
+prior context). `docs/implementation/task-packets/`/`spec/tasks.json`/
+`docs/implementation/TRACKER.json` are static bootstrap artifacts, not
+live state (`spec/tasks.json`'s own `status`/`ready` fields never update
+after bootstrap) — computed the real dependency-ready frontier directly
+from `spec/tasks.json`'s dependency graph against `docs/spec-matrix.yaml`'s
+own live `certification_state`, matching the same approach implied by
+QUEUE.md's own "Queue (ordered by dependency)" section.
+
+**STEP 1:** 8 dependency-ready items found: FTF-0202 (already an open
+owner ask — unchanged this shift, no concrete secret backend named
+anywhere in this repository's architecture docs), FTF-0305, FTF-0402,
+FTF-0403, FTF-0404, FTF-1001, FTF-1401, FTF-1501. Picked FTF-0402
+(Project security profile) — lowest CAP number among the remaining seven
+with no external-service ask of its own, and the item most downstream
+work depends on (FTF-0408/FTF-0500D/FTF-0514/FTF-0617/FTF-0901/FTF-0902/
+FTF-1206 all name it as a dependency in `docs/TASK_INDEX.md`). Pulled its
+real DoD via `python tools/r1_handoff.py packet FTF-0402 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` rather than improvising from the title.
+
+**STEP 2 (PEV):**
+- **P:** Read `apps/api/app/projects/project_schema.py`/`project_crud.py`/
+  `project_routes.py` (FTF-0401, already CERTIFIED) and
+  `apps/api/app/auth/organization_workspace_schema.py` (FTF-0102, already
+  CERTIFIED) directly. Confirmed `Project.security_profile`/
+  `Organization.default_security_profile` are both currently opaque,
+  unenforced strings (shape-only validation, ≤64 chars, no enumeration,
+  no relationship to each other) — `project_routes.py`'s own module
+  docstring already disclosed this exact gap ("nor real security-profile
+  enforcement (FTF-0402)"). Neither Section 6 nor any other section this
+  task's packet cites fixes a concrete profile taxonomy or ordering; Law
+  17/Section 11.1 names `ZERO_EGRESS` as a real posture, and the spec's
+  own text describes `AIR_GAPPED` as adding "a deployment constraint to
+  the existing ZERO_EGRESS policy" — grounding a real, closed, ordered
+  taxonomy (`standard < zero_egress < air_gapped`) directly in this
+  specification's own words rather than inventing one.
+- **E:** Wrote `apps/api/app/services/project_security_profile.py` (pure,
+  DB-free: `validate_security_profile_name`/`security_profile_rank`/
+  `resolve_effective_security_profile`/`enforce_security_profile_selection`/
+  `require_profile_at_least`) and `tests/tasks/test_ftf_0402.py`. Ran the
+  negative_acceptance test BEFORE wiring `enforce_security_profile_selection`
+  into `project_crud.py` — confirmed it could not yet fail meaningfully
+  since nothing depended on it; wired it into `create_project`/
+  `update_project` (fetching the calling organization's own real
+  `default_security_profile` via `execute_tenant_scoped`, then calling
+  `enforce_security_profile_selection` before the row is ever persisted),
+  deliberately leaving `apply_edits` itself untouched (still FTF-0401's
+  own certified pure core) to avoid any regression to FTF-0401's already-
+  certified no-DB test file. Wrote
+  `tests/integration/test_ftf_0402_project_security_profile.py` (real
+  Postgres, two organizations seeded with two different real
+  `default_security_profile` values) and CI's new
+  `project-security-profile-integration` job.
+  **Failure output shown before the fix (Law 1):** commented out the
+  relaxation check inside `enforce_security_profile_selection` itself
+  (`if requested_rank < org_rank:` → `if False:`) — `uv run python3
+  tests/tasks/test_ftf_0402.py` failed with exactly 3 named
+  negative_acceptance checks (`FAIL [FTF-0402] negative_acceptance:
+  requesting 'standard' under an org default of 'air_gapped' is
+  refused...`, and the two sibling cases), confirming the test can fail
+  before trusting it to pass. Reverted (`diff` confirmed byte-identical),
+  re-ran clean. Separately removed the `enforce_security_profile_selection(...)`
+  call from `create_project` — the live-Postgres suite failed with
+  exactly the 3 named creation-time negative_acceptance checks (the
+  omitted-field/client-default case, the explicit-relaxation case, the
+  unrecognized-profile-name case); reverted (`diff` confirmed
+  byte-identical), re-ran clean.
+- **V:** `python3 scripts/product_truth_check.py --fail-on-unwired` — was
+  `4/4` before this shift, now `5/5` (this task's own `proving_symbol`,
+  `enforce_security_profile_selection`, has a real caller in
+  `project_crud.py`, not a TRACKER). No TRACKER diagnosis needed.
+
+**Full regression, this sandbox:** `git fetch --unshallow origin` first
+(this sandbox's own clone is shallow by default — the same pre-existing
+`stale_commit`-on-`validate_spec.py --strict` artifact every prior
+certifying/relay session has already documented; cleared, then
+`validate_spec.py --strict` reported clean). `uv run ruff check .`/`ruff
+format --check .`/`mypy .` clean (108 source files, after `uv run ruff
+format` fixed this shift's own two new files' line-length/string-join
+formatting); `pnpm run lint`/`typecheck`/`format:check` clean (no
+frontend files touched); `pnpm exec vitest run` — 14/14 unchanged; `uv
+run pytest tests/unit` — 3/3; every existing `tests/tasks/test_ftf_*.py`
+(FTF-0002 through FTF-0401, 23 files) re-run clean, including FTF-0401's
+own no-DB suite (confirming `apply_edits` being left untouched really
+did avoid a regression) and, separately, FTF-0401's own live-Postgres
+integration suite re-run clean against a real local PostgreSQL 16
+cluster. `python3 scripts/status.py` — `27/300 certified · 4
+product-true` (unchanged, correct — FTF-0402 is PROVISIONAL, not yet
+CERTIFIED).
+
+**Disclosed, not hidden:** enforcement lives in `create_project`/
+`update_project` (the impure wrappers), not inside `apply_edits` itself
+— see this shift's own `docs/certifications/queue.md` entry for the full
+reasoning (adding a DB-derived parameter to `apply_edits` would have
+required editing FTF-0401's own already-certified test file's calls).
+`require_profile_at_least` has no live caller yet — datasets/source/
+worker/models/judges/telemetry (this task's own acceptance clause names
+all six) do not exist as live modules in this repository yet; they are
+FTF-0500s/0600s/0800s/FTF-0901's own, later, separately dependency-gated
+tasks. `validate_security_profile` (`project_schema.py`, shape-only) is
+left unchanged, as additional defense-in-depth alongside this task's own
+new enum+relaxation check, not a replacement.
+
+**STEP 3 metrics after this shift:** 27/300 certified (unchanged — this
+shift implements, it does not certify); 1 provisional (FTF-0402, this
+shift); `scripts/status.py`'s own authoritative "product-true" count
+stays 4; `product_truth_check.py --fail-on-unwired` — `5/5`. PR opened as
+PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/`docs/certifications/queue.md`
+all updated in a second, tracking-doc-only commit on the same branch,
+matching the FTF-0201/FTF-0301/FTF-0401 two-commit precedent.
+
+**STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+reporting and stopping to await independent Control-plane L2
+certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+An independent Control-plane CERTIFY review of FTF-0402 (this shift's own
+PR) is the natural next action, matching the established relay/certifier
+alternation. If a certifier session is not what fires next, the next
+relay-workable item is whichever of FTF-0305/FTF-0403/FTF-0404/FTF-1001/
+FTF-1401/FTF-1501 has the lowest CAP number and no external-service ask
+of its own at that time — recompute the frontier fresh rather than
+assuming this shift's own list is still current, since FTF-0402 reaching
+CERTIFIED would newly unblock FTF-0408/FTF-0500D/FTF-0514/FTF-0617/
+FTF-0901/FTF-0902/FTF-1206 (all currently blocked on it, per
+`docs/TASK_INDEX.md`).

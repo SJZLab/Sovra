@@ -39,7 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.audit_event_writer import write_audit_event
-from app.auth.organization_workspace_schema import Workspace, validate_name
+from app.auth.organization_workspace_schema import Organization, Workspace, validate_name
 from app.auth.resource_authorization import ResourceAuthorizationError, authorize_resource_ownership
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
@@ -52,6 +52,7 @@ from app.projects.project_schema import (
     validate_security_profile,
     validate_ui_state,
 )
+from app.services.project_security_profile import enforce_security_profile_selection
 
 __all__ = [
     "ActorInfo",
@@ -135,6 +136,25 @@ def _fetch_or_raise(session: Session, context: TenantContext, project_id: uuid.U
     return row
 
 
+def _organization_default_security_profile(session: Session, context: TenantContext) -> str:
+    """The calling organization's own inherited `default_security_profile`
+    (FTF-0102, Section 6.1), read through the same `execute_tenant_scoped`
+    guard every other real query in this module uses -- never a bare
+    `session.get`/`session.execute`. `Organization`'s own RLS policy
+    (`id = current_organization_id`, FTF-0102's migration) already scopes
+    this to exactly the caller's own organization; the explicit `WHERE`
+    below is defense-in-depth, matching Section 65.1's own discipline
+    every other query in this repository already applies."""
+    statement = select(Organization.default_security_profile).where(
+        Organization.id == context.organization_id
+    )
+    result = execute_tenant_scoped(session, context.organization_id, statement)
+    value = result.scalar_one_or_none()
+    if value is None:
+        raise RuntimeError(f"organization {context.organization_id} vanished mid-transaction")
+    return value
+
+
 def _authorize_workspace_or_raise(
     session: Session, context: TenantContext, workspace_id: uuid.UUID
 ) -> None:
@@ -169,8 +189,17 @@ def create_project(
     from `project_type` (`initial_status_for`), never client-supplied --
     this task's own negative_acceptance ("no silent generic downgrade")
     would be meaningless if a caller could simply POST `status: active`
-    for an agentic project."""
+    for an agentic project.
+
+    `security_profile` is checked against the calling organization's own
+    inherited `default_security_profile` (FTF-0402) before it is ever
+    persisted -- a project can never be *created* with a profile less
+    restrictive than its organization's own floor."""
     _authorize_workspace_or_raise(session, context, workspace_id)
+    organization_default_security_profile = _organization_default_security_profile(session, context)
+    security_profile = enforce_security_profile_selection(
+        organization_default_security_profile, security_profile
+    )
     project = Project(
         organization_id=context.organization_id,
         workspace_id=workspace_id,
@@ -294,7 +323,20 @@ def update_project(
     expected_row_version: int,
     actor: ActorInfo,
 ) -> Project:
+    """`security_profile` (when being changed) is checked against the
+    calling organization's own inherited `default_security_profile`
+    (FTF-0402) before `apply_edits` ever runs -- this task's own
+    negative_acceptance made real: a project field, or a direct API call,
+    cannot relax an inherited organization security policy by editing an
+    existing project any more than it can by creating a new one."""
     project = _fetch_or_raise(session, context, project_id)
+    if security_profile is not None:
+        organization_default_security_profile = _organization_default_security_profile(
+            session, context
+        )
+        security_profile = enforce_security_profile_selection(
+            organization_default_security_profile, security_profile
+        )
     apply_edits(
         project,
         name=name,
