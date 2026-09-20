@@ -1,5 +1,28 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0401
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #139) — independent CERTIFY
+  review of FTF-0401 (Project schema/API/UI): **CERTIFIED**. Session-ID
+  clean against all 3 commits on PR #139 (session_01HCDh4VoHfgGL9NkLs6Q4YG,
+  not matching this reviewing session's own ID), diff read directly
+  confirming `build_project_router` wired unconditionally into
+  `apps/api/app/main.py`, `apply_edits` has no `project_type` parameter at
+  all, and `create_project` authorizes the workspace before insert, CI
+  reconfirmed green (13/13) on the real final head `5b4dc4c`, own
+  reproduction against a real local PostgreSQL 16 cluster (both suites
+  "all checks passed"), two own fault injections (agentic-always-active;
+  workspace-ownership check removed) each caught for real and reverted
+  byte-identical, `product_truth_check.py --fail-on-unwired` reconfirmed
+  `4/4`, task contract cross-checked via `tools/r1_handoff.py packet
+  FTF-0401` (including confirming `/requirements`/`/tools` are genuinely
+  FTF-0404/FTF-0407/FTF-0408's own later scope via `docs/TASK_INDEX.md`,
+  not a hidden gap). Merged PR #139 (merge commit
+  `59e14e71a446bbc68b8488ecc221ae5877aba14a`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Certified: 27/300, Product-true: 4/4. Full review:
+  `docs/certifications/ledger.md` (FTF-0401 entry) and
+  `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — implemented FTF-0401
   (Project schema/API/UI, deps FTF-0102/FTF-0103/FTF-0104 all CERTIFIED).
   FTF-0202 ("Secret-manager integration") also became dependency-ready
   this shift but names no concrete secret backend anywhere in this
@@ -282,27 +305,22 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 26/300 (main; FTF-0301 CERTIFIED 2026-09-20, PR #137 merged as
-`634d5977` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0401, this shift — see "## Provisional" below) · Blocked: 0
+Certified: 27/300 (main; FTF-0401 CERTIFIED 2026-09-20, PR #139 merged as
+`59e14e7` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
 work continued this shift on FTF-0401 instead of stopping)
-Product-true (Law 16): 3 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 4 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
-`build_litellm_connection_router` and FTF-0301's
-`build_trainable_artifact_router` all meet all three, independently
-reconfirmed by the certifying session; FTF-0401's own `build_project_router`
-has a real caller too — `product_truth_check.py --fail-on-unwired`'s
-narrower, certification-state-independent wiring check is `4/4` this
-shift — but FTF-0401 is only PROVISIONAL/L1-PROVEN so far, not yet
-CERTIFIED/L2-CERTIFIED, so `scripts/status.py`'s own stricter count stays
-3 until an independent Control-plane review certifies it).
+`build_litellm_connection_router`, FTF-0301's
+`build_trainable_artifact_router` and FTF-0401's own `build_project_router`
+all meet all three, independently reconfirmed by this certifying session;
+`product_truth_check.py --fail-on-unwired` matches at `4/4`).
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -401,10 +419,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0401 (Project schema/API/UI) — implemented this shift, deps
-FTF-0102/FTF-0103/FTF-0104 all CERTIFIED. PR opened as PROVISIONAL;
-`docs/spec-matrix.yaml` set to `PROVISIONAL`/`L1-PROVEN`. Full submission
-report: `docs/certifications/queue.md`.
+None currently. FTF-0401 (Project schema/API/UI) was independently
+reviewed and CERTIFIED this shift via PR #139 (merge commit `59e14e7`) —
+see "## Done" below for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0301 (TrainableArtifact schema/API) was independently
 reviewed and CERTIFIED a prior shift via PR #137 (merge commit
@@ -1057,6 +1076,30 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   zero FAILED after; "Product-true" `1` before, `2` after, matching
   `product_truth_check.py`'s own `2/2`). This certification's own doc
   updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
+- FTF-0401 — Project schema/API/UI. CERTIFIED 2026-09-20, PR #139, merge
+  commit `59e14e7`. Independent Control-plane review triggered by the
+  `pull_request.opened` webhook: session-ID check clean against all 3 PR
+  #139 commits; diff read directly confirming `build_project_router`
+  wired unconditionally into `apps/api/app/main.py`, `apply_edits` has no
+  `project_type` parameter, `create_project` authorizes the workspace
+  before insert, and the migration FORCEs RLS with no DELETE grant; CI
+  reconfirmed green (13/13) on the real final head; own reproduction
+  against a real local PostgreSQL 16 cluster (both suites "all checks
+  passed"); two independent fault injections (agentic-always-`active`;
+  workspace-ownership check removed), each caught for real and reverted
+  byte-identical; `product_truth_check.py --fail-on-unwired` reconfirmed
+  `4/4`; task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-0401`, confirming the abbreviated `api_contract`'s `/requirements`/
+  `/tools` routes are genuinely FTF-0404/FTF-0407/FTF-0408's own later,
+  separately dependency-gated scope (`docs/TASK_INDEX.md` lists FTF-0401
+  as their dependency, not the reverse), not a hidden gap. No blocking
+  defect. `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED`
+  / `proof_state: L2-CERTIFIED`. `scripts/status.py` confirmed non-inflated
+  (`26/300` before, `27/300` after; "Product-true" `3` before, `4` after,
+  matching `product_truth_check.py`'s own `4/4`). This certification's own
+  doc updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
 - FTF-0301 — TrainableArtifact schema/API. CERTIFIED 2026-09-20, PR #137

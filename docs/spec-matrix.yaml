@@ -378,10 +378,10 @@ FTF-0310:
   proving_symbol: ''
   proving_test: ''
 FTF-0401:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Project schema/API/UI
-  evidence_hash: 141be0f381a00f4c68664c9358404922837c1d29
+  evidence_hash: 59e14e71a446bbc68b8488ecc221ae5877aba14a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0102, FTF-0103,
@@ -513,8 +513,30 @@ FTF-0401:
     build_project_router (proving_test tests/tasks/test_ftf_0401.py), matching the
     FTF-0201/FTF-0301 producer-shift precedent of setting proving_symbol at PROVISIONAL
     submission time (certification_state/proof_state's CERTIFIED/L2-CERTIFIED values, not
-    proving_symbol, are what the certifying session alone sets).
-  proof_state: L1-PROVEN
+    proving_symbol, are what the certifying session alone sets). Control plane: 2026-09-20,
+    independent CERTIFY review (PR #139, merge commit 59e14e71a446bbc68b8488ecc221ae5877aba14a)
+    -- session-ID check passed (all 3 PR #139 commits carry session_01HCDh4VoHfgGL9NkLs6Q4YG,
+    no match to this reviewing session); diff read directly confirming build_project_router
+    wired unconditionally into apps/api/app/main.py's create_app(), apply_edits's signature has
+    no project_type parameter, create_project calls _authorize_workspace_or_raise before insert,
+    and the migration FORCEs RLS with no DELETE grant; CI reconfirmed 13/13 completed/success on
+    the real PR head (run 35512925027); own reproduction against a real local PostgreSQL 16
+    cluster -- both tests/tasks/test_ftf_0401.py and tests/integration/test_ftf_0401_project_schema_api.py
+    passed clean; two independent fault injections (return "active" unconditionally from
+    initial_status_for; remove the workspace-ownership authorization call in create_project),
+    each reverted byte-identical and each caught for real by the relevant suite(s) before revert;
+    product_truth_check.py --fail-on-unwired independently reconfirmed 4/4; full regression clean
+    (ruff/mypy/pnpm lint/typecheck/format:check/vitest 14/14/pytest 3/3, and no regression in the
+    seven other live-Postgres integration suites sharing this migrated database);
+    validate_spec.py --strict clean; sha256sum CLAUDE.md matches CLAUDE.md.sha256. Task contract
+    re-pulled via tools/r1_handoff.py packet FTF-0401 -- acceptance clause 1 (create/edit
+    agentic/generic project with versioned security/budget/owner settings and saved UI state) and
+    negative_acceptance (agentic without approved target/runtime stays setup_incomplete, no silent
+    generic downgrade) both independently confirmed met; the abbreviated api_contract's
+    /requirements and /tools routes confirmed genuinely out of this task's scope via
+    docs/TASK_INDEX.md (FTF-0404/FTF-0407/FTF-0408 all list FTF-0401 as their own dependency, not
+    the reverse). No blocking defect found. Certified L2-CERTIFIED.
+  proof_state: L2-CERTIFIED
   proving_symbol: build_project_router
   proving_test: tests/tasks/test_ftf_0401.py
 FTF-0402:
