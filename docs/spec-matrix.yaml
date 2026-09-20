@@ -856,10 +856,10 @@ FTF-0405:
   proving_symbol: validate_json_schema_document
   proving_test: tests/tasks/test_ftf_0405.py
 FTF-0406:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Side-effect classification
-  evidence_hash: 67231315036fb33b1a862298d9356595b046d908
+  evidence_hash: 80dcd4b2a66c700e64e7c997b693f68a05103784
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401, FTF-0404,
@@ -913,13 +913,39 @@ FTF-0406:
     file this task touched (and clean across the full `apps/api/app` tree, 40 source files).
     `scripts/validate_spec.py --strict` clean (task graph and verification-map). PR opened as
     PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control-plane L2 review.
-    evidence_hash is the real implementation commit, confirmed resolvable via `git cat-file -e` in
-    this repository. proving_symbol is `enforce_side_effect_classification`, called for real by
-    `ToolDefinition.__init__` -- `product_truth_check.py --fail-on-unwired` rises to `9/9` once this
-    symbol is counted (a real, newly-wired live caller, not inflation); `scripts/status.py`'s own
-    stricter "product-true" count (CERTIFIED-only) stays at 8 until this entry is independently
-    certified.
-  proof_state: L1-PROVEN
+    proving_symbol is `enforce_side_effect_classification`, called for real by
+    `ToolDefinition.__init__` -- `product_truth_check.py --fail-on-unwired` is `9/9` with this
+    symbol counted (a real, newly-wired live caller, not inflation).
+
+    Control plane independent CERTIFY review (session_01GtkZi1xVFgaMfPbXjiPPz4):
+    session-ID clean against all 4 commits on PR #153 (session_01WFunvdUFkEnkkpFRCVm2ga, no
+    match). CI's real `gate` job initially failed for real on the PR's first head (`2885a40`):
+    `uv run mypy .` reported 3 errors at `tests/tasks/test_ftf_0406.py:110` (`_enforce`'s
+    `**dict[str, object]` unpack could not be verified against `enforce_side_effect_classification`'s
+    own heterogeneous keyword types) -- confirmed via the real CI job log, not a self-report,
+    and reproduced identically in this reviewing session's own sandbox; filed NOT CERTIFIED.
+    While that review was in flight the same producer session independently found and fixed the
+    identical gap on the same PR branch (commit `e61bd45`, retyping `_enforce` to explicit,
+    individually-typed keyword parameters, no behavior change); CI's real `gate` job on that new
+    head is genuinely green (`mypy .`: "Success: no issues found in 122 source files", confirmed
+    from the real CI job log; all 16 checks `success`). Re-reviewed the fixed head directly:
+    diff confirmed the fix touches only the test helper, not the shipped
+    `side_effect_classification.py`/`tool_definition_schema.py`; own fault injection distinct
+    from the producer's own two (disabled the `claimed_rank < signals.minimum_required_rank`
+    risk-floor check itself, not either guard the producer already fault-injected) -- caught for
+    real (4 checks failed, all naming the risk floor), reverted byte-identical
+    (`git diff --stat` empty), FTF-0406/FTF-0401/FTF-0404/FTF-0405 suites all reconfirmed "all
+    checks passed" afterward. `product_truth_check.py --fail-on-unwired` reconfirmed `9/9` in this
+    sandbox; source-read confirmed `enforce_side_effect_classification` runs inside
+    `ToolDefinition.__init__` before `super().__init__(**kwargs)` (before session/database).
+    Task contract re-pulled via `tools/r1_handoff.py packet FTF-0406`: acceptance clause 1 met
+    directly by the code above; clause 2 (independent review) met by this review itself;
+    negative_acceptance met both directly (dedicated tests for each half) and by this review's
+    own and the producer's fault injections. Dependencies FTF-0401/FTF-0404/FTF-0405 confirmed
+    genuinely `CERTIFIED` in this file before relying on them. No blocking defect found in the
+    fixed head. Merged as PR #153 (merge commit `80dcd4b2a66c700e64e7c997b693f68a05103784`).
+    Certified L2-CERTIFIED.
+  proof_state: L2-CERTIFIED
   proving_symbol: enforce_side_effect_classification
   proving_test: tests/tasks/test_ftf_0406.py
 FTF-0407:

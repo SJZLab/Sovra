@@ -6878,3 +6878,126 @@ with `docs/spec-matrix.yaml`.
   regardless of its own declared `type`), and consistent with this
   task's own `database_changes: "No independent schema change"`
   charter.
+
+## Control plane review — 2026-09-20 — FTF-0406 (PR #153) — CERTIFIED (after a first-pass NOT CERTIFIED on a real CI failure the producer fixed independently)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #153
+  (https://github.com/SJZLab/Sovra/pull/153, `claude/wizardly-fermat-coeg4t`
+  → `main`).
+- **Session-ID check:** all 4 commits on PR #153 carry `Claude-Session:
+  .../session_01WFunvdUFkEnkkpFRCVm2ga`; this reviewing session's own ID
+  is `session_01GtkZi1xVFgaMfPbXjiPPz4` — no match, independent per Law 4.
+- **First pass — real CI failure, filed NOT CERTIFIED:** CI checked on
+  the real head, not a stale/in-progress snapshot (subscribed to the
+  PR's own activity and waited for the real `check_run.completed`
+  event): the `gate` job's own `uv run mypy .` step genuinely failed on
+  head `2885a40` — 3 errors at `tests/tasks/test_ftf_0406.py:110`
+  (`_enforce`'s own `**dict[str, object]` unpack could not be verified by
+  mypy against `enforce_side_effect_classification`'s heterogeneous
+  keyword-only parameter types: `name: str`, `description: str | None`,
+  `requires_confirmation: bool`). Confirmed from the real CI job log
+  (`get_job_logs`, not a self-report) and reproduced identically in this
+  session's own sandbox, byte-for-byte matching the CI error text and
+  line. Filed as its own PR (#154) with the exact fix needed, since the
+  underlying production logic drew no mypy errors — a test-helper typing
+  gap, not a logic defect.
+- **Superseded before PR #154's own CI finished:** while that review was
+  being written, the same producer session (same session ID) independently
+  found and fixed the identical gap on PR #153's own branch — commit
+  `e61bd45`, pushed at 23:11:36Z (before this review's own PR #154 was
+  even opened at 23:16:42Z). Retyped `_enforce` to explicit,
+  individually-typed optional keyword parameters instead of the generic
+  `**overrides: object` unpack — no behavior change, every call site
+  already passed only recognized keyword names (confirmed by reading the
+  fix commit's own diff directly: `+17/-11`, `tests/tasks/test_ftf_0406.py`
+  only). Closed PR #154 without merging — merging a "NOT CERTIFIED,
+  action needed" doc state immediately alongside an already-fixed,
+  already-green reality would misrepresent current status, and it would
+  conflict with PR #153's own tracking-doc commit on the same
+  `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` sections — and
+  re-reviewed the fixed head from scratch instead, folding the full story
+  (including the NOT CERTIFIED finding) into this entry and the ledger.
+- **CI reconfirmed on the real final head:** GitHub Actions run
+  `35543916766` — all 16 check runs `completed`/`success`. Pulled the
+  real `gate` job log directly (job `106166360499`, not a self-report):
+  `uv run ruff check .` → "All checks passed!"; `uv run ruff format
+  --check .` → "122 files already formatted"; `uv run mypy .` → "Success:
+  no issues found in 122 source files" (the prior 3 errors gone, zero
+  remaining — note this differs from this session's own sandbox
+  reproduction, which still shows 7 pre-existing `alembic` "no attribute
+  op/context" errors in migration files this PR does not touch; CI's own
+  real environment does not report them at all, a sandbox/CI environment
+  difference, not a real gate failure — CI's own conclusion is
+  authoritative); `product_truth_check.py --fail-on-unwired` → "9/9
+  product-true"; `scripts/status.py` → "31/300 certified · 8 product-true"
+  (pre-certification baseline, as expected — this task was still
+  PROVISIONAL at that point in the run).
+- **Diff of the fix commit read directly** (`get_commit` with
+  `full_patch`): touches only `tests/tasks/test_ftf_0406.py`'s own
+  `_enforce` helper (17 insertions/11 deletions) —
+  `apps/api/app/services/side_effect_classification.py` and
+  `apps/api/app/tools/tool_definition_schema.py` (the shipped production
+  logic and its live wiring) are byte-identical to the first head; no new
+  `# type: ignore`, no `Any` widening, no behavior change to any call
+  site (every existing call already passed only the six recognized
+  keyword names, now explicit parameters instead of a dict unpack).
+- **Own reproduction, this sandbox:** `git worktree add` on the real PR
+  head `e61bd45`, `uv sync --all-packages`. `uv run mypy .` — 0 errors at
+  `tests/tasks/test_ftf_0406.py` (the fix holds); 7 pre-existing
+  `alembic` errors remain in files this PR does not touch, not counted
+  against it (see above). `python3 scripts/product_truth_check.py
+  --fail-on-unwired` → `9/9`, reconfirmed.
+- **Own fault injection, distinct from the producer's own two** (which
+  targeted the `read_only`/unresolved guard and the
+  `requires_confirmation` guard specifically): disabled the risk-floor
+  check itself in `enforce_side_effect_classification` —
+  `if False and claimed_rank < signals.minimum_required_rank:` — caught
+  for real: 4 checks failed (`constructing a ToolDefinition with a risky
+  name claimed as read_only fails at construction time...`,
+  `negative_acceptance: reassuring free text in description cannot
+  override a real risk signal...`, `a financial-risk tool claimed only as
+  reversible_write (below its own detected floor) is refused`,
+  `negative_acceptance: a tool with real risk evidence in its own name
+  cannot be claimed as read_only`). Directly proves the risk-floor
+  enforcement itself — the core of acceptance clause 1 — is real code,
+  not merely asserted. Reverted byte-identical (`git diff --stat` empty
+  for `side_effect_classification.py`); `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py` all re-run
+  "all checks passed" afterward — no regression.
+- **Live wiring confirmed by direct source read:** `ToolDefinition.
+  __init__` (`apps/api/app/tools/tool_definition_schema.py`) builds
+  `enforce_side_effect_classification`'s call from `kwargs` and raises
+  `ToolDefinitionValidationError` on `SideEffectClassificationError`,
+  entirely before `super().__init__(**kwargs)` runs — before any session
+  or database is touched, exactly as the submission claims, and only when
+  `name`/`input_schema_json`/`output_schema_json`/`side_effect_class` are
+  all present in `kwargs` (matching `create`/`edit`, both of which always
+  supply all four).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0406 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  clause 1 ("Map real tool operations to read/write/financial/privileged
+  risk with reviewed enforcement proof") met by the code confirmed above
+  and this review's own fault injection; acceptance clause 2
+  ("Independent review, exact merged commit, real relevant integration
+  and negative-test evidence recorded") met by this review itself, now
+  that CI is genuinely green on the merged commit — it could not be met
+  during the first pass, while the gate was red; negative_acceptance
+  ("Unclassified or unresolved sensitive tool cannot default to
+  read-only; user mandate text cannot disable actual guard") proven both
+  directly (dedicated tests for each half, confirmed present in the diff)
+  and by both this review's own and the producer's fault injections.
+  Dependencies FTF-0401/FTF-0404/FTF-0405 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found in the fixed head.**
+- **Merged PR #153** (merge commit
+  `80dcd4b2a66c700e64e7c997b693f68a05103784`). `docs/spec-matrix.yaml`
+  FTF-0406 set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to the merge commit SHA. Appended
+  `docs/certifications/ledger.md` (FTF-0406 entry, full independent-review
+  narrative). `QUEUE.md` updated (FTF-0406 moved to Done, Certified
+  31→32/300, Provisional section cleared). `scripts/status.py`'s own
+  stricter "product-true" count: 8→9, matching `product_truth_check.py`'s
+  own `9/9`.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01GtkZi1xVFgaMfPbXjiPPz4,
+  2026-09-20.
