@@ -185,6 +185,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. tests/tasks/test_ftf_0103.py is the full evidence for this task (no separate live-integration CI job): its own real, locally-hosted demonstration FastAPI app over a real local socket is a no-DB, no-network proof, fully re-executable by verify_task.py in this sandbox — unlike FTF-0101/FTF-0102/FTF-0104/FTF-1601, this task has no real external/GPU/DB prerequisite to gate on (no live Membership table or /api/v1 route exists yet; both are disclosed, not hidden, per docs/spec-matrix.yaml's own FTF-0103 notes). Certified on first submission (PR #118) — the underlying implementation commit is unchanged since 9d9e536."
+    },
+    "FTF-0105": {
+      "commit": "e5df228996c32c8d10c2a1a999effcc56d29aac6",
+      "commands": [["python3", "tests/tasks/test_ftf_0105.py"]],
+      "expected_output_contains": "FTF-0105 tenant-isolation query guards: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres connection-pool-reuse/raw-SQL/background-job tenant-isolation evidence is tests/integration/test_tenant_isolation_query_guards.py, run separately in CI (tenant-isolation-query-guards-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-1601/FTF-0101. Certified on first submission (PR #120, merged directly by the repo owner on green CI ~6 minutes after opening, before this independent review ran — merging early did not skip any review step; see docs/certifications/ledger.md's FTF-0105 entry) — the underlying implementation commit is unchanged since e5df228."
     }
   }
 }

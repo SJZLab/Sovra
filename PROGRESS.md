@@ -1,7 +1,123 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (same relay shift, follow-up) — PR #120 was merged
-  directly by the repo owner on green CI, ~6 minutes after opening,
-  before any independent Control-plane review. See below.
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #121) — FTF-0105 independently
+  reviewed and CERTIFIED. See below.
+
+## 2026-09-20 — Control plane: FTF-0105 (PR #120) reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #121 (a docs-only
+follow-up recording that PR #120 had been merged directly by the repo
+owner, still PROVISIONAL — not itself a certification claim, and not a
+new PROVISIONAL item in `docs/certifications/queue.md`).
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-0105, PR #120 (a prior relay shift's own submission). CLAUDE.md
+integrity confirmed first (`sha256sum CLAUDE.md` matches the committed
+`CLAUDE.md.sha256`).
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01NwXm9ZGHeSgqKhHThLrQMg`) against all 3
+commits on PR #120 — all three (`e5df228`, `aa1cc7c`, `5590ae6`) carry
+`Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`. No match —
+independent.
+
+Re-read `apps/api/app/auth/tenant_isolation_query_guards.py` in full on
+the current `main` head (PR #120 was already merged as `14f785c` by the
+time this review ran): `tenant_scoped_session()` fails closed on a
+non-`uuid.UUID` `organization_id` before a session is even created, binds
+context via FTF-0102's own `set_tenant_context()`, and always
+commits-or-rolls-back-and-closes; `execute_tenant_scoped()` reads back the
+session's own live transaction-local context via `require_tenant_context()`
+and refuses to run the caller's statement at all on mismatch/absence;
+`install_tenant_pool_reset_guard()` registers a real SQLAlchemy pool
+`checkin` listener that force-clears the tenant GUID on every connection
+returned to the pool. No independent schema change confirmed by `grep` —
+matches this task's own `database_changes` contract.
+
+CI reconfirmed for real on the actual merged PR head (`5590ae6`, fetched
+directly via the GitHub API rather than trusted from the PR's own
+checklist): all 8 check runs `completed`/`success`, including the new
+`tenant-isolation-query-guards-integration` job this task's own PR added.
+
+Re-ran `uv run python3 tests/tasks/test_ftf_0105.py` clean in a fresh `uv
+sync --all-packages` sandbox (30/30 checks), reproducing CI.
+
+Started a real local PostgreSQL 16 in this sandbox (already installed,
+same no-container-registry-egress finding as
+FTF-0004/FTF-0102/FTF-0104/FTF-R017/FTF-1601/FTF-0101), created the
+`sovra_migrate` role and `sovra_ftf0105` database matching CI's own job
+config exactly, and ran `tests/integration/test_tenant_isolation_query_guards.py`
+against it directly: all checks passed for real, proving (a)
+`tenant_scoped_session` applies context consistently across two
+independent units of work drawn from a `pool_size=1`-forced-reuse engine
+via real DBAPI connection-identity equality; (b) connection-pool reuse
+cannot leak; (c) a naive background-job-style session is still refused by
+`execute_tenant_scoped` on a claimed-tenant mismatch; (d) raw SQL cannot
+leak, shown able to fail (Law 1) twice against the same real pool reuse.
+
+Two own independent fault injections, distinct from the producer's own two
+(uuid.UUID validation removal from `tenant_scoped_session`; no-op'd
+checkin-reset `set_config` call): (1) removed the `uuid.UUID`
+re-encoding/validation from `require_tenant_context` (returned the raw
+`current_setting` value unchecked) — `tests/tasks/test_ftf_0105.py`
+genuinely crashed downstream with a real `TenantContextError` from an
+equality comparison, proving the suite is sensitive to this type-safety
+regression too, reverted byte-identical; (2) changed the pool-checkin
+reset's `set_config(...)` call to clear the wrong GUC key
+(`app.wrong_key` instead of `app.current_organization_id`) — the real
+live-Postgres suite's "no longer leaks WITH the guard installed" check
+genuinely failed (flipped back to "leaked"), proving that check is not
+vacuously true, reverted byte-identical; both suites re-ran clean
+afterward.
+
+Full regression, this sandbox: `git fetch --unshallow` needed once (this
+worktree started shallow — before unshallowing, `scripts/validate_spec.py
+--strict` showed 9 stale-commit findings against unrelated,
+already-certified tasks, the same documented shallow-clone artifact as
+every prior shift; clean after unshallowing). `uv run ruff check .` /
+`uv run ruff format --check .` / `uv run mypy .` clean (73 source files);
+`pnpm install --frozen-lockfile` then `pnpm run lint` / `typecheck` /
+`format:check` clean; `pnpm exec vitest run` 5/5; `uv run pytest
+tests/unit` 3/3; all 17 existing `tests/tasks/test_ftf_*.py` files plus
+`tests/implementation/*.py` (2 files) and
+`tests/security/test_profile_scope.py` re-run clean.
+
+`product_truth_check.py --fail-on-unwired` reports `1/1 product-true`;
+`docs/spec-matrix.yaml` FTF-0105's `proving_symbol` is empty — confirmed
+by direct `grep` across `apps/` that no file outside this task's own
+module and its tests imports `tenant_isolation_query_guards`, so the
+unchanged `1/1` is FTF-0101's own wiring, not an inflated or fabricated
+pass for FTF-0105.
+
+Task contract re-pulled directly: `python3 tools/r1_handoff.py packet
+FTF-0105 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1
+("Repository/query layer consistently applies authenticated
+tenant/workspace and transaction-local context") is MET by the real
+live-Postgres proof above. Acceptance clause 2 (independent review, exact
+merged commit, real relevant integration and negative-test evidence) is
+satisfied by this review itself. The negative_acceptance clause
+("Connection-pool reuse, background job and raw SQL query cannot leak
+previous tenant rows") is MET for all three named vectors. `verify_task.py
+--task FTF-0105 --stage task` reported `BLOCKED — no merged verification
+evidence yet` before this certification, exactly as
+`docs/spec-matrix.yaml`'s own submission notes disclosed it would
+pre-merge; added FTF-0105's entry to `spec/verification-map.json`
+(mirroring FTF-0104's own two-commit pattern) as part of certifying, after
+which it resolves `PASS`.
+
+No blocking defect found. Set `docs/spec-matrix.yaml` FTF-0105 to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`; appended a
+signed entry to `docs/certifications/ledger.md` (session ID, PR #120,
+merge commit `14f785c`, evidence, date); updated `QUEUE.md` (moved
+FTF-0105 from "## Provisional" to "## Done", Certified count 21 → 22,
+Provisional count 1 → 0) and this file. `scripts/status.py` now reports
+`22/300 certified · 1 product-true`. FTF-0106 (which lists FTF-0105 as a
+direct dependency) is now dependency-ready for the next relay shift — not
+claimed here, per this shift's own certification-only scope
+(docs/CONTROL_PLANE_MODES.md's CERTIFY procedure: "no new task work, no
+design decisions, no queue reprioritization beyond what
+certifying/rejecting naturally requires").
 
 ## 2026-09-20 — Relay follow-up: PR #120 merged by owner, FTF-0105 still PROVISIONAL (not certified)
 

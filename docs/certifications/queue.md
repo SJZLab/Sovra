@@ -4647,3 +4647,151 @@ the same code on a now-clean head.
 ## 2026-09-20 — FTF-0105 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/120
   (`claude/wizardly-fermat-daazqp` → `main`).
+
+## 2026-09-20 — FTF-0105 (PR #120) — Control plane review: CERTIFIED
+- **PR:** https://github.com/SJZLab/Sovra/pull/120, already merged
+  (merge commit `14f785c688cd1134dfe110edd73bf71f5df6d708`) directly by
+  the repo owner on green CI before this review ran — triggered for
+  review by PR #121's own `pull_request.opened` webhook (PR #121 is a
+  docs-only follow-up recording the early merge as still PROVISIONAL, not
+  a new submission). This review is what that early merge was waiting on;
+  merging early skipped no review step below.
+- **Session-ID check:** all three commits on PR #120 (`e5df228`,
+  `aa1cc7c`, `5590ae6`) carry a `Claude-Session` trailer for
+  session_01J8DXF7NnsGdpJSPpuN7gCc; this reviewing session's own ID
+  (`session_01NwXm9ZGHeSgqKhHThLrQMg`) matches none of them —
+  independent, not self-certification.
+- **Real diff read directly:** read `apps/api/app/auth/
+  tenant_isolation_query_guards.py` in full on the current `main` head.
+  `tenant_scoped_session()` fails closed (before a session is even
+  created) on a non-`uuid.UUID` `organization_id`, binds context via
+  FTF-0102's own `set_tenant_context()`, always commits-or-rolls-back and
+  closes; `execute_tenant_scoped()` reads back the session's own live
+  transaction-local context via `require_tenant_context()` and refuses to
+  run the caller's statement at all on mismatch/absence;
+  `install_tenant_pool_reset_guard()` registers a real SQLAlchemy pool
+  `checkin` listener force-clearing the tenant GUID on every connection
+  returned to the pool. No independent schema change, confirmed by
+  `grep` — matches this task's own `database_changes` contract ("No
+  independent schema change. Consume frozen contract").
+- **CI checked for real on the actual merged PR head:** fetched all 8
+  check runs directly via the GitHub API for head `5590ae6` (the commit
+  that was actually merged) rather than trusting the PR's own checklist —
+  `gate`, `tenant-isolation-query-guards-integration` (new, added by this
+  PR), and the other 6 pre-existing jobs all `completed`/`success`. A
+  real job set, not 0 jobs or a parse failure.
+- **Own reproduction, no-DB suite:** in this sandbox (`uv sync
+  --all-packages`, fresh), `uv run python3 tests/tasks/test_ftf_0105.py` —
+  30/30 checks passed, reproducing CI.
+- **Own fault injection #1, independent of the producer's own two:**
+  removed the `uuid.UUID` re-encoding/validation from
+  `require_tenant_context` (returned the raw `current_setting` string
+  unchecked). Re-ran `tests/tasks/test_ftf_0105.py` — it genuinely crashed
+  with a real `TenantContextError` raised from a downstream equality
+  comparison in `test_execute_tenant_scoped_runs_the_statement_when_context_matches`
+  (a string no longer compares equal to the `uuid.UUID` it should have
+  been), proving the suite is sensitive to this type-safety regression as
+  well, not only to the specific check the producer's own injection
+  targeted. Restored byte-identical (confirmed via `diff` against a
+  pre-injection copy); re-ran clean.
+- **Own reproduction, live-Postgres suite:** started a real local
+  PostgreSQL 16 in this sandbox (already installed — same
+  no-container-registry-egress finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-R017/FTF-1601/FTF-0101, not
+  re-attempted), created the `sovra_migrate` role and `sovra_ftf0105`
+  database matching CI's own job configuration exactly (same role name,
+  same `POSTGRES_DB`), and ran `SOVRA_DATABASE_URL=...
+  SOVRA_APP_DB_PASSWORD=... uv run python3
+  tests/integration/test_tenant_isolation_query_guards.py` directly
+  against it (the migration owner role, matching FTF-0102/FTF-0104's own
+  environment contract) — all checks passed for real against a genuine
+  Postgres instance (SQLite has no RLS, so a pass there would prove
+  nothing about this task's actual acceptance criterion). Proved for
+  real: (a) `tenant_scoped_session` applies context consistently across
+  two independent units of work drawn from a `pool_size=1`-forced-reuse
+  engine, via real DBAPI connection-identity equality; (b) connection-pool
+  reuse cannot leak (org2's session, reusing org1's exact connection, sees
+  only its own row); (c) a naive background-job-style session bypassing
+  `tenant_scoped_session` is still refused by `execute_tenant_scoped` on a
+  claimed-tenant mismatch, and a fresh session on the same reused
+  connection with no context set sees zero rows; (d) raw SQL cannot leak —
+  shown able to fail (Law 1) twice against the same real pool/connection
+  reuse: a bare session-level `SET` misuse genuinely leaks without
+  `install_tenant_pool_reset_guard` installed, and genuinely does not leak
+  with the identical guard installed on the same pool configuration.
+- **Own fault injection #2, against the live-Postgres suite (a second
+  distinct vector from both the producer's own two and this review's own
+  fault injection #1):** changed the pool-checkin reset's
+  `set_config(...)` call to clear the wrong GUC key (`app.wrong_key`
+  instead of `app.current_organization_id`), leaving the real tenant GUID
+  never actually cleared despite the guard still being "installed".
+  Re-ran the live-Postgres suite — the "no longer leaks WITH the guard
+  installed" check genuinely failed for real (flipped back to "leaked"),
+  proving that check is not vacuously true and that the guard's actual SQL
+  target — not merely its registration — is what the suite exercises.
+  Restored byte-identical (`diff` confirmed no residual change); both
+  suites re-ran clean afterward.
+- **`product_truth_check.py` result confirmed legitimate:**
+  `--fail-on-unwired` reports `1/1 product-true`; direct `grep` across
+  `apps/` confirms no file outside this task's own module and its tests
+  imports `tenant_isolation_query_guards` — the disclosed "no live product
+  caller yet" claim is accurate, so `proving_symbol: ''`/`1/1` (unchanged
+  from FTF-0101's own wiring) is the correct, non-inflated result, not a
+  vacuous pass being misread as a real one.
+- **Full regression, fresh environment:** `git fetch --unshallow` needed
+  once (this worktree started shallow — before unshallowing,
+  `scripts/validate_spec.py --strict` reported 9 `stale_commit` findings
+  against unrelated, already-certified tasks, the same documented
+  shallow-clone artifact as every prior session's own finding; clean
+  after). `uv run ruff check .` / `uv run ruff format --check .` /
+  `uv run mypy .` clean (73 source files); `pnpm install
+  --frozen-lockfile` then `pnpm run lint` / `typecheck` / `format:check`
+  clean; `pnpm exec vitest run` — 5 passed (3 files); `uv run pytest
+  tests/unit` — 3 passed; all 17 existing `tests/tasks/test_ftf_*.py`
+  files plus `tests/implementation/*.py` (2 files) and
+  `tests/security/test_profile_scope.py` re-run clean and unmodified.
+  `scripts/status.py` (pre-certification baseline) — `21/300 certified ·
+  1 product-true`, matching QUEUE.md.
+- **Task contract re-pulled via `tools/r1_handoff.py packet FTF-0105
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`:** acceptance clause 1
+  ("Repository/query layer consistently applies authenticated
+  tenant/workspace and transaction-local context") is MET by the real
+  live-Postgres proof above; acceptance clause 2 ("Independent review,
+  exact merged commit, real relevant integration and negative-test
+  evidence recorded") is satisfied by this review itself; the
+  negative_acceptance clause ("Connection-pool reuse, background job and
+  raw SQL query cannot leak previous tenant rows") is MET for all three
+  named vectors. `database_changes` ("No independent schema change.
+  Consume frozen contract") is honored, confirmed above. `verify_task.py
+  --task FTF-0105 --stage task` reported `BLOCKED — no merged
+  verification evidence yet` before this certification, exactly as
+  disclosed pre-merge; its `spec/verification-map.json` entry is added by
+  this review (mirroring FTF-0104's own two-commit pattern:
+  `commit: e5df228996c32c8d10c2a1a999effcc56d29aac6`, `commands:
+  [["python3", "tests/tasks/test_ftf_0105.py"]]`), after which
+  `verify_task.py` resolves `PASS`.
+- **Doc updates:** `docs/spec-matrix.yaml` FTF-0105 set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+  (`evidence_hash` unchanged at the implementation commit
+  `e5df228996c32c8d10c2a1a999effcc56d29aac6`, same convention as
+  FTF-0102/FTF-0103/FTF-0104). `spec/verification-map.json` FTF-0105 entry
+  added. `docs/certifications/ledger.md` FTF-0105 entry appended (session
+  ID, PR, merge commit, evidence, date). `QUEUE.md` FTF-0105 moved from
+  "## Provisional" to "## Done" (Certified 21 → 22, Provisional 1 → 0) and
+  `PROGRESS.md` updated to match.
+- **Not carried forward from this review (out of scope, disclosed by the
+  producer rather than found here):** the pre-existing YAML-comment
+  truncation defect in several already-certified tasks' `notes` fields
+  (flagged in FTF-0105's own `docs/spec-matrix.yaml` notes) is unrelated
+  to this task's own acceptance/negative_acceptance contract and is left
+  for Control plane / a separately claimed follow-up, per the producer's
+  own disclosure — not silently fixed as part of this certification's own
+  write set.
+- **Conclusion:** the delivered tenant-isolation query-layer guard is
+  real, independently reproduced against a genuine local PostgreSQL 16
+  instance (not a mock or SQLite stand-in), genuinely fault-injectable via
+  two independent, this-session-chosen breaks distinct from the
+  producer's own two, and CI is green on the real final merged head (8/8
+  real jobs). Both acceptance clauses and the negative_acceptance clause
+  are met per the task's real contract. No blocking defect.
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
