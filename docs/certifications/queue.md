@@ -6041,8 +6041,9 @@ the same code on a now-clean head.
   see session-ID check above), 2026-09-20.
 
 ## 2026-09-20 — FTF-0402 — Project security profile
-- **PR:** opened this shift (`claude/wizardly-fermat-dj7v5w` → `main`,
-  title `[relay] FTF-0402: Project security profile`).
+- **PR:** https://github.com/SJZLab/Sovra/pull/141
+  (`claude/wizardly-fermat-dj7v5w` → `main`, title
+  `[relay] FTF-0402: Project security profile`).
 - **Commit:** 99a63b0b7413c75d36707ef928a2de2b3a33a01d (implementation);
   `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
   second, tracking-doc-only commit on the same branch, matching the

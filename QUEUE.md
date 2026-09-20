@@ -469,9 +469,9 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-0402 (Project security profile) — submitted PROVISIONAL this shift.
-PR opened (see this shift's own entry at the top of this file and the
-full submission report in `docs/certifications/queue.md`). Not
-self-certified (Law 4) — awaiting an independent Control-plane L2 review.
+PR: https://github.com/SJZLab/Sovra/pull/141. Not self-certified (Law 4)
+— awaiting an independent Control-plane L2 review. Full submission
+report: `docs/certifications/queue.md`.
 
 Prior item: FTF-0401 (Project schema/API/UI) was independently
 reviewed and CERTIFIED a prior shift via PR #139 (merge commit `59e14e7`) —
