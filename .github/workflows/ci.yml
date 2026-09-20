@@ -144,6 +144,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0301.py
       - name: FTF-0401 negative-test proof (Project schema/API/UI catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0401.py
+      - name: FTF-0402 negative-test proof (Project security profile catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0402.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -497,6 +499,52 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real Project schema/API evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0401_project_schema_api.py
+
+  project-security-profile-integration:
+    # FTF-0402: real Postgres Project security profile inheritance
+    # evidence -- two real organizations seeded with two different real
+    # `default_security_profile` values ("standard" and "air_gapped"), a
+    # real uvicorn server proving `build_project_router` (FTF-0401)
+    # genuinely refuses to create or edit a project whose security_profile
+    # is less restrictive than its own organization's real inherited
+    # floor -- both when the client omits the field entirely (defaulting
+    # to "standard") and when it explicitly names a laxer profile --
+    # matching exactly and exceeding the floor both succeed, an
+    # unrecognized profile name is refused, and a project MAY choose a
+    # profile stricter than its own organization's floor. Running through
+    # the restricted sovra_app role, never the migration owner --
+    # tests/integration/test_ftf_0402_project_security_profile.py. Same
+    # real `services: postgres` container pattern as
+    # project-schema-api-integration (this repo's interactive dev sandbox
+    # has no container-registry egress; this evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0402
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0402"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0402
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real Project security profile inheritance evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0402_project_security_profile.py
 
   postgres-backup-integration:
     # FTF-1601: real pg_dump/openssl/pg_restore encrypted-backup-and-
