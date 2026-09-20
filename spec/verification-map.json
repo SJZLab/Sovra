@@ -402,6 +402,20 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401/FTF-0402 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres revoke-license/mark-ready-refused-again/IDOR/idempotency/archived-refusal evidence is tests/integration/test_ftf_0305_license_acceptance_workflow.py, run separately in CI (license-acceptance-workflow-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as every prior integration-tested task above. Certified on first submission (PR #144) -- independent Control-plane review reproduced the no-DB suite directly in this sandbox, reconfirmed all 15 CI checks green on the real final head (ea50eac), and ran its own fault injection (the ready->registered demotion removed from apply_revoke_license), caught for real by the exact two named negative_acceptance checks, reverted byte-identical. evidence_hash/commit here point at the implementation commit (66aff8b) unchanged from PR #144's own head (ea50eac only added a tracking-doc commit recording the PR link on top)."
+    },
+    "FTF-0404": {
+      "commit": "b5d4cb7b3bfa2ddfe4356de87c2cded01eb569ec",
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0404.py"
+        ]
+      ],
+      "expected_output_contains": "FTF-0404 Tool schema CRUD tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/duplicate-name-rejected/edit/historical-row-untouched/re-edit-refused/cross-project-IDOR/cross-organization-IDOR/DELETE-refused evidence is tests/integration/test_ftf_0404_tool_schema_crud.py, run separately in CI (tool-schema-crud-integration job). Certified on first submission (PR #146) — independent Control-plane review reproduced both the no-DB suite (run directly via `python3 tests/tasks/test_ftf_0404.py`, matching the exact invocation CI itself uses — not via pytest, which does not execute this file's own check()/FAILURES/exit-code mechanism) and the live-Postgres suite directly in this sandbox against a freshly created local PostgreSQL 16 database/role, reconfirmed all 16 CI checks green on the real final head (caec978f), and ran its own two fault injections: (1) replacing apply_new_version's own superseded_at guard with `if False:`, caught for real by the no-DB suite's named negative_acceptance check; (2) mutating the historical row's own input_schema_json inside apply_new_version after marking it superseded, caught for real by both the no-DB suite and the live-Postgres suite's own named negative_acceptance checks. Both reverted byte-identical (confirmed via `git diff --stat` showing no changes) and both suites re-run clean afterward. No regression confirmed in FTF-0401's/FTF-0402's own no-DB and live-Postgres suites, re-run against a freshly recreated database/role. product_truth_check.py --fail-on-unwired reconfirmed 7/7; scripts/status.py reconfirmed 29/300 certified, 6 product-true before this certification. Minor evidence-accuracy note (not blocking): the PR's own queue.md entry claims '22 no-DB test functions' and '20 real live-Postgres checks' — this review counted 19 test_* functions in tests/tasks/test_ftf_0404.py and 24 check() call sites in tests/integration/test_ftf_0404_tool_schema_crud.py. The substance of every claimed behavior and both named fault injections was independently verified as real; only the raw counts in the write-up are off."
     }
   }
 }

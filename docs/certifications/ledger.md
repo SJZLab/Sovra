@@ -3564,3 +3564,174 @@ corrected 2026-09-15.
   already documented) — not a defect in the evidence, a disclosed
   reproduction-environment constraint. No blocking defect. Certified
   L2-CERTIFIED.
+
+## FTF-0404 — Tool schema CRUD
+- Criterion ID: FTF-0404
+- PR: https://github.com/SJZLab/Sovra/pull/146 (`claude/wizardly-fermat-vkr3sq` → `main`)
+- Merge commit: d06199626628c5f9770b756ff7aa202fea02110f
+- Implementation commit: b5d4cb7b3bfa2ddfe4356de87c2cded01eb569ec
+- Validated-by: session https://claude.ai/code/session_01NRVmAUpr7iauXiySAFGGXh
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #146)
+- Date: 2026-09-20
+- **Session-ID check:** all 3 commits on PR #146 (`b5d4cb7`, `6d698c0`,
+  `caec978`) carry `Claude-Session: .../session_01Erh4hdf73yUo4Q36YKTshz`;
+  this reviewing session's own ID is
+  `session_01NRVmAUpr7iauXiySAFGGXh` — no match, independent per Law 4.
+- **Diff read directly** against the real PR head `caec978f` (16 files,
+  +4551/-31): confirmed `apps/api/app/tools/tool_definition_schema.py` is
+  a new SQLAlchemy model + validators for a project-scoped
+  `ToolDefinition` (Section 6.9), with a real, closed
+  `side_effect_class` CHECK constraint and bounded-size validators for
+  `name`/`description`/`input_schema_json`/`output_schema_json`.
+  Confirmed `apps/api/app/tools/tool_definition_crud.py`'s
+  `apply_new_version` — read line-by-line — is the one pure, DB-free core
+  that ever produces a new version, and never mutates the row it
+  replaces except `superseded_at`/`updated_at`, matching this task's own
+  negative_acceptance exactly. Confirmed
+  `apps/api/app/tools/tool_definition_routes.py` is a new, real FastAPI
+  router (create/get/list/edit) under
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/tools`,
+  with `TOOL_READ_ROLES`/`TOOL_WRITE_ROLES` matching FTF-0401's own
+  Section 45 role-gating precedent, and confirmed wired into
+  `apps/api/app/main.py`'s `create_app` — a real, live caller. Confirmed
+  `apps/api/alembic/versions/0006_tool_definitions.py` is a real forward
+  migration: FORCE ROW LEVEL SECURITY scoped to the same tenant context
+  every prior migration in this chain established; a real composite
+  `(organization_id, project_id)` → `projects(organization_id, id)`
+  foreign key, backed by a purely additive `UNIQUE(organization_id, id)`
+  constraint on the already-CERTIFIED `projects` table (trivially always
+  true, since `id` is already a globally-unique primary key, so this
+  cannot invalidate FTF-0401's own certified evidence); a real partial
+  unique index (`(project_id, name) WHERE superseded_at IS NULL`)
+  enforcing "one current version per tool name per project" at the
+  database level; `sovra_app` granted `SELECT, INSERT, UPDATE` only, no
+  `DELETE`. Confirmed `packages/contracts/{openapi,jsonschema}/04-*` are
+  extended in place under the existing `contracts:04` lock (owned by
+  FTF-0401), not forked into a new file.
+- **CI reconfirmed on the real final head:** `pull_request_read
+  get_check_runs` on PR #146 returned 16/16 `completed`/`success`,
+  including `gate` and the new `tool-schema-crud-integration` job,
+  against head `caec978f`, confirmed via `pull_request_read get` to be
+  the PR's actual current head (`mergeable_state: clean`) — not a stale
+  snapshot.
+- **Own reproduction, this sandbox:** started the local PostgreSQL 16
+  cluster; ran `uv sync --all-packages` and `pnpm install` (this sandbox
+  starts with neither the Python workspace deps nor `node_modules`
+  present — an environment gap in this review's own container, not a
+  defect in the PR). `uv run ruff check .`/`ruff format --check .`/
+  `mypy .` clean (118 source files). `pnpm run lint`/`typecheck`/
+  `format:check` clean; `pnpm exec vitest run` 14/14; `uv run pytest
+  tests/unit` 3/3.
+
+  First ran `tests/tasks/test_ftf_0404.py` under `pytest` directly, which
+  reported "19 passed" — including after a fault was deliberately
+  injected (see below). Traced this to the file's own `check()` helper
+  only appending to a module-level `FAILURES` list and never raising, so
+  pytest's default collection marks every `test_*` function passed
+  regardless of the underlying condition; the file's own real gate is
+  its `main()` (`if FAILURES: sys.exit(1)`), invoked only when run
+  directly. Re-ran via `uv run python3 tests/tasks/test_ftf_0404.py` —
+  the exact invocation `.github/workflows/ci.yml` actually uses for
+  every `tests/tasks/test_ftf_*.py` file — "all checks passed",
+  consistent with CI. Re-ran all 26 `tests/tasks/test_ftf_*.py` files
+  this same way — all clean (three that failed on a first pass,
+  FTF-0002/FTF-0003/FTF-H001, did so only for lack of `node_modules`;
+  clean after `pnpm install`, confirming an environment gap, not a
+  regression).
+
+  Set up a real local Postgres role/database matching CI's own
+  `services: postgres` container (`sovra_migrate` superuser role,
+  `sovra_ftf0404` database; `sovra_app` created by the migration itself
+  — dropped and recreated between runs, since roles are cluster-wide and
+  survive a `DROP DATABASE`). Ran
+  `tests/integration/test_ftf_0404_tool_schema_crud.py` directly against
+  it (migration run for real) — "all checks passed". Re-ran
+  `tests/integration/test_ftf_0401_project_schema_api.py` and
+  `tests/integration/test_ftf_0402_project_security_profile.py` against
+  freshly recreated databases/roles — both still "all checks passed", no
+  regression.
+- **Own fault injections** (Law 1, two, distinct vectors): (1) in
+  `tool_definition_crud.py`'s `apply_new_version`, replaced `if
+  current.superseded_at is not None:` with `if False:` — the no-DB
+  suite's own "editing an already-superseded row is refused" check
+  failed for real (`FAIL [FTF-0404] negative_acceptance: editing an
+  already-superseded (historical) version is refused...`), exit 1.
+  Reverted (`git diff --stat` clean); suite re-ran clean. (2) added
+  `current.input_schema_json = new_input_schema` immediately after
+  marking `current` superseded — caught for real by both suites: the
+  no-DB suite's own "the historical row's own input_schema_json is
+  untouched" check failed, and the live-Postgres suite's own "fetching
+  the historical version 1 by its own ID still returns its exact
+  original, byte-identical content" check failed. Reverted; both suites
+  re-ran clean.
+- **No regression:** re-ran FTF-0401's own no-DB and live-Postgres
+  suites and FTF-0402's own live-Postgres suite (see above) — all still
+  "all checks passed".
+- **Full regression, this sandbox:** `uv run ruff check .`/`ruff format
+  --check .`/`mypy .` clean; `pnpm run lint`/`typecheck`/`format:check`
+  clean; `pnpm exec vitest run` 14/14; `uv run pytest tests/unit` 3/3;
+  all 26 `tests/tasks/test_ftf_*.py` files clean; `python3
+  scripts/validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` reconfirmed `7/7`.
+- **Non-inflation check (Law 2):** before this certification,
+  `scripts/status.py` reported `29/300 certified · 6 product-true`,
+  matching the PR's own PROVISIONAL claim exactly. After certifying,
+  `30/300 certified · 7 product-true` — a one-item, non-inflated
+  increment.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0404 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  clause 1 ("Create immutable-version tool schemas with side-effect
+  policy, evidence and project ownership") confirmed met by direct
+  reading of `apply_new_version`/`ToolDefinition` and this review's own
+  fault injections above. Acceptance clause 2 (independent review) is
+  this entry. negative_acceptance ("Editing used tool schema creates new
+  version and drift, never changes historical manifest in place")
+  confirmed met at both the pure-function level and over real HTTP
+  round-trips against a real Postgres database. `database_changes: "Own
+  forward Alembic migration..."` confirmed — a real forward migration
+  exists. The dependency (FTF-0401) confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on it. The disclosed scope
+  narrowing (no delete/archive; no Agent Manifest `tool_contracts_json`
+  consumer yet; schemas validated as bounded JSON objects, not as
+  conforming JSON Schema meta-schema documents) matches the same
+  disclosed-gap class FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0201/
+  FTF-0301 already established, not a hidden shortcut.
+- **Flagged, not blocking (Law 1/Law 2 evidence-accuracy note):** the
+  PR's own `docs/certifications/queue.md` entry claims "22 no-DB test
+  functions" and "20 real live-Postgres checks". Direct counts in this
+  review: 19 `test_*` functions in `tests/tasks/test_ftf_0404.py`; 24
+  `check(` call sites (excluding the helper's own definition) in
+  `tests/integration/test_ftf_0404_tool_schema_crud.py`. Neither
+  discrepancy changes what was actually tested or what actually passed
+  — every claimed behavior and both named fault injections above were
+  independently reproduced as real — but the counts themselves, as
+  written, are inaccurate.
+- **Action taken:** merged PR #146 (merge commit
+  `d06199626628c5f9770b756ff7aa202fea02110f`). Set
+  `docs/spec-matrix.yaml` FTF-0404 to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED` (`evidence_hash` set to the merge commit,
+  matching the FTF-0402/FTF-0305 convention). Added FTF-0404's own entry
+  to `spec/verification-map.json` (`commit` kept at the implementation
+  commit `b5d4cb7`, matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402/
+  FTF-0305 precedent). Ran `sync_certified_status()` — diff limited to
+  exactly FTF-0404's own `status`/`evidence` fields in `spec/tasks.json`
+  and `docs/implementation/TRACKER.json`. `QUEUE.md` updated (Certified
+  29 → 30, Product-true 6 → 7, Provisional 1 → 0). `PROGRESS.md` updated
+  with the full review narrative. This certification's own doc updates
+  are pushed on a branch and opened as a PR against `main`, not pushed
+  directly, per `BRANCH_PROTECTION` in `CLAUDE.md`.
+- **Conclusion:** the delivered Tool schema CRUD surface is real,
+  live-wired end to end (`build_tool_definition_router` → `main.py`),
+  independently confirmed via this session's own reproduction of both
+  suites and two fault injections (both caught for real, matching the
+  exact negative_acceptance cases the PR claims, both reverted
+  byte-identical), CI green on the real final merged head (16/16,
+  including the new `tool-schema-crud-integration` job against a real
+  Postgres service), and `product_truth_check.py` legitimately reporting
+  `7/7` with a genuine live caller, not 0/0. The disclosed scope
+  narrowing matches established, already-certified repository
+  precedent, not a new gap. The one flagged issue (the evidence-count
+  discrepancy above) is a documentation-accuracy nit, not a correctness
+  or security defect, and does not block certification. No blocking
+  defect. Certified L2-CERTIFIED.
