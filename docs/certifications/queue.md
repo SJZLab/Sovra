@@ -5175,3 +5175,202 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01YYH2AJhFMjzPnDbKw3C44c (independent —
   see session-ID check above), 2026-09-20.
+
+## 2026-09-20 — FTF-0201 (LiteLLM connection CRUD) — Relay: real organization-scoped gateway connection CRUD submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-0201, LiteLLM connection CRUD. Dependencies FTF-0103
+  (RBAC middleware), FTF-0104 (audit event writer) and FTF-0005
+  (configuration system) are all CERTIFIED; DoD pulled fresh via
+  `python tools/r1_handoff.py packet FTF-0201 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from the task title
+  alone.
+- **Scope decision checked before writing any code (disclosed, not
+  hidden — matching the FTF-0105/FTF-H003/FTF-0106 precedent of an
+  explicit scope narrowing):** the task packet's own `api_contract`
+  field names a broad surface ("/api/v1/connections/litellm;
+  validate/sync-models/syncs; /models and /models/{id}/probe"), but its
+  own `acceptance`/`files` fields scope only to freezing the shared
+  interface and "Create/edit/revoke an organization-scoped gateway
+  connection with secret refs and explicit TLS/URL policy" — a single
+  CRUD module. Confirmed in `docs/TASK_INDEX.md` that FTF-0203
+  ("Connection validation"), FTF-0204 ("`/v1/models` discovery") and
+  FTF-0210 ("Real chat probe") are later, separately dependency-gated
+  tasks that own the actual-gateway-calling surface. Implemented and
+  wired ONLY create/get/list/edit/revoke as real, live FastAPI routes;
+  declared no `validate`/`sync-models`/`syncs`/`/models`/`/models/{id}/probe`
+  route at all, not even a stub or a `501` — the task's own binding text
+  ("no placeholder endpoints") and Law 11 forbid declaring interface
+  surface with no real backing handler.
+- **Path refinement (disclosed):** the task packet's own abbreviated
+  `api_contract` names no `{organization_id}` path segment, but
+  FTF-0103's own `require_role` requires one (`organization_id_from_path()`)
+  and Section 77.6 describes the analogous admin-only resource's route
+  literally as `/organizations/{id}/component-bindings`. Routes are
+  `/api/v1/organizations/{organization_id}/connections/litellm[/{connection_id}]`,
+  matching that established shape and FTF-0106's own demo-route
+  precedent (`/api/v1/orgs/{organization_id}/workspaces/{workspace_id}`).
+- **Files path refinement (disclosed):** the task packet's own suggested
+  `files` path is `packages/litellm-client/litellm_connection_crud.py`.
+  This repository has no Python `packages/` workspace member —
+  `packages/shared` is a TS/pnpm-workspace package, and the Python `uv`
+  workspace lists only `apps/api` and the four `workers/*` members.
+  Every prior certified live-app-bound domain/CRUD module (FTF-0102/
+  0103/0104/0105/H003/0106) lives under `apps/api/app/`, and this task's
+  module needs the identical FastAPI/SQLAlchemy/`TenantContext`
+  composition those do. Placed the real implementation at
+  `apps/api/app/litellm/{connection_schema,connection_crud,connection_routes}.py`
+  instead of inventing a new, unprecedented Python package root and
+  workspace-member wiring for one CRUD module.
+- **Role gating (Section 45 applied literally):** every route, including
+  reads, is `organization_admin`-only. Section 45's own role table names
+  exactly one role for connections — "organization_admin: connections,
+  security profiles, cost profiles" — unlike FTF-0106's own
+  read/write/approve three-tier split, which had no single Section 45
+  sentence to draw a line from. Section 77.6 independently describes the
+  analogous `component-bindings` route as "Admin-only create/read/
+  versioned update", confirming reads are not opened to a wider tier
+  here.
+- **`apps/api/app/litellm/connection_schema.py`:** the `litellm_connections`
+  table (name/base_url/secret_ref/status/timestamps), with `validate_base_url`
+  enforcing Section 3.1/65.4 literally — https:// only, no userinfo, no
+  fragment, no `tls_verify=false`, no duplicate `/v1/v1` path segment —
+  and `validate_secret_ref` accepting only a `vault://`/`openbao://`/
+  `secret://` reference shape, independently rejecting a raw
+  bearer-token/JWT-shaped value by pattern as well as by the scheme
+  requirement. `apps/api/alembic/versions/0003_litellm_connections.py`
+  FORCEs row-level security scoped to the same `app.current_organization_id`
+  tenant context FTF-0102/FTF-0104 established, and grants the
+  restricted `sovra_app` role SELECT/INSERT/UPDATE only — never DELETE,
+  since revoke is a soft `status='revoked'` transition, confirmed
+  directly in the integration suite by a raw DELETE attempt against the
+  restricted role genuinely failing.
+- **`apps/api/app/litellm/connection_crud.py`:** create/get/list/edit/
+  revoke composed entirely from already-certified primitives —
+  `TenantContext`/`tenant_scoped_session_for` (FTF-H003) open the unit of
+  work, `authorize_resource_ownership` (FTF-H003) denies a foreign-tenant
+  or missing connection ID identically before any row is read/mutated
+  (this task's own negative_acceptance), `execute_tenant_scoped`
+  (FTF-0105) is what every actual SELECT runs through. Every mutation
+  writes an audit event via FTF-0104's `write_audit_event` in the same
+  transaction. `apply_edits`/`apply_revoke` are pure, DB-free cores split
+  out specifically so this task's own "status transitions, revoke
+  idempotency" acceptance is provable without a database.
+- **`apps/api/app/litellm/connection_routes.py`:** `build_litellm_connection_router`
+  wires this up as real FastAPI routes, included into `apps/api/app/main.py`'s
+  `create_app()` — the SECOND live-wired product-runtime path in this
+  repository, after FTF-0101's `/auth/*`. The response serializer never
+  includes `secret_ref` (this task's own negative_acceptance: "secret
+  echo fails"). `main.py` now also builds a real SQLAlchemy engine from
+  FTF-0005's own `Settings.database_url` and installs FTF-0105's
+  `install_tenant_pool_reset_guard` on it (disclosed: trusts
+  `SOVRA_DATABASE_URL` to already be a real `sovra_app`-role connection
+  string in a real deployment, the same migration-owner/app-role
+  operational split every integration test in this repository already
+  assumes).
+- **`packages/contracts/openapi/02-interface.yaml` +
+  `packages/contracts/jsonschema/02-domain.schema.json`:** the
+  `contracts:02` lock, modeled on `01-interface.yaml`/`01-domain.schema.json`'s
+  own format. Declares exactly the CRUD paths implemented, nothing else.
+  `LiteLLMConnection` (the read-facing schema) has no `secret_ref`
+  property at all, with `additionalProperties: false`, so a leaked
+  `secret_ref` would itself be a contract violation, not merely an
+  undocumented extra field.
+- **`tests/tasks/test_ftf_0201.py`:** 48 no-DB checks — `validate_base_url`/
+  `validate_secret_ref`'s exact named rejection cases (non-https scheme,
+  userinfo, fragment, `tls_verify=false`, duplicate `/v1/v1`, oversize, a
+  raw bearer-token/JWT-shaped "secret_ref"); `LiteLLMConnection.__init__`
+  itself refusing bad input before any session/database is touched;
+  `apply_edits`/`apply_revoke`'s pure status-transition/idempotency
+  rules; `_serialize` never including `secret_ref`; a real,
+  locally-hosted `build_litellm_connection_router` (real uvicorn server,
+  real local socket, same pattern `test_ftf_0101.py`/`test_ftf_0103.py`/
+  `test_ftf_0106.py` established) denying unauthenticated/non-admin
+  requests before `session_factory` is ever called, with a structural
+  check (via the real parsed AST, not a docstring-fooled text search)
+  that the route/CRUD layers genuinely delegate to the real, imported
+  `require_role`/`authorize_resource_ownership`/`execute_tenant_scoped`
+  rather than a hand-rolled duplicate check.
+- **`tests/integration/test_ftf_0201_litellm_connection_crud.py`:** 28
+  real live-Postgres checks against a directly installed PostgreSQL 16
+  cluster (this sandbox has no container-registry egress, same finding
+  as FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106 already
+  documented). Two real organizations; create/get/list/edit/revoke for
+  the owning organization; a rejected (non-https) `base_url` and a raw
+  (non-reference-shaped) `secret_ref` both genuinely fail at creation
+  and on edit (400); the core IDOR case — a real connection ID belonging
+  to org1, requested/mutated under org2's own path by a real org2
+  `organization_admin` — denied identically to missing (404) for
+  GET/PATCH/DELETE alike, with the connection independently confirmed
+  genuinely untouched afterward (this task's own negative_acceptance:
+  "cannot mutate another organization gateway"); revoke idempotency (a
+  second DELETE: same 200, same `revoked_at`, no error); editing a
+  revoked connection refused (409); a session with no tenant context
+  ever bound refused via `TenantContextError`; the restricted `sovra_app`
+  role confirmed by connection username (never the migration-owner
+  role) and confirmed structurally unable to issue a raw DELETE against
+  `litellm_connections` directly (grant-surface proof, not merely a
+  router-code choice).
+- **Own fault injections (two, distinct vectors, both reverted and
+  re-verified byte-identical via `git diff --stat` against the clean
+  tree, both suites re-run clean afterward):**
+  1. Widened `CONNECTION_ADMIN_ROLES` to include `Role.VIEWER` — a real
+     privilege-escalation bug. Caught for real by both suites: 5 checks
+     failed in `tests/tasks/test_ftf_0201.py` (the role-set check itself,
+     the viewer-denied-403 checks, and the never-opens-a-session checks
+     that depend on the denial actually happening), and 1 check failed
+     in the live-Postgres suite (the viewer-denied-403 check — the
+     no-DB suite's independently-hardcoded role-set assertion is what
+     catches most of the blast radius here, the same disclosed coverage
+     split FTF-0106 already documented for an analogous constant).
+  2. Added `secret_ref` back into `_serialize`'s response body — a real
+     secret-leak bug. Caught for real by both suites: 1 check failed in
+     `tests/tasks/test_ftf_0201.py` (the direct in-memory serializer
+     check), and 3 checks failed in the live-Postgres suite (the
+     create/list/edit response-body checks, since this fault is visible
+     over real HTTP too, unlike fault #1's role-set-import blast-radius
+     nuance).
+- **Full regression, this sandbox** (`uv sync --all-packages`, `pnpm
+  install --frozen-lockfile`, local PostgreSQL 16 already running):
+  `ruff check .` / `ruff format --check .` / `mypy .` clean; `pnpm run
+  lint` / `typecheck` / `format:check` clean; `pnpm exec vitest run` —
+  5/5; `uv run pytest tests/unit` — 3/3; all existing `tests/tasks/
+  test_ftf_*.py` files (including FTF-0106's own) re-run clean and
+  unmodified in behavior; `python3 scripts/validate_spec.py --strict`
+  clean (one pre-existing `stale_commit` artifact traced to this
+  session's own shallow clone, cleared by `git fetch --unshallow`, the
+  same artifact FTF-0106's own certifying session already documented);
+  `product_truth_check.py --fail-on-unwired` now reports `2/2`
+  product-true — `build_oidc_login_router` (FTF-0101) plus
+  `build_litellm_connection_router` (FTF-0201, this task's own real,
+  non-empty `proving_symbol`, confirmed genuinely imported and called
+  unconditionally from `apps/api/app/main.py`'s `create_app()`).
+  `verify_task.py --task FTF-0201 --stage task` reports `BLOCKED — no
+  merged verification evidence yet`, expected pre-merge (its
+  `spec/verification-map.json` entry is added by Control plane at
+  certification time, per established convention — not touched by this
+  submission, matching FTF-0105/FTF-H003/FTF-0106's own PROVISIONAL-stage
+  diffs, which likewise left `spec/tasks.json`/`spec/verification-map.json`/
+  `docs/implementation/TRACKER.json` untouched until their own later
+  certification commits).
+- **Disclosed, not hidden:** (1) secret handling — unlike FTF-0101, this
+  task never resolves `secret_ref` to a real value at all; it only
+  stores/validates the reference shape, since this task never calls the
+  actual LiteLLM gateway (resolving `secret_ref` to bytes is FTF-0202's
+  job, and calling the gateway with it is FTF-0203's). (2) no
+  request-fingerprint idempotency-key mechanics are implemented for
+  `POST create` (Section 84.3's general "every card inherits" contract
+  names this, but this task's own specific acceptance/negative_acceptance
+  clauses do not) — a repeated POST creates a genuinely new row unless
+  the `(organization_id, name)` unique constraint collides; no
+  outbox/idempotency-key infrastructure exists anywhere in this
+  repository yet. (3) `principal_resolver`/`role_lookup` stay at their
+  fail-closed defaults, same disclosed "no live Membership table /
+  session-reader wired in yet" gap FTF-0103/FTF-0106 already carry.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID
+  check against this submission's own commits; CI has not yet been
+  confirmed green on the real PR head by an independent session; no
+  independent fault injection beyond the two performed above.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.

@@ -5,7 +5,10 @@ service -- every prior CERTIFIED task deliberately disclosed "no live
 FastAPI app exists yet" as the reason its own module had no live caller
 (FTF-0005, FTF-0006, FTF-0102, FTF-0104). This module is that caller: it
 builds and serves the real `/auth/*` router from
-`app.auth.oidc_login.build_oidc_login_router`.
+`app.auth.oidc_login.build_oidc_login_router`, and (FTF-0201) the real
+`/api/v1/organizations/{organization_id}/connections/litellm` router from
+`app.litellm.connection_routes.build_litellm_connection_router` -- the
+second live-wired product-runtime path in this repository.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -17,6 +20,25 @@ rather than from the `*_secret_ref` values themselves. This is a real,
 tracked gap for whichever task first wires an actual secret-manager
 resolver -- not a production mock of the OIDC/session logic itself, which
 is fully real from this point on.
+
+FTF-0201's own connection router never needs that same secret-resolution
+step at all (see `app/litellm/connection_schema.py`'s own module
+docstring): it only stores/validates a connection's `secret_ref` shape,
+never resolves it to a value, since this task never calls the gateway.
+What it does need is a real database engine: `SOVRA_DATABASE_URL` (FTF-0005's
+own `Settings.from_env()`) is trusted here to already be a real connection
+string for the restricted `sovra_app` role in a real deployment -- the
+same migration-owner/app-role operational split every integration test in
+this repository already assumes (see e.g.
+`tests/integration/test_ftf_0106_rbac_idor_security.py`'s own
+`_app_role_url` helper); migrations run as a separate, more-privileged
+process/step, never through this running app. `install_tenant_pool_reset_guard`
+(FTF-0105) is installed on that engine as the same connection-pool-reuse
+defense-in-depth every tenant-scoped table in this repository already
+relies on. `principal_resolver`/`role_lookup` stay at their fail-closed
+defaults -- no live session-reader backed by `oidc_login.read_session_cookie`
+or DB-backed Membership lookup is wired in yet, the same disclosed gap
+FTF-0103/FTF-0106 already carry.
 """
 
 from __future__ import annotations
@@ -24,24 +46,35 @@ from __future__ import annotations
 import os
 
 from fastapi import FastAPI
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.auth.oidc_login import build_oidc_login_router
 from app.auth.oidc_settings import OidcSettings
+from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_guard
+from app.config.configuration_system import Settings
+from app.litellm.connection_routes import build_litellm_connection_router
 
 
 def create_app() -> FastAPI:
     production = os.environ.get("SOVRA_ENVIRONMENT") == "production"
     settings = OidcSettings.from_env(production=production)
+    app_settings = Settings.from_env()
 
     # See module docstring: resolving `*_secret_ref` to a real value is a
     # disclosed, tracked gap -- no secret-manager integration exists yet.
     client_secret = os.environ["SOVRA_OIDC_CLIENT_SECRET_VALUE"]
     signing_key = os.environ["SOVRA_SESSION_SIGNING_KEY_VALUE"].encode("utf-8")
 
+    engine = create_engine(app_settings.database_url)
+    install_tenant_pool_reset_guard(engine)
+    session_factory = sessionmaker(bind=engine)
+
     app = FastAPI(title="Sovra Factory API")
     app.include_router(
         build_oidc_login_router(settings, client_secret=client_secret, signing_key=signing_key)
     )
+    app.include_router(build_litellm_connection_router(session_factory))
     return app
 
 

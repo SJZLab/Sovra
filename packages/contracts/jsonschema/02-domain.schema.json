@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-02/domain.schema.json",
+  "title": "Sovra Phase 02 Domain Schemas (FTF-0201 — LiteLLM connection CRUD)",
+  "description": "Frozen shared domain schemas for the organization-scoped LiteLLM gateway connection resource (Section 2-3/38/65/77/81). Field constraints (patterns, lengths, enums) are copied verbatim from the single real enforcing source, apps/api/app/litellm/connection_schema.py, and tested against it directly in tests/tasks/test_ftf_0201.py so this file cannot silently drift from the code that actually validates these shapes. LiteLLMConnection (the read-facing/domain-record shape) deliberately has no secret_ref property — this task's own negative_acceptance ('secret echo fails') — while LiteLLMConnectionCreateRequest/LiteLLMConnectionUpdateRequest (write-facing request shapes) do carry it, since the caller must supply it to create/edit a connection; it is simply never echoed back.",
+  "$defs": {
+    "ConnectionStatus": {
+      "type": "string",
+      "enum": ["active", "revoked"]
+    },
+    "SecretRef": {
+      "type": "string",
+      "description": "A secret-manager reference only (vault://, openbao:// or secret://) — never a raw secret value. This task never resolves it to a value; FTF-0202 ('Secret-manager integration') does.",
+      "pattern": "^(vault|openbao|secret)://[A-Za-z0-9_\\-./]+$",
+      "maxLength": 512
+    },
+    "BaseUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "Must be https://, no userinfo, no fragment, no tls_verify=false in the query, no duplicate /v1/v1 path segment (Section 3.1/65.4). Shape-validated only — this task never dials the URL.",
+      "maxLength": 2048
+    },
+    "ConnectionName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "LiteLLMConnectionCreateRequest": {
+      "type": "object",
+      "description": "The create request body — carries secret_ref, since the caller must supply it.",
+      "properties": {
+        "name": { "$ref": "#/$defs/ConnectionName" },
+        "base_url": { "$ref": "#/$defs/BaseUrl" },
+        "secret_ref": { "$ref": "#/$defs/SecretRef" }
+      },
+      "required": ["name", "base_url", "secret_ref"],
+      "additionalProperties": false
+    },
+    "LiteLLMConnectionUpdateRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of name/base_url/secret_ref.",
+      "properties": {
+        "name": { "$ref": "#/$defs/ConnectionName" },
+        "base_url": { "$ref": "#/$defs/BaseUrl" },
+        "secret_ref": { "$ref": "#/$defs/SecretRef" }
+      },
+      "additionalProperties": false
+    },
+    "LiteLLMConnection": {
+      "type": "object",
+      "description": "Section 2-3/38/65/77/81 — the read-facing representation. Deliberately has NO secret_ref property (this task's own negative_acceptance: 'secret echo fails'); additionalProperties: false makes a leaked secret_ref a contract violation, not merely an undocumented extra field.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/ConnectionName" },
+        "base_url": { "$ref": "#/$defs/BaseUrl" },
+        "status": { "$ref": "#/$defs/ConnectionStatus" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "revoked_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": ["id", "organization_id", "name", "base_url", "status", "created_at", "updated_at"],
+      "additionalProperties": false
+    }
+  }
+}
