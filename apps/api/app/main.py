@@ -13,7 +13,11 @@ second live-wired product-runtime path in this repository -- and
 router from `app.artifacts.artifact_routes.build_trainable_artifact_router`
 -- the third, and (FTF-0401) the real
 `/api/v1/organizations/{organization_id}/projects` router from
-`app.projects.project_routes.build_project_router` -- the fourth.
+`app.projects.project_routes.build_project_router` -- the fourth, and
+(FTF-0404) the real
+`/api/v1/organizations/{organization_id}/projects/{project_id}/tools`
+router from `app.tools.tool_definition_routes.build_tool_definition_router`
+-- the fifth.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -61,6 +65,7 @@ from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_gua
 from app.config.configuration_system import Settings
 from app.litellm.connection_routes import build_litellm_connection_router
 from app.projects.project_routes import build_project_router
+from app.tools.tool_definition_routes import build_tool_definition_router
 
 
 def create_app() -> FastAPI:
@@ -84,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(build_litellm_connection_router(session_factory))
     app.include_router(build_trainable_artifact_router(session_factory))
     app.include_router(build_project_router(session_factory))
+    app.include_router(build_tool_definition_router(session_factory))
     return app
 
 
