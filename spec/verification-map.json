@@ -203,6 +203,15 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres cross-tenant read/write/download/job/route-denial evidence is tests/integration/test_ftf_h003_cross_layer_isolation.py, run separately in CI (ftf-h003-cross-layer-isolation-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601. Certified on first submission (PR #125) — the underlying implementation commit is unchanged since 6242412."
+    },
+    "FTF-0106": {
+      "commit": "9fe19578b9a002000eb839708777db3de9813094",
+      "commands": [["python3", "tests/tasks/test_ftf_0106.py"]],
+      "expected_output_contains": "FTF-0106 RBAC/IDOR security tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres two-tenant, six-role RBAC/IDOR full-matrix evidence is tests/integration/test_ftf_0106_rbac_idor_security.py, run separately in CI (rbac-idor-security-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601/FTF-H003. Certified on first submission (PR #127) — the underlying implementation commit is unchanged since 9fe1957."
     }
   }
 }

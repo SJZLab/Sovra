@@ -2720,3 +2720,152 @@ corrected 2026-09-15.
   via two own, this-session-chosen breaks distinct from the producer's own
   one and each correctly caught or explained, and CI is green on the real
   final merged head (9/9). No blocking defect. Certified L2-CERTIFIED.
+
+## FTF-0106 — RBAC/IDOR security tests
+- Criterion ID: FTF-0106
+- PR: https://github.com/SJZLab/Sovra/pull/127
+- Merge commit: e21df28 (`e21df287193bebe0feaa4ad77ad0b030d28c3a4f`)
+- Validated-by: session https://claude.ai/code/session_018QtV6pEexcKARRhw5TL7pz
+  (session-ID comparison performed and recorded before this entry: all 4
+  commits on PR #127 — 9fe1957, ea8e963, ba8b3fe, 6b226ee — carry
+  `Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`; none match this
+  reviewing session's own ID, so this is an independent certification, not
+  self-certification.)
+- Steps performed:
+  1. Task contract pulled fresh via `python tools/r1_handoff.py packet
+     FTF-0106 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, not taken from the
+     PR body alone: acceptance = ["Full real two-tenant role matrix
+     exercises reads/writes/artifacts/approvals with guessed IDs.",
+     "Independent review, exact merged commit, real relevant integration
+     and negative-test evidence recorded."]; negative_acceptance = ["No
+     authorization test exclusively uses privileged DB connection or
+     mocked membership result."]; `database_changes` = "No independent
+     schema change." Dependencies FTF-0102/FTF-0103/FTF-0104/FTF-0105/
+     FTF-H003 confirmed CERTIFIED in `docs/spec-matrix.yaml` before review.
+  2. Read the full delivered diff directly: `apps/api/app/auth/
+     rbac_idor_security_tests.py` (`TwoTenantRoleMatrixFixture`, twelve
+     distinct (org, role) principals across two real organizations;
+     `build_two_tenant_security_demo_app`, wiring FTF-0103's `require_role`
+     and FTF-H003's `authorize_resource_ownership`/`TenantContext`/
+     `tenant_scoped_session_for` across read/write/approve routes),
+     `tests/tasks/test_ftf_0106.py` (23 no-DB checks) and
+     `tests/integration/test_ftf_0106_rbac_idor_security.py` (75 real
+     live-Postgres checks). New CI job `rbac-idor-security-integration`
+     (real `services: postgres` container) plus a new `gate`-job step.
+  3. CI reconfirmed for real on the actual PR head, not the producer's own
+     self-report: `mcp__github__pull_request_read get_check_runs` on PR
+     #127 — all 10 checks (`gate`, `rbac-idor-security-integration`,
+     `ftf-h003-cross-layer-isolation-integration`,
+     `tenant-isolation-query-guards-integration`,
+     `organization-workspace-schema-integration`, `oidc-provider-integration`,
+     `audit-event-writer-integration`, `postgres-backup-integration`,
+     `docker-local-stack-integration`, `storage-semantics-integration`)
+     completed `success`, matching the head that was actually merged
+     (`6b226ee` → merge commit `e21df28`).
+  4. Own re-run in this sandbox against a directly-installed local
+     PostgreSQL 16 (no container-registry egress, same FTF-0004/FTF-0102/
+     FTF-0104/FTF-0105/FTF-H003/FTF-R017 finding): seeded a `sovra_migrate`
+     superuser role and a `sovra_ftf0106` database matching CI's own
+     service-container config exactly; `uv run python3 tests/tasks/
+     test_ftf_0106.py` — all checks passed; `uv run python3 tests/
+     integration/test_ftf_0106_rbac_idor_security.py` — all checks passed.
+  5. Own fault injection, distinct from the producer's own three (which
+     targeted `WRITE_ROLES`/`WORKSPACE_WRITE_ALLOWED_ROLES` and
+     `write_dependency`): in `build_two_tenant_security_demo_app`, aliased
+     `approve_dependency = read_dependency` (an enforcement-wiring fault
+     on the approve route, never exercised by the producer's own
+     write-focused vectors). Genuinely caught by both suites — the no-DB
+     suite: 2 failed (`a viewer (not in APPROVE_ROLES) is denied an
+     approval (403)`, `an approval role-boundary denial also never opens a
+     session`, the latter surfacing a `TenantContextError` through the
+     suite's own mocked session, since the read dependency no longer
+     blocks a viewer before `authorize_resource_ownership` runs); the
+     live-Postgres suite: 16 failed — every `workspace_admin`/
+     `ml_engineer`/`evaluator`/`viewer` approve attempt in both real
+     organizations flipped from the expected `403` to `200` (own
+     workspace) or `404` (foreign workspace). Reverted byte-identical
+     (`diff` against a pre-injection copy clean) and re-ran both suites
+     clean.
+  6. Full regression, this sandbox: `uv run ruff check .` / `uv run ruff
+     format --check .` clean; `uv run mypy .` clean (84 source files);
+     `pnpm install --frozen-lockfile` then `pnpm run lint` / `typecheck` /
+     `format:check` clean; `pnpm exec vitest run` 5/5; `uv run pytest
+     tests/unit` 3/3; all 20 existing `tests/tasks/test_ftf_*.py` files
+     re-run clean. `python3 scripts/validate_spec.py --strict` first
+     showed 10 `stale_commit` defects and `tests/tasks/test_ftf_h001.py`
+     failed 3 checks, both traced directly to this review's own shallow
+     clone (same class already documented for FTF-H003's own review),
+     cleared by `git fetch --unshallow`; `scripts/verify_release.py`
+     first showed 6 `FAILED` entries for already-CERTIFIED tasks, traced
+     to invoking the system `python3` instead of the `uv`-managed venv's
+     own interpreter (same documented artifact class), cleared by
+     activating `.venv`. `product_truth_check.py --fail-on-unwired`
+     confirmed legitimately `1/1` (unchanged — this task's own
+     `proving_symbol` is empty, no live-wiring claim; `grep` confirms no
+     FastAPI route or background-worker service anywhere in this
+     repository imports `rbac_idor_security_tests.py` yet).
+     `verify_release.py` (after activating `.venv`) reports `23/300`, zero
+     `FAILED`, matching the pre-certification count exactly (this
+     certification's own count bump happens in step 8, after, not before,
+     the review above).
+  7. Acceptance clause 1 is met for reads/writes/approvals as disclosedly
+     scoped: no live `ModelVersion`/`PromotionDecision`/artifact table
+     exists anywhere in this repository yet (Section 6.20/6.21 are
+     later-phase tasks) and this task's own `database_changes` contract
+     forbids an independent schema change, so "approve" is proven against
+     the same real `workspaces` table with an approval-shaped role gate
+     (`approver`/`organization_admin`) — the same disclosed scoping
+     precedent FTF-0105/FTF-H003 already established, not a fabricated
+     artifact table this task was not authorized to create. Acceptance
+     clause 2 makes no full-release claim here (`verify_release.py` above
+     confirms the release itself stays `NOT READY`). The negative_acceptance
+     clause is met directly: `tests/integration/
+     test_ftf_0106_rbac_idor_security.py` asserts the demo app's own
+     session engine username equals the restricted `sovra_app` role and
+     not the migration-owner role before any authorization check runs;
+     the membership *input* is necessarily a fixture (no live `Membership`
+     table exists yet, same disclosed limitation FTF-0103/FTF-H003 already
+     established and were certified against), but the tenant-boundary
+     *decision* is never mocked — `authorize_resource_ownership` always
+     runs a real query through FTF-0105's own `execute_tenant_scoped`
+     guard against the real restricted connection.
+  8. Ran `scripts.task_claim.sync_certified_status()` after setting
+     `certification_state: CERTIFIED` in `docs/spec-matrix.yaml` — diff
+     limited to exactly FTF-0106's own `status`/`evidence` fields in
+     `spec/tasks.json` and `docs/implementation/TRACKER.json`, confirmed
+     via `git diff`. Added FTF-0106's entry to `spec/verification-map.json`
+     (same two-commit pattern as every prior certification, minimal
+     surgical diff, no reformatting of unrelated entries);
+     `validate_spec.py --strict` clean, `verify_task.py --task FTF-0106
+     --stage task` → `PASS`.
+  9. Process note, disclosed rather than silently passed over: PR #127's
+     own merge commit message ("independently reviewed and certified, see
+     docs/certifications/ledger.md") was written into git history at
+     merge time — before this independent review, and before any
+     `docs/certifications/ledger.md` entry for FTF-0106 existed.
+     `docs/spec-matrix.yaml` correctly showed `certification_state:
+     PROVISIONAL` throughout the interim (Law 4 was not violated — no
+     self-certification occurred, and `scripts/status.py` was never
+     inflated), but the merge commit text itself asserted a status that
+     was not yet true at the moment it was written into immutable git
+     history. This review makes that specific claim true as of this
+     entry's own date; the premature wording is flagged here rather than
+     quietly left uncommented, per Law 9 (adversarial audit runs out of
+     band) and the same transparency precedent
+     `docs/certifications/watchdog-findings.md` already established for
+     an earlier, more serious instance of an unearned status claim.
+  10. This certification's own doc updates (this ledger entry,
+      `docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+      `spec/verification-map.json`, `spec/tasks.json`,
+      `docs/implementation/TRACKER.json`) are pushed on a branch and
+      opened as a PR against `main`, not pushed directly, per
+      `BRANCH_PROTECTION` in `CLAUDE.md`.
+- Conclusion: the delivered RBAC/IDOR full-matrix security-test harness
+  (`TwoTenantRoleMatrixFixture`, `build_two_tenant_security_demo_app`,
+  `authorize_resource_ownership`/`require_role` composition) is real,
+  independently reproduced against a real local PostgreSQL 16 cluster
+  under real seeded two-tenant, six-role data, genuinely fault-injectable
+  via one own, this-session-chosen break distinct from the producer's own
+  three and correctly caught by both delivered suites, and CI is green on
+  the real final merged head (10/10). No blocking defect. Certified
+  L2-CERTIFIED.

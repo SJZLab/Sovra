@@ -1,9 +1,35 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #129) — independent CERTIFY
+  review of FTF-0106 (RBAC/IDOR security tests): **CERTIFIED**. Session-ID
+  clean against all 4 commits on PR #127, CI reconfirmed green (10/10,
+  including the new `rbac-idor-security-integration` job) on the real
+  final head, one own independent fault injection (aliased
+  `approve_dependency` to `read_dependency`, distinct from the producer's
+  own three write-focused vectors) caught for real by both delivered
+  suites, `product_truth_check.py`'s `1/1` confirmed legitimate (empty
+  `proving_symbol`, no live-wiring claim), and the real task contract
+  (`tools/r1_handoff.py packet FTF-0106`) confirms both the acceptance
+  clause and the negative_acceptance clause are met for this task's own
+  disclosed scope. Merged PR #127 (merge commit `e21df28`);
+  `docs/spec-matrix.yaml` set to `CERTIFIED`/`L2-CERTIFIED`; full entry in
+  `docs/certifications/ledger.md`. Note: this run was triggered by PR
+  #129, a separate, still-open `[relay] FTF-0106` submission with a
+  different implementation file set (`test_ftf_0106_rbac_idor_security_
+  matrix.py`) than the already-merged PR #127 — a same-task-ID collision
+  between two relay shifts, the same class already seen with FTF-0105/
+  FTF-H003 this same date. PR #129 was left untouched (out of this
+  session's CERTIFY-only scope); its own resubmission-vs-close disposition
+  is relay work for the next shift, now that FTF-0106 is CERTIFIED via
+  PR #127. This certification's own doc updates are pushed on a branch
+  and opened as a PR against `main`, not pushed directly, per
+  `BRANCH_PROTECTION`. Full review history: docs/certifications/queue.md.
+
+Earlier the same date (scheduled relay shift) — picked up the next
   unblocked item once FTF-H003 was independently CERTIFIED (FTF-0106,
   RBAC/IDOR security tests — its own deps FTF-0102/FTF-0103/FTF-0104/
   FTF-0105/FTF-H003 all CERTIFIED). Full submission report:
-  docs/certifications/queue.md; see "## Provisional" below for the
+  docs/certifications/queue.md; see "## Done" below for the certification
   summary.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
@@ -124,10 +150,8 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 23/300 (main; FTF-H003 CERTIFIED 2026-09-20, PR #125 merged as
-`9407710` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0106, RBAC/IDOR security tests — submitted this shift, awaiting
-independent Control-plane L2 certification) · Blocked: 0
+Certified: 24/300 (main; FTF-0106 CERTIFIED 2026-09-20, PR #127 merged as
+`e21df28` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -178,9 +202,11 @@ yet importing `tenant_isolation_query_guards.py`, and FTF-H003 is the
 cross-layer IDOR guard/tenant-context type/storage-key policy with no live
 FastAPI route, background-worker job runner, cache or model-alias layer
 anywhere in this repository yet constructing a `TenantContext` or calling
-`authorize_resource_ownership`/`tenant_policy.py` — none a live-wired
-product-runtime path, so all twenty-two are CERTIFIED without counting
-toward product-true).
+`authorize_resource_ownership`/`tenant_policy.py`, and FTF-0106 is the
+RBAC/IDOR security-test harness with no live FastAPI route or
+background-worker service anywhere in this repository yet importing
+`rbac_idor_security_tests.py` — none a live-wired product-runtime path,
+so all twenty-three are CERTIFIED without counting toward product-true).
 
 ## Owner actions — current
 None currently. The one open ask (FTF-0101's local-OIDC-test-provider
@@ -195,29 +221,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0106 — RBAC/IDOR security tests. Submitted this shift (relay,
-  scheduled, non-interactive): `apps/api/app/auth/
-  rbac_idor_security_tests.py` (a reusable full six-role, two-tenant
-  security-test harness — `TwoTenantRoleMatrixFixture` assigns all six
-  Section 6.4 roles to a distinct real principal in each of two real
-  organizations; `build_two_tenant_security_demo_app` composes
-  `require_role`/`authorize_resource_ownership`/`tenant_scoped_session_for`
-  across read/write/approve routes) + `tests/tasks/test_ftf_0106.py`
-  (23 no-DB checks) + `tests/integration/
-  test_ftf_0106_rbac_idor_security.py` (75 real live-Postgres checks —
-  every one of 2 organizations × 6 roles × 3 operations × 2 targets
-  proves the exact expected 200/403/404 outcome, guessed cross-tenant
-  IDs denied identically to missing resources, and confirms the demo
-  app's own session runs through the real restricted `sovra_app` role,
-  never the migration owner). Disclosed, not hidden: "artifacts/
-  approvals" is scoped down to a real approval-shaped role gate over the
-  existing `workspaces` table, since no `ModelVersion`/`PromotionDecision`
-  table exists yet and this task's own `database_changes` contract
-  forbids adding one. Full submission report:
-  docs/certifications/queue.md. `certification_state: PROVISIONAL` /
-  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR:
-  https://github.com/SJZLab/Sovra/pull/127
-  (`claude/wizardly-fermat-daazqp` → `main`).
+None currently. FTF-0106 (RBAC/IDOR security tests) was the only item
+here; it was independently reviewed and CERTIFIED this shift via PR #127
+(merge commit `e21df28`) — see "## Done" for the certification summary
+and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
+the full history and evidence.
 
 Prior item: FTF-H003 (Cross-layer tenant isolation and relational
 identity) was independently reviewed and CERTIFIED this shift via
@@ -763,6 +771,59 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   pushed on a branch and opened as a PR against `main` rather than pushed
   directly — see `docs/certifications/ledger.md`'s FTF-H003 entry, step
   10, for why that matters here. Full entry: docs/certifications/ledger.md.
+
+- FTF-0106 — RBAC/IDOR security tests. CERTIFIED 2026-09-20, PR #127
+  (merge commit `e21df287193bebe0feaa4ad77ad0b030d28c3a4f`) — certified on
+  first submission, no resubmission needed. Independent review this shift
+  (session-ID clean against all 4 commits on PR #127 —
+  session_01J8DXF7NnsGdpJSPpuN7gCc — none match this reviewing session's
+  own ID): CI reconfirmed green (10/10, including the new
+  `rbac-idor-security-integration` job) on the real final head (`6b226ee`
+  → merge commit `e21df28`); own live-Postgres reproduction against a
+  real, directly installed local PostgreSQL 16 cluster (no
+  container-registry egress in this sandbox, same FTF-0004/FTF-0102/
+  FTF-0104/FTF-0105/FTF-H003/FTF-R017 finding) — both delivered suites
+  clean (13 no-DB checks incl. the full role-matrix/policy structural
+  proof, 75 live-Postgres checks); one own fault injection distinct from
+  the producer's own three (which targeted `WRITE_ROLES`/
+  `WORKSPACE_WRITE_ALLOWED_ROLES`/`write_dependency`) — aliased
+  `approve_dependency = read_dependency` in
+  `build_two_tenant_security_demo_app`, an enforcement-wiring fault on the
+  approve route the producer's own write-focused vectors never exercised
+  — genuinely caught by both suites (2 no-DB failures, 16 live-Postgres
+  failures: every non-approver role's approve attempt in both real
+  organizations flipped from the expected `403` to `200`/`404`), reverted
+  byte-identical, re-ran clean. `product_truth_check.py --fail-on-unwired`
+  confirmed legitimately `1/1` (`docs/spec-matrix.yaml` FTF-0106's
+  `proving_symbol` is empty — no live-wiring claim, since no FastAPI route
+  or background-worker service anywhere in this repository imports
+  `rbac_idor_security_tests.py` yet). `tools/r1_handoff.py packet
+  FTF-0106` confirmed acceptance clause 1 is met for reads/writes/
+  approvals as disclosedly scoped (no live `ModelVersion`/
+  `PromotionDecision`/artifact table exists yet and this task's own
+  `database_changes` contract forbids adding one, so "approve" is proven
+  against the real `workspaces` table with an approval-shaped role gate —
+  the same disclosed scoping precedent FTF-0105/FTF-H003 already
+  established) and the negative_acceptance clause is met directly (the
+  live suite asserts its own demo app's session engine username is the
+  restricted `sovra_app` role, never the migration owner, before any
+  check runs; the membership *input* is a disclosed fixture, but the
+  tenant-boundary *decision* always runs a real query through FTF-0105's
+  own `execute_tenant_scoped` guard). Ran `sync_certified_status()` — diff
+  limited to exactly FTF-0106's own `status`/`evidence` fields.
+  `verify_release.py` confirmed non-inflated (`23/300` before, `24/300`/
+  zero FAILED after, once a shallow-clone/`python3`-vs-`.venv` sandbox
+  artifact — same documented class as FTF-H003's own review — was
+  cleared). Process note: PR #127's own merge commit message prematurely
+  claimed "independently reviewed and certified" before this review or
+  any ledger entry existed for FTF-0106 — `docs/spec-matrix.yaml` stayed
+  honestly `PROVISIONAL` throughout (Law 4 held, nothing was inflated),
+  but the wording itself was written into git history before it was true;
+  flagged, not silently passed over — see
+  `docs/certifications/ledger.md`'s FTF-0106 entry, step 9. This
+  certification's own doc updates were pushed on a branch and opened as a
+  PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+  Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
