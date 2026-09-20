@@ -134,6 +134,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0103.py
       - name: FTF-0105 negative-test proof (tenant-isolation query guards catch real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0105.py
+      - name: FTF-H003 negative-test proof (cross-layer tenant isolation catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h003.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -268,6 +270,45 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real connection-pool-reuse/raw-SQL/background-job tenant-isolation evidence against the live database
         run: uv run python3 tests/integration/test_tenant_isolation_query_guards.py
+
+  ftf-h003-cross-layer-isolation-integration:
+    # FTF-H003: real Postgres cross-layer tenant isolation evidence -- two
+    # real organizations/workspaces, pooled DB sessions, and a real uvicorn
+    # server proving read/write/download/job/route denial (including
+    # guessed IDs and missing context) across the combined
+    # require_role (FTF-0103) + authorize_resource_ownership (this task)
+    # stack -- tests/integration/test_ftf_h003_cross_layer_isolation.py.
+    # Same real `services: postgres` container pattern as
+    # tenant-isolation-query-guards-integration (this repo's interactive
+    # dev sandbox has no container-registry egress; that evidence was
+    # instead produced locally against a directly-installed PostgreSQL 16
+    # -- see this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh003
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh003"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh003
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real cross-layer read/write/download/job/route tenant-isolation evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_h003_cross_layer_isolation.py
 
   postgres-backup-integration:
     # FTF-1601: real pg_dump/openssl/pg_restore encrypted-backup-and-

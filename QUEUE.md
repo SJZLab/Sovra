@@ -1,5 +1,26 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — picked up the next unblocked
+  item per the prior shift's own dependency graph. FTF-0106 (RBAC/IDOR
+  security tests) is next in CAP-01 order but depends on FTF-H003
+  (Cross-layer tenant isolation and relational identity), which was still
+  `ABSENT`/`NONE` — not itself dependency-ready. FTF-H003's own
+  dependencies (FTF-0102/FTF-0103/FTF-0104/FTF-H001) are all CERTIFIED, so
+  this shift implemented FTF-H003 instead: a cross-layer IDOR guard
+  (`apps/api/app/auth/resource_authorization.py`) closing the real gap
+  FTF-0103's own `require_role` cannot see by construction (it authorizes
+  role+tenant from the URL path but never checks whether some other
+  resource ID in that same path actually belongs to that tenant), a
+  canonical `TenantContext` type (`apps/api/app/db/tenant_context.py`) and
+  a tenant-scoped object-storage key policy
+  (`packages/storage/tenant_policy.py`). Real live-Postgres evidence
+  (two real organizations, pooled sessions, a real uvicorn route) proves
+  read/write/download/job/route denial including guessed IDs and missing
+  context — see `docs/certifications/queue.md` for the full submission
+  entry. PR opened as PROVISIONAL; `docs/spec-matrix.yaml` FTF-H003 set to
+  `PROVISIONAL`/`L1-PROVEN`. Awaiting independent Control plane
+  certification — not self-certified (Law 4).
+
+Earlier the same date (2026-09-20, scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #120) — independent CERTIFY
   review of FTF-0105 (Tenant-isolation query guards): **CERTIFIED**.
   Session-ID clean against all 3 commits on PR #120, CI reconfirmed green
@@ -75,7 +96,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 22/300 (main; FTF-0105 CERTIFIED 2026-09-20, PR #120 merged as
-`14f785c` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`14f785c` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-H003, Cross-layer tenant isolation and relational identity — submitted
+this shift, PROVISIONAL/L1-PROVEN, awaiting independent Control plane
+review; see "## Provisional" below) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -139,13 +163,21 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0105 (Tenant-isolation query guards) was the only item
-here; it was independently reviewed and CERTIFIED this shift via PR #120
-(merge commit `14f785c`) — see "## Done" for the certification summary and
+FTF-H003 (Cross-layer tenant isolation and relational identity) —
+submitted this shift as PROVISIONAL/L1-PROVEN. PR:
+https://github.com/SJZLab/Sovra/pull/125
+(`claude/wizardly-fermat-hb5qby` → `main`). Full submission entry
+(modules, tests, real live-Postgres evidence, disclosed gaps):
+`docs/certifications/queue.md`. Not self-certified (Law 4) — awaiting an
+independent Control plane review session.
+
+Prior item: FTF-0105 (Tenant-isolation query guards) was independently
+reviewed and CERTIFIED a prior shift via PR #120 (merge commit `14f785c`)
+— see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 
-Prior item: FTF-0103 (RBAC middleware) was independently reviewed and
+Earlier item: FTF-0103 (RBAC middleware) was independently reviewed and
 CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 "## Done" for the full narrative and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the complete review history.

@@ -1,7 +1,169 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR#120) — FTF-0105 (Tenant-isolation
-  query guards) independently reviewed and CERTIFIED; see below.
+Updated: 2026-09-20T03:05:22Z (scheduled relay shift) — FTF-H003
+  (Cross-layer tenant isolation and relational identity) implemented and
+  submitted as PROVISIONAL, awaiting independent Control plane review; see
+  below.
+
+## 2026-09-20T03:05:22Z — Relay shift: FTF-H003 implemented, PROVISIONAL (awaiting Control plane review)
+
+STEP 0.1: read PROGRESS.md, QUEUE.md and docs/certifications/queue.md
+first. `## Active` and `## Provisional` were both empty — FTF-0105 (the
+prior shift's own submission) had already been independently reviewed and
+CERTIFIED via PR #120 (merge commit `14f785c`) by an earlier session this
+same date; nothing else was pending review.
+
+CLAUDE.md self-check: `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` exactly — no drift, shift continued.
+
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(`product_truth_check.py`'s deterministic text search only), same as every
+prior shift.
+
+STEP 1: with `## Active`/`## Provisional` empty, picked the next unblocked
+item per QUEUE.md's own CAP-01 dependency order (FTF-0101…0106). FTF-0105
+was the most recently certified item in that chain, so FTF-0106 (RBAC/IDOR
+security tests) looked like the natural next pick — but its own task
+packet (`python tools/r1_handoff.py packet FTF-0106 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) lists a dependency,
+FTF-H003 (Cross-layer tenant isolation and relational identity), that was
+still `certification_state: NONE` / `implementation_state: ABSENT` in
+`docs/spec-matrix.yaml` — not merged, not even started. FTF-0106 is
+therefore not dependency-ready. Checked FTF-H003's own task packet instead
+(`python tools/r1_handoff.py packet FTF-H003 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): its dependencies (FTF-0102, FTF-0103,
+FTF-0104, FTF-H001) are all CERTIFIED, so FTF-H003 is the real next
+unblocked item — worked that instead of improvising on FTF-0106's own
+still-unmet dependency.
+
+"Working: FTF-H003 (Cross-layer tenant isolation and relational
+identity)."
+
+STEP 2 (P — read, form hypothesis, no changes yet): read
+`apps/api/app/auth/rbac_middleware.py` (FTF-0103) and
+`apps/api/app/auth/tenant_isolation_query_guards.py` (FTF-0105) in full.
+Confirmed the real, structural gap FTF-H003 closes: `require_role`
+resolves `organization_id` only from the URL path and checks role
+membership in *that* organization — it never queries whether some *other*
+resource ID in that same path (a workspace ID, and eventually a
+dataset/model ID) actually belongs to that organization. A caller who is a
+genuinely, validly authorized `organization_admin` of org A, who also
+knows or guesses a real resource ID belonging to org B, passes
+`require_role`'s own checks outright — exactly the task's own Q01/Q24
+guessed-ID/IDOR scenario. Confirmed via `grep -rn` that no
+`apps/api/app/db/`, no `resource_authorization.py` and no
+`packages/storage/` existed anywhere in this repository yet, matching the
+task packet's own `files` list — three genuinely new files, nothing to
+reuse instead of duplicating.
+
+STEP 2 (E — write code and tests, show FAIL first):
+- `apps/api/app/db/tenant_context.py` — `TenantContext`, the one
+  canonical authenticated-tenant type every downstream layer binds to,
+  only ever constructed via `from_authorized_context()` from a real
+  `AuthorizedContext` (FTF-0103's own `require_role` output);
+  `tenant_scoped_session_for()` is its typed entry point to FTF-0105's own
+  `tenant_scoped_session`, delegating unchanged.
+- `apps/api/app/auth/resource_authorization.py` —
+  `authorize_resource_ownership()`, the IDOR guard: looks a resource up
+  through FTF-0105's own `execute_tenant_scoped` (inheriting its
+  fail-closed pool-reuse safety and FTF-0102's FORCE-RLS enforcement) and
+  denies identically whether the row is missing or foreign-tenant, so a
+  caller cannot use the distinction as an existence oracle.
+- `packages/storage/tenant_policy.py` — `build_tenant_scoped_object_key()`/
+  `validate_object_key_belongs_to_tenant()`, the tenant-scoped
+  object-storage key policy Section 65.2 requires; fail-closed-denies
+  (never raises) path-traversal/absolute-path/foreign-tenant-prefix keys.
+- `tests/tasks/test_ftf_h003.py` (no-DB, wrote and ran first to confirm
+  each negative case genuinely fails against a deliberately-missing
+  implementation before writing the real modules, then again clean once
+  they existed) plus a real fault injection against the tracked
+  `resource_authorization.py` file on disk (drops the foreign-tenant half
+  of its own check, run in a fresh subprocess — never `importlib.reload`,
+  the same reload-identity gotcha FTF-0105's own suite already
+  documented) — confirmed the negative case genuinely flips to
+  "authorized" with the fault present, then restored byte-identical.
+- `tests/integration/test_ftf_h003_cross_layer_isolation.py` — real
+  live-Postgres proof. Started a directly-installed local PostgreSQL 16
+  cluster in this sandbox (`pg_ctlcluster 16 main start`; no
+  container-registry egress here, same documented finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-R017/FTF-1601): created the
+  `sovra_migrate` superuser role and a `sovra_ftfh003` database, ran the
+  real migration, then proved this task's own acceptance clause 1 with two
+  real seeded organizations and pooled sessions — read/write/download/
+  job/route denial including guessed IDs and missing context, and a real
+  uvicorn server (same pattern `tests/tasks/test_ftf_0103.py` established)
+  combining `require_role` + `authorize_resource_ownership` on one route.
+  All checks passed; full narrative in `docs/certifications/queue.md`.
+
+STEP 2 (V — verify, product_truth_check, wire before claiming done): ran
+the full local regression this shift (`uv run ruff check .` / `ruff
+format --check .` / `mypy .` all clean across 81 source files; `pnpm run
+lint`/`typecheck`/`format:check` clean; `pnpm run test` 5/5; `uv run
+pytest tests/unit` 3/3; all 19 existing `tests/tasks/test_ftf_*.py`
+clean). Hit three transient sandbox artifacts along the way, each
+diagnosed and resolved rather than worked around: (1) `pnpm run
+lint`/`typecheck` initially failed — `node_modules` had never been
+installed in this fresh session; fixed with `pnpm install
+--frozen-lockfile`. (2) `tests/tasks/test_ftf_h001.py` initially failed
+its own ledger/`validate_spec.py --strict` checks — this session's git
+clone was shallow; fixed with `git fetch --unshallow`, the same class of
+artifact FTF-0102/FTF-0105's own reviews already documented. (3)
+`verify_release.py` initially reported `FAILED` for five already-CERTIFIED
+tasks with a `ModuleNotFoundError: sqlalchemy` — traced to invoking bare
+`python3` instead of the `uv`-managed venv's own interpreter; resolved by
+activating `.venv`, after which `verify_release.py` reported the same
+`22/300`/zero-`FAILED` result as before this shift, confirmed non-inflated.
+`product_truth_check.py --fail-on-unwired` stayed legitimately `1/1`
+(FTF-H003's own `proving_symbol` is empty — no live FastAPI route,
+background-worker, cache or model-alias layer anywhere in this repository
+yet constructs a `TenantContext` or calls these new modules, the same
+disclosed "no live caller yet" class already accepted for
+FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105). `scripts/status.py`
+stayed `22/300 certified · 1 product-true`, unchanged — `PROVISIONAL` is
+not `CERTIFIED`, no inflation. `validate_spec.py --strict` clean.
+`verify_task.py --task FTF-H003 --stage task` correctly reports `BLOCKED —
+no merged verification evidence yet` (expected pre-merge; Control plane
+adds the `spec/verification-map.json` entry at certification time, per
+established convention).
+
+Updated `docs/spec-matrix.yaml` (FTF-H003:
+`certification_state: PROVISIONAL` / `implementation_state: IMPLEMENTED` /
+`proof_state: L1-PROVEN` / `proving_test: tests/tasks/test_ftf_h003.py`,
+`proving_symbol` stays `''`), `.github/workflows/ci.yml` (new
+`ftf-h003-cross-layer-isolation-integration` job mirroring
+`tenant-isolation-query-guards-integration`, plus a new `gate`-job step),
+`docs/certifications/queue.md` (full submission entry, PROVISIONAL — not
+self-certified, per Law 4), and `QUEUE.md` (moved to `## Provisional`,
+`Provisional: 0` → `1`). Opened a PR (title `[relay] FTF-H003: Cross-layer
+tenant isolation and relational identity`) against `main` per
+CLAUDE.md's `BRANCH_PROTECTION: instruction-tier` policy — never pushed
+directly to `main`.
+
+STEP 3: this entry, written before any compaction, with the real ISO
+timestamp per the scheduled-shift prompt's own instruction.
+
+STEP 4 stop condition: **(a)** — this item is now fully L1-PROVEN
+(implemented, tested against real Postgres, submitted as PROVISIONAL) and
+awaiting independent Control plane certification and the eventual L4
+gate. Stopping here rather than self-certifying (Law 4: "producer never
+certifies own work").
+
+## Next shift
+Top item once FTF-H003 is independently reviewed and CERTIFIED: FTF-0106
+(RBAC/IDOR security tests) becomes dependency-ready (its own remaining
+dependency, FTF-H003, would then be CERTIFIED). Until FTF-H003 is
+reviewed, a relay shift should not start FTF-0106 — its own dependency
+would still be PROVISIONAL, not CERTIFIED. A Control-plane certifier
+shift should independently review FTF-H003's PR next per the normal
+`pull_request.opened` trigger.
+
+## Metrics (this shift)
+Certified / denominator: 22/300 (unchanged — FTF-H003 is PROVISIONAL, not
+CERTIFIED)
+Product-true (Law 16): 1 (unchanged — FTF-H003 has no proving_symbol, no
+live caller yet)
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
 
 ## 2026-09-20 — Control plane: FTF-0105 (PR#120) reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
