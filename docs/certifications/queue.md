@@ -6337,8 +6337,9 @@ the same code on a now-clean head.
   version surfaced and reverted before ever being committed.
 
 ## 2026-09-20 — FTF-0404 — Tool schema CRUD
-- **PR:** `claude/wizardly-fermat-vkr3sq` → `main`, title
-  `[relay] FTF-0404: Tool schema CRUD`.
+- **PR:** https://github.com/SJZLab/Sovra/pull/146
+  (`claude/wizardly-fermat-vkr3sq` → `main`, title
+  `[relay] FTF-0404: Tool schema CRUD`).
 - **Commit:** `b5d4cb7` (implementation); `docs/spec-matrix.yaml`/
   `PROGRESS.md`/`QUEUE.md`/this entry pushed as a second, tracking-doc-only
   commit on the same branch, matching the FTF-0201/FTF-0301/FTF-0401/
