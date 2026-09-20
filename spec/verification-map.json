@@ -4,7 +4,12 @@
   "tasks": {
     "FTF-0001": {
       "commit": "7ab3f6ff1ac7bcc240e546b764af8d67ae0c8561",
-      "commands": [["python3", "tests/test_ftf_0001_monorepo_layout.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/test_ftf_0001_monorepo_layout.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0001 monorepo layout: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -12,7 +17,12 @@
     },
     "FTF-0002": {
       "commit": "41f1493bca4f70aa74ab61516d1a22ee197daf79",
-      "commands": [["python3", "tests/tasks/test_ftf_0002.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0002.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0002 formatting/lint/type checks: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -20,7 +30,12 @@
     },
     "FTF-0003": {
       "commit": "e2c2dae96142c95a78005fd7528df6ac7e3e5dfc",
-      "commands": [["python3", "tests/tasks/test_ftf_0003.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0003.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0003 test harnesses: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -28,7 +43,12 @@
     },
     "FTF-0004": {
       "commit": "a477e678b785d3248bdc985c91586b148411b4fe",
-      "commands": [["python3", "tests/tasks/test_ftf_0004.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0004.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0004 docker local stack: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -37,7 +57,12 @@
     },
     "FTF-0005": {
       "commit": "5f5a34d803a76e3261c8cc860bd5f21cd8290424",
-      "commands": [["python3", "tests/tasks/test_ftf_0005.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0005.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0005 configuration system: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -45,7 +70,12 @@
     },
     "FTF-0006": {
       "commit": "268186bd5e70032a6c563796910059ab2684b684",
-      "commands": [["python3", "tests/tasks/test_ftf_0006.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0006.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0006 observability foundation: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -53,7 +83,12 @@
     },
     "FTF-H001": {
       "commit": "6a1abc093f2c8897e86d8e33bd33667d1c2ee0f3",
-      "commands": [["python3", "tests/tasks/test_ftf_h001.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_h001.py"
+        ]
+      ],
       "expected_output_contains": "FTF-H001 executable specification/gate bootstrap: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -62,7 +97,12 @@
     },
     "FTF-R001": {
       "commit": "f9c82e910cde344a08b910c5b059e85c25b59adf",
-      "commands": [["python3", "tests/tasks/test_ftf_r001.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_r001.py"
+        ]
+      ],
       "expected_output_contains": "FTF-R001 reuse architecture / version-lock schema freeze: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -71,7 +111,12 @@
     },
     "FTF-H002": {
       "commit": "40b61d221238a25a2420cabc945d0d41d91b36e3",
-      "commands": [["python3", "tests/tasks/test_ftf_h002.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_h002.py"
+        ]
+      ],
       "expected_output_contains": "FTF-H002 release scope / compatibility / measured execution inputs: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -80,7 +125,12 @@
     },
     "FTF-H028": {
       "commit": "d502c89a1733c0dbff054e07e556f1a74d244c3b",
-      "commands": [["python3", "tests/tasks/test_ftf_h028.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_h028.py"
+        ]
+      ],
       "expected_output_contains": "FTF-H028 trusted CI and exact-revision release evidence gate: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -89,7 +139,12 @@
     },
     "FTF-H034": {
       "commit": "7109100c9bfaff995a94203720e9161e095cb7bf",
-      "commands": [["python3", "tests/tasks/test_ftf_h034.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_h034.py"
+        ]
+      ],
       "expected_output_contains": "FTF-H034 safe parallel scheduler and task/evidence ownership: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -98,7 +153,12 @@
     },
     "FTF-1810": {
       "commit": "e7ddf75f0bcdeaf99f1b92ee5b1bc52fc74b650a",
-      "commands": [["python3", "tests/tasks/test_ftf_1810.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_1810.py"
+        ]
+      ],
       "expected_output_contains": "FTF-1810 ReleaseQualificationWorkflow: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -107,7 +167,12 @@
     },
     "FTF-R014": {
       "commit": "fc1822903741fae188b7b81767a7668b3ee9cc96",
-      "commands": [["python3", "tests/implementation/test_r1_execution_binding.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/implementation/test_r1_execution_binding.py"
+        ]
+      ],
       "expected_output_contains": "All 24 checks passed.",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -116,7 +181,12 @@
     },
     "FTF-R015": {
       "commit": "519bba0ecbabcf36276df1dda3265673a7c2b702",
-      "commands": [["python3", "tests/implementation/test_safe_parallel_executor.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/implementation/test_safe_parallel_executor.py"
+        ]
+      ],
       "expected_output_contains": "All 36 checks passed.",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -125,7 +195,12 @@
     },
     "FTF-R011": {
       "commit": "18dd2823eff6171594fb53b6adf0beb953bada82",
-      "commands": [["python3", "tests/security/test_profile_scope.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/security/test_profile_scope.py"
+        ]
+      ],
       "expected_output_contains": "FTF-R011 deployment-profile assertion-level release matrix: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -134,7 +209,12 @@
     },
     "FTF-R017": {
       "commit": "b76235989aca9b73bbefb9502435c8c25f9564ad",
-      "commands": [["python3", "tests/tasks/test_ftf_r017.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_r017.py"
+        ]
+      ],
       "expected_output_contains": "FTF-R017 storage/OSS-lifecycle qualification: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -143,7 +223,12 @@
     },
     "FTF-0102": {
       "commit": "82c75f42231c32c2fa45988bb36e805534548ed1",
-      "commands": [["python3", "tests/tasks/test_ftf_0102.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0102.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0102 organization/workspace schema: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -152,7 +237,12 @@
     },
     "FTF-0104": {
       "commit": "96e15980c1c375ed3f864b88024027ea4554e73b",
-      "commands": [["python3", "tests/tasks/test_ftf_0104.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0104.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0104 audit event writer: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -161,7 +251,12 @@
     },
     "FTF-1601": {
       "commit": "f5d3aee56da747f52c335813fc03677052bf8949",
-      "commands": [["python3", "tests/tasks/test_ftf_1601.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_1601.py"
+        ]
+      ],
       "expected_output_contains": "FTF-1601 postgres backup: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -170,7 +265,12 @@
     },
     "FTF-0101": {
       "commit": "e2c54235584445f7e062f3b1b21a7b98f47308c2",
-      "commands": [["python3", "tests/tasks/test_ftf_0101.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0101.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0101 OIDC login: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -179,7 +279,12 @@
     },
     "FTF-0103": {
       "commit": "9d9e53642e937de6a1242012323ae586c2135d49",
-      "commands": [["python3", "tests/tasks/test_ftf_0103.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0103.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0103 RBAC middleware: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -188,7 +293,12 @@
     },
     "FTF-0105": {
       "commit": "e5df228996c32c8d10c2a1a999effcc56d29aac6",
-      "commands": [["python3", "tests/tasks/test_ftf_0105.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0105.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0105 tenant-isolation query guards: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -197,7 +307,12 @@
     },
     "FTF-H003": {
       "commit": "62424123a05706c944eb0557ac935556e7a8a60b",
-      "commands": [["python3", "tests/tasks/test_ftf_h003.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_h003.py"
+        ]
+      ],
       "expected_output_contains": "FTF-H003 cross-layer tenant isolation: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
@@ -206,12 +321,31 @@
     },
     "FTF-0106": {
       "commit": "9fe19578b9a002000eb839708777db3de9813094",
-      "commands": [["python3", "tests/tasks/test_ftf_0106.py"]],
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0106.py"
+        ]
+      ],
       "expected_output_contains": "FTF-0106 RBAC/IDOR security tests: all checks passed",
       "expected_skipped": 0,
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003 and their own predecessors — this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres full six-role, two-tenant RBAC/IDOR matrix evidence is tests/integration/test_ftf_0106_rbac_idor_security.py, run separately in CI (rbac-idor-security-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601/FTF-H003. Certified on first submission (PR #127) — the underlying implementation commit is unchanged since 9fe1957."
+    },
+    "FTF-0201": {
+      "commit": "1815080980fb0280f33a864b5f9ad4850ce997de",
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0201.py"
+        ]
+      ],
+      "expected_output_contains": "FTF-0201 LiteLLM connection CRUD tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/get/list/edit/revoke, IDOR and TenantContextError evidence is tests/integration/test_ftf_0201_litellm_connection_crud.py, run separately in CI (litellm-connection-crud-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601/FTF-H003/FTF-0106. Certified on first submission (PR #133) -- the underlying implementation commit is unchanged since 1815080 (the lint-fix commit; evidence_hash matches docs/spec-matrix.yaml's own convention of pointing at the final lint-clean implementation revision, per Section 84.7)."
     }
   }
 }

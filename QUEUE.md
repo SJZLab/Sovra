@@ -1,5 +1,22 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0201
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #133) — independent CERTIFY
+  review of FTF-0201 (LiteLLM connection CRUD): **CERTIFIED**. Session-ID
+  clean against all 7 commits on PR #133 (session_01MV1wn1CJHoHmds4eRKKVaV,
+  none matching this reviewing session's own ID), CI reconfirmed green
+  (11/11, including the new `litellm-connection-crud-integration` job) on
+  the real final head `d0aec3b`, own independent fault injection (widened
+  `validate_base_url`'s allowed scheme to accept `http`, a real
+  TLS-downgrade bug) caught for real by both suites and reverted
+  byte-identical, `product_truth_check.py --fail-on-unwired` reconfirmed
+  `2/2`, task contract cross-checked via `tools/r1_handoff.py packet
+  FTF-0201`. Merged PR #133 (merge commit `3588e4e5e8f0fcb81f0f458869f2d1e252ea1305`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Certified: 25/300, Product-true: 2/2. Full
+  review: `docs/certifications/ledger.md` (FTF-0201 entry) and
+  `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — implemented FTF-0201
   (LiteLLM connection CRUD, deps FTF-0103/FTF-0104/FTF-0005 all
   CERTIFIED, DoD pulled fresh via `tools/r1_handoff.py packet FTF-0201`).
   Scope narrowed honestly to create/get/list/edit/revoke only (no
@@ -177,31 +194,19 @@ already independently CERTIFIED via PR #127 (merge commit `e21df28`),
 which the top banner and "## Done" section both already reflect
 correctly. Corrected here rather than left for a future shift to notice.
 
-Certified: 24/300 (main; FTF-0106 CERTIFIED 2026-09-20, PR #127 merged as
-`e21df28` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0201, LiteLLM connection CRUD — submitted this shift, awaiting
-independent Control-plane L2 certification) · Blocked: 0
+Certified: 25/300 (main; FTF-0201 CERTIFIED 2026-09-20, PR #133 merged as
+`3588e4e` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
 open owner ask remains)
-Product-true (Law 16): 1 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 2 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` — FTF-0101's
-`build_oidc_login_router` is the one entry meeting all three; unchanged
-this shift). Distinct, narrower-scoped signal worth disclosing precisely
-rather than conflating (Law 2: never inflate the tracker):
-`product_truth_check.py --fail-on-unwired` — which only checks "does
-this claimed `proving_symbol` have a confirmed live caller," with no
-certification-state requirement at all — now reports `2/2`, because this
-shift's own FTF-0201 genuinely wires `build_litellm_connection_router`
-into `apps/api/app/main.py`'s `create_app()` unconditionally (confirmed
-via a direct `grep` on `main.py`, not merely asserted), even though
-FTF-0201's own `certification_state` stays `PROVISIONAL` /
-`proof_state` stays `L1-PROVEN` (Law 4: not self-certified). Once
-FTF-0201 is independently CERTIFIED at L2, `scripts/status.py`'s own
-"Product-true" count will correctly become 2 to match; it is
-deliberately still 1 until then.
+`build_oidc_login_router` and FTF-0201's `build_litellm_connection_router`
+now both meet all three, matching `product_truth_check.py
+--fail-on-unwired`'s own `2/2`, independently reconfirmed by the
+certifying session).
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -281,11 +286,10 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0201 (LiteLLM connection CRUD) — submitted this shift, PR opened
-against `main`, `docs/spec-matrix.yaml` set to `PROVISIONAL`/`L1-PROVEN`,
-`evidence_hash` = `1815080980fb0280f33a864b5f9ad4850ce997de`. Full
-submission report: `docs/certifications/queue.md`. Not self-certified
-(Law 4) — awaiting independent Control-plane L2 review.
+(none — FTF-0201 was independently reviewed and CERTIFIED this shift via
+PR #133, merge commit `3588e4e`; see "## Done" below for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
+for the full history and evidence.)
 
 Prior item: FTF-0106 (RBAC/IDOR security tests) was independently
 reviewed and CERTIFIED a prior shift via PR #127, merge commit
@@ -884,6 +888,51 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   task's write set. This certification's own doc updates were pushed on
   a branch and opened as a PR against `main` rather than pushed directly,
   per `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
+
+- FTF-0201 — LiteLLM connection CRUD. CERTIFIED 2026-09-20, PR #133
+  (merge commit `3588e4e5e8f0fcb81f0f458869f2d1e252ea1305`) — certified on
+  first submission, no resubmission needed. Independent review this shift
+  (session-ID clean against all 7 commits on PR #133 —
+  session_01MV1wn1CJHoHmds4eRKKVaV — none match this reviewing session's
+  own ID): CI reconfirmed green (11/11, including the new
+  `litellm-connection-crud-integration` job) on the real final head
+  (`d0aec3b`); own reproduction of both delivered suites in this sandbox
+  against a real, directly installed local PostgreSQL 16 cluster (no
+  container-registry egress in this sandbox, same FTF-0004/FTF-0102/
+  FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-R017 finding) — both "all checks
+  passed" (run via `uv run python3 <file>`, the way CI actually invokes
+  them — noted that `pytest` on `tests/tasks/test_ftf_0201.py` reports a
+  misleadingly-green "24 passed" regardless of the real check outcomes,
+  since that file's own `check()` helper only appends to a module-level
+  list rather than asserting; the real signal is the script's own printed
+  "all checks passed"/exit code). One own fault injection distinct from
+  the producer's own two — widened `validate_base_url`'s allowed scheme
+  set to accept `http` as well as `https` (a real TLS-downgrade bug),
+  caught for real by both suites (3 no-DB checks failed, 1 live-Postgres
+  check failed) — reverted byte-identical, both suites re-ran clean. Also
+  tried removing the `authorize_resource_ownership` call entirely; neither
+  suite caught it, traced to a real, non-defective reason (`FORCE ROW
+  LEVEL SECURITY` + `execute_tenant_scoped` already block the cross-tenant
+  row at the database level, so that check is defense-in-depth, not the
+  sole IDOR guard) rather than silently accepted as a gap.
+  `product_truth_check.py --fail-on-unwired` independently reconfirmed
+  `2/2` (`build_litellm_connection_router`'s unconditional
+  `app.include_router(...)` wiring into `apps/api/app/main.py`'s
+  `create_app()` read directly). `tools/r1_handoff.py packet FTF-0201`
+  confirmed the acceptance/negative_acceptance clauses are met for this
+  task's own disclosed create/get/list/edit/revoke scope, and that the
+  validate/sync-models/probe exclusion is genuinely FTF-0203/0204/0210's
+  own later scope, not a hidden cut. Dependencies FTF-0103/0104/0005
+  confirmed genuinely `CERTIFIED` before relying on them. Added FTF-0201's
+  entry to `spec/verification-map.json` (`verify_task.py --task FTF-0201
+  --stage task` reconfirmed `PASS`); ran `sync_certified_status()` —
+  diff limited to exactly FTF-0201's own `status`/`evidence` fields;
+  `scripts/status.py` confirmed non-inflated (`24/300` before, `25/300`/
+  zero FAILED after; "Product-true" `1` before, `2` after, matching
+  `product_truth_check.py`'s own `2/2`). This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
