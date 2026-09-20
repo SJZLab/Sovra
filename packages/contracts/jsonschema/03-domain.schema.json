@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-03/domain.schema.json",
+  "title": "Sovra Phase 03 Domain Schemas (FTF-0301 — TrainableArtifact schema/API)",
+  "description": "Frozen shared domain schemas for the organization-scoped TrainableArtifact resource (Section 6.7/13/34/45/65/68/77/81). Field constraints (patterns, lengths, enums) are copied verbatim from the single real enforcing source, apps/api/app/artifacts/artifact_schema.py, and tested against it directly in tests/tasks/test_ftf_0301.py so this file cannot silently drift from the code that actually validates these shapes.",
+  "$defs": {
+    "ArtifactStatus": {
+      "type": "string",
+      "enum": ["registered", "ready", "archived"]
+    },
+    "SourceType": {
+      "type": "string",
+      "enum": ["huggingface", "private_s3", "local_filesystem", "private_registry"]
+    },
+    "SourceUri": {
+      "type": "string",
+      "description": "Shape-validated per source_type (Section 65.4-style safety) — this task never resolves it against a real upstream.",
+      "maxLength": 2048
+    },
+    "WeightsDigest": {
+      "type": ["string", "null"],
+      "description": "'sha256:' followed by 64 hex characters once resolved by FTF-0306; null until then.",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 128
+    },
+    "DisplayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "TrainableArtifactCreateRequest": {
+      "type": "object",
+      "properties": {
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "source_type": { "$ref": "#/$defs/SourceType" },
+        "source_uri": { "$ref": "#/$defs/SourceUri" },
+        "model_family": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "base_model_revision": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "license_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "trust_remote_code_allowed": { "type": "boolean", "default": false },
+        "required_python_packages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "minimum_gpu_profile": { "type": "object", "default": {} }
+      },
+      "required": ["display_name", "source_type", "source_uri", "model_family", "base_model_revision", "license_id"],
+      "additionalProperties": false
+    },
+    "TrainableArtifactUpdateRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of the mutable fields. Refused unless the artifact is still 'registered'.",
+      "properties": {
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "source_uri": { "$ref": "#/$defs/SourceUri" },
+        "base_model_revision": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "model_family": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "weights_digest": { "$ref": "#/$defs/WeightsDigest" },
+        "license_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "trust_remote_code_allowed": { "type": "boolean" },
+        "required_python_packages": { "type": "array", "items": { "type": "string" } },
+        "minimum_gpu_profile": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "TrainableArtifact": {
+      "type": "object",
+      "description": "Section 6.7 — the read-facing representation.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "source_type": { "$ref": "#/$defs/SourceType" },
+        "source_uri": { "$ref": "#/$defs/SourceUri" },
+        "model_family": { "type": "string" },
+        "base_model_revision": { "type": "string" },
+        "weights_digest": { "$ref": "#/$defs/WeightsDigest" },
+        "license_id": { "type": "string" },
+        "license_accepted_by": { "type": ["string", "null"] },
+        "license_accepted_at": { "type": ["string", "null"], "format": "date-time" },
+        "trust_remote_code_allowed": { "type": "boolean" },
+        "required_python_packages": { "type": "array", "items": { "type": "string" } },
+        "minimum_gpu_profile": { "type": "object" },
+        "status": { "$ref": "#/$defs/ArtifactStatus" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "archived_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": [
+        "id", "organization_id", "display_name", "source_type", "source_uri",
+        "model_family", "base_model_revision", "license_id", "status",
+        "created_at", "updated_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

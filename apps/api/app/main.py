@@ -5,10 +5,13 @@ service -- every prior CERTIFIED task deliberately disclosed "no live
 FastAPI app exists yet" as the reason its own module had no live caller
 (FTF-0005, FTF-0006, FTF-0102, FTF-0104). This module is that caller: it
 builds and serves the real `/auth/*` router from
-`app.auth.oidc_login.build_oidc_login_router`, and (FTF-0201) the real
+`app.auth.oidc_login.build_oidc_login_router`, (FTF-0201) the real
 `/api/v1/organizations/{organization_id}/connections/litellm` router from
 `app.litellm.connection_routes.build_litellm_connection_router` -- the
-second live-wired product-runtime path in this repository.
+second live-wired product-runtime path in this repository -- and
+(FTF-0301) the real `/api/v1/organizations/{organization_id}/artifacts`
+router from `app.artifacts.artifact_routes.build_trainable_artifact_router`
+-- the third.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -49,6 +52,7 @@ from fastapi import FastAPI
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.artifacts.artifact_routes import build_trainable_artifact_router
 from app.auth.oidc_login import build_oidc_login_router
 from app.auth.oidc_settings import OidcSettings
 from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_guard
@@ -75,6 +79,7 @@ def create_app() -> FastAPI:
         build_oidc_login_router(settings, client_secret=client_secret, signing_key=signing_key)
     )
     app.include_router(build_litellm_connection_router(session_factory))
+    app.include_router(build_trainable_artifact_router(session_factory))
     return app
 
 
