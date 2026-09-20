@@ -179,8 +179,9 @@ full history and evidence.
   submission against this same task ID is expected once that
   infrastructure exists. Full submission report:
   docs/certifications/queue.md. `certification_state: PROVISIONAL` /
-  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR link to be
-  recorded once opened.
+  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR:
+  https://github.com/SJZLab/Sovra/pull/124
+  (`claude/wizardly-fermat-daazqp` → `main`).
 
 Prior item: FTF-0105 (Tenant-isolation query guards) was independently
 reviewed and CERTIFIED this shift via PR #120 (merge commit `14f785c`)

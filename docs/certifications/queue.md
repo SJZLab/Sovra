@@ -4960,3 +4960,7 @@ the same code on a now-clean head.
   `L1-PROVEN`.
 - **Submitted-by:** this relay shift (scheduled, non-interactive),
   2026-09-20.
+
+## 2026-09-20 — FTF-H003 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/124
+  (`claude/wizardly-fermat-daazqp` → `main`).
