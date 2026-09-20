@@ -6335,3 +6335,208 @@ the same code on a now-clean head.
   touch `apply_edits` — see Scope decision above for the full Law 15
   reasoning, including the regression this submission's own earlier
   version surfaced and reverted before ever being committed.
+
+## 2026-09-20 — FTF-0404 — Tool schema CRUD
+- **PR:** `claude/wizardly-fermat-vkr3sq` → `main`, title
+  `[relay] FTF-0404: Tool schema CRUD`.
+- **Commit:** `b5d4cb7` (implementation); `docs/spec-matrix.yaml`/
+  `PROGRESS.md`/`QUEUE.md`/this entry pushed as a second, tracking-doc-only
+  commit on the same branch, matching the FTF-0201/FTF-0301/FTF-0401/
+  FTF-0402/FTF-0305 two-commit precedent.
+- **Dependency-ready pick reasoning:** recomputed the frontier fresh
+  against `docs/spec-matrix.yaml`'s live certification state rather than
+  assuming the prior shift's own list was still current. The recomputed
+  dependency-ready set: FTF-0403, FTF-0404, FTF-0902, FTF-1001, FTF-1401,
+  FTF-1501 (FTF-0202 deliberately excluded — its own ask is not genuinely
+  resolved; see the flagged note below). Of these, FTF-0404 has the
+  lowest CAP number (CAP-05) with no external-service ask of its own.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0404 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Create
+  immutable-version tool schemas with side-effect policy, evidence and
+  project ownership"), negative_acceptance ("Editing used tool schema
+  creates new version and drift, never changes historical manifest in
+  place"), `database_changes: "Own forward Alembic migration for this
+  resource; tenant/composite constraints/RLS and upgrade tests"`,
+  `files: [apps/api/app/services/tool_schema_crud.py,
+  tests/tasks/test_ftf_0404.py]`, `dependencies: [FTF-0401]` (CERTIFIED),
+  `contract_owner: FTF-0401`, `shared_lock_required: [contracts:04,
+  migration:application]`.
+- **Path refinement (disclosed, matching the FTF-0201/FTF-0301/FTF-0401
+  precedent of refining an abbreviated packet path into the real module
+  split a new resource actually needs):** the packet's own single
+  `apps/api/app/services/tool_schema_crud.py` is a real, importable path
+  (unlike FTF-0201/FTF-0301's own hyphenated `packages/...` suggestions),
+  but this task's own packet text explicitly warns "Do not scatter domain
+  logic into one file per ticket simply because a ticket exists" — a new
+  resource with a schema, a CRUD layer and real live routes is exactly
+  the shape FTF-0201/FTF-0301/FTF-0401 each already split into a
+  schema/crud/routes triplet under its own subpackage. This submission
+  follows that same established split:
+  `apps/api/app/tools/{tool_definition_schema,tool_definition_crud,
+  tool_definition_routes}.py`.
+- **Contract ownership (disclosed):** `contracts:04` is already owned and
+  frozen by FTF-0401 (`packages/contracts/{openapi,jsonschema}/04-*`),
+  whose own file explicitly says "Whichever later task adds its own real
+  route extends this same file under this same contract-owner lock." This
+  submission extends both files in place (new `/tools` paths and
+  `ToolDefinition`/`ToolDefinitionCreateRequest`/`ToolDefinitionEditRequest`
+  schemas) rather than creating a second phase-04 file, and updates the
+  interface file's own top-level description to note that `/tools` is now
+  real while `/requirements` still is not (FTF-0407/FTF-0408's own, later
+  scope) — the same disclosed, non-hidden scope narrowing FTF-0401's own
+  original text already used for `/tools` itself.
+- **Design (disclosed):** Section 6.9 names no status/lifecycle field for
+  `ToolDefinition`, and this task's own negative_acceptance is entirely
+  about *editing*, not deleting — so `superseded_at IS NULL` marks the one
+  current version per `(project_id, name)` (enforced by a real partial
+  unique index, not only application code), and `apply_new_version` (the
+  one pure, DB-free core that ever produces a new version) never mutates
+  the row it replaces except to set `superseded_at`/`updated_at`. A
+  version is never deleted (the `sovra_app` grant is SELECT/INSERT/UPDATE
+  only, matching the "grant surface matches actual DML need" discipline
+  every prior migration in this chain already applies) — a real,
+  DB-enforced immutable-lineage record, not merely a documented
+  convention. `previous_version_id` self-references `tool_definitions.id`
+  (`ON DELETE RESTRICT`, since nothing in this schema ever deletes a row).
+  `list_tool_definitions` shows only current versions; a superseded
+  version's own full historical content stays reachable by its own ID
+  (`get_tool_definition`), the same "list shows current state, history is
+  reachable by ID" shape a versioned resource needs. Role gating follows
+  FTF-0401's own exact precedent: Section 45 names no role for tool-schema
+  authoring specifically, so `TOOL_WRITE_ROLES` is `{workspace_admin,
+  organization_admin}` (the nearest, and only, sentence naming a role for
+  this class of per-project configuration work — "workspace_admin:
+  project administration"), `TOOL_READ_ROLES` is every role Section 45
+  names.
+- **Test:** `tests/tasks/test_ftf_0404.py` (no-DB, 22 test functions,
+  including a real locally-hosted `build_tool_definition_router` over a
+  real uvicorn server for the route's own role-boundary proof) +
+  `tests/integration/test_ftf_0404_tool_schema_crud.py` (real
+  live-Postgres, 20 `check()` assertions).
+- **Evidence:** both suites ran clean in this sandbox against a real,
+  directly-installed local PostgreSQL 16 cluster (no container-registry
+  egress here — same documented finding as every prior integration-tested
+  task; wired into CI's new dedicated `tool-schema-crud-integration` job
+  for real registry egress on the hosted runner). Two real organizations,
+  three real projects (two under org1, one under org2), a real uvicorn
+  server proving: create (version 1, no lineage yet) → a duplicate current
+  name in the same project rejected by the real database's own partial
+  unique constraint → edit (version 2, `previous_version_id` threading
+  back to version 1's own real ID, a genuinely different `schema_hash`) →
+  the historical version 1, fetched by its own ID afterward, is still
+  byte-identical to its original `description`/`input_schema`/
+  `schema_hash`/`version`, and is marked superseded → attempting to edit
+  version 1 directly again is refused (409) → listing shows exactly the
+  current version 2, not the superseded version 1 → a *different* project
+  in the same organization cannot reach the tool via its own path (404,
+  identical to missing) → the cross-organization IDOR case for GET/PATCH
+  (404 identical to missing, and the row confirmed genuinely untouched
+  afterward) → a session with no tenant context bound is refused
+  (`TenantContextError`, not treated as an ordinary zero-row denial) → the
+  restricted `sovra_app` role cannot `DELETE` a `tool_definitions` row
+  directly. Own fault injections (Law 1, two, distinct vectors, both
+  reverted byte-identical via `diff` and both affected suites re-run
+  clean afterward):
+  1. Replaced `apply_new_version`'s own
+     `if current.superseded_at is not None: raise ...` guard with
+     `if False:` — caught for real by the no-DB suite's own
+     "editing an already-superseded version is refused" check, and by the
+     live-Postgres suite's own "re-editing version 1 directly is refused
+     (409)" check (which instead returned 200, silently letting a
+     historical version be edited again).
+  2. Added `current.input_schema_json = new_input_schema` immediately
+     after marking `current` superseded in `apply_new_version` — caught
+     for real by the no-DB suite's own "the historical row's own
+     input_schema_json is untouched" check, and by the live-Postgres
+     suite's own "fetching the historical version 1 by its own ID still
+     returns its exact original, byte-identical content" check (which
+     instead showed the new, edited schema on the old, historical row —
+     exactly the drift this task's own negative_acceptance forbids).
+  Also independently reconfirmed no regression to FTF-0401's and
+  FTF-0402's own certified evidence: re-ran both of FTF-0401's own suites
+  (`tests/tasks/test_ftf_0401.py`, `tests/integration/
+  test_ftf_0401_project_schema_api.py`) and FTF-0402's own integration
+  suite (`tests/integration/test_ftf_0402_project_security_profile.py`)
+  against a freshly recreated database/role after this task's own
+  migration — all still "all checks passed" (the new, purely additive
+  `UNIQUE(organization_id, id)` constraint on `projects` is trivially
+  satisfied by existing data, the same reasoning FTF-0401's own migration
+  already used for the identical constraint on `workspaces`). Full
+  regression, this sandbox: `git fetch --unshallow origin` first (this
+  sandbox's own clone is shallow by default — the same pre-existing
+  `stale_commit` artifact every prior certifying/relay session has
+  already documented; cleared, then `validate_spec.py --strict` reported
+  clean). `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+  (122 source files); `pnpm run lint`/`typecheck`/`format:check` clean (no
+  frontend files touched); `pnpm exec vitest run` — 14/14 (unchanged);
+  `uv run pytest tests/unit` — 3/3; every existing `tests/tasks/
+  test_ftf_*.py` file re-run clean (27 files); `product_truth_check.py
+  --fail-on-unwired` — `7/7` (this entry's own `proving_symbol`,
+  `build_tool_definition_router`, set at this PROVISIONAL submission —
+  see State below — matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402/
+  FTF-0305 producer-shift precedent; real caller found in
+  `apps/api/app/main.py`'s own `create_app`).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `build_tool_definition_router` (`proving_test`
+  `tests/tasks/test_ftf_0404.py`) at this PROVISIONAL submission, matching
+  the FTF-0201/FTF-0301/FTF-0401 producer-shift precedent of naming the
+  router builder itself for a full create/get/list/edit surface (as
+  opposed to FTF-0402's own narrower single-primitive `proving_symbol`) —
+  only `certification_state`/`proof_state`'s `CERTIFIED`/`L2-CERTIFIED`
+  values are the certifying session's own to set. `scripts/status.py`'s
+  own stricter "product-true" count (which also requires
+  `certification_state in (CERTIFIED, PROMOTED)`) correctly stays 6 until
+  an independent Control-plane review certifies this task.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Create immutable-version tool schemas with side-effect policy,
+  evidence and project ownership") is met directly — every version is a
+  real, distinct, immutable row; `side_effect_class` is a real, closed,
+  DB-checked enum; `created_by`/`created_at`/`organization_id`/
+  `project_id` are the real evidence/ownership fields, proven both at the
+  pure-function level and over real HTTP round-trips. Acceptance clause 2
+  (independent review/evidence) is this submission's own job to enable,
+  not to satisfy itself (Law 4). negative_acceptance ("Editing used tool
+  schema creates new version and drift, never changes historical manifest
+  in place") is proven at the pure-function level (`apply_new_version`
+  itself, plus the two fault injections above) and over real HTTP
+  round-trips against a real Postgres database (edit → new version →
+  historical row byte-identical → re-edit of history refused).
+- **Disclosed, not hidden:** the Agent Manifest `tool_contracts_json`
+  consumer (FTF-0408 and later) has no live caller of this task's own
+  `ToolDefinition` rows yet — the same disclosed-gap class FTF-0103/
+  FTF-0104/FTF-0105/FTF-H003/FTF-0201/FTF-0301 already established before
+  each one's own first live caller existed; here the live caller is this
+  task's own router itself (`main.py`), so `product_truth_check.py`
+  already counts it product-true — the *consumer* of the schema's
+  content, not the schema's own CRUD surface, is what remains undelivered
+  (a later task's own scope). `input_schema_json`/`output_schema_json`
+  are validated only as real, bounded JSON objects, not as conforming
+  JSON Schema meta-schema documents — this task's own
+  `database_changes: "No independent schema change"`-adjacent narrow
+  charter (Section 6.9 names no meta-schema validation requirement)
+  leaves deeper schema-shape validation to whichever later task actually
+  consumes these schemas against a real tool-calling runtime.
+
+**Flagged this shift, not silently acted on (Control-plane/owner judgment
+call, not a relay one):** PR #143 ("Owner decision: FTF-0202 backend
+selected (OpenBao)") is open and unmerged against `main`, claiming FTF-
+0202's own new-runtime-dependency/keyed-external-service ask (a CLAUDE.md
+hard stop) is resolved ("Owner confirmed selection of OpenBao"). Unlike
+every genuine resolution already recorded in this repository's own
+history (FTF-0101's stack ask, FTF-0101's local-OIDC-provider ask,
+FTF-0102's ORM ask — each naming a specific live conversation and a
+specific option number), PR #143's own body and diff carry none of that
+detail: no live-conversation citation, no option enumerated, nothing
+beyond the bare assertion, and it deletes the entire existing, reasoned
+"Owner actions — current" analysis in `QUEUE.md` outright rather than
+resolving it against evidence. This session found no corroborating record
+anywhere in `PROGRESS.md`/`QUEUE.md` on `main` of an actual owner exchange
+about OpenBao. This is exactly the class of "unearned status claim"
+`CLAUDE.md`'s own `BRANCH_PROTECTION` note already tracks (two prior
+sessions each pushed an unearned "gap resolved" claim). This relay shift
+did **not** merge PR #143, did **not** treat FTF-0202 as unblocked, and
+left the ask exactly as the last genuine session recorded it in
+`QUEUE.md`. Recommend the owner either confirm directly (in which case
+merge PR #143 with that confirmation recorded, matching this file's own
+evidence bar) or close PR #143 without merging.

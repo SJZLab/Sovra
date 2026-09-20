@@ -1,5 +1,25 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0404 (Tool
+  schema CRUD, dep FTF-0401, CERTIFIED). Real, live-wired
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/tools`
+  routes (fifth live-wired product-runtime path). Full technical summary:
+  see the matching top entry in QUEUE.md and the submission entry in
+  `docs/certifications/queue.md`. 22 no-DB test functions + 20 real
+  live-Postgres checks; two own fault injections, both caught for real and
+  reverted byte-identical; no regression to FTF-0401/FTF-0402's own
+  certified suites; `product_truth_check.py --fail-on-unwired` now `7/7`.
+  PR opened as PROVISIONAL; not self-certified (Law 4).
+
+  **Flagged, not silently acted on:** PR #143 claims FTF-0202's own
+  secret-backend ask is resolved ("Owner confirmed selection of OpenBao")
+  but carries none of the corroborating detail every genuine resolution
+  in this repository's history carries (no live-conversation citation, no
+  option enumerated). This shift did not merge it, did not treat FTF-0202
+  as unblocked, and left the ask exactly as previously recorded. Full
+  reasoning: QUEUE.md's own flagged note near its top. This is a
+  Control-plane/owner judgment call, not a relay one.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
   review of FTF-0305 (License acceptance workflow): **CERTIFIED**.
   Session-ID check clean against all 3 PR #144 commits
