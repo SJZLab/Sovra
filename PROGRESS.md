@@ -9190,3 +9190,115 @@ relay-workable item is whichever of FTF-0403/FTF-0404/FTF-0902/FTF-1001/
 FTF-1401/FTF-1501 has the lowest CAP number and no external-service ask
 of its own at that time — recompute the frontier fresh rather than
 assuming this shift's own list is still current.
+
+## 2026-09-20 — Control plane: FTF-0405 (PR #148) independently reviewed, CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the
+`pull_request.opened` webhook for PR #148 ("[relay] FTF-0405: JSON Schema
+tool validation"). Note: this shift found `docs/certifications/queue.md`,
+`QUEUE.md` and this file had not been updated by several recent
+certifications (FTF-0402/FTF-0404) or by PR #148's own producer shift —
+only `docs/spec-matrix.yaml`/tests/the packet doc were touched by those
+commits. This did not block review (the authoritative state lives in
+`docs/spec-matrix.yaml`/`docs/certifications/ledger.md`, both independently
+verified below), but the tracking docs were behind; this shift's own doc
+updates bring `QUEUE.md`/`PROGRESS.md`/`docs/certifications/ledger.md` back
+in sync with the real, current `docs/spec-matrix.yaml` state for FTF-0405
+specifically (not a full backfill of every prior gap, which is outside this
+shift's own certify-only charter).
+
+**Session-ID check:** the sole commit on PR #148 (`9138f46`) carries
+`Claude-Session: .../session_01ULAxA48EZT6uh2Kg6DziPL`; this reviewing
+session's own ID is `session_01XbdXkopSW5Eh19JXpG2EBG` — no match,
+independent per Law 4.
+
+**Diff read directly** (6 files, +2513/-14): the new
+`apps/api/app/services/json_schema_tool_validation.py` is a pure,
+DB-free, network-free module implementing a pinned, safe subset of JSON
+Schema Draft 2020-12 — `validate_json_schema_document` (schema-definition
+validation) and `validate_instance` (call-time instance validation, no
+live caller yet, disclosed). `$ref` resolution is local-only by
+construction (`_check_ref_target` rejects anything that isn't a literal
+`#/$defs/<name>` prefix before any resolution is attempted), and `$defs`
+cycles are caught by a real DFS at schema-validation time, independent of
+separate depth/node/hop bounds. `apps/api/app/tools/tool_definition_schema.py`'s
+`validate_schema_object` now calls `validate_json_schema_document` for
+both `input_schema_json`/`output_schema_json` — the already-CERTIFIED,
+already-live-wired FTF-0404 `ToolDefinition.__init__` path, so no new
+route or wiring was needed for this to be real. `tests/tasks/test_ftf_0404.py`'s
+own diff is exactly one filler-value change unrelated to that test's own
+coverage.
+
+**CI reconfirmed on the real final head:** GitHub Actions run
+`35537769604` — all 16 check runs `completed`/`success` (the `gate` job
+was still `in_progress` when this session first checked; re-checked after
+completion), including `tool-schema-crud-integration`.
+
+**Own reproduction, this sandbox:** checked out PR #148's four
+code/test-relevant files on top of a fresh `main`; `uv sync
+--all-packages`; `uv run python3 tests/tasks/test_ftf_0405.py` → "all
+checks passed" (25 test functions); `uv run python3
+tests/tasks/test_ftf_0404.py` → "all checks passed" (no regression).
+
+**Own fault injection, two, distinct from the producer's own two named in
+the PR** (Law 1), both reverted byte-identical and both suites re-run
+clean afterward:
+1. Removed the non-local-`$ref` rejection in `_check_ref_target` — caught
+   for real: `FAIL [FTF-0405] negative_acceptance: a non-local $ref
+   ('urn:not-a-local-pointer') is refused, as a security-classed error`.
+2. Removed the `additionalProperties: false` excess-property rejection in
+   `_validate_object_instance` — caught for real: `FAIL [FTF-0405]
+   negative_acceptance: an instance carrying a property beyond what
+   additionalProperties: false permits is refused explicitly`.
+
+**Full regression, this sandbox:** `uv run ruff check`/`uv run mypy`
+clean on both changed source files; every `tests/tasks/test_ftf_*.py`
+file re-run (27 files) — all pass except FTF-0002/FTF-0003/FTF-H001's own
+frontend-tooling-dependent checks, independently reproduced as failing
+identically on `main` *before* this PR (`git stash` back to the pre-PR
+tree, same three files fail the same way) — a pre-existing sandbox
+artifact (no frontend `node_modules` build in this sandbox), not a
+regression this PR introduces. `python3 scripts/validate_spec.py
+--strict` clean once unshallowed.
+
+**`product_truth_check.py --fail-on-unwired`:** `7/7` before this
+certification, `8/8` after — `validate_json_schema_document` (this
+entry's own `proving_symbol`) has a real, source-inspection-confirmed
+live caller, so it is correctly newly counted; a genuine evidence-backed
+increase, not inflation (Law 2).
+
+**Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+FTF-0405 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+("Validate JSON Schema using pinned dialect and schema references under
+safe limits") confirmed met. `negative_acceptance` ("Recursive/reference
+bombs, remote schema SSRF, invalid required/type constraints and excess
+arguments fail explicitly") confirmed met against all four named cases —
+two independently reproduced above, the other two (`_detect_ref_cycles`,
+`ALLOWED_TYPES`/required-vs-properties consistency) confirmed present and
+exercised by the reproduced no-DB suite. Both dependencies (FTF-0401,
+FTF-0404) confirmed genuinely `CERTIFIED` before relying on them.
+
+**Action taken:** merged PR #148 (merge commit
+`82e2851be2c02b8e9257713404d11f66147efcb0`). Set `docs/spec-matrix.yaml`
+FTF-0405 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED`. Added FTF-0405's own entry to `spec/verification-map.json`.
+Ran `sync_certified_status()`. `scripts/status.py` confirmed non-inflated
+(`30/300` certified · `7` product-true before, reproduced directly via
+`git stash`; `31/300` · `8` after). Full ledger entry appended to
+`docs/certifications/ledger.md`. `QUEUE.md` updated (Certified 30 → 31,
+Product-true 7 → 8; item added to "## Done"). This certification's own
+doc updates are pushed on a branch and opened as a PR against `main`, not
+pushed directly, per `BRANCH_PROTECTION` in `CLAUDE.md`.
+
+No blocking defect. Certified L2-CERTIFIED.
+
+## Next shift
+The next relay-workable item is whichever dependency-ready task has the
+lowest CAP number and no external-service ask of its own — recompute the
+frontier fresh against `docs/spec-matrix.yaml`'s live state rather than
+assuming this shift's own view is still current. Separately: the stale
+`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` gap noted above
+(several prior shifts skipped their own tracking-doc updates) is worth a
+future shift's attention if it recurs — not urgent on its own, since
+`docs/spec-matrix.yaml`/`docs/certifications/ledger.md` remained the real
+source of truth throughout and nothing was found certified without
+genuine evidence.

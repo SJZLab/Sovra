@@ -1,6 +1,39 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #146) — independent CERTIFY
+  the `pull_request.opened` webhook for PR #148) — independent CERTIFY
+  review of FTF-0405 (JSON Schema tool validation): **CERTIFIED**.
+  Session-ID clean against the sole commit on PR #148
+  (session_01ULAxA48EZT6uh2Kg6DziPL, not matching this reviewing
+  session's own `session_01XbdXkopSW5Eh19JXpG2EBG`). Diff read directly:
+  the new `apps/api/app/services/json_schema_tool_validation.py` is a
+  pure, DB-free, network-free module implementing a pinned, safe subset
+  of JSON Schema Draft 2020-12, and `tool_definition_schema.py`'s
+  `validate_schema_object` now calls its `validate_json_schema_document`
+  for both `input_schema_json`/`output_schema_json`, on the
+  already-CERTIFIED, already-live-wired FTF-0404
+  `ToolDefinition.__init__` path. CI reconfirmed green (16/16, including
+  `gate`) on the real final head `9138f46`. Own reproduction of the no-DB
+  suite in this sandbox ("all checks passed") and of FTF-0404's own no-DB
+  suite (no regression). Two own fault injections, distinct from the
+  producer's own two: disabling the non-local-`$ref` rejection (caught
+  for real by the "remote schema SSRF" negative_acceptance case) and
+  disabling the `additionalProperties: false` excess-property rejection
+  (caught for real by the "excess arguments" negative_acceptance case) —
+  both reverted byte-identical, both suites re-run clean. Full repo-wide
+  regression re-run clean aside from FTF-0002/FTF-0003/FTF-H001's own
+  frontend-tooling-dependent checks, independently confirmed pre-existing
+  on `main` before this PR (no regression). `product_truth_check.py
+  --fail-on-unwired` correctly rises `7/7` -> `8/8` once this entry is
+  certified (a real, newly-counted live caller, not inflation). Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0405`,
+  confirming acceptance clause 1 and all four negative_acceptance cases
+  are genuinely met. Merged PR #148 (merge commit `82e2851`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Certified: 31/300, Product-true: 8/8. Full
+  review: `docs/certifications/ledger.md` (FTF-0405 entry).
+
+Previously, 2026-09-20 (scheduled Control-plane certifier shift, triggered
+  by the `pull_request.opened` webhook for PR #146) — independent CERTIFY
   review of FTF-0404 (Tool schema CRUD): **CERTIFIED**. Session-ID clean
   against all 3 commits on PR #146 (session_01Erh4hdf73yUo4Q36YKTshz, not
   matching this reviewing session's own ID). Diff read directly. CI
@@ -619,18 +652,18 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 30/300 (main; FTF-0404 CERTIFIED 2026-09-20, PR #146 merged as
-`d061996` — see docs/certifications/ledger.md) · Provisional: 0 ·
+Certified: 31/300 (main; FTF-0405 CERTIFIED 2026-09-20, PR #148 merged as
+`82e2851` — see docs/certifications/ledger.md) · Provisional: 0 ·
 Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
-work continued this shift on FTF-0404 instead of stopping. PR #143's own
+work continued on FTF-0404/FTF-0405 instead of stopping. PR #143's own
 bare claim to have resolved that ask remains unverified and was not acted
 on — see the flagged note near the top of this file.)
-Product-true (Law 16): 7 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 8 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
@@ -640,10 +673,14 @@ FTF-0402's own `enforce_security_profile_selection` (called for real by
 FTF-0401's `create_project`/`update_project`), FTF-0305's own
 `apply_revoke_license` (called for real by `artifact_crud.py`'s own new
 `revoke_license`, which the new live-wired `revoke-license` route calls),
-and now FTF-0404's own `build_tool_definition_router` (called for real by
-`apps/api/app/main.py`) all meet all three, independently reconfirmed by
-this certifying session. `product_truth_check.py --fail-on-unwired` and
-`scripts/status.py` now agree at `7/7`/`7`.
+FTF-0404's own `build_tool_definition_router` (called for real by
+`apps/api/app/main.py`), and now FTF-0405's own
+`validate_json_schema_document` (called for real by
+`tool_definition_schema.py`'s `validate_schema_object`, itself called by
+`ToolDefinition.__init__` on every FTF-0404 create/edit route) all meet
+all three, independently reconfirmed by this certifying session.
+`product_truth_check.py --fail-on-unwired` and `scripts/status.py` now
+agree at `8/8`/`8`.
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -1530,6 +1567,53 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
+- FTF-0405 — JSON Schema tool validation. CERTIFIED 2026-09-20, PR #148,
+  merge commit `82e2851`. Independent Control-plane review triggered by
+  the `pull_request.opened` webhook: session-ID check clean against the
+  sole PR #148 commit (session_01ULAxA48EZT6uh2Kg6DziPL, no match to this
+  reviewing session); diff read directly confirming
+  `tool_definition_schema.py`'s `validate_schema_object` now calls the
+  new `json_schema_tool_validation.py`'s `validate_json_schema_document`
+  for both `input_schema_json`/`output_schema_json`, on the already-live
+  FTF-0404 `ToolDefinition.__init__` path. CI reconfirmed green (16/16,
+  including `gate`) on the real final head `9138f46`. Own reproduction of
+  the no-DB suite directly in this sandbox ("all checks passed"; no
+  live-Postgres suite is claimed by this task, since its own logic is
+  pure and DB-free); FTF-0404's own no-DB suite re-run clean (no
+  regression). Own two fault injections, distinct from the producer's own
+  two, both reverted byte-identical and both suites re-run clean
+  afterward: (1) disabled the non-local-`$ref` rejection in
+  `_check_ref_target` — caught for real by the named "remote schema SSRF"
+  negative_acceptance check; (2) disabled the `additionalProperties:
+  false` excess-property rejection in `_validate_object_instance` —
+  caught for real by the named "excess arguments" negative_acceptance
+  check. Full repo-wide regression re-run clean (`ruff`/`mypy` on changed
+  files, every `tests/tasks/test_ftf_*.py` file except FTF-0002/
+  FTF-0003/FTF-H001's own frontend-tooling-dependent checks, which this
+  review independently reproduced as failing identically on `main`
+  *before* this PR — a pre-existing sandbox artifact, not a regression;
+  `validate_spec.py --strict` clean after unshallowing);
+  `product_truth_check.py --fail-on-unwired` went `7/7` before this
+  certification to `8/8` after — `validate_json_schema_document` (this
+  task's own `proving_symbol`) has a real, source-inspection-confirmed
+  caller (`tool_definition_schema.py`'s `validate_schema_object`), so it
+  is correctly newly counted, matching the same "gains a real caller ->
+  gains a count" pattern every prior task's own certification already
+  followed; this is a genuine, evidence-backed increase, not inflation
+  (Law 2). Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-0405`, confirming both acceptance clause 1 (pinned dialect +
+  safe `$ref`/limit enforcement) and all four negative_acceptance cases
+  (reference/recursion bombs, remote schema SSRF, invalid required/type
+  constraints, excess arguments) are genuinely met, and that both
+  dependencies (FTF-0401, FTF-0404) are genuinely `CERTIFIED`. No
+  blocking defect. `docs/spec-matrix.yaml` set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`. `scripts/status.py` confirmed
+  non-inflated (`30/300` before, reproduced directly via `git stash`;
+  `31/300` after; "Product-true" `7` before, `8` after, matching
+  `product_truth_check.py`'s own `8/8`). This certification's
+  own doc updates were pushed on a branch and opened as a PR against
+  `main` rather than pushed directly, per `BRANCH_PROTECTION`. Full
+  entry: docs/certifications/ledger.md.
 - FTF-0402 — Project security profile. CERTIFIED 2026-09-20, PR #141,
   merge commit `a6ef1d9`. See `docs/certifications/ledger.md` (FTF-0402
   entry) for the full independent-review narrative.

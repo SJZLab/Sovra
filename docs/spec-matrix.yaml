@@ -748,10 +748,10 @@ FTF-0404:
   proving_symbol: build_tool_definition_router
   proving_test: tests/tasks/test_ftf_0404.py
 FTF-0405:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: JSON Schema tool validation
-  evidence_hash: ''
+  evidence_hash: 82e2851be2c02b8e9257713404d11f66147efcb0
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401,
@@ -806,9 +806,50 @@ FTF-0405:
     this sandbox: `ruff check`/`ruff format --check`/`mypy .` (120 source
     files), `pnpm run lint`/`typecheck`, every `tests/tasks/test_ftf_*.py`
     file, `validate_spec.py --strict`. PR opened as PROVISIONAL; not
-    self-certified (Law 4) -- awaiting independent Control-plane L2
-    review.
-  proof_state: L1-PROVEN
+    self-certified (Law 4). Certified on first submission (PR #148) --
+    independent Control-plane review confirmed the sole commit on PR #148
+    (`9138f46`) carries `Claude-Session: .../session_01ULAxA48EZT6uh2Kg6DziPL`,
+    no match to the reviewing session's own `session_01XbdXkopSW5Eh19JXpG2EBG`;
+    read the diff directly against the real PR head; reconfirmed CI green
+    (16/16, including `gate`) on the real final head `9138f46`; reproduced
+    `tests/tasks/test_ftf_0405.py` ("all checks passed") and
+    `tests/tasks/test_ftf_0404.py` (no regression) directly in this
+    sandbox; ran two of its own fault injections distinct from the
+    producer's own two -- disabling the non-local-`$ref` rejection in
+    `_check_ref_target` (caught for real: "a non-local $ref ... is
+    refused, as a security-classed error") and disabling the
+    `additionalProperties: false` excess-property rejection in
+    `_validate_object_instance` (caught for real: "an instance carrying a
+    property beyond what additionalProperties: false permits is refused
+    explicitly") -- both reverted byte-identical (`diff`-confirmed) and
+    both suites re-run clean afterward; confirmed `ruff check`/`mypy`
+    clean on the two changed source files; `validate_spec.py --strict`
+    clean after `git fetch --unshallow`; confirmed FTF-0002/FTF-0003/
+    FTF-H001's own local test failures are a pre-existing sandbox artifact
+    (reproduced identically on `main` before this PR -- no frontend
+    tooling installed in this sandbox, unrelated to this change);
+    `product_truth_check.py --fail-on-unwired` reconfirmed `7/7` prior to
+    this certification (matching the PR's own claim), rising to `8/8`
+    once this entry is set to `CERTIFIED` here --
+    `validate_json_schema_document` (this entry's own `proving_symbol`)
+    has a real, source-inspection-confirmed live caller, so it is
+    correctly newly counted, a genuine evidence-backed increase rather
+    than inflation (Law 2).
+    Task contract re-pulled via `tools/r1_handoff.py packet FTF-0405
+    --plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1
+    ("Validate JSON Schema using pinned dialect and schema references
+    under safe limits") confirmed met -- `PINNED_DIALECT` checked,
+    `MAX_SCHEMA_DEPTH`/`MAX_SCHEMA_NODES`/`MAX_REF_HOPS` all real,
+    enforced bounds. negative_acceptance ("Recursive/reference bombs,
+    remote schema SSRF, invalid required/type constraints and excess
+    arguments fail explicitly") confirmed met against all four named
+    cases -- reference cycles (`_detect_ref_cycles`), remote/non-local
+    `$ref` (rejected by construction, reproduced above), invalid
+    required/type (`ALLOWED_TYPES`/required-vs-properties consistency),
+    excess arguments (`additionalProperties: false`, reproduced above).
+    No blocking defect found. Merged as PR #148 (merge commit
+    `82e2851be2c02b8e9257713404d11f66147efcb0`). Certified L2-CERTIFIED.
+  proof_state: L2-CERTIFIED
   proving_symbol: validate_json_schema_document
   proving_test: tests/tasks/test_ftf_0405.py
 FTF-0406:

@@ -3735,3 +3735,148 @@ corrected 2026-09-15.
   discrepancy above) is a documentation-accuracy nit, not a correctness
   or security defect, and does not block certification. No blocking
   defect. Certified L2-CERTIFIED.
+
+## FTF-0405 — JSON Schema tool validation
+- Criterion ID: FTF-0405
+- PR: https://github.com/SJZLab/Sovra/pull/148 (`claude/wizardly-fermat-0iyrgu` → `main`)
+- Merge commit: 82e2851be2c02b8e9257713404d11f66147efcb0
+- Implementation commit: 9138f46abebe74e35bcda233bf4c91d81e6ec0d1
+- Validated-by: session https://claude.ai/code/session_01XbdXkopSW5Eh19JXpG2EBG
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #148)
+- Date: 2026-09-20
+- **Session-ID check:** the sole commit on PR #148 (`9138f46`) carries
+  `Claude-Session: .../session_01ULAxA48EZT6uh2Kg6DziPL`; this reviewing
+  session's own ID is `session_01XbdXkopSW5Eh19JXpG2EBG` — no match,
+  independent per Law 4.
+- **Diff read directly** against the real PR head `9138f46` (6 files,
+  +2513/-14): confirmed `apps/api/app/services/json_schema_tool_validation.py`
+  is a new, pure module (no SQLAlchemy/network imports) implementing a
+  pinned, bounded JSON Schema Draft 2020-12 subset —
+  `validate_json_schema_document` (schema-definition validation, real
+  live caller) and `validate_instance` (call-time instance validation,
+  disclosed no-live-caller-yet primitive, matching the FTF-0103/FTF-0104/
+  FTF-0105/FTF-H003/FTF-0305 disclosed-gap precedent). Confirmed directly
+  in `apps/api/app/tools/tool_definition_schema.py`: `validate_schema_object`
+  now calls `validate_json_schema_document` for both `input_schema_json`
+  and `output_schema_json` before either value ever reaches the database
+  — this is FTF-0404's own already-CERTIFIED, already-live-wired
+  `ToolDefinition.__init__` path, so this task's own validator runs on
+  every real create/edit HTTP round-trip without any new route or wiring
+  needed. `$ref` resolution is local-only by construction
+  (`_check_ref_target` rejects any pointer that is not a literal
+  `#/$defs/<name>` prefix before any resolution is attempted — no
+  network I/O anywhere in the module), and `$defs` reference cycles are
+  detected by a real DFS (`_detect_ref_cycles`) at schema-validation
+  time, independent of the separate `MAX_SCHEMA_DEPTH`/`MAX_SCHEMA_NODES`/
+  `MAX_REF_HOPS` bounds. `tests/tasks/test_ftf_0404.py`'s own diff is
+  exactly one filler-value change (`{"type": "different"}` →
+  `{"type": "boolean"}`) in a test that only ever asserted "editing never
+  mutates the historical row" — not a weakening of that test's own
+  coverage.
+- **CI reconfirmed on the real final head:** GitHub Actions run
+  `35537769604` — all 16 check runs `completed`/`success` (checked after
+  polling to real completion; the `gate` job was still `in_progress` when
+  this session first looked and was re-checked afterward), including
+  `tool-schema-crud-integration` (FTF-0404's own, still relevant since
+  this task changes code that job's suite exercises).
+- **Own reproduction, this sandbox:** checked out PR #148's four changed
+  code/test files directly (`git checkout pr-148 -- ...`) on top of a
+  fresh `main`; `uv sync --all-packages`; `uv run python3
+  tests/tasks/test_ftf_0405.py` → "all checks passed" (25 test
+  functions); `uv run python3 tests/tasks/test_ftf_0404.py` → "all checks
+  passed" (no regression).
+- **Own fault injection, two, distinct from the producer's own two named
+  in the PR** (Law 1): both reverted byte-identical (`diff`-confirmed
+  against the original file), both suites re-run clean afterward.
+  1. Removed the non-local-`$ref` rejection in `_check_ref_target`
+     (replaced the `_fail_security(...)` call with `pass`): caught for
+     real — `FAIL [FTF-0405] negative_acceptance: a non-local $ref
+     ('urn:not-a-local-pointer') is refused, as a security-classed
+     error`. Directly proves the "remote schema SSRF" negative_acceptance
+     case is enforced by real code, not merely documented.
+  2. Removed the `additionalProperties: false` excess-property rejection
+     in `_validate_object_instance` (replaced the `_fail(...)` call with
+     `pass`): caught for real — `FAIL [FTF-0405] negative_acceptance: an
+     instance carrying a property beyond what additionalProperties:
+     false permits is refused explicitly`. Directly proves the "excess
+     arguments" negative_acceptance case.
+- **No regression:** FTF-0404's own no-DB suite re-run clean after this
+  change (unchanged besides the one disclosed filler-value edit above).
+- **Full regression, this sandbox:** `uv run ruff check` and `uv run
+  mypy` clean on both changed source files; every existing
+  `tests/tasks/test_ftf_*.py` file re-run (27 files) — all pass except
+  FTF-0002/FTF-0003/FTF-H001's own frontend-tooling-dependent checks
+  (`pnpm run lint`/`typecheck`, `vitest run`, `check_test_harness.py`),
+  which this session independently reproduced as failing identically on
+  `main` *before* this PR (`git stash` back to the pre-PR tree and
+  re-ran the same three files) — a pre-existing sandbox artifact (no
+  frontend `node_modules` build performed in this sandbox), not a
+  regression this PR introduced. `python3 scripts/validate_spec.py
+  --strict` clean once unshallowed (`git fetch --unshallow origin`
+  first — the same pre-existing shallow-clone artifact every prior
+  certifying/relay session has already documented).
+- **`product_truth_check.py --fail-on-unwired`:** independently
+  reconfirmed `7/7` before this certification (matching the PR's own
+  pre-certification claim), rising to `8/8` once `docs/spec-matrix.yaml`
+  is set to `CERTIFIED` here — `validate_json_schema_document` (this
+  task's own `proving_symbol`) is confirmed to have a real, live caller
+  via source inspection of `tool_definition_schema.py`'s
+  `validate_schema_object` call site, so it is correctly newly counted, a
+  genuine evidence-backed increase rather than inflation (Law 2).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0405 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  clause 1 ("Validate JSON Schema using pinned dialect and schema
+  references under safe limits") confirmed met: `PINNED_DIALECT` is
+  checked against `$schema` when present, and `MAX_SCHEMA_DEPTH`/
+  `MAX_SCHEMA_NODES`/`MAX_REF_HOPS` are real, enforced, tested bounds.
+  `negative_acceptance` ("Recursive/reference bombs, remote schema SSRF,
+  invalid required/type constraints and excess arguments fail
+  explicitly") confirmed met against all four named cases: reference
+  cycles (`_detect_ref_cycles`, DFS-based, real), remote schema SSRF
+  (rejected by construction, independently reproduced above), invalid
+  required/type constraints (`ALLOWED_TYPES` closed vocabulary plus
+  `required`-vs-`properties` consistency checking), excess arguments
+  (`additionalProperties: false` enforcement, independently reproduced
+  above). `database_changes: "No independent schema change"` confirmed —
+  no migration files in the diff. Both dependencies (FTF-0401, FTF-0404)
+  confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before
+  relying on them.
+- **Action taken:** merged PR #148 (merge commit
+  `82e2851be2c02b8e9257713404d11f66147efcb0`). Set
+  `docs/spec-matrix.yaml` FTF-0405 to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED` (`evidence_hash` set to the merge commit,
+  matching the FTF-0402/FTF-0305/FTF-0404 convention; `spec/
+  verification-map.json`'s own new FTF-0405 entry keeps `commit` at the
+  implementation commit `9138f46`, matching the established precedent of
+  pointing `verify_task.py` at the exact commit its own command was
+  verified against). Added FTF-0405's own entry to
+  `spec/verification-map.json`. Ran `sync_certified_status()` — diff
+  limited to exactly FTF-0405's own `status`/`evidence` fields in
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py` confirmed non-inflated (30/300 certified · 7 product-true
+  before, reproduced directly via `git stash`; 31/300 certified · 8
+  product-true after). Full ledger entry appended to this file.
+  `QUEUE.md` updated (Certified 30 → 31, Product-true 7 → 8; item moved
+  to Done). `PROGRESS.md` updated with the full review narrative. This
+  certification's own doc updates are pushed on a branch and opened as a
+  PR against `main`, not pushed directly, per `BRANCH_PROTECTION` in
+  `CLAUDE.md`.
+- **Conclusion:** the delivered pinned, safe JSON Schema Draft 2020-12
+  subset validator is real, live-wired into `tool_definition_schema.py`'s
+  `validate_schema_object` (both `input_schema_json` and
+  `output_schema_json`, on every `create_tool_definition`/
+  `edit_tool_definition` call), and independently reproduced in this
+  sandbox. Both named attack classes this task's own negative_acceptance
+  singles out — remote schema SSRF and reference/recursion bombs — are
+  structurally impossible by construction (no network I/O anywhere in
+  the module; a real DFS cycle check plus independent depth/node
+  bounds), confirmed by this session's own two fault injections, both
+  distinct from the producer's own two and both caught for real. CI
+  green on the real final merged head (16/16, including `gate`) and
+  `product_truth_check.py` legitimately reporting `7/7` unchanged
+  (this task adds no new route of its own — it strengthens an
+  already-live-wired validation call site). The disclosed absence of a
+  live caller for `validate_instance` matches an established,
+  already-certified repository precedent, not a new or hidden gap. No
+  blocking defect. Certified L2-CERTIFIED.
