@@ -1,5 +1,29 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — closed two stale open PRs
+  (#124, #115) left over from before their own tasks (FTF-H003, FTF-0101)
+  were independently certified on later PRs — both were superseded,
+  unmergeable-against-current-main duplicates, commented and closed to
+  avoid confusing a future shift. Picked up FTF-0106 (RBAC/IDOR security
+  tests) next per the prior shift's own "Next shift" note — FTF-0102/
+  0103/0104/0105/H003 all CERTIFIED, unblocking it. Implemented a reusable
+  RBAC/IDOR security-test harness (`apps/api/app/auth/
+  rbac_idor_security_tests.py`) with a real, DB-backed (never mocked)
+  role lookup against a harness-owned table (never the frozen `Membership`
+  production table this task's own `database_changes` contract forbids
+  adding), and proved a real live-Postgres two-tenant, six-role matrix
+  (reads/writes/guessed IDs) — full submission report:
+  `docs/certifications/queue.md`. Own fault injection this shift caught a
+  real evidence gap in the submission's own first draft before submitting
+  (a role-set-derived negative-acceptance loop went silently vacuous
+  under a broadened `WORKSPACE_WRITE_ALLOWED_ROLES`, producing a false
+  "all checks passed" against live Postgres) — fixed with explicit
+  expected-iteration-count assertions, re-verified the fault is now
+  genuinely caught in both suites. PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-0106 set to `PROVISIONAL`/`L1-PROVEN`.
+  Awaiting independent Control-plane certification — not self-certified
+  (Law 4).
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #125) — independent CERTIFY
   review of FTF-H003 (Cross-layer tenant isolation and relational
   identity): **CERTIFIED**. Session-ID clean against all 3 commits on PR
@@ -118,8 +142,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 23/300 (main; FTF-H003 CERTIFIED 2026-09-20, PR #125 merged as
-`9407710` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
-(FTF-0101's web-framework/auth-stack approval and its own
+`9407710` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0106,
+RBAC/IDOR security tests, this shift — see "## Provisional" below) ·
+Blocked: 0 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
 open owner ask remains)
@@ -186,12 +211,23 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-H003 (Cross-layer tenant isolation and relational
-identity) was the only item here; it was independently reviewed and
-CERTIFIED this shift via PR #125 (merge commit `9407710`) — see "## Done"
-for the certification summary and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full history and evidence.
+FTF-0106 (RBAC/IDOR security tests) — this shift's own submission,
+PROVISIONAL per Law 4 (producer never certifies own work). Full
+submission report: `docs/certifications/queue.md`. Real live-Postgres
+two-tenant, six-role matrix evidence (reads/writes/guessed IDs), a real
+DB-backed (never mocked) role lookup, and a disclosed scope limit
+("artifacts"/"approvals" have no live table/route yet). Own fault
+injection this shift caught a real evidence gap in the submission's own
+first draft (a role-set-derived negative-acceptance loop went silently
+vacuous under a broadened `WORKSPACE_WRITE_ALLOWED_ROLES`) before
+submitting — see `docs/spec-matrix.yaml`'s own FTF-0106 entry for the
+full account. Awaiting independent Control-plane review.
+
+Prior item: FTF-H003 (Cross-layer tenant isolation and relational
+identity) was independently reviewed and CERTIFIED a prior shift via PR
+#125 (merge commit `9407710`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
+for the full history and evidence.
 
 Prior item: FTF-0105 (Tenant-isolation query guards) was independently
 reviewed and CERTIFIED a prior shift via PR #120 (merge commit `14f785c`)

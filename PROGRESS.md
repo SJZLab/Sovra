@@ -1,7 +1,151 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift) — FTF-H003
-  (Cross-layer tenant isolation and relational identity) independently
-  reviewed and CERTIFIED via PR #125 (merge commit `9407710`); see below.
+Updated: 2026-09-20T00:00:00Z (scheduled relay shift) — FTF-0106
+  (RBAC/IDOR security tests) implemented and submitted PROVISIONAL; see
+  below.
+
+## 2026-09-20 — Relay shift: FTF-0106 implemented, PROVISIONAL (awaiting Control plane review)
+
+STEP 0.1: read PROGRESS.md, QUEUE.md and docs/certifications/queue.md
+first. `## Active`/`## Provisional` were both empty — FTF-H003 (the prior
+shift's own submission) had already been independently reviewed and
+CERTIFIED via PR #125 (merge commit `9407710`) by an earlier session this
+same date. Also found two stale open PRs (#124, #115) predating their own
+tasks' (FTF-H003, FTF-0101) later, actually-merged certifications — read
+both in full via the GitHub MCP tools, confirmed `docs/spec-matrix.yaml`
+on `main` already shows both tasks `CERTIFIED` with different merge
+commits than these two PRs' own heads, closed both with an explanatory
+comment rather than leaving stale/superseded PRs for a future shift to
+puzzle over.
+
+CLAUDE.md self-check: `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` exactly — no drift, shift continued.
+
+STEP 0.2: `cognee-cli` not found on PATH — text-search fallback active
+(`product_truth_check.py`'s deterministic text search only), same as
+every prior shift.
+
+STEP 1: with `## Active`/`## Provisional` empty, computed every
+dependency-ready `NOT_STARTED` task across the full 300-task
+`docs/spec-matrix.yaml` (not just the next title in QUEUE.md's own read
+order) to confirm the real next unblocked item rather than assume it:
+FTF-0106, FTF-0201, FTF-0301 and FTF-0401 were all fully dependency-ready.
+Checked FTF-0201/0301/0401's own task packets before deferring to
+QUEUE.md's established CAP-01-first sequencing — each of the three opens
+a new phase's own frozen contract (`packages/contracts/openapi/0{2,3,4}-
+interface.yaml`) and owns its own Alembic migration, materially larger
+and more disruptive to fan out into before CAP-01's own last item closes.
+Picked FTF-0106 (RBAC/IDOR security tests) — FTF-0102/0103/0104/0105/
+H003 all CERTIFIED, unblocking it, and it is the last item in CAP-01's
+own dependency chain per QUEUE.md's "Read order for early work".
+
+"Working: FTF-0106 (RBAC/IDOR security tests)."
+
+STEP 2 (P — read, form hypothesis, no changes yet): read
+`apps/api/app/auth/rbac_middleware.py`, `resource_authorization.py`,
+`tenant_isolation_query_guards.py`, `audit_event_writer.py`,
+`organization_workspace_schema.py` and `app/db/tenant_context.py` in
+full, plus the existing `tests/tasks/test_ftf_0103.py` and
+`tests/integration/test_ftf_h003_cross_layer_isolation.py` for the
+established real-uvicorn-server/real-Postgres evidence patterns this
+task's own evidence needed to match.
+
+Found the real, structural blocker before writing any code: this task's
+own negative_acceptance clause ("No authorization test exclusively uses
+privileged DB connection or mocked membership result") needs real,
+non-mocked role evidence, but no `Membership` table exists anywhere in
+this repository (confirmed via `grep -rn`; only `organizations`/
+`workspaces` and `audit_events` are migrated), and this task's own
+`database_changes` contract explicitly forbids adding one. Cross-checked
+`spec/tasks.json` for any task ID chartered to add a production
+`Membership` table — none exists in the 300-task DAG. Resolved this per
+CLAUDE.md's default-resolution rule (match what's already decided
+elsewhere rather than treat a novel point as a fresh hard stop): built a
+harness-owned table in its own private `MetaData`
+(`security_test_memberships`), created/dropped directly by the
+integration test, never through `apps/api/alembic/versions/` — real,
+DB-backed role evidence without touching the frozen production schema.
+Recorded this reasoning in `docs/certifications/queue.md`'s own full
+entry, not silently assumed.
+
+STEP 2 (E — write code and tests, show FAIL first): implemented
+`apps/api/app/auth/rbac_idor_security_tests.py` (the harness:
+`security_test_memberships`, `postgres_backed_role_lookup`, the
+`ROLE_MATRIX`/`READ_ALLOWED_ROLES`/`WORKSPACE_WRITE_ALLOWED_ROLES` policy,
+`build_rbac_idor_demo_app`), `tests/tasks/test_ftf_0106.py` (13 no-DB
+checks, real local uvicorn sockets, never FastAPI's `TestClient` since
+`httpx` is not an owner-approved dependency of this repository), and
+`tests/integration/test_ftf_0106_rbac_idor_security_matrix.py` (real
+live-Postgres two-tenant, six-role matrix). Stood up a real,
+directly-installed local PostgreSQL 16 cluster in this sandbox (this
+repo's interactive dev sandbox has no container-registry egress, same
+documented finding as every prior integration test). Proved Law 1 by
+deliberately broadening `WORKSPACE_WRITE_ALLOWED_ROLES` to all six roles
+and re-running both suites before ever calling the work done.
+
+**Found and fixed a real evidence gap in this submission's own first
+draft, not merely a clean pass reported:** that fault injection exposed
+that both suites' negative-acceptance loops derive their role set from
+the same constant being broadened, via `all_roles_except(...)` — so
+broadening it silently emptied the loop to zero iterations. The real
+Postgres integration suite reported a false "all checks passed" under a
+real injected defect; the unit suite happened to survive only because an
+unrelated, non-loop structural check caught it. Fixed per Section 84.4
+("Count and verify expected tests; zero collected tests is failure"):
+added explicit expected-iteration-count assertions before every
+role-set-derived loop in both suites. Re-ran the same fault injection
+afterward — both suites now genuinely fail, naming the exact collapsed
+count. Reverted the injected fault byte-identical (`diff` confirmed no
+residual change) after each round; re-ran both suites clean.
+
+STEP 2 (V — verify): `product_truth_check.py --fail-on-unwired` stays
+`1/1` — no live `/api/v1` product route exists anywhere in this
+repository yet, so this module has no live product caller, same disclosed
+class already accepted for FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/
+FTF-0105/FTF-H003 before each one's own first live caller existed —
+correctly not inflated. Full regression this sandbox: `uv run ruff check
+.` / `uv run ruff format --check .` / `uv run mypy .` clean (86 source
+files); `pnpm run lint`/`typecheck`/`format:check` clean; `uv run pytest
+tests/unit` 3/3; `pnpm exec vitest run` 5/5; `check_test_harness.py`
+clean; all 20 existing `tests/tasks/test_ftf_*.py` files re-run clean;
+`validate_spec.py --strict` clean; `status.py` unchanged at `23/300
+certified · 1 product-true`. New CI wiring
+(`rbac-idor-security-matrix-integration` job + a new `gate`-job step)
+added to `.github/workflows/ci.yml`, YAML-syntax-validated. Updated
+`docs/spec-matrix.yaml` (FTF-0106: IMPLEMENTED/L1-PROVEN/PROVISIONAL),
+`docs/certifications/queue.md` (full entry), `QUEUE.md` (moved to
+Provisional, cleared Active). Certified count unchanged at 23/300 —
+PROVISIONAL is not certified. PR opened against `main` as PROVISIONAL per
+Law 4 — not self-certified.
+
+## Next shift
+Top item: FTF-0106 awaits independent Control-plane L2 certification —
+no further relay action on it until that lands. If picked up as a
+Control-plane certifier shift instead, review
+`docs/certifications/queue.md`'s own 2026-09-20 FTF-0106 entry, paying
+particular attention to the disclosed "artifacts"/"approvals" scope limit
+and the harness table's own private-`MetaData` isolation from the frozen
+production schema (Section 6.4's real `Membership` table remains a
+separately claimed prerequisite, not delivered by this task). If resuming
+as the relay instead: once FTF-0106 is certified, CAP-01 is fully closed;
+the next unblocked items are FTF-0201 (LiteLLM connection CRUD), FTF-0301
+(TrainableArtifact schema/API) and FTF-0401 (Project schema/API/UI) — all
+three are dependency-ready today (see this shift's own dependency-graph
+computation above) and each opens its own new phase contract
+(`packages/contracts/openapi/0{2,3,4}-interface.yaml`); no single one is
+mandated ahead of the others by QUEUE.md's own read order past CAP-01.
+Blocked: no.
+
+## Metrics
+Certified / denominator: 23/300 (unchanged this shift)
+Product-true (Law 16): 1 — unchanged; FTF-0106 has no live product caller
+yet, does not count either way
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
+
+## Open owner asks
+None. See QUEUE.md "Owner actions — current" for the authoritative,
+current list (empty as of this shift).
 
 ## 2026-09-20 — Control plane: FTF-H003 (PR#125) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),

@@ -4937,3 +4937,137 @@ the same code on a now-clean head.
 ## 2026-09-20 — FTF-H003 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/125
   (`claude/wizardly-fermat-hb5qby` → `main`).
+
+## 2026-09-20 — FTF-0106 (RBAC/IDOR security tests) — Relay: real two-tenant, six-role security matrix submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-0106, RBAC/IDOR security tests. Dependencies FTF-0102
+  (Organization/workspace schema), FTF-0103 (RBAC middleware), FTF-0104
+  (audit event writer), FTF-0105 (tenant-isolation query guards) and
+  FTF-H003 (Cross-layer tenant isolation) are all CERTIFIED; DoD pulled
+  fresh via `python tools/r1_handoff.py packet FTF-0106 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from the task title
+  alone. This is the last item in QUEUE.md's own CAP-01 dependency chain.
+- **Real constraint checked before writing any code:** this task's own
+  negative_acceptance clause ("No authorization test exclusively uses
+  privileged DB connection or mocked membership result") requires real,
+  non-mocked role evidence — but no `Membership` table exists anywhere in
+  this repository (confirmed via `grep -rn` across `apps/api` and
+  `apps/api/alembic/versions/`: only `organizations`/`workspaces`
+  (FTF-0102) and `audit_events` (FTF-0104) are migrated), and this task's
+  own `database_changes` contract explicitly forbids adding one ("No
+  independent schema change... any required change is a separately
+  claimed migration prerequisite"). Cross-checked `spec/tasks.json`: no
+  task ID in the 300-task DAG owns adding a production `Membership`
+  table. Resolved this the same way as an architecture point the plan
+  doesn't spell out to the letter (CLAUDE.md's default-resolution rule):
+  built a harness-owned table in its own private `MetaData`
+  (`security_test_memberships`), created/dropped directly by the
+  integration test itself, never through `apps/api/alembic/versions/` —
+  never mistaken for the frozen `Membership` contract, and a real,
+  DB-backed role lookup queries it via genuine SQL, satisfying the
+  negative_acceptance clause without touching the frozen production
+  schema. This is not an invented workaround: it produces real evidence
+  from a real database query against real seeded rows, the same
+  "purpose-built synthetic reference data, genuine and disclosed" class
+  Section 84.4 already permits, and is fully disclosed in
+  `docs/spec-matrix.yaml`'s own entry rather than silently substituted
+  for the (still-absent) production `Membership` table.
+- **`apps/api/app/auth/rbac_idor_security_tests.py`:** the reusable
+  production harness. `security_test_memberships` (harness-only table,
+  never the frozen production schema); `postgres_backed_role_lookup()`
+  resolves FTF-0103's own `RoleLookup` type via a genuine SQL `SELECT`,
+  never a Python dict/conditional; `ROLE_MATRIX` (Section 6.4's exact
+  six-role set) / `READ_ALLOWED_ROLES` (all six — Section 45 "viewer:
+  read only" is the floor) / `WORKSPACE_WRITE_ALLOWED_ROLES`
+  (`workspace_admin`/`organization_admin` only, per Section 45's own
+  worked examples) give the read/write policy; `build_rbac_idor_demo_app`
+  wires one read route and one write route combining `require_role`
+  (FTF-0103) with `authorize_resource_ownership` (FTF-H003).
+- **`tests/tasks/test_ftf_0106.py`:** 13 no-DB checks — role-matrix/policy
+  structural checks, plus a real uvicorn server over a real local socket
+  (the same pattern `tests/tasks/test_ftf_0103.py` established — never
+  FastAPI's `TestClient`, which needs `httpx`, not an owner-approved
+  dependency of this repository) proving the demo app denies an
+  unauthenticated request, a principal with no membership row, a
+  genuinely-resolved viewer role, and every one of the four non-write
+  roles, each before ever opening a database session.
+- **`tests/integration/test_ftf_0106_rbac_idor_security_matrix.py`:** real
+  live-Postgres two-tenant, six-role matrix (this sandbox has no
+  container-registry egress, same documented finding as FTF-0004/
+  FTF-0102/FTF-0104/FTF-0105/FTF-H003 — produced against a directly-
+  installed local PostgreSQL 16 cluster). Every one of Section 6.4's six
+  real roles is genuinely seeded as a real row for org1 and resolved via
+  `postgres_backed_role_lookup`'s own live SQL `SELECT`: each can read
+  org1's own real workspace and is denied (404) org2's real workspace via
+  a guessed ID; only `workspace_admin`/`organization_admin` can write
+  org1's own real workspace, the other four real roles are each denied
+  (403) — genuinely resolved via a real seeded row, not merely absent; an
+  authorized writer substituting org2's real workspace ID is denied
+  (404). Every check's own database session runs as `sovra_app` (never
+  the migration-owner role) except the seed step itself.
+- **Own fault injection, including a real evidence gap this submission
+  found and fixed before submitting (not merely a clean pass reported):**
+  broadened `WORKSPACE_WRITE_ALLOWED_ROLES` to all six roles (a
+  plausible real defect — e.g. an accidental widening during a future
+  edit) and re-ran both suites. The unit suite's independent structural
+  check (`WORKSPACE_WRITE_ALLOWED_ROLES == {workspace_admin,
+  organization_admin}`) caught it, but the *loop-based* negative-
+  acceptance checks in both the unit and the real Postgres integration
+  suite derive their role set from that same broadened constant via
+  `all_roles_except(...)` — broadening it emptied that set to zero,
+  silently collapsing the loop into a vacuous pass. The real Postgres
+  integration suite reported a false "all checks passed" under a real
+  injected defect; the unit suite happened to survive only because of an
+  unrelated, non-loop check. Fixed per Section 84.4 ("Count and verify
+  expected tests; zero collected tests is failure"): added explicit
+  expected-iteration-count assertions (`len(ROLE_MATRIX) == 6`,
+  `len(write_allowed) == 2`, `len(write_denied) == 4`) before every
+  role-set-derived loop in both suites. Re-ran the same fault injection
+  afterward: both suites now genuinely fail (the integration suite
+  reports `1 failed` naming the exact collapsed count). Reverted the
+  injected fault byte-identical (`diff` confirmed no residual change)
+  after each round; re-ran both suites clean.
+- **CI:** new `gate`-job step (`uv run python3 tests/tasks/test_ftf_0106.py`)
+  immediately after FTF-H003's own step, and a new
+  `rbac-idor-security-matrix-integration` job (real `services: postgres`
+  container, mirroring `ftf-h003-cross-layer-isolation-integration`)
+  added to `.github/workflows/ci.yml`. YAML syntax validated
+  (`yaml.safe_load`).
+- **Full regression, this sandbox:** `uv run ruff check .` / `uv run ruff
+  format --check .` / `uv run mypy .` clean (86 source files); `pnpm run
+  lint` / `typecheck` / `format:check` clean; `uv run pytest tests/unit`
+  3/3; `pnpm exec vitest run` 5/5; `scripts/check_test_harness.py` clean;
+  all 20 existing `tests/tasks/test_ftf_*.py` files re-run clean;
+  `validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` unchanged at `1/1` (no live `/api/v1` product route
+  exists anywhere in this repository yet, so this module has no live
+  product caller — same disclosed class already accepted for FTF-0005/
+  FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003 before each one's
+  own first live caller existed); `status.py` reports `23/300 certified ·
+  1 product-true`, unchanged — `PROVISIONAL` is not `CERTIFIED`.
+- **Disclosed, not hidden:** this task's own acceptance clause 1 names
+  four operation classes — "reads/writes/artifacts/approvals". No live
+  `TrainableArtifact`/`Dataset`/`PromotionDecision` table or route exists
+  anywhere in this repository yet (Section 6.7/6.10/6.21 are domain-model
+  text only), so this submission's real evidence is scoped to
+  reads/writes against the only two real tenant-scoped resources that
+  exist (`organizations`/`workspaces`, FTF-0102) — the same disclosed
+  scoping precedent FTF-0105/FTF-H003 already established. A future task
+  adding a real artifact/approval table extends this same harness
+  (`ROLE_MATRIX`, `postgres_backed_role_lookup`) rather than re-proving
+  the role-matrix mechanism from scratch.
+- **Doc updates:** `docs/spec-matrix.yaml` FTF-0106 set to
+  `certification_state: PROVISIONAL` / `implementation_state: IMPLEMENTED`
+  / `proof_state: L1-PROVEN` / `proving_test: tests/tasks/test_ftf_0106.py`
+  (`proving_symbol` stays `''` — no live caller yet, see above);
+  `evidence_hash` to be filled to this shift's own implementation commit
+  in a follow-up commit once it exists, same two-commit pattern as every
+  prior task's own evidence.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID check
+  against this submission's own commits; CI has not yet been confirmed
+  green on the real PR head by an independent session; no independent
+  fault injection beyond the ones performed above.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.
