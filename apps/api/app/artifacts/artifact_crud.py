@@ -1,6 +1,6 @@
 """TrainableArtifact CRUD (FTF-0301, Section 6.7/13/34/45/65/68/77/81).
 
-Create/get/list/edit/accept-license/mark-ready/archive an
+Create/get/list/edit/accept-license/revoke-license/mark-ready/archive an
 organization-scoped `TrainableArtifact`
 (`apps/api/app/artifacts/artifact_schema.py`). Every real query against
 `trainable_artifacts` goes through the same certified composition
@@ -37,6 +37,18 @@ dedicated restrictive sentence.
 Every mutating operation writes an audit event via FTF-0104's
 `write_audit_event` in the *same* transaction as the mutation it
 describes, identical to FTF-0201's own discipline.
+
+FTF-0305 (License acceptance workflow) adds `revoke_license` -- a purely
+additive new operation, never touching `apply_edits`/`create_artifact`/
+`accept_license`/`mark_ready`/`archive_artifact`'s own existing bodies --
+see `app.artifacts.license_acceptance_workflow`'s own module docstring
+for why this task's own real state-machine logic
+(`apply_revoke_license`) lives there, pure and DB-free, rather than being
+duplicated here. This module's own pre-existing create/get/list/edit/
+accept-license/mark-ready/archive behavior is unchanged; independently
+re-verified (this task's own docs/certifications/queue.md submission
+entry) against FTF-0301's own no-DB and live-Postgres suites, both still
+"all checks passed".
 """
 
 from __future__ import annotations
@@ -59,6 +71,10 @@ from app.artifacts.artifact_schema import (
     validate_source_uri,
     validate_weights_digest,
 )
+from app.artifacts.license_acceptance_workflow import LicenseAcceptanceError
+from app.artifacts.license_acceptance_workflow import (
+    apply_revoke_license as _apply_revoke_license,
+)
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.organization_workspace_schema import validate_name
 from app.auth.resource_authorization import ResourceAuthorizationError, authorize_resource_ownership
@@ -79,6 +95,7 @@ __all__ = [
     "get_artifact",
     "list_artifacts",
     "mark_ready",
+    "revoke_license",
     "update_artifact",
 ]
 
@@ -405,6 +422,39 @@ def accept_license(
             actor_type=actor.actor_type,
             actor_id=actor.actor_id,
             action="trainable_artifact.accept_license",
+            resource_type="trainable_artifact",
+            resource_id=str(artifact.id),
+            request_id=actor.request_id,
+        )
+    return artifact
+
+
+def revoke_license(
+    session: Session,
+    context: TenantContext,
+    artifact_id: uuid.UUID,
+    *,
+    actor: ActorInfo,
+) -> TrainableArtifact:
+    """FTF-0305's own real, live-wired revocation surface. Delegates the
+    pure state transition to `license_acceptance_workflow.apply_revoke_license`
+    and translates its `LicenseAcceptanceError` (raised only on an
+    archived artifact) into this module's own `ArtifactStateError`, so
+    every mutating route in `artifact_routes.py` keeps catching exactly
+    one state-conflict exception type for a 409, matching
+    `accept_license`/`mark_ready`'s own existing convention."""
+    artifact = _fetch_or_raise(session, context, artifact_id)
+    try:
+        changed = _apply_revoke_license(artifact)
+    except LicenseAcceptanceError as exc:
+        raise ArtifactStateError(str(exc)) from exc
+    if changed:
+        write_audit_event(
+            session,
+            organization_id=context.organization_id,
+            actor_type=actor.actor_type,
+            actor_id=actor.actor_id,
+            action="trainable_artifact.revoke_license",
             resource_type="trainable_artifact",
             resource_id=str(artifact.id),
             request_id=actor.request_id,

@@ -5,7 +5,9 @@ FTF-0201's `/connections/litellm`.
 
 Scope (disclosed explicitly, not hidden -- see this task's own
 docs/certifications/queue.md submission entry): this router implements
-create/get/list/edit/accept-license/mark-ready/archive. It deliberately
+create/get/list/edit/accept-license/revoke-license/mark-ready/archive
+(`revoke-license` added by FTF-0305, Section 6.7/13/34/68/77/81 --
+`app.artifacts.license_acceptance_workflow`). It deliberately
 does not implement any real resolution against Hugging Face/S3/local
 filesystem/a private registry, nor computing/verifying `weights_digest`
 from real bytes -- those are FTF-0302 ("Hugging Face artifact
@@ -29,10 +31,10 @@ mapping (a later, separate task's own concern, FTF-0308).
 Role gating: see `artifact_crud.py`'s own module docstring for the full
 Section 45 reasoning -- reads are open to every role Section 45 names
 (matching its own generic "viewer: read only" baseline), writes
-(create/edit/accept-license/mark-ready/archive) are restricted to
-`{ml_engineer, organization_admin}` (Section 45's "ml_engineer:
-datasets/training, no production approval" is the only sentence naming a
-role for this class of work).
+(create/edit/accept-license/revoke-license/mark-ready/archive) are
+restricted to `{ml_engineer, organization_admin}` (Section 45's
+"ml_engineer: datasets/training, no production approval" is the only
+sentence naming a role for this class of work).
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ from app.artifacts.artifact_crud import (
     get_artifact,
     list_artifacts,
     mark_ready,
+    revoke_license,
     update_artifact,
 )
 from app.artifacts.artifact_schema import TrainableArtifact
@@ -92,6 +95,7 @@ ARTIFACT_WRITE_ROLES: frozenset[Role] = frozenset({Role.ML_ENGINEER, Role.ORGANI
 _COLLECTION_PATH = "/api/v1/organizations/{organization_id}/artifacts"
 _ITEM_PATH = _COLLECTION_PATH + "/{artifact_id}"
 _ACCEPT_LICENSE_PATH = _ITEM_PATH + "/accept-license"
+_REVOKE_LICENSE_PATH = _ITEM_PATH + "/revoke-license"
 _MARK_READY_PATH = _ITEM_PATH + "/mark-ready"
 
 
@@ -321,6 +325,30 @@ def build_trainable_artifact_router(
         except (ArtifactNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         except ArtifactStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(body, status_code=200)
+
+    @router.post(_REVOKE_LICENSE_PATH)
+    async def revoke(
+        request: Request,
+        organization_id: uuid.UUID,
+        artifact_id: uuid.UUID,
+        ctx: AuthorizedContext = write_dependency,
+    ) -> JSONResponse:
+        del organization_id
+        tenant_context = TenantContext.from_authorized_context(ctx)
+        try:
+            with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                artifact = revoke_license(
+                    session, tenant_context, artifact_id, actor=_actor_from(ctx, request)
+                )
+                body = _serialize(artifact)
+        except (ArtifactNotFoundError, TenantContextError) as exc:
+            raise HTTPException(status_code=404, detail="not_found") from exc
+        except ArtifactStateError as exc:
+            # FTF-0305's own negative_acceptance: "Unaccepted/revoked
+            # license blocks training/serving" -- an archived artifact is
+            # a closed record, so revoking its license is refused (409).
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return JSONResponse(body, status_code=200)
 
