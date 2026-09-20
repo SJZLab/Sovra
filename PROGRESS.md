@@ -8667,3 +8667,133 @@ assuming this shift's own list is still current, since FTF-0402 reaching
 CERTIFIED would newly unblock FTF-0408/FTF-0500D/FTF-0514/FTF-0617/
 FTF-0901/FTF-0902/FTF-1206 (all currently blocked on it, per
 `docs/TASK_INDEX.md`).
+
+## 2026-09-20T17:11:56Z — Relay shift: FTF-0305 (License acceptance workflow) implemented, PROVISIONAL
+**STEP 0.1:** Read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`
+fresh (never assumed state from prior context). CLAUDE.md.sha256
+self-check: `sha256sum CLAUDE.md` matched the committed hash — no
+BLOCKER. Confirmed current `main` (fetched fresh) already carries PR #142
+(Control plane's own FTF-0402 CERTIFIED review, merge commit `a6ef1d9`),
+so this session's own branch (`git rev-parse HEAD` == `git rev-parse
+origin/main`) started from that same, current tip.
+
+**STEP 0.2:** No `cognee-cli` available in this environment — text-search
+fallback active for this shift (declared, per STEP 0.2).
+
+**STEP 1:** Recomputed the dependency-ready frontier fresh (never trusted
+the prior shift's own list as still current) by loading
+`docs/spec-matrix.yaml` and, for every non-`CERTIFIED` task, parsing its
+own `notes: deps=...` field, checking every named dependency against the
+live `certification_state`. Dependency-ready set: FTF-0202 (owner ask,
+unchanged), FTF-0305, FTF-0403, FTF-0404, FTF-0902, FTF-1001, FTF-1401,
+FTF-1501. FTF-0305 has the lowest CAP number (CAP-06) with no
+external-service ask of its own. Picked FTF-0305 (License acceptance
+workflow, dep FTF-0301, CERTIFIED). Stated "Working: FTF-0305."
+
+**STEP 2 (PEV):**
+- **P:** Read `apps/api/app/artifacts/{artifact_schema.py,artifact_crud.py,
+  artifact_routes.py}` (FTF-0301, CERTIFIED) in full. `TrainableArtifact`
+  already carries `license_id`/`license_accepted_by`/`license_accepted_at`
+  and `apply_mark_ready` already gates on acceptance — this task's own
+  `database_changes` ("No independent schema change. Consume frozen
+  contract") means the job is to close what FTF-0301 left open
+  (revocation), not duplicate its state. Pulled the exact task contract
+  via `tools/r1_handoff.py packet FTF-0305 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`. `packages/model-catalog/
+  license_acceptance_workflow.py` (the packet's own suggested path) is
+  not a `uv` workspace member and, being hyphenated, is not a valid
+  Python import path — refined to `apps/api/app/artifacts/
+  license_acceptance_workflow.py`, matching FTF-0301's own precedent of
+  refining the identical `packages/model-catalog/...` prefix into a real
+  module.
+- **E:** First implementation attempt included an `apply_edits` hook that
+  auto-invalidated a license acceptance whenever `source_uri`/
+  `base_model_revision`/`license_id` changed. Running FTF-0301's own
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`
+  against that version **failed for real** (Law 1's own spirit applied in
+  reverse — a regression check that can fail is only meaningful if it
+  actually failed once): "mark-ready succeeds (200) once source_uri is
+  safe, license is accepted and revision+digest are pinned/resolved" and
+  3 sibling checks failed, because that suite's own certified flow
+  accepts a license while `base_model_revision` is still `"main"`, then
+  PATCHes it to a pinned value, then expects `mark-ready` to succeed —
+  exactly the sequence the new hook broke. Reverted the hook entirely
+  (Law 15: a material change to already-CERTIFIED FTF-0301 behavior is
+  outside this task's own charter) and re-ran FTF-0301's own suite on a
+  freshly recreated database — clean again. Final design: pure
+  `evaluate_license_gate`/`assert_license_accepted_for_use` (the one
+  sanctioned admission gate) and `apply_revoke_license`/
+  `invalidate_stale_license_acceptance` (explicit, on-demand revocation;
+  demotes `ready` back to `registered`) in the new module; one purely
+  additive `revoke_license` function in `artifact_crud.py`; one new
+  `POST .../artifacts/{artifact_id}/revoke-license` route in
+  `artifact_routes.py`, on the same already-live-wired router. Wrote
+  `tests/tasks/test_ftf_0305.py` (no-DB, 15 test functions) and
+  `tests/integration/test_ftf_0305_license_acceptance_workflow.py` (real
+  Postgres) plus CI's new `license-acceptance-workflow-integration` job.
+  **Failure output shown before the fix (Law 1):** (1) replaced
+  `evaluate_license_gate`'s own unaccepted-branch condition with `if
+  False:` — `uv run python3 tests/tasks/test_ftf_0305.py` crashed with
+  `AttributeError: 'NoneType' object has no attribute 'isoformat'` on the
+  very first fresh-artifact check; (2) removed the `ready` →
+  `registered` demotion from `apply_revoke_license` — failed with exactly
+  the 2 named negative_acceptance checks
+  (`FAIL [FTF-0305] negative_acceptance: revoking a ready artifact's
+  license demotes it back to registered...` and the sibling mark-ready
+  check). Both reverted (`diff`/`cp` back from a saved copy confirmed
+  byte-identical), re-ran clean.
+- **V:** `python3 scripts/product_truth_check.py --fail-on-unwired` — was
+  `5/5` before this shift, now `6/6` (this task's own `proving_symbol`,
+  `apply_revoke_license`, has a real caller in `artifact_crud.py`'s own
+  `revoke_license`, which the new live-wired route calls — not a
+  TRACKER). No TRACKER diagnosis needed.
+
+**Full regression, this sandbox:** `git fetch --unshallow origin` first
+(this sandbox's own clone is shallow by default — the same pre-existing
+`stale_commit`-on-`validate_spec.py --strict` artifact every prior
+certifying/relay session has already documented; cleared, then
+`validate_spec.py --strict` reported clean). `uv run ruff check .`/`ruff
+format --check .`/`mypy .` clean (114 source files); `pnpm run
+lint`/`typecheck`/`format:check` clean (no frontend files touched);
+`pnpm exec vitest run` — 14/14 unchanged; `uv run pytest tests/unit` —
+3/3; every existing `tests/tasks/test_ftf_*.py` re-run clean, including
+FTF-0301's own no-DB suite and, separately, FTF-0301's own live-Postgres
+integration suite re-run clean against a freshly recreated local
+PostgreSQL 16 database and `sovra_app` role (confirming this task's own
+final design really did avoid the regression the first attempt
+surfaced). `python3 scripts/status.py` — `28/300 certified · 5
+product-true` (unchanged, correct — FTF-0305 is PROVISIONAL, not yet
+CERTIFIED).
+
+**Disclosed, not hidden:** `assert_license_accepted_for_use` has no live
+training/serving caller yet — TrainingExperiment/Deployment are later,
+separately dependency-gated tasks, the same disclosed-gap class
+FTF-0103/FTF-0104/FTF-0105/FTF-H003 already established. This task
+deliberately does not touch `apply_edits` — see this shift's own
+`docs/certifications/queue.md` entry for the full Law 15 reasoning,
+including the regression the first implementation attempt surfaced and
+reverted before ever being committed. "Acceptance bound to model
+revision" is satisfied by construction (the acceptance record lives on
+the same row as `base_model_revision`), not by an active invalidation
+mechanism.
+
+**STEP 3 metrics after this shift:** 28/300 certified (unchanged — this
+shift implements, it does not certify); 1 provisional (FTF-0305, this
+shift); `scripts/status.py`'s own authoritative "product-true" count
+stays 5; `product_truth_check.py --fail-on-unwired` — `6/6`. PR opened as
+PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/`docs/certifications/queue.md`
+all updated in a second, tracking-doc-only commit on the same branch,
+matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402 two-commit precedent.
+
+**STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+reporting and stopping to await independent Control-plane L2
+certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+An independent Control-plane CERTIFY review of FTF-0305 (this shift's own
+PR) is the natural next action, matching the established relay/certifier
+alternation. If a certifier session is not what fires next, the next
+relay-workable item is whichever of FTF-0403/FTF-0404/FTF-0902/FTF-1001/
+FTF-1401/FTF-1501 has the lowest CAP number and no external-service ask
+of its own at that time — recompute the frontier fresh rather than
+assuming this shift's own list is still current.
