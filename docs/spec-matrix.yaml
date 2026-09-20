@@ -689,10 +689,10 @@ FTF-0403:
   proving_symbol: ''
   proving_test: ''
 FTF-0404:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool schema CRUD
-  evidence_hash: ''
+  evidence_hash: d06199626628c5f9770b756ff7aa202fea02110f
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401
@@ -742,9 +742,9 @@ FTF-0404:
     "all checks passed" against a freshly recreated database/role).
     `product_truth_check.py --fail-on-unwired` unchanged at `6/6` before
     this submission's own `proving_symbol` is counted by an independent
-    reviewer. PR opened as PROVISIONAL; not self-certified (Law 4) --
-    awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    reviewer. PR opened as PROVISIONAL; independently reviewed and
+    L2-CERTIFIED by Control plane -- see docs/certifications/ledger.md.
+  proof_state: L2-CERTIFIED
   proving_symbol: build_tool_definition_router
   proving_test: tests/tasks/test_ftf_0404.py
 FTF-0405:

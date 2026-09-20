@@ -1,5 +1,58 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0404 (Tool
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #146) — independent CERTIFY
+  review of FTF-0404 (Tool schema CRUD): **CERTIFIED**. Session-ID clean
+  against all 3 commits on PR #146 (session_01Erh4hdf73yUo4Q36YKTshz, not
+  matching this reviewing session's own ID). Diff read directly. CI
+  reconfirmed green (16/16, including the new `tool-schema-crud-integration`
+  job) on the real final head `caec978f` (matching the PR's own current
+  head, `mergeable_state: clean`). Own reproduction of both suites directly
+  in this sandbox: the no-DB suite run via its documented direct-script
+  invocation (`python3 tests/tasks/test_ftf_0404.py`) — running it under
+  pytest instead, as this review first tried, is misleading: this file's
+  own `check()`/`FAILURES` pattern never raises, so pytest reports every
+  `test_*` function as passed regardless of whether the underlying
+  condition held; the correct invocation is the direct script, matching
+  exactly what CI's own workflow step runs — and the live-Postgres suite
+  against a freshly created local PostgreSQL 16 database/role (migration
+  run for real, `sovra_app` role created by the migration itself). Both
+  "all checks passed". Own two fault injections, both reverted
+  byte-identical afterward (`git diff --stat` clean) and both suites
+  re-run clean: (1) replaced `apply_new_version`'s own `superseded_at`
+  guard with `if False:` — caught for real by the no-DB suite's named
+  negative_acceptance check; (2) mutated the historical row's own
+  `input_schema_json` inside `apply_new_version` after marking it
+  superseded — caught for real by both the no-DB suite's and the
+  live-Postgres suite's own named negative_acceptance checks. No
+  regression: re-ran FTF-0401's and FTF-0402's own no-DB and
+  live-Postgres suites against freshly recreated databases/roles — both
+  still "all checks passed". Full repo-wide regression re-run clean in
+  this sandbox after installing `node_modules` (absent by default in this
+  sandbox — not a defect in the PR, an environment gap in this review's
+  own container): `ruff check`/`ruff format --check`/`mypy` (118 source
+  files), `pnpm run lint`/`typecheck`/`format:check`, `pnpm exec vitest
+  run` (14/14), `pytest tests/unit` (3/3), every `tests/tasks/test_ftf_*.py`
+  file (26/26), `validate_spec.py --strict`, `product_truth_check.py
+  --fail-on-unwired` reconfirmed `7/7`. Task contract cross-checked via
+  `tools/r1_handoff.py packet FTF-0404 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  — acceptance/negative_acceptance clauses match the PR's own claims, and
+  the dependency (FTF-0401) is confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on it. Minor evidence-accuracy
+  note (flagged, not blocking): the PR's own `docs/certifications/queue.md`
+  entry claims "22 no-DB test functions" and "20 real live-Postgres
+  checks" — this review counted 19 `test_*` functions in
+  `tests/tasks/test_ftf_0404.py` and 24 `check()` call sites in
+  `tests/integration/test_ftf_0404_tool_schema_crud.py`. Every claimed
+  behavior and both named fault injections were independently verified as
+  real; only the raw counts in the write-up are off — relay's next shift
+  should hold counts to what `grep -c` actually shows before stating them.
+  Merged PR #146 (merge commit `d06199626628c5f9770b756ff7aa202fea02110f`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Certified: 30/300, Product-true: 7/7. Full
+  review: `docs/certifications/ledger.md` (FTF-0404 entry) and
+  `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — implemented FTF-0404 (Tool
   schema CRUD, dep FTF-0401, CERTIFIED). Recomputed the dependency-ready
   frontier fresh against `docs/spec-matrix.yaml`'s live certification
   state (never trusted a prior shift's own list as still current):
@@ -91,15 +144,15 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-An independent Control-plane CERTIFY review of FTF-0404 (this shift's own
-PR) is the natural next action, matching the established relay/certifier
-alternation. Before merging PR #143, verify a genuine owner confirmation
-exists for FTF-0202's own backend selection (see the flagged note above)
-— do not treat that PR's own bare claim as sufficient by itself. If a
-certifier session is not what fires next, the next relay-workable item is
-whichever of FTF-0403/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest
-CAP number and no external-service ask of its own at that time —
-recompute the frontier fresh rather than assuming this shift's own list is
+FTF-0404's own independent Control-plane CERTIFY review is now done
+(CERTIFIED, PR #146, merge commit `d061996` — see "## Done"). Before
+merging PR #143, verify a genuine owner confirmation exists for
+FTF-0202's own backend selection (see the flagged note above) — do not
+treat that PR's own bare claim as sufficient by itself. Otherwise the
+next relay-workable item is whichever of
+FTF-0403/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest CAP number
+and no external-service ask of its own at that time — recompute the
+frontier fresh rather than assuming this shift's own list is
 still current, since FTF-0404 reaching CERTIFIED would newly unblock
 FTF-0407/FTF-0408 (per `docs/TASK_INDEX.md`, once their own other
 dependencies are also met).
@@ -566,31 +619,31 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 29/300 (main; FTF-0305 CERTIFIED 2026-09-20, PR #144 merged as
-`1a3c6b4` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0404, this shift, awaiting independent Control-plane L2
-certification) · Blocked: 0
+Certified: 30/300 (main; FTF-0404 CERTIFIED 2026-09-20, PR #146 merged as
+`d061996` — see docs/certifications/ledger.md) · Provisional: 0 ·
+Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
 work continued this shift on FTF-0404 instead of stopping. PR #143's own
-bare claim to have resolved that ask was found unverified this shift and
-was not acted on — see the flagged note near the top of this file.)
-Product-true (Law 16): 6 (`scripts/status.py`'s own authoritative count,
+bare claim to have resolved that ask remains unverified and was not acted
+on — see the flagged note near the top of this file.)
+Product-true (Law 16): 7 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
 `build_litellm_connection_router`, FTF-0301's
 `build_trainable_artifact_router`, FTF-0401's own `build_project_router`,
 FTF-0402's own `enforce_security_profile_selection` (called for real by
-FTF-0401's `create_project`/`update_project`), and now FTF-0305's own
+FTF-0401's `create_project`/`update_project`), FTF-0305's own
 `apply_revoke_license` (called for real by `artifact_crud.py`'s own new
-`revoke_license`, which the new live-wired `revoke-license` route calls)
-all meet all three, independently reconfirmed by this certifying session.
-`product_truth_check.py --fail-on-unwired` and `scripts/status.py` now
-agree at `6/6`/`6`.
+`revoke_license`, which the new live-wired `revoke-license` route calls),
+and now FTF-0404's own `build_tool_definition_router` (called for real by
+`apps/api/app/main.py`) all meet all three, independently reconfirmed by
+this certifying session. `product_truth_check.py --fail-on-unwired` and
+`scripts/status.py` now agree at `7/7`/`7`.
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -698,10 +751,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0404 (Tool schema CRUD) — implemented this shift, PR opened as
-PROVISIONAL. Not self-certified (Law 4); awaiting independent
-Control-plane L2 review. See the top of this file and
-`docs/certifications/queue.md` for the full submission.
+None currently. FTF-0404 (Tool schema CRUD) was the only item here; it
+was independently reviewed and CERTIFIED this shift via PR #146 (merge
+commit `d061996`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0305 (License acceptance workflow) was independently
 reviewed and CERTIFIED a prior shift via PR #144 (merge commit
@@ -1434,6 +1488,48 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-0404 — Tool schema CRUD. CERTIFIED 2026-09-20, PR #146, merge
+  commit `d061996`. Independent Control-plane review triggered by the
+  `pull_request.opened` webhook: session-ID check clean against all 3
+  PR #146 commits (session_01Erh4hdf73yUo4Q36YKTshz, no match to this
+  reviewing session); diff read directly. CI reconfirmed green (16/16,
+  including the new `tool-schema-crud-integration` job) on the real
+  final head `caec978f` (`mergeable_state: clean`, matching the PR's own
+  current head). Own reproduction of both suites directly in this
+  sandbox: the no-DB suite via its documented direct-script invocation
+  (`python3 tests/tasks/test_ftf_0404.py` — not pytest, whose default
+  collection reports every `test_*` function as passed regardless of
+  the underlying `check()` condition since this file's own
+  check()/FAILURES pattern never raises) and the live-Postgres suite
+  against a freshly created local PostgreSQL 16 database/role; both "all
+  checks passed". Own two fault injections, both reverted byte-identical
+  and both suites re-run clean afterward: (1) replaced
+  `apply_new_version`'s own `superseded_at` guard with `if False:` —
+  caught for real by the no-DB suite's named negative_acceptance check;
+  (2) mutated the historical row's own `input_schema_json` inside
+  `apply_new_version` after marking it superseded — caught for real by
+  both the no-DB suite's and the live-Postgres suite's own named
+  negative_acceptance checks. No regression in FTF-0401's/FTF-0402's own
+  no-DB and live-Postgres suites, re-run against freshly recreated
+  databases/roles. Full repo-wide regression re-run clean (`ruff`/`mypy`,
+  `pnpm lint`/`typecheck`/`format:check`/`vitest` 14/14, `pytest
+  tests/unit` 3/3, all 26 `tests/tasks/test_ftf_*.py` files,
+  `validate_spec.py --strict`); `product_truth_check.py
+  --fail-on-unwired` reconfirmed `7/7`. Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0404`, confirming the acceptance/
+  negative_acceptance clauses and that the dependency (FTF-0401) is
+  genuinely `CERTIFIED`. Flagged, not blocking: the PR's own
+  `docs/certifications/queue.md` entry overstates its own test counts
+  ("22"/"20") against the actual 19/24 — every claimed behavior and both
+  named fault injections were independently verified as real regardless.
+  No blocking defect. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  `scripts/status.py` confirmed non-inflated (`29/300` before, `30/300`
+  after; "Product-true" `6` before, `7` after, matching
+  `product_truth_check.py`'s own `7/7`). This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
 - FTF-0402 — Project security profile. CERTIFIED 2026-09-20, PR #141,
   merge commit `a6ef1d9`. See `docs/certifications/ledger.md` (FTF-0402
   entry) for the full independent-review narrative.
