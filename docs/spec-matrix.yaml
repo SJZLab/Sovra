@@ -788,8 +788,11 @@ FTF-0405:
     FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 (there is no
     tool-invocation/agent-runtime anywhere in this repository yet to feed
     it). No independent schema change (`database_changes` honored) --
-    consumes FTF-0404's own frozen `ToolDefinition` columns. 25 no-DB test
-    functions in `tests/tasks/test_ftf_0405.py`, plus two own fault
+    consumes FTF-0404's own frozen `ToolDefinition` columns. 23 no-DB test
+    functions in `tests/tasks/test_ftf_0405.py` (corrected from an
+    original PR-body claim of 25 -- `grep -c "^def test_"` shows 23, the
+    same evidence-accuracy discipline the prior Control-plane certifier
+    already flagged on PR #146), plus two own fault
     injections against the delivered code (disabling the `$ref`-locality
     guard; disabling `$defs` cycle detection, which crashes with a real
     Python `RecursionError` on a cyclic schema) both caught for real and

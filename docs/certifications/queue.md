@@ -6587,8 +6587,9 @@ genuine completion), including `tool-schema-crud-integration`.
 
 **Own reproduction, this sandbox:** `git checkout pr-148 -- <changed
 files>` on top of a fresh `main`; `uv sync --all-packages`; `uv run
-python3 tests/tasks/test_ftf_0405.py` → "all checks passed" (25 test
-functions); `uv run python3 tests/tasks/test_ftf_0404.py` → "all checks
+python3 tests/tasks/test_ftf_0405.py` → "all checks passed" (23 test
+functions, `grep -c "^def test_"`-confirmed -- corrected from PR #148's
+own body claim of 25); `uv run python3 tests/tasks/test_ftf_0404.py` → "all checks
 passed" (no regression).
 
 **Own fault injection, two, distinct from the producer's own two named in

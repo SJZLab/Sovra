@@ -9236,7 +9236,8 @@ completion), including `tool-schema-crud-integration`.
 **Own reproduction, this sandbox:** checked out PR #148's four
 code/test-relevant files on top of a fresh `main`; `uv sync
 --all-packages`; `uv run python3 tests/tasks/test_ftf_0405.py` → "all
-checks passed" (25 test functions); `uv run python3
+checks passed" (23 test functions, `grep -c "^def test_"`-confirmed --
+corrected from the PR body's own claim of 25); `uv run python3
 tests/tasks/test_ftf_0404.py` → "all checks passed" (no regression).
 
 **Own fault injection, two, distinct from the producer's own two named in
