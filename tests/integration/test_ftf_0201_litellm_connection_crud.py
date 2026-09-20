@@ -51,6 +51,7 @@ import urllib.parse
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -145,7 +146,7 @@ class _Response:
         self.status = status
         self.body = body
 
-    def json(self) -> object:
+    def json(self) -> Any:
         return json.loads(self.body)
 
 
@@ -365,17 +366,13 @@ def main() -> None:
         check("FTF-0201", "a real get-by-id succeeds (200)", r.status == 200)
 
         # -- acceptance: a missing/random ID is a real 404 --
-        r = _request(
-            base_url, "GET", item_path(org1_id, uuid.uuid4()), principal=org1_admin
-        )
+        r = _request(base_url, "GET", item_path(org1_id, uuid.uuid4()), principal=org1_admin)
         check("FTF-0201", "a real, never-created ID is a real 404", r.status == 404)
 
         # -- negative_acceptance: THE core IDOR case -- a real connection ID,
         # guessed/borrowed by the OTHER organization's own admin, substituted
         # into THEIR OWN org path -- must be denied identically to missing.
-        r = _request(
-            base_url, "GET", item_path(org2_id, connection_id), principal=org2_admin
-        )
+        r = _request(base_url, "GET", item_path(org2_id, connection_id), principal=org2_admin)
         check(
             "FTF-0201",
             "negative_acceptance: a foreign connection ID (belongs to org1) "
@@ -426,7 +423,11 @@ def main() -> None:
             principal=org1_admin,
             payload={"name": "prod-gateway-renamed"},
         )
-        check("FTF-0201", "a real, valid edit by the owning organization succeeds (200)", r.status == 200)
+        check(
+            "FTF-0201",
+            "a real, valid edit by the owning organization succeeds (200)",
+            r.status == 200,
+        )
         edited = r.json() if r.status == 200 else {}
         check(
             "FTF-0201",
@@ -453,7 +454,11 @@ def main() -> None:
 
         # -- Real revoke (idempotent) --
         r = _request(base_url, "DELETE", item_path(org1_id, connection_id), principal=org1_admin)
-        check("FTF-0201", "a real revoke by the owning organization succeeds (200)", r.status == 200)
+        check(
+            "FTF-0201",
+            "a real revoke by the owning organization succeeds (200)",
+            r.status == 200,
+        )
         revoked = r.json() if r.status == 200 else {}
         check(
             "FTF-0201",
@@ -482,8 +487,7 @@ def main() -> None:
         )
         check(
             "FTF-0201",
-            "acceptance: editing a revoked connection is refused (409), not "
-            "silently applied",
+            "acceptance: editing a revoked connection is refused (409), not " "silently applied",
             r.status == 409,
         )
 
