@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 02 Interface (LiteLLM Connection)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and real live routes for the
+    organization-scoped LiteLLM gateway connection resource (Section
+    2-3/38/65/77/81, FTF-0201). `paths` declares exactly the CRUD surface
+    this task actually implements and wires into
+    `apps/api/app/main.py` -- create/get/list/edit/revoke -- and nothing
+    else. It deliberately does NOT declare `validate`/`sync-models`/
+    `syncs`/`/models`/`/models/{id}/probe`: those require a real call to
+    the organization's actual LiteLLM gateway and are FTF-0203
+    ("Connection validation"), FTF-0204 ("`/v1/models` discovery") and
+    FTF-0210 ("Real chat probe")'s own, later, separately
+    dependency-gated acceptance criteria (see docs/TASK_INDEX.md).
+    Declaring that surface here without a real backing handler would be
+    exactly the "placeholder endpoint" Law 11 and this task's own
+    acceptance clause ("no placeholder endpoints") forbid. Whichever of
+    those later tasks adds its own real route extends this same file
+    under this same contract-owner lock (shared_lock_required:
+    contracts:02).
+paths:
+  /api/v1/organizations/{organization_id}/connections/litellm:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the organization's LiteLLM gateway connections.
+      operationId: listLiteLLMConnections
+      responses:
+        '200':
+          description: The organization's connections (never including secret_ref).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LiteLLMConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: Create a new LiteLLM gateway connection.
+      operationId: createLiteLLMConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiteLLMConnectionCreateRequest'
+      responses:
+        '201':
+          description: The created connection (never including secret_ref).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiteLLMConnection'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+  /api/v1/organizations/{organization_id}/connections/litellm/{connection_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one LiteLLM gateway connection.
+      operationId: getLiteLLMConnection
+      responses:
+        '200':
+          description: The connection (never including secret_ref).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiteLLMConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing or belongs to a different organization -- identical in
+            both cases (this task's own negative_acceptance: "Foreign
+            connection ID... fails").
+    patch:
+      summary: Edit name/base_url/secret_ref of an active connection.
+      operationId: updateLiteLLMConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiteLLMConnectionUpdateRequest'
+      responses:
+        '200':
+          description: The updated connection (never including secret_ref).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiteLLMConnection'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+        '409':
+          description: The connection is revoked and cannot be edited.
+    delete:
+      summary: Revoke (soft-delete) a connection. Idempotent.
+      operationId: revokeLiteLLMConnection
+      responses:
+        '200':
+          description: >-
+            The connection in its revoked state -- returned unchanged, with
+            no new audit event, if it was already revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiteLLMConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: "organization_admin:
+        connections, security profiles, cost profiles" is the only role
+        Section 45 names for connections -- every route here is
+        organization_admin-only, including reads).
+    ValidationFailed:
+      description: The request body failed schema/policy validation.
+  schemas:
+    ConnectionStatus:
+      type: string
+      enum: [active, revoked]
+    SecretRef:
+      type: string
+      description: >-
+        A secret-manager reference only (vault://, openbao:// or
+        secret://) -- never a raw secret value. This task never resolves
+        it to a value; FTF-0202 ("Secret-manager integration") does.
+      pattern: '^(vault|openbao|secret)://[A-Za-z0-9_\-./]+$'
+      maxLength: 512
+    BaseUrl:
+      type: string
+      format: uri
+      description: >-
+        Must be https://, no userinfo, no fragment, no tls_verify=false in
+        the query, no duplicate /v1/v1 path segment (Section 3.1/65.4).
+        Shape-validated only -- this task never dials the URL.
+      maxLength: 2048
+    LiteLLMConnectionCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        base_url:
+          $ref: '#/components/schemas/BaseUrl'
+        secret_ref:
+          $ref: '#/components/schemas/SecretRef'
+      required: [name, base_url, secret_ref]
+      additionalProperties: false
+    LiteLLMConnectionUpdateRequest:
+      type: object
+      description: Any non-empty subset of name/base_url/secret_ref.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        base_url:
+          $ref: '#/components/schemas/BaseUrl'
+        secret_ref:
+          $ref: '#/components/schemas/SecretRef'
+      additionalProperties: false
+    LiteLLMConnection:
+      type: object
+      description: >-
+        The read-facing representation -- deliberately has no secret_ref
+        property at all (this task's own negative_acceptance: "secret
+        echo fails"). additionalProperties: false means a leaked
+        secret_ref would itself be a contract violation, not merely an
+        undocumented extra field.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        base_url:
+          $ref: '#/components/schemas/BaseUrl'
+        status:
+          $ref: '#/components/schemas/ConnectionStatus'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+      required: [id, organization_id, name, base_url, status, created_at, updated_at]
+      additionalProperties: false
