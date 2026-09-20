@@ -388,6 +388,20 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres two-organization inheritance/no-relaxation evidence is tests/integration/test_ftf_0402_project_security_profile.py, run separately in CI (project-security-profile-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as every prior integration-tested task above. Certified on first submission (PR #141) -- independent Control-plane review reproduced both suites against a real local PostgreSQL 16 cluster and ran two of its own fault injections (the relaxation check in enforce_security_profile_selection disabled; the enforcement call removed from create_project), both caught for real, matching the exact cases the PR claims. evidence_hash/commit here point at the implementation commit (99a63b0) unchanged from PR #141's own head (b8cd86d only added tracking-doc commits on top)."
+    },
+    "FTF-0305": {
+      "commit": "66aff8b6f8b81846891d5da43c3d1eb1e11f708a",
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0305.py"
+        ]
+      ],
+      "expected_output_contains": "FTF-0305 License acceptance workflow tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401/FTF-0402 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres revoke-license/mark-ready-refused-again/IDOR/idempotency/archived-refusal evidence is tests/integration/test_ftf_0305_license_acceptance_workflow.py, run separately in CI (license-acceptance-workflow-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as every prior integration-tested task above. Certified on first submission (PR #144) -- independent Control-plane review reproduced the no-DB suite directly in this sandbox, reconfirmed all 15 CI checks green on the real final head (ea50eac), and ran its own fault injection (the ready->registered demotion removed from apply_revoke_license), caught for real by the exact two named negative_acceptance checks, reverted byte-identical. evidence_hash/commit here point at the implementation commit (66aff8b) unchanged from PR #144's own head (ea50eac only added a tracking-doc commit recording the PR link on top)."
     }
   }
 }
