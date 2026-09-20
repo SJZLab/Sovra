@@ -5,18 +5,21 @@ info:
   description: >-
     Frozen shared component schemas and real live routes for the
     workspace-scoped Project resource (Section 6.8/7A/22/45/65-66/77/81,
-    FTF-0401). `paths` declares exactly the surface this task actually
-    implements and wires into `apps/api/app/main.py` -- create/get/list/
-    edit/save-ui-state/archive -- and nothing else. It deliberately does
-    NOT declare `/requirements` or `/tools` routes: those are FTF-0404
-    ("Tool schema CRUD")/FTF-0407 ("Critical behavior requirements")/
-    FTF-0408 ("Requirements UI")'s own, later, separately dependency-gated
-    acceptance criteria (see docs/TASK_INDEX.md). Declaring that surface
-    here without a real backing handler would be exactly the "placeholder
-    endpoint" Law 11 and this task's own acceptance clause ("no
-    placeholder endpoints") forbid. Whichever of those later tasks adds
-    its own real route extends this same file under this same
-    contract-owner lock (shared_lock_required: contracts:04).
+    FTF-0401) and the project-scoped ToolDefinition resource (Section
+    6.9/7A/22/45/65-66/77/81, FTF-0404, extending this same
+    contract-owner-locked file per its own original note below).
+    `paths` declares exactly the surface each task actually implements
+    and wires into `apps/api/app/main.py` -- Project's own create/get/
+    list/edit/save-ui-state/archive, and ToolDefinition's own
+    create/get/list/edit -- and nothing else. It still deliberately does
+    NOT declare `/requirements` routes: that is FTF-0407 ("Critical
+    behavior requirements")/FTF-0408 ("Requirements UI")'s own, later,
+    separately dependency-gated acceptance criteria (see
+    docs/TASK_INDEX.md). Declaring that surface here without a real
+    backing handler would be exactly the "placeholder endpoint" Law 11
+    forbids. Whichever later task adds its own real route extends this
+    same file under this same contract-owner lock (shared_lock_required:
+    contracts:04).
 paths:
   /api/v1/organizations/{organization_id}/projects:
     parameters:
@@ -188,6 +191,134 @@ paths:
           description: Missing or belongs to a different organization -- identical.
         '409':
           description: The project is archived.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/tools:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the project's current tool definitions (one row per tool name).
+      operationId: listToolDefinitions
+      responses:
+        '200':
+          description: The project's current tool definitions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ToolDefinition'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: >-
+        Create version 1 of a new tool definition. A second create with
+        the same name while a current version already exists is refused
+        by the real database's own partial unique constraint.
+      operationId: createToolDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolDefinitionCreateRequest'
+      responses:
+        '201':
+          description: The created tool definition (version 1).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: project_id missing or belongs to a different organization -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/tools/{tool_definition_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: tool_definition_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one tool definition version (current or historical) by ID.
+      operationId: getToolDefinition
+      responses:
+        '200':
+          description: The tool definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolDefinition'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case.
+    patch:
+      summary: >-
+        Edit the current version of a tool definition. Never mutates the
+        existing row in place: creates version N+1 (previous_version_id
+        set to the row it replaces) and marks the prior row
+        superseded_at, whose own content fields are left byte-identical.
+        Editing anything but the current version (e.g. a
+        previous_version_id already superseded) is refused (409).
+      operationId: editToolDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolDefinitionEditRequest'
+      responses:
+        '200':
+          description: The new current version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing, wrong organization, or wrong project -- identical.
+        '409':
+          description: The named row is not the current version of this tool.
 components:
   responses:
     NotAuthenticated:
@@ -317,6 +448,116 @@ components:
         - security_profile
         - status
         - row_version
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    ToolSideEffectClass:
+      type: string
+      enum: [read_only, reversible_write, irreversible_write, financial, privileged]
+    ToolDefinitionCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$'
+        description:
+          type: [string, 'null']
+          maxLength: 4000
+        input_schema:
+          type: object
+        output_schema:
+          type: object
+        side_effect_class:
+          $ref: '#/components/schemas/ToolSideEffectClass'
+        requires_confirmation:
+          type: boolean
+          default: false
+        is_critical:
+          type: boolean
+          default: false
+      required: [name, input_schema, output_schema, side_effect_class]
+      additionalProperties: false
+    ToolDefinitionEditRequest:
+      type: object
+      description: >-
+        Any non-empty subset of the mutable fields. Never edits the named
+        row in place -- creates a new version. Refused (409) unless the
+        named row is the current version.
+      properties:
+        description:
+          type: [string, 'null']
+          maxLength: 4000
+        input_schema:
+          type: object
+        output_schema:
+          type: object
+        side_effect_class:
+          $ref: '#/components/schemas/ToolSideEffectClass'
+        requires_confirmation:
+          type: boolean
+        is_critical:
+          type: boolean
+      additionalProperties: false
+    ToolDefinition:
+      type: object
+      description: Section 6.9 -- one immutable version of a project's tool schema.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        input_schema:
+          type: object
+        output_schema:
+          type: object
+        side_effect_class:
+          $ref: '#/components/schemas/ToolSideEffectClass'
+        requires_confirmation:
+          type: boolean
+        is_critical:
+          type: boolean
+        version:
+          type: integer
+        schema_hash:
+          type: string
+        previous_version_id:
+          type: [string, 'null']
+          format: uuid
+        superseded_at:
+          type: [string, 'null']
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - project_id
+        - name
+        - input_schema
+        - output_schema
+        - side_effect_class
+        - requires_confirmation
+        - is_critical
+        - version
+        - schema_hash
         - created_by
         - created_at
         - updated_at

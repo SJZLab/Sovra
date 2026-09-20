@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sovra.internal/contracts/phase-04/domain.schema.json",
-  "title": "Sovra Phase 04 Domain Schemas (FTF-0401 — Project schema/API/UI)",
-  "description": "Frozen shared domain schemas for the workspace-scoped Project resource (Section 6.8/7A/22/45/65-66/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source, apps/api/app/projects/project_schema.py, and tested against it directly in tests/tasks/test_ftf_0401.py so this file cannot silently drift from the code that actually validates these shapes.",
+  "title": "Sovra Phase 04 Domain Schemas (FTF-0401 — Project schema/API/UI; FTF-0404 — Tool schema CRUD)",
+  "description": "Frozen shared domain schemas for the workspace-scoped Project resource (Section 6.8/7A/22/45/65-66/77/81) and the project-scoped ToolDefinition resource (Section 6.9/7A/22/45/65-66/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source for each -- apps/api/app/projects/project_schema.py (tested in tests/tasks/test_ftf_0401.py) and apps/api/app/tools/tool_definition_schema.py (tested in tests/tasks/test_ftf_0404.py) -- so this file cannot silently drift from the code that actually validates these shapes.",
   "$defs": {
     "ProjectType": {
       "type": "string",
@@ -75,6 +75,73 @@
       "required": [
         "id", "organization_id", "workspace_id", "name", "project_type",
         "security_profile", "status", "row_version", "created_by",
+        "created_at", "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "ToolSideEffectClass": {
+      "type": "string",
+      "enum": ["read_only", "reversible_write", "irreversible_write", "financial", "privileged"]
+    },
+    "ToolName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "ToolDefinitionCreateRequest": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "#/$defs/ToolName" },
+        "description": { "type": ["string", "null"], "maxLength": 4000 },
+        "input_schema": { "type": "object" },
+        "output_schema": { "type": "object" },
+        "side_effect_class": { "$ref": "#/$defs/ToolSideEffectClass" },
+        "requires_confirmation": { "type": "boolean", "default": false },
+        "is_critical": { "type": "boolean", "default": false }
+      },
+      "required": ["name", "input_schema", "output_schema", "side_effect_class"],
+      "additionalProperties": false
+    },
+    "ToolDefinitionEditRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of the mutable fields. Never edits the named row in place -- creates a new version. Refused unless the named row is the current version.",
+      "properties": {
+        "description": { "type": ["string", "null"], "maxLength": 4000 },
+        "input_schema": { "type": "object" },
+        "output_schema": { "type": "object" },
+        "side_effect_class": { "$ref": "#/$defs/ToolSideEffectClass" },
+        "requires_confirmation": { "type": "boolean" },
+        "is_critical": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "ToolDefinition": {
+      "type": "object",
+      "description": "Section 6.9 — one immutable version of a project's tool schema.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "project_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/ToolName" },
+        "description": { "type": ["string", "null"] },
+        "input_schema": { "type": "object" },
+        "output_schema": { "type": "object" },
+        "side_effect_class": { "$ref": "#/$defs/ToolSideEffectClass" },
+        "requires_confirmation": { "type": "boolean" },
+        "is_critical": { "type": "boolean" },
+        "version": { "type": "integer" },
+        "schema_hash": { "type": "string" },
+        "previous_version_id": { "type": ["string", "null"], "format": "uuid" },
+        "superseded_at": { "type": ["string", "null"], "format": "date-time" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "organization_id", "project_id", "name", "input_schema",
+        "output_schema", "side_effect_class", "requires_confirmation",
+        "is_critical", "version", "schema_hash", "created_by",
         "created_at", "updated_at"
       ],
       "additionalProperties": false

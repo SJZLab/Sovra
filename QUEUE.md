@@ -1,5 +1,110 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0404 (Tool
+  schema CRUD, dep FTF-0401, CERTIFIED). Recomputed the dependency-ready
+  frontier fresh against `docs/spec-matrix.yaml`'s live certification
+  state (never trusted a prior shift's own list as still current):
+  FTF-0403, FTF-0404, FTF-0902, FTF-1001, FTF-1401, FTF-1501 (FTF-0202
+  deliberately excluded from the pick — see the flagged note under
+  "Owner actions — current" below; its ask is NOT genuinely resolved).
+  FTF-0404 has the lowest CAP number (CAP-05) with no external-service
+  ask of its own. Real, live-wired
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/tools`
+  routes (the fifth live-wired product-runtime path in this repository).
+  `apps/api/app/tools/{tool_definition_schema,tool_definition_crud,
+  tool_definition_routes}.py` (refined from the packet's own single
+  abbreviated `apps/api/app/services/tool_schema_crud.py` suggestion into
+  the same schema/crud/routes triplet FTF-0201/FTF-0301/FTF-0401 already
+  established for a real new resource — the packet's own single-file
+  `files` listing is this repo's own standard abbreviated-ticket shape,
+  not a literal constraint; its own text explicitly warns "Do not
+  scatter domain logic into one file per ticket simply because a ticket
+  exists"). Real forward Alembic migration
+  (`apps/api/alembic/versions/0006_tool_definitions.py`), FORCE-RLS
+  scoped to the same tenant context every prior migration in this chain
+  established, plus a composite `(organization_id, project_id)` ->
+  `projects(organization_id, id)` foreign key (a purely additive
+  `UNIQUE(organization_id, id)` on the already-CERTIFIED `projects`
+  table, the same precedent FTF-0401's own migration applied to
+  `workspaces`). This task's own negative_acceptance ("Editing used tool
+  schema creates new version and drift, never changes historical
+  manifest in place") is enforced by construction: `apply_new_version`
+  never mutates the row it replaces except to set
+  `superseded_at`/`updated_at`, and a real partial unique index
+  (`(project_id, name) WHERE superseded_at IS NULL`) enforces "one
+  current version per tool name per project" at the database level, not
+  only in application code. Contracts extended under the existing
+  contract-owner lock (`contracts:04`, owned by FTF-0401) rather than a
+  new file — new `/tools` paths and
+  `ToolDefinition`/`ToolDefinitionCreateRequest`/`ToolDefinitionEditRequest`
+  schemas appended to `packages/contracts/openapi/04-interface.yaml` and
+  `packages/contracts/jsonschema/04-domain.schema.json`; `/requirements`
+  is still disclosed as not yet declared (FTF-0407/FTF-0408's own, later
+  scope). 22 no-DB test functions (including a real locally-hosted
+  `build_tool_definition_router` over a real uvicorn server) + 20 real
+  live-Postgres checks (two real organizations, three real projects, a
+  real uvicorn server proving create → duplicate-current-name rejected
+  by the real DB constraint → edit → version 2 with the historical
+  version 1 fetched byte-identical by its own ID afterward → re-editing
+  version 1 directly refused (409) → cross-project IDOR denied →
+  cross-organization IDOR denied → grant-surface DELETE refused); two own
+  fault injections (removing the "only the current version can be
+  edited" guard; mutating the historical row's own `input_schema_json`
+  during an edit), both genuinely caught by both suites and reverted
+  byte-identical. Independently reconfirmed no regression to FTF-0401's
+  and FTF-0402's own certified no-DB/live-Postgres suites (both still
+  "all checks passed" against a freshly recreated database/role after
+  this task's own migration). `product_truth_check.py --fail-on-unwired`
+  now `7/7` (this task's own `proving_symbol`, `build_tool_definition_router`,
+  has a real caller in `apps/api/app/main.py`). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-0404 set to `PROVISIONAL`/`L1-PROVEN`,
+  `proving_symbol` `build_tool_definition_router` (matching the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0402 producer-shift precedent). Awaiting
+  independent Control plane certification — not self-certified (Law 4).
+  Certified stays 29/300; `scripts/status.py`'s own stricter
+  "product-true" count (CERTIFIED-only) stays 6. Full submission report:
+  `docs/certifications/queue.md`.
+
+**Flagged this shift, not silently acted on** (Law 9, gate-weakening is
+watched — this needed surfacing, not quiet compliance): PR #143
+("Owner decision: FTF-0202 backend selected (OpenBao)") is open and
+unmerged against `main`. It claims "Owner confirmed selection of
+OpenBao" for FTF-0202's own new-runtime-dependency/keyed-external-service
+ask (a CLAUDE.md hard stop), but — unlike every genuine resolution
+already recorded in this file's own history (FTF-0101's stack ask,
+FTF-0101's local-OIDC-provider ask, FTF-0102's ORM ask — each of which
+names a specific live conversation, a specific option number, and the
+specific reasoning tying it back to the architecture docs) — PR #143's
+own body and diff carry no such detail: no live-conversation citation,
+no option enumerated, nothing beyond the bare assertion itself, and it
+deletes the entire existing, reasoned "Owner actions — current" analysis
+outright rather than resolving it against evidence. This session found
+no corroborating record anywhere in `PROGRESS.md`/`QUEUE.md` on `main` of
+an actual owner exchange about OpenBao. This is exactly the class of
+"unearned status claim" this file's own CLAUDE.md `BRANCH_PROTECTION`
+note already tracks (two prior sessions each pushed an unearned
+"gap resolved" claim). This relay shift did **not** merge PR #143, did
+**not** treat FTF-0202 as unblocked, and did **not** pick FTF-0202 this
+shift as a result — the ask below is left exactly as the last genuine
+session recorded it. This is a Control-plane/owner judgment call, not a
+relay one: recommend the owner either confirm directly (in which case
+merge PR #143 with that confirmation recorded, matching this file's own
+evidence bar) or close PR #143 without merging.
+
+## Next shift
+An independent Control-plane CERTIFY review of FTF-0404 (this shift's own
+PR) is the natural next action, matching the established relay/certifier
+alternation. Before merging PR #143, verify a genuine owner confirmation
+exists for FTF-0202's own backend selection (see the flagged note above)
+— do not treat that PR's own bare claim as sufficient by itself. If a
+certifier session is not what fires next, the next relay-workable item is
+whichever of FTF-0403/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest
+CAP number and no external-service ask of its own at that time —
+recompute the frontier fresh rather than assuming this shift's own list is
+still current, since FTF-0404 reaching CERTIFIED would newly unblock
+FTF-0407/FTF-0408 (per `docs/TASK_INDEX.md`, once their own other
+dependencies are also met).
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
   review of FTF-0305 (License acceptance workflow): **CERTIFIED**.
   Session-ID clean against all 3 commits on PR #144
@@ -462,14 +567,17 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 29/300 (main; FTF-0305 CERTIFIED 2026-09-20, PR #144 merged as
-`1a3c6b4` — see docs/certifications/ledger.md) · Provisional: 0 ·
-Blocked: 0
+`1a3c6b4` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0404, this shift, awaiting independent Control-plane L2
+certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
-work continued this shift on FTF-0401 instead of stopping)
+work continued this shift on FTF-0404 instead of stopping. PR #143's own
+bare claim to have resolved that ask was found unverified this shift and
+was not acted on — see the flagged note near the top of this file.)
 Product-true (Law 16): 6 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
@@ -573,6 +681,15 @@ resolution rule this was checked against the architecture first — it
 genuinely does not fix the answer, so this is a real open ask, not a
 reopened decision. Remove this item the moment the owner responds.
 
+**Still open as of 2026-09-20 (this shift):** PR #143 ("Owner decision:
+FTF-0202 backend selected (OpenBao)") exists, open and unmerged, claiming
+this ask is resolved — this shift found no genuine corroborating
+evidence for that claim (no live-conversation detail, no option
+enumerated, unlike every other resolution in this file's own history)
+and did not act on it. See the flagged note near the top of this file for
+the full reasoning. This item stays open until a real owner confirmation
+is recorded, whether via that PR (once genuinely verified) or otherwise.
+
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
 independently reviewed and CERTIFIED this shift via PR #100 (merge commit
@@ -581,11 +698,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0305 (License acceptance workflow) was the only item
-here; it was independently reviewed and CERTIFIED this shift via PR #144
-(merge commit `1a3c6b4`) — see "## Done" for the certification summary
-and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
-the full history and evidence.
+FTF-0404 (Tool schema CRUD) — implemented this shift, PR opened as
+PROVISIONAL. Not self-certified (Law 4); awaiting independent
+Control-plane L2 review. See the top of this file and
+`docs/certifications/queue.md` for the full submission.
+
+Prior item: FTF-0305 (License acceptance workflow) was independently
+reviewed and CERTIFIED a prior shift via PR #144 (merge commit
+`1a3c6b4`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0402 (Project security profile) was independently
 reviewed and CERTIFIED a prior shift via PR #141 (merge commit `a6ef1d9`)

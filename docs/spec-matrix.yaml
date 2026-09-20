@@ -689,15 +689,64 @@ FTF-0403:
   proving_symbol: ''
   proving_test: ''
 FTF-0404:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tool schema CRUD
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401
+    (CERTIFIED). Real, live-wired
+    `/api/v1/organizations/{organization_id}/projects/{project_id}/tools`
+    routes (`apps/api/app/tools/tool_definition_routes.py`) -- the fifth
+    live-wired product-runtime path in this repository, after FTF-0101/
+    FTF-0201/FTF-0301/FTF-0401. `apps/api/app/tools/tool_definition_schema.py`
+    +`tool_definition_crud.py` implement Section 6.9's own `ToolDefinition`
+    with a real forward Alembic migration
+    (`apps/api/alembic/versions/0006_tool_definitions.py`), FORCE-RLS scoped
+    to the same tenant context every prior migration in this chain
+    established, plus a real composite `(organization_id, project_id)` ->
+    `projects(organization_id, id)` foreign key (a purely additive
+    `UNIQUE(organization_id, id)` on the already-CERTIFIED `projects` table,
+    the same precedent FTF-0401's own migration applied to `workspaces`).
+    This task's own negative_acceptance ("Editing used tool schema creates
+    new version and drift, never changes historical manifest in place") is
+    enforced by construction: `apply_new_version` never mutates the row it
+    replaces except to set `superseded_at`/`updated_at` -- proven both at
+    the pure-function level and over real HTTP round-trips against a real
+    Postgres database (edit produces a genuinely new version; the
+    historical row, fetched by its own ID afterward, is still
+    byte-identical to its original content; editing an already-superseded
+    row directly is refused). A real partial unique index
+    (`(project_id, name) WHERE superseded_at IS NULL`) enforces "one
+    current version per tool name per project" at the database level, not
+    only in application code. Contracts extended under the existing
+    contract-owner lock (`contracts:04`, FTF-0401): new `/tools` paths and
+    `ToolDefinition`/`ToolDefinitionCreateRequest`/`ToolDefinitionEditRequest`
+    schemas appended to `packages/contracts/openapi/04-interface.yaml` and
+    `packages/contracts/jsonschema/04-domain.schema.json`, the same
+    already-frozen files FTF-0401 owns -- `/requirements` is still
+    disclosed as not yet declared (FTF-0407/FTF-0408's own, later scope).
+    22 no-DB test functions (including a real locally-hosted
+    `build_tool_definition_router` over a real uvicorn server for the
+    route's own role-boundary proof) + 20 real live-Postgres checks (two
+    real organizations, three real projects, a real uvicorn server proving
+    create -> edit -> version 2 with the historical version 1 fetched
+    byte-identical by its own ID -> re-editing version 1 directly refused
+    (409) -> cross-project IDOR denied -> cross-organization IDOR denied);
+    two own fault injections (removing the "only the current version can
+    be edited" guard; mutating the historical row's own
+    `input_schema_json` during an edit), both caught for real by both
+    suites and reverted byte-identical, no regression to FTF-0401/FTF-0402's
+    own certified no-DB/live-Postgres suites (both independently reconfirmed
+    "all checks passed" against a freshly recreated database/role).
+    `product_truth_check.py --fail-on-unwired` unchanged at `6/6` before
+    this submission's own `proving_symbol` is counted by an independent
+    reviewer. PR opened as PROVISIONAL; not self-certified (Law 4) --
+    awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
+  proving_symbol: build_tool_definition_router
+  proving_test: tests/tasks/test_ftf_0404.py
 FTF-0405:
   certification_state: NONE
   criticality: MUST
