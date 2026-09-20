@@ -316,15 +316,58 @@ FTF-0304:
   proving_symbol: ''
   proving_test: ''
 FTF-0305:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: License acceptance workflow
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 66aff8b6f8b81846891d5da43c3d1eb1e11f708a
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301 (CERTIFIED).
+    apps/api/app/artifacts/license_acceptance_workflow.py (refined from the packet's own
+    unimportable/hyphenated `packages/model-catalog/license_acceptance_workflow.py` suggestion to
+    a real apps/api/app/artifacts/* module, the same refinement precedent FTF-0301 already
+    established for the same directory) -- pure, DB-free: `evaluate_license_gate`/
+    `assert_license_accepted_for_use` (the one sanctioned admission gate a future training/serving
+    workflow must call; no live caller yet -- TrainingExperiment/Deployment are later,
+    separately dependency-gated tasks, the same disclosed-gap class FTF-0103/FTF-0104/FTF-0105/
+    FTF-H003 already established) and `apply_revoke_license`/`invalidate_stale_license_acceptance`
+    (this task's own real negative_acceptance made executable: revoking a `ready` artifact demotes
+    it back to `registered`, so any caller gating real work on `status == "ready"` is automatically
+    excluded). Deliberately does NOT hook into FTF-0301's own `apply_edits` -- an earlier version
+    auto-cleared acceptance on identity edits, but that materially changed already-CERTIFIED
+    FTF-0301 behavior (its own live-Postgres suite accepts, then pins base_model_revision, then
+    expects mark-ready to still succeed) -- a Law 15 situation outside this task's own charter;
+    "acceptance bound to model revision" instead holds by construction (the acceptance record
+    lives on the same row as base_model_revision). `apps/api/app/artifacts/artifact_crud.py` gains
+    one purely additive new function, `revoke_license` (never touching `apply_edits`/
+    `create_artifact`/`accept_license`/`mark_ready`/`archive_artifact`'s own existing bodies);
+    `apps/api/app/artifacts/artifact_routes.py` gains one new route,
+    `POST .../artifacts/{artifact_id}/revoke-license`, on the same already-live-wired router
+    FTF-0301 established (unconditionally mounted in apps/api/app/main.py). `database_changes`:
+    "No independent schema change" honored -- reuses FTF-0301's own nullable
+    license_accepted_by/license_accepted_at columns, no new migration. 27 no-DB test functions (via
+    `check()`, `tests/tasks/test_ftf_0305.py`) + 21 real live-Postgres checks
+    (`tests/integration/test_ftf_0305_license_acceptance_workflow.py`, CI's new
+    `license-acceptance-workflow-integration` job); two own fault injections (Law 1, distinct
+    vectors: (1) `evaluate_license_gate`'s own unaccepted-branch replaced with `if False:` --
+    caught for real by the no-DB suite's `AttributeError` on the now-always-accepted path; (2) the
+    ready->registered demotion in `apply_revoke_license` removed -- caught for real by the no-DB
+    suite's own two named negative_acceptance checks), both reverted byte-identical and both
+    suites re-run clean. Independently re-verified no regression to FTF-0301's own certified
+    evidence: its no-DB (`tests/tasks/test_ftf_0301.py`) and live-Postgres
+    (`tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`) suites both still "all
+    checks passed" on a freshly recreated database/role. Full regression clean (`ruff check .`/
+    `ruff format --check .`/`mypy .`; `pnpm run lint`/`typecheck`/`format:check`; `pnpm exec
+    vitest run`; `uv run pytest tests/unit`; every existing `tests/tasks/test_ftf_*.py` re-run
+    clean after `git fetch --unshallow`, the same pre-existing shallow-clone `stale_commit`
+    artifact every prior session has already documented); `product_truth_check.py
+    --fail-on-unwired` -- `6/6` (this entry's own `proving_symbol`, `apply_revoke_license`, set at
+    this PROVISIONAL submission, matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402 producer-shift
+    precedent; real callers found in both `license_acceptance_workflow.py` itself and
+    `artifact_crud.py`'s own new `revoke_license`, which the new live-wired route calls).
+  proof_state: L1-PROVEN
+  proving_symbol: apply_revoke_license
+  proving_test: tests/tasks/test_ftf_0305.py
 FTF-0306:
   certification_state: NONE
   criticality: MUST

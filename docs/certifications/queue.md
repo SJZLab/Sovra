@@ -6178,3 +6178,159 @@ the same code on a now-clean head.
   additional, not a replacement, defense-in-depth. Datasets/source/
   worker/models/judges/telemetry enforcement is explicitly NOT this
   task's scope — see Scope decision above.
+
+## 2026-09-20 — FTF-0305 — License acceptance workflow
+- **PR:** opened this shift (`claude/wizardly-fermat-34mau8` → `main`,
+  title `[relay] FTF-0305: License acceptance workflow`).
+- **Commit:** 66aff8b6f8b81846891d5da43c3d1eb1e11f708a (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  FTF-0401/FTF-0402 two-commit precedent.
+- **Dependency-ready pick reasoning:** recomputed the frontier fresh
+  against `docs/spec-matrix.yaml`'s live certification state rather than
+  assuming the prior shift's own list was still current (per that
+  shift's own "Next shift" note). FTF-0402 CERTIFIED this shift (before
+  this one), newly unblocking FTF-0408/FTF-0500D/FTF-0514/FTF-0617/
+  FTF-0901/FTF-0902/FTF-1206 — none of which are dependency-ready yet
+  (each names other, still-uncertified dependencies too). The recomputed
+  dependency-ready set is unchanged from the prior shift's own list minus
+  FTF-0402 itself: FTF-0202 (owner ask, unchanged — no concrete secret
+  backend named anywhere in this repository's architecture docs),
+  FTF-0305, FTF-0403, FTF-0404, FTF-1001, FTF-1401, FTF-1501. Of these,
+  FTF-0305 has the lowest CAP number (CAP-06) with no external-service
+  ask of its own.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0305 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Authorized
+  user records actual license/usage terms and source acceptance bound to
+  model revision"), negative_acceptance ("Unaccepted/revoked license
+  blocks training/serving; no blanket approval based on provider name"),
+  `database_changes: "No independent schema change. Consume frozen
+  contract"`, `files: [packages/model-catalog/license_acceptance_workflow.py,
+  tests/tasks/test_ftf_0305.py]`, `dependencies: [FTF-0301]` (CERTIFIED),
+  `contract_owner: FTF-0301`.
+- **Path refinement (disclosed, matching the FTF-0301/FTF-0201 precedent
+  of refining an abbreviated/unusable packet path to a real one):**
+  `packages/model-catalog` is not a `uv` workspace member
+  (`pyproject.toml`'s own `[tool.uv.workspace] members` list) and, being
+  hyphenated, is not a valid Python import path at all. FTF-0301 already
+  refined its own identical `packages/model-catalog/...` suggestion into
+  `apps/api/app/artifacts/*` instead of creating an unimportable package;
+  this task follows the same refinement into
+  `apps/api/app/artifacts/license_acceptance_workflow.py`, reusing the
+  existing artifacts module family rather than scattering a second,
+  hyphenated top-level package for one file.
+- **Scope decision (disclosed, matching the FTF-0301/FTF-0401/FTF-0402
+  precedent of an explicit, non-hidden scope narrowing):** FTF-0301
+  already stores `license_id`/`license_accepted_by`/`license_accepted_at`
+  on `TrainableArtifact` and already gates `mark_ready` on acceptance —
+  this task's own job is not to duplicate that state
+  (`database_changes` forbids an independent schema change) but to add
+  what FTF-0301 left open: revocation. `apply_revoke_license`/
+  `revoke_license` are wholly new, purely additive operations using only
+  FTF-0301's own existing nullable columns. An earlier version of this
+  submission also auto-invalidated acceptance inside `apply_edits`
+  whenever `source_uri`/`base_model_revision`/`license_id` changed, to
+  make "acceptance bound to model revision" more actively enforced — but
+  running FTF-0301's own live-Postgres suite against that version
+  surfaced a real regression: that suite's own certified flow (accept a
+  license while `base_model_revision` is still the mutable alias
+  `"main"`, then PATCH `base_model_revision` to a pinned value, then
+  expect `mark-ready` to succeed) failed, because the new hook cleared
+  the acceptance the PATCH itself introduced. This is a genuine Law 15
+  ("a material source change invalidates affected evidence until
+  requalification") situation this task is not chartered to open
+  unilaterally — FTF-0301 is already CERTIFIED and merged. The hook was
+  removed; "acceptance bound to model revision" is instead satisfied by
+  construction (the acceptance record lives on the exact same row as
+  `base_model_revision` — there is no free-floating, artifact-independent
+  acceptance fact anywhere in this schema), and revocation is always an
+  explicit, on-demand action, never an automatic side effect of an
+  unrelated edit. `assert_license_accepted_for_use` has no live
+  training/serving caller yet — TrainingExperiment/Deployment are later,
+  separately dependency-gated tasks (`docs/TASK_INDEX.md`) — the same
+  disclosed-gap class FTF-0103/FTF-0104/FTF-0105/FTF-H003 already
+  established before FTF-0201 gave each of them a first real caller.
+- **Test:** `tests/tasks/test_ftf_0305.py` (no-DB, 15 test functions,
+  including a real locally-hosted `build_trainable_artifact_router` over
+  a real uvicorn server for the new route's own role-boundary proof) +
+  `tests/integration/test_ftf_0305_license_acceptance_workflow.py` (real
+  live-Postgres, 15 `check()` assertions).
+- **Evidence:** both suites ran clean in this sandbox (no
+  container-registry egress here — same documented finding as every
+  prior integration-tested task; the live-Postgres suite was produced
+  against a directly-installed local PostgreSQL 16 cluster — freshly
+  recreated database and `sovra_app` role each run, since roles are
+  cluster-wide and survive a `DROP DATABASE` — and is wired into CI's new
+  dedicated `license-acceptance-workflow-integration` job for real
+  registry egress on the hosted runner). Own fault injections (Law 1,
+  two, distinct vectors, both reverted byte-identical via `diff` and both
+  affected suites re-run clean afterward):
+  1. Replaced `evaluate_license_gate`'s own
+     `if artifact.license_accepted_by is None or ...` unaccepted-branch
+     condition with `if False:` — caught for real by the no-DB suite
+     (`AttributeError: 'NoneType' object has no attribute 'isoformat'`
+     the moment a fresh, unaccepted artifact is evaluated — the gate
+     unconditionally tried to format a `None` timestamp as accepted).
+  2. Removed the `if artifact.status == "ready": artifact.status =
+     "registered"` demotion from `apply_revoke_license` — caught for real
+     by the no-DB suite's own two named negative_acceptance checks
+     ("revoking a ready artifact's license demotes it back to
+     registered" and "a subsequent mark-ready attempt is refused once the
+     license has been revoked").
+  Also independently reconfirmed no regression to FTF-0301's own
+  certified evidence: re-ran its no-DB (`tests/tasks/test_ftf_0301.py`)
+  and live-Postgres
+  (`tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`)
+  suites against a freshly recreated database/role after this task's
+  final code — both still "all checks passed", including the exact
+  accept-then-pin-revision-then-mark-ready sequence the removed
+  auto-invalidation hook would have broken. Full regression: `uv run
+  ruff check .`/`ruff format --check .`/`mypy .` clean (114 source
+  files); `pnpm run lint`/`typecheck`/`format:check` clean (no frontend
+  files touched); `pnpm exec vitest run` — 14/14 (unchanged); `uv run
+  pytest tests/unit` — 3/3; every existing `tests/tasks/test_ftf_*.py`
+  re-run clean (`git fetch --unshallow` first — same pre-existing
+  shallow-clone `stale_commit` artifact every prior certifying/relay
+  session has already documented); `python3 scripts/validate_spec.py
+  --strict` clean; `product_truth_check.py --fail-on-unwired` — `6/6`
+  (this entry's own `proving_symbol`, `apply_revoke_license`, set at this
+  PROVISIONAL submission — see State below — matching the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0402 producer-shift precedent; real
+  callers found in both `license_acceptance_workflow.py` itself and
+  `artifact_crud.py`'s own new `revoke_license`, which the new live-wired
+  `revoke-license` route calls).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `apply_revoke_license` (`proving_test`
+  `tests/tasks/test_ftf_0305.py`) at this PROVISIONAL submission, matching
+  the FTF-0201/FTF-0301/FTF-0401/FTF-0402 producer-shift precedent — only
+  `certification_state`/`proof_state`'s `CERTIFIED`/`L2-CERTIFIED` values
+  are the certifying session's own to set. `scripts/status.py`'s own
+  stricter "product-true" count (which also requires
+  `certification_state in (CERTIFIED, PROMOTED)`) correctly stays 5 until
+  an independent Control-plane review certifies this task.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Authorized user records actual license/usage terms and source
+  acceptance bound to model revision") is satisfied by FTF-0301's own
+  already-certified `accept_license` plus this task's own "bound by
+  construction" reasoning above (disclosed, not a new mechanism claimed).
+  Acceptance clause 2 (independent review/evidence) is this submission's
+  own job to enable, not to satisfy itself (Law 4). negative_acceptance
+  ("Unaccepted/revoked license blocks training/serving; no blanket
+  approval based on provider name") is proven at the pure-function level
+  (`apply_revoke_license` demotes `ready` back to `registered`;
+  `assert_license_accepted_for_use`/`evaluate_license_gate` take no
+  provider/source_type/model_family parameter, proven both by signature
+  introspection and by exercising all four of Section 6.7's own allowed
+  `source_type` values identically) and over real HTTP round-trips
+  against a real Postgres database (revoke → mark-ready refused again;
+  the foreign-artifact IDOR case on the new route; revoke idempotency;
+  revoking an archived artifact's license refused).
+- **Disclosed, not hidden:** `assert_license_accepted_for_use` has no
+  live training/serving caller yet (see Scope decision above); "training/
+  serving" is proven at the one concrete admission point that already
+  exists today (`status == "ready"`), not at a training/serving system
+  this repository does not yet have. This task deliberately does not
+  touch `apply_edits` — see Scope decision above for the full Law 15
+  reasoning, including the regression this submission's own earlier
+  version surfaced and reverted before ever being committed.

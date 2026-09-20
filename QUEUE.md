@@ -1,5 +1,58 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0305
+  (License acceptance workflow, dep FTF-0301, CERTIFIED). Recomputed the
+  dependency-ready frontier fresh (never trusted the prior shift's own
+  list as still current): FTF-0202 (owner ask, unchanged), FTF-0305,
+  FTF-0403, FTF-0404, FTF-0902, FTF-1001, FTF-1401, FTF-1501. FTF-0305 has
+  the lowest CAP number (CAP-06) with no external-service ask of its own.
+  `apps/api/app/artifacts/license_acceptance_workflow.py` (refined from
+  the packet's own unimportable/hyphenated
+  `packages/model-catalog/license_acceptance_workflow.py` suggestion, the
+  same refinement precedent FTF-0301 already established) adds the one
+  sanctioned training/serving admission gate
+  (`assert_license_accepted_for_use`, no live caller yet — disclosed) and
+  real revocation (`apply_revoke_license`) — FTF-0301 already stored
+  acceptance but had no way to withdraw it. Revoking a `ready` artifact
+  demotes it back to `registered`, so any caller gating real work on
+  `status == "ready"` is automatically excluded, closing this task's own
+  negative_acceptance ("Unaccepted/revoked license blocks
+  training/serving"). `apps/api/app/artifacts/artifact_crud.py` gains one
+  purely additive new function, `revoke_license`, never touching
+  `apply_edits`/`create_artifact`/`accept_license`/`mark_ready`/
+  `archive_artifact`'s own existing bodies;
+  `apps/api/app/artifacts/artifact_routes.py` gains one new route,
+  `POST .../artifacts/{artifact_id}/revoke-license`, on the same
+  already-live-wired router. `database_changes` honored ("No independent
+  schema change") — reuses FTF-0301's own nullable
+  `license_accepted_by`/`license_accepted_at` columns, no new migration.
+  An earlier implementation attempt also auto-invalidated acceptance
+  inside `apply_edits` on an identity edit, but running FTF-0301's own
+  live-Postgres suite against it surfaced a real regression (that suite's
+  own certified flow accepts a license, then pins `base_model_revision`,
+  then expects `mark-ready` to still succeed) — a Law 15 situation
+  outside this task's own charter; reverted before ever being committed,
+  and "acceptance bound to model revision" is instead satisfied by
+  construction (the acceptance record lives on the same row as
+  `base_model_revision`). 15 no-DB test functions (including a real
+  locally-hosted router over a real uvicorn server for the new route's
+  own role-boundary proof) + 15 real live-Postgres checks (two real
+  organizations, a real uvicorn server proving accept → resolve →
+  mark-ready → revoke → mark-ready refused again, the foreign-artifact
+  IDOR case on the new route, revoke idempotency, and revoking an
+  archived artifact's license refused); two own fault injections, both
+  caught for real, reverted byte-identical. Independently reconfirmed no
+  regression to FTF-0301's own certified no-DB/live-Postgres suites (both
+  still "all checks passed" on a freshly recreated database/role). PR
+  opened as PROVISIONAL; `docs/spec-matrix.yaml` FTF-0305 set to
+  `PROVISIONAL`/`L1-PROVEN`, `proving_symbol` `apply_revoke_license`
+  (matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402 producer-shift
+  precedent). Awaiting independent Control plane certification — not
+  self-certified (Law 4). Certified stays 28/300;
+  `product_truth_check.py --fail-on-unwired`: `6/6`; `scripts/status.py`'s
+  own stricter "product-true" count (CERTIFIED-only) stays 5. Full
+  submission report: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #141) — independent CERTIFY
   review of FTF-0402 (Project security profile): **CERTIFIED**. Session-ID
   clean against all 3 commits on PR #141 (session_01YLCGLfbyuEcZGJTe7LWQAL,
@@ -376,8 +429,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 28/300 (main; FTF-0402 CERTIFIED 2026-09-20, PR #141 merged as
-`a6ef1d9` — see docs/certifications/ledger.md) · Provisional: 0 ·
-Blocked: 0
+`a6ef1d9` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0305, this shift, awaiting independent Control-plane L2
+certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
@@ -493,10 +547,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0402 (Project security profile) — submitted PROVISIONAL this shift.
-PR: https://github.com/SJZLab/Sovra/pull/141. Not self-certified (Law 4)
-— awaiting an independent Control-plane L2 review. Full submission
-report: `docs/certifications/queue.md`.
+FTF-0305 (License acceptance workflow) — submitted PROVISIONAL this
+shift. PR: opened this shift
+(`claude/wizardly-fermat-34mau8` → `main`). Not self-certified (Law 4) —
+awaiting an independent Control-plane L2 review. Full submission report:
+`docs/certifications/queue.md`.
+
+Prior item: FTF-0402 (Project security profile) was independently
+reviewed and CERTIFIED a prior shift via PR #141 (merge commit `a6ef1d9`)
+— see "## Done" below for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0401 (Project schema/API/UI) was independently
 reviewed and CERTIFIED a prior shift via PR #139 (merge commit `59e14e7`) —
