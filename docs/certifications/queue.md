@@ -4772,3 +4772,191 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01WAStZmrW1dFrLLivEgcmxN (independent —
   see session-ID check above), 2026-09-20.
+
+## 2026-09-20 — FTF-H003 (Cross-layer tenant isolation and relational identity) — Relay: real composed guard + RLS-safe view submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-H003, Cross-layer tenant isolation and relational
+  identity. Dependencies FTF-0102 (Organization/workspace schema),
+  FTF-0103 (RBAC middleware), FTF-0104 (Audit event writer) and FTF-H001
+  (Executable specification/gate bootstrap) are all CERTIFIED; DoD pulled
+  fresh via `python tools/r1_handoff.py packet FTF-H003 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from the task title
+  alone. Picked up immediately after FTF-0105 was independently
+  CERTIFIED by a separate Control plane session (PR #120, merge commit
+  `14f785c`) this same date — FTF-0106 (the other item FTF-0105 unblocks)
+  additionally depends on FTF-H003 itself, which was not yet started, so
+  FTF-H003 is the real next unblocked item, not FTF-0106.
+- **Real constraint checked before writing any code:** this task's own
+  `database_changes` contract reads "Schema change required under the
+  single-writer migration lock; exact tenant-owned fields from bound
+  sections are frozen before fan-out" and `shared_lock_required` names
+  `migration:application`/`security:trust-boundary`. Confirmed directly
+  that `packages/storage/` and `apps/api/app/db/` (the packet's own
+  initial owner paths) do not exist anywhere in this repository, and that
+  the real object-storage client FTF-R017 delivered
+  (`apps/api/app/services/storage_semantics_client.py`) has no tenant
+  concept at all — a low-level SigV4 signer only. Also confirmed
+  `workers/*` are still only `README.md`/`pyproject.toml` stub packages
+  with zero real code — no Temporal workflow or activity exists anywhere
+  in this repository to bind tenant context into yet.
+- **`apps/api/alembic/versions/0003_cross_layer_isolation.py`:** real
+  forward migration chained onto FTF-0104's `0002` as the single
+  serialized head. Creates a real `workspace_directory` SQL view over the
+  FORCE-RLS `workspaces`/`organizations` tables with
+  `security_invoker = true`. Reproduced directly against a real local
+  Postgres 16 *before* writing this migration, using manual `psql`
+  sessions as both the migration-owner and restricted `sovra_app` roles:
+  an otherwise-identical view *without* that option genuinely returns
+  every tenant's rows to `sovra_app` with zero tenant context set (2 rows
+  from 2 real organizations, confirmed empirically, not assumed from
+  documentation) — Postgres evaluates a view with its owner's own
+  privileges by default, and the migration-owner role is exempt from RLS
+  as table owner. The same view *with* `security_invoker = true` genuinely
+  returns zero rows under the identical conditions. This is exactly this
+  task's own negative_acceptance clause ("test views... not API guards
+  alone"), reproduced as a real vulnerability before being closed, not
+  asserted from documentation.
+- **`apps/api/app/db/tenant_context.py`:** `tenant_context_dependency()`
+  — the one FastAPI dependency composing FTF-0103's `require_role` and
+  FTF-0105's `tenant_scoped_session`: authorization runs first, and a
+  database session is opened (taking a real connection from the pool)
+  only once authorization actually succeeds, always bound to exactly the
+  organization `require_role` authorized. `TenantScopedRequest` bundles
+  the authorized identity/role/organization alongside the already-scoped
+  session for the route handler.
+- **`apps/api/app/auth/resource_authorization.py`:** `authorize_resource()`
+  — a thin, undrifting pass-through to `session.get(...)` through a
+  tenant-scoped session; adds no independent tenant re-check of its own
+  that could drift from the database's real RLS policy. Returns `None`
+  identically whether a resource is missing or belongs to a different,
+  unauthorized tenant, so a guessed foreign resource ID cannot be
+  confirmed to exist via a distinguishable response (Section 65.4).
+- **`tests/tasks/test_ftf_h003.py`:** 30 no-DB checks —
+  `authorize_resource`'s pass-through behavior; `tenant_context_dependency`'s
+  fail-fast composition ordering proven against a real, locally-hosted
+  demonstration FastAPI app (real uvicorn server, real local socket, same
+  pattern `test_ftf_0101.py`/`test_ftf_0103.py` established) with a
+  test-double `session_factory` this suite can count calls against
+  (Section 84.4 permits test doubles for exactly this isolated wiring
+  proof); a static structural check that no real application source file
+  under `apps/*`/`workers/*` (excluding the Alembic migration tooling
+  itself) references the migration-owner role name.
+- **`tests/integration/test_cross_layer_tenant_isolation.py`:** real
+  live-Postgres proof against a directly installed PostgreSQL 16 cluster
+  (this sandbox has no container-registry egress, same finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-R017 already documented).
+  Proves: (1) the `workspace_directory` view enforces identical RLS to
+  the base tables under `sovra_app`; (2) the migration-owner role sees
+  every organization's rows with zero tenant context set, demonstrating
+  concretely why it must never be the API/worker's own connection role;
+  (3) shown able to fail (Law 1) — downgrades this migration alone to
+  `0002`, removes the `security_invoker` line from a scratch copy of
+  `0003`, re-upgrades on the *same* already-migrated database (reusing
+  the primary database rather than a second scratch database, since
+  migration `0001` creates a cluster-global role that cannot be created
+  twice in the same Postgres cluster — this was found the hard way: an
+  earlier draft using a fresh scratch database hit a real
+  `DuplicateObject`/`role "sovra_app" already exists` error, exactly
+  reproducing the same collision CI's own single-container-per-job setup
+  would also hit), observes the real leak, then restores the migration
+  file byte-identical and re-applies the real, fixed migration, confirming
+  the view is genuinely fixed again afterward — not just a restored file
+  against a still-broken database; (4) a real end-to-end demonstration
+  app combining `require_role`, `tenant_scoped_session` and
+  `authorize_resource` against the real database proves an authorized
+  viewer fetches their own real workspace, a guessed real workspace ID
+  belonging to a different real organization is denied with 404 (not
+  403 — indistinguishable from a nonexistent resource, no side channel
+  confirming it exists), and a caller with no membership at all is denied
+  before any resource lookup happens.
+- **Own fault injections (two, distinct vectors, both reverted and
+  re-verified byte-identical via `diff` against a pre-injection copy):**
+  (1) reordered `tenant_context_dependency` to open the session before
+  authorization completed — 5 corresponding checks in
+  `tests/tasks/test_ftf_h003.py` genuinely failed (session-factory-called-
+  before-authorization-fails checks, session-scoping checks); (2)
+  rebound the composed session to a fixed placeholder organization ID
+  instead of the one `require_role` actually authorized — the real
+  end-to-end "viewer fetches their own workspace" check in
+  `tests/integration/test_cross_layer_tenant_isolation.py` genuinely
+  failed. Also independently re-verified the migration's own fault
+  injection is not vacuous: with the checkin-reset-style
+  `security_invoker` line removed, re-ran and confirmed exactly the
+  expected leak-detection check flips, restored clean.
+- **Full regression, this sandbox** (`uv sync --all-packages`, `pnpm
+  install --frozen-lockfile`, `git fetch --unshallow` — all needed once,
+  this sandbox starts with none of them, same documented environment-
+  artifact note as every prior shift, not a real defect): `ruff check .` /
+  `ruff format --check .` / `mypy .` clean (79 source files, per mypy's
+  own reported count); `pnpm run lint` / `typecheck` / `format:check`
+  clean; `pnpm exec vitest run` — 5/5; `uv run pytest tests/unit` — 3/3;
+  all 18 existing `tests/tasks/test_ftf_*.py` files (including FTF-0105's
+  own, certified earlier this same date) plus `tests/implementation/*.py`
+  and `tests/security/*.py` re-run clean and unmodified in behavior;
+  `python3 scripts/validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` still `1/1` (unchanged —
+  this module has no live product caller yet, see below);
+  `scripts/status.py` still `22/300 certified · 1 product-true`.
+  `verify_task.py --task FTF-H003 --stage task` reports `BLOCKED — no
+  merged verification evidence yet`, expected pre-merge (its
+  `spec/verification-map.json` entry is added by Control plane at
+  certification time, per established convention — not touched by this
+  submission).
+- **Disclosed, not hidden:** no live product caller (no FastAPI route or
+  background-worker service) exists anywhere in this repository yet that
+  imports `tenant_context.py` or `resource_authorization.py` — same
+  disclosed "no live caller yet" class already accepted for
+  FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105 before each one's
+  own first live caller existed; `product_truth_check.py` stays `1/1`,
+  unchanged, not inflated. **Not fully met this submission:** this task's
+  own acceptance clause names five denial vectors ("read/write/download/
+  job/route"). This submission proves read/write (via the view and
+  base-table RLS) and route (via the real demonstration app's
+  guessed-workspace-ID denial) fully, but "download" (no tenant-scoped
+  object-storage policy exists yet on top of FTF-R017's own tenant-unaware
+  low-level `S3Client`) and "job" (no live Temporal workflow or worker
+  activity exists anywhere in this repository — `workers/*` are still
+  only stub packages) have no real subject matter to prove against yet —
+  matching the same disclosed "no live infrastructure yet" class already
+  accepted elsewhere in this queue, not a hidden gap. A separately claimed
+  follow-up submission against this same task ID is expected once a
+  tenant-scoped storage policy and a first real background worker exist —
+  this is disclosed as genuinely incomplete against the packet's full
+  acceptance clause, for Control plane to weigh (same class of judgment
+  call as FTF-0101's own multi-PR supersession chain for a compound
+  acceptance clause).
+- **Unrelated forward-looking observation, disclosed rather than silently
+  fixed (out of this task's scope):** FTF-0005's own certified
+  `Settings.REQUIRED_ENV_VARS` models `SOVRA_DATABASE_URL` as a generic
+  application setting with no distinction from the migration-owner
+  connection string. No live caller anywhere in this repository actually
+  calls `Settings.from_env()` today (confirmed via `grep`), so this has
+  caused no real violation of this task's own negative_acceptance clause
+  yet — flagged for whichever task first wires `Settings` into a live
+  database-backed service, not silently left for that task to
+  rediscover from scratch, and not touched here (editing FTF-0005's
+  already-certified module is outside this task's write set).
+- **Doc updates:** `docs/spec-matrix.yaml` FTF-H003 set to
+  `certification_state: PROVISIONAL` / `implementation_state: IMPLEMENTED`
+  / `proof_state: L1-PROVEN` / `proving_test:
+  tests/tasks/test_ftf_h003.py` (`proving_symbol` stays `''` — no live
+  caller yet, see above); `evidence_hash` to be filled to this shift's own
+  implementation commit in a follow-up commit once it exists, same
+  two-commit pattern as every prior task's own evidence. New CI job
+  `cross-layer-tenant-isolation-integration` added to
+  `.github/workflows/ci.yml` (real `services: postgres` container,
+  mirroring `organization-workspace-schema-integration`/
+  `audit-event-writer-integration`/`tenant-isolation-query-guards-
+  integration`) plus a new `gate` job step (`uv run python3
+  tests/tasks/test_ftf_h003.py`), immediately after FTF-0105's own step.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID check
+  against this submission's own commits; CI has not yet been confirmed
+  green on the real PR head by an independent session; no independent
+  fault injection beyond the two performed above; a judgment call on
+  whether the disclosed download/job gap is acceptable for L2
+  certification of this submission, or whether this task ID should stay
+  open for a follow-up submission before certifying.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.

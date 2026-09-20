@@ -1,5 +1,14 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+  unblocked item once FTF-0105 was independently CERTIFIED (FTF-H003,
+  Cross-layer tenant isolation and relational identity — its own deps
+  FTF-0102/FTF-0103/FTF-0104/FTF-H001 all CERTIFIED; FTF-0106 also
+  depends directly on FTF-H003, which was not yet started, so FTF-H003
+  is the real next unblocked item, not FTF-0106). Full submission
+  report: docs/certifications/queue.md; see "## Provisional" below for
+  the summary.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #120) — independent CERTIFY
   review of FTF-0105 (Tenant-isolation query guards): **CERTIFIED**.
   Session-ID clean against all 3 commits on PR #120, CI reconfirmed green
@@ -75,7 +84,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 22/300 (main; FTF-0105 CERTIFIED 2026-09-20, PR #120 merged as
-`14f785c` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`14f785c` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-H003, Cross-layer tenant isolation and relational identity —
+submitted this shift, awaiting independent Control-plane L2
+certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -139,16 +151,42 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0105 (Tenant-isolation query guards) was the only item
-here; it was independently reviewed and CERTIFIED this shift via PR #120
-(merge commit `14f785c`) — see "## Done" for the certification summary and
+- FTF-H003 — Cross-layer tenant isolation and relational identity.
+  Submitted this shift (relay, scheduled, non-interactive):
+  `apps/api/alembic/versions/0003_cross_layer_isolation.py` (real forward
+  migration creating a `workspace_directory` SQL view over the FORCE-RLS
+  base tables with `security_invoker = true` — reproduced directly
+  against real Postgres that an otherwise-identical view without that
+  option genuinely leaks every tenant's rows) + `apps/api/app/db/
+  tenant_context.py` (`tenant_context_dependency` — composes FTF-0103's
+  `require_role` and FTF-0105's `tenant_scoped_session` so a route opens
+  a database session, scoped to the authorized organization, only once
+  authorization actually succeeds) + `apps/api/app/auth/
+  resource_authorization.py` (`authorize_resource` — a thin IDOR guard
+  returning `None` identically for a missing or a foreign-tenant
+  resource, no distinguishable side channel) + `tests/tasks/
+  test_ftf_h003.py` (30 no-DB checks) + `tests/integration/
+  test_cross_layer_tenant_isolation.py` (real live-Postgres proof,
+  including a Law-1 fault injection reproducing and then closing the
+  view's own RLS-bypass vulnerability, and a real end-to-end
+  guessed-workspace-ID denial via a real demonstration app). Disclosed,
+  not fully met this submission: this task's own acceptance clause names
+  five denial vectors (read/write/download/job/route); this submission
+  proves read/write and route fully, but "download" (no tenant-scoped
+  object-storage policy exists yet) and "job" (no live Temporal
+  workflow/worker exists anywhere in this repository) have no real
+  subject matter to prove against yet — a separately claimed follow-up
+  submission against this same task ID is expected once that
+  infrastructure exists. Full submission report:
+  docs/certifications/queue.md. `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR link to be
+  recorded once opened.
+
+Prior item: FTF-0105 (Tenant-isolation query guards) was independently
+reviewed and CERTIFIED this shift via PR #120 (merge commit `14f785c`)
+— see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
-
-Prior item: FTF-0103 (RBAC middleware) was independently reviewed and
-CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
-"## Done" for the full narrative and `docs/certifications/ledger.md`/
-`docs/certifications/queue.md` for the complete review history.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).

@@ -1,7 +1,167 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR#120) — FTF-0105 (Tenant-isolation
-  query guards) independently reviewed and CERTIFIED; see below.
+Updated: 2026-09-20 (scheduled relay shift) — FTF-H003 (Cross-layer
+  tenant isolation and relational identity) implemented and submitted
+  PROVISIONAL, awaiting independent Control-plane L2 certification; see
+  below.
+
+## 2026-09-20 — Relay: FTF-H003 (Cross-layer tenant isolation and relational identity) implemented, submitted PROVISIONAL
+
+STEP 0.1: after PR #120 (FTF-0105) was independently CERTIFIED by a
+separate Control-plane session while this session was watching it (see
+this file's own prior "PR #120 merged by owner" follow-up entry below —
+that follow-up's own PR #121 was correctly superseded/closed without
+merging once the real certification landed, not an error on this
+session's part), re-read `QUEUE.md`/`docs/spec-matrix.yaml` fresh from
+`origin/main` rather than assuming stale state. Restarted this session's
+designated branch from the newly-updated `main`
+(`git fetch origin main && git checkout -B claude/wizardly-fermat-daazqp
+origin/main`), matching the standing instruction for a branch whose PR
+has already merged. CLAUDE.md self-check: `sha256sum CLAUDE.md` matched
+the committed `CLAUDE.md.sha256` exactly.
+
+STEP 1: `docs/spec-matrix.yaml` showed FTF-0105 genuinely
+`certification_state: CERTIFIED` on `main` (confirmed directly, not
+assumed from the notification alone). Per the dependency graph, FTF-0106
+depends on FTF-0105 *and* FTF-H003; FTF-H003 itself was still
+`certification_state: NONE` / `implementation_state: ABSENT`, but its own
+four dependencies (FTF-0102, FTF-0103, FTF-0104, FTF-H001) are all
+CERTIFIED. FTF-H003, not FTF-0106, is the real next unblocked item.
+Working: FTF-H003.
+
+Real DoD pulled before writing any code: `python tools/r1_handoff.py
+packet FTF-H003 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Confirmed
+`database_changes: "Schema change required..."` and
+`shared_lock_required: [migration:application, security:trust-boundary]`
+— this task, unlike FTF-0105, is expected to touch the schema. Confirmed
+via direct filesystem inspection that `packages/storage/` and
+`apps/api/app/db/` (the packet's own initial owner paths) do not exist,
+that FTF-R017's real `storage_semantics_client.py` has no tenant concept
+at all (a low-level SigV4 signer only), and that `workers/*` are still
+only `README.md`/`pyproject.toml` stub packages with zero real code.
+
+STEP 2 (PEV):
+- **P:** before writing any migration, manually reproduced the exact
+  vulnerability this task's own negative_acceptance clause names ("test
+  views... not API guards alone") against a real local Postgres 16, via
+  raw `psql` sessions: a `CREATE VIEW` over the already-certified
+  FORCE-RLS `workspaces`/`organizations` tables, queried as the
+  restricted `sovra_app` role with zero tenant context, returned every
+  tenant's rows (2 real organizations' worth) — confirming Postgres
+  evaluates a view with its *owner's* privileges by default, not the
+  querying role's. The same view with `ALTER VIEW ... SET
+  (security_invoker = true)` returned zero rows under identical
+  conditions. This finding shaped the whole migration design.
+- **E:** wrote `apps/api/alembic/versions/0003_cross_layer_isolation.py`,
+  `apps/api/app/db/tenant_context.py`, `apps/api/app/auth/
+  resource_authorization.py`, `tests/tasks/test_ftf_h003.py` (30 no-DB
+  checks) and `tests/integration/test_cross_layer_tenant_isolation.py`.
+  Hit and fixed two real environment issues along the way, both disclosed
+  in `docs/certifications/queue.md`'s full submission entry rather than
+  silently worked around: (1) the revision ID
+  `0003_cross_layer_tenant_isolation` (33 characters) exceeded
+  `alembic_version.version_num`'s real `VARCHAR(32)` column width —
+  reproduced as a genuine `StringDataRightTruncation` against real
+  Postgres, fixed by shortening the revision ID to
+  `0003_cross_layer_isolation`; (2) an initial fault-injection test design
+  ran the *full* migration chain against a second scratch database within
+  the same Postgres cluster, which collided on migration `0001`'s
+  cluster-global `CREATE ROLE "sovra_app"` (`DuplicateObject`, reproduced
+  for real) — the same collision CI's own single-container-per-job setup
+  would also hit, not merely a local sandbox artifact — fixed by
+  downgrading/re-upgrading only this task's own migration (`0003 ↔ 0002`)
+  on the *same* already-migrated database instead of provisioning a
+  second one. Confirmed both fault-injection tests (this task's own
+  `security_invoker` removal, and the composition-ordering fault in
+  `tenant_context.py`) genuinely fail before the fix and pass after,
+  restored byte-identical each time.
+- **V:** `product_truth_check.py --fail-on-unwired` stays `1/1`
+  (unchanged — no live product caller yet, same disclosed class as
+  FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105 before each one's
+  own first caller existed). Opened PR as PROVISIONAL and appended the
+  full submission report to `docs/certifications/queue.md`.
+
+Disclosed, not hidden, in the submission itself: this task's own
+acceptance clause names five denial vectors ("read/write/download/job/
+route"). This submission proves read/write (the view plus base-table
+RLS) and route (the real demonstration app's guessed-workspace-ID
+denial) fully, but "download" (no tenant-scoped object-storage policy
+exists yet on top of FTF-R017's tenant-unaware low-level `S3Client`) and
+"job" (no live Temporal workflow/worker exists anywhere in this
+repository) have no real subject matter to prove against yet — flagged
+as genuinely incomplete against the packet's full compound acceptance
+clause, matching the same class of judgment call FTF-0101's own
+multi-PR supersession chain already established, for Control plane to
+weigh rather than silently narrowed or hidden.
+
+Also disclosed, unrelated to this task's own write set: FTF-0005's
+certified `Settings.REQUIRED_ENV_VARS` models `SOVRA_DATABASE_URL` as a
+generic application setting with no distinction from the migration-owner
+connection string. Confirmed via `grep` that no live caller anywhere
+actually calls `Settings.from_env()` today, so this has caused no real
+violation yet — flagged as a forward-looking observation for whichever
+task first wires `Settings` into a live database-backed service, not
+touched here (outside this task's write set, and editing FTF-0005's
+already-certified module would risk its certified evidence for no
+in-scope reason).
+
+Full regression, this sandbox (`uv sync --all-packages`, `pnpm install
+--frozen-lockfile` already present from earlier this shift): `ruff check .`
+/ `ruff format --check .` / `mypy .` clean (79 source files, per mypy's
+own reported count); `pnpm run lint` / `typecheck` / `format:check`
+clean; `pnpm exec vitest run` 5/5; `uv run pytest tests/unit` 3/3; all 18
+existing `tests/tasks/test_ftf_*.py` files (including FTF-0105's own,
+already CERTIFIED) plus `tests/implementation/*.py`/`tests/security/
+*.py` re-run clean and unmodified in behavior; `python3
+scripts/validate_spec.py --strict` clean; `scripts/status.py` still
+`22/300 certified · 1 product-true`. `verify_task.py --task FTF-H003
+--stage task` reports `BLOCKED — no merged verification evidence yet`,
+expected pre-merge.
+
+Wired `.github/workflows/ci.yml`: new `gate`-job step (`uv run python3
+tests/tasks/test_ftf_h003.py`) immediately after FTF-0105's own step, and
+a new `cross-layer-tenant-isolation-integration` job (real `services:
+postgres` container, mirroring the three prior tenant-isolation
+integration jobs).
+
+`docs/spec-matrix.yaml` FTF-H003 set to `certification_state:
+PROVISIONAL` / `implementation_state: IMPLEMENTED` / `proof_state:
+L1-PROVEN` / `proving_test: tests/tasks/test_ftf_h003.py`; `evidence_hash`
+to be filled to the real implementation commit SHA in a follow-up commit
+once it exists, same two-commit pattern as every prior task.
+
+STEP 3: this entry, written before compaction, per convention.
+
+STEP 4: stop condition (a) applies — single-task PROVISIONAL submission
+handed to Control plane for independent L2 review, per Law 4 ("producer
+never certifies own work"). No true blocker, no repeated-failure stop, no
+usage-limit stop, no ask-first item this shift.
+
+## Next shift
+Once FTF-H003 is independently reviewed (CERTIFIED, NOT CERTIFIED with
+findings, or accepted-with-disclosed-gaps-for-a-follow-up), the next
+unblocked item per `docs/spec-matrix.yaml`'s dependency graph is
+FTF-0106 (RBAC/IDOR security tests — deps FTF-0102, FTF-0103, FTF-0104,
+FTF-0105, FTF-H003; all five now CERTIFIED-or-pending-this-submission).
+Do not claim FTF-0106 before FTF-H003 is CERTIFIED — its own dependency
+list names FTF-H003 directly, matching every prior task's own established
+precedent in this queue's history of waiting for CERTIFIED (not merely
+merged/PROVISIONAL) dependencies before claiming a dependent task.
+Blocked: no.
+
+## Metrics
+Certified / denominator: 22/300 (unchanged this shift — FTF-H003 is
+PROVISIONAL, not yet independently certified; Law 2 — statuses move only
+with evidence at their named assurance level, never by the producer's own
+submission)
+Product-true (Law 16): 1 — unchanged; FTF-H003 has no live product caller
+yet, does not count either way
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
+
+## Open owner asks
+None. See QUEUE.md "Owner actions — current" for the authoritative,
+current list (empty as of this shift).
 
 ## 2026-09-20 — Control plane: FTF-0105 (PR#120) reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
