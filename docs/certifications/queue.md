@@ -5644,3 +5644,75 @@ the same code on a now-clean head.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_01GfsUDjXzko44RWa1HfAxwz,
   2026-09-20.
+
+### Relay follow-up — 2026-09-20 — FTF-0301 fix for the NOT CERTIFIED gap above — resubmitted PROVISIONAL, new PR
+- **Trigger:** scheduled relay shift, picked up the exact "Action needed"
+  item from the review directly above (no proposing/designing — a fully
+  decided, sliced item with its own DoD spelled out by the certifier).
+- **Branch note:** this session's own harness assigns it a fresh, dedicated
+  branch per shift and does not permit pushing to a different branch
+  (`claude/wizardly-fermat-h7e3n7`, PR #135's own branch, belongs to a
+  different session). Matching this repo's own established supersession
+  precedent for the identical situation (FTF-1601's #90→#96→#100 chain,
+  FTF-0101's #103→#112→#114 chain — each fix landed as a new PR from a new
+  branch rather than a push to the flawed PR's own branch), this fix is a
+  new commit (`86397f123998a251ea7c459770290807f00c86da`) on this session's
+  own branch (`claude/wizardly-fermat-t8m4ps`), built on top of PR #135's
+  real head (`0dd3473`, merged in cleanly — zero code conflicts, only the
+  three tracking docs conflicted and were resolved by keeping `main`'s
+  fuller, already-reconciled history, the same resolution FTF-R017/FTF-0004
+  established for this exact class of conflict) plus `main`'s own later
+  doc-only commit (`8526654`/PR #136, the review above). PR #135 is left
+  open; a follow-up PR from this branch supersedes it and should close it
+  on merge — no code exists on `main` yet for FTF-0301, so nothing is lost
+  by superseding rather than reusing the old PR number.
+- **What changed:** exactly the fix named in the "Action needed" section
+  above, no more — one new isolated case in
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`
+  mirroring the existing mutable-revision isolation: a separate artifact
+  (`license-isolation-check`) has `weights_digest` resolved and
+  `base_model_revision` pinned via two independent PATCH calls, with
+  `accept-license` never called; asserts `mark-ready` still returns 409;
+  then accepts the license and asserts `mark-ready` succeeds (200). No
+  production code touched — the review above already confirmed the
+  shipped logic is correct.
+- **Own fault injection, reproducing the certifier's exact fault:** in
+  `apply_mark_ready` (`apps/api/app/artifacts/artifact_crud.py`), wrapped
+  the `license_accepted_by is None or license_accepted_at is None` check
+  in `False and (...)`, identical to the review's own injection. Re-ran the
+  live-Postgres suite with the fault in place: exactly 1 check failed —
+  this new isolated case (`negative_acceptance: mark-ready is refused
+  (409) with a resolved digest and a pinned revision but no license
+  acceptance...`) — nothing else. Reverted byte-identical
+  (`git diff --stat` empty), both suites re-ran clean (0 failures each).
+  This closes the exact Law 1 gap the review identified: the "unknown
+  owner" leg is now provably able to fail against a real, live-Postgres
+  round-trip, isolated from the other two conditions.
+- **Full regression, this session's own sandbox** (real, directly-installed
+  local PostgreSQL 16 — no container-registry egress here, same finding as
+  every prior integration-tested task; `git fetch --unshallow` run first —
+  the initial `validate_spec.py --strict` 11-defect `stale_commit` report
+  was the same transient shallow-clone artifact every prior certifying
+  session's own ledger entry already documents, clean after unshallowing):
+  `ruff check .` / `ruff format --check .` / `mypy .` clean (98 files);
+  `pnpm run lint` / `pnpm run typecheck` / `pnpm run format:check` /
+  `vitest run` (5/5) clean; all 22 `tests/tasks/test_*.py` scripts clean;
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py` and
+  `tests/tasks/test_ftf_0301.py` both clean; the five other live-Postgres
+  integration suites sharing this same migrated database
+  (`test_organization_workspace_schema`, `test_audit_event_writer`,
+  `test_tenant_isolation_query_guards`, `test_ftf_h003_cross_layer_isolation`,
+  `test_ftf_0106_rbac_idor_security`, `test_ftf_0201_litellm_connection_crud`)
+  all re-ran clean, confirming no regression from the merge; `validate_spec.py
+  --strict` clean; `product_truth_check.py --fail-on-unwired` → `3/3`;
+  `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`.
+  `docs/spec-matrix.yaml`'s FTF-0301 `evidence_hash` updated to this fix's
+  real commit SHA (`86397f123998a251ea7c459770290807f00c86da`); it stays
+  `PROVISIONAL`/`L1-PROVEN` — this relay shift does not self-certify
+  (Law 4), a fresh independent Control-plane session must review this
+  fix's own diff, re-run both suites, and perform its own fault injection
+  before certifying.
+- **Not self-certified, per Law 4:** submitted PROVISIONAL; awaiting a
+  fresh independent Control-plane L2 review of this specific fix (not the
+  same reviewing session that found the gap, and not this producing
+  session).
