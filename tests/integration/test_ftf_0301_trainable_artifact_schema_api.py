@@ -449,6 +449,105 @@ def main() -> None:
         ready = r.json() if r.status == 200 else {}
         check("FTF-0301", "the artifact is genuinely ready", ready.get("status") == "ready")
 
+        # -- negative_acceptance: isolate the "unknown owner" (license) gate
+        # from the other two -- a separate artifact with weights_digest
+        # resolved and base_model_revision already pinned via PATCH, but
+        # accept-license never called, must still be refused. Mirrors the
+        # mutable-revision isolation above: a fault that disables only the
+        # license-acceptance check (leaving source_uri and revision/digest
+        # checks untouched) must not be able to hide behind the other two
+        # conditions independently producing the same 409. --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id),
+            principal=org1_ml,
+            payload={
+                "display_name": "license-isolation-check",
+                "source_type": "huggingface",
+                "source_uri": "meta-llama/Llama-3.1-8B",
+                "model_family": "llama",
+                "base_model_revision": "main",
+                "license_id": "llama3",
+            },
+        )
+        check(
+            "FTF-0301",
+            "a real, valid create for the license-isolation case succeeds (201)",
+            r.status == 201,
+        )
+        license_check_created = r.json() if r.status == 201 else {}
+        license_check_id = (
+            license_check_created.get("id") if isinstance(license_check_created, dict) else None
+        )
+
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, license_check_id),
+            principal=org1_ml,
+            payload={"weights_digest": "sha256:" + "d" * 64},
+        )
+        check(
+            "FTF-0301",
+            "resolving weights_digest for the license-isolation artifact " "succeeds (200)",
+            r.status == 200,
+        )
+
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, license_check_id),
+            principal=org1_ml,
+            payload={"base_model_revision": "b1c2d3e4f5061728394a5b6c7d8e9f0123456789"},
+        )
+        check(
+            "FTF-0301",
+            "pinning base_model_revision for the license-isolation artifact " "succeeds (200)",
+            r.status == 200,
+        )
+
+        r = _request(
+            base_url,
+            "POST",
+            item_path(org1_id, license_check_id) + "/mark-ready",
+            principal=org1_ml,
+        )
+        check(
+            "FTF-0301",
+            "negative_acceptance: mark-ready is refused (409) with a "
+            "resolved digest and a pinned revision but no license "
+            "acceptance -- the 'unknown owner' gate is real, not merely "
+            "masked by the other two conditions independently producing "
+            "the same 409",
+            r.status == 409,
+        )
+
+        r = _request(
+            base_url,
+            "POST",
+            item_path(org1_id, license_check_id) + "/accept-license",
+            principal=org1_ml,
+        )
+        check(
+            "FTF-0301",
+            "accepting the license for the license-isolation artifact " "succeeds (200)",
+            r.status == 200,
+        )
+
+        r = _request(
+            base_url,
+            "POST",
+            item_path(org1_id, license_check_id) + "/mark-ready",
+            principal=org1_ml,
+        )
+        check(
+            "FTF-0301",
+            "acceptance: mark-ready succeeds (200) once the license is "
+            "accepted after digest and revision were already resolved",
+            r.status == 200,
+        )
+
         # -- acceptance: 'immutable identity after resolution' -- editing a
         # ready artifact is refused --
         r = _request(
