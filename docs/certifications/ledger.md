@@ -3873,10 +3873,60 @@ corrected 2026-09-15.
   the module; a real DFS cycle check plus independent depth/node
   bounds), confirmed by this session's own two fault injections, both
   distinct from the producer's own two and both caught for real. CI
-  green on the real final merged head (16/16, including `gate`) and
-  `product_truth_check.py` legitimately reporting `7/7` unchanged
-  (this task adds no new route of its own — it strengthens an
-  already-live-wired validation call site). The disclosed absence of a
+  green on the real final merged head (16/16, including `gate`), though
+  this session found `.github/workflows/ci.yml` had no dedicated step for
+  `tests/tasks/test_ftf_0405.py` at that head — the "gate" job's own
+  green did not itself mean CI ran this task's own suite; this
+  certification relies on this session's own direct reproduction of that
+  suite instead, not on CI's own signal for it. Fixed in a same-day
+  follow-up commit on this branch, which also corrects a test-count
+  accuracy slip (PR #148's own body claimed 25 no-DB test functions;
+  `grep -c "^def test_"` shows 23) and confirms `product_truth_check.py`
+  correctly rises `7/7` -> `8/8` once this entry is set to `CERTIFIED`
+  (this task adds no new route of its own, but its `proving_symbol` does
+  gain a real, newly-counted live caller — see the correction above, not
+  "unchanged" as first written here). The disclosed absence of a
   live caller for `validate_instance` matches an established,
   already-certified repository precedent, not a new or hidden gap. No
   blocking defect. Certified L2-CERTIFIED.
+
+### Addendum — 2026-09-20 — FTF-0405: CI-wiring gap closed, evidence-count corrected
+Same certifying session (`session_01XbdXkopSW5Eh19JXpG2EBG`), same-day
+follow-up after merging PR #148/#150. While checking GitHub for other open
+work, this session noticed PR #149 ("[relay] FTF-0405: record submission,
+wire CI, fix evidence-accuracy slips") — a follow-up pushed by the
+producer session to the same source branch *after* PR #148 had already
+been merged and independently certified here. PR #149's own base
+(`82e2851`) predates this session's own certification commit (`a49cf7b`),
+so it could not be merged as-is without reverting FTF-0405 back to
+`PROVISIONAL`. Rather than merge it directly, this session independently
+verified its two real, substantive findings and applied them fresh on top
+of the current `main`:
+1. **Real gate-hygiene gap (Law 9):** `.github/workflows/ci.yml` had no
+   dedicated step running `tests/tasks/test_ftf_0405.py` at PR #148's own
+   merged head — this repo's CI test-discovery is an explicit per-task
+   step list, not a glob, so the new suite was silently never exercised
+   by CI itself. Confirmed directly (`git show 9138f46:.github/workflows/ci.yml`
+   has no `test_ftf_0405` line). This did not invalidate the certification
+   above — this session's own review relied on its own direct
+   reproduction of the suite, not on CI's signal for it — but it meant no
+   future change to `json_schema_tool_validation.py` would be caught by
+   CI without this fix. Added the missing step (same placement/pattern as
+   every prior task).
+2. **Evidence-count accuracy slip:** PR #148's own body and this session's
+   own copied ledger/queue text both claimed "25 no-DB test functions" —
+   `grep -c "^def test_" tests/tasks/test_ftf_0405.py` shows 23. Corrected
+   in `docs/spec-matrix.yaml`, `docs/certifications/queue.md` and
+   `PROGRESS.md` (this ledger entry's own count references were already
+   generic, not needing correction). Matches the exact discipline this
+   repository's own prior certifier already flagged on PR #146 ("hold
+   counts to what `grep -c` actually shows").
+
+Reproduced `uv run python3 tests/tasks/test_ftf_0405.py` clean after the
+CI-step addition (script behavior unchanged, only workflow config
+touched). PR #149 is closed without merging (superseded — its two real
+findings are captured here and in the working tree instead; its own
+`docs/spec-matrix.yaml`/tracking-doc diffs, written against a
+since-superseded `PROVISIONAL` state, are not applied). No change to the
+certification verdict itself: still CERTIFIED L2-CERTIFIED, for the
+reasons given above.
