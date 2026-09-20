@@ -1,5 +1,53 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20T21:14:07Z (scheduled relay shift) — STEP 0.2: no
+  `cognee-cli` in this sandbox; text-search fallback active this shift,
+  as declared. Implemented FTF-0405 (JSON Schema tool validation, deps
+  FTF-0401/FTF-0404, both CERTIFIED). Recomputed the dependency-ready
+  frontier fresh (never trusted the prior shift's own list as still
+  current): FTF-0202 (owner ask, unresolved), FTF-0403, FTF-0405 (newly
+  ready now that FTF-0404 reached CERTIFIED this same date — absent from
+  every prior shift's own list), FTF-0902, FTF-1001, FTF-1401, FTF-1501.
+  Of the six real candidates, only FTF-0405 (CAP-05) and FTF-1501
+  (CAP-14) carry a `CAP-`-prefixed requirement; FTF-0405 has the lower,
+  with no external-service ask of its own — matching the exact
+  "lowest CAP number" convention every prior producer shift already
+  applied. `apps/api/app/services/json_schema_tool_validation.py` closes
+  the gap FTF-0404's own `validate_schema_object` explicitly disclaimed
+  as "a later task's own scope": schema documents are validated as
+  instances of a pinned, safe subset of JSON Schema Draft 2020-12. A
+  bespoke, pure-Python design (no new runtime dependency) — reaching for
+  a general-purpose JSON Schema validator library would have been a
+  genuine new-runtime-dependency ask-first item per CLAUDE.md (no
+  architecture doc names or implies one, and even a dev/test-only prior
+  addition, `idpyoidc`, required explicit live owner approval). Only
+  intra-document `$ref` (`#/$defs/<name>`) is supported at all, which
+  makes "remote schema SSRF" and "recursive/reference bombs" (this
+  task's own two hardest negative_acceptance cases) structurally
+  impossible rather than merely detected. Real, live-wired:
+  `tool_definition_schema.py`'s own `validate_schema_object` (the
+  already-CERTIFIED FTF-0404 live route's own validation path) now calls
+  this task's own `validate_json_schema_document`, before either
+  `input_schema_json`/`output_schema_json` ever reaches the database. A
+  real regression was found and fixed before submission: FTF-0404's own
+  already-CERTIFIED test suite used a nonsensical filler schema value
+  (`{"type": "different"}`) that this task's own stricter validation
+  would have rejected — fixed with a valid-but-still-different value,
+  never by weakening the new validator; FTF-0404's own suite reconfirmed
+  clean afterward. 23 no-DB test functions; two own fault injections
+  (disabling the `$ref`-locality guard; disabling `$defs` cycle
+  detection, which crashes with a real `RecursionError` on a cyclic
+  schema), both caught for real and reverted byte-identical.
+  `product_truth_check.py --fail-on-unwired` — `7/7` before, `8/8` after
+  (this check counts any real live caller regardless of
+  `certification_state`, unlike `scripts/status.py`, which correctly
+  stays at 7 until independent certification). PR #148 opened as
+  PROVISIONAL (`claude/wizardly-fermat-0iyrgu` → `main`);
+  `docs/spec-matrix.yaml` FTF-0405 set to `PROVISIONAL`/`L1-PROVEN`,
+  `proving_symbol` `validate_json_schema_document`. Awaiting independent
+  Control plane certification — not self-certified (Law 4). Certified
+  stays 30/300. Full submission report: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #146) — independent CERTIFY
   review of FTF-0404 (Tool schema CRUD): **CERTIFIED**. Session-ID check
   clean against all 3 PR #146 commits (session_01Erh4hdf73yUo4Q36YKTshz,

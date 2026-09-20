@@ -1,5 +1,66 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0405 (JSON
+  Schema tool validation, deps FTF-0401/FTF-0404, both CERTIFIED).
+  Recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted the
+  prior shift's own list as still current): FTF-0202 (owner ask,
+  unresolved, unchanged), FTF-0403, FTF-0405 (newly ready now that
+  FTF-0404 reached CERTIFIED this same date — absent from every prior
+  shift's own list), FTF-0902, FTF-1001, FTF-1401, FTF-1501. Of the six
+  real candidates, only FTF-0405 (CAP-05) and FTF-1501 (CAP-14) carry a
+  `CAP-`-prefixed requirement rather than an `AF-`-prefixed one — matching
+  the exact "lowest CAP number" convention every prior producer shift has
+  already applied (FTF-0401/FTF-0402/FTF-0404 were each picked over
+  sibling AF-prefixed candidates on this same basis). FTF-0405 has the
+  lower of the two, with no external-service ask of its own.
+  `apps/api/app/services/json_schema_tool_validation.py` closes the gap
+  FTF-0404's own `validate_schema_object` explicitly disclaimed as "a
+  later task's own scope": schema documents are now validated as
+  instances of a pinned, safe subset of JSON Schema Draft 2020-12. Design
+  choice, not an oversight: only intra-document `$ref` (`#/$defs/<name>`)
+  is supported at all — no remote `$ref`, no `$dynamicRef`/`$recursiveRef`
+  — which makes "remote schema SSRF" and "recursive/reference bombs"
+  (this task's own two hardest negative_acceptance cases) structurally
+  impossible rather than merely detected: no network I/O is ever
+  attempted for any `$ref`, and the `$defs` reference graph is checked
+  for cycles at schema-validation time independent of a separate
+  node-count/depth ceiling. This bespoke, pure-Python design (no new
+  runtime dependency) was a deliberate choice over reaching for a
+  general-purpose JSON Schema validator library — the latter would have
+  been a genuine new-runtime-dependency ask-first item per CLAUDE.md (no
+  architecture doc names or implies a specific validator package, and
+  even a dev/test-only prior addition, `idpyoidc`, required explicit live
+  owner approval before being added). Real, live-wired:
+  `tool_definition_schema.py`'s own `validate_schema_object` (the
+  already-CERTIFIED FTF-0404 live route's own validation path) now calls
+  this task's own `validate_json_schema_document` for both
+  `input_schema_json` and `output_schema_json`, before either value ever
+  reaches the database. A real regression risk was found and fixed before
+  submission, not merely inspected: FTF-0404's own already-CERTIFIED
+  `tests/tasks/test_ftf_0404.py` used a deliberately nonsensical filler
+  schema value (`{"type": "different"}`) in a test whose own purpose was
+  never schema correctness — this task's own stricter validation would
+  have made that test raise instead of completing its assertions; fixed
+  by using a valid-but-still-different filler value instead of weakening
+  the new validator, and FTF-0404's own suite reconfirmed "all checks
+  passed" afterward. 23 no-DB test functions
+  (`tests/tasks/test_ftf_0405.py`); two own fault injections (disabling
+  the `$ref`-locality guard; disabling `$defs` cycle detection, which
+  crashes with a real Python `RecursionError` on a cyclic schema), both
+  caught for real and reverted byte-identical.
+  `product_truth_check.py --fail-on-unwired` — `7/7` before this
+  submission, `8/8` after (this check counts any entry with a real live
+  caller regardless of `certification_state`, unlike `scripts/status.py`
+  — a genuine, freshly-measured count, not left stale). PR opened as
+  PROVISIONAL; `docs/spec-matrix.yaml` FTF-0405 set to
+  `PROVISIONAL`/`L1-PROVEN`, `proving_symbol` `validate_json_schema_document`
+  (matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404
+  producer-shift precedent). Awaiting independent Control plane
+  certification — not self-certified (Law 4). Certified stays 30/300;
+  `scripts/status.py`'s own stricter "product-true" count (CERTIFIED-only)
+  stays 7. Full submission report: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #146) — independent CERTIFY
   review of FTF-0404 (Tool schema CRUD): **CERTIFIED**. Session-ID clean
   against all 3 commits on PR #146 (session_01Erh4hdf73yUo4Q36YKTshz, not
@@ -144,18 +205,19 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0404's own independent Control-plane CERTIFY review is now done
-(CERTIFIED, PR #146, merge commit `d061996` — see "## Done"). Before
-merging PR #143, verify a genuine owner confirmation exists for
-FTF-0202's own backend selection (see the flagged note above) — do not
-treat that PR's own bare claim as sufficient by itself. Otherwise the
-next relay-workable item is whichever of
-FTF-0403/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest CAP number
-and no external-service ask of its own at that time — recompute the
-frontier fresh rather than assuming this shift's own list is
-still current, since FTF-0404 reaching CERTIFIED would newly unblock
-FTF-0407/FTF-0408 (per `docs/TASK_INDEX.md`, once their own other
-dependencies are also met).
+FTF-0405 (JSON Schema tool validation) is submitted PROVISIONAL via PR
+#148 — awaiting independent Control-plane L2 review (Law 4, not
+self-certified). Before merging PR #143, verify a genuine owner
+confirmation exists for FTF-0202's own backend selection (see the
+flagged note above) — do not treat that PR's own bare claim as
+sufficient by itself. Otherwise, once FTF-0405 is independently
+CERTIFIED, the next relay-workable item is whichever of
+FTF-0403/FTF-0406/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest CAP
+number and no external-service ask of its own at that time — recompute
+the frontier fresh rather than assuming this shift's own list is still
+current, since FTF-0405 reaching CERTIFIED would newly unblock FTF-0406
+(per `docs/TASK_INDEX.md`, deps FTF-0401/FTF-0404/FTF-0405 all would then
+be CERTIFIED).
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
@@ -620,16 +682,18 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 30/300 (main; FTF-0404 CERTIFIED 2026-09-20, PR #146 merged as
-`d061996` — see docs/certifications/ledger.md) · Provisional: 0 ·
+`d061996` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0405, PR #148, awaiting independent Control-plane L2 review) ·
 Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
-work continued this shift on FTF-0404 instead of stopping. PR #143's own
-bare claim to have resolved that ask remains unverified and was not acted
-on — see the flagged note near the top of this file.)
+work continued this shift on FTF-0404 and then FTF-0405 instead of
+stopping. PR #143's own bare claim to have resolved that ask remains
+unverified and was not acted on — see the flagged note near the top of
+this file.)
 Product-true (Law 16): 7 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
@@ -640,10 +704,17 @@ FTF-0402's own `enforce_security_profile_selection` (called for real by
 FTF-0401's `create_project`/`update_project`), FTF-0305's own
 `apply_revoke_license` (called for real by `artifact_crud.py`'s own new
 `revoke_license`, which the new live-wired `revoke-license` route calls),
-and now FTF-0404's own `build_tool_definition_router` (called for real by
+and FTF-0404's own `build_tool_definition_router` (called for real by
 `apps/api/app/main.py`) all meet all three, independently reconfirmed by
-this certifying session. `product_truth_check.py --fail-on-unwired` and
-`scripts/status.py` now agree at `7/7`/`7`.
+the last certifying session. `scripts/status.py` stays at 7 until
+FTF-0405 is independently CERTIFIED (Law 4); `product_truth_check.py
+--fail-on-unwired` (which counts any real live caller regardless of
+`certification_state`) is `8/8` right now — FTF-0405's own
+`validate_json_schema_document`, called for real by
+`tool_definition_schema.py`'s `validate_schema_object`, already counts
+there even while PROVISIONAL. The two checks are not expected to agree
+while a PROVISIONAL submission is outstanding; they last agreed at
+`7/7`/`7` right after FTF-0404's own certification.
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -751,9 +822,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0404 (Tool schema CRUD) was the only item here; it
-was independently reviewed and CERTIFIED this shift via PR #146 (merge
-commit `d061996`) — see "## Done" for the certification summary and
+FTF-0405 (JSON Schema tool validation) — submitted this shift via PR #148
+(`claude/wizardly-fermat-0iyrgu` → `main`), `docs/spec-matrix.yaml` set to
+`PROVISIONAL`/`L1-PROVEN`, `proving_symbol` `validate_json_schema_document`.
+Not self-certified (Law 4) — awaiting independent Control-plane L2
+review. Full submission report: `docs/certifications/queue.md`.
+
+Prior item: FTF-0404 (Tool schema CRUD) was independently reviewed and
+CERTIFIED a prior shift via PR #146 (merge commit `d061996`) — see
+"## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 

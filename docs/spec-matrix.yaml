@@ -788,7 +788,7 @@ FTF-0405:
     FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 (there is no
     tool-invocation/agent-runtime anywhere in this repository yet to feed
     it). No independent schema change (`database_changes` honored) --
-    consumes FTF-0404's own frozen `ToolDefinition` columns. 25 no-DB test
+    consumes FTF-0404's own frozen `ToolDefinition` columns. 23 no-DB test
     functions in `tests/tasks/test_ftf_0405.py`, plus two own fault
     injections against the delivered code (disabling the `$ref`-locality
     guard; disabling `$defs` cycle detection, which crashes with a real
@@ -801,8 +801,11 @@ FTF-0405:
     (`{"type": "boolean"}`) since this task's own stricter validation now
     runs on every `ToolDefinition` construction; the test's own assertions
     and coverage are unchanged. `product_truth_check.py --fail-on-unwired`
-    unchanged at `7/7` before this submission's own `proving_symbol` is
-    counted by an independent reviewer. Full repo-wide regression clean in
+    (unlike `scripts/status.py`, this check counts any entry with a real
+    live caller regardless of `certification_state`) goes `7/7` to `8/8`
+    once this submission's own `proving_symbol` is set below -- a real,
+    freshly-wired live caller, not an inflated count; not this
+    submission's own to certify (Law 4). Full repo-wide regression clean in
     this sandbox: `ruff check`/`ruff format --check`/`mypy .` (120 source
     files), `pnpm run lint`/`typecheck`, every `tests/tasks/test_ftf_*.py`
     file, `validate_spec.py --strict`. PR opened as PROVISIONAL; not

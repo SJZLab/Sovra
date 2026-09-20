@@ -6541,3 +6541,218 @@ left the ask exactly as the last genuine session recorded it in
 `QUEUE.md`. Recommend the owner either confirm directly (in which case
 merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
+
+## 2026-09-20 — FTF-0405 — JSON Schema tool validation
+- **PR:** https://github.com/SJZLab/Sovra/pull/148
+  (`claude/wizardly-fermat-0iyrgu` → `main`, title
+  `[relay] FTF-0405: JSON Schema tool validation`).
+- **Commit:** `9138f46abebe74e35bcda233bf4c91d81e6ec0d1` (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404 two-commit
+  precedent.
+- **Dependency-ready pick reasoning:** recomputed the frontier fresh
+  against `docs/spec-matrix.yaml`'s live certification state rather than
+  assuming the prior shift's own list was still current (FTF-0404 reached
+  CERTIFIED this same date). The recomputed dependency-ready set: FTF-0202
+  (owner ask, unresolved — see the flagged note above, unchanged),
+  FTF-0403, FTF-0405 (newly ready now that FTF-0404 is CERTIFIED — absent
+  from every prior shift's own list), FTF-0902, FTF-1001, FTF-1401,
+  FTF-1501. Of the six real candidates, only FTF-0405 (CAP-05) and
+  FTF-1501 (CAP-14) carry a `CAP-`-prefixed requirement rather than an
+  `AF-`-prefixed one (FTF-0403 is AF-22, FTF-0902 is AF-06/AF-07, FTF-1001
+  is AF-14, FTF-1401 is AF-21) — matching the exact "lowest CAP number"
+  convention every prior producer shift in this file has already applied
+  (FTF-0401/FTF-0402/FTF-0404 were each picked over sibling AF-prefixed
+  candidates on this same basis). FTF-0405 (CAP-05) has the lower of the
+  two, with no external-service ask of its own.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0405 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Validate JSON
+  Schema using pinned dialect and schema references under safe limits"),
+  negative_acceptance ("Recursive/reference bombs, remote schema SSRF,
+  invalid required/type constraints and excess arguments fail
+  explicitly"), `database_changes: "No independent schema change.
+  Consume frozen contract"`, `files: [apps/api/app/services/
+  json_schema_tool_validation.py, tests/tasks/test_ftf_0405.py]`,
+  `dependencies: [FTF-0401, FTF-0404]` (both CERTIFIED), `contract_owner:
+  FTF-0401`.
+- **Design decision (disclosed, not an oversight):** this task's own
+  pinned dialect is a genuinely *safe subset* of JSON Schema Draft
+  2020-12, not the full specification — only intra-document `$ref`
+  (`#/$defs/<name>`) is supported at all, with no remote `$ref`, no
+  `$dynamicRef`/`$recursiveRef`, no `$id`-based re-basing, and a pinned,
+  bounded keyword vocabulary (unknown keywords are refused explicitly,
+  never silently ignored). This is what turns the negative_acceptance's
+  own two hardest cases into structural impossibilities rather than
+  merely-detected attacks: "remote schema SSRF" — this module never
+  performs network I/O for any reason, under any input, because a `$ref`
+  that is not a local `#/$defs/<name>` pointer is rejected before any
+  resolution is even attempted; "recursive/reference bombs" — the
+  `$defs` reference graph is walked for cycles via DFS at
+  schema-*validation* time (before the schema is ever used to validate an
+  instance, which is where an undetected cycle would actually hang), with
+  a separate node-count (300) and nesting-depth (10) ceiling that also
+  catches a schema bomb built with no `$ref` involved at all, plus a
+  `MAX_REF_HOPS` (25) budget at instance-validation time as
+  defense-in-depth on top of the cycle detector, not a substitute for it.
+  This bespoke, pure-Python design (no new runtime dependency) matches
+  this repository's own established practice of writing focused domain
+  modules for enforcement logic outside the seven reused components,
+  rather than reaching for a general-purpose JSON Schema library — the
+  latter would have been a genuine new-runtime-dependency ask-first item
+  per `CLAUDE.md` (no architecture doc names or implies a specific
+  validator package; the only prior precedent, `idpyoidc`, a *dev/test-
+  only* dependency, still required explicit live owner approval before
+  being added — see this file's own FTF-0101 history).
+- **Real live wiring:** `tool_definition_schema.py`'s own
+  `validate_schema_object` (already-CERTIFIED FTF-0404, called by
+  `ToolDefinition.__init__` on every `create_tool_definition`/
+  `edit_tool_definition`, which is FTF-0404's own live-wired
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/tools`
+  route) now calls this task's own `validate_json_schema_document` for
+  both `input_schema_json` and `output_schema_json`, before either value
+  ever reaches the database — source-inspection-proven in the test suite
+  below, not merely imported. `validate_instance` (real call-time
+  tool-argument validation, e.g. what a tool-invocation runtime would
+  call against an actual tool call's arguments) has no live caller in
+  this repository yet — disclosed, not hidden, matching the same
+  disclosed-gap precedent already independently CERTIFIED for
+  FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 (there is no
+  tool-invocation/agent-runtime anywhere in this repository yet to feed
+  it; that is Section 7A.8's own, later, separately dependency-gated
+  scope).
+- **Regression risk found and fixed (disclosed):** FTF-0404's own
+  already-CERTIFIED `tests/tasks/test_ftf_0404.py` used
+  `{"type": "different"}` as filler schema content in
+  `test_apply_new_version_never_mutates_the_historical_row_content` — a
+  deliberately nonsensical value, since that test's own purpose is only
+  to prove "editing never mutates the historical row's own content",
+  never schema correctness. Since this task's own stricter validation now
+  runs on every `ToolDefinition` construction (including inside
+  `apply_new_version`'s own internal construction of the new version),
+  this filler value would have made that already-CERTIFIED test raise
+  instead of completing its own assertions — a real regression, caught
+  by actually re-running FTF-0404's own suite before submission, not
+  merely inspected. Fixed by changing the filler value to
+  `{"type": "boolean"}` (still genuinely different from the schema's own
+  original `{"type": "string"}` content, satisfying the test's own
+  purpose unchanged) rather than weakening this task's own validator to
+  accommodate nonsense data. Re-ran FTF-0404's own no-DB suite after the
+  fix: "all checks passed", 0 failures.
+- **Test:** `tests/tasks/test_ftf_0405.py` (no-DB, 23 test functions)
+  covering: a well-formed schema round-trips unchanged; pinned-dialect
+  enforcement (the exact pinned string accepted, any other `$schema`
+  value refused); a safe local `$ref` into `$defs` accepted, a `$ref`
+  naming an undeclared `$defs` entry refused; unsupported keywords
+  (`patternProperties`, `$dynamicRef`) refused explicitly; a `$defs`
+  reference cycle (A→B→A) and a self-referencing `$defs` entry both
+  refused as security-classed errors; an oversized schema (300+
+  properties, no `$ref` involved) and an overly-deep schema (nested past
+  the depth ceiling) both refused independently of reference machinery; an acyclic but
+  excessively long `$ref` chain refused at instance-validation time by
+  the hop budget specifically (distinct from the schema-validation-time
+  cycle check); five distinct non-local `$ref` shapes (a cloud-metadata
+  URL, an `https://` URL, a `file://` URL, a protocol-relative URL, a
+  `urn:`) each refused as security-classed errors; a fault-injection test
+  that patches `socket.socket` to raise and confirms this module never
+  constructs one, even for a schema built specifically to provoke it
+  (and confirms the same patched environment does not break a genuinely
+  safe local `$ref` case, isolating the refusal to the remote reference
+  specifically); an unrecognized `type` value refused; `required` naming
+  an undeclared property refused; `required` with no matching
+  `properties` object refused; an instance carrying a property beyond
+  what `additionalProperties: false` permits refused (the "excess
+  arguments" case); a missing required instance property refused; an
+  instance type mismatch refused; enum/pattern instance checks; a
+  source-inspection proof that `tool_definition_schema.py` genuinely
+  calls `validate_json_schema_document` (not merely imports it);
+  constructing a real `ToolDefinition` with a schema this task's own
+  validator rejects raising at construction time, before any session or
+  database is ever touched; and a realistic tool-schema shape (a shared
+  `$defs` "money amount" definition reused by two sibling properties via
+  `$ref`) surviving the full definition-and-instance pipeline end-to-end,
+  including its own negative case (a value below the declared minimum
+  refused).
+- **Evidence:** own two fault injections (Law 1, distinct vectors, both
+  reverted byte-identical via `diff` and both re-run clean afterward):
+  1. Disabled the `$ref`-locality guard in `_check_ref_target`
+     (`if False and not value.startswith(_REF_PREFIX):`) — caught for
+     real: the `urn:not-a-local-pointer` case in
+     `test_remote_ref_is_rejected_explicitly` degraded from a
+     security-classed rejection (the correct behavior) to a
+     generic-`JsonSchemaValidationError` rejection for the wrong,
+     incidental reason (the sliced "name" happened to still not be a
+     declared `$defs` entry) — exactly the class of silent
+     security-control degradation this negative_acceptance case exists
+     to catch, since a malicious `$ref` that *did* coincidentally match a
+     real `$defs` entry name would have been resolved for real under this
+     fault.
+  2. Disabled `$defs` cycle detection in `_detect_ref_cycles`
+     (`if False and name in visiting:`) — caught for real, more starkly
+     than a soft check failure: validating the genuinely cyclic
+     `A→B→A` schema crashed the entire test process with an uncaught
+     Python `RecursionError` (exit code 1), proving the cycle detector is
+     load-bearing, not decorative — an undetected cycle does not merely
+     "let a bad schema through", it makes this module itself unusable.
+  Both reverted byte-identical (`diff` against a pre-fault-injection copy
+  clean); `tests/tasks/test_ftf_0405.py` re-run clean after each
+  revert. No regression: `tests/tasks/test_ftf_0404.py`,
+  `tests/tasks/test_ftf_0401.py`, `tests/tasks/test_ftf_0402.py` and
+  `tests/tasks/test_ftf_0305.py` all re-run clean, unchanged from their
+  own certified evidence. Full repo-wide regression, this sandbox: `git
+  fetch --unshallow origin` first (this sandbox's own clone is shallow by
+  default — the same pre-existing `stale_commit` artifact every prior
+  certifying/relay session has already documented; cleared, then
+  `validate_spec.py --strict` reported clean). `uv run ruff check .`/
+  `ruff format --check .`/`mypy .` clean (120 source files); `pnpm run
+  lint`/`typecheck` clean; every existing `tests/tasks/test_ftf_*.py`
+  file re-run clean (27 files, including `test_ftf_0002`/`test_ftf_0003`/
+  `test_ftf_h001`, which only needed `pnpm install --frozen-lockfile` and
+  the unshallow fetch above to pass in this fresh sandbox — not a defect
+  in this submission); `product_truth_check.py --fail-on-unwired` — `7/7`
+  before this submission, `8/8` after (this check, unlike
+  `scripts/status.py`, counts any entry with a real live caller
+  regardless of `certification_state` — a genuine, freshly-measured
+  count, not left stale at `7/7`; this entry's own `proving_symbol`,
+  `validate_json_schema_document`, set at this PROVISIONAL submission —
+  see State below — matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402/
+  FTF-0305/FTF-0404 producer-shift precedent; real caller found in
+  `apps/api/app/tools/tool_definition_schema.py`'s own
+  `validate_schema_object`).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `validate_json_schema_document` (`proving_test`
+  `tests/tasks/test_ftf_0405.py`) at this PROVISIONAL submission, matching
+  the FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404
+  producer-shift precedent — only `certification_state`/`proof_state`'s
+  `CERTIFIED`/`L2-CERTIFIED` values are the certifying session's own to
+  set. `scripts/status.py`'s own stricter "product-true" count (which
+  also requires `certification_state in (CERTIFIED, PROMOTED)`) correctly
+  stays 7 until an independent Control-plane review certifies this task.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Validate JSON Schema using pinned dialect and schema references under
+  safe limits") is met directly by `validate_json_schema_document` — a
+  real, pinned `$schema` dialect check and real, bounded, cycle-checked
+  `$ref`/`$defs` support, not a stub. Acceptance clause 2 (independent
+  review/evidence) is this submission's own job to enable, not to satisfy
+  itself (Law 4). negative_acceptance ("Recursive/reference bombs, remote
+  schema SSRF, invalid required/type constraints and excess arguments
+  fail explicitly") is proven by name, one test class per named failure
+  mode, listed in Test above, plus the two fault injections in Evidence
+  above proving the recursive-bomb and remote-SSRF guards are both
+  load-bearing, not merely present.
+- **Disclosed, not hidden:** `validate_instance` has no live caller yet
+  (see Real live wiring above) — a later, separately dependency-gated
+  task's own scope (a real tool-invocation/agent runtime does not exist
+  anywhere in this repository yet). The pinned keyword vocabulary
+  deliberately excludes `oneOf`/`anyOf`/`allOf`/`not`/`if`/`then`/`else`
+  — a schema using any of them is refused explicitly (as an unsupported
+  keyword) rather than silently accepted with incomplete semantics; a
+  real tool schema needing conditional/composition logic is out of this
+  task's own pinned-dialect scope, matching the same "safe, bounded
+  subset over the full specification" design choice already explained
+  above. The `pattern` safety check is a best-effort heuristic (a
+  nested-quantifier regex scan plus a length ceiling on both the pattern
+  itself and the string it is matched against) — flagged in the module's
+  own code comment as a heuristic, not a formal proof of linear-time
+  regex matching for every possible catastrophic-backtracking shape.
