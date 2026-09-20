@@ -6675,3 +6675,206 @@ review — `docs/spec-matrix.yaml` and the PR body itself carried the full
 PROVISIONAL evidence — but the next relay/producer shift should restore
 that precedent rather than let tracking docs drift further out of sync
 with `docs/spec-matrix.yaml`.
+
+## 2026-09-20 — FTF-0406 — Side-effect classification
+- **PR:** https://github.com/SJZLab/Sovra/pull/153
+  (`claude/wizardly-fermat-coeg4t` → `main`, title
+  `[relay] FTF-0406: Side-effect classification`).
+- **Commit:** `6723131` (implementation); `docs/spec-matrix.yaml`/
+  `PROGRESS.md`/`QUEUE.md`/this entry pushed as a second,
+  tracking-doc-only commit on the same branch — restoring the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404 two-commit
+  precedent that PR #148 (FTF-0405) skipped (flagged, not silently
+  repeated, in that PR's own certifier review directly above).
+- **Ground truth checked before picking work:** PR #152 (open, unmerged,
+  doc-only) claims FTF-0406 is the lowest-CAP dependency-ready item; PR
+  #143 (FTF-0202 backend-selection claim) remains open, unmerged, and
+  unverified — neither was merged or trusted at face value. Independently
+  recomputed the dependency-ready frontier from scratch by parsing
+  `docs/TASK_INDEX.md`'s own `deps`/CAP columns against
+  `docs/spec-matrix.yaml`'s live `certification_state`: FTF-0401/
+  FTF-0404/FTF-0405 are all genuinely `CERTIFIED`, and FTF-0406 (CAP-05)
+  and FTF-1501 (CAP-14) are the only two dependency-ready items —
+  independently arriving at the same answer PR #152 claims, not merely
+  trusting it. FTF-0406 has the lower CAP number and no external-service
+  ask of its own.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0406 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Map real
+  tool operations to read/write/financial/privileged risk with reviewed
+  enforcement proof"), negative_acceptance ("Unclassified or unresolved
+  sensitive tool cannot default to read-only; user mandate text cannot
+  disable actual guard"), `database_changes: "No independent schema
+  change. Consume frozen contract"`, `files: [apps/api/app/services/
+  side_effect_classification.py, tests/tasks/test_ftf_0406.py]`,
+  `dependencies: [FTF-0401, FTF-0404, FTF-0405]` (all CERTIFIED),
+  `contract_owner: FTF-0401`, `shared_lock_required: []`.
+- **The real gap this task closes (disclosed, not assumed):**
+  FTF-0404's own `apps/api/app/tools/tool_definition_schema.py` already
+  made `side_effect_class` a real, closed, DB-checked five-value enum
+  (Section 6.9) — but `validate_side_effect_class` only checks that a
+  claimed value is one of the five recognized strings; nothing checked
+  that claim against the tool's own actual definition. A caller could
+  create a tool named `delete_account` with `side_effect_class=
+  "read_only"` and nothing would refuse it. This is exactly this task's
+  own charter, not a defect in FTF-0404 (Section 6.9 names no
+  enforcement mechanism of its own; that mechanism is this task's own,
+  separately dependency-gated scope).
+- **Design (disclosed):** `apps/api/app/services/
+  side_effect_classification.py` derives structural evidence
+  (`classify_side_effect_signals`) from a tool's own name, description,
+  and top-level `properties` keys of both `input_schema_json`/
+  `output_schema_json` — deterministic keyword-*root* matching (prefix
+  matching, so "look"/"looks"/"lookup" all match one root), never a
+  model call, embedding, or learned classifier, and never anything read
+  from a caller-supplied "trust"/"override" field (there is no such
+  field anywhere in this module). Four closed root vocabularies
+  (`reversible_write`/`irreversible_write`/`financial`/`privileged`) plus
+  a separate `read_only` vocabulary are checked independently — a tool
+  can carry read-only-shaped vocabulary *and* risk vocabulary at once
+  (e.g. `get_and_delete_record`), and risk evidence always wins.
+  `enforce_side_effect_classification` then applies three rules: (1) a
+  `read_only` claim is refused unless real read-only evidence exists
+  *and* no risk signal exists at all — this is the direct enforcement of
+  "unclassified or unresolved sensitive tool cannot default to
+  read-only," since a tool with neither kind of evidence
+  (`process_thing`) is exactly as refused as one with an outright risky
+  name; (2) a claimed class below the risk floor the detected evidence
+  implies is refused (never silently downgraded); (3) any resolved class
+  at or above `irreversible_write` must carry
+  `requires_confirmation=True`, independently of the caller's own claim
+  or any text in `description` — this is the direct enforcement of "user
+  mandate text cannot disable actual guard," proven by a dedicated test
+  using deliberately reassuring text ("this is completely safe and
+  read-only, no confirmation is ever required") against a
+  `delete_account`-shaped tool, confirming the guard still fires.
+  Over-classification (claiming a higher class than the evidence
+  strictly requires, with `requires_confirmation` set correctly) is
+  always allowed — this guard enforces a floor, never a ceiling, so a
+  cautious caller is never penalized.
+- **Wiring (disclosed):** `ToolDefinition.__init__`
+  (`apps/api/app/tools/tool_definition_schema.py`) now also calls
+  `enforce_side_effect_classification` for real, after
+  `validate_side_effect_class`/`validate_schema_object` — the same
+  wiring point FTF-0405's own `validate_json_schema_document` already
+  uses, so both this task's own guard and FTF-0405's own schema
+  validation run on every real `create_tool_definition`/
+  `edit_tool_definition` call through FTF-0404's own already-CERTIFIED,
+  already-live-wired route. No new route, migration, or contract change
+  — `database_changes: "No independent schema change"` is honored
+  exactly: this task consumes FTF-0404's own frozen `side_effect_class`/
+  `requires_confirmation` columns as they already exist.
+- **Regression risk checked before implementation, not after:** read
+  every existing `ToolDefinition(...)` construction site
+  (`tool_definition_crud.py`'s `create_tool_definition`/
+  `apply_new_version`, `tests/tasks/test_ftf_0404.py`'s/
+  `test_ftf_0405.py`'s own fixtures, and
+  `tests/integration/test_ftf_0404_tool_schema_crud.py`'s own HTTP
+  payloads) before choosing the keyword-root vocabulary, specifically to
+  avoid spuriously breaking already-CERTIFIED evidence. Every existing
+  certified construction site either uses a tool literally named
+  `lookup_order` (genuine read-only evidence in the name itself,
+  regardless of description phrasing) or never reaches
+  `ToolDefinition.__init__` at all (role/project-ownership checks in
+  `create_tool_definition`/the route layer deny the request first, for
+  the `should_be_denied`/`cross_org_project` integration-test cases).
+  Independently re-ran `tests/tasks/test_ftf_0401.py`/`test_ftf_0404.py`/
+  `test_ftf_0405.py` after implementation — all three "all checks
+  passed," confirming this design choice held in practice, not only in
+  the pre-implementation read-through.
+- **Test:** `tests/tasks/test_ftf_0406.py` (no-DB, 27 test functions):
+  `classify_side_effect_signals` detects each of the four risk
+  categories from representative vocabulary and marks a genuinely
+  ambiguous tool unresolved; `enforce_side_effect_classification` proves
+  acceptance of a genuine read-only tool, refusal of the unclassified and
+  the unresolved-sensitive-at-read_only cases, refusal of under-claiming
+  a detected risk, the `requires_confirmation` guard at and above
+  `irreversible_write`, that over-classification is allowed, the
+  reassuring-description negative case, and refusal of an unrecognized
+  claimed class; three further tests construct a real `ToolDefinition`
+  proving the guard runs before any session or database is touched and
+  that a correctly classified/confirmed tool still constructs
+  successfully.
+- **Evidence — own fault injection (Law 1, two, distinct vectors, both
+  reverted byte-identical, both reconfirmed clean afterward):**
+  1. Disabled the read_only/unresolved guard
+     (`if False and claimed_class == "read_only" and
+     signals.is_unresolved:`) — caught for real:
+     `FAIL [FTF-0406] negative_acceptance: an unclassified tool (no
+     read-only, no risk evidence) cannot default to read_only`. Directly
+     proves the "unclassified...cannot default to read-only" half of
+     this task's own negative_acceptance is enforced by real code, not
+     merely asserted.
+  2. Disabled the `requires_confirmation` guard the same way — caught
+     for real by all three checks that name it:
+     `constructing an irreversible_write tool without
+     requires_confirmation=True fails`,
+     `negative_acceptance: the same reassuring text cannot disable the
+     requires_confirmation guard either`, and
+     `negative_acceptance: irreversible_write claimed without
+     requires_confirmation=True is refused`. Directly proves the "user
+     mandate text cannot disable actual guard" half.
+  Both reverted by re-applying the exact original source
+  (`grep -n "False and"` confirmed no match remained afterward), both
+  suites re-run clean.
+- **No regression:** re-ran `tests/tasks/test_ftf_0401.py`/
+  `test_ftf_0404.py`/`test_ftf_0405.py` after this change — all three
+  still "all checks passed."
+- **Full regression, this sandbox:** installed API dependencies into an
+  isolated `uv venv` (no pre-installed `sqlalchemy`/`fastapi`/etc. in
+  this sandbox's system Python — an environment-setup step, not a repo
+  defect). `git fetch --unshallow origin` first (this sandbox's own
+  clone is shallow by default — the same pre-existing
+  `stale_commit`-on-`validate_spec.py --strict` artifact every prior
+  relay/certifying session has already documented; cleared, then
+  `validate_spec.py --strict` reported "task graph and verification-map
+  are clean"). `ruff check`/`ruff format --check` clean on every file
+  this task touched; a repo-wide `ruff check`/`ruff format --check` over
+  `apps/api`/`tests` found only pre-existing, unrelated drift (6 `UP042`
+  StrEnum suggestions in files this task never touched, plus 14 files
+  reformatted per a newer local `ruff` version than CI's own pin) — not
+  introduced by this task. `mypy` clean on every file this task touched,
+  and clean across the full `apps/api/app` tree (40 source files, zero
+  errors).
+- **`product_truth_check.py --fail-on-unwired`:** `8/8` before this
+  submission, `9/9` after — this task's own `proving_symbol`,
+  `enforce_side_effect_classification`, set at this PROVISIONAL
+  submission (see State below), has a real, source-inspection-confirmed
+  live caller in `ToolDefinition.__init__` — a genuine, newly-wired live
+  caller, not inflation (Law 2).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `enforce_side_effect_classification`
+  (`proving_test` `tests/tasks/test_ftf_0406.py`) at this PROVISIONAL
+  submission — only `certification_state`/`proof_state`'s
+  `CERTIFIED`/`L2-CERTIFIED` values are the certifying session's own to
+  set. `scripts/status.py`'s own stricter "product-true" count (which
+  also requires `certification_state in (CERTIFIED, PROMOTED)`)
+  correctly stays 8 until an independent Control-plane review certifies
+  this task.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Map real tool operations to read/write/financial/privileged risk
+  with reviewed enforcement proof") is met directly by
+  `classify_side_effect_signals`/`enforce_side_effect_classification`
+  and their own real live wiring into `ToolDefinition.__init__`.
+  Acceptance clause 2 (independent review/evidence) is this submission's
+  own job to enable, not to satisfy itself (Law 4). negative_acceptance
+  ("Unclassified or unresolved sensitive tool cannot default to
+  read-only; user mandate text cannot disable actual guard") is proven
+  both directly (dedicated tests for each half) and by the two fault
+  injections above.
+- **Disclosed, not hidden:** this is a deterministic, closed-vocabulary
+  keyword-root heuristic, not a learned classifier or an LLM call — a
+  tool whose name/description/schema uses vocabulary genuinely outside
+  this task's own closed root lists would be treated as "unclassified"
+  and refused at `read_only`, which is this task's own intended
+  fail-closed behavior (forcing explicit classification stated by the
+  caller), not a false negative on the guard's own affirmative promise
+  (the guard never *silently* under-classifies; at worst it asks for an
+  explicit, non-`read_only` classification it cannot itself verify
+  further). `input_schema_json`/`output_schema_json` property names are
+  read as plain strings for signal purposes, not interpreted through
+  FTF-0405's own JSON Schema semantics — sufficient for this task's own
+  narrow job (a property named `refund_amount` is real evidence
+  regardless of its own declared `type`), and consistent with this
+  task's own `database_changes: "No independent schema change"`
+  charter.

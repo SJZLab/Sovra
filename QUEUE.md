@@ -1,5 +1,76 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0406
+  (Side-effect classification, deps FTF-0401/FTF-0404/FTF-0405 all
+  CERTIFIED). Recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted a
+  prior shift's own list, or PR #152's own still-unmerged claim, as
+  proof by itself — independently re-derived the same answer by parsing
+  every non-`CERTIFIED` task's own `deps=` field against the live
+  `certification_state` set): FTF-0406 (CAP-05) and FTF-1501 (CAP-14)
+  are the only two dependency-ready items; FTF-0406 has the lower CAP
+  number and no external-service ask of its own.
+  `apps/api/app/services/side_effect_classification.py` closes a real
+  gap FTF-0404 left open: `ToolDefinition.side_effect_class` (Section
+  6.9) was a closed five-value enum validated only as a recognized
+  string, with nothing checking a caller's own claimed class against the
+  tool's own actual definition — a tool named `delete_account` could be
+  created with `side_effect_class="read_only"` and nothing refused it.
+  `enforce_side_effect_classification` derives a real risk floor from
+  the tool's own name/description/schema property-name tokens
+  (deterministic keyword-root signals, never a model call or a
+  client-supplied "trust me" flag) and refuses a claimed class below
+  that floor, or a resolved class at or above `irreversible_write`
+  claimed without `requires_confirmation=True`. This task's own
+  negative_acceptance ("Unclassified or unresolved sensitive tool cannot
+  default to read-only; user mandate text cannot disable actual guard")
+  is enforced by construction: `read_only` is only accepted when real
+  read-only evidence is present *and* no risk signal exists at all —
+  absence of a risk signal is not, by itself, evidence of safety — and
+  reassuring free text in `description` contributes no signal of its own
+  kind and can never lower a floor a different structural signal already
+  raised, nor disable the `requires_confirmation` guard (proven directly
+  by a dedicated test using exactly that reassuring text against a
+  `delete_account`-shaped tool). Real, live-wired: wired into
+  `ToolDefinition.__init__` (source-inspection-proven, not merely
+  imported), called on every `create_tool_definition`/
+  `edit_tool_definition` — the already-CERTIFIED, already-live-wired
+  FTF-0404 route, the same wiring point FTF-0405's own
+  `validate_json_schema_document` already uses. `database_changes`
+  honored ("No independent schema change") — consumes FTF-0404's own
+  frozen `side_effect_class`/`requires_confirmation` columns exactly as
+  they exist. 27 no-DB test functions in `tests/tasks/test_ftf_0406.py`,
+  including three that construct a real `ToolDefinition` proving the
+  guard runs before any session or database is touched, and that a
+  correctly classified and confirmed tool still constructs successfully
+  (no regression to FTF-0404's own certified default fixture shape). Own
+  fault injection (Law 1, two, distinct vectors, both reverted
+  byte-identical and re-confirmed clean afterward): (1) disabled the
+  read_only/unresolved guard — caught for real by the exact named
+  "unclassified tool...cannot default to read_only" check; (2) disabled
+  the `requires_confirmation` guard — caught for real by all three
+  checks that name it. Independently reconfirmed no regression to
+  FTF-0401/FTF-0404/FTF-0405's own certified no-DB suites (all three
+  re-run "all checks passed"). `ruff check`/`ruff format --check`/`mypy`
+  clean on every file this task touched, and clean across the full
+  `apps/api/app` tree (40 source files). `validate_spec.py --strict`
+  clean (`git fetch --unshallow origin` first — this sandbox's own clone
+  is shallow by default, the same pre-existing artifact every prior
+  relay/certifying session has already documented).
+  `product_truth_check.py --fail-on-unwired` — `8/8` before this shift,
+  `9/9` after (this task's own `proving_symbol`,
+  `enforce_side_effect_classification`, has a real caller in
+  `ToolDefinition.__init__` — not a TRACKER). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-0406 set to `PROVISIONAL`/`L1-PROVEN`,
+  `proving_symbol` `enforce_side_effect_classification` (matching the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0404 producer-shift precedent). Awaiting
+  independent Control plane certification — not self-certified (Law 4).
+  Certified stays 31/300; `scripts/status.py`'s own stricter
+  "product-true" count (CERTIFIED-only) stays 8. This shift also restores
+  the two-commit tracking-doc precedent PR #148 (FTF-0405) skipped, per
+  that PR's own certifier review's flagged process note below. Full
+  submission report: `docs/certifications/queue.md`.
+
+Previously, 2026-09-20 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #148) — independent CERTIFY
   review of FTF-0405 (JSON Schema tool validation): **CERTIFIED**.
   Session-ID clean against the sole commit on PR #148
@@ -177,18 +248,26 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0404's own independent Control-plane CERTIFY review is now done
-(CERTIFIED, PR #146, merge commit `d061996` — see "## Done"). Before
-merging PR #143, verify a genuine owner confirmation exists for
-FTF-0202's own backend selection (see the flagged note above) — do not
-treat that PR's own bare claim as sufficient by itself. Otherwise the
-next relay-workable item is whichever of
-FTF-0403/FTF-0902/FTF-1001/FTF-1401/FTF-1501 has the lowest CAP number
-and no external-service ask of its own at that time — recompute the
-frontier fresh rather than assuming this shift's own list is
-still current, since FTF-0404 reaching CERTIFIED would newly unblock
-FTF-0407/FTF-0408 (per `docs/TASK_INDEX.md`, once their own other
-dependencies are also met).
+FTF-0406 (this shift's own submission, see the top of this file) is now
+PROVISIONAL, PR opened, awaiting independent Control-plane L2
+certification — that review is the natural next action, matching the
+established relay/certifier alternation. If a certifier session is not
+what fires next: recompute the dependency-ready frontier fresh rather
+than trusting this note — as of this shift, parsing every
+non-`CERTIFIED` task's own `deps=` field against the live
+`certification_state` set found exactly one other dependency-ready item,
+FTF-1501 (CAP-14, no external-service ask of its own); FTF-0406 reaching
+CERTIFIED will newly unblock FTF-0407 (per `docs/TASK_INDEX.md`, once its
+own other dependencies are also met). Before merging PR #143 (still open
+and unmerged as of this shift), verify a genuine owner confirmation
+exists for FTF-0202's own backend selection (see the flagged note
+above) — do not treat that PR's own bare claim as sufficient by itself.
+Separately, PR #152 (a doc-only "Next shift" catch-up, opened by an
+earlier shift) is also still open/unmerged and now superseded by this
+shift's own more current update to this same section — a future
+certifier session should close it without merging once this section's
+own accuracy is confirmed, rather than merging stale text over this
+shift's newer note.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
@@ -653,16 +732,17 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 31/300 (main; FTF-0405 CERTIFIED 2026-09-20, PR #148 merged as
-`82e2851` — see docs/certifications/ledger.md) · Provisional: 0 ·
+`82e2851` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0406, this shift's own PR, not yet independently certified) ·
 Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
-work continued on FTF-0404/FTF-0405 instead of stopping. PR #143's own
-bare claim to have resolved that ask remains unverified and was not acted
-on — see the flagged note near the top of this file.)
+work continued on FTF-0404/FTF-0405/FTF-0406 instead of stopping. PR
+#143's own bare claim to have resolved that ask remains unverified and
+was not acted on — see the flagged note near the top of this file.)
 Product-true (Law 16): 8 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
