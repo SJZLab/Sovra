@@ -1,0 +1,323 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 04 Interface (Project)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and real live routes for the
+    workspace-scoped Project resource (Section 6.8/7A/22/45/65-66/77/81,
+    FTF-0401). `paths` declares exactly the surface this task actually
+    implements and wires into `apps/api/app/main.py` -- create/get/list/
+    edit/save-ui-state/archive -- and nothing else. It deliberately does
+    NOT declare `/requirements` or `/tools` routes: those are FTF-0404
+    ("Tool schema CRUD")/FTF-0407 ("Critical behavior requirements")/
+    FTF-0408 ("Requirements UI")'s own, later, separately dependency-gated
+    acceptance criteria (see docs/TASK_INDEX.md). Declaring that surface
+    here without a real backing handler would be exactly the "placeholder
+    endpoint" Law 11 and this task's own acceptance clause ("no
+    placeholder endpoints") forbid. Whichever of those later tasks adds
+    its own real route extends this same file under this same
+    contract-owner lock (shared_lock_required: contracts:04).
+paths:
+  /api/v1/organizations/{organization_id}/projects:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the organization's projects.
+      operationId: listProjects
+      responses:
+        '200':
+          description: The organization's projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: >-
+        Create a new project. `status` is always server-derived from
+        `project_type` (never client-supplied) -- an agentic_product
+        project always starts `setup_incomplete`.
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreateRequest'
+      responses:
+        '201':
+          description: The created project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: workspace_id missing or belongs to a different organization -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one project.
+      operationId: getProject
+      responses:
+        '200':
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical in both cases.
+    patch:
+      summary: >-
+        Edit a non-archived project's mutable fields. `project_type` is
+        immutable and never accepted here. `expected_row_version` is
+        required (optimistic concurrency); a mismatch is refused (409).
+      operationId: updateProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdateRequest'
+      responses:
+        '200':
+          description: The updated project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+        '409':
+          description: The project is archived, or expected_row_version does not match.
+    delete:
+      summary: Archive (soft-delete) a project. Idempotent.
+      operationId: archiveProject
+      responses:
+        '200':
+          description: >-
+            The project in its archived state -- returned unchanged, with
+            no new audit event, if it was already archived.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/ui-state:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Save the project's client-draft UI state (e.g. wizard progress).
+        Bounded size; does not bump row_version (not a versioned setting).
+      operationId: saveProjectUiState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUiStateSaveRequest'
+      responses:
+        '200':
+          description: The project with its saved ui_state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+        '409':
+          description: The project is archived.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: reads are open to every named
+        role; create/edit/save-ui-state/archive require workspace_admin or
+        organization_admin).
+    ValidationFailed:
+      description: The request body failed schema/policy validation.
+  schemas:
+    ProjectType:
+      type: string
+      enum: [agentic_product, generic_model_tuning]
+    ProjectStatus:
+      type: string
+      enum: [setup_incomplete, active, archived]
+    ProjectCreateRequest:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        project_type:
+          $ref: '#/components/schemas/ProjectType'
+        description:
+          type: [string, 'null']
+          maxLength: 4000
+        agent_objective:
+          type: [string, 'null']
+          maxLength: 4000
+          description: Required non-empty for agentic_product; must be null/absent for generic_model_tuning.
+        security_profile:
+          type: string
+          minLength: 1
+          maxLength: 64
+          default: standard
+      required: [workspace_id, name, project_type]
+      additionalProperties: false
+    ProjectUpdateRequest:
+      type: object
+      description: >-
+        Any non-empty subset of the mutable fields, plus the required
+        expected_row_version. Refused (409) once archived or on a
+        row_version mismatch.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 4000
+        agent_objective:
+          type: [string, 'null']
+          maxLength: 4000
+        security_profile:
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_row_version:
+          type: integer
+      required: [expected_row_version]
+      additionalProperties: false
+    ProjectUiStateSaveRequest:
+      type: object
+      properties:
+        ui_state:
+          type: object
+      required: [ui_state]
+      additionalProperties: false
+    Project:
+      type: object
+      description: The read-facing representation.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        project_type:
+          $ref: '#/components/schemas/ProjectType'
+        agent_objective:
+          type: [string, 'null']
+        security_profile:
+          type: string
+        budget_policy_id:
+          type: [string, 'null']
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        ui_state:
+          type: object
+        row_version:
+          type: integer
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: [string, 'null']
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - workspace_id
+        - name
+        - project_type
+        - security_profile
+        - status
+        - row_version
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false

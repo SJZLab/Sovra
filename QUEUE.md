@@ -1,5 +1,37 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0401
+  (Project schema/API/UI, deps FTF-0102/FTF-0103/FTF-0104 all CERTIFIED).
+  FTF-0202 ("Secret-manager integration") also became dependency-ready
+  this shift but names no concrete secret backend anywhere in this
+  repository's architecture docs (grepped
+  `docs/architecture/REFERENCE_REPOSITORIES.md`/`SPEC.md`/this plan's own
+  Section 77/81 seven-component list — a secret manager is not among
+  them; only a `vault://`/`openbao://`/`secret://` reference-string
+  *shape* convention already exists, which fixes the shape of a stored
+  reference, not the backend it resolves against) — a new-runtime-
+  dependency/keyed-external-service ask-first item per CLAUDE.md, logged
+  below instead of picked. Real, live-wired
+  `/api/v1/organizations/{organization_id}/projects` routes (the FOURTH
+  live-wired product-runtime path); FORCE-RLS migration with a real
+  composite foreign key into `workspaces`; CRUD composed entirely from
+  already-certified primitives; a real React form component. This task's
+  own negative_acceptance ("Agentic project without approved target/
+  runtime remains setup-incomplete; no silent generic downgrade") is
+  enforced by construction — `project_type` is immutable, and an agentic
+  project always starts `setup_incomplete`, proven both at the
+  pure-function level and over a real HTTP round-trip. 22 no-DB test
+  functions (45 checks) + 32 live-Postgres checks + 9 component/DOM
+  checks; three own fault injections, all caught for real, reverted
+  byte-identical. PR opened as PROVISIONAL; `docs/spec-matrix.yaml`
+  FTF-0401 set to `PROVISIONAL`/`L1-PROVEN`, `proving_symbol`
+  `build_project_router` (set at this PROVISIONAL submission, matching
+  the FTF-0201/FTF-0301 producer-shift precedent). Awaiting independent
+  Control plane certification — not self-certified (Law 4). Certified
+  stays 26/300; `product_truth_check.py --fail-on-unwired`: 4/4;
+  `scripts/status.py`'s own stricter "product-true" count (CERTIFIED-only)
+  stays 3. Full submission report: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #137) — independent CERTIFY
   review of FTF-0301 (TrainableArtifact schema/API): **CERTIFIED**.
   Session-ID clean against all 6 commits on PR #137 (session_01UFUfcwwet85jUWc3BNVoJZ/
@@ -251,19 +283,26 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 26/300 (main; FTF-0301 CERTIFIED 2026-09-20, PR #137 merged as
-`634d5977` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`634d5977` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0401, this shift — see "## Provisional" below) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
-live owner instruction/confirmation — see "## Blocked" history below; no
-open owner ask remains)
+live owner instruction/confirmation — see "## Blocked" history below; the
+one open ask below, FTF-0202's secret-backend choice, is tracked in
+"## Owner actions — current," not "## Blocked," since dependency-ready
+work continued this shift on FTF-0401 instead of stopping)
 Product-true (Law 16): 3 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
 `build_litellm_connection_router` and FTF-0301's
-`build_trainable_artifact_router` now all meet all three, matching
-`product_truth_check.py --fail-on-unwired`'s own `3/3`, independently
-reconfirmed by the certifying session).
+`build_trainable_artifact_router` all meet all three, independently
+reconfirmed by the certifying session; FTF-0401's own `build_project_router`
+has a real caller too — `product_truth_check.py --fail-on-unwired`'s
+narrower, certification-state-independent wiring check is `4/4` this
+shift — but FTF-0401 is only PROVISIONAL/L1-PROVEN so far, not yet
+CERTIFIED/L2-CERTIFIED, so `scripts/status.py`'s own stricter count stays
+3 until an independent Control-plane review certifies it).
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -331,9 +370,28 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. The one open ask (FTF-0101's local-OIDC-test-provider
-package choice) was resolved 2026-09-19 by live owner instruction — see
-the banner above and "## Blocked" history below.
+2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
+backend selected before it can be implemented for real.** Its own
+acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
+through the actual selected secret backend") names no concrete system
+anywhere in this repository's architecture docs
+(`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's
+own Section 77/81 seven-reused-component list — a secret manager is not
+one of the seven). The only existing artifact is a `vault://`/
+`openbao://`/`secret://` reference-string *shape* convention (already
+used by two CERTIFIED tasks, FTF-0201/FTF-0101, to validate how a
+`secret_ref` value must look) — it fixes the shape, not the backend.
+Standing up a real resolver means selecting and deploying a real external
+secret-management system: both a "new runtime dep" and a "keyed external
+service," explicit "Ask owner first" hard stops. Options observed in the
+existing `vault://`/`openbao://` scheme names (not a recommendation,
+just what the naming already anticipates): (1) self-hosted HashiCorp
+Vault, (2) self-hosted OpenBao (Vault's OSS fork), (3) a cloud provider
+secret manager reachable from Railway (AWS Secrets Manager / GCP Secret
+Manager / etc.), (4) some other backend entirely. Per CLAUDE.md's default
+resolution rule this was checked against the architecture first — it
+genuinely does not fix the answer, so this is a real open ask, not a
+reopened decision. Remove this item the moment the owner responds.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
@@ -343,12 +401,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0301 (TrainableArtifact schema/API) was the only item
-here; it was independently reviewed and CERTIFIED this shift via PR #137
-(merge commit `634d5977`, superseding the NOT CERTIFIED PR #135) — see
-"## Done" below for the certification summary and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full history and evidence.
+FTF-0401 (Project schema/API/UI) — implemented this shift, deps
+FTF-0102/FTF-0103/FTF-0104 all CERTIFIED. PR opened as PROVISIONAL;
+`docs/spec-matrix.yaml` set to `PROVISIONAL`/`L1-PROVEN`. Full submission
+report: `docs/certifications/queue.md`.
+
+Prior item: FTF-0301 (TrainableArtifact schema/API) was independently
+reviewed and CERTIFIED a prior shift via PR #137 (merge commit
+`634d5977`, superseding the NOT CERTIFIED PR #135) — see "## Done" below
+for the certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 Prior item: FTF-0201 was independently reviewed and CERTIFIED a prior
 shift via PR #133, merge commit `3588e4e`; see "## Done" below for the

@@ -142,6 +142,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0201.py
       - name: FTF-0301 negative-test proof (TrainableArtifact schema/API catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0301.py
+      - name: FTF-0401 negative-test proof (Project schema/API/UI catches real defects, real local sockets, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0401.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -445,6 +447,56 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real TrainableArtifact schema/API evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0301_trainable_artifact_schema_api.py
+
+  project-schema-api-integration:
+    # FTF-0401: real Postgres Project schema/API evidence -- two real
+    # organizations (each with a real workspace), a real uvicorn server
+    # proving create/get/list/edit/save-ui-state/archive, the agentic/
+    # generic negative_acceptance gate ("Agentic project without approved
+    # target/runtime remains setup-incomplete; no silent generic
+    # downgrade") proven both at creation (an agentic_product project
+    # always starts setup_incomplete, never active) and against a PATCH
+    # attempting to smuggle project_type (immutable -- no effect), a
+    # workspace_id belonging to a different organization refused (404)
+    # identically to missing, optimistic concurrency (a stale
+    # expected_row_version refused, 409), the foreign-project-ID IDOR case
+    # (denied identically to missing, never a distinguishable 403),
+    # archive idempotency, a session with no tenant context ever bound
+    # refused via TenantContextError, and the restricted sovra_app role's
+    # own grant surface (no DELETE privilege) -- running through the
+    # restricted sovra_app role, never the migration owner --
+    # tests/integration/test_ftf_0401_project_schema_api.py. Same real
+    # `services: postgres` container pattern as
+    # trainable-artifact-schema-api-integration (this repo's interactive
+    # dev sandbox has no container-registry egress; that evidence was
+    # instead produced locally against a directly-installed PostgreSQL 16
+    # -- see this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0401
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0401"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0401
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real Project schema/API evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0401_project_schema_api.py
 
   postgres-backup-integration:
     # FTF-1601: real pg_dump/openssl/pg_restore encrypted-backup-and-
