@@ -1,5 +1,29 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #135) — independent CERTIFY
+  review of FTF-0301 (TrainableArtifact schema/API): **NOT CERTIFIED**.
+  Session-ID clean against all 3 commits on PR #135
+  (session_01UFUfcwwet85jUWc3BNVoJZ, not matching this reviewing
+  session's own ID), CI reconfirmed green (12/12) on the real final head,
+  own independent fault injection distinct from the producer's own
+  (disabled only the "unknown owner" leg of `apply_mark_ready`'s
+  license-acceptance check) caught for real by the no-DB suite but
+  **not** by the live-Postgres integration suite — a real Law 1 gap: that
+  suite's own mark-ready sequence accepts the license immediately and
+  never revisits it, so it never isolates that one leg the way it
+  already deliberately isolates the mutable-revision leg. Shipped
+  production code is correct (confirmed directly); this is a
+  test-coverage gap, not a logic defect. Not merged, not certified per
+  Law 4/Law 1. `docs/spec-matrix.yaml` for FTF-0301 stays `NONE` on
+  `main` (PR #135 unmerged, nothing to downgrade). **Action needed:** add
+  one isolated live-Postgres negative case for the license/owner leg to
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`
+  (exact test shape specified in `docs/certifications/queue.md`'s own
+  FTF-0301 NOT CERTIFIED entry), push to PR #135's own branch
+  (`claude/wizardly-fermat-h7e3n7`), confirm CI green, resubmit. Full
+  review: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #133) — independent CERTIFY
   review of FTF-0201 (LiteLLM connection CRUD): **CERTIFIED**. Session-ID
   clean against all 7 commits on PR #133 (session_01MV1wn1CJHoHmds4eRKKVaV,

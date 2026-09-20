@@ -1,8 +1,104 @@
 # PROGRESS — Sovra
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #133) — FTF-0201 (LiteLLM
-  connection CRUD) independently reviewed and **CERTIFIED**; see the top
+  the `pull_request.opened` webhook for PR #135) — FTF-0301 (TrainableArtifact
+  schema/API) independently reviewed and **NOT CERTIFIED**; see the top
   section below.
+
+## 2026-09-20 — Control plane: FTF-0301 (PR#135) independently reviewed, NOT CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #135.
+
+STEP 0: `docs/certifications/queue.md` had one PROVISIONAL item pending —
+FTF-0301, PR #135 (a prior shift's own relay submission).
+
+Session-independence check (done first, per procedure): compared this
+reviewing session's own ID
+(`https://claude.ai/code/session_01GfsUDjXzko44RWa1HfAxwz`) against all 3
+commits on PR #135 (`0f50c1e`, `30ba359`, `0dd3473`) — all carry
+`Claude-Session: .../session_01UFUfcwwet85jUWc3BNVoJZ`. No match —
+independent.
+
+Re-read the full diff directly (18 files, +6722/-27) against the real PR
+head (`0dd3473391b892264e206368ecb5b2a7f9805790`, checked out via `git
+checkout -B review-pr135 origin/claude/wizardly-fermat-h7e3n7`; `git
+rev-parse HEAD` confirmed it matches the PR's reported head exactly):
+`apps/api/app/artifacts/artifact_schema.py` (`TrainableArtifact` table +
+per-`source_type` URI shape validation), `apps/api/alembic/versions/
+0004_trainable_artifacts.py` (confirmed directly: `GRANT SELECT, INSERT,
+UPDATE` — no DELETE — plus `FORCE ROW LEVEL SECURITY` and a real
+`CREATE POLICY tenant_isolation`), `apps/api/app/artifacts/artifact_crud.py`
+(composition of `TenantContext`/`authorize_resource_ownership` (FTF-H003),
+`execute_tenant_scoped` (FTF-0105), `write_audit_event` (FTF-0104) —
+confirmed these are the real imported functions; `apply_mark_ready` is the
+pure, DB-free ready-transition gate), `apps/api/app/artifacts/artifact_routes.py`
+and `apps/api/app/main.py` (confirmed `build_trainable_artifact_router` is
+wired unconditionally via `app.include_router(...)` in `create_app()` — the
+third live-wired product-runtime path), and the
+`packages/contracts/{openapi,jsonschema}/03-*` freeze.
+
+CI reconfirmed green on the real final head (`get_check_runs`, run
+`35501775524`, 12/12 `completed`/`success`, including the new
+`trainable-artifact-schema-api-integration` job).
+
+Own reproduction, this sandbox: stood up a real, directly-installed local
+PostgreSQL 16 cluster (`sovra_migrate_review`/`sovra_ftf0301_review`),
+ran the real forward migration chain (0001→0004) clean, and reproduced
+both `tests/tasks/test_ftf_0301.py` and
+`tests/integration/test_ftf_0301_trainable_artifact_schema_api.py` —
+both "all checks passed" against the real cluster.
+`product_truth_check.py --fail-on-unwired` reconfirmed real `3/3`. `ruff
+check .` / `mypy .` clean; `validate_spec.py --strict` clean (after `git
+fetch --unshallow`, the same transient shallow-clone artifact every
+prior certifying session documents); `sha256sum CLAUDE.md` matches the
+committed `CLAUDE.md.sha256`.
+
+Task contract re-pulled directly via `tools/r1_handoff.py packet
+FTF-0301 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — negative_acceptance
+names three independent conditions ("Unsafe URI, unknown owner or
+mutable unresolved revision cannot enter training as ready"). Both
+dependencies (FTF-0103, FTF-0104) confirmed genuinely `CERTIFIED`.
+
+**Own fault injection, distinct from the producer's own** (which widened
+`is_pinned_revision` to unconditionally return `True`): disabled only the
+"unknown owner" leg of `apply_mark_ready` — wrapped the
+`license_accepted_by is None or license_accepted_at is None` condition in
+`False and (...)`, leaving the `source_uri` and revision/digest checks
+untouched. The no-DB suite caught this for real (1 check failed, exit 1).
+**The live-Postgres integration suite did not** — re-ran against the real
+cluster with the fault still in place and got "all checks passed" (exit
+0, zero `FAIL [...]` lines). Reverted byte-identical
+(`git diff --stat` empty) immediately after; both suites re-ran clean on
+the unfaulted code.
+
+**Root cause:** the live-Postgres suite's own mark-ready sequence accepts
+the license immediately after the first "nothing satisfied" check and
+never revisits it — so it never isolates the license/owner leg the way
+it already deliberately isolates the mutable-revision leg (a fix the
+producer's own submission documents making, for the identical reason,
+after finding the mutable-revision leg wasn't isolated either in the
+integration suite's first draft). The shipped production code is
+correct — this is a live-database test-coverage gap on one leg of the
+negative_acceptance clause, not a logic defect, matching the FTF-1601/PR
+#96 precedent for the same class of gap.
+
+**Conclusion:** per Law 1 ("Nothing proven until test shown able to fail
+— evidence bound to criterion ID"), the "unknown owner" leg has never
+been shown able to fail against the "real relevant integration" evidence
+acceptance clause 2 requires — only against the no-DB suite. Not merged,
+not certified, per Law 4. `docs/spec-matrix.yaml` for FTF-0301 stays
+`certification_state: NONE` on `main` (PR #135 is unmerged) — nothing to
+downgrade. **Action needed before re-requesting certification:** add one
+isolated live-Postgres negative case — create an artifact, resolve
+`weights_digest` and pin `base_model_revision` via PATCH without ever
+calling `accept-license`, assert `mark-ready` still returns 409 named for
+the license/owner reason, then accept the license and assert success. No
+production code change expected. Push to PR #135's own branch
+(`claude/wizardly-fermat-h7e3n7`), confirm CI green, resubmit.
+
+Full review recorded in `docs/certifications/queue.md` and `QUEUE.md`.
+
+**Validated-by:** this session (independent), session
+https://claude.ai/code/session_01GfsUDjXzko44RWa1HfAxwz, 2026-09-20.
 
 ## 2026-09-20 — Control plane: FTF-0201 (PR#133) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),

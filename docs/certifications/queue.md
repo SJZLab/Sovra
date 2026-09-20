@@ -5510,3 +5510,137 @@ the same code on a now-clean head.
 - **Validated-by:** session
   https://claude.ai/code/session_01RLyWKThYBPJkaqeDp2HZsN (independent —
   see session-ID check above), 2026-09-20.
+
+### Control plane review — 2026-09-20 — FTF-0301 (PR #135) — NOT CERTIFIED (real Law 1 gap: the "unknown owner" negative_acceptance leg never proven able to fail against live Postgres)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #135
+  (https://github.com/SJZLab/Sovra/pull/135, `claude/wizardly-fermat-h7e3n7`
+  → `main`).
+- **Session-ID check:** all 3 commits on PR #135 (`0f50c1e`, `30ba359`,
+  `0dd3473`) carry `Claude-Session: .../session_01UFUfcwwet85jUWc3BNVoJZ`;
+  this reviewing session's own ID is `session_01GfsUDjXzko44RWa1HfAxwz` —
+  no match, independent per Law 4.
+- **Diff read directly** against the real PR head `0dd34733...05790`
+  (`git checkout -B review-pr135 origin/claude/wizardly-fermat-h7e3n7`,
+  `git rev-parse HEAD` confirmed it matches the PR's own reported head
+  exactly): 18 files, +6722/-27
+  (`apps/api/app/artifacts/{artifact_schema,artifact_crud,artifact_routes}.py`,
+  `apps/api/alembic/versions/0004_trainable_artifacts.py`,
+  `apps/api/app/main.py`, `packages/contracts/openapi/03-interface.yaml`,
+  `packages/contracts/jsonschema/03-domain.schema.json`,
+  `tests/tasks/test_ftf_0301.py`,
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`,
+  `.github/workflows/ci.yml`, `docs/spec-matrix.yaml`, `QUEUE.md`,
+  `PROGRESS.md`, `docs/certifications/queue.md`, three task-packet docs).
+  Confirmed directly in `apps/api/app/main.py`: `build_trainable_artifact_router`
+  wired unconditionally via `app.include_router(...)` in `create_app()`
+  (the third live-wired product-runtime path). Confirmed directly in
+  `apps/api/alembic/versions/0004_trainable_artifacts.py`: real
+  `GRANT SELECT, INSERT, UPDATE` (no DELETE), `FORCE ROW LEVEL SECURITY`,
+  and a real `CREATE POLICY tenant_isolation`.
+- **CI reconfirmed on the real final head:** `get_check_runs` on PR #135
+  — 12/12 `completed`/`success` (run `35501775524`), including the new
+  `trainable-artifact-schema-api-integration` job.
+- **Own reproduction, this sandbox:** stood up a real, directly-installed
+  local PostgreSQL 16 cluster (`sovra_migrate_review` role,
+  `sovra_ftf0301_review` database — no container-registry egress in this
+  sandbox, same finding as every prior integration-tested task) and ran
+  the real forward migration chain (0001→0004) clean. `uv run python3
+  tests/tasks/test_ftf_0301.py` → "all checks passed" (exit 0); `uv run
+  python3 tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`
+  → "all checks passed" (exit 0) against the real cluster.
+  `product_truth_check.py --fail-on-unwired` → real `3/3`
+  (`build_oidc_login_router`, `build_litellm_connection_router`,
+  `build_trainable_artifact_router`, all confirmed genuinely imported and
+  called unconditionally). `ruff check .` / `mypy .` clean (98 files);
+  `validate_spec.py --strict` clean (after `git fetch --unshallow`, same
+  transient shallow-clone artifact every prior certifying session's own
+  ledger entry already documents); `sha256sum CLAUDE.md` matches the
+  committed `CLAUDE.md.sha256`.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0301 --plan FINE_TUNING_FACTORY_RELEASE_1.md` —
+  negative_acceptance reads exactly "Unsafe URI, unknown owner or mutable
+  unresolved revision cannot enter training as ready," three independent
+  conditions. Both dependencies (FTF-0103, FTF-0104) confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Own fault injection, distinct from the producer's own (which widened
+  `is_pinned_revision` to unconditionally return `True`, already caught
+  by both suites per the PR's own submission entry):** targeted the
+  "unknown owner" leg specifically — in `apply_mark_ready`
+  (`apps/api/app/artifacts/artifact_crud.py`), disabled only the
+  `license_accepted_by`/`license_accepted_at` check (wrapped its
+  condition in `False and (...)`, so it can never contribute a refusal
+  reason), leaving the `source_uri` and `weights_digest`/
+  `is_pinned_revision` checks untouched.
+  - **No-DB suite (`tests/tasks/test_ftf_0301.py`):** caught for real — 1
+    check failed (`negative_acceptance: mark_ready is refused with no
+    license acceptance and no resolved weights_digest`). Exit 1.
+  - **Live-Postgres suite
+    (`tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`):**
+    **did NOT catch it** — re-ran against the real cluster with the fault
+    still in place: "all checks passed", exit 0, zero `FAIL [...]` lines.
+  - Reverted byte-identical (`git diff --stat
+    apps/api/app/artifacts/artifact_crud.py` empty) immediately after;
+    both suites re-ran clean on the unfaulted code.
+- **Root cause, read directly in the test file:** the live-Postgres
+  suite's own mark-ready sequence (lines ~356-446) is: (1) assert refused
+  with nothing satisfied; (2) **accept the license immediately next**;
+  (3) assert refused with license accepted but revision+digest
+  unresolved; (4) resolve `weights_digest` alone, assert still refused
+  (the mutable-revision isolation the producer's own fault-injection note
+  says it added, for exactly this reason, to catch a broken
+  `is_pinned_revision`); (5) resolve the revision, assert success. The
+  license is accepted at step (2) and never revisited — there is no step
+  that holds the license unaccepted while `weights_digest` and
+  `base_model_revision` are both already resolved, so the "unknown owner"
+  leg is never exercised in isolation the way the mutable-revision leg
+  now deliberately is. Step (1) still reports refused when the fault is
+  present only because the *other two* unsatisfied conditions (mutable
+  revision, unresolved digest) independently produce the same 409 — the
+  same class of false-cover the producer's own submission already
+  diagnosed and fixed for the mutable-revision leg ("the integration
+  suite's *first* version did not catch it, because it resolved
+  `base_model_revision` and `weights_digest` together in one PATCH"), but
+  the identical fix was never applied to the license-acceptance leg.
+- **Why this is a certification blocker, not a nice-to-have (matching the
+  FTF-1601/PR #96 precedent for the identical class of gap):** CLAUDE.md
+  Law 1 is unconditional — "Nothing proven until test shown able to fail
+  — evidence bound to criterion ID, test ID, commit, failure reason,
+  hash." This task's own negative_acceptance clause names three
+  independent conditions; the PR's own queue.md submission entry
+  explicitly claims "the mark-ready negative_acceptance gate proven with
+  three separate real HTTP round-trips isolating each of its three
+  conditions in turn" — that claim is not accurate as shipped. Only two
+  of the three conditions (mutable revision, unresolved digest) are ever
+  isolated against a real live database; the third ("unknown owner") is
+  proven able to fail only by the no-DB suite, never by the "real
+  relevant integration" evidence acceptance clause 2 requires. The
+  shipped production code is correct — `apply_mark_ready`'s real,
+  unfaulted logic genuinely enforces all three conditions, confirmed
+  directly above — this is a test-coverage gap on one leg of the
+  acceptance criterion's own live-database evidence, not a defect in the
+  shipped logic itself.
+- **Action needed before re-requesting certification:** add one more
+  isolated live-Postgres negative case to
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`,
+  mirroring the mutable-revision isolation already present — create an
+  artifact, resolve `weights_digest` and pin `base_model_revision` (both
+  via PATCH) *without* ever calling `accept-license`, and assert
+  `mark-ready` still returns 409 with the license/owner reason named,
+  before then accepting the license and asserting success. No production
+  code change is expected or needed (the underlying logic is already
+  correct, per the no-DB suite's own existing, passing coverage and this
+  review's own fault-injection confirmation above). Push that test to PR
+  #135's own branch (`claude/wizardly-fermat-h7e3n7`) and confirm CI
+  stays green before resubmitting.
+- **Not merged, not certified, per Law 4/Law 1:** `docs/spec-matrix.yaml`
+  for FTF-0301 is not yet `PROVISIONAL` on `main` — PR #135 is unmerged,
+  so `main` still shows `certification_state: NONE` /
+  `implementation_state: ABSENT` for FTF-0301; nothing to downgrade
+  there. On PR #135's own branch the PROVISIONAL entry stands as
+  submitted — not altered by this review, since the shipped code is
+  sound; what's missing is the one live-Postgres negative case named
+  above. PR #135 stays open, unmerged.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01GfsUDjXzko44RWa1HfAxwz,
+  2026-09-20.
