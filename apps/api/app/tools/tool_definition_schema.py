@@ -56,6 +56,10 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.auth.organization_workspace_schema import Base
+from app.services.json_schema_tool_validation import (
+    JsonSchemaValidationError,
+    validate_json_schema_document,
+)
 
 __all__ = [
     "ALLOWED_SIDE_EFFECT_CLASSES",
@@ -137,12 +141,14 @@ def validate_side_effect_class(value: object) -> str:
 
 def validate_schema_object(value: object, field_name: str) -> dict[str, object]:
     """`input_schema_json`/`output_schema_json` are JSON Schema documents
-    themselves (Section 6.9). This module does not validate them as a
-    conforming JSON Schema meta-schema (a later task's own scope, matching
-    this task's own `database_changes: "No independent schema change"`
-    narrow charter) -- only that they are a real, bounded JSON object, the
-    same "genuinely free-form but not unbounded" discipline
-    `validate_ui_state` already applies."""
+    themselves (Section 6.9). This function's own docstring used to
+    disclaim real JSON Schema meta-schema validation as "a later task's
+    own scope" -- that later task is FTF-0405
+    (`app.services.json_schema_tool_validation`), which this function now
+    calls for real: the size ceiling below is checked first (the same
+    "genuinely free-form but not unbounded" discipline `validate_ui_state`
+    already applies), then the document itself is validated as an
+    instance of FTF-0405's own pinned, safe JSON Schema subset."""
     if not isinstance(value, dict):
         raise ToolDefinitionValidationError(f"{field_name} must be a JSON object")
     serialized = json.dumps(value, sort_keys=True)
@@ -150,6 +156,10 @@ def validate_schema_object(value: object, field_name: str) -> dict[str, object]:
         raise ToolDefinitionValidationError(
             f"{field_name} must serialize to at most {SCHEMA_MAX_SERIALIZED_LENGTH} characters"
         )
+    try:
+        validate_json_schema_document(value, field_name)
+    except JsonSchemaValidationError as exc:
+        raise ToolDefinitionValidationError(str(exc)) from exc
     return dict(value)
 
 
