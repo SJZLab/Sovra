@@ -316,10 +316,10 @@ FTF-0304:
   proving_symbol: ''
   proving_test: ''
 FTF-0305:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: License acceptance workflow
-  evidence_hash: 66aff8b6f8b81846891d5da43c3d1eb1e11f708a
+  evidence_hash: 1a3c6b42785cf89a18c7f4c68138f224f1787574
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0301 (CERTIFIED).
@@ -364,8 +364,18 @@ FTF-0305:
     --fail-on-unwired` -- `6/6` (this entry's own `proving_symbol`, `apply_revoke_license`, set at
     this PROVISIONAL submission, matching the FTF-0201/FTF-0301/FTF-0401/FTF-0402 producer-shift
     precedent; real callers found in both `license_acceptance_workflow.py` itself and
-    `artifact_crud.py`'s own new `revoke_license`, which the new live-wired route calls).
-  proof_state: L1-PROVEN
+    `artifact_crud.py`'s own new `revoke_license`, which the new live-wired route calls). Certified
+    on first submission (PR #144) -- independent Control-plane review reproduced the no-DB suite
+    directly in this sandbox and reconfirmed all 15 CI checks green on the real final head
+    (`ea50eac`), including the new `license-acceptance-workflow-integration` job; ran its own fault
+    injection (the `ready`->`registered` demotion removed from `apply_revoke_license`), caught for
+    real by the exact two named negative_acceptance checks, reverted byte-identical, suite re-run
+    clean; reconfirmed no regression to FTF-0301's own no-DB suite; independently re-pulled the
+    task contract via `tools/r1_handoff.py packet FTF-0305`, confirming the disclosed scope
+    narrowing (revocation only, no live training/serving caller yet) matches the
+    FTF-0103/FTF-0104/FTF-0105/FTF-H003 disclosed-gap precedent, not a hidden gap. evidence_hash
+    here points at the merge commit (`1a3c6b4`), matching the FTF-0402 convention.
+  proof_state: L2-CERTIFIED
   proving_symbol: apply_revoke_license
   proving_test: tests/tasks/test_ftf_0305.py
 FTF-0306:

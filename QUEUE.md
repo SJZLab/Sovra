@@ -1,5 +1,38 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — implemented FTF-0305
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #144) — independent CERTIFY
+  review of FTF-0305 (License acceptance workflow): **CERTIFIED**.
+  Session-ID clean against all 3 commits on PR #144
+  (session_01CW8M8Mir1PpW62RZm8ZLJz, not matching this reviewing session's
+  own ID), diff read directly confirming `artifact_crud.py`'s new
+  `revoke_license` and `artifact_routes.py`'s new `revoke-license` route
+  are the real, live-wired callers of `license_acceptance_workflow.py`'s
+  pure `apply_revoke_license`, and every pre-existing FTF-0301 operation
+  untouched. CI reconfirmed green (15/15, including the new
+  `license-acceptance-workflow-integration` job) on the real final head
+  `ea50eac` (polled to genuine completion via a PR-activity subscription,
+  not the in-progress snapshot from when the PR first opened — 2 jobs were
+  still running when first checked). Own reproduction of the no-DB suite
+  in this sandbox ("all checks passed"; the live-Postgres suite itself was
+  verified via the real CI job, no container-registry egress in this
+  sandbox, same disclosed limitation every prior integration-tested task
+  has documented), one own fault injection (the `ready`→`registered`
+  demotion removed from `apply_revoke_license`) caught for real — matching
+  the exact two named negative_acceptance cases — and reverted
+  byte-identical, no regression in FTF-0301's own no-DB suite,
+  `product_truth_check.py --fail-on-unwired` reconfirmed `6/6`, task
+  contract cross-checked via `tools/r1_handoff.py packet FTF-0305`
+  (confirming the disclosed scope narrowing — revocation only, no live
+  training/serving caller yet — matches the same disclosed-gap precedent
+  already independently `CERTIFIED` for FTF-0103/FTF-0104/FTF-0105/
+  FTF-H003, not a hidden gap). Merged PR #144 (merge commit
+  `1a3c6b42785cf89a18c7f4c68138f224f1787574`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Certified: 29/300, Product-true: 6/6. Full review:
+  `docs/certifications/ledger.md` (FTF-0305 entry) and
+  `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — implemented FTF-0305
   (License acceptance workflow, dep FTF-0301, CERTIFIED). Recomputed the
   dependency-ready frontier fresh (never trusted the prior shift's own
   list as still current): FTF-0202 (owner ask, unchanged), FTF-0305,
@@ -428,27 +461,28 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 28/300 (main; FTF-0402 CERTIFIED 2026-09-20, PR #141 merged as
-`a6ef1d9` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0305, this shift, awaiting independent Control-plane L2
-certification) · Blocked: 0
+Certified: 29/300 (main; FTF-0305 CERTIFIED 2026-09-20, PR #144 merged as
+`1a3c6b4` — see docs/certifications/ledger.md) · Provisional: 0 ·
+Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
 one open ask below, FTF-0202's secret-backend choice, is tracked in
 "## Owner actions — current," not "## Blocked," since dependency-ready
 work continued this shift on FTF-0401 instead of stopping)
-Product-true (Law 16): 5 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 6 (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
 `build_litellm_connection_router`, FTF-0301's
-`build_trainable_artifact_router`, FTF-0401's own `build_project_router`
-and now FTF-0402's own `enforce_security_profile_selection` (called for
-real by FTF-0401's `create_project`/`update_project`) all meet all three,
-independently reconfirmed by this certifying session.
+`build_trainable_artifact_router`, FTF-0401's own `build_project_router`,
+FTF-0402's own `enforce_security_profile_selection` (called for real by
+FTF-0401's `create_project`/`update_project`), and now FTF-0305's own
+`apply_revoke_license` (called for real by `artifact_crud.py`'s own new
+`revoke_license`, which the new live-wired `revoke-license` route calls)
+all meet all three, independently reconfirmed by this certifying session.
 `product_truth_check.py --fail-on-unwired` and `scripts/status.py` now
-agree at `5/5`/`5`.
+agree at `6/6`/`6`.
 FTF-0001, FTF-0002,
 FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-H001, FTF-R001, FTF-H002,
 FTF-H028, FTF-H034, FTF-1810, FTF-R014, FTF-R015, FTF-R017, FTF-0102,
@@ -547,11 +581,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0305 (License acceptance workflow) — submitted PROVISIONAL this
-shift. PR: https://github.com/SJZLab/Sovra/pull/144
-(`claude/wizardly-fermat-34mau8` → `main`). Not self-certified (Law 4) —
-awaiting an independent Control-plane L2 review. Full submission report:
-`docs/certifications/queue.md`.
+None currently. FTF-0305 (License acceptance workflow) was the only item
+here; it was independently reviewed and CERTIFIED this shift via PR #144
+(merge commit `1a3c6b4`) — see "## Done" for the certification summary
+and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
+the full history and evidence.
 
 Prior item: FTF-0402 (Project security profile) was independently
 reviewed and CERTIFIED a prior shift via PR #141 (merge commit `a6ef1d9`)
@@ -1275,6 +1309,39 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   (`25/300` before, `26/300`/zero FAILED after; "Product-true" `2` before,
   `3` after, matching `product_truth_check.py`'s own `3/3`). PR #135
   closed with a comment pointing to this certification. This
+  certification's own doc updates were pushed on a branch and opened as a
+  PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+  Full entry: docs/certifications/ledger.md.
+- FTF-0402 — Project security profile. CERTIFIED 2026-09-20, PR #141,
+  merge commit `a6ef1d9`. See `docs/certifications/ledger.md` (FTF-0402
+  entry) for the full independent-review narrative.
+- FTF-0305 — License acceptance workflow. CERTIFIED 2026-09-20, PR #144,
+  merge commit `1a3c6b4`. Independent Control-plane review triggered by
+  the `pull_request.opened` webhook: session-ID check clean against all 3
+  PR #144 commits; diff read directly confirming `artifact_crud.py`'s new
+  `revoke_license` and `artifact_routes.py`'s new `revoke-license` route
+  are the real, live-wired callers of the new
+  `license_acceptance_workflow.py`'s pure `apply_revoke_license`, and
+  every pre-existing FTF-0301 operation untouched; CI reconfirmed green
+  (15/15, including the new `license-acceptance-workflow-integration`
+  job) on the real final head `ea50eac` (polled to genuine completion via
+  a PR-activity subscription — 2 jobs were still `in_progress` when first
+  checked); own reproduction of the no-DB suite in this sandbox ("all
+  checks passed"; the live-Postgres suite verified via the real CI job,
+  no container-registry egress in this sandbox); one own fault injection
+  (the `ready`→`registered` demotion removed from `apply_revoke_license`)
+  caught for real by exactly the two named negative_acceptance checks,
+  reverted byte-identical, suite re-ran clean; no regression in FTF-0301's
+  own no-DB suite; `product_truth_check.py --fail-on-unwired` reconfirmed
+  `6/6`; task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-0305`, confirming the disclosed scope narrowing (revocation only,
+  no live training/serving caller yet) matches the same disclosed-gap
+  precedent already independently `CERTIFIED` for
+  FTF-0103/FTF-0104/FTF-0105/FTF-H003, not a hidden gap. No blocking
+  defect. `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED`
+  / `proof_state: L2-CERTIFIED`. `scripts/status.py` confirmed
+  non-inflated (`28/300` before, `29/300` after; "Product-true" `5`
+  before, `6` after, matching `product_truth_check.py`'s own `6/6`). This
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.

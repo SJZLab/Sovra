@@ -1,5 +1,159 @@
 # PROGRESS — Sovra
 Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #144) — independent CERTIFY
+  review of FTF-0305 (License acceptance workflow): **CERTIFIED**.
+  Session-ID check clean against all 3 PR #144 commits
+  (session_01CW8M8Mir1PpW62RZm8ZLJz, no match to this reviewing session,
+  `session_013HH42MZMwMHWimcWvF5qcq`). Diff read directly confirming
+  `artifact_crud.py`'s new `revoke_license` and `artifact_routes.py`'s new
+  `revoke-license` route are the real, live-wired callers of the new
+  `license_acceptance_workflow.py`'s pure `apply_revoke_license`, and
+  every pre-existing FTF-0301 operation untouched. CI reconfirmed green
+  (15/15, including the new `license-acceptance-workflow-integration`
+  job) on the real final head `ea50eac` (polled to genuine completion via
+  a PR-activity subscription rather than the in-progress snapshot from
+  when the PR first opened — 2 jobs were still running). Own reproduction
+  of `tests/tasks/test_ftf_0305.py` in this sandbox — "all checks passed"
+  (the live-Postgres suite was verified via the real CI job, no
+  container-registry egress in this sandbox, the same pre-existing
+  finding every prior integration-tested task has documented). One own
+  fault injection (the `ready`→`registered` demotion removed from
+  `apply_revoke_license`), caught for real by exactly the two named
+  negative_acceptance checks, reverted byte-identical. No regression in
+  FTF-0301's own no-DB suite. `product_truth_check.py --fail-on-unwired`
+  reconfirmed `6/6`. Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-0305` — negative_acceptance independently confirmed met; the
+  disclosed scope narrowing (revocation only, no live training/serving
+  caller yet) confirmed to match the same disclosed-gap precedent already
+  independently `CERTIFIED` for FTF-0103/FTF-0104/FTF-0105/FTF-H003. No
+  blocking defect. Merged PR #144 (merge commit
+  `1a3c6b42785cf89a18c7f4c68138f224f1787574`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Certified: 29/300 (28 → 29); Product-true: 6/6 (5 → 6), matching
+  `product_truth_check.py`'s own `6/6`. Full entry:
+  `docs/certifications/ledger.md`.
+
+## 2026-09-20 — Control plane: FTF-0305 (PR#144) independently reviewed, CERTIFIED
+
+STEP 0 (MODE declaration): `docs/certifications/queue.md` had exactly one
+pending PROVISIONAL item not yet certified — FTF-0305 (License acceptance
+workflow), submitted this same date via PR #144
+(`claude/wizardly-fermat-34mau8` → `main`). CERTIFY mode.
+
+STEP 1 (session-ID check, Law 4): pulled all 3 commits on PR #144
+(`66aff8b`, `50db929`, `ea50eac`) — every one carries `Claude-Session:
+.../session_01CW8M8Mir1PpW62RZm8ZLJz`. This reviewing session's own ID is
+`session_013HH42MZMwMHWimcWvF5qcq` — no match. Independent per Law 4.
+
+STEP 2 (diff read directly): 10 files, +1653/-20 against the real PR head
+`ea50eac` (confirmed the third commit only touches `QUEUE.md`/
+`docs/certifications/queue.md` — an empty code diff against `50db929`).
+`apps/api/app/artifacts/license_acceptance_workflow.py` confirmed as a
+new, pure, DB-free module (no SQLAlchemy import at all) implementing
+`evaluate_license_gate`/`assert_license_accepted_for_use` (the admission
+gate, no live caller yet, disclosed) and `apply_revoke_license`/
+`invalidate_stale_license_acceptance` (revocation — demotes a `ready`
+artifact back to `registered`; refuses on an archived artifact).
+`apps/api/app/artifacts/artifact_crud.py` confirmed: a new, purely
+additive `revoke_license` function delegates to `apply_revoke_license`
+and writes an audit event on real change; `apply_edits`/`create_artifact`/
+`accept_license`/`mark_ready`/`archive_artifact` all untouched.
+`apps/api/app/artifacts/artifact_routes.py` confirmed: one new route,
+`POST .../artifacts/{artifact_id}/revoke-license`, restricted to
+`{ml_engineer, organization_admin}`, matching the existing write-role
+convention. `.github/workflows/ci.yml` confirmed a genuine new
+`license-acceptance-workflow-integration` job with a real `services:
+postgres` container, same digest pin as every other integration-tested
+task. No migration file in the diff — `database_changes: "No independent
+schema change"` honored.
+
+STEP 3 (CI + merge-readiness): 2 of 15 jobs (`gate`,
+`docker-local-stack-integration`) were still `in_progress` when this
+session first checked PR #144's check runs. Subscribed to PR activity
+(`subscribe_pr_activity`) rather than polling with a sleep loop, then
+polled once more shortly after — GitHub Actions run `35525256295`: 15/15
+`completed`/`success`, including the new
+`license-acceptance-workflow-integration` job.
+
+STEP 4 (own reproduction): this session's workspace was provisioned from
+PR #144's own branch, so the working tree already carried `66aff8b`/
+`50db929` verbatim; confirmed identical to the real PR head by diffing
+the doc-only third commit. `uv sync --all-packages`. `uv run python3
+tests/tasks/test_ftf_0305.py` → "all checks passed" (exit 0) — a real
+local uvicorn server over a real socket for the new route's own
+role-boundary proof, no database required for this suite. The live-Postgres
+suite (`tests/integration/test_ftf_0305_license_acceptance_workflow.py`)
+was not independently re-run against a live database in this sandbox (no
+container-registry egress here, same pre-existing finding as every prior
+integration-tested task) — relied on the real CI job reconfirmed green in
+STEP 3 instead.
+
+STEP 5 (own fault injection, Law 1): the `if artifact.status == "ready":
+artifact.status = "registered"` demotion removed from
+`apply_revoke_license` (`if False and artifact.status == "ready":`) —
+re-ran the no-DB suite: exactly 2 failures, the two named
+negative_acceptance checks ("revoking a ready artifact's license demotes
+it back to registered" and "a subsequent mark-ready attempt is refused
+once the license has been revoked"), matching the exact cases the PR
+itself claims. Reverted byte-identical (`diff` empty); re-ran clean
+afterward, and FTF-0301's own no-DB suite re-ran clean too (no
+regression; one expected negative-test traceback printed mid-run, from a
+fixture deliberately feeding a malformed tenant context, not a real
+failure).
+
+STEP 6 (product-truth): `python3 scripts/product_truth_check.py
+--fail-on-unwired` independently reconfirmed `6/6` — `apply_revoke_license`
+confirmed to have real, live callers in `license_acceptance_workflow.py`
+itself and in `artifact_crud.py`'s own new `revoke_license`, which the
+new live-wired `revoke-license` route calls end to end (not a 0/0 pass).
+
+STEP 7 (task contract): `python tools/r1_handoff.py packet FTF-0305
+--plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+independently confirmed met via FTF-0301's own already-certified
+`accept_license` plus this task's "bound by construction" reasoning
+(the acceptance record lives on the same row as `base_model_revision`).
+negative_acceptance confirmed met: `evaluate_license_gate`/
+`assert_license_accepted_for_use` take no provider/source_type/
+model_family parameter (confirmed by reading the full public signature
+set), and revocation demotes `ready` back to `registered` (confirmed by
+fault injection in STEP 5). The disclosed scope narrowing (revocation
+only; `assert_license_accepted_for_use` has no live training/serving
+caller yet) confirmed to match the same disclosed-gap precedent already
+independently `CERTIFIED` for FTF-0103/FTF-0104/FTF-0105/FTF-H003, not a
+hidden gap. Dependency FTF-0301 confirmed genuinely `CERTIFIED` in
+`docs/spec-matrix.yaml` before relying on it.
+
+STEP 8 (action taken): merged PR #144 (merge commit
+`1a3c6b42785cf89a18c7f4c68138f224f1787574`). Set `docs/spec-matrix.yaml`
+FTF-0305 to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED` (`evidence_hash` set to the merge commit). Added FTF-0305's
+own entry to `spec/verification-map.json`. Ran `sync_certified_status()`
+— diff limited to exactly FTF-0305's own `status`/`evidence` fields in
+`spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/status.py`
+confirmed non-inflated (`28/300` before, `29/300` after; "Product-true"
+`5` before, `6` after). Full ledger entry appended to
+`docs/certifications/ledger.md`. `QUEUE.md` updated (Certified 28 → 29,
+Product-true 5 → 6, moved FTF-0305 out of "Provisional" into "Done").
+This certification's own doc updates are pushed on a branch and opened as
+a PR against `main`, not pushed directly, per `BRANCH_PROTECTION`.
+
+Conclusion: the delivered license-revocation workflow is real, live-wired
+end to end (`revoke-license` route → `artifact_crud.revoke_license` →
+`apply_revoke_license`), independently confirmed via this session's own
+no-DB reproduction and fault injection (caught for real, matching the
+exact negative_acceptance cases the PR claims, reverted byte-identical),
+CI green on the real final merged head (15/15, including the new
+`license-acceptance-workflow-integration` job against a real Postgres
+service), and `product_truth_check.py` legitimately reporting `6/6` with
+a genuine live caller, not 0/0. The disclosed scope narrowing (revocation
+only, no live training/serving caller yet) matches established,
+already-certified repository precedent, not a new gap. The live-Postgres
+integration suite itself was verified via the real CI job rather than
+independently re-run against a live database in this sandbox (a disclosed
+reproduction-environment constraint, not a defect in the evidence). No
+blocking defect. Certified L2-CERTIFIED.
+
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #141) — independent CERTIFY
   review of FTF-0402 (Project security profile): **CERTIFIED**. Session-ID
   check clean against all 3 PR #141 commits (session_01YLCGLfbyuEcZGJTe7LWQAL,
