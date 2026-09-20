@@ -1,8 +1,112 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #135) — FTF-0301 (TrainableArtifact
-  schema/API) independently reviewed and **NOT CERTIFIED**; see the top
-  section below.
+Updated: 2026-09-20 (scheduled relay shift) — picked up the exact,
+  fully-specified "Action needed" item from the prior Control-plane
+  certifier shift's own FTF-0301 (PR #135) NOT CERTIFIED review: added the
+  one missing isolated live-Postgres negative case for the
+  license-acceptance ("unknown owner") leg of `apply_mark_ready`. New PR
+  opened, superseding PR #135 (branch-per-session harness constraint — see
+  full narrative below); see the top section below.
+
+## 2026-09-20 — Relay: FTF-0301 fix for the NOT CERTIFIED gap (PR #135 review) — resubmitted PROVISIONAL, new PR
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh this shift (never assumed state from prior context). `CLAUDE.md`
+self-check: `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` — no mismatch, shift proceeded.
+
+STEP 1: the top of `docs/certifications/queue.md` and `QUEUE.md` both
+carried a Control-plane certifier review of PR #135 (FTF-0301,
+TrainableArtifact schema/API) dated the same day: **NOT CERTIFIED**, with
+a real Law 1 gap named exactly — the live-Postgres integration suite's own
+mark-ready sequence accepts the license immediately at step 2 and never
+revisits it while `weights_digest`/`base_model_revision` are both already
+resolved, so the "unknown owner" leg of the three-part negative_acceptance
+clause is never isolated against a real database the way the
+mutable-revision leg deliberately already is (only the no-DB suite catches
+a fault there). The review named the exact fix needed, so this was a
+fully decided, sliced item with its own DoD — no proposing or designing
+required, matching the relay's own execution-only role. "Working: FTF-0301
+NOT CERTIFIED fix (PR #135's own named action item)."
+
+Branch handling: this session's own harness assigns a fresh, dedicated
+branch per shift (`claude/wizardly-fermat-t8m4ps`) and does not permit
+pushing to a different branch, so pushing directly to PR #135's own branch
+(`claude/wizardly-fermat-h7e3n7`, owned by a different session) was not
+available. This repo has already established the precedent for exactly
+this situation — FTF-1601's #90→#96→#100 chain and FTF-0101's
+#103→#112→#114 chain both landed each fix as a new PR from a new branch
+rather than a push to the flawed PR's own branch. Followed that precedent:
+fast-forwarded this branch to the latest `main` (`257a0a0`, which already
+carries the certifier's own NOT CERTIFIED review doc commit, PR #136),
+then merged in PR #135's own branch (`origin/claude/wizardly-fermat-h7e3n7`
+at its real head `0dd3473`) on top. Zero code conflicts; the only
+conflicts were the three tracking docs (`PROGRESS.md`, `QUEUE.md`,
+`docs/certifications/queue.md`), resolved by keeping `main`'s fuller,
+already-reconciled history — the same resolution already established for
+this exact class of conflict (FTF-R017/FTF-0004 precedent).
+`docs/spec-matrix.yaml` merged clean with no conflict, carrying forward
+FTF-0301's own `PROVISIONAL`/`L1-PROVEN` entry from PR #135 intact.
+
+STEP 2 (PEV):
+- **P:** read `apply_mark_ready` (`apps/api/app/artifacts/artifact_crud.py`)
+  and the integration suite's own mark-ready sequence directly, confirming
+  the review's own root-cause diagnosis against the real code — the
+  license-acceptance check at line ~319 is real and correct; the gap is
+  purely in the test's own sequencing, exactly as the review concluded (no
+  production defect, a coverage gap).
+- **E:** added one isolated case to
+  `tests/integration/test_ftf_0301_trainable_artifact_schema_api.py`,
+  mirroring the existing mutable-revision isolation exactly as the review
+  specified: create a separate artifact (`license-isolation-check`),
+  resolve `weights_digest` and pin `base_model_revision` via two
+  independent `PATCH` calls, never call `accept-license`, assert
+  `mark-ready` still returns 409; then accept the license and assert
+  `mark-ready` succeeds (200). Reproduced the certifier's own exact fault
+  injection (wrapped the `license_accepted_by is None or
+  license_accepted_at is None` check in `False and (...)` in
+  `apply_mark_ready`) against a real, directly-installed local PostgreSQL
+  16 cluster (this sandbox has no container-registry egress, same finding
+  as every prior integration-tested task) — re-ran the live-Postgres suite
+  with the fault in place: **exactly 1 check failed**, the new isolated
+  case itself, matching the criterion ID and failure reason the review
+  named (`FAIL [FTF-0301] negative_acceptance: mark-ready is refused (409)
+  with a resolved digest and a pinned revision but no license
+  acceptance...`) — bound to this fix's own commit
+  (`86397f123998a251ea7c459770290807f00c86da`). Reverted byte-identical
+  (`git diff --stat` empty), both suites re-ran clean.
+- **V:** `product_truth_check.py --fail-on-unwired` → `3/3` (unchanged —
+  this is a test-only fix, no production code touched, no new caller
+  added). `ruff check .`/`ruff format --check .`/`mypy .` clean (98
+  files); `pnpm run lint`/`typecheck`/`format:check`/`vitest run` (5/5)
+  clean; all 22 `tests/tasks/test_*.py` scripts clean; both of FTF-0301's
+  own suites clean; the five other live-Postgres integration suites
+  sharing this migrated database (FTF-0102/FTF-0104/FTF-0105/FTF-H003/
+  FTF-0106/FTF-0201) all re-ran clean, confirming the merge introduced no
+  regression. `validate_spec.py --strict` initially reported 11
+  `stale_commit` defects — traced to this session's own shallow clone
+  (same transient artifact every prior certifying session's own ledger
+  entry already documents), clean after `git fetch --unshallow`.
+  `docs/spec-matrix.yaml`'s FTF-0301 `evidence_hash` updated to this fix's
+  real commit SHA; `certification_state`/`proof_state` left at
+  `PROVISIONAL`/`L1-PROVEN` (not upgraded — this relay shift does not
+  self-certify, Law 4). PR opened as PROVISIONAL, superseding PR #135 (PR
+  #135 itself left open, to be closed on this PR's merge — no code from
+  FTF-0301 exists on `main` yet, so nothing is lost by superseding rather
+  than reusing the old PR number). Appended a full resubmission entry to
+  `docs/certifications/queue.md` for Control plane.
+
+STEP 3: this file (`PROGRESS.md`) written before compaction, with the ISO
+timestamp above, completed item (FTF-0301 fix, PROVISIONAL, awaiting fresh
+independent Control-plane review), queued (none new — no other unblocked
+item exists until this one is certified or a genuinely independent item is
+identified), certified count unchanged at 25/300, product-true unchanged
+at 3/3 (this shift's own sandbox reconfirmation, matching the
+`product_truth_check.py --fail-on-unwired` run above; FTF-0301 itself
+stays `PROVISIONAL`, not counted toward certified until independently
+reviewed).
+
+STEP 4: stop condition (a) applies — this fix is now L1-PROVEN and
+submitted; awaiting Control-plane certification and (eventually) the L4
+gate. Reporting and stopping this shift; not self-certifying (Law 4).
 
 ## 2026-09-20 — Control plane: FTF-0301 (PR#135) independently reviewed, NOT CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),

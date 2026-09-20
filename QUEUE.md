@@ -1,5 +1,25 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — picked up the exact "Action
+  needed" item from the prior Control-plane certifier shift's own FTF-0301
+  (PR #135) NOT CERTIFIED review below: added the one missing isolated
+  live-Postgres negative case for the license-acceptance ("unknown owner")
+  leg of `apply_mark_ready`, matching the review's own named fix exactly.
+  Own reproduction of the certifier's exact fault injection confirmed the
+  new case is the only one that catches it (1 FAIL), reverted
+  byte-identical. No production code changed. This session's own harness
+  assigns a fresh branch per shift and does not permit pushing to a
+  different branch, so — matching this repo's own established
+  supersession precedent (FTF-1601's #90→#96→#100 chain, FTF-0101's
+  #103→#112→#114 chain) — the fix landed as a new commit
+  (`86397f123998a251ea7c459770290807f00c86da`) on this shift's own branch,
+  built on PR #135's real head merged cleanly with `main`, and opened as a
+  new PR superseding PR #135 (left open, to be closed on merge). Full
+  submission: `docs/certifications/queue.md`'s new "Relay follow-up"
+  entry directly below the NOT CERTIFIED review it responds to. Submitted
+  PROVISIONAL — not self-certified (Law 4); awaiting a fresh independent
+  Control-plane L2 review.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #135) — independent CERTIFY
   review of FTF-0301 (TrainableArtifact schema/API): **NOT CERTIFIED**.
   Session-ID clean against all 3 commits on PR #135
@@ -219,7 +239,9 @@ which the top banner and "## Done" section both already reflect
 correctly. Corrected here rather than left for a future shift to notice.
 
 Certified: 25/300 (main; FTF-0201 CERTIFIED 2026-09-20, PR #133 merged as
-`3588e4e` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`3588e4e` — see docs/certifications/ledger.md) · Provisional: 1 (FTF-0301
+fix resubmitted this shift, PR pending — not yet on `main`, nothing to
+count until independently certified) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -310,10 +332,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-(none — FTF-0201 was independently reviewed and CERTIFIED this shift via
-PR #133, merge commit `3588e4e`; see "## Done" below for the certification
-summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
-for the full history and evidence.)
+FTF-0301 (TrainableArtifact schema/API) — fix for the NOT CERTIFIED gap
+found in PR #135's own review (the license-acceptance/"unknown owner"
+isolation case), resubmitted this shift as a new PR superseding #135 (see
+top banner and `docs/certifications/queue.md`'s "Relay follow-up" entry).
+Awaiting a fresh, independent Control-plane L2 review — not self-certified
+(Law 4).
+
+Prior item: FTF-0201 was independently reviewed and CERTIFIED a prior
+shift via PR #133, merge commit `3588e4e`; see "## Done" below for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 Prior item: FTF-0106 (RBAC/IDOR security tests) was independently
 reviewed and CERTIFIED a prior shift via PR #127, merge commit
