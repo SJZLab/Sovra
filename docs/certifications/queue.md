@@ -6543,14 +6543,34 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## 2026-09-20 — FTF-0405 — JSON Schema tool validation
-- **PR:** https://github.com/SJZLab/Sovra/pull/148
-  (`claude/wizardly-fermat-0iyrgu` → `main`, title
-  `[relay] FTF-0405: JSON Schema tool validation`).
-- **Commit:** `9138f46abebe74e35bcda233bf4c91d81e6ec0d1` (implementation);
-  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
-  second, tracking-doc-only commit on the same branch, matching the
-  FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404 two-commit
-  precedent.
+- **PR:** https://github.com/SJZLab/Sovra/pull/148 (implementation;
+  `claude/wizardly-fermat-0iyrgu` → `main`, title
+  `[relay] FTF-0405: JSON Schema tool validation`) +
+  https://github.com/SJZLab/Sovra/pull/149 (tracking docs/CI wiring,
+  same branch → `main`).
+- **Commit:** `9138f46abebe74e35bcda233bf4c91d81e6ec0d1` (implementation,
+  merged as PR #148, merge commit `82e2851be2c02b8e9257713404d11f66147efcb0`).
+  Deviation from the usual FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/
+  FTF-0404 same-PR two-commit precedent, disclosed here rather than
+  silently reconciled: the repo owner merged PR #148 directly
+  (`merged_by: samerzakaria`) within roughly five minutes of it opening —
+  before this session's own follow-up commits (`docs/spec-matrix.yaml`
+  accuracy fixes, this entry, `QUEUE.md`/`PROGRESS.md`, and the CI
+  wiring for `tests/tasks/test_ftf_0405.py`, which `main` had zero CI
+  coverage for immediately after PR #148 merged, since this repo's CI
+  test-discovery is an explicit per-task list, not a glob) reached
+  `origin`. This session's own branch instructions require treating a
+  branch whose PR already merged as needing a fresh PR for any further
+  unmerged commits, never stacked onto the closed one — followed here:
+  `git rebase --onto origin/main 9138f46
+  claude/wizardly-fermat-0iyrgu` (clean, no conflicts), force-with-lease
+  push, PR #149 opened for the two rebased commits
+  (`fb052fd`/`5b50d4c`) rather than reusing #148. `certification_state:
+  PROVISIONAL`/`proof_state: L1-PROVEN`/`proving_symbol` were all already
+  set inside the implementation commit itself (`9138f46`), so they are
+  genuinely on `main` already via PR #148 — only this entry's own two
+  evidence-accuracy corrections (test count, `product_truth_check.py`
+  count) and the CI step were still outstanding when #148 merged.
 - **Dependency-ready pick reasoning:** recomputed the frontier fresh
   against `docs/spec-matrix.yaml`'s live certification state rather than
   assuming the prior shift's own list was still current (FTF-0404 reached

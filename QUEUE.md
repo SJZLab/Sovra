@@ -683,7 +683,11 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 ## Status
 Certified: 30/300 (main; FTF-0404 CERTIFIED 2026-09-20, PR #146 merged as
 `d061996` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0405, PR #148, awaiting independent Control-plane L2 review) ·
+(FTF-0405, PR #148, merged directly by the owner already — implementation
+is genuinely on `main`; PR #149 carries this shift's own remaining
+tracking-doc/CI-wiring follow-up commits, rebased after #148's early
+merge — see `docs/certifications/queue.md`'s own FTF-0405 entry for the
+full reasoning; awaiting independent Control-plane L2 review either way) ·
 Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
@@ -822,9 +826,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0405 (JSON Schema tool validation) — submitted this shift via PR #148
-(`claude/wizardly-fermat-0iyrgu` → `main`), `docs/spec-matrix.yaml` set to
-`PROVISIONAL`/`L1-PROVEN`, `proving_symbol` `validate_json_schema_document`.
+FTF-0405 (JSON Schema tool validation) — implementation submitted this
+shift via PR #148 (`claude/wizardly-fermat-0iyrgu` → `main`), merged
+directly by the owner already; `docs/spec-matrix.yaml` set to
+`PROVISIONAL`/`L1-PROVEN`, `proving_symbol` `validate_json_schema_document`
+(already genuinely on `main`). PR #149 (same branch) carries this
+shift's own remaining tracking-doc corrections and the CI wiring for
+`tests/tasks/test_ftf_0405.py` (absent from `main` immediately after
+#148 merged), rebased fresh per this session's own branch instructions
+rather than stacked onto the already-merged #148 — see
+`docs/certifications/queue.md`'s own FTF-0405 entry for the full
+reasoning.
 Not self-certified (Law 4) — awaiting independent Control-plane L2
 review. Full submission report: `docs/certifications/queue.md`.
 

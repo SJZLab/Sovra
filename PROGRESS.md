@@ -43,9 +43,16 @@ Updated: 2026-09-20T21:14:07Z (scheduled relay shift) — STEP 0.2: no
   stays at 7 until independent certification). PR #148 opened as
   PROVISIONAL (`claude/wizardly-fermat-0iyrgu` → `main`);
   `docs/spec-matrix.yaml` FTF-0405 set to `PROVISIONAL`/`L1-PROVEN`,
-  `proving_symbol` `validate_json_schema_document`. Awaiting independent
-  Control plane certification — not self-certified (Law 4). Certified
-  stays 30/300. Full submission report: `docs/certifications/queue.md`.
+  `proving_symbol` `validate_json_schema_document`. The owner merged PR
+  #148 directly within minutes of it opening, before this session's own
+  follow-up commits (tracking-doc corrections, CI wiring for
+  `tests/tasks/test_ftf_0405.py`) reached `origin` — per this session's
+  own branch instructions, those unmerged commits were rebased onto the
+  new `main` and opened as a fresh PR #149 rather than stacked onto the
+  already-closed #148 (full reasoning in `docs/certifications/queue.md`'s
+  own FTF-0405 entry). Awaiting independent Control plane certification
+  either way — not self-certified (Law 4). Certified stays 30/300. Full
+  submission report: `docs/certifications/queue.md`.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #146) — independent CERTIFY
