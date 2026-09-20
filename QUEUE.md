@@ -1,10 +1,28 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #127) — independent CERTIFY
+  review of FTF-0106 (RBAC/IDOR security tests): **CERTIFIED**. Session-ID
+  clean against all 4 commits on PR #127, CI reconfirmed green (10/10,
+  including the new `rbac-idor-security-integration` job) on the real
+  final head, two own independent fault injections (`APPROVE_ROLES`
+  widened to include `viewer`, caught for real by the no-DB suite;
+  approve-route dependency aliased to `write_dependency`, caught for real
+  by the live-Postgres integration suite), `product_truth_check.py`'s
+  `1/1` confirmed legitimate (empty `proving_symbol`, no live-wiring
+  claim), and the real task contract (`tools/r1_handoff.py packet
+  FTF-0106`) confirms both the acceptance clause and the negative_
+  acceptance clause are met for this task's own scope. Merged PR #127
+  (merge commit `e21df28`); `docs/spec-matrix.yaml` set to
+  `CERTIFIED`/`L2-CERTIFIED`; full entry in `docs/certifications/ledger.md`.
+  This certification's own doc updates are pushed on a branch and opened
+  as a PR against `main`, not pushed directly, per `BRANCH_PROTECTION`.
+  Full review history: `docs/certifications/queue.md`.
+
+Earlier the same date (scheduled relay shift) — picked up the next
   unblocked item once FTF-H003 was independently CERTIFIED (FTF-0106,
   RBAC/IDOR security tests — its own deps FTF-0102/FTF-0103/FTF-0104/
   FTF-0105/FTF-H003 all CERTIFIED). Full submission report:
-  docs/certifications/queue.md; see "## Provisional" below for the
-  summary.
+  docs/certifications/queue.md.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #125) — independent CERTIFY
@@ -195,32 +213,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0106 — RBAC/IDOR security tests. Submitted this shift (relay,
-  scheduled, non-interactive): `apps/api/app/auth/
-  rbac_idor_security_tests.py` (a reusable full six-role, two-tenant
-  security-test harness — `TwoTenantRoleMatrixFixture` assigns all six
-  Section 6.4 roles to a distinct real principal in each of two real
-  organizations; `build_two_tenant_security_demo_app` composes
-  `require_role`/`authorize_resource_ownership`/`tenant_scoped_session_for`
-  across read/write/approve routes) + `tests/tasks/test_ftf_0106.py`
-  (23 no-DB checks) + `tests/integration/
-  test_ftf_0106_rbac_idor_security.py` (75 real live-Postgres checks —
-  every one of 2 organizations × 6 roles × 3 operations × 2 targets
-  proves the exact expected 200/403/404 outcome, guessed cross-tenant
-  IDs denied identically to missing resources, and confirms the demo
-  app's own session runs through the real restricted `sovra_app` role,
-  never the migration owner). Disclosed, not hidden: "artifacts/
-  approvals" is scoped down to a real approval-shaped role gate over the
-  existing `workspaces` table, since no `ModelVersion`/`PromotionDecision`
-  table exists yet and this task's own `database_changes` contract
-  forbids adding one. Full submission report:
-  docs/certifications/queue.md. `certification_state: PROVISIONAL` /
-  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR:
-  https://github.com/SJZLab/Sovra/pull/127
-  (`claude/wizardly-fermat-daazqp` → `main`).
+(none — FTF-0106 independently reviewed and CERTIFIED this shift via
+PR #127, merge commit `e21df28`; see "## Done" below for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
+for the full history and evidence.)
 
 Prior item: FTF-H003 (Cross-layer tenant isolation and relational
-identity) was independently reviewed and CERTIFIED this shift via
+identity) was independently reviewed and CERTIFIED a prior shift via
 PR #125 (merge commit `9407710`) — see "## Done" for the certification
 summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
 for the full history and evidence.
@@ -763,6 +762,53 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   pushed on a branch and opened as a PR against `main` rather than pushed
   directly — see `docs/certifications/ledger.md`'s FTF-H003 entry, step
   10, for why that matters here. Full entry: docs/certifications/ledger.md.
+
+- FTF-0106 — RBAC/IDOR security tests. CERTIFIED 2026-09-20, PR #127
+  (merge commit `e21df287193bebe0feaa4ad77ad0b030d28c3a4f`) — certified on
+  first submission, no resubmission needed. Independent review this shift
+  (session-ID clean against all 4 commits on PR #127 —
+  session_01J8DXF7NnsGdpJSPpuN7gCc — none match this reviewing session's
+  own ID): CI reconfirmed green (10/10, including the new
+  `rbac-idor-security-integration` job) on the real final head (`6b226ee`);
+  own reproduction of both delivered suites in a dedicated worktree
+  against a real, directly installed local PostgreSQL 16 cluster (no
+  container-registry egress in this sandbox, same FTF-0004/FTF-0102/
+  FTF-0104/FTF-0105/FTF-H003/FTF-R017 finding) — 23 no-DB checks and 75
+  live-Postgres checks, both clean; confirmed directly that the demo
+  app's session engine binds to the real, restricted `sovra_app` role,
+  never the migration owner. Two own fault injections distinct from the
+  producer's own two — (1) widened `APPROVE_ROLES` to include
+  `Role.VIEWER` (a real privilege-escalation bug), caught for real by the
+  no-DB suite's own independently-hardcoded role-set check, NOT caught by
+  the live suite for the same disclosed same-constant-import reason
+  already documented for `WRITE_ROLES`; (2) aliased the `approve` route's
+  dependency to `write_dependency` (a real wiring bug), NOT caught by the
+  no-DB suite, caught for real by the live-Postgres integration suite (12
+  checks flipped) — both reverted byte-identical, both suites re-ran
+  clean. `product_truth_check.py --fail-on-unwired` confirmed legitimately
+  `1/1` (`docs/spec-matrix.yaml` FTF-0106's `proving_symbol` is empty — no
+  live-wiring claim, no FastAPI route or background-worker service
+  anywhere in this repository imports `rbac_idor_security_tests.py` yet).
+  `tools/r1_handoff.py packet FTF-0106` confirmed acceptance clause 1
+  (full real two-tenant role matrix, reads/writes/artifacts/approvals,
+  guessed IDs) and the negative_acceptance clause (no authorization test
+  exclusively uses a privileged DB connection or mocked membership
+  result) are met for this task's own scope; "artifacts/approvals" is
+  honestly scoped down to an approval-shaped role gate over the real
+  `workspaces` table, the same disclosed scoping precedent FTF-0105/
+  FTF-H003 already established. All five dependencies (FTF-0102/0103/
+  0104/0105/H003) confirmed genuinely `CERTIFIED` before relying on them.
+  Ran `sync_certified_status()` — diff limited to exactly FTF-0106's own
+  `status`/`evidence` fields. `verify_release.py` confirmed non-inflated
+  (`23/300` before, `24/300`/zero FAILED after). A pre-existing,
+  unrelated inconsistency was noticed but not remediated (outside this
+  session's CERTIFY-only scope): FTF-H003's own `evidence_hash` in
+  `docs/spec-matrix.yaml` (the PR #125 merge commit) does not match its
+  own `spec/verification-map.json` `commit` field (the implementation
+  commit) — flagged here for the next Control-plane shift, not this
+  task's write set. This certification's own doc updates were pushed on
+  a branch and opened as a PR against `main` rather than pushed directly,
+  per `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

@@ -5067,3 +5067,111 @@ the same code on a now-clean head.
 ## 2026-09-20 — FTF-0106 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/127
   (`claude/wizardly-fermat-daazqp` → `main`).
+
+## 2026-09-20 — FTF-0106 (RBAC/IDOR security tests) — Control plane: independent CERTIFY review, CERTIFIED
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #127.
+- **Session-ID check:** all 4 commits on PR #127 (`9fe1957`, `ea8e963`,
+  `ba8b3fe`, `6b226ee`) carry `Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`;
+  this reviewing session's own ID is `session_01YYH2AJhFMjzPnDbKw3C44c` —
+  no match, independent per Law 4.
+- **Diff read directly:** 8 files, +1242/-23, against the real PR head
+  `6b226ee` in a dedicated `git worktree`
+  (`apps/api/app/auth/rbac_idor_security_tests.py`,
+  `tests/tasks/test_ftf_0106.py`,
+  `tests/integration/test_ftf_0106_rbac_idor_security.py`,
+  `.github/workflows/ci.yml`, `docs/spec-matrix.yaml`, `QUEUE.md`,
+  `PROGRESS.md`, `docs/certifications/queue.md`). Confirmed directly in
+  `apps/api/app/auth/rbac_middleware.py` that `require_role` genuinely
+  accepts the `principal_resolver`/`role_lookup` keyword overrides the
+  harness passes.
+- **CI reconfirmed on the real final head:** polled `get_check_runs` until
+  completion (`gate`, `storage-semantics-integration`,
+  `docker-local-stack-integration` were still `in_progress` on first
+  poll); all 10 checks completed `success` on `6b226ee` itself;
+  `mergeable_state` confirmed `clean` before merge.
+- **Own re-run, dedicated worktree:** `uv sync --all-packages`; the no-DB
+  suite (`tests/tasks/test_ftf_0106.py`, 23 checks) passed directly. Stood
+  up a real local PostgreSQL 16 cluster (`sovra_migrate_review` role,
+  `sovra_ftf0106_review` database — no container-registry egress in this
+  sandbox, same finding as FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/
+  FTF-R017); ran `tests/integration/test_ftf_0106_rbac_idor_security.py`
+  (self-migrating via `alembic upgrade head`, 75 checks) — passed clean.
+  Confirmed in the test source that the demo app's session engine binds
+  to the real, restricted `sovra_app` role (`app_engine.url.username ==
+  APP_ROLE_NAME`), never the migration owner.
+- **Two own independent fault injections, distinct from the producer's
+  own two:**
+  1. Widened `APPROVE_ROLES` to include `Role.VIEWER` — a real
+     privilege-escalation bug. Caught for real by the no-DB suite (4
+     checks failed); NOT caught by the live suite, for the same disclosed
+     same-constant-import reason already documented for `WRITE_ROLES` —
+     confirming the disclosed coverage split holds for an independently
+     chosen fault, not just the producer's own.
+  2. Aliased the `approve` route's dependency to `write_dependency`
+     instead of `approve_dependency` — a real wiring bug. NOT caught by
+     the no-DB suite; caught for real by the live-Postgres integration
+     suite (12 checks flipped).
+  Both reverted byte-identical (`git diff --stat` clean) and both suites
+  re-ran clean afterward.
+- **Full regression, this sandbox:** `ruff check .` / `ruff format --check
+  .` / `mypy .` clean (84 files); `pnpm install --frozen-lockfile` then
+  `pnpm run lint` / `typecheck` / `format:check` clean; `pnpm exec vitest
+  run` 5/5; `uv run pytest tests/unit` 3/3; all existing
+  `tests/tasks/test_ftf_*.py` re-run clean, after one disclosed artifact:
+  `test_ftf_h001.py` / `validate_spec.py --strict` first showed 10
+  `stale_commit` findings, traced to this review's own shallow worktree
+  clone, cleared by `git fetch --unshallow`; `verify_release.py` (after
+  `pnpm install`, the same not-yet-installed `node_modules` artifact
+  already documented in this task's own submission) reports `24/300`,
+  zero `FAILED`.
+- **`product_truth_check.py --fail-on-unwired`:** confirmed legitimately
+  `1/1`, unchanged — `docs/spec-matrix.yaml` FTF-0106's `proving_symbol`
+  is empty; `grep` confirms no FastAPI route or background-worker service
+  anywhere in this repository imports `rbac_idor_security_tests.py` yet.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0106 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("Full real two-tenant role matrix exercises reads/writes/artifacts/
+  approvals with guessed IDs") proven for real against two real
+  organizations, twelve real (issuer, subject) principals covering all
+  six Section 6.4 roles, and a real uvicorn server; "artifacts/approvals"
+  honestly scoped down to an approval-shaped role gate over the real
+  `workspaces` table (disclosed, matching the FTF-0105/FTF-H003
+  precedent, no live artifact table exists yet); acceptance clause 2
+  satisfied by this review itself; negative_acceptance (no privileged DB
+  connection or mocked membership result used exclusively) independently
+  confirmed above. All five dependencies (FTF-0102/0103/0104/0105/H003)
+  confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before
+  relying on them.
+- **Pre-existing inconsistency noticed, not remediated (outside
+  CERTIFY-only scope):** FTF-H003's own `docs/spec-matrix.yaml`
+  `evidence_hash` (the PR #125 merge commit `9407710...`) does not match
+  its own `spec/verification-map.json` `commit` field (the implementation
+  commit `6242412...`), contrary to that file's own documented
+  convention. FTF-0106's own new entries use the implementation-commit
+  convention throughout, consistent with FTF-0105/FTF-0103/FTF-0101.
+  Flagged in `QUEUE.md` for the next Control-plane shift.
+- **Conclusion:** the delivered full six-role, two-tenant RBAC/IDOR
+  security harness is real, independently reproduced against a real
+  local PostgreSQL 16 cluster, genuinely fault-injectable via two own,
+  this-session-chosen breaks distinct from the producer's own two and
+  each correctly caught by the coverage layer the disclosed design says
+  should catch it, and CI is green on the real final merged head (10/10).
+  No blocking defect.
+- **Action taken:** merged PR#127 (merge commit
+  `e21df287193bebe0feaa4ad77ad0b030d28c3a4f`). Set `docs/spec-matrix.yaml`
+  FTF-0106 to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED` (`evidence_hash` kept at
+  `9fe19578b9a002000eb839708777db3de9813094`, matching the new
+  `spec/verification-map.json` entry's `commit` field). Added FTF-0106's
+  own entry to `spec/verification-map.json`. Ran `sync_certified_status()`
+  — diff limited to exactly FTF-0106's own `status`/`evidence` fields in
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. Full ledger entry
+  appended to `docs/certifications/ledger.md`. `QUEUE.md` updated
+  (Certified 23 → 24). `PROGRESS.md` updated with the full review
+  narrative. This certification's own doc updates are pushed on a branch
+  and opened as a PR against `main`, not pushed directly, per
+  `BRANCH_PROTECTION`.
+- **Validated-by:** session
+  https://claude.ai/code/session_01YYH2AJhFMjzPnDbKw3C44c (independent —
+  see session-ID check above), 2026-09-20.
