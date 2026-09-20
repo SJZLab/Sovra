@@ -5374,3 +5374,139 @@ the same code on a now-clean head.
   `L1-PROVEN`.
 - **Submitted-by:** this relay shift (scheduled, non-interactive),
   2026-09-20.
+
+## 2026-09-20 — FTF-0201 (LiteLLM connection CRUD) — Control plane: independent CERTIFY review, CERTIFIED
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #133.
+- **Session-ID check:** all 7 commits on PR #133 (`b7756b3`, `e445185`,
+  `417477e`, `37ec61c`, `2ed384b`, `96eac79`, `1815080`, `d0aec3b`) carry
+  `Claude-Session: .../session_01MV1wn1CJHoHmds4eRKKVaV`; this reviewing
+  session's own ID is `session_01RLyWKThYBPJkaqeDp2HZsN` — no match,
+  independent per Law 4.
+- **Diff read directly:** 16 files, +3533/-22, against the real PR head
+  `d0aec3b` (workspace already checked out to it by the triggering event):
+  `apps/api/app/litellm/connection_schema.py`,
+  `apps/api/alembic/versions/0003_litellm_connections.py`,
+  `apps/api/app/litellm/connection_crud.py`,
+  `apps/api/app/litellm/connection_routes.py`, `apps/api/app/main.py`,
+  `packages/contracts/openapi/02-interface.yaml`,
+  `packages/contracts/jsonschema/02-domain.schema.json`,
+  `tests/tasks/test_ftf_0201.py`,
+  `tests/integration/test_ftf_0201_litellm_connection_crud.py`,
+  `.github/workflows/ci.yml`, `docs/spec-matrix.yaml`, `QUEUE.md`,
+  `PROGRESS.md`, `docs/certifications/queue.md`. Confirmed directly in
+  `apps/api/alembic/versions/0003_litellm_connections.py`: real
+  `GRANT SELECT, INSERT, UPDATE` (no DELETE) plus
+  `ALTER TABLE ... FORCE ROW LEVEL SECURITY` and a real
+  `CREATE POLICY tenant_isolation`. Confirmed directly in
+  `apps/api/app/main.py`: `build_litellm_connection_router` wired
+  unconditionally via `app.include_router(...)` in `create_app()`.
+  Confirmed directly in `packages/contracts/jsonschema/02-domain.schema.json`:
+  `LiteLLMConnection` has no `secret_ref` property, `additionalProperties: false`.
+- **Merge-readiness confirmed before merge:** PR #133 up to date with
+  `main` (base `dee3931` an ancestor of the PR head), `mergeable_state:
+  clean`.
+- **CI reconfirmed on the real final head:** polled `get_check_runs` until
+  completion (`gate` and `docker-local-stack-integration` were still
+  `in_progress` on first poll); all 11 checks completed `success` on
+  `d0aec3b2cd5862bb046104d4e8ca822bc48b10a9` (run `35496794399`),
+  including the new `litellm-connection-crud-integration` job.
+- **Own re-run, this sandbox:** `git fetch --unshallow` first (shallow
+  clone, same pre-existing artifact FTF-0106's own certifying session
+  already documented). Stood up a real, directly-installed local
+  PostgreSQL 16 cluster (`sovra_migrate`/`sovra_ftf0201` — no
+  container-registry egress in this sandbox, same finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-R017/FTF-1601).
+  `uv run python3 tests/tasks/test_ftf_0201.py` → "all checks passed";
+  `uv run python3 tests/integration/test_ftf_0201_litellm_connection_crud.py`
+  → "all checks passed" (28 real live-Postgres checks). **Noted for the
+  record:** running `tests/tasks/test_ftf_0201.py` under `pytest` instead
+  of directly reports a misleadingly-green "24 passed" regardless of real
+  outcomes — that file's own `check()` helper only appends to a
+  module-level `FAILURES` list rather than asserting inside the `test_*`
+  functions `pytest` collects. Confirmed this directly: re-ran it under
+  `pytest` both before and after a real fault injection and got "24
+  passed" both times, while the script's own direct invocation (the way
+  CI actually runs it, per `.github/workflows/ci.yml` line 142) correctly
+  reported the failures. Future reviewing sessions should invoke it
+  directly, not via `pytest`, to get the real signal.
+- **Own fault injections, distinct from the producer's own two (widening
+  `CONNECTION_ADMIN_ROLES`; leaking `secret_ref` back into the response
+  serializer):**
+  1. Widened `validate_base_url`'s allowed scheme set from `("https",)`
+     to `("https", "http")` — a real TLS-downgrade bug (Section 3.1/65.4
+     requires https-only). Caught for real by both suites: 3 checks
+     failed in the no-DB suite (the named http-scheme rejection case plus
+     two downstream checks), 1 check failed in the live-Postgres suite
+     (the creation-time 400-rejection check). Reverted byte-identical
+     (`git diff --stat` clean) and both suites re-ran clean afterward.
+  2. Also tried removing the `authorize_resource_ownership` call from
+     `_fetch_or_raise` entirely — neither suite caught it. Did not stop
+     at "not caught": traced it to a real, non-defective reason — `FORCE
+     ROW LEVEL SECURITY` plus `execute_tenant_scoped`'s own RLS-bound
+     session already block the cross-tenant row at the database level
+     regardless of the application-layer check, so
+     `authorize_resource_ownership` here is defense-in-depth on top of a
+     DB-level guarantee, not the sole IDOR control. Not a defect;
+     disclosed in `docs/spec-matrix.yaml`'s own FTF-0201 notes for the
+     next session rather than silently dropped.
+- **Full regression, this sandbox:** `ruff check .` / `ruff format --check
+  .` / `mypy .` clean (91 files); `pnpm install --frozen-lockfile` then
+  `pnpm run lint` / `typecheck` / `format:check` clean; `pnpm exec vitest
+  run` 5/5; `uv run pytest tests/unit` 3/3; all existing
+  `tests/tasks/test_ftf_*.py` re-run clean; `python3
+  scripts/validate_spec.py --strict` clean (after unshallowing);
+  `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`;
+  `scripts/status.py` confirmed non-inflated (`24/300` before, `25/300`
+  / zero FAILED after; "Product-true" `1` before, `2` after).
+- **`product_truth_check.py --fail-on-unwired`:** independently
+  reconfirmed `2/2` (`build_oidc_login_router` plus
+  `build_litellm_connection_router`, both confirmed genuinely imported
+  and called unconditionally from `apps/api/app/main.py`'s
+  `create_app()` by direct source read).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0201 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("Freeze the minimum shared phase interface and domain schemas at the
+  declared owner paths, with schema/client validation and no placeholder
+  endpoints. Then: Create/edit/revoke an organization-scoped gateway
+  connection with secret refs and explicit TLS/URL policy") met by the
+  delivered CRUD module plus the `contracts:02` freeze; acceptance clause
+  2 satisfied by this review itself; negative_acceptance ("Foreign
+  connection ID, rejected URL or secret echo fails; cannot mutate another
+  organization gateway") independently confirmed above via the
+  live-Postgres IDOR/rejection/no-secret-echo checks. Confirmed the
+  disclosed scope narrowing (no `validate`/`sync-models`/`/models`/
+  `/models/{id}/probe` routes) is genuinely justified against
+  `docs/TASK_INDEX.md` — FTF-0203/FTF-0204/FTF-0210 are later, separately
+  dependency-gated tasks that own that surface, not a hidden cut in the
+  producer's favor; declaring that surface here with no real backing
+  handler would itself violate Law 11. All three dependencies
+  (FTF-0103/FTF-0104/FTF-0005) confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Conclusion:** the delivered organization-scoped LiteLLM gateway
+  connection CRUD (create/get/list/edit/revoke) is real, live-wired into
+  `apps/api/app/main.py`, independently reproduced against a real local
+  PostgreSQL 16 cluster, genuinely fault-injectable via an own,
+  this-session-chosen break distinct from the producer's own two and
+  correctly caught by both suites, with CI green on the real final merged
+  head (11/11) and `product_truth_check.py` legitimately reporting `2/2`.
+  No blocking defect.
+- **Action taken:** merged PR#133 (merge commit
+  `3588e4e5e8f0fcb81f0f458869f2d1e252ea1305`). Set `docs/spec-matrix.yaml`
+  FTF-0201 to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED` (`evidence_hash` kept at
+  `1815080980fb0280f33a864b5f9ad4850ce997de`, matching the new
+  `spec/verification-map.json` entry's `commit` field, the same
+  implementation-commit convention FTF-0105/FTF-H003/FTF-0106 used). Added
+  FTF-0201's own entry to `spec/verification-map.json`. Ran
+  `sync_certified_status()` — diff limited to exactly FTF-0201's own
+  `status`/`evidence` fields in `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`. Full ledger entry appended to
+  `docs/certifications/ledger.md`. `QUEUE.md` updated (Certified
+  24 → 25, Product-true 1 → 2). `PROGRESS.md` updated with the full review
+  narrative. This certification's own doc updates are pushed on a branch
+  and opened as a PR against `main`, not pushed directly, per
+  `BRANCH_PROTECTION`.
+- **Validated-by:** session
+  https://claude.ai/code/session_01RLyWKThYBPJkaqeDp2HZsN (independent —
+  see session-ID check above), 2026-09-20.
