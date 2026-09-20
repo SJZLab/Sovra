@@ -5844,8 +5844,9 @@ the same code on a now-clean head.
   see session-ID check above), 2026-09-20.
 
 ## 2026-09-20 — FTF-0401 — Project schema/API/UI
-- **PR:** opened against `main` from branch `claude/wizardly-fermat-wc06b1`
-  (title `[relay] FTF-0401: Project schema/API/UI`).
+- **PR:** https://github.com/SJZLab/Sovra/pull/139
+  (`claude/wizardly-fermat-wc06b1` → `main`, title
+  `[relay] FTF-0401: Project schema/API/UI`).
 - **Commit:** 141be0f381a00f4c68664c9358404922837c1d29 (implementation);
   `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
   second, tracking-doc-only commit on the same branch.
