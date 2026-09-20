@@ -1,7 +1,172 @@
 # PROGRESS — Sovra
-Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #118: FTF-0103 RBAC middleware
-  independently reviewed and CERTIFIED; see below)
+Updated: 2026-09-20 (scheduled relay shift) — FTF-0105 (Tenant-isolation
+  query guards) implemented and submitted PROVISIONAL, awaiting
+  independent Control-plane L2 certification; see below.
+
+## 2026-09-20 — Relay: FTF-0105 (Tenant-isolation query guards) implemented, submitted PROVISIONAL
+
+STEP 0.1: read PROGRESS.md, QUEUE.md and docs/certifications/queue.md
+fresh this shift (not assumed from prior context). QUEUE.md "Active" and
+"Provisional" were both empty; "Owner actions — current" had no open ask;
+BLOCKER.md held only resolved history (no live blocker).
+
+CLAUDE.md self-check: `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` exactly — no drift, shift proceeded.
+
+STEP 0.2: `cognee-cli doctor` not attempted (not on PATH in this
+sandbox, same as every documented prior shift) — text-search fallback
+(`product_truth_check.py`'s deterministic text search) declared active.
+
+STEP 1: per QUEUE.md's own dependency read order and `docs/spec-matrix.yaml`,
+FTF-0105 (Tenant-isolation query guards) is the next unblocked item —
+deps FTF-0102 (Organization/workspace schema) and FTF-0103 (RBAC
+middleware) are both CERTIFIED; `docs/spec-matrix.yaml` showed FTF-0105
+`certification_state: NONE` / `implementation_state: ABSENT` /
+`proof_state: UNPROVEN` before this shift. Working: FTF-0105.
+
+Real DoD pulled before writing any code: `python tools/r1_handoff.py
+packet FTF-0105 --plan FINE_TUNING_FACTORY_RELEASE_1.md` →
+`docs/implementation/task-packets/FTF-0105.md`. Confirmed
+`database_changes: "No independent schema change..."` and
+`shared_lock_required: []` — this task consumes FTF-0102's frozen
+`organizations`/`workspaces` tables and `set_tenant_context()` exactly as
+delivered, adds no schema. Confirmed via `grep -rn
+"sessionmaker\|create_engine" apps/api --include='*.py'` that no
+session-factory/engine/repository layer existed anywhere in this
+repository before this task — the missing piece really is the guard
+layer this task's own acceptance clause 1 names ("Repository/query layer
+consistently applies authenticated tenant/workspace and
+transaction-local context"), not a re-implementation of FTF-0102's own
+already-certified primitive.
+
+STEP 2 (PEV):
+- **P:** read `apps/api/app/auth/organization_workspace_schema.py`'s
+  `set_tenant_context` (transaction-local `set_config(..., is_local=true)`,
+  already certified) and `apps/api/app/auth/rbac_middleware.py` for house
+  style before writing anything.
+- **E:** wrote `apps/api/app/auth/tenant_isolation_query_guards.py`
+  (`tenant_scoped_session`, `execute_tenant_scoped`, `require_tenant_context`,
+  `install_tenant_pool_reset_guard`) and
+  `tests/tasks/test_ftf_0105.py` (30 no-DB checks). Confirmed the suite
+  can fail before trusting it green: manually removed the
+  `organization_id` `uuid.UUID` validation from `tenant_scoped_session`
+  — 3 checks failed for real with the expected failure reasons; restored
+  byte-identical, re-ran clean. Wrote
+  `tests/integration/test_tenant_isolation_query_guards.py` (real
+  Postgres 16, directly installed in this sandbox — no container-registry
+  egress here, same documented finding as FTF-0004/FTF-0102/FTF-0104/
+  FTF-R017; started the already-installed local cluster with
+  `pg_ctlcluster 16 main start` rather than re-attempting a `docker pull`
+  already known to 403). Confirmed this suite too can fail: no-op'd the
+  pool-checkin reset's own `set_config(...)` call — the "no longer leaks
+  WITH the guard installed" check failed for real (flipped back to
+  "leaked"), restored byte-identical, re-ran clean.
+- **V:** `product_truth_check.py --fail-on-unwired` stays `1/1`
+  (unchanged — this module has no live product caller yet, same disclosed
+  class as FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104 before each one's
+  own first caller existed; not TRACKER-inflated). Opened PR as
+  PROVISIONAL and appended the full submission report to
+  `docs/certifications/queue.md`.
+
+An `importlib.reload`-based first draft of the fault-injection test in
+`tests/tasks/test_ftf_0105.py` produced nondeterministic failures in
+unrelated, earlier-alphabetical test functions — root-caused to Python's
+own reload-identity gotcha (reloading the guard module mid-suite creates
+a second, distinct `TenantContextError` class object, so an `except
+TenantContextError` written against the original import no longer
+matches instances the reloaded code raises). Fixed by switching to the
+same fresh-subprocess pattern `tests/tasks/test_ftf_h002.py` already
+established for exactly this class of problem
+(`subprocess.run([sys.executable, "-c", probe], ...)`), never
+`importlib.reload` on a module already imported elsewhere in the same
+process.
+
+Full regression, this sandbox (`uv sync --all-packages`, `pnpm install
+--frozen-lockfile`, `git fetch --unshallow` — all needed once, this
+sandbox starts with none of them, same documented environment-artifact
+note as every prior shift): `ruff check .` / `ruff format --check .` /
+`mypy .` clean (73 source files, per mypy's own reported count); `pnpm
+run lint` / `typecheck` / `format:check` clean; `pnpm exec vitest run`
+5/5; `uv run pytest tests/unit` 3/3; all 17 existing `tests/tasks/
+test_ftf_*.py` files plus `tests/implementation/*.py` and
+`tests/security/*.py` re-run clean and unmodified in behavior;
+`python3 scripts/validate_spec.py --strict` clean (a transient
+`stale_commit` defect against FTF-R001/FTF-H002 was traced to this
+session's own shallow clone before `git fetch --unshallow`, same
+documented artifact as every prior session's finding, not a real
+defect); `scripts/status.py` still `21/300 certified · 1 product-true`.
+`verify_task.py --task FTF-0105 --stage task` reports `BLOCKED — no
+merged verification evidence yet`, expected pre-merge per established
+convention.
+
+Wired `.github/workflows/ci.yml`: new `gate`-job step (`uv run python3
+tests/tasks/test_ftf_0105.py`) immediately after FTF-0103's own step, and
+a new `tenant-isolation-query-guards-integration` job (real `services:
+postgres` container, mirroring `organization-workspace-schema-integration`/
+`audit-event-writer-integration`).
+
+`docs/spec-matrix.yaml` FTF-0105 set to `certification_state: PROVISIONAL`
+/ `implementation_state: IMPLEMENTED` / `proof_state: L1-PROVEN` /
+`proving_test: tests/tasks/test_ftf_0105.py` (`proving_symbol` stays
+`''`); `evidence_hash` to be filled to the real implementation commit SHA
+in a follow-up commit once it exists, same two-commit pattern as every
+prior task.
+
+**Unrelated finding, disclosed rather than silently fixed (out of this
+task's scope):** while re-verifying `docs/spec-matrix.yaml` still parses
+as valid YAML after this shift's own edit, discovered several
+**already-certified** entries' `notes` fields are silently truncated by
+PyYAML's own comment-start rule — a space followed by `#` (as in a `(PR
+#87, ...)` reference) inside an unquoted plain scalar ends the scalar
+there with no parse error. Reproduced directly against the real committed
+file: `FTF-0101`'s parsed `notes` is 6354→5158 chars, `FTF-0102`'s
+1831→1682, `FTF-0103`'s 5350→4061, `FTF-0104`'s 2064→1313. Pre-existing,
+not introduced by this shift (this shift's own new `notes` value was
+written to avoid both `": "` and `" #"` sequences, and was verified to
+round-trip through `yaml.safe_load` at full length before being
+committed). Does not affect any machine-checked field
+(`certification_state`/`proof_state`/`evidence_hash`) — only the
+free-text `notes` prose silently loses its tail. Not fixed here: editing
+another task's already-certified `notes` text is outside this task's own
+write set and this shift's scope (Section 84.1 — "log a specification
+conflict or new defect and continue independent unblocked work").
+Flagged in `docs/certifications/queue.md`'s own submission entry for
+Control plane / a separately claimed follow-up to decide a fix (e.g.
+YAML literal block scalars for `notes`) or accept the loss.
+
+STEP 3: this entry, written before compaction, per convention.
+
+STEP 4: stop condition (a) does not apply (not N/N L1-PROVEN — this is a
+single-task PROVISIONAL submission). No true blocker, no repeated-failure
+stop, no usage-limit stop, no ask-first item this shift. Ending the shift
+normally after opening the PR: PROVISIONAL work handed to Control plane
+for independent L2 review, per Law 4 ("producer never certifies own
+work").
+
+## Next shift
+Once FTF-0105 is independently reviewed (CERTIFIED or NOT CERTIFIED with
+findings), the next unblocked item per `docs/spec-matrix.yaml`'s
+dependency graph is FTF-0106 (RBAC/IDOR security tests — deps FTF-0102,
+FTF-0103, FTF-0104, FTF-0105, FTF-H003; blocked on FTF-0105 landing
+CERTIFIED first, and on FTF-H003's own real DoD/status being checked
+before claiming it ready). Do not claim FTF-0106 before FTF-0105 is
+CERTIFIED — its own dependency list names FTF-0105 directly.
+Blocked: no.
+
+## Metrics
+Certified / denominator: 21/300 (unchanged this shift — FTF-0105 is
+PROVISIONAL, not yet independently certified; Law 2 — statuses move only
+with evidence at their named assurance level, never by the producer's own
+submission)
+Product-true (Law 16): 1 — unchanged; FTF-0105 has no live product caller
+yet, does not count either way
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
+
+## Open owner asks
+None. See QUEUE.md "Owner actions — current" for the authoritative,
+current list (empty as of this shift).
 
 ## 2026-09-19 — Control plane: FTF-0103 (PR #118) reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),

@@ -1,5 +1,12 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-19 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+  unblocked item per the prior shift's own dependency graph (FTF-0105,
+  Tenant-isolation query guards — FTF-0102/FTF-0103 both CERTIFIED,
+  unblocking FTF-0105/0106's own dependency chain). Full submission
+  report: docs/certifications/queue.md; see "## Provisional" below for
+  the summary.
+
+Earlier the same date (2026-09-19, scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #118) — independent CERTIFY
   review of FTF-0103 (RBAC middleware): **CERTIFIED**. Session-ID clean
   against all 5 commits on PR #118, CI reconfirmed green (7/7) on the real
@@ -52,7 +59,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 21/300 (main; FTF-0103 CERTIFIED 2026-09-19, PR #118 merged as
-`b4b47c0` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`b4b47c0` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0105, Tenant-isolation query guards — submitted this shift, awaiting
+independent Control-plane L2 certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -113,17 +122,34 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0103 (RBAC middleware) was the only item here; it was
-independently reviewed and CERTIFIED this shift via PR #118 (merge commit
-`b4b47c0`) — see "## Done" for the full narrative and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-complete review history.
+- FTF-0105 — Tenant-isolation query guards. Submitted this shift (relay,
+  scheduled, non-interactive): `apps/api/app/auth/tenant_isolation_query_guards.py`
+  (`tenant_scoped_session` — the one blessed way to open a tenant-scoped
+  unit of work, request handler or background job alike, fail-closed
+  before a session is even created; `execute_tenant_scoped` — the guard a
+  raw-SQL/background-job caller must use instead of `session.execute(...)`
+  directly, refusing to run a statement at all on a tenant-context
+  mismatch; `install_tenant_pool_reset_guard` — a real SQLAlchemy pool
+  `checkin` listener force-clearing the tenant GUID on every connection
+  returned to the pool) + `tests/tasks/test_ftf_0105.py` (30 no-DB checks)
+  + `tests/integration/test_tenant_isolation_query_guards.py` (real
+  live-Postgres proof: connection-pool reuse, a naive background-job-style
+  session, and a raw-SQL context mismatch all genuinely cannot leak a
+  previous tenant's rows; Law 1 shown able to fail twice for the
+  pool-reset guard itself — a bare session-level `SET` misuse genuinely
+  leaks without the guard installed and genuinely does not leak with it
+  installed, on the same real pool). Disclosed, not hidden: no live
+  product caller (no FastAPI route or background-worker service) exists
+  anywhere in this repository yet that imports this module, so it does
+  not count toward product-true (`product_truth_check.py` stays `1/1`).
+  Full submission report: docs/certifications/queue.md.
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` in
+  docs/spec-matrix.yaml. PR link to be recorded once opened.
 
-Prior item: FTF-0101 (OIDC login) was independently reviewed and
-CERTIFIED a prior shift via PR #114 (merge commit `5de1c58`) — see
+Prior item: FTF-0103 (RBAC middleware) was independently reviewed and
+CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 "## Done" for the full narrative and `docs/certifications/ledger.md`/
-`docs/certifications/queue.md` for the complete review history (PR #103 →
-NOT CERTIFIED, PR #112 → NOT CERTIFIED, PR #114 → CERTIFIED).
+`docs/certifications/queue.md` for the complete review history.
 
 ## Done
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
