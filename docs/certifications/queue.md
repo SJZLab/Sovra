@@ -4937,3 +4937,129 @@ the same code on a now-clean head.
 ## 2026-09-20 — FTF-H003 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/125
   (`claude/wizardly-fermat-hb5qby` → `main`).
+
+## 2026-09-20 — FTF-0106 (RBAC/IDOR security tests) — Relay: real full six-role, two-tenant security-test harness submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-0106, RBAC/IDOR security tests. Dependencies FTF-0102,
+  FTF-0103, FTF-0104, FTF-0105 and FTF-H003 are all CERTIFIED (FTF-H003
+  itself independently certified this same date via PR #125); DoD pulled
+  fresh via `python tools/r1_handoff.py packet FTF-0106 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from the task title
+  alone.
+- **Real constraint checked before writing any code:** this task's own
+  acceptance clause reads "Full real two-tenant role matrix exercises
+  reads/writes/artifacts/approvals with guessed IDs" and its own
+  negative_acceptance reads "No authorization test exclusively uses
+  privileged DB connection or mocked membership result." Confirmed every
+  prior security proof in this repository covers only a hand-picked
+  subset of Section 6.4's six roles (FTF-0103: viewer/evaluator/approver;
+  FTF-H003: a single organization_admin) -- none of them is the full
+  six-role matrix this task's own acceptance clause names. Confirmed no
+  live `ModelVersion`/`PromotionDecision`/artifact table exists anywhere
+  in this repository yet (Section 6.20/6.21 are later-phase tasks) and
+  this task's own `database_changes` contract forbids an independent
+  schema change, so "artifacts/approvals" cannot be proven against a real
+  artifact table -- scoped down honestly rather than fabricating one.
+- **`apps/api/app/auth/rbac_idor_security_tests.py`:** a reusable
+  harness, not a one-off fixture -- `docs/spec-matrix.yaml` shows this
+  task's own dependents (FTF-1501 "Tenant isolation suite", FTF-1504
+  "IDOR suite") depend on FTF-0106 directly, so the real, six-role,
+  two-tenant fixture and demonstration-app builder are exposed as an
+  importable module those later suites can build on rather than each
+  re-deriving their own narrower one. `TwoTenantRoleMatrixFixture.build()`
+  assigns all six roles to a distinct real principal in each of two real
+  organizations (twelve distinct identities, never one principal reused
+  across roles or organizations). `build_two_tenant_security_demo_app()`
+  composes FTF-0103's `require_role` and FTF-H003's
+  `authorize_resource_ownership`/`TenantContext`/`tenant_scoped_session_for`
+  across three routes matching this task's own named operation classes:
+  read (any real member), write (`ml_engineer`/`workspace_admin`/
+  `organization_admin` per Section 45's own role descriptions), approve
+  (`approver`/`organization_admin` per Section 45's own "approver --
+  promotion approval" role description).
+- **`tests/tasks/test_ftf_0106.py`:** 23 no-DB checks -- the fixture's own
+  shape (exactly 12 distinct (org_label, role) principals), fail-closed
+  `principal_resolver`/`role_lookup` behavior on malformed/unknown/
+  cross-fixture input, the exact expected `READ_ROLES`/`WRITE_ROLES`/
+  `APPROVE_ROLES` sets (hardcoded independently, not re-derived from the
+  module under test), and the demo app's role-boundary gate genuinely
+  denying a disallowed role before any database session is opened,
+  proven against a real, locally-hosted demonstration FastAPI app (real
+  uvicorn server, real local socket, same pattern
+  `tests/tasks/test_ftf_0101.py`/`test_ftf_0103.py` established) with a
+  test-double `session_factory` this suite can count calls against.
+- **`tests/integration/test_ftf_0106_rbac_idor_security.py`:** 75 real
+  live-Postgres checks against a directly installed PostgreSQL 16 cluster
+  (this sandbox has no container-registry egress, same finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-R017 already
+  documented). For every one of 2 real organizations times 6 real roles
+  times 3 operations times 2 targets (own real workspace / the other
+  organization's real, guessed workspace ID), a real HTTP request through
+  a real uvicorn server proves the exact expected outcome: 200 for an
+  allowed role against the caller's own resource, 403 for a disallowed
+  role, and 404 -- identical to a missing resource, never a
+  distinguishable error -- for an allowed role whose resource ID is
+  substituted with the other organization's real one. Also proves a
+  session with no tenant context ever bound is refused via
+  `TenantContextError`, not treated as an ordinary zero-row denial.
+  negative_acceptance directly confirmed: the demo app's own database
+  session is built from the restricted `sovra_app` role's connection URL
+  (compared by engine username against the migration-owner role's),
+  never the privileged owner role, which is used only to seed the two
+  real organizations/workspaces -- matching every prior certified task's
+  own established convention.
+- **Own fault injections (three, distinct vectors, all reverted and
+  re-verified byte-identical via `diff` against a pre-injection copy):**
+  (1) widened `APPROVE_ROLES` to every role -- 4 corresponding checks in
+  `tests/tasks/test_ftf_0106.py` genuinely failed; (2) widened
+  `WRITE_ROLES` to every role -- this was **not** caught by the
+  integration suite, since it imports `WRITE_ROLES` from the same module
+  it exercises (both the enforcement and the test's own expected-status
+  calculation move together on a semantic change to the constant); traced
+  this to the intended, disclosed split of coverage rather than a real
+  gap -- confirmed the same fault genuinely fails 5 checks in the no-DB
+  suite's own `test_role_allow_lists_match_section_45`, which hardcodes
+  its expected role sets independently; (3) aliased `write_dependency` to
+  `READ_ROLES` while leaving the `WRITE_ROLES` constant itself correct
+  (a pure enforcement-wiring fault, not a constant-value fault) --
+  genuinely caught by the integration suite this time, 12 checks flipped
+  from the expected `403` to `200`/`404` for every viewer/evaluator/
+  approver write attempt across both organizations.
+- **Full regression, this sandbox** (`uv sync --all-packages`, `pnpm
+  install --frozen-lockfile`, local Postgres 16 already running from
+  earlier this shift): `ruff check .` / `ruff format --check .` /
+  `mypy .` clean (84 source files, per mypy's own reported count); `pnpm
+  run lint` / `typecheck` / `format:check` clean; `pnpm exec vitest run`
+  -- 5/5; `uv run pytest tests/unit` -- 3/3; all 19 existing `tests/tasks/
+  test_ftf_*.py` files (including FTF-H003's own, certified earlier this
+  same date via PR #125) plus `tests/implementation/*.py` and
+  `tests/security/*.py` re-run clean and unmodified in behavior;
+  `python3 scripts/validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` still `1/1` (unchanged --
+  this module has no live product caller yet, see below);
+  `scripts/status.py` still `23/300 certified · 1 product-true`.
+  `verify_task.py --task FTF-0106 --stage task` reports `BLOCKED -- no
+  merged verification evidence yet`, expected pre-merge (its
+  `spec/verification-map.json` entry is added by Control plane at
+  certification time, per established convention -- not touched by this
+  submission).
+- **Disclosed, not hidden:** no live product caller (no FastAPI route or
+  background-worker service) exists anywhere in this repository yet that
+  imports `rbac_idor_security_tests.py` -- same disclosed "no live caller
+  yet" class already accepted for FTF-0005/FTF-0006/FTF-0102/FTF-0103/
+  FTF-0104/FTF-0105/FTF-H003 before each one's own first live caller
+  existed; `product_truth_check.py` stays `1/1`, unchanged, not inflated.
+  "artifacts/approvals" is honestly scoped down to a real
+  approval-shaped role gate over the existing `workspaces` table, since
+  no `ModelVersion`/`PromotionDecision` table exists yet and this task's
+  own `database_changes` contract forbids adding one -- the same
+  disclosed scoping precedent FTF-0105/FTF-H003 already established for
+  the same reason.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID check
+  against this submission's own commits; CI has not yet been confirmed
+  green on the real PR head by an independent session; no independent
+  fault injection beyond the three performed above.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.

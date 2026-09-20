@@ -1,5 +1,12 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+  unblocked item once FTF-H003 was independently CERTIFIED (FTF-0106,
+  RBAC/IDOR security tests — its own deps FTF-0102/FTF-0103/FTF-0104/
+  FTF-0105/FTF-H003 all CERTIFIED). Full submission report:
+  docs/certifications/queue.md; see "## Provisional" below for the
+  summary.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #125) — independent CERTIFY
   review of FTF-H003 (Cross-layer tenant isolation and relational
   identity): **CERTIFIED**. Session-ID clean against all 3 commits on PR
@@ -118,7 +125,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 23/300 (main; FTF-H003 CERTIFIED 2026-09-20, PR #125 merged as
-`9407710` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+`9407710` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0106, RBAC/IDOR security tests — submitted this shift, awaiting
+independent Control-plane L2 certification) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
@@ -186,18 +195,34 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-H003 (Cross-layer tenant isolation and relational
-identity) was the only item here; it was independently reviewed and
-CERTIFIED this shift via PR #125 (merge commit `9407710`) — see "## Done"
-for the certification summary and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full history and evidence.
+- FTF-0106 — RBAC/IDOR security tests. Submitted this shift (relay,
+  scheduled, non-interactive): `apps/api/app/auth/
+  rbac_idor_security_tests.py` (a reusable full six-role, two-tenant
+  security-test harness — `TwoTenantRoleMatrixFixture` assigns all six
+  Section 6.4 roles to a distinct real principal in each of two real
+  organizations; `build_two_tenant_security_demo_app` composes
+  `require_role`/`authorize_resource_ownership`/`tenant_scoped_session_for`
+  across read/write/approve routes) + `tests/tasks/test_ftf_0106.py`
+  (23 no-DB checks) + `tests/integration/
+  test_ftf_0106_rbac_idor_security.py` (75 real live-Postgres checks —
+  every one of 2 organizations × 6 roles × 3 operations × 2 targets
+  proves the exact expected 200/403/404 outcome, guessed cross-tenant
+  IDs denied identically to missing resources, and confirms the demo
+  app's own session runs through the real restricted `sovra_app` role,
+  never the migration owner). Disclosed, not hidden: "artifacts/
+  approvals" is scoped down to a real approval-shaped role gate over the
+  existing `workspaces` table, since no `ModelVersion`/`PromotionDecision`
+  table exists yet and this task's own `database_changes` contract
+  forbids adding one. Full submission report:
+  docs/certifications/queue.md. `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR link to be
+  recorded once opened.
 
-Prior item: FTF-0105 (Tenant-isolation query guards) was independently
-reviewed and CERTIFIED a prior shift via PR #120 (merge commit `14f785c`)
-— see "## Done" for the certification summary and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full history and evidence.
+Prior item: FTF-H003 (Cross-layer tenant isolation and relational
+identity) was independently reviewed and CERTIFIED this shift via
+PR #125 (merge commit `9407710`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
+for the full history and evidence.
 
 Earlier item: FTF-0103 (RBAC middleware) was independently reviewed and
 CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see

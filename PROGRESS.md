@@ -1,7 +1,150 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift) — FTF-H003
-  (Cross-layer tenant isolation and relational identity) independently
-  reviewed and CERTIFIED via PR #125 (merge commit `9407710`); see below.
+Updated: 2026-09-20 (scheduled relay shift) — FTF-0106 (RBAC/IDOR
+  security tests) implemented and submitted PROVISIONAL, awaiting
+  independent Control-plane L2 certification; see below.
+
+## 2026-09-20 — Relay: FTF-0106 (RBAC/IDOR security tests) implemented, submitted PROVISIONAL
+
+STEP 0.1: my own two prior submissions this shift (FTF-0105 via PR #120,
+FTF-H003 via PR #124) were each independently superseded by a different,
+concurrently-running relay session's own submission for the same task ID
+before mine could be reviewed (FTF-0105: my PR #121 doc-only follow-up
+was closed once PR #120 itself was certified by Control plane directly;
+FTF-H003: my own PR #124 was closed without merging once a parallel
+session's own, more complete FTF-H003 submission — PR #125, including a
+`packages/storage/tenant_policy.py` module this shift's own submission
+did not attempt — was independently certified first). Verified this
+directly rather than assuming: `git log origin/main` shows PR #125's own
+commits on a different branch (`claude/wizardly-fermat-hb5qby`) with a
+different session's own `Claude-Session` trailer. Both outcomes are
+correct, expected behavior under this repo's own multi-session relay
+model (concurrent sessions may pick up the same unblocked item; whichever
+lands and passes independent review first wins, the other's PR is simply
+superseded) — not an error, and not something a session can reliably
+prevent given no visibility into other concurrently-running sessions.
+Restarted this session's designated branch from the newly-updated `main`
+each time (`git fetch origin main && git checkout -B
+claude/wizardly-fermat-daazqp origin/main`) before further work, per the
+standing instruction for a branch whose PR has already merged/closed.
+
+STEP 1: with FTF-H003 now genuinely CERTIFIED (confirmed directly against
+`origin/main`'s own `docs/spec-matrix.yaml`, not assumed from a
+notification), FTF-0106 (RBAC/IDOR security tests) became the next
+unblocked item — its own five dependencies (FTF-0102/0103/0104/0105/
+H003) are all CERTIFIED. Working: FTF-0106.
+
+Real DoD pulled before writing any code: `python tools/r1_handoff.py
+packet FTF-0106 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read the
+now-certified FTF-H003 modules fresh from `main` first
+(`apps/api/app/db/tenant_context.py`'s `TenantContext`/
+`tenant_scoped_session_for`, `apps/api/app/auth/resource_authorization.py`'s
+`authorize_resource_ownership`, `packages/storage/tenant_policy.py`) —
+these differ from what this session's own now-superseded FTF-H003
+submission had built, so building FTF-0106 on top of them (rather than
+this session's own discarded design) was necessary, not optional.
+
+STEP 2 (PEV):
+- **P:** read FTF-0103's/FTF-H003's own existing security-proof suites to
+  confirm neither already covers the full six-role, two-tenant matrix
+  this task's own acceptance clause names ("Full real two-tenant role
+  matrix exercises reads/writes/artifacts/approvals with guessed IDs") —
+  confirmed each covers only a hand-picked subset (3 roles, or a single
+  role). Confirmed no live `ModelVersion`/`PromotionDecision`/artifact
+  table exists anywhere in this repository (Section 6.20/6.21 are
+  later-phase tasks) before deciding how to scope "artifacts/approvals."
+- **E:** wrote `apps/api/app/auth/rbac_idor_security_tests.py` (a
+  reusable harness, since `docs/spec-matrix.yaml` shows this task's own
+  dependents — FTF-1501/FTF-1504 — depend on it directly, not just a
+  one-off test fixture), `tests/tasks/test_ftf_0106.py` (23 no-DB checks)
+  and `tests/integration/test_ftf_0106_rbac_idor_security.py` (75 real
+  Postgres checks, one per organization/role/operation/target
+  combination). Ran three own fault injections to verify the suites
+  genuinely catch real regressions, not merely re-reading a claim: (1)
+  widening `APPROVE_ROLES` — caught by the no-DB suite; (2) widening
+  `WRITE_ROLES` — **not** caught by the integration suite on the first
+  attempt, since that suite imports the same constant it exercises (both
+  sides move together on a semantic change); traced this to an
+  intentional, disclosed split of coverage rather than a real gap once
+  confirmed the no-DB suite's own independently-hardcoded role-set check
+  does catch it; (3) a pure enforcement-wiring fault (aliasing
+  `write_dependency` to `READ_ROLES` while leaving the `WRITE_ROLES`
+  constant itself correct) — genuinely caught by the integration suite
+  (12 checks flipped). All three reverted, confirmed byte-identical via
+  `diff` against a pre-injection copy.
+- **V:** `product_truth_check.py --fail-on-unwired` stays `1/1`
+  (unchanged — no live product caller yet, same disclosed class as every
+  certified predecessor before its own first caller existed). Opened PR
+  as PROVISIONAL and appended the full submission report to
+  `docs/certifications/queue.md`.
+
+Disclosed, not hidden: this task's own acceptance clause names "artifacts/
+approvals" alongside reads/writes; scoped down to a real approval-shaped
+role gate (`approver`/`organization_admin`) over the existing `workspaces`
+table, since no artifact/promotion table exists yet and this task's own
+`database_changes` contract forbids adding one — the same disclosed
+scoping precedent FTF-0105/FTF-H003 already established for the same
+reason, not a hidden narrowing.
+
+Full regression, this sandbox (`uv sync --all-packages`, `pnpm install
+--frozen-lockfile`, local Postgres 16 already running from earlier this
+shift): `ruff check .` / `ruff format --check .` / `mypy .` clean (84
+source files, per mypy's own reported count); `pnpm run lint` /
+`typecheck` / `format:check` clean; `pnpm exec vitest run` 5/5; `uv run
+pytest tests/unit` 3/3; all 19 existing `tests/tasks/test_ftf_*.py` files
+(including FTF-H003's own, already CERTIFIED) plus
+`tests/implementation/*.py`/`tests/security/*.py` re-run clean and
+unmodified in behavior; `python3 scripts/validate_spec.py --strict`
+clean; `scripts/status.py` still `23/300 certified · 1 product-true`.
+`verify_task.py --task FTF-0106 --stage task` reports `BLOCKED — no
+merged verification evidence yet`, expected pre-merge.
+
+Wired `.github/workflows/ci.yml`: new `gate`-job step (`uv run python3
+tests/tasks/test_ftf_0106.py`) immediately after FTF-H003's own step, and
+a new `rbac-idor-security-integration` job (real `services: postgres`
+container, mirroring `ftf-h003-cross-layer-isolation-integration`).
+
+`docs/spec-matrix.yaml` FTF-0106 set to `certification_state:
+PROVISIONAL` / `implementation_state: IMPLEMENTED` / `proof_state:
+L1-PROVEN` / `proving_test: tests/tasks/test_ftf_0106.py`; `evidence_hash`
+to be filled to the real implementation commit SHA in a follow-up commit
+once it exists, same two-commit pattern as every prior task.
+
+STEP 3: this entry, written before compaction, per convention.
+
+STEP 4: stop condition (a) applies — single-task PROVISIONAL submission
+handed to Control plane for independent L2 review, per Law 4 ("producer
+never certifies own work"). No true blocker, no repeated-failure stop, no
+usage-limit stop, no ask-first item this shift.
+
+## Next shift
+Once FTF-0106 is independently reviewed (CERTIFIED or NOT CERTIFIED with
+findings — noting this shift's own experience that a concurrently-running
+session may also pick up the same item and land first, which is not an
+error), the next unblocked items per `docs/spec-matrix.yaml`'s dependency
+graph include FTF-1501 (Tenant isolation suite — deps FTF-0106, FTF-H003)
+and FTF-1504 (IDOR suite — deps FTF-0106, FTF-0501, FTF-1501), both of
+which are meant to build on this shift's own
+`rbac_idor_security_tests.py` harness directly. FTF-0501 (a dependency of
+FTF-1504) has not been checked this shift. Do not claim either before
+FTF-0106 is CERTIFIED — matching every prior task's own established
+precedent in this queue's history of waiting for CERTIFIED, not merely
+merged/PROVISIONAL, dependencies before claiming a dependent task.
+Blocked: no.
+
+## Metrics
+Certified / denominator: 23/300 (unchanged this shift — FTF-0106 is
+PROVISIONAL, not yet independently certified; Law 2 — statuses move only
+with evidence at their named assurance level, never by the producer's own
+submission)
+Product-true (Law 16): 1 — unchanged; FTF-0106 has no live product caller
+yet, does not count either way
+L4 gate: not run (Tier 3, release-only — relay never dispatches it)
+Knowledge graph: not set up (`cognee-cli` not found this shift; still
+text-search fallback per S1.9)
+
+## Open owner asks
+None. See QUEUE.md "Owner actions — current" for the authoritative,
+current list (empty as of this shift).
 
 ## 2026-09-20 — Control plane: FTF-H003 (PR#125) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
