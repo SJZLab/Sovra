@@ -1,7 +1,27 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled relay shift) — FTF-0106 (RBAC/IDOR
-  security tests) implemented and submitted PROVISIONAL, awaiting
-  independent Control-plane L2 certification; see below.
+Updated: 2026-09-20 (same relay shift, follow-up) — PR #127 was merged
+  directly by the repo owner on green CI, ~6 minutes after opening,
+  before any independent Control-plane review. See below.
+
+## 2026-09-20 — Relay follow-up: PR #127 merged by owner, FTF-0106 still PROVISIONAL (not certified)
+
+Same pattern as this shift's own earlier PR #120 (FTF-0105) follow-up:
+`pull_request_read` on PR #127 shows `merged: true`, `merged_by:
+samerzakaria` — the repo owner merged it directly, not a Control-plane
+certifier session. `git fetch origin main` + `git show
+origin/main:docs/spec-matrix.yaml` confirms FTF-0106 on `main` still
+reads `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`.
+This is a legitimate owner action (CLAUDE.md's own "Do without asking"
+list names "merge on green + L1 doc (PROVISIONAL)"), and Law 4 ("Merge =
+PROVISIONAL only") still holds — merged code is not certified code.
+Restarted this session's designated branch from the newly-updated `main`
+before this documentation-only update. Updated QUEUE.md's banner/Status
+sections to record the merge accurately. Not claiming FTF-1501/FTF-1504
+(FTF-0106's own dependents) this shift — they depend on FTF-0106 being
+CERTIFIED, not merely merged, matching every prior precedent in this
+queue's own history today. No BLOCKER — bookkeeping only; continuing to
+hold per STEP 4(a) until either FTF-0106 is independently certified or a
+new event/next scheduled fire picks up other work.
 
 ## 2026-09-20 — Relay: FTF-0106 (RBAC/IDOR security tests) implemented, submitted PROVISIONAL
 

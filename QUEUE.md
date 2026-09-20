@@ -1,5 +1,20 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled relay shift) — picked up the next
+Updated: 2026-09-20 (same relay shift, follow-up) — PR #127 (FTF-0106)
+  was merged directly by the repo owner (`merged_by: samerzakaria`,
+  confirmed via `pull_request_read`) ~6 minutes after opening, on green
+  CI (10/10), before any independent Control-plane L2 review ran —
+  the same owner-merge-on-green pattern already seen this shift for PR
+  #120 (FTF-0105). `docs/spec-matrix.yaml` on `main` still reads
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` for
+  FTF-0106 (confirmed directly against `origin/main`, not assumed).
+  Matches CLAUDE.md's own "Do without asking" allowance ("merge on green
+  + L1 doc (PROVISIONAL)") and Law 4 ("Merge = PROVISIONAL only") —
+  merged code is not certified code. FTF-1501/FTF-1504 (this task's own
+  dependents) are not claimed this shift: they depend on FTF-0106 being
+  CERTIFIED, not merely merged, matching this queue's own established
+  precedent throughout this date's history.
+
+Earlier the same date (scheduled relay shift) — picked up the next
   unblocked item once FTF-H003 was independently CERTIFIED (FTF-0106,
   RBAC/IDOR security tests — its own deps FTF-0102/FTF-0103/FTF-0104/
   FTF-0105/FTF-H003 all CERTIFIED). Full submission report:
@@ -126,8 +141,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 ## Status
 Certified: 23/300 (main; FTF-H003 CERTIFIED 2026-09-20, PR #125 merged as
 `9407710` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0106, RBAC/IDOR security tests — submitted this shift, awaiting
-independent Control-plane L2 certification) · Blocked: 0
+(FTF-0106, RBAC/IDOR security tests — submitted this shift; PR #127
+merged directly by the repo owner on green CI before independent review,
+still awaiting Control-plane L2 certification — merged is not certified,
+see banner above) · Blocked: 0
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; no
