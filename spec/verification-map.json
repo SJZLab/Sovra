@@ -360,6 +360,20 @@
       "timeout_seconds": 300,
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/get/list/edit/accept-license/mark-ready/archive, IDOR, TenantContextError and DELETE-privilege evidence is tests/integration/test_ftf_0301_trainable_artifact_schema_api.py, run separately in CI (trainable-artifact-schema-api-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004/FTF-R017/FTF-0102/FTF-0104/FTF-0105/FTF-1601/FTF-H003/FTF-0106/FTF-0201. NOT certified on first submission (PR #135) -- an independent Control-plane review found a real Law 1 gap (the live-Postgres suite never isolated the 'unknown owner'/license-acceptance leg of mark-ready's negative_acceptance from the other two conditions); fixed with one additional isolated live-Postgres case and certified on the resubmission (PR #137, superseding #135). evidence_hash/commit here point at PR #137's own fix commit (86397f1), not PR #135's original implementation commit (30ba359), since that is the commit whose diff was actually independently re-verified end to end."
+    },
+    "FTF-0401": {
+      "commit": "141be0f381a00f4c68664c9358404922837c1d29",
+      "commands": [
+        [
+          "python3",
+          "tests/tasks/test_ftf_0401.py"
+        ]
+      ],
+      "expected_output_contains": "FTF-0401 Project schema/API tests: all checks passed",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0102/FTF-0104/FTF-1601/FTF-0101/FTF-0103/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301 and their own predecessors -- this entry is added in the certifying commit, once the implementation commit it points to already exists in history. The real live-Postgres create/get/list/edit/save-ui-state/archive, IDOR, optimistic-concurrency and setup_incomplete-negative_acceptance evidence is tests/integration/test_ftf_0401_project_schema_api.py, run separately in CI (project-schema-api-integration job) -- not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as every prior integration-tested task above. Certified on first submission (PR #139) -- independent Control-plane review reproduced both suites against a real local PostgreSQL 16 cluster and ran two of its own fault injections (initial_status_for always 'active'; workspace-ownership authorization removed from create_project), both caught for real. evidence_hash/commit here point at the implementation commit (141be0f) unchanged from PR #139's own head (5b4dc4c only added tracking-doc commits on top)."
     }
   }
 }

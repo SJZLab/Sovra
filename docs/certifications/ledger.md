@@ -3170,3 +3170,131 @@ corrected 2026-09-15.
   gap and observing it caught. CI green on the real final merged head
   (12/12) and `product_truth_check.py` legitimately reporting `3/3`. No
   blocking defect. Certified L2-CERTIFIED.
+
+## FTF-0401 — Project schema/API/UI
+- Criterion ID: FTF-0401
+- PR: https://github.com/SJZLab/Sovra/pull/139 (`claude/wizardly-fermat-wc06b1` → `main`)
+- Merge commit: 59e14e71a446bbc68b8488ecc221ae5877aba14a
+- Implementation commit: 141be0f381a00f4c68664c9358404922837c1d29
+- Validated-by: session https://claude.ai/code/session_01Jnn617YvqzzmxdTV1RgiFD
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #139)
+- Date: 2026-09-20
+- **Session-ID check:** all 3 commits on PR #139 (`141be0f`, `24b36c8`,
+  `5b4dc4c`) carry `Claude-Session: .../session_01HCDh4VoHfgGL9NkLs6Q4YG`;
+  this reviewing session's own ID is `session_01Jnn617YvqzzmxdTV1RgiFD` —
+  no match, independent per Law 4.
+- **Diff read directly** against the real PR head `5b4dc4c` (19 files,
+  +5576/-31): confirmed `build_project_router` wired unconditionally into
+  `apps/api/app/main.py`'s `create_app()` — the fourth live-wired
+  product-runtime path after FTF-0101/FTF-0201/FTF-0301. Confirmed
+  directly in `apps/api/app/projects/project_crud.py`: `apply_edits`'s own
+  signature has no `project_type` parameter at all (immutability is
+  structural, not merely unexercised); `create_project` calls
+  `_authorize_workspace_or_raise` before ever constructing the `Project`
+  row; `initial_status_for` (in `project_schema.py`) derives `status` from
+  `project_type` alone, never client-supplied. Confirmed directly in
+  `apps/api/app/projects/project_routes.py`: the PATCH route's own
+  `update_project` call never reads `project_type` from the request body —
+  the field is unreachable at the API layer, not merely dropped
+  downstream. Confirmed directly in
+  `apps/api/alembic/versions/0005_projects.py`: real `GRANT SELECT,
+  INSERT, UPDATE` (no DELETE), `FORCE ROW LEVEL SECURITY`, a real
+  `CREATE POLICY tenant_isolation`, and the purely additive
+  `UNIQUE(organization_id, id)` constraint on `workspaces` backing the new
+  composite foreign key.
+- **Merge-readiness confirmed before merge:** PR #139 `mergeable_state:
+  clean`, base `0ec0b73` an ancestor of the PR head.
+- **CI reconfirmed on the real final head:** `get_check_runs` on PR #139 —
+  13/13 `completed`/`success` (run `35512925027`), including
+  `project-schema-api-integration`, `gate`, and every other prior
+  integration job (no regression signaled by CI itself).
+- **Own reproduction, this sandbox:** stood up a real, directly-installed
+  local PostgreSQL 16 cluster (`sovra_migrate_cert`/`sovra_ftf0401_cert` —
+  no container-registry egress in this sandbox, same finding as every
+  prior integration-tested task) via a `git worktree` checkout of the real
+  PR head. `uv sync --all-packages` (root `uv sync` alone under-installs
+  workspace-member deps in this sandbox — a pre-existing environment
+  quirk, not a defect in this PR). `uv run python3 tests/tasks/test_ftf_0401.py`
+  → "all checks passed" (exit 0); `uv run python3
+  tests/integration/test_ftf_0401_project_schema_api.py` → "all checks
+  passed" (exit 0) against the real cluster; `pnpm exec vitest run` — 14/14
+  (5 pre-existing + 9 new).
+- **Own fault injection, two, distinct vectors** (Law 1 — reproducing and
+  independently re-confirming the producer's own claimed fault
+  injections, not merely trusting the log): both reverted byte-identical
+  (`diff` empty) and all affected suites re-run clean afterward.
+  1. `initial_status_for` (`project_schema.py`) changed to unconditionally
+     `return "active"`: no-DB suite — 1 check failed (the exact named
+     "agentic_product project always starts setup_incomplete, never
+     active" case); live-Postgres suite — 3 checks failed, including the
+     immutability-under-PATCH and untouched-after-IDOR checks whose
+     expected values assume `setup_incomplete`.
+  2. `_authorize_workspace_or_raise(session, context, workspace_id)` call
+     removed from `create_project`: live-Postgres suite — 1 check failed
+     (creating a project against a workspace_id belonging to a different
+     organization was no longer refused with 404).
+- **Full regression, this sandbox:** `uv run ruff check .` / `ruff format
+  --check .` / `mypy .` clean (105 source files); `pnpm run lint` /
+  `typecheck` / `format:check` clean; `uv run pytest tests/unit` — 3/3;
+  the seven other live-Postgres integration suites sharing this migrated
+  database (`test_organization_workspace_schema`, `test_audit_event_writer`,
+  `test_tenant_isolation_query_guards`, `test_ftf_h003_cross_layer_isolation`,
+  `test_ftf_0106_rbac_idor_security`, `test_ftf_0201_litellm_connection_crud`,
+  `test_ftf_0301_trainable_artifact_schema_api`) all re-ran clean,
+  confirming no regression from the merge; `validate_spec.py --strict`
+  clean; `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`.
+- **`product_truth_check.py --fail-on-unwired`:** independently
+  reconfirmed `4/4` (`build_oidc_login_router`,
+  `build_litellm_connection_router`, `build_trainable_artifact_router`,
+  `build_project_router`, all confirmed genuinely imported and called
+  unconditionally from `apps/api/app/main.py`'s `create_app()` by direct
+  source read).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0401 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("Create/edit agentic or generic project with versioned security/
+  budget/owner settings and saved UI state") met by the delivered
+  create/get/list/edit/save-ui-state/archive surface (`security_profile`/
+  `created_by` are the settings/owner fields; `row_version` is the
+  versioning; `ui_state_json` plus the dedicated `ui-state` route is the
+  saved UI state, a genuine backend round-trip); acceptance clause 2
+  (independent review/evidence) satisfied by this review itself;
+  negative_acceptance ("Agentic project without approved target/runtime
+  remains setup-incomplete; no silent generic downgrade") independently
+  confirmed both at the pure-function level and over a real HTTP
+  round-trip attempting to smuggle `project_type` through a PATCH. The
+  abbreviated `api_contract` field's `/requirements`/`/tools` routes are
+  confirmed genuinely out of this task's own scope, not a hidden gap:
+  `docs/TASK_INDEX.md` lists FTF-0404/FTF-0407/FTF-0408 as each naming
+  FTF-0401 as their own dependency (not the reverse), matching the PR's
+  own disclosed scope-narrowing. Both dependencies (FTF-0102, FTF-0103,
+  FTF-0104) confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+  before relying on them.
+- **Action taken:** merged PR #139 (merge commit
+  `59e14e71a446bbc68b8488ecc221ae5877aba14a`). Set `docs/spec-matrix.yaml`
+  FTF-0401 to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED` (`evidence_hash` set to the merge commit, matching the
+  `docs/spec-matrix.yaml` convention this file's own recent entries
+  follow; `spec/verification-map.json`'s own new FTF-0401 entry keeps
+  `commit` at the implementation commit `141be0f`, matching the
+  FTF-0201/FTF-0301 precedent of pointing `verify_task.py` at the exact
+  commit its own command was verified against). Added FTF-0401's own
+  entry to `spec/verification-map.json`. Ran `sync_certified_status()` —
+  diff limited to exactly FTF-0401's own `status`/`evidence` fields in
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/status.py`
+  confirmed non-inflated (`26/300` before, `27/300` after; "Product-true"
+  `3` before, `4` after, matching `product_truth_check.py`'s own `4/4`).
+  Full ledger entry appended to `docs/certifications/ledger.md`. `QUEUE.md`
+  updated (Certified 26 → 27, Product-true 3 → 4). `PROGRESS.md` updated
+  with the full review narrative. This certification's own doc updates
+  are pushed on a branch and opened as a PR against `main`, not pushed
+  directly, per `BRANCH_PROTECTION` in `CLAUDE.md`.
+- **Conclusion:** the delivered workspace-scoped Project schema/API/UI
+  (create/get/list/edit/save-ui-state/archive) is real, live-wired into
+  `apps/api/app/main.py`, independently reproduced against a real local
+  PostgreSQL 16 cluster, and this task's own negative_acceptance
+  (immutable `project_type`, agentic-always-`setup_incomplete`) is
+  confirmed enforced by construction — proven by this session's own two
+  independent fault injections, both caught for real. CI green on the
+  real final merged head (13/13) and `product_truth_check.py` legitimately
+  reporting `4/4`. No blocking defect. Certified L2-CERTIFIED.
