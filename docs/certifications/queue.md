@@ -4468,3 +4468,182 @@ the same code on a now-clean head.
 ## 2026-09-19 — FTF-0103 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/118
   (`claude/wizardly-fermat-vpmo65` → `main`).
+
+## 2026-09-20 — FTF-0105 (Tenant-isolation query guards) — Relay: real query-layer guard submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-0105, Tenant-isolation query guards. Dependencies FTF-0102
+  (Organization/workspace schema) and FTF-0103 (RBAC middleware) are both
+  CERTIFIED; DoD pulled fresh via `python tools/r1_handoff.py packet
+  FTF-0105 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from
+  the task title alone.
+- **Real constraint checked before writing any code:** this task's own
+  `database_changes` contract reads "No independent schema change.
+  Consume frozen contract; any required change is a separately claimed
+  migration prerequisite" and `shared_lock_required` is empty. Confirmed
+  FTF-0102 already delivered the one real primitive this task builds on
+  (`apps/api/app/auth/organization_workspace_schema.py::set_tenant_context`,
+  a parameterized, transaction-local `set_config(..., is_local=true)`
+  call) but that no application-layer guard existed anywhere yet forcing
+  every caller to use it correctly — no session factory, no engine, no
+  repository layer existed in this repository at all before this task
+  (confirmed via `grep -rn "sessionmaker\|create_engine"
+  apps/api --include='*.py'`, zero matches outside this task's own new
+  module). This task's job is exactly that missing structural guard, not
+  a new schema.
+- **`apps/api/app/auth/tenant_isolation_query_guards.py`:**
+  `tenant_scoped_session(session_factory, organization_id)` — the one
+  blessed way to open a tenant-scoped unit of work for a request handler
+  or a background job alike; fails closed (`TenantContextError`) before a
+  session is even created when `organization_id` is not a real
+  `uuid.UUID`, binds context immediately via FTF-0102's own
+  `set_tenant_context`, always commits-or-rolls-back and closes.
+  `execute_tenant_scoped(session, organization_id, statement, params)` —
+  the guard a raw-SQL/background-job caller must use instead of
+  `session.execute(...)` directly; reads back the session's own live
+  transaction-local context via `require_tenant_context()` and refuses to
+  run the caller's statement at all on mismatch or absence (never trusts
+  the caller's stated intent). `install_tenant_pool_reset_guard(engine)`
+  — a real SQLAlchemy pool `checkin` event listener that force-clears
+  `app.current_organization_id` on every connection returned to the pool,
+  defense-in-depth for the one gap the other two guards cannot see by
+  construction: a raw DBAPI connection, or a raw-SQL path that used a bare
+  (session-level) `SET` instead of the required `SET LOCAL` — which is
+  *not* cleared by rollback and would otherwise survive a pool checkin.
+- **`tests/tasks/test_ftf_0105.py`:** 30 no-DB checks — fail-closed
+  validation on every guard function (missing/malformed/wrong-type
+  organization ID, context mismatch, missing context), the pool-checkin
+  reset's own parameterized `set_config(...)` call proven directly against
+  a mocked DBAPI connection, a real `sqlite://` engine used to prove the
+  checkin listener is genuinely wired to the pool's real lifecycle event
+  (not merely defined and never attached), and a real fault injection
+  against the tracked module on disk. That fault injection deliberately
+  runs in a **fresh subprocess**, not `importlib.reload` — reloading this
+  module in-process would silently create a second `TenantContextError`
+  class object in the same module dict, breaking every other `except
+  TenantContextError` in this suite via Python's ordinary reload-identity
+  gotcha (found the hard way: an earlier draft using `importlib.reload`
+  made unrelated, earlier-alphabetical tests fail nondeterministically
+  depending on run order — fixed by switching to the same
+  `subprocess.run([sys.executable, "-c", probe], ...)` pattern
+  `tests/tasks/test_ftf_h002.py` already established for exactly this
+  class of problem).
+- **`tests/integration/test_tenant_isolation_query_guards.py`:** real
+  live-Postgres proof against a directly installed PostgreSQL 16 cluster
+  (this sandbox has no container-registry egress, same finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-R017 already documented — a real `docker
+  pull postgres:16-alpine` was not re-attempted this task since the
+  finding is already established; local Postgres 16 was already installed
+  in this sandbox and only needed starting). Acceptance: `tenant_scoped_session`
+  applies context consistently across two independent units of work drawn
+  from one `pool_size=1`-forced-reuse engine, proven via real DBAPI
+  connection-identity equality (`id(session.connection().connection.dbapi_connection)`),
+  not merely asserted. negative_acceptance "connection-pool reuse...
+  cannot leak": the org2-scoped session, reusing org1's exact pooled
+  connection, sees only its own row. negative_acceptance "background
+  job... cannot leak": a session opened the naive way (bypassing
+  `tenant_scoped_session`, mimicking an unreviewed background-worker code
+  path) is still refused by `execute_tenant_scoped` on a claimed-tenant
+  mismatch, and a fresh session on the same reused connection with no
+  context set sees zero rows. negative_acceptance "raw SQL query...
+  cannot leak": shown able to fail (Law 1), twice, against the same real
+  pool/connection reuse rather than asserted from either side alone — a
+  bare, session-level `SET` misuse (the one raw-SQL error class the two
+  guards above cannot see by construction, since it never goes through
+  either) genuinely leaks a stale tenant context across a real pool
+  checkout **without** `install_tenant_pool_reset_guard` installed, and
+  genuinely no longer leaks with the identical guard installed on the same
+  pool configuration.
+- **Own fault injections (two, distinct vectors, both reverted and
+  re-verified byte-identical via `diff` against a pre-injection copy):**
+  (1) removed the `organization_id` `uuid.UUID` validation from
+  `tenant_scoped_session` — the 3 corresponding negative checks in
+  `tests/tasks/test_ftf_0105.py` genuinely failed; (2) no-op'd the
+  checkin reset's own `set_config(...)` call inside
+  `_reset_dbapi_connection_tenant_context` — the "no longer leaks WITH
+  the guard installed" check in the real-Postgres integration suite
+  genuinely failed (flipped to "leaked" again), proving that check is not
+  vacuously true.
+- **Full regression, this sandbox** (`uv sync --all-packages`, `pnpm
+  install --frozen-lockfile`, `git fetch --unshallow` — all needed once,
+  this sandbox starts with none of them, same documented environment-
+  artifact note as every prior shift, not a real defect): `ruff check .` /
+  `ruff format --check .` / `mypy .` clean (73 source files, per mypy's own
+  reported count); `pnpm run lint` /
+  `typecheck` / `format:check` clean; `pnpm exec vitest run` — 5/5; `uv
+  run pytest tests/unit` — 3/3; all 17 existing `tests/tasks/
+  test_ftf_*.py` files plus `tests/implementation/*.py` and
+  `tests/security/*.py` re-run clean and unmodified in behavior;
+  `python3 scripts/validate_spec.py --strict` clean (a transient
+  `stale_commit` defect against `FTF-R001`/`FTF-H002` was traced to this
+  session's own shallow clone, same documented artifact as every prior
+  session's finding — resolved by `git fetch --unshallow`, not a real
+  defect); `product_truth_check.py --fail-on-unwired` still `1/1`
+  (unchanged — this module has no live product caller yet, see below);
+  `scripts/status.py` still `21/300 certified · 1 product-true`.
+  `verify_task.py --task FTF-0105 --stage task` reports `BLOCKED — no
+  merged verification evidence yet`, expected pre-merge (its
+  `spec/verification-map.json` entry is added by Control plane at
+  certification time, per established convention — not touched by this
+  submission).
+- **Disclosed, not hidden:** no live product caller (no FastAPI route or
+  background-worker service) exists anywhere in this repository yet that
+  imports this module, the same disclosed "no live caller yet" class
+  already accepted for FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104
+  before each one's own first live caller existed —
+  `product_truth_check.py` stays `1/1`, unchanged, not inflated. The
+  guard's positive-path evidence is proven against FTF-0102's own two
+  tenant-scoped tables (`organizations`/`workspaces`), the only real
+  tenant-scoped tables that exist in this repository; a future
+  tenant-scoped table gets the same guarantee automatically by going
+  through `tenant_scoped_session`/`execute_tenant_scoped`, not by
+  re-proving this task's own evidence. `install_tenant_pool_reset_guard()`
+  is not yet wired to call at process startup against any real
+  application engine, since no live FastAPI app/background-worker engine
+  construction site exists yet to call it from; it is proven directly
+  against a real engine/pool in the integration suite, not yet against a
+  live product engine.
+- **Unrelated finding, disclosed rather than silently fixed (out of this
+  task's scope):** while hand-verifying `docs/spec-matrix.yaml` still
+  parses as valid YAML after this task's own edit, discovered that
+  several **already-certified** entries' `notes` fields are silently
+  truncated by PyYAML's own comment-start rule (a space followed by `#`,
+  as in a `(PR #87, ...)` reference inside an unquoted plain scalar, ends
+  the scalar there with no error) — reproduced directly: `FTF-0101`'s
+  parsed `notes` is 6354→5158 chars, `FTF-0102`'s 1831→1682,
+  `FTF-0103`'s 5350→4061, `FTF-0104`'s 2064→1313. This is pre-existing
+  (not introduced by this submission, which was written to avoid both
+  `": "` and `" #"` sequences in its own new `notes` value) and does not
+  affect `certification_state`/`proof_state`/`evidence_hash`/any
+  machine-checked field — only the free-text `notes` prose silently loses
+  its tail past the first ` #NN` occurrence. Not fixed here: editing
+  another task's already-certified `notes` text is outside this task's
+  write set and this relay shift's own scope (Section 84.1 — "log a
+  specification conflict or new defect and continue independent
+  unblocked work"); flagged for Control plane / a separately claimed
+  follow-up to decide whether to requote those fields (e.g. YAML literal
+  block scalars) or accept the loss.
+- **Doc updates:** `docs/spec-matrix.yaml` FTF-0105 set to
+  `certification_state: PROVISIONAL` / `implementation_state: IMPLEMENTED`
+  / `proof_state: L1-PROVEN` / `proving_test:
+  tests/tasks/test_ftf_0105.py` (`proving_symbol` stays `''` — no live
+  caller yet, see above); `evidence_hash` to be filled to this shift's own
+  implementation commit in a follow-up commit once it exists, same
+  two-commit pattern as every prior task's own evidence. New CI job
+  `tenant-isolation-query-guards-integration` added to
+  `.github/workflows/ci.yml` (real `services: postgres` container,
+  mirroring `organization-workspace-schema-integration`/
+  `audit-event-writer-integration`) plus a new `gate` job step (`uv run
+  python3 tests/tasks/test_ftf_0105.py`), immediately after FTF-0103's own
+  step.
+- **Not done this submission (left for the reviewing session, per
+  "producer never certifies own work"):** no independent session-ID check
+  against this submission's own commits; CI has not yet been confirmed
+  green on the real PR head by an independent session; no independent
+  fault injection beyond the two performed above.
+  `certification_state` stays `PROVISIONAL` / `proof_state` stays
+  `L1-PROVEN`.
+- **Submitted-by:** this relay shift (scheduled, non-interactive),
+  2026-09-20.
+
+## 2026-09-20 — FTF-0105 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/120
+  (`claude/wizardly-fermat-daazqp` → `main`).
