@@ -164,7 +164,9 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-H003 (Cross-layer tenant isolation and relational identity) —
-submitted this shift as PROVISIONAL/L1-PROVEN. Full submission entry
+submitted this shift as PROVISIONAL/L1-PROVEN. PR:
+https://github.com/SJZLab/Sovra/pull/125
+(`claude/wizardly-fermat-hb5qby` → `main`). Full submission entry
 (modules, tests, real live-Postgres evidence, disclosed gaps):
 `docs/certifications/queue.md`. Not self-certified (Law 4) — awaiting an
 independent Control plane review session.
