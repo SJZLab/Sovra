@@ -6541,3 +6541,136 @@ left the ask exactly as the last genuine session recorded it in
 `QUEUE.md`. Recommend the owner either confirm directly (in which case
 merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
+
+## 2026-09-20 — Control plane: FTF-0405 (PR #148) independently reviewed, CERTIFIED
+This entry is appended by the certifying session, not the producer —
+PR #148 ("[relay] FTF-0405: JSON Schema tool validation") did not itself
+append a PROVISIONAL submission entry here (only `docs/spec-matrix.yaml`,
+the two test files, `tool_definition_schema.py` and the new
+`json_schema_tool_validation.py` were touched by its single commit); the
+full PROVISIONAL write-up is preserved in that PR's own description and
+in `docs/spec-matrix.yaml`'s own `notes` field prior to this
+certification (still visible in `git show 9138f46:docs/spec-matrix.yaml`).
+
+**Session-ID check:** the sole commit on PR #148 (`9138f46`) carries
+`Claude-Session: .../session_01ULAxA48EZT6uh2Kg6DziPL`; this reviewing
+session's own ID is `session_01XbdXkopSW5Eh19JXpG2EBG` — no match,
+independent per Law 4.
+
+**Diff read directly** against the real PR head `9138f46` (6 files,
++2513/-14): `apps/api/app/services/json_schema_tool_validation.py` is a
+new, pure, DB-free, network-free module implementing a pinned, safe
+subset of JSON Schema Draft 2020-12 (`validate_json_schema_document` for
+schema-definition validation, real live caller; `validate_instance` for
+call-time instance validation, no live caller yet, disclosed in-module,
+matching the FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 disclosed-gap
+precedent). `$ref` resolution is local-only by construction
+(`_check_ref_target` rejects any pointer that is not a literal
+`#/$defs/<name>` prefix before any resolution is attempted — no network
+I/O anywhere in the module), and `$defs` reference cycles are caught by a
+real DFS (`_detect_ref_cycles`) at schema-validation time, independent of
+separate `MAX_SCHEMA_DEPTH`/`MAX_SCHEMA_NODES`/`MAX_REF_HOPS` bounds.
+`apps/api/app/tools/tool_definition_schema.py`'s `validate_schema_object`
+now calls `validate_json_schema_document` for both
+`input_schema_json`/`output_schema_json`, on the already-CERTIFIED,
+already-live-wired FTF-0404 `ToolDefinition.__init__` path — real,
+source-inspection-confirmed live wiring, not merely imported.
+`tests/tasks/test_ftf_0404.py`'s own diff is exactly one filler-value
+change (`{"type": "different"}` → `{"type": "boolean"}`) in a test whose
+own assertions only ever concerned "editing never mutates the historical
+row," not schema-shape correctness — not a weakening of coverage.
+
+**CI reconfirmed on the real final head:** GitHub Actions run
+`35537769604` — all 16 check runs `completed`/`success` (the `gate` job
+was still `in_progress` when this session first checked; re-checked after
+genuine completion), including `tool-schema-crud-integration`.
+
+**Own reproduction, this sandbox:** `git checkout pr-148 -- <changed
+files>` on top of a fresh `main`; `uv sync --all-packages`; `uv run
+python3 tests/tasks/test_ftf_0405.py` → "all checks passed" (25 test
+functions); `uv run python3 tests/tasks/test_ftf_0404.py` → "all checks
+passed" (no regression).
+
+**Own fault injection, two, distinct from the producer's own two named in
+the PR** (Law 1), both reverted byte-identical (`diff`-confirmed against
+the original file) and both suites re-run clean afterward:
+1. Removed the non-local-`$ref` rejection in `_check_ref_target`
+   (replaced the `_fail_security(...)` call with `pass`): caught for real
+   — `FAIL [FTF-0405] negative_acceptance: a non-local $ref
+   ('urn:not-a-local-pointer') is refused, as a security-classed error`.
+   Directly proves the "remote schema SSRF" negative_acceptance case is
+   enforced by real code.
+2. Removed the `additionalProperties: false` excess-property rejection in
+   `_validate_object_instance` (replaced the `_fail(...)` call with
+   `pass`): caught for real — `FAIL [FTF-0405] negative_acceptance: an
+   instance carrying a property beyond what additionalProperties: false
+   permits is refused explicitly`. Directly proves the "excess arguments"
+   negative_acceptance case.
+
+**No regression:** FTF-0404's own no-DB suite re-run clean after this
+change.
+
+**Full regression, this sandbox:** `uv run ruff check`/`uv run mypy`
+clean on both changed source files; every existing
+`tests/tasks/test_ftf_*.py` file re-run (27 files) — all pass except
+FTF-0002/FTF-0003/FTF-H001's own frontend-tooling-dependent checks
+(`pnpm run lint`/`typecheck`, `vitest run`, `check_test_harness.py`),
+independently reproduced as failing identically on `main` *before* this
+PR (`git stash` back to the pre-PR tree, same three files fail the same
+way) — a pre-existing sandbox artifact (no frontend `node_modules` build
+performed in this sandbox), not a regression this PR introduces. `python3
+scripts/validate_spec.py --strict` clean once unshallowed (`git fetch
+--unshallow origin` first — the same pre-existing shallow-clone artifact
+every prior certifying/relay session has already documented).
+
+**`product_truth_check.py --fail-on-unwired`:** `7/7` before this
+certification (matching the PR's own pre-certification claim), `8/8`
+after — `validate_json_schema_document` (this task's own
+`proving_symbol`) has a real, source-inspection-confirmed live caller, so
+it is correctly newly counted once `docs/spec-matrix.yaml` is set to
+`CERTIFIED` here; a genuine evidence-backed increase, not inflation
+(Law 2).
+
+**Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+FTF-0405 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+("Validate JSON Schema using pinned dialect and schema references under
+safe limits") confirmed met: `PINNED_DIALECT` is checked against
+`$schema` when present, and `MAX_SCHEMA_DEPTH`/`MAX_SCHEMA_NODES`/
+`MAX_REF_HOPS` are real, enforced, tested bounds. `negative_acceptance`
+("Recursive/reference bombs, remote schema SSRF, invalid required/type
+constraints and excess arguments fail explicitly") confirmed met against
+all four named cases: reference cycles (`_detect_ref_cycles`, real DFS),
+remote schema SSRF (rejected by construction, independently reproduced
+above), invalid required/type constraints (`ALLOWED_TYPES` closed
+vocabulary plus `required`-vs-`properties` consistency checking), excess
+arguments (`additionalProperties: false` enforcement, independently
+reproduced above). `database_changes: "No independent schema change"`
+confirmed — no migration files in the diff. Both dependencies (FTF-0401,
+FTF-0404) confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+before relying on them.
+
+**No blocking defect found.**
+
+**Action taken:** merged PR #148 (merge commit
+`82e2851be2c02b8e9257713404d11f66147efcb0`). Set
+`docs/spec-matrix.yaml` FTF-0405 to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED` (`evidence_hash` set to the merge commit).
+Added FTF-0405's own entry to `spec/verification-map.json`. Ran
+`sync_certified_status()`. `scripts/status.py` confirmed non-inflated
+(`30/300` certified · `7` product-true before, reproduced directly via
+`git stash`; `31/300` · `8` after, matching `product_truth_check.py`'s
+own `8/8`). Full ledger entry appended to `docs/certifications/ledger.md`.
+`QUEUE.md`/`PROGRESS.md` updated. This certification's own doc updates
+are pushed on a branch and opened as a PR against `main`, not pushed
+directly, per `BRANCH_PROTECTION` in `CLAUDE.md`.
+
+**Conclusion:** Certified L2-CERTIFIED.
+
+**Process note, flagged not blocking:** PR #148 skipped this repo's own
+established two-commit tracking-doc precedent (no `QUEUE.md`/
+`PROGRESS.md`/`docs/certifications/queue.md` update alongside the
+implementation commit). This did not affect the substance of the
+review — `docs/spec-matrix.yaml` and the PR body itself carried the full
+PROVISIONAL evidence — but the next relay/producer shift should restore
+that precedent rather than let tracking docs drift further out of sync
+with `docs/spec-matrix.yaml`.
