@@ -4647,3 +4647,128 @@ the same code on a now-clean head.
 ## 2026-09-20 — FTF-0105 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/120
   (`claude/wizardly-fermat-daazqp` → `main`).
+
+## 2026-09-20 — Control plane: FTF-0105 (PR#120) independently reviewed, CERTIFIED
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR#120.
+- **Session-independence check (performed first):** this reviewing
+  session's own ID (`session_01WAStZmrW1dFrLLivEgcmxN`) compared against
+  all 3 commits on PR#120 (`e5df228`, `aa1cc7c`, `5590ae6`) — all three
+  carry `Claude-Session: .../session_01J8DXF7NnsGdpJSPpuN7gCc`. No match —
+  independent, per Law 4.
+- **Diff re-read directly:** in a dedicated `git worktree` at the real PR
+  head (`5590ae6`), 8 files/+1419/-20 — `apps/api/app/auth/
+  tenant_isolation_query_guards.py`, `tests/tasks/test_ftf_0105.py`,
+  `tests/integration/test_tenant_isolation_query_guards.py`,
+  `.github/workflows/ci.yml`, `docs/spec-matrix.yaml`, plus tracking-doc
+  updates (`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md`).
+- **Own re-run against a real live Postgres, this sandbox:** stood up a
+  directly-installed local PostgreSQL 16 cluster (`pg_ctlcluster 16 main
+  start`; no container-registry egress here, same documented finding as
+  FTF-0004/FTF-0102/FTF-0104/FTF-R017/FTF-1601), created the
+  `sovra_migrate` superuser role and `sovra_ftf0105` database, then ran
+  `tests/integration/test_tenant_isolation_query_guards.py` directly
+  against it — all checks pass, including both Law-1 pool-reset-guard
+  runs (leaks without the guard, does not leak with it, against the same
+  real pool configuration). `uv run python3 tests/tasks/test_ftf_0105.py`
+  (30/30 no-DB checks) clean in a fresh `uv sync --all-packages` sandbox
+  (`git fetch --unshallow` needed once).
+- **Own independent fault injection**, distinct from the producer's own
+  two: edited `execute_tenant_scoped` on disk to replace `if active !=
+  organization_id:` with `if False:`, disabling the mismatch check
+  entirely. The no-DB suite's own fault-injection check (which greps for
+  an exact source snippet to mutate) reported its expected snippet
+  missing — a consequence of mutating the source directly with a
+  different edit than the one it looks for, not a false pass — so this
+  break was instead proven against the real, live-Postgres integration
+  suite: re-ran it against the same real database with the break in
+  place, and exactly the expected negative_acceptance check failed (`a
+  raw SQL query whose caller claims a different tenant than the session's
+  real live context is refused outright...`); reverted byte-identical
+  (`git diff --stat` confirmed no residual change against the original
+  worktree copy), re-ran both suites clean.
+- **CI reconfirmed on the real final head:** the PR head moved once
+  during submission (`aa1cc7c` → `5590ae6`, a tracking-doc-only commit);
+  waited for completion rather than trusting a mid-run snapshot — all 8
+  checks (`gate`, `tenant-isolation-query-guards-integration`,
+  `organization-workspace-schema-integration`, `oidc-provider-integration`,
+  `audit-event-writer-integration`, `postgres-backup-integration`,
+  `docker-local-stack-integration`, `storage-semantics-integration`)
+  completed `success` on `5590ae6` itself; fetched and read the new
+  `tenant-isolation-query-guards-integration` job's own step log directly,
+  confirmed `success`, not merely inferred from the green check.
+- **`product_truth_check.py --fail-on-unwired`:** confirmed legitimately
+  `1/1`, unchanged — `docs/spec-matrix.yaml` FTF-0105's `proving_symbol`
+  is empty, so this criterion claims no live wiring at all (`grep`
+  confirms no FastAPI route or background-worker service anywhere in this
+  repository imports `tenant_isolation_query_guards.py` yet); the `1/1`
+  is the unchanged FTF-0101 `build_oidc_login_router` wiring, not an
+  inflated or fabricated pass for this task's own, disclosedly-unwired
+  module.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0105 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1
+  ("Repository/query layer consistently applies authenticated
+  tenant/workspace and transaction-local context") proven for real against
+  FTF-0102's own two tenant-scoped tables via genuine DBAPI
+  connection-identity equality across two independent units of work drawn
+  from a pool forced to reuse one connection, not merely asserted;
+  acceptance clause 2 (independent review, exact merged commit, real
+  relevant integration and negative-test evidence) satisfied by this
+  review itself; negative_acceptance (connection-pool reuse, background
+  job, raw SQL — all three named vectors) independently confirmed above.
+  Every disclosed gap in `docs/spec-matrix.yaml`'s FTF-0105 notes (no live
+  product caller, positive-path evidence scoped to FTF-0102's own two
+  tables, pool-reset guard not yet wired to a real application engine's
+  startup) matches the real repository state, not silently expanded past
+  what the submission itself disclosed.
+- **YAML-truncation finding (disclosed by the prior relay shift) —
+  independently reproduced, and this review's own note written to avoid
+  it:** this review's first draft of the FTF-0105 certification note
+  truncated the same way the disclosed pre-existing findings did (a space
+  followed by `#`, as in `(PR #120, ...)`, silently ends an unquoted
+  `notes` scalar with no parse error) — reproduced directly (6908 → 1914
+  chars). Fixed by writing `PR#120` (no space before `#`) throughout this
+  review's own new note text and verifying the full 6908-char note
+  round-trips through `yaml.safe_load` unchanged before committing. The
+  pre-existing already-certified entries' own truncation
+  (FTF-0101/0102/0103/0104) is unchanged by this review — still open,
+  still a separately claimed follow-up, not this task's write set.
+- **Full regression, this sandbox:** `uv run ruff check .` / `uv run ruff
+  format --check .` / `uv run mypy .` clean; `pnpm install
+  --frozen-lockfile` then `pnpm run lint` / `typecheck` / `format:check`
+  clean; `pnpm run test` (Vitest) 5/5; `uv run pytest tests/unit` 3/3; all
+  17 existing `tests/tasks/test_ftf_*.py` files re-run clean (including
+  `test_ftf_h001.py`, whose first run showed 3 failures traced directly to
+  `validate_spec.py --strict` reporting 9 `stale_commit` findings against
+  FTF-0001/0002/0003/0004/0005/0006/H001/R001/H002 — a shallow-clone
+  artifact of this review's own worktree, not a real defect, cleared by
+  `git fetch --unshallow`); `validate_spec.py --strict` clean;
+  `verify_task.py --task FTF-0105 --stage task` → `PASS`;
+  `verify_release.py` confirmed non-inflated (`21/300` before this
+  certification, `22/300`/zero `FAILED` after — the `FAILED` entries that
+  surfaced mid-review for FTF-0002/FTF-0003/FTF-H001 were traced to this
+  sandbox's Python venv not yet having `pnpm install`/`uv sync
+  --all-packages` run against it, not a real regression; both installed,
+  all three re-ran `PASS`).
+- **Conclusion:** the delivered tenant-isolation query-layer guard is
+  real, independently reproduced against a real local PostgreSQL 16
+  cluster (not a mock or SQLite stand-in, which has no row-level security
+  at all), genuinely fault-injectable via an own, this-session-chosen
+  break distinct from the producer's own two and caught for real by the
+  live-Postgres integration suite, and CI is green on the real final
+  merged head (8/8). No blocking defect.
+- **Action taken:** merged PR#120 (merge commit
+  `14f785c688cd1134dfe110edd73bf71f5df6d708`). Set `docs/spec-matrix.yaml`
+  FTF-0105 to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED` (`evidence_hash` kept at `e5df228996c32c8d10c2a1a999effcc56d29aac6`,
+  matching the new `spec/verification-map.json` entry's `commit` field).
+  Added FTF-0105's own entry to `spec/verification-map.json`. Ran
+  `sync_certified_status()` — diff limited to exactly FTF-0105's own
+  `status`/`evidence` fields in `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. Full ledger entry appended to
+  `docs/certifications/ledger.md`. `QUEUE.md` updated (Certified 21 → 22,
+  Provisional 1 → 0, "## Provisional"/"## Done" sections). `PROGRESS.md`
+  updated with the full review narrative.
+- **Validated-by:** session
+  https://claude.ai/code/session_01WAStZmrW1dFrLLivEgcmxN (independent —
+  see session-ID check above), 2026-09-20.
