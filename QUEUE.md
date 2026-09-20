@@ -215,8 +215,9 @@ full history and evidence.
   table exists yet and this task's own `database_changes` contract
   forbids adding one. Full submission report:
   docs/certifications/queue.md. `certification_state: PROVISIONAL` /
-  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR link to be
-  recorded once opened.
+  `proof_state: L1-PROVEN` in docs/spec-matrix.yaml. PR:
+  https://github.com/SJZLab/Sovra/pull/127
+  (`claude/wizardly-fermat-daazqp` → `main`).
 
 Prior item: FTF-H003 (Cross-layer tenant isolation and relational
 identity) was independently reviewed and CERTIFIED this shift via
