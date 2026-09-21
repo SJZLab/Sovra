@@ -1,5 +1,51 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1401 (API
+  load test, deps FTF-0006/FTF-0401/FTF-0106 all CERTIFIED). Checked
+  GitHub directly for open PRs before picking work: PR #158 (FTF-0403),
+  #159 (FTF-1501), #160 (FTF-1001) were already open from more recent
+  relay shifts than this file's own prior update — treated as already
+  claimed, not re-done. Independently recomputed the dependency-ready
+  frontier: FTF-0202 (owner ask, still open/unverified), FTF-0403,
+  FTF-0902, FTF-1001, FTF-1401, FTF-1501, FTF-1701 (newly unblocked by
+  FTF-0407's own certification). FTF-0902 requires a real enforcing
+  Kubernetes cluster for its own acceptance (CNI/firewall/DNS/IPv6
+  restrictions) that this sandbox cannot reach — set aside rather than
+  faked. Picked FTF-1401 over FTF-1701 as achievable with only this
+  sandbox's real local Postgres + uvicorn.
+  `tests/performance/api_load_test.py` drives the real, already-live
+  project/tool routers over a real uvicorn/Postgres round trip, reporting
+  p50/p95/p99/errors/backpressure — a disclosed partial profile against
+  Section 49's full-scale Control API target (is_partial_profile=true,
+  disclosed_gaps names every reduction), per that section's own "smaller
+  environment -> partial profile" rule. Real run: 3,831 requests over
+  15.0s, read P95 48.9ms / write P95 48.8ms (within the 500ms/1000ms
+  thresholds), 0 unexpected 5xx, acceptance_passed=true; independently
+  re-queried the DB to confirm no successful write was lost. Own fault
+  injection (Law 1, two vectors — `execute_request`'s OSError guard and
+  `evaluate_acceptance`'s 5xx-rate branch — both caught for real and
+  reverted byte-identical). 17 no-DB test functions, all pass. No
+  regression to FTF-0401/FTF-0404/FTF-0405/FTF-0406/FTF-0407's own
+  suites. `ruff`/`mypy` clean repo-wide. `validate_spec.py --strict`
+  clean. `product_truth_check.py` unchanged at 10/10 (proving_symbol is
+  deliberately empty — a measurement tool, not a new served route,
+  matching FTF-1601's own precedent). Wired into
+  `.github/workflows/ci.yml` (new gate step + new
+  `api-load-test-integration` job). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1401 set to `PROVISIONAL`/`L1-PROVEN`.
+  Awaiting independent Control plane certification — not self-certified
+  (Law 4). Certified stays 33/300; product-true stays 10.
+  **Flagged for Control plane/next shift (not fixed by this task, out of
+  its own scope):** FTF-0406's and FTF-0407's own no-DB and live-Postgres
+  test suites are not wired into `.github/workflows/ci.yml` at all — no
+  step anywhere references `test_ftf_0406.py`/`test_ftf_0407.py` or their
+  `tests/integration/` counterparts (confirmed by direct search over the
+  whole file). Their CERTIFIED evidence was genuinely reproduced by their
+  own independent certifier reviews, so this is not a false-certification
+  finding, but that evidence is not continuously re-enforced by CI on
+  every future PR the way every other CERTIFIED task's is. Full
+  submission report: `docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #156) — independent CERTIFY
   review of FTF-0407 (Critical behavior requirements): **CERTIFIED**.
   Subscribed while CI was still in-flight; the producer session
@@ -355,22 +401,28 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0407 (this shift's own submission, see the top of this file) is now
+FTF-1401 (this shift's own submission, see the top of this file) is now
 PROVISIONAL, PR opened, awaiting independent Control-plane L2
 certification — that review is the natural next action, matching the
 established relay/certifier alternation. If a certifier session is not
 what fires next: recompute the dependency-ready frontier fresh rather
-than trusting this note — as of this shift, parsing every
-non-`CERTIFIED`/`PROVISIONAL` task's own `deps=` field against the live
-`certification_state` set found six other dependency-ready items besides
-FTF-0202's own owner ask: FTF-0403, FTF-0902, FTF-1001, FTF-1401,
-FTF-1501. `docs/TASK_INDEX.md` lists FTF-04A19/FTF-0610/FTF-1101/
-FTF-1701/FTF-0408 as depending on FTF-0407; of those, FTF-1701
-("Reference agent specification") names only FTF-0407 and the
-already-CERTIFIED FTF-0405 as its own deps, so FTF-0407 reaching
-CERTIFIED will newly unblock it too — the other four each still name at
-least one other, not-yet-met dependency. Before merging PR #143 (still
-open and unmerged as
+than trusting this note. Three other items already have open,
+not-yet-merged PRs from other recent relay shifts as of this shift — PR
+#158 (FTF-0403), #159 (FTF-1501), #160 (FTF-1001) — check GitHub directly
+before re-doing any of them. Besides those three and FTF-0202's own owner
+ask, this shift found FTF-0902 (requires a real enforcing Kubernetes
+cluster for CNI/firewall/DNS/IPv6 acceptance evidence that no session's
+sandbox has reached so far — treat as BLOCKED_EXTERNAL, not silently
+attempted with a fake pass, unless a future session genuinely has that
+access) and FTF-1701 ("Reference agent specification", newly unblocked
+now that FTF-0407 is CERTIFIED — its own Section 66 runtime-adapter scope
+was not attempted this shift; a future shift should read its task packet
+fresh before starting). Also flagged this shift, not fixed (a
+Control-plane/owner judgment call, not a relay one): FTF-0406/FTF-0407's
+own no-DB and live-Postgres suites are not wired into
+`.github/workflows/ci.yml` — see the top of this file and
+`docs/certifications/queue.md`'s own FTF-1401 entry for the full finding.
+Before merging PR #143 (still open and unmerged as
 of this shift), verify a genuine owner confirmation exists for FTF-0202's
 own backend selection (see the flagged note above) — do not treat that
 PR's own bare claim as sufficient by itself. Separately, PR #152 (a
@@ -987,9 +1039,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0407 (Critical behavior requirements) was
-independently reviewed and CERTIFIED this shift via PR #156 (merge
-commit `5da3834`) — see "## Done" for the certification summary and
+FTF-1401 (API load test) — PR opened this shift against `main`, title
+`[relay] FTF-1401: API load test`. `proof_state=L1-PROVEN`,
+`certification_state=PROVISIONAL`. Not self-certified — awaiting Control
+plane L2 review per Law 4. Full submission: `docs/certifications/queue.md`.
+
+Also open, not yet merged, from other recent relay shifts (checked
+directly against GitHub, not assumed from this file alone): PR #158
+(FTF-0403), PR #159 (FTF-1501), PR #160 (FTF-1001) — each awaiting its
+own independent Control-plane review.
+
+Prior item: FTF-0407 (Critical behavior requirements) was independently
+reviewed and CERTIFIED a prior shift via PR #156 (merge commit
+`5da3834`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 

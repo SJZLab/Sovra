@@ -7364,3 +7364,170 @@ with `docs/spec-matrix.yaml`.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_0185UQFPYhDkeasgkhTHrE5K,
   2026-09-21.
+
+## 2026-09-21 — FTF-1401 — API load test
+- **PR:** opened against `main` from `claude/wizardly-fermat-uec7js`, title
+  `[relay] FTF-1401: API load test`.
+- **Commit:** implementation + contracts + CI wiring on one commit;
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, restoring the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404/FTF-0406/FTF-0407
+  two-commit precedent.
+- **Ground truth checked before picking work:** ran the CLAUDE.md.sha256
+  self-check (matched — no BLOCKER), read PROGRESS.md/QUEUE.md/this file
+  fresh, confirmed `cognee-cli` is not installed in this sandbox
+  (text-search fallback declared). Confirmed this session's branch sat
+  exactly at `main`'s tip (`5100bac`, FTF-0407 CERTIFIED, 33/300, 10
+  product-true) before any change. Checked GitHub directly for open PRs
+  rather than trusting `QUEUE.md` alone: found PR #158 (FTF-0403), #159
+  (FTF-1501), #160 (FTF-1001) already open from other, more recent relay
+  shifts than `QUEUE.md`'s own last update — none of these had merged
+  into `main` yet (`docs/spec-matrix.yaml` on `main` still showed 0
+  PROVISIONAL), so they were treated as already claimed, not re-done.
+  Independently recomputed the dependency-ready frontier from
+  `docs/TASK_INDEX.md`'s own `deps=` fields against the live 33-CERTIFIED
+  set in `docs/spec-matrix.yaml`: FTF-0202 (owner ask, still open/
+  unverified per `QUEUE.md`'s own flagged note), FTF-0403, FTF-0902,
+  FTF-1001, FTF-1401, FTF-1501, FTF-1701 (newly unblocked now that
+  FTF-0407 is CERTIFIED) are the seven dependency-ready items. Excluding
+  the three already claimed by open PRs above and the owner-blocked
+  FTF-0202 left FTF-0902, FTF-1401, FTF-1701. Read FTF-0902's own task
+  packet first: its acceptance clause requires installing and testing
+  actual CNI/firewall/DNS/IPv6/metadata restrictions on a real enforcing
+  Kubernetes cluster ("NetworkPolicy YAML on nonenforcing cluster is not
+  pass") — no such cluster is reachable from this sandbox, so it was set
+  aside rather than attempted with a fabricated pass. FTF-1401 was picked
+  over FTF-1701 as concretely achievable with only this sandbox's real
+  local Postgres + uvicorn (no target-agent container/runtime-adapter
+  infrastructure needed, unlike FTF-1701's own Section 66 scope).
+- **Task contract:** `python tools/r1_handoff.py packet FTF-1401 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Freeze the minimum
+  shared phase interface and domain schemas... Run declared API request
+  mix/load/resource profile and report p50/p95/p99/errors/backpressure";
+  "Independent review, exact merged commit, real relevant integration and
+  negative-test evidence recorded"), negative_acceptance ("Exclude
+  provider latency only where specified; no reduced hidden load or
+  dropped timed-out requests"), `database_changes: "No independent schema
+  change. Consume frozen contract"`, `files: [tests/performance/
+  api_load_test.py, tests/tasks/test_ftf_1401.py, packages/contracts/
+  openapi/14-interface.yaml, packages/contracts/jsonschema/
+  14-domain.schema.json]`, `dependencies: [FTF-0006, FTF-0401, FTF-0106]`
+  (all CERTIFIED), `contract_owner: FTF-1401`, `shared_lock_required:
+  [contracts:14]`.
+- **Disclosed partial profile (Section 49's own "if the environment is
+  smaller, report a partial profile, not full-scale PASS" rule):**
+  Section 49's full "Control API" profile targets 2 API replicas (2
+  vCPU/4GiB each), a 4 vCPU/16GiB database, 10 organizations/100
+  projects/1,000 models, 50 RPS for 30 minutes. This sandbox (and the new
+  CI job) run 1 API process against 1 local Postgres instance, 3
+  organizations/9 projects, for 15-30s — every run's `WorkloadSpec.
+  is_partial_profile` is `True` and `disclosed_gaps` names every
+  reduction; nothing is reported as a full-scale PASS. "Models"
+  (`ModelVersion`/FTF-1001) is not a CERTIFIED feature as of this task —
+  the request mix covers only the projects/tools surface genuinely live
+  today. Section 70's durable job-admission/idempotency-key contract does
+  not exist anywhere in this repository yet, so "no lost/duplicate
+  admitted jobs" is substituted with a real, independently re-queried
+  DB-count-vs-response-count check on tool creation (successful 201
+  responses vs. real `ToolDefinition` row count) — a real "nothing
+  admitted was lost" check bound to durable state, not a fabricated
+  duplicate-admission proof; genuine dedup stays a disclosed gap for
+  whichever later task builds Section 70. No explicit backpressure/
+  rate-limiting (429/503) exists yet — `backpressure_signal_count` is a
+  genuine, expected-zero measurement.
+- **Design:** `tests/performance/api_load_test.py` holds both the pure,
+  no-DB measurement/aggregation logic (`compute_percentile`,
+  `summarize_latencies`, `build_workload_plan`, `evaluate_acceptance`,
+  `execute_request`, `build_report`) and the real, live-Postgres/
+  live-uvicorn run (`main()`): seeds 3 real organizations/9 real projects
+  via direct DB insert (same `Organization`/`Workspace`/`Project`
+  construction pattern `test_ftf_0407_critical_behavior_requirements.py`
+  already established), builds a real `FastAPI` app from the already-live
+  `build_project_router`/`build_tool_definition_router` (FTF-0401/
+  FTF-0404, both CERTIFIED), serves it over a real local uvicorn thread,
+  then runs N worker threads issuing real HTTP requests (stdlib
+  `http.client`, no new dependency) at an 80/20 read/write mix for a
+  bounded duration, recording one `RequestSample` per request. Reads:
+  `GET .../projects/{id}`. Writes: `POST .../tools` creating a uniquely
+  named `read_only` tool each time. negative_acceptance ("no ... dropped
+  timed-out requests") is enforced by construction: `execute_request`
+  always returns exactly one `RequestSample`, including on `OSError`
+  (connection failure/timeout) — proven directly against a real closed
+  local TCP port in the no-DB suite, not a mock.
+- **Own fault injection (Law 1, two distinct vectors, both applied
+  directly to the real shipped source and reverted byte-identical
+  afterward, confirmed via `grep -n "FAULT INJECTION"` finding no match
+  post-revert):**
+  1. Removed the `except OSError` guard in `execute_request` (made it
+     re-raise) — `test_execute_request_never_raises_on_an_unreachable_host`
+     failed for real: `FAIL [FTF-1401] negative_acceptance: a request
+     against an unreachable host never raises out of execute_request --
+     it is reported as a real, status_code=0 sample, not dropped or
+     crashed on`. Reverted, re-ran clean.
+  2. Removed the unexpected-5xx-rate branch in `evaluate_acceptance` —
+     `test_evaluate_acceptance_fails_when_5xx_rate_exceeds_threshold`
+     failed for real: `FAIL [FTF-1401] negative_acceptance: a 0.5%
+     unexpected-5xx rate (threshold 0.1%) fails, and the reason names the
+     5xx clause`. Reverted, re-ran clean.
+- **Tests:** `tests/tasks/test_ftf_1401.py` — 17 no-DB test functions
+  (percentile/latency-summary edge cases, workload-plan proportion and
+  real-shuffle proofs, all three acceptance-threshold negative cases plus
+  a no-traffic-category positive case, the two fault-injected negative
+  cases above, a `build_report`-never-drops-a-sample proof, the
+  14-interface.yaml placeholder-path check, and a real `LoadTestReport`
+  validated against `14-domain.schema.json` via a hand-rolled stdlib-only
+  structural validator — same reasoning as FTF-1601's own suite for not
+  adding the third-party `jsonschema` package). All 17 pass:
+  `FTF-1401 no-DB proof: all checks passed (17 test functions)`.
+- **Real live-Postgres/live-uvicorn run** (reproduced identically at the
+  exact CI profile — 15s duration, 10 workers — before pushing): real
+  local PostgreSQL 16, `alembic upgrade head` run for real, real uvicorn
+  server, 3,831 real HTTP requests over 15.0s (254.8 achieved RPS): read
+  P95 48.9ms / write P95 48.8ms (Section 49's own Control-API thresholds:
+  500ms/1000ms), 0 unexpected 5xx, 0 failed/timed-out requests,
+  `acceptance_passed: true`. The independent DB-count-vs-response-count
+  check confirmed every successful (201) write response corresponds to a
+  real, durably persisted `ToolDefinition` row — nothing admitted was
+  lost. `FTF-1401 real API load-test proof: all checks passed`.
+- **Full regression, this sandbox:** `ruff check`/`ruff format --check`
+  clean repo-wide (100 files, `apps/api` + `tests`); `mypy .` clean
+  repo-wide (128 source files, 0 errors). Re-ran
+  `tests/tasks/test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/
+  `test_ftf_0406.py`/`test_ftf_0407.py` — all five "all checks passed,"
+  no regression. `git fetch --unshallow origin` (this sandbox's clone is
+  shallow by default, the same pre-existing artifact every prior
+  session has documented), then `python3 scripts/validate_spec.py
+  --strict` → "task graph and verification-map are clean."
+  `product_truth_check.py --fail-on-unwired` unchanged at `10/10`
+  (`proving_symbol` is deliberately `''` for this task, matching
+  FTF-1601's own precedent — a measurement tool is not a new served
+  production route). `scripts/status.py` unchanged at `33/300 certified ·
+  10 product-true` (correct — this submission is PROVISIONAL, not yet
+  independently certified).
+- **CI wiring:** added a new no-DB gate step (`uv run python3
+  tests/tasks/test_ftf_1401.py`, right after FTF-0405's own step) and a
+  new `api-load-test-integration` job (`services: postgres`, same
+  pinned-digest pattern as `tool-schema-crud-integration`, CI-profile
+  `SOVRA_LOAD_TEST_DURATION_SECONDS=15`/`SOVRA_LOAD_TEST_WORKERS=10`) to
+  `.github/workflows/ci.yml`. Verified the whole file still parses as
+  valid YAML (`yaml.safe_load`) before pushing.
+- **Disclosed, not fixed by this task (flagged for the next shift/
+  Control plane — out of this task's own scope):** while adding this
+  task's own CI wiring, found that FTF-0406's and FTF-0407's own no-DB
+  and live-Postgres test suites are **not** wired into
+  `.github/workflows/ci.yml` at all — no gate step or integration job
+  anywhere in that file references `test_ftf_0406.py`, `test_ftf_0407.py`,
+  or their `tests/integration/` counterparts (confirmed by direct
+  `grep -n "0406\|0407"` over the whole file finding zero matches, and by
+  reading the full gate-job step list, which stops at FTF-0405). Their
+  CERTIFIED evidence was genuinely reproduced by their own independent
+  certifier reviews (see this file's own FTF-0406/FTF-0407 CERTIFIED
+  entries above), so this is not a false-certification finding — but that
+  evidence is not continuously re-enforced by CI on every future PR the
+  way every other CERTIFIED task's is, which is exactly the kind of
+  gate-weakening-by-omission Law 9 exists to catch. Not fixed here: it
+  touches two other tasks' own already-CERTIFIED evidence/CI surface, not
+  this task's own declared `files`/`shared_lock_required`, and the relay
+  role does not improvise scope beyond a decided, sliced item's own DoD.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`.
+  Not self-certified — awaiting Control plane L2 review per Law 4.
