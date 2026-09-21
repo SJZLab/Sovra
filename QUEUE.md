@@ -1,39 +1,21 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1301
-  (CostProfile schema/UI, deps FTF-0401/FTF-0403/FTF-0103 all CERTIFIED).
-  STEP 0: verified `sha256sum CLAUDE.md` against the committed
-  `CLAUDE.md.sha256` — clean, no BLOCKER needed. Found the designated
-  branch `claude/wizardly-fermat-togs1a` already fully merged into `main`
-  (its own head commit, `f3141c4`, is an ancestor of `origin/main`, and
-  the remote branch no longer existed) — restarted it fresh from
-  `origin/main` per this session's own instructions rather than stacking
-  new work on already-merged history. STEP 1: read PROGRESS.md/QUEUE.md/
-  `docs/certifications/queue.md`, then cross-checked GitHub directly
-  (`list_pull_requests`) rather than trusting this file's own prior
-  "Next shift" note by itself: PR #167 ("[relay] FTF-1702: Tool
-  environment") had already been opened by a prior shift very shortly
-  before this one fired (2026-09-21T15:01Z) — genuinely claimed, not
-  picked again. PR #158 (stale FTF-0403 duplicate)/#159 (FTF-1501)/#160
-  (FTF-1001)/#161 (FTF-1401)/#162 (unverified FTF-0202 claim) remain open
-  and unmerged, all Control-plane review items this relay shift has no
-  standing to act on (per Law 4, producer never certifies own work, and
-  this session's own relay role is execution-only). Recomputed the
-  dependency-ready frontier directly against `docs/spec-matrix.yaml`'s
-  live `certification_state`, not by title alone: FTF-0202 stays a
-  genuine, unresolved owner ask (Secret-manager backend selection) that
-  blocks a large fraction of the graph transitively through
-  `FTF-H006`/`FTF-0203`+; FTF-0408 still carries the same real DoD-clarity
-  gap the FTF-1701 shift already found and disclosed (its own acceptance
-  clause reads on `AgentManifest.mandate_json`, a field with no real
-  storage anywhere in this repository yet — re-confirmed this shift by
-  re-pulling `docs/implementation/task-packets/FTF-0408.md` fresh, not
-  trusted from the prior shift's own claim); FTF-0902 still names a real
-  enforcing Kubernetes/CNI cluster as its own `resource_gate`
-  prerequisite, unavailable in this sandbox. FTF-1301 is the
-  lowest-task-ID item among what remains genuinely unblocked and
-  unclaimed by any open PR: all three of its own dependencies
-  (FTF-0401/FTF-0403/FTF-0103) are independently confirmed CERTIFIED in
-  `docs/spec-matrix.yaml`, and no open PR names FTF-1301.
+Updated: 2026-09-21 (scheduled relay shift) — recomputed the
+  dependency-ready frontier fresh against `docs/spec-matrix.yaml`
+  (36/300 CERTIFIED now, up from 35) and found **no new, unblocked,
+  unclaimed item to implement**: all nine dependency-ready tasks
+  (`FTF-0202`, `FTF-0408`, `FTF-0902`, `FTF-1001`, `FTF-1302`, `FTF-1401`,
+  `FTF-1501`, `FTF-1702`, `FTF-R016`) are already either a standing,
+  already-declared blocker (owner ask / DoD-clarity gap / resource gate)
+  or already covered by a real, open PR (#160/#170/#161/#159/#167/#172,
+  the last two of which — #170 and #172/#173 — Control-plane has already
+  independently reviewed and found NOT CERTIFIED purely for the ongoing
+  CI-runner-provisioning outage, not a code defect). Re-verified that
+  outage is still live directly against the last 10 `ci.yml` workflow
+  runs (last genuine success run #255, 17:35Z; every run since, including
+  #263 at 21:15Z, fails identically) rather than trusting the existing
+  "Owner actions — current" entry without a fresh check. No code changed,
+  no new PR opened this shift — full detail in `PROGRESS.md`'s matching
+  entry. Doc-only tracking PR opened for this note.
 
   **STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-1301` fresh. Read
   the existing FTF-0403 (`budget_policy_schema.py`/`_crud.py`/`_routes.py`/

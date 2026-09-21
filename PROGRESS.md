@@ -1,16 +1,78 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #170) — independent CERTIFY
-  review of FTF-1302 (Local compute costing): **NOT CERTIFIED**, but not
-  for a code reason — the shipped code, tests, and fault-injection
-  evidence were independently reproduced and confirmed sound.
-  Certification is blocked solely because GitHub Actions is not
-  provisioning CI runners for this repository (18/18 jobs failing with no
-  runner ever assigned, confirmed independently of the producer's own
-  finding on the same PR), elevated to "Owner actions — current" on
-  `main` in this same shift. See the new section directly below for the
-  full review. `docs/certifications/queue.md` carries the complete
-  evidence.
+Updated: 2026-09-21 (scheduled relay shift) — recomputed the
+  dependency-ready frontier fresh against `docs/spec-matrix.yaml` and
+  found **no new, unblocked, unclaimed item to implement this shift** —
+  every dependency-ready task is already covered by an open PR or a
+  standing, already-declared blocker. See the new section directly below
+  for the full accounting. No code changed this shift.
+
+## 2026-09-21 — Relay shift: no new unblocked work available (full frontier already claimed or blocked)
+STEP 0: `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256` —
+clean, no BLOCKER needed. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`, then cross-checked directly against
+GitHub (`list_pull_requests`) and `docs/spec-matrix.yaml` rather than
+trusting either file's own prior snapshot by itself — both PR #172
+(`[relay] FTF-R016`) and PR #173 (Control plane's own review of it, NOT
+CERTIFIED for the same CI-runner reason as PR #170) had already landed
+between this shift firing and the last file update, newer than either
+tracked file's own top entry.
+
+STEP 1: parsed every task's live `certification_state` and `deps=` in
+`docs/spec-matrix.yaml` directly (not by title or a prior shift's list) —
+36/300 now `CERTIFIED` (up from 35; FTF-1301 reached CERTIFIED via PR
+#168/#169 since the last relay shift). Nine tasks have every dependency
+`CERTIFIED` but are not `CERTIFIED` themselves — the full ready frontier:
+`FTF-0202`, `FTF-0408`, `FTF-0902`, `FTF-1001`, `FTF-1302`, `FTF-1401`,
+`FTF-1501`, `FTF-1702`, `FTF-R016`. Every one of the nine is already
+spoken for:
+- `FTF-0202` — the standing owner ask (secret-backend selection, see
+  "Owner actions — current"), unresolved; PR #162's own unverified claim
+  still not treated as a resolution, matching every prior shift's
+  standing skepticism.
+- `FTF-0408` — still the same real DoD-clarity gap disclosed by the
+  FTF-1701 shift (`AgentManifest.mandate_json` has no real storage
+  anywhere in this repository yet); re-confirmed, not re-improvised.
+- `FTF-0902` — still names a real enforcing Kubernetes/CNI cluster as its
+  own `resource_gate` prerequisite, unavailable in this sandbox.
+- `FTF-1001`, `FTF-1401`, `FTF-1501` — already real, open, PROVISIONAL PRs
+  (#160, #161, #159 respectively), unreviewed, awaiting Control-plane.
+- `FTF-1302` — open PR #170, already independently reviewed by
+  Control-plane and found NOT CERTIFIED solely for the CI-runner outage
+  (code itself confirmed sound); nothing left for a relay shift to do on
+  it.
+- `FTF-1702` — open PR #167, unreviewed, awaiting Control-plane.
+- `FTF-R016` — open PR #172, already independently reviewed by
+  Control-plane via PR #173 and found NOT CERTIFIED for the identical
+  CI-runner reason, code confirmed sound; nothing left for a relay shift
+  to do on it either.
+
+With every dependency-ready task already claimed by an open PR or blocked
+by a standing, already-declared ask, implementing any of them again would
+duplicate real work in progress — exactly the class of mistake PR #158
+already made once against FTF-0403 and this file's own history has
+warned against since. This shift did not pick, implement, or open any new
+PR as a result.
+
+Also independently reconfirmed the CI-runner-provisioning outage is still
+live, a third and fourth data point beyond PR #170's own two: pulled the
+last 10 `ci.yml` workflow runs directly
+(`actions_list`/`list_workflow_runs`) — the last genuine `success` was run
+#255 (FTF-1301 certification tracking, 2026-09-21T17:35Z); every run
+since, including run #263 (PR #173's own CI, 21:15Z, less than a minute
+before this shift's own check), completed with `conclusion: failure`
+matching the same signature (near-instant completion, no runner ever
+assigned). No change to the existing "Owner actions — current" entry was
+needed — it already states this precisely; this shift only re-verified it
+rather than assuming it still holds.
+
+**STEP 4 stop condition:** none of (a)-(e) literally applies (this shift
+completed no item and found no true blocker of its own to newly report),
+but the practical effect is the same as (a): every real, unblocked item is
+already `PROVISIONAL` and waiting on Control-plane review or on an
+existing owner ask, so this shift stops here rather than inventing work.
+Six open PRs (#158 stale-duplicate/close-candidate, #159, #160, #161,
+#162 unresolved-claim, #167, #170, #172/#173) remain Control-plane's own
+next items, unchanged by this shift.
 
 ## 2026-09-21 — Control plane: FTF-1302 (PR#170) independently reviewed, NOT CERTIFIED (CI runner-provisioning failure, not a code defect)
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
