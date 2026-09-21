@@ -10,10 +10,14 @@ create/get/list/edit/save-ui-state/archive for a workspace-scoped
 routes (the task packet's own abbreviated `api_contract` mentions both) --
 those are FTF-0404 ("Tool schema CRUD")/FTF-0407 ("Critical behavior
 requirements")/FTF-0408 ("Requirements UI")'s own, later, separately
-dependency-gated tasks (see docs/TASK_INDEX.md) -- nor real security-
-profile enforcement (FTF-0402) or a real BudgetPolicy to reference
-(FTF-0403). `budget_policy_id` stays a schema column this task's own
-routes never accept, for a later task to write through.
+dependency-gated tasks (see docs/TASK_INDEX.md). PATCH now accepts
+`budget_policy_id` (FTF-0403): `project_crud.py`'s `update_project` runs
+it through `app.services.budget_policy.enforce_budget_policy_reference`
+before persisting it, the same real-lookup-before-write discipline
+`security_profile` (FTF-0402) already established for this router. There
+is still no route to *author* a `BudgetPolicy` itself -- FTF-0403's own
+disclosed scope, see `apps/api/app/services/budget_policy.py`'s own
+module docstring for exactly why.
 
 Path shape (refined from the task packet's own abbreviated
 `api_contract: "/api/v1/projects; /requirements; /tools; ..."` to the same
@@ -69,6 +73,7 @@ from app.projects.project_crud import (
     update_project,
 )
 from app.projects.project_schema import Project
+from app.services.budget_policy import BudgetPolicyNotFoundError, BudgetPolicyStateError
 
 __all__ = ["PROJECT_READ_ROLES", "PROJECT_WRITE_ROLES", "build_project_router"]
 
@@ -165,6 +170,20 @@ def _optional_str(payload: dict[str, Any], key: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise HTTPException(status_code=400, detail=f"{key} must be a string or null")
     return value
+
+
+def _optional_uuid(payload: dict[str, Any], key: str) -> uuid.UUID | None:
+    if key not in payload:
+        return None
+    value = payload[key]
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"{key} must be a uuid string or null")
+    try:
+        return uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{key} must be a valid uuid") from exc
 
 
 def _optional_dict(payload: dict[str, Any], key: str) -> dict[str, object] | None:
@@ -279,15 +298,16 @@ def build_project_router(
                     description=_optional_str(payload, "description"),
                     agent_objective=_optional_str(payload, "agent_objective"),
                     security_profile=_optional_str(payload, "security_profile"),
+                    budget_policy_id=_optional_uuid(payload, "budget_policy_id"),
                     expected_row_version=_require_int(payload, "expected_row_version"),
                     actor=_actor_from(ctx, request),
                 )
                 body = _serialize(project)
-        except (ProjectNotFoundError, TenantContextError) as exc:
+        except (ProjectNotFoundError, BudgetPolicyNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         except ProjectConcurrencyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except ProjectStateError as exc:
+        except (ProjectStateError, BudgetPolicyStateError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

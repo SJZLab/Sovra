@@ -52,6 +52,7 @@ from app.projects.project_schema import (
     validate_security_profile,
     validate_ui_state,
 )
+from app.services.budget_policy import enforce_budget_policy_reference
 from app.services.project_security_profile import enforce_security_profile_selection
 
 __all__ = [
@@ -250,6 +251,7 @@ def apply_edits(
     description: str | None,
     agent_objective: str | None,
     security_profile: str | None,
+    budget_policy_id: uuid.UUID | None = None,
     expected_row_version: int,
 ) -> bool:
     """The pure, DB-free core of `update_project`. Refuses
@@ -257,7 +259,13 @@ def apply_edits(
     the same precedent FTF-0201/FTF-0301 established for a revoked
     connection / a ready-or-archived artifact. `project_type` is
     deliberately never accepted here -- it is immutable after creation
-    (see `project_schema.py`'s own module docstring)."""
+    (see `project_schema.py`'s own module docstring).
+
+    `budget_policy_id` (FTF-0403) is already validated by `update_project`
+    (a real `BudgetPolicy` lookup, requiring database access this pure
+    function deliberately never performs) before it ever reaches here --
+    the same split `security_profile`'s own organization-inheritance check
+    already establishes."""
     if project.status == "archived":
         raise ProjectStateError(f"project {project.id} is archived and cannot be edited")
     if expected_row_version != project.row_version:
@@ -278,6 +286,9 @@ def apply_edits(
         changed = True
     if security_profile is not None:
         project.security_profile = validate_security_profile(security_profile)
+        changed = True
+    if budget_policy_id is not None:
+        project.budget_policy_id = budget_policy_id
         changed = True
 
     if not changed:
@@ -320,6 +331,7 @@ def update_project(
     description: str | None = None,
     agent_objective: str | None = None,
     security_profile: str | None = None,
+    budget_policy_id: uuid.UUID | None = None,
     expected_row_version: int,
     actor: ActorInfo,
 ) -> Project:
@@ -328,7 +340,16 @@ def update_project(
     (FTF-0402) before `apply_edits` ever runs -- this task's own
     negative_acceptance made real: a project field, or a direct API call,
     cannot relax an inherited organization security policy by editing an
-    existing project any more than it can by creating a new one."""
+    existing project any more than it can by creating a new one.
+
+    `budget_policy_id` (FTF-0403), when being set, is validated through
+    `enforce_budget_policy_reference` before `apply_edits` ever runs --
+    denied identically whether the referenced `BudgetPolicy` does not
+    exist at all, belongs to a different organization, belongs to a
+    different project in this same organization, or is no longer
+    `active`. There is no route through this function that lets a caller
+    attach a budget policy without that real, live lookup succeeding
+    first -- `apply_edits` itself never touches the database."""
     project = _fetch_or_raise(session, context, project_id)
     if security_profile is not None:
         organization_default_security_profile = _organization_default_security_profile(
@@ -337,12 +358,20 @@ def update_project(
         security_profile = enforce_security_profile_selection(
             organization_default_security_profile, security_profile
         )
+    if budget_policy_id is not None:
+        enforce_budget_policy_reference(
+            session,
+            organization_id=context.organization_id,
+            project_id=project.id,
+            budget_policy_id=budget_policy_id,
+        )
     apply_edits(
         project,
         name=name,
         description=description,
         agent_objective=agent_objective,
         security_profile=security_profile,
+        budget_policy_id=budget_policy_id,
         expected_row_version=expected_row_version,
     )
     write_audit_event(
