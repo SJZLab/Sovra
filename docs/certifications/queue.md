@@ -7366,7 +7366,8 @@ with `docs/spec-matrix.yaml`.
   2026-09-21.
 
 ## 2026-09-21 — FTF-1401 — API load test
-- **PR:** opened against `main` from `claude/wizardly-fermat-uec7js`, title
+- **PR:** https://github.com/SJZLab/Sovra/pull/161
+  (`claude/wizardly-fermat-uec7js` → `main`), title
   `[relay] FTF-1401: API load test`.
 - **Commit:** implementation + contracts + CI wiring on one commit;
   `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a

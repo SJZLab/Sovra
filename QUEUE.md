@@ -1039,7 +1039,8 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1401 (API load test) — PR opened this shift against `main`, title
+FTF-1401 (API load test) — PR #161
+(https://github.com/SJZLab/Sovra/pull/161), title
 `[relay] FTF-1401: API load test`. `proof_state=L1-PROVEN`,
 `certification_state=PROVISIONAL`. Not self-certified — awaiting Control
 plane L2 review per Law 4. Full submission: `docs/certifications/queue.md`.
