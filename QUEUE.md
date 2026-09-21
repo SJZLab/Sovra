@@ -1503,6 +1503,38 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+2026-09-21 (this shift, elevated to an owner ask): **GitHub Actions CI
+appears to have stopped provisioning runners for this repository —
+likely a billing/spend limit or account-level capacity cap, outside any
+session's access to diagnose or fix.** Evidence, all on PR #170
+(https://github.com/SJZLab/Sovra/pull/170), escalating across three
+consecutive pushes to the same PR: (1) first push — 10/18 jobs failed
+with `runner_id: 0` (no runner ever assigned), 2-12s "completion," no
+logs available; the other 8 jobs ran and passed normally. (2) A stale
+duplicate CI run (from two rapid pushes) was cancelled and the 10 failed
+jobs re-run once, per this repo's own CI-red policy — failed identically,
+even faster (2s), with no other workflow run active anywhere in the repo
+at the time (ruling out ordinary concurrency contention from this PR's
+own duplicate pushes as the full explanation). (3) A third push — a
+**pure documentation commit touching zero code** (`QUEUE.md` only) — came
+back with **all 18/18 jobs failing** the same way (`runner_id: 0`,
+~2s each). A commit that cannot possibly affect test outcomes getting a
+100% failure rate, with jobs never reaching a runner at all, is not a
+code defect in this or any PR — it reads as the CI provider itself
+declining to schedule work for this repository. The same 18-job matrix
+had run clean in full minutes earlier on this identical workflow file
+(run #255, PR #168), so this is a new, sudden-onset condition, not a
+standing one this shift simply hadn't hit before. This session has
+already used the one re-run this repo's own CI-red policy allows and has
+no billing/account-admin access to check or raise a GitHub Actions spend
+limit. If this repeats on the next PR event, treat it as continued
+evidence of the same root cause, not a fresh incident requiring another
+re-run. Flagging now rather than letting every future relay/certifier
+shift rediscover the same wall independently — this blocks the entire
+CI-gated PROVISIONAL→CERTIFIED pipeline, not just this one item. Remove
+this item the moment the owner resolves it (or a session confirms CI is
+provisioning runners again).
+
 2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
 backend selected before it can be implemented for real.** Its own
 acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
