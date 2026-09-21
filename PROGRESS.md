@@ -1,10 +1,128 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #165) — independent CERTIFY
-  review of FTF-1701 (Reference agent specification): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1702 (Tool
+  environment): PROVISIONAL, PR opened, awaiting independent
+  Control-plane L2 certification. See the new section directly below for
+  the full P/E/V record. `docs/certifications/queue.md` carries the
+  complete submission report.
+
+## 2026-09-21 — scheduled relay shift — FTF-1702 (Tool environment)
+
+**STEP 0.1/0.2:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh this shift, never assumed state from prior context.
+CLAUDE.md integrity self-check ran first: `sha256sum CLAUDE.md` matched
+the committed `CLAUDE.md.sha256` byte-for-byte. `cognee-cli` not invoked
+this shift (text-search/direct-file-read fallback used throughout,
+declared here per STEP 0.2).
+
+**STEP 1:** `docs/spec-matrix.yaml` itself carries no populated `deps`
+field on any non-`CERTIFIED` task, so the dependency-ready frontier was
+recomputed by a fresh script-driven join of `docs/TASK_INDEX.md`'s real
+`Dependencies` column against `docs/spec-matrix.yaml`'s live
+`certification_state` set, not merely trusted from the prior shift's own
+"Next shift" note. Dependency-ready: FTF-0902, FTF-0202 (owner ask,
+unresolved), FTF-1001, FTF-1401, FTF-1301 (CostProfile schema/UI — newly
+ready now that FTF-0403 is CERTIFIED, not in the prior shift's own
+frontier), FTF-0408, FTF-1702, FTF-1501, FTF-R016. Cross-checked live
+GitHub state via `list_pull_requests` before picking: PRs #158/#159/
+#160/#161/#162 are still open exactly as the prior shift's own flagged
+note described; none acted on by this shift (a relay shift, not a
+certifier shift — no merge/close authority exercised). FTF-1001/FTF-1401/
+FTF-1501 not re-implemented (would duplicate PRs #160/#161/#159).
+FTF-0408/FTF-0902's own disclosed DoD-clarity/resource-gate gaps are
+unchanged, re-checked not re-litigated. FTF-1301/FTF-R016 are genuinely
+unclaimed with no open PR, but FTF-1702 has the lowest task-ID among
+items with no disclosed gap, no missing external resource, and no
+duplicated in-flight PR — and is exactly the item the prior (FTF-1701)
+shift's own "Next shift" note predicted. **Working: FTF-1702 (Tool
+environment).**
+
+**STEP 2 — P (read code, form hypothesis, no changes yet):** Read
+`evals/reference/reference_agent_specification.py` (FTF-1701, CERTIFIED)
+in full: `ReferenceBusinessServer`/`dispatch_tool_call` are real,
+tested, live building blocks with no disposable/reseedable lifecycle of
+their own. Read `docs/implementation/task-packets/FTF-1702.md`'s own
+resolved contract: acceptance clause 1 ("Implement real disposable
+seeded backend for search/get/create-note/request-approval/
+execute-approved-action"), negative_acceptance ("Canned success tools
+and unguarded financial writes cannot satisfy target-product test
+environment"), `database_changes`/`resource_gate` both moot (no DB/
+network/GPU prerequisite named), `shared_lock_required: []`,
+`contract_owner: FTF-1701`. Hypothesis: build a thin `ToolEnvironment`
+wrapper implementing Section 66.3's own named `reset` operation
+("destroy/reseed disposable namespace between independent cases") on
+top of FTF-1701's real building blocks, adding only a seed-membership
+guard of its own — no new contract, no new database, no new live route.
+
+**STEP 2 — E (write code and test, show test FAIL first):** Wrote
+`evals/reference/tool_environment.py` (`ToolEnvironmentSeed`,
+`ToolEnvironment`, `build_tool_environment`) and `tests/reference/
+test_ftf_1702.py` (12 no-DB test functions) together, then proved both
+of this task's own real guards catch a real regression before finalizing:
+1. Disabled the unseeded-tenant/subject guard in `dispatch()` — reran
+   the suite and got a genuine `FAIL [FTF-1702]` on exactly the three
+   named guard checks; reverted byte-identical (`diff` against the
+   pre-injection copy confirmed empty), suite re-confirmed "all checks
+   passed".
+2. Replaced `reset()`'s real discard-and-rebuild body with an in-place
+   mutation of the existing server's own seeded records — reran the
+   suite and got a genuine `FAIL [FTF-1702]` on exactly the three named
+   disposal checks; reverted byte-identical, suite re-confirmed "all
+   checks passed".
+
+**STEP 2 — V (verify):** `python3 tests/reference/test_ftf_1702.py` — all
+12 checks passed. `python3 tests/reference/test_ftf_1701.py` — all 24
+checks passed, unchanged (no regression from wrapping its own building
+blocks). `product_truth_check.py --fail-on-unwired` — no TRACKER, stays
+`11/11` (`proving_symbol` deliberately empty — this task adds no live
+caller into any `SOURCE_ROOTS` path, matching FTF-1701/FTF-1401/
+FTF-1601's own precedent, not inflation). `ruff check .`/`ruff format
+--check .`/`mypy .` clean repo-wide (139 source files; the 2 remaining
+mypy errors are the pre-existing, unrelated `authlib.jose` stub gap,
+confirmed identical on `main`). `pnpm install --frozen-lockfile` had not
+yet been run in this sandbox this shift (the same pre-existing,
+previously-documented environment gap every prior shift has already
+noted) — confirmed by re-running `test_ftf_0002.py`/`test_ftf_0003.py`/
+`test_ftf_h001.py` clean immediately after installing. Full `tests/
+tasks/test_ftf_*.py` sweep (30 files) clean afterward. `git fetch
+--unshallow origin` first (this sandbox's own clone is shallow by
+default); `validate_spec.py --strict` clean. Wired
+`.github/workflows/ci.yml` with one new `gate` job step (`uv run python3
+tests/reference/test_ftf_1702.py`, right after the FTF-1701 step) — no
+new integration job, since this task touches no database/network/GPU
+resource.
+
+**STEP 3 metrics after this shift:** 35/300 certified (unchanged — this
+shift implements, it does not certify); 1 new provisional this shift
+(FTF-1702), plus the three pre-existing provisionals still open and
+unreviewed (FTF-1501/FTF-1001/FTF-1401, PRs #159/#160/#161); one stale
+duplicate PR still open (PR #158); one owner-ask resolution claim still
+unverified (PR #162, FTF-0202 stays open). `scripts/status.py`'s own
+authoritative "product-true" count stays 11; `product_truth_check.py
+--fail-on-unwired` — `11/11`. PR opened as PROVISIONAL;
+`docs/spec-matrix.yaml`/`QUEUE.md`/`docs/certifications/queue.md` all
+updated in a second, tracking-doc-only commit on the same branch,
+matching the established two-commit precedent.
+
+**STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+reporting and stopping to await independent Control-plane L2
+certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+FTF-1702 (this shift's own submission, see above) is now PROVISIONAL, PR
+opened, awaiting independent Control-plane L2 certification — that
+review is the natural next action, matching the established relay/
+certifier alternation. Four other open PRs still need Control-plane
+attention: (1) close PR #158 without merging (superseded by the
+already-merged PR #163); (2) certify or reject PR #159/#160/#161
+(FTF-1501/FTF-1001/FTF-1401); (3) resolve PR #162's own FTF-0202 claim
+one way or the other. If a relay session fires next instead: recompute
+the dependency-ready frontier fresh — FTF-1702 reaching CERTIFIED will
+newly unblock FTF-1703 ("Training dataset") only once FTF-0506 (not yet
+CERTIFIED) also lands; FTF-1301 (CostProfile schema/UI, deps FTF-0401/
+FTF-0403/FTF-0103 all CERTIFIED, no open PR) is a real, unpicked,
+UI+migration-bearing item worth picking next if no certifier session
+fires first. FTF-0408/FTF-0902's own disclosed DoD-clarity/resource-gate
+gaps are unchanged and still not resolved.
 
 ## 2026-09-21 — Control plane: FTF-1701 (PR#165) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
