@@ -8004,3 +8004,105 @@ Full entry: docs/certifications/ledger.md.
   `proving_test: tests/tasks/test_ftf_1301.py`. Certified stays 35/300;
   Product-true rises to 12/12. Awaiting independent Control-plane L2
   review.
+
+## 2026-09-21 — Control plane: FTF-1301 (PR#168) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #168.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01GWAaJpcZSaNqKJ9zmk2CDz`; both commits on PR #168
+  (`61995ac`, `cadb320`) carry `Claude-Session: .../
+  session_0175jrFsfGmpVqpjJFqPTiAE` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** the webhook fired
+  at PR-open time, before CI had finished (`gate` still `queued` on the
+  first check) — polled `get_check_runs` to completion rather than
+  trusting a self-report. All 18 real GitHub Actions check runs
+  `completed`/`success` on the real final head
+  (`cadb3202103ab3c56811af722406bfb1bac38eeb`, run `35631327707`), `gate`
+  and the new `cost-profile-integration` job both included.
+- **Merge:** the PR was still open/unmerged at review time (the relay's
+  own shift had not yet reached its own merge-on-green step before this
+  webhook fired). Merged it directly (`merge_pull_request`,
+  `expectedHeadSha` pinned to the confirmed green head) — pre-authorized
+  under CLAUDE.md's "Do without asking: ... merge on green + L1 doc
+  (PROVISIONAL)". Merging is a distinct step from certifying (Law 4
+  governs the latter, not the former) and does not substitute for the
+  independent review below.
+- **Diff read directly:** `apps/api/app/costs/cost_profile_schema.py`,
+  `cost_profile_crud.py`, `cost_profile_routes.py`,
+  `apps/api/alembic/versions/0008_cost_profiles.py`,
+  `apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx`,
+  `packages/contracts/{openapi,jsonschema}/13-*`. Confirmed
+  `is_certifiable_cheapest`'s three disqualifying conditions (expired,
+  unverified, zero-provider-rate) match the negative_acceptance clause
+  exactly, including that a verified, unexpired `local_hardware` zero
+  rate is NOT disqualified; confirmed `validate_rate_amount` refuses
+  negative amounts at the application layer; confirmed the migration
+  FORCEs row-level security, grants `sovra_app` SELECT/INSERT/UPDATE only
+  (no DELETE), and adds a real `CHECK(rate_amount >= 0)` constraint;
+  confirmed every route (including reads and search) is gated to
+  `organization_admin` alone, matching Section 45's literal role table;
+  confirmed `app.main` includes `build_cost_profile_router` for real.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1301 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — the
+  committed `docs/implementation/task-packets/FTF-1301.md` matched.
+  Acceptance clause 1 ("Record dated provider/local hardware TCO
+  rates/currency/source and display unknowns honestly") and
+  negative_acceptance ("Token price zero is not local compute free;
+  unverified/expired rate cannot certify cheapest") both confirmed met
+  by the code above.
+- **Own reproduction, this sandbox** (`uv sync --all-packages`, `pnpm
+  install`, `git fetch --unshallow`, a real directly-installed
+  PostgreSQL 16 cluster — no container-registry egress in this sandbox,
+  migrated by the integration script itself via
+  `SOVRA_DATABASE_URL`/`SOVRA_APP_DB_PASSWORD`): `tests/tasks/
+  test_ftf_1301.py` and `tests/integration/test_ftf_1301_cost_profile.py`
+  against the live database both — "all checks passed".
+- **Own fault injection, reproducing both of the producer's own vectors,
+  both reverted byte-identical (`diff` confirmed empty) and the suites
+  re-confirmed clean afterward:**
+  1. Disabled the zero-provider-rate disqualification in
+     `is_certifiable_cheapest` — `tests/tasks/test_ftf_1301.py` failed
+     with exactly the named negative_acceptance check, exit code 1.
+  2. Disabled the negative-rate application-layer guard in
+     `validate_rate_amount` against the real live database —
+     `tests/integration/test_ftf_1301_cost_profile.py` failed with
+     exactly the named "a negative rate is refused (400)" check; the raw
+     INSERT reached the database and was independently refused a second
+     time by the real `CHECK(rate_amount >= 0)` constraint
+     (`sqlalchemy.exc.IntegrityError`), confirming the defense-in-depth
+     claim is real, not asserted.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep all "all checks passed" or equivalent, after
+  `pnpm install` resolved a pre-existing, undocumented
+  frontend-dependency gap in this sandbox affecting
+  FTF-0002/FTF-0003/FTF-H001 (confirmed a sandbox artifact, not a
+  regression); `ruff`/`mypy`/`pnpm lint+typecheck+format` all clean
+  repo-wide (2 pre-existing, unrelated `authlib.jose` mypy stub gaps
+  only); `pnpm run test` (vitest) — 19/19 passed across all 5 spec
+  files.
+- **Static checks re-run clean:** `scripts/validate_spec.py --strict`
+  clean after `git fetch --unshallow` (18 `stale_commit` defects present
+  before unshallowing, none after). `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `12/12` product-true;
+  `is_certifiable_cheapest` confirmed a genuine, non-test live caller in
+  `cost_profile_crud.py`'s own `search_cost_profiles` (grepped directly
+  — not 0/0, not inflation).
+- Dependencies FTF-0401/FTF-0403/FTF-0103 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+  `shared_lock_required: contracts:13` confirmed as the first and only
+  claim on that contract slot.
+- **No blocking defect found.** Merged PR #168 (merge commit
+  `9a47458118ee46095270f4aa9758b5ec35efeea5`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` — `['FTF-1301']` updated. Certified:
+  36/300, Product-true: 12/12.
+- **Out of scope, flagged not silently dropped:** PR #159/#160/#161/#167
+  (FTF-1501/FTF-1001/FTF-1401/FTF-1702) remain genuinely open and
+  PROVISIONAL with no `docs/certifications/queue.md` entry of their own
+  — not reviewed this shift (this shift's trigger and scope was PR #168
+  only); left flagged in QUEUE.md for a future Control-plane pass.
+
+Full entry: docs/certifications/ledger.md.
