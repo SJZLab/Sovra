@@ -436,32 +436,38 @@ evidence bar) or close PR #143 without merging.
 ## Next shift
 Two items are now PROVISIONAL and awaiting independent Control-plane L2
 certification: FTF-0403 (PR #158, CI green 17/17, from an earlier same-day
-relay shift) and FTF-1501 (this shift's own submission, PR to be opened).
-A certifier session picking either is the natural next action, matching
+relay shift) and FTF-1501 (PR #159, this shift's own submission). A
+certifier session picking either is the natural next action, matching
 the established relay/certifier alternation — FTF-0403 was opened first
 and has no external-service ask, so certify it first if only one certifier
-shift fires. If a certifier session is not what fires next: recompute the
-dependency-ready frontier fresh rather than trusting this note — as of
-this shift, parsing every non-`CERTIFIED`/`PROVISIONAL` task's own
-`deps=` field against the live `certification_state` set found FTF-0902,
-FTF-1001, FTF-1401, FTF-1701 as the remaining dependency-ready items
-besides FTF-0202's own owner ask (FTF-1701 newly unblocked now that
-FTF-0407 is CERTIFIED — it names only FTF-0407 and the already-CERTIFIED
-FTF-0405 as its own deps). None of FTF-0902/FTF-1001/FTF-1401/FTF-1701
-carries an actual `CAP-xx` requirements tag (all are `AF-xx`), so the
-next relay shift should read each one's own task packet before picking,
-rather than assuming CAP-number order applies. Also fixed this shift,
-disclosed above: `.github/workflows/ci.yml` had no gate step for
-FTF-0406/FTF-0407 and no integration job for FTF-0407 — both already
-CERTIFIED before this gap was found. A future Control-plane session
-should treat those two certifications' own "CI reconfirmed green" claims
-as needing re-verification now that the jobs actually exist and can run
-for real. Before merging PR #143 (still open and unmerged as of this
-shift), verify a genuine owner confirmation exists for FTF-0202's own
-backend selection (see the flagged note above) — do not treat that PR's
-own bare claim as sufficient by itself. Separately, PR #152 (a doc-only
-"Next shift" catch-up, opened by an earlier shift, already superseded) is
-still open/unmerged — a future certifier session should close it without
+shift fires.
+
+**FTF-0202's own backend-selection ask is now RESOLVED** (2026-09-21,
+live owner conversation — see "## Owner actions — current" for the full
+record): OpenBao selected. PR #143 (the prior, insufficiently-evidenced
+claim of the same decision) was closed without merging, superseded by the
+properly-evidenced record in this file. FTF-0202 is now genuinely
+dependency-ready — a future relay shift should recompute the frontier
+fresh (never assume the list below is still current) and may now
+legitimately pick it: FTF-0202, FTF-0902, FTF-1001, FTF-1401, FTF-1701
+were the dependency-ready items as of this shift (FTF-1701 newly
+unblocked now that FTF-0407 is CERTIFIED — it names only FTF-0407 and the
+already-CERTIFIED FTF-0405 as its own deps). FTF-0202 itself is a real
+implementation task (standing up an OpenBao resolver against
+`vault://`/`openbao://` refs) requiring its own PEV cycle, not something
+this owner-ask resolution did. None of FTF-0202/FTF-0902/FTF-1001/
+FTF-1401/FTF-1701 carries an actual `CAP-xx` requirements tag (all are
+`AF-xx`), so the next relay shift should read each one's own task packet
+before picking, rather than assuming CAP-number order applies.
+
+Also fixed this shift, disclosed above: `.github/workflows/ci.yml` had no
+gate step for FTF-0406/FTF-0407 and no integration job for FTF-0407 —
+both already CERTIFIED before this gap was found. A future Control-plane
+session should treat those two certifications' own "CI reconfirmed
+green" claims as needing re-verification now that the jobs actually
+exist and can run for real. Separately, PR #152 (a doc-only "Next shift"
+catch-up, opened by an earlier shift, already superseded) is still
+open/unmerged — a future certifier session should close it without
 merging.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
@@ -1033,37 +1039,44 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
-backend selected before it can be implemented for real.** Its own
+None currently. FTF-0202's own secret-backend ask (open since 2026-09-20)
+was resolved this shift — see "RESOLVED" immediately below.
+
+**RESOLVED (2026-09-21, live owner conversation, this session):** the
+owner directly confirmed, in this conversation, selection of **OpenBao**
+(self-hosted, Vault's open-source fork) as FTF-0202's secret-management
+backend, with reasoning: a self-hosted/self-built custom solution was
+judged too complex to deploy, and a cloud-provider-managed secret store
+(AWS Secrets Manager / GCP Secret Manager / etc.) introduces both an
+external dependency and ongoing cost that a self-hosted open-source
+backend avoids — matching the option list already recorded below and the
+existing `vault://`/`openbao://` reference-string shape convention
+FTF-0101/FTF-0201 already validate against. This supersedes PR #143
+("Owner decision: FTF-0202 backend selected (OpenBao)") — that PR made
+the same claim (and was opened from the owner's own GitHub account,
+`samerzakaria`) but carried no corroborating evidence in its own body
+(no live-conversation citation, no reasoning tied to the architecture),
+the exact gap a prior Control-plane certifier shift flagged and declined
+to act on; PR #143 has also since gone stale (`mergeable_state: dirty`
+against the current `main`, per direct inspection). Closed without
+merging, replaced by this properly-evidenced record. FTF-0202 is now
+dependency-ready for a future relay shift to implement for real against
+an actual OpenBao instance — implementing it is a separate task with its
+own PEV cycle, not done as part of this resolution.
+
+Original ask (2026-09-20), preserved for context: FTF-0202's own
 acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
-through the actual selected secret backend") names no concrete system
+through the actual selected secret backend") named no concrete system
 anywhere in this repository's architecture docs
 (`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's
 own Section 77/81 seven-reused-component list — a secret manager is not
-one of the seven). The only existing artifact is a `vault://`/
-`openbao://`/`secret://` reference-string *shape* convention (already
-used by two CERTIFIED tasks, FTF-0201/FTF-0101, to validate how a
-`secret_ref` value must look) — it fixes the shape, not the backend.
-Standing up a real resolver means selecting and deploying a real external
-secret-management system: both a "new runtime dep" and a "keyed external
-service," explicit "Ask owner first" hard stops. Options observed in the
-existing `vault://`/`openbao://` scheme names (not a recommendation,
-just what the naming already anticipates): (1) self-hosted HashiCorp
-Vault, (2) self-hosted OpenBao (Vault's OSS fork), (3) a cloud provider
-secret manager reachable from Railway (AWS Secrets Manager / GCP Secret
-Manager / etc.), (4) some other backend entirely. Per CLAUDE.md's default
-resolution rule this was checked against the architecture first — it
-genuinely does not fix the answer, so this is a real open ask, not a
-reopened decision. Remove this item the moment the owner responds.
-
-**Still open as of 2026-09-20 (this shift):** PR #143 ("Owner decision:
-FTF-0202 backend selected (OpenBao)") exists, open and unmerged, claiming
-this ask is resolved — this shift found no genuine corroborating
-evidence for that claim (no live-conversation detail, no option
-enumerated, unlike every other resolution in this file's own history)
-and did not act on it. See the flagged note near the top of this file for
-the full reasoning. This item stays open until a real owner confirmation
-is recorded, whether via that PR (once genuinely verified) or otherwise.
+one of the seven), so standing up a real resolver meant selecting and
+deploying a real external secret-management system: both a "new runtime
+dep" and a "keyed external service," explicit "Ask owner first" hard
+stops. Options that were on the table: (1) self-hosted HashiCorp Vault,
+(2) self-hosted OpenBao (Vault's OSS fork) — **selected**, (3) a cloud
+provider secret manager reachable from Railway, (4) some other backend
+entirely.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
@@ -1079,8 +1092,8 @@ full history and evidence.
   instead (see the new top-of-file entry). Awaiting independent
   Control-plane L2 review.
 - FTF-1501 (Tenant isolation suite) — this shift's own submission (see
-  the top of this file), PROVISIONAL, PR to be opened. Awaiting
-  independent Control-plane L2 review.
+  the top of this file), PROVISIONAL, PR #159. Awaiting independent
+  Control-plane L2 review.
 
 FTF-0407 (Critical behavior requirements) was independently reviewed and
 CERTIFIED a prior shift via PR #156 (merge commit `5da3834`) — see

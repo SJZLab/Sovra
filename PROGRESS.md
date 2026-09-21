@@ -1,11 +1,50 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1501
-  (Tenant isolation suite): PROVISIONAL, PR to be opened. Also found and
-  fixed a real CI-wiring gap (FTF-0406/FTF-0407 had no gate step, FTF-0407
-  no live-Postgres integration job — already CERTIFIED without CI ever
-  running their own test files). See the new section directly below for
-  the full write-up. `docs/certifications/queue.md` carries the complete
-  evidence.
+Updated: 2026-09-21 (live owner conversation, same session as the FTF-1501
+  relay shift below) — FTF-0202's own secret-backend selection ask is
+  RESOLVED: the owner directly confirmed OpenBao in this conversation,
+  with reasoning (self-hosted/self-built too complex to deploy; a
+  cloud-provider-managed store adds external dependency and cost; OpenBao
+  is open-source/self-hostable, avoiding both). PR #143 (the prior,
+  insufficiently-evidenced claim of the same decision, flagged by an
+  earlier certifier shift and left unresolved) was closed without
+  merging, superseded by the properly-evidenced record now in `QUEUE.md`
+  "Owner actions — current". FTF-0202 is now genuinely dependency-ready
+  for a future relay shift to implement. See the new section directly
+  below for the full record.
+
+## 2026-09-21 — Owner ask resolved: FTF-0202 secret backend (OpenBao)
+Live conversation, this session: the owner (account `samerzakaria`, the
+same account that opened PR #143) was asked directly, in-chat, to
+restate their FTF-0202 backend decision with reasoning, since PR #143's
+own body carried only a bare assertion — no live-conversation citation,
+no option enumerated, nothing tying it back to the architecture — the
+exact evidence gap a prior Control-plane certifier shift (2026-09-20)
+flagged and declined to act on (see that entry further below and
+`docs/certifications/queue.md`'s matching flagged note).
+
+The owner confirmed: **OpenBao** (self-hosted, Vault's open-source fork)
+selected over (a) a self-hosted/self-built custom solution — judged too
+complex to deploy, and (b) a cloud-provider-managed secret store (AWS
+Secrets Manager / GCP Secret Manager / etc.) — which would introduce
+both an external dependency and ongoing cost. OpenBao is open-source and
+self-hostable, avoiding both concerns, and matches the existing
+`vault://`/`openbao://` reference-string shape convention FTF-0101/
+FTF-0201 (both CERTIFIED) already validate against.
+
+Checked PR #143 directly before acting: opened from the owner's own
+GitHub account (`samerzakaria`), so the underlying decision was never in
+doubt — the gap was evidentiary (no reasoning recorded in the PR itself)
+and the PR had since gone stale (`mergeable_state: dirty` against the
+current `main`, confirmed via `mcp__github__pull_request_read`). Closed
+PR #143 without merging rather than attempting a conflicted merge of a
+now-superseded diff; recorded this properly-evidenced resolution directly
+in `QUEUE.md`'s "Owner actions — current" section instead, matching the
+evidence bar every other resolved ask in this file's history already
+meets (a specific live conversation, a specific option, specific
+reasoning). Did not implement FTF-0202 itself in this same action — that
+is a separate, substantial task (a real OpenBao resolver against live
+secret refs) requiring its own PEV cycle; this action only unblocks it
+for a future relay shift to pick up.
 
 ## 2026-09-21 — Relay: FTF-1501 (Tenant isolation suite) implemented, PROVISIONAL
 Ran the PEV procedure (`docs/CONTROL_PLANE_MODES.md`) for a scheduled
@@ -173,18 +212,21 @@ certification, per Law 4 (producer never certifies own work).
 ## Next shift
 Two items now await independent Control-plane L2 certification:
 FTF-0403 (PR #158, opened by an earlier same-day relay shift, CI green
-17/17) and FTF-1501 (this shift's own submission, PR to be opened).
-Certify FTF-0403 first if only one certifier shift fires (opened first,
-no external-service ask). If a certifier session is not what fires next,
-recompute the dependency-ready frontier fresh: FTF-0902, FTF-1001,
-FTF-1401, FTF-1701 remain dependency-ready, none carrying an actual
-`CAP-xx` tag (all `AF-xx`) — read each one's own task packet before
-picking rather than assuming CAP-number order applies. Also flagged: a
-future Control-plane session should re-verify the FTF-0406/FTF-0407
-certifications' own "CI reconfirmed green" claims now that this shift
-added the CI jobs that were silently missing. PR #143 (FTF-0202 backend
-selection) and PR #152 (superseded doc-only catch-up) both remain
-open/unmerged — a Control-plane/owner judgment call, not a relay one.
+17/17) and FTF-1501 (this shift's own submission, PR #159). Certify
+FTF-0403 first if only one certifier shift fires (opened first, no
+external-service ask). FTF-0202's own backend-selection ask is now
+RESOLVED (see the entry above this file's own top) — OpenBao confirmed
+live by the owner, PR #143 closed without merging, superseded by the
+evidenced record in `QUEUE.md`. If a certifier session is not what fires
+next, recompute the dependency-ready frontier fresh: FTF-0202, FTF-0902,
+FTF-1001, FTF-1401, FTF-1701 are now dependency-ready, none carrying an
+actual `CAP-xx` tag (all `AF-xx`) — read each one's own task packet
+before picking rather than assuming CAP-number order applies. Also
+flagged: a future Control-plane session should re-verify the FTF-0406/
+FTF-0407 certifications' own "CI reconfirmed green" claims now that this
+shift added the CI jobs that were silently missing. PR #152 (superseded
+doc-only catch-up) remains open/unmerged — a future certifier session
+should close it without merging.
 
 ## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),

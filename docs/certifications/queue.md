@@ -7559,3 +7559,28 @@ with `docs/spec-matrix.yaml`.
 ## 2026-09-21 — FTF-1501 — record the opened PR link
 - **PR:** https://github.com/SJZLab/Sovra/pull/159
   (`claude/wizardly-fermat-bhjs9m` → `main`).
+
+## 2026-09-21 — Owner ask resolved: FTF-0202 secret backend (OpenBao)
+Live owner conversation, this session (same session as the FTF-1501
+submission above). The owner directly confirmed **OpenBao** (self-hosted,
+Vault's open-source fork) for FTF-0202's secret-management backend, with
+reasoning: a self-hosted/self-built custom solution was judged too
+complex to deploy, and a cloud-provider-managed secret store introduces
+both an external dependency and ongoing cost — OpenBao avoids both while
+matching the existing `vault://`/`openbao://` reference-string shape
+convention FTF-0101/FTF-0201 already validate against.
+
+This supersedes PR #143 ("Owner decision: FTF-0202 backend selected
+(OpenBao)"), flagged by a 2026-09-20 Control-plane certifier shift (see
+above) for carrying no corroborating evidence — no live-conversation
+citation, no reasoning tied to the architecture — despite being opened
+from the owner's own GitHub account (`samerzakaria`). PR #143 had also
+gone stale (`mergeable_state: dirty` against the current `main`,
+confirmed via `mcp__github__pull_request_read` before acting). Closed
+without merging; the properly-evidenced resolution is recorded in
+`QUEUE.md`'s "Owner actions — current" section, meeting the same
+evidence bar every other resolved ask in this repository's history
+already meets. FTF-0202 is now genuinely dependency-ready — implementing
+it (a real OpenBao resolver against live secret refs) is a separate task
+for a future relay shift's own PEV cycle, not done as part of this
+resolution.
