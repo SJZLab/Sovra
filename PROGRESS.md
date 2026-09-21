@@ -1,5 +1,56 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21T20:55:00Z (scheduled relay shift) — implemented FTF-R016
+  (Measure selected coding-model/executor pilot cost and enforce budget
+  tree, deps FTF-R015/FTF-H002/FTF-0403 all CERTIFIED). CLAUDE.md hash
+  verified clean. Re-confirmed the CI-runner-provisioning owner-ask is
+  still genuinely open (PR #170's checks and the control plane's own
+  19:17Z re-confirmation both still `failure`/`runner_id: 0`; no workflow
+  run since) — not re-triggered a third time, left exactly as recorded.
+  Caught and fixed a real bug in this shift's own dependency-frontier
+  script before implementing anything (a `notes:` field that wraps onto a
+  second YAML line was silently mis-parsed as `deps=none`, falsely making
+  FTF-R006 look ready when its four real dependencies are all `NONE`).
+  FTF-R016 is the real, sole, newly dependency-ready, unclaimed item this
+  shift (FTF-0202/FTF-0408/FTF-0902 all carry previously disclosed
+  blockers; FTF-1001/1302/1401/1501/1702 each already have an open,
+  unreviewed PROVISIONAL PR from a prior shift).
+
+  Implemented `tools/implementation/usage_ledger.py`,
+  `scripts/report_executor_pilot.py`,
+  `tests/implementation/test_executor_budget_limits.py` (34/34 checks
+  passed). Two genuine first-run failures before any check was declared
+  passing (Law 1): a marker-filename mismatch that made the real
+  `TaskOrchestrator` integrated-CI step fail closed, and a fault-injection
+  probe that crashed instead of demonstrating the targeted vulnerability
+  — both fixed and re-confirmed. Own fault injection (Law 1): removed the
+  unknown-cost guard from `cost_per_success`, a fresh subprocess wrongly
+  folded an unknown cost into a real zero, caught by the named "missing
+  usage counted free" check; reverted byte-identical, re-confirmed clean.
+  Resource-gate disclosure: this sandbox has no live token-usage-reporting
+  API, so `token_cost_usd` is always `None` (UNKNOWN), never fabricated or
+  treated as free — the same disclosed-limitation pattern FTF-R015 already
+  used for true multi-host dispatch.
+
+  Full regression clean: unshallowed the sandbox's shallow clone, ran
+  `uv sync --all-packages`/`pnpm install --frozen-lockfile` (both
+  pre-existing environment gaps, closed not worked around — confirmed by
+  re-running the full `tests/tasks/test_ftf_*.py` sweep clean immediately
+  after with no other change). `ruff check`/`format --check`/`mypy .`
+  clean repo-wide (147 source files, 0 errors); `pnpm run
+  lint`/`typecheck`/`format:check` clean; `validate_spec.py --strict`
+  clean; `scripts/verify_task.py --task FTF-R016 --stage task` — PASS.
+  `product_truth_check.py --fail-on-unwired` stays `12/12` (build tooling,
+  `proving_symbol` deliberately empty, matching FTF-R014/R015/R017).
+  Wired into `.github/workflows/ci.yml`'s `gate` job and
+  `spec/verification-map.json` (two-commit hash-fixup pattern).
+
+  **Certified: 36/300 (unchanged). Product-true: 12/12 (unchanged).**
+  Queued for Control-plane L2 certification: FTF-R016 (this shift, PR
+  pending open). Not self-certified (Law 4). STEP 4 stop: (a)
+  L1-PROVEN/PROVISIONAL reached, reporting and stopping. Full submission
+  report: `docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #170) — independent CERTIFY
   review of FTF-1302 (Local compute costing): **NOT CERTIFIED**, but not
   for a code reason — the shipped code, tests, and fault-injection

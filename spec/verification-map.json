@@ -221,6 +221,20 @@
       "resource_profile": "local",
       "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014/FTF-R015/FTF-R011 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history. The real live-container storage-semantics evidence is tests/integration/test_storage_semantics.py, run separately in CI (storage-semantics-integration job) — not re-executable by verify_task.py in this sandbox (no container-registry egress), same resource_gate rationale as FTF-0004's own docker-local-stack-integration job."
     },
+    "FTF-R016": {
+      "commit": "c4f55353f6ffe712f3149cc5853445dfa3ccc2e0",
+      "commands": [
+        [
+          "python3",
+          "tests/implementation/test_executor_budget_limits.py"
+        ]
+      ],
+      "expected_output_contains": "All 34 checks passed.",
+      "expected_skipped": 0,
+      "timeout_seconds": 300,
+      "resource_profile": "local",
+      "note": "Same two-commit pattern as FTF-0006/FTF-H001/FTF-R001/FTF-H002/FTF-H028/FTF-H034/FTF-1810/FTF-R014/FTF-R015/FTF-R011/FTF-R017 — this entry is added in the hash-fixup commit, once the implementation commit it points to already exists in history."
+    },
     "FTF-0102": {
       "commit": "82c75f42231c32c2fa45988bb36e805534548ed1",
       "commands": [

@@ -8197,3 +8197,103 @@ Full entry: docs/certifications/ledger.md.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_01U9fapCAPqWfq9QZeRdwpkM,
   2026-09-21.
+
+## 2026-09-21 — FTF-R016 — Measure selected coding-model/executor pilot cost and enforce budget tree
+- **PR:** pending open (branch `claude/wizardly-fermat-dtzhzo` → main)
+- **Commit:** c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
+- **Deps:** FTF-R015, FTF-H002, FTF-0403 — all confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Test:** tests/implementation/test_executor_budget_limits.py — 34 checks
+- **Scope:** `tools/implementation/usage_ledger.py` (`UsageMeasurement`,
+  `accepted_from_wave`, `measure_real_command`, `execute_with_real_retries`,
+  `cost_per_success`, `compare_to_baseline`, `BudgetNode`/`BudgetExceeded`,
+  `run_within_budget`/`BoundedTermination`,
+  `enforce_model_route_policy`/`ExternalRoutePolicyViolation`),
+  `scripts/report_executor_pilot.py` (runs acceptance clause 1's one real
+  backend task plus one real parallel wave end to end), one new `gate`
+  step in `.github/workflows/ci.yml`, and the matching
+  `spec/verification-map.json` entry. Build/implementation tooling only —
+  no Factory production package (`apps/api`, any `workers/*`) imports
+  anything here, matching FTF-R014/R015's own disclosed scope.
+- **Dependency-frontier bug caught before implementing anything:** this
+  shift's own throwaway script for recomputing the dependency-ready
+  frontier initially mis-parsed `docs/spec-matrix.yaml`'s `notes:` field
+  when it YAML-folds `deps=...` onto a second line, silently treating it
+  as `deps=none`. That falsely made FTF-R006 (whose real dependencies —
+  FTF-R002/FTF-0500/FTF-0506/FTF-0516 — are all still `NONE`) look
+  dependency-ready. Caught by cross-checking the task packet's own
+  `dependencies` list directly against `docs/spec-matrix.yaml` before
+  writing any code; the script was fixed and FTF-R016 (genuinely
+  dependency-ready, no open PR naming it) was picked instead.
+- **Resource-gate disclosure (Section 32/64.4's own "explicit unknown cost
+  state" clause, this task's own `api_contract`):** this sandbox exposes
+  no live token-usage-reporting API to the executing coding-agent session
+  — no tool surfaces a per-request token count back to this process.
+  `token_cost_usd` is therefore always `None` (UNKNOWN), the same class of
+  disclosed sandbox limitation FTF-R015 already recorded for true
+  multi-host dispatch. `cost_per_success` propagates that `None` rather
+  than ever substituting `Decimal("0")` — this task's own named
+  negative_acceptance ("missing usage counted free") made structurally
+  impossible by construction.
+- **Two genuine first-run failures before any check was declared passing
+  (Law 1):** (1) the first draft's parallel-wave fixture wrote marker
+  files named `a.marker`/`b.marker`; `TaskOrchestrator`'s own real
+  integrated-CI step expects `{task_id}.marker`, so the mismatch made the
+  real integrated-CI check genuinely fail closed (`approved_for_downstream`
+  reset to the empty set) — caught directly by the "the passing task is
+  independently accepted" check, fixed by using the correct marker
+  filenames. (2) The fault-injection probe for the unknown-cost guard
+  initially crashed (`TypeError` summing `Decimal + None`) instead of
+  demonstrating the vulnerability, correctly flagged as not matching the
+  expected outcome — fixed by rewriting the guarded arithmetic to
+  `m.token_cost_usd or Decimal("0")`, so removing the guard produces
+  exactly the silent-zero-fallback the negative_acceptance names.
+- **Own fault injection (Law 1, reverted byte-identical, suite re-run
+  clean afterward):** removed the `if any(m.has_unknown_cost() for m in
+  accepted): return None` guard from the tracked `cost_per_success` — a
+  fresh subprocess wrongly computed a numeric (zero-substituted) cost from
+  a measurement with unknown `token_cost_usd`, caught by the exact named
+  "missing usage counted free" check; restoring the file byte-identical
+  (`diff` confirmed empty) made it correctly report `None` again.
+- **Other real, non-simulated behavior proven directly:** `BudgetNode`'s
+  delegated tree — a child's own large declared `limit_usd=100` cannot
+  escape its parent's real remaining balance ($2 of $10 after an $8
+  reservation), `reserve()` raises `BudgetExceeded` for the excess
+  ("budget reset per subagent" refused by construction); `run_within_budget`
+  genuinely `SIGTERM`s a real 5-second-sleeping child process once a tiny
+  ($0.05) budget is reached, confirmed by a marker file (written only
+  after the full sleep) being genuinely absent; `execute_with_real_retries`
+  against a real flaky command (a persisted counter file) reports
+  `retries == 2` for a command needing two real failed attempts before
+  succeeding, and correctly exhausts `max_retries` for a command that
+  always fails; `enforce_model_route_policy` denies a real external URL
+  under `private_mode=True` and allows an approved internal route; no
+  hardcoded `$100`/`$300`/"guarantee" figure anywhere in either new file.
+- **Regression:** unshallowed this sandbox's own shallow clone, ran
+  `uv sync --all-packages`/`pnpm install --frozen-lockfile` (both
+  pre-existing environment gaps, closed not silently worked around —
+  confirmed pre-existing by the full `tests/tasks/test_ftf_*.py` sweep
+  failing identically on missing `uvicorn`/`sqlalchemy`/stale-commit
+  errors before, and passing clean immediately after, with no other
+  change). Full `tests/test_ftf_0001_monorepo_layout.py` +
+  `tests/tasks/test_ftf_*.py` + `tests/implementation/test_*.py` +
+  `tests/reference/test_ftf_1701.py` sweep (34 files) all clean.
+  `ruff check .`/`ruff format --check .` clean; `uv run mypy .` clean
+  (147 source files, 0 errors). `pnpm run lint`/`typecheck`/`format:check`
+  clean (this task touches no frontend file). `validate_spec.py --strict`
+  clean; `scripts/verify_task.py --task FTF-R016 --stage task` — PASS
+  against evidence commit `c4f5535`. `product_truth_check.py
+  --fail-on-unwired` stays `12/12` (`proving_symbol` deliberately empty —
+  build tooling, not a served product route, matching the
+  FTF-R014/R015/R017 precedent). `scripts/status.py` — `36/300 certified
+  · 12 product-true` (unchanged — PROVISIONAL, not yet CERTIFIED).
+- **CI-runner-provisioning owner-ask (see QUEUE.md "Owner actions —
+  current"):** re-confirmed still genuinely open as of this shift (PR
+  #170's checks and the control plane's own 19:17Z re-confirmation both
+  still `failure`/`runner_id: 0`; no workflow run since). Not re-triggered
+  a third time — already independently re-confirmed twice. A genuine
+  passing CI conclusion on this PR's own head is expected to be blocked by
+  the same issue until it clears; that is an infrastructure gap, not a
+  defect in this submission.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
