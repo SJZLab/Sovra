@@ -2695,15 +2695,95 @@ FTF-1206:
   proving_symbol: ''
   proving_test: ''
 FTF-1301:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: CostProfile schema/UI
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0401, FTF-0403, FTF-0103
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 61995ac572eb732392e698f53565a5fec3bf5064
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0401, FTF-0403, FTF-0103
+    (all three CERTIFIED). Narrowed to this task's own acceptance clause -- "Record dated
+    provider/local hardware TCO rates/currency/source and display unknowns honestly" -- not
+    Section 32's own full cost-per-success computation pipeline against real usage data, which is
+    FTF-1304's own, later, separately dependency-gated task (docs/TASK_INDEX.md records FTF-1302
+    "Local compute costing"/FTF-1303 "Provider token costing"/FTF-1304 "Cost-per-success
+    calculator" as this task's own dependents, not the reverse). A new `apps/api/app/costs/`
+    package (refined from the task packet's own web-only file list -- disclosed in
+    `cost_profile_schema.py`'s own module docstring, the same refinement precedent FTF-0403 already
+    established) adds a real, organization-scoped, immutable `CostProfile` rate observation: a
+    genuine `decimal.Decimal` `rate_amount` (never a float, NUMERIC(24,10) for real per-token
+    precision), currency reused directly from FTF-0403's own already-CERTIFIED
+    `ALLOWED_CURRENCIES`/`validate_currency` (no duplicate vocabulary), and a closed `rate_unit`
+    vocabulary grounded in Section 32's own named cost formula terms. `is_certifiable_cheapest`
+    (`cost_profile_schema.py`) makes this task's own negative_acceptance ("Token price zero is not
+    local compute free; unverified/expired rate cannot certify cheapest") real: an expired or
+    unverified rate never certifies, and a `provider` rate of exactly zero never certifies even
+    once verified -- while a verified, unexpired `local_hardware` zero rate does, proving the rule
+    is provider-specific, not a blanket zero refusal (proven both at the pure-function level and
+    against the real database). The real forward Alembic migration
+    (`apps/api/alembic/versions/0008_cost_profiles.py`) FORCEs row-level security scoped to the same
+    `app.current_organization_id` tenant context every prior migration already established, grants
+    `sovra_app` SELECT/INSERT/UPDATE only (never DELETE -- a rate observation is never removed,
+    matching FTF-0403/FTF-0404's own precedent), and adds a real `CHECK(rate_amount >= 0)`
+    constraint as an independent backstop behind the application-level guard. Real, live-wired:
+    `app.main` now includes `build_cost_profile_router` (the eighth live-wired product-runtime path
+    in this repository), gated to `organization_admin` alone for every route including reads and
+    the search endpoint (Section 45's own literal role table names "cost profiles" explicitly,
+    the same "admin-only, including reads" precedent FTF-0201's own `/connections/litellm` already
+    established for the resource named in the same sentence). Freezes
+    `packages/contracts/{openapi,jsonschema}/13-*` (contract slot 13, first claim,
+    `shared_lock_required: contracts:13`). 34 no-DB test functions in `tests/tasks/test_ftf_1301.py`:
+    validation shape checks, `CostProfile.__init__` construction guards, all three
+    `is_certifiable_cheapest` disqualifying conditions plus the two positive cases proving the
+    zero-rate rule is provider-specific, source-inspection proofs that crud/routes compose the
+    real, imported `execute_tenant_scoped`/`authorize_resource_ownership`/`require_role`/
+    `validate_currency` (never a hand-rolled duplicate), and a real local uvicorn server proving
+    unauthenticated (401)/non-admin-role (403, including reads) denial never opens a session.
+    `tests/integration/test_ftf_1301_cost_profile.py`: a real Postgres proof (two real
+    organizations, a real uvicorn server bound to the real, restricted `sovra_app` role) covering
+    role gating -> create (persists real decimal/currency/source, wires the real
+    `build_cost_profile_router` router for real) -> cross-organization IDOR (404) -> negative rate
+    refused (400) -> search returns every disqualified rate with an honest reason, never silently
+    filtered -> verify genuinely advances `verified_at` -> a verified, unexpired, non-zero provider
+    rate certifies cheapest for real -> a verified, unexpired provider rate of exactly zero still
+    never certifies -> a verified, unexpired local_hardware zero rate DOES certify -> expired takes
+    priority even once verified -> `current_cheapest_certified` picks the real minimum among
+    certified candidates, never an arbitrary one -> missing tenant context refused
+    (`TenantContextError`) -> real FORCE ROW LEVEL SECURITY backstop (a raw SELECT by ID under
+    org1's own tenant context returns zero rows for org2's own row) -> `sovra_app` cannot `DELETE` a
+    `cost_profiles` row directly -> the real `CHECK(rate_amount >= 0)` constraint refuses a negative
+    rate even at the raw SQL level. Own fault injection (Law 1, two distinct vectors, both reverted
+    byte-identical and the suite re-confirmed clean afterward): (1) disabled the zero-provider-rate
+    disqualification in `is_certifiable_cheapest` (`if False and profile.profile_type ==
+    "provider"...`) -- `uv run python3 tests/tasks/test_ftf_1301.py` failed with exactly the named
+    negative_acceptance check ("token price zero is not local compute free"); (2) disabled the
+    negative-rate API-boundary guard in `validate_rate_amount` (`if False and value < 0:`) against
+    the real live database -- `tests/integration/test_ftf_1301_cost_profile.py` failed with exactly
+    the named "a negative rate is refused (400)" check (the request instead reached the database and
+    was independently refused there too, a real `IntegrityError` on the DB's own
+    `CHECK(rate_amount >= 0)` constraint -- a second, independent backstop, the same defense-in-depth
+    class FTF-0403's own fault injection already demonstrated). Independently reconfirmed no
+    regression: full `tests/tasks/test_ftf_*.py` sweep (25 files, after `pnpm install
+    --frozen-lockfile` to close a pre-existing, undocumented-until-now frontend-dependency gap in
+    this sandbox) all "all checks passed" or equivalent; `ruff check .`/`ruff format --check .`
+    clean repo-wide; `mypy .` (from `apps/api`) -- 2 errors, both the pre-existing, unrelated
+    `authlib.jose` missing-stub gap in `oidc_login.py`, confirmed identical on `main`; `pnpm run
+    lint`/`typecheck`/`format:check` clean; `pnpm run test` (vitest) -- 19/19 passed across all 5
+    spec files, no regression to FTF-0401's own suite. `git fetch --unshallow origin` first (this
+    sandbox's own documented shallow-clone artifact), then `validate_spec.py --strict` clean.
+    `product_truth_check.py --fail-on-unwired` rises to `12/12` once `is_certifiable_cheapest` is
+    counted -- a real, newly-wired live caller (`cost_profile_crud.py`'s own `search_cost_profiles`
+    calls it for real), not inflation. `scripts/status.py`'s own stricter "product-true" count
+    (CERTIFIED-only) stays at `11` -- `35/300 certified · 11 product-true`, unchanged, since
+    FTF-1301 is PROVISIONAL, not yet CERTIFIED, matching FTF-0403's own precedent for this same
+    CERTIFIED-vs-PROVISIONAL count distinction. Wired `.github/workflows/ci.yml` with
+    one new `gate` job step (`uv run python3 tests/tasks/test_ftf_1301.py`) plus a new dedicated
+    `cost-profile-integration` job (real `services: postgres` container) -- no other job's steps
+    touched. PR opened as PROVISIONAL; not self-certified (Law 4) -- awaiting independent
+    Control-plane L2 review.
+  proof_state: L1-PROVEN
+  proving_symbol: is_certifiable_cheapest
+  proving_test: tests/tasks/test_ftf_1301.py
 FTF-1302:
   certification_state: NONE
   criticality: MUST
