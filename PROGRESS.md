@@ -1,11 +1,118 @@
 # PROGRESS — Sovra
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #153) — independent CERTIFY
-  review of FTF-0406 (Side-effect classification): **CERTIFIED**. See the
-  new section directly below for the full review, including the initial
-  NOT CERTIFIED finding this review superseded once the producer session
-  independently fixed it. `docs/certifications/ledger.md`/
-  `docs/certifications/queue.md` carry the complete evidence.
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0407
+  (Critical behavior requirements): PROVISIONAL, PR opened, awaiting
+  independent Control-plane L2 certification. See the new section
+  directly below for the full submission; `docs/certifications/queue.md`
+  carries the complete evidence and fault-injection detail.
+
+## 2026-09-21 — Relay: FTF-0407 (Critical behavior requirements) implemented, PROVISIONAL
+Ran the PEV procedure (`docs/CONTROL_PLANE_MODES.md`) for a scheduled
+relay shift.
+
+**Step 0 — ground state, never assumed from prior context:** read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. `cognee-cli
+doctor` is not installed in this sandbox (`command not found`) — text-search
+fallback declared per the shift's own STEP 0.2 instruction. Fetched
+`origin` fully (this session's initial shallow clone only carried recent
+branches) and confirmed the assigned branch
+`claude/wizardly-fermat-i56nvv` sits exactly at `main`'s own tip
+(`f73bbd6`, FTF-0406 CERTIFIED) with zero divergent commits either way —
+a genuinely fresh shift, not a continuation. CLAUDE.md self-check:
+`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly —
+no mismatch, shift proceeded.
+
+**Step 1 — picked FTF-0407:** independently recomputed the
+dependency-ready frontier from `docs/spec-matrix.yaml`'s live
+`certification_state` (32 CERTIFIED, 0 PROVISIONAL at shift start) against
+every task's own `deps=` field, rather than trusting `QUEUE.md`'s own
+prior "Next shift" note by itself (that note itself said to recompute
+fresh). Confirmed the same answer independently: FTF-0202 (owner ask,
+still open/unverified — PR #143's own bare claim was not treated as
+sufficient, per the flagged note already in `QUEUE.md`), FTF-0403,
+FTF-0407, FTF-0902, FTF-1001, FTF-1401, FTF-1501 are the seven
+dependency-ready items. FTF-0407 (CAP-05) has the lowest CAP number with
+no external-service ask of its own.
+
+**Step 2 — P (plan, no changes yet):** pulled the real task contract
+(`tools/r1_handoff.py packet FTF-0407 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) and cross-checked it against the
+master spec's own Section 6/7A.6/22 text directly (the packet alone
+supplies only the same abbreviated JSON this repo's other packets carry,
+matching CLAUDE.md's own disclosure that most of the 300 tasks lack a
+full Section-85 acceptance contract). Read every existing
+`ToolDefinition`-touching file end to end before writing any code:
+`tool_definition_schema.py`, `tool_definition_crud.py`,
+`tool_definition_routes.py`, `side_effect_classification.py`, and all of
+`test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0406.py`'s own fixtures —
+specifically to find any existing certified construction that a candidate
+enforcement rule might regress before choosing one (Law 14). Found that
+`test_ftf_0406.py`'s own
+`test_construction_accepts_a_correctly_confirmed_high_risk_tool` builds
+an `irreversible_write`, confirmed, `is_critical=False` tool — this ruled
+out an initial candidate design (forcing `is_critical=True` on any
+high-risk resolution) before ever writing it, in favor of the
+one-directional rule actually shipped (see `docs/certifications/queue.md`
+for the full design rationale).
+
+**Step 2 — E (write code + test, show FAIL first, bound to the
+criterion):** implemented `apps/api/app/services/
+critical_behavior_requirements.py` (`enforce_critical_behavior_requirement`,
+`derive_critical_behavior_requirement_view`), wired it into
+`ToolDefinition.__init__`, and added the new
+`apps/api/app/tools/critical_behavior_requirement_routes.py` real
+`/requirements` route, wired into `apps/api/app/main.py`. Wrote
+`tests/tasks/test_ftf_0407.py` (22 no-DB functions) and
+`tests/integration/test_ftf_0407_critical_behavior_requirements.py` (15
+real live-Postgres checks) alongside the implementation, then proved Law
+1 directly by disabling each of the two real guards in turn and
+confirming the exact named tests fail in **both** suites before
+reverting byte-identical:
+- Disabling the live wiring in `ToolDefinition.__init__` — the two named
+  live-wiring tests failed in the no-DB suite
+  (`FAIL [FTF-0407] constructing a read_only ToolDefinition claimed
+  is_critical=True fails at construction time...`,
+  `FAIL [FTF-0407] constructing a reversible_write ToolDefinition claimed
+  is_critical=True with requires_confirmation=False fails...`), and three
+  checks failed in the live-Postgres suite, including a genuine
+  `IntegrityError` unique-constraint collision (the wrongly admitted
+  unmeasurable tool occupied the name slot the next real create needed).
+- Disabling the `requires_confirmation` conflict check inside the
+  enforcement function itself — the exact named negative_acceptance
+  checks failed in both suites.
+Both reverted by restoring the exact original source; `git diff --stat`
+confirmed empty for the touched production files afterward, and both
+suites re-ran clean each time.
+
+**Step 2 — V (verify):** stood up a real local PostgreSQL 16 cluster
+(role `sovra_migrate`, database `sovra_ftf0407`, migration run for real —
+`sovra_app` role created by the migration itself), reconfirmed FTF-0404's
+own live-Postgres suite unchanged against a freshly recreated
+database/role ("all checks passed" — no regression), then ran this
+task's own new integration suite clean. Re-ran
+`test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0406.py`
+(no-DB) — all four "all checks passed." `ruff check --fix`/`ruff format`
+needed one real fixup this task introduced (import ordering in
+`tool_definition_schema.py`'s own new import, and reformatting this
+task's own new module) — applied, reconfirmed clean afterward across the
+full `apps/api` tree (49 files). `mypy .` clean on every file this task
+touched; the 2 remaining repo-wide errors (`authlib.jose` missing stubs
+in `oidc_login.py`) were confirmed pre-existing and byte-identical on
+`main` via `git stash` before/after comparison — not this task's own.
+`git fetch --unshallow origin` (this sandbox's own clone is shallow by
+default, the same pre-existing artifact every prior session has already
+documented), then `validate_spec.py --strict` → clean.
+`product_truth_check.py --fail-on-unwired` rose `9/9` → `10/10` once
+`docs/spec-matrix.yaml`'s own `proving_symbol` was set (a genuine new
+live caller, not inflation — Law 2); `scripts/status.py` correctly stayed
+at 9 product-true (PROVISIONAL does not count until independently
+certified).
+
+PR opened as PROVISIONAL (title `[relay] FTF-0407: Critical behavior
+requirements`); `docs/spec-matrix.yaml` FTF-0407 set to
+`PROVISIONAL`/`L1-PROVEN`, `proving_symbol`
+`enforce_critical_behavior_requirement`. Awaiting independent Control
+plane certification — not self-certified (Law 4). Certified stays
+32/300. Full submission report: `docs/certifications/queue.md`.
 
 ## 2026-09-20 — Control plane: FTF-0406 (PR#153) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
