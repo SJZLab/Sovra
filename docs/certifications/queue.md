@@ -7555,3 +7555,7 @@ with `docs/spec-matrix.yaml`.
   tests/tasks/test_ftf_1501.py`. Awaiting independent Control-plane L2
   certification — not self-certified (Law 4). Certified stays 33/300;
   product-true stays 10/10.
+
+## 2026-09-21 — FTF-1501 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/159
+  (`claude/wizardly-fermat-bhjs9m` → `main`).
