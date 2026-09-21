@@ -1,10 +1,101 @@
 # PROGRESS — Sovra
 Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #156) — independent CERTIFY
-  review of FTF-0407 (Critical behavior requirements): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+  the `pull_request.opened` webhook for PR #163) — independent CERTIFY
+  review of FTF-0403 (Budget policy): **CERTIFIED**. See the new section
+  directly below for the full review. `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` carry the complete evidence.
+
+## 2026-09-21 — Control plane: FTF-0403 (PR#163) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
+triggered by the `pull_request.opened` webhook for PR #163.
+
+Session-independence check: this reviewing session's own ID is
+`session_01VV6XRzSwbobfnvyZfLfg6q`; all 3 commits on PR #163 carry
+`Claude-Session: .../session_017jneh8CPxEPmfPrbC5PJrg` — no match,
+independent per Law 4.
+
+Subscribed to PR #163's own activity right away (16 of 17 checks were
+still `in_progress`/`queued`) rather than certifying against a stale
+snapshot. Polled `get_check_runs` to completion: all 17 GitHub Actions
+check runs on the real final head (`6a59384e09326c8cecfd0e3dd78472376486b0df`,
+run `35592841192`) `completed`/`success`, `gate` included. Pulled the
+real `gate` job log directly (`get_job_logs`, not a self-report):
+`Product-truth: 11/11 product-true`, `Status: 33/300 certified · 10
+product-true` (status.py's own CERTIFIED-only count, still 10 at CI
+time — expected, since certification had not yet landed).
+
+Read the diff directly: `apps/api/app/budget/budget_policy_crud.py`,
+`budget_policy_schema.py`, `budget_policy_routes.py`,
+`apps/api/alembic/versions/0007_budget_policies.py`,
+`apps/api/app/main.py`. Confirmed `reserve_budget_allocation`/
+`release_budget_allocation` are each a single conditional SQL `UPDATE`
+(never read-then-write), backed by the real `CHECK
+(reserved_amount <= total_amount)`/`CHECK (reserved_amount >= 0)`/
+`UNIQUE(project_id)` constraints in the migration as an independent
+DB-level backstop. Confirmed `app.main` live-wires
+`build_budget_policy_router` by direct source read.
+
+Task contract re-pulled directly, not trusted from the producer's own
+claim: `python tools/r1_handoff.py packet FTF-0403 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — the committed
+`docs/implementation/task-packets/FTF-0403.md` matched the tool's own
+deterministic output byte-for-byte (its exclusive-create check passed
+without raising). Acceptance clause 1 ("Persist decimal budget
+authorization, cost currency, scopes and approval history") met by the
+real `BudgetPolicy` table plus FTF-0104's own already-CERTIFIED
+`audit_events` table carrying approval history. negative_acceptance
+("Negative/unknown rates and concurrent allocation beyond available
+reservation cannot be accepted") proven directly and by this review's
+own fault injections below.
+
+Own reproduction, this sandbox (`git worktree add` on the real merged PR
+head, `uv sync --all-packages`, a freshly created local PostgreSQL 16
+database/role matching CI's own `sovra_migrate`/`sovra_app`
+credentials): `tests/tasks/test_ftf_0403.py` — "all checks passed";
+`tests/integration/test_ftf_0403_budget_policy.py` against the real
+database — "all checks passed," including the real concurrent-HTTP
+reservation proof (two simultaneous over-budget reservations, exactly
+one 200/one 409).
+
+Own fault injection, distinct from the producer's own two, both reverted
+byte-identical and reconfirmed clean afterward:
+1. Disabled the reserve headroom guard (removed the
+   `reserved_amount + amount <= total_amount` WHERE clause) — 2 checks
+   failed for real: the over-headroom-refusal check and the central
+   concurrency negative_acceptance check; independently, the real DB
+   `CHECK` constraint itself raised `IntegrityError` — a genuine second,
+   independent backstop.
+2. Disabled the "project already has a budget policy" guard in
+   `create_budget_policy` — 1 check failed for real (duplicate-create-
+   refusal), independently caught by the real DB `UNIQUE(project_id)`
+   constraint itself (`IntegrityError`).
+
+No regression, independently re-run: `tests/tasks/test_ftf_0401.py`/
+`test_ftf_0402.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/
+`test_ftf_0406.py`/`test_ftf_0407.py` — all six "all checks passed".
+`ruff check .`/`ruff format --check .` clean; `mypy .` (from `apps/api`)
+— 2 errors, both the pre-existing, unrelated `authlib.jose` missing-stub
+gap in `oidc_login.py`, confirmed identical on `main`. `scripts/
+validate_spec.py --strict` clean after `git fetch --unshallow`. `scripts/
+product_truth_check.py --fail-on-unwired` — own run, `11/11`
+product-true, matching the real CI log exactly. Confirmed the disclosed
+CI gate-wiring fix (FTF-0406/FTF-0407 steps added to the `gate` job) is
+live in the real job's own step list. Dependencies FTF-0104/FTF-0401
+confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying
+on them.
+
+No blocking defect found. Merged PR #163 (merge commit
+`4afab390b60028cccc489c439d8401252a2c1d8f`). `docs/spec-matrix.yaml` set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+(`scripts/task_claim.py`) to write the real status into
+`spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-0403']`
+updated. Certified: 34/300, Product-true: 11/11.
+
+This certification's own doc updates (`docs/spec-matrix.yaml`,
+`docs/certifications/ledger.md`, `QUEUE.md`, `PROGRESS.md`) are pushed on
+a branch and opened as a PR against `main` rather than pushed directly,
+per `BRANCH_PROTECTION`.
 
 ## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),

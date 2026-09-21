@@ -4128,3 +4128,98 @@ reasons given above.
   updated. Certified: 33/300, Product-true: 10/10.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0403 — Budget policy
+- Criterion ID: FTF-0403
+- PR: https://github.com/SJZLab/Sovra/pull/163 (`claude/wizardly-fermat-zl5g8t` → `main`)
+- Merge commit: 4afab390b60028cccc489c439d8401252a2c1d8f
+- Implementation commit: 48eb4c6cb46fe2aca621d1c9fed8d3438ed7dce8
+- Validated-by: session https://claude.ai/code/session_01VV6XRzSwbobfnvyZfLfg6q
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #163)
+- Date: 2026-09-21
+- **Session-ID check:** all 3 commits on PR #163 carry `Claude-Session:
+  .../session_017jneh8CPxEPmfPrbC5PJrg`; this reviewing session's own ID
+  is `session_01VV6XRzSwbobfnvyZfLfg6q` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** all 17 GitHub
+  Actions check runs on the real final head (`6a59384e09326c8cecfd0e3dd78472376486b0df`,
+  run `35592841192`) `completed`/`success`, `gate` included. Pulled the
+  real `gate` job log directly (`get_job_logs`): `Product-truth: 11/11
+  product-true`, `Status: 33/300 certified · 10 product-true`
+  (status.py's own stricter CERTIFIED-only count, still 10 at CI time —
+  expected, since certification had not yet landed).
+- **Diff read directly:** `apps/api/app/budget/budget_policy_crud.py`,
+  `budget_policy_schema.py`, `budget_policy_routes.py`,
+  `apps/api/alembic/versions/0007_budget_policies.py`, `apps/api/app/main.py`.
+  Confirmed `reserve_budget_allocation`/`release_budget_allocation` are
+  each a single conditional SQL `UPDATE` (`WHERE reserved_amount +
+  :amount <= total_amount` / `WHERE reserved_amount - :amount >= 0`),
+  never read-then-write; confirmed the real `CHECK
+  (reserved_amount <= total_amount)`/`CHECK (reserved_amount >= 0)`/
+  `UNIQUE(project_id)` constraints in the migration as an independent
+  DB-level backstop; confirmed `app.main` live-wires
+  `build_budget_policy_router` by direct source read.
+- **Task contract re-pulled directly, not trusted from the producer's own
+  claim:** `python tools/r1_handoff.py packet FTF-0403 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — the committed
+  `docs/implementation/task-packets/FTF-0403.md` matched the tool's own
+  deterministic output byte-for-byte (the tool's own exclusive-create
+  check passed without raising "Refusing to overwrite different
+  content"). Acceptance clause 1 ("Persist decimal budget authorization,
+  cost currency, scopes and approval history") met by the real
+  `BudgetPolicy` table (`total_amount` a genuine `Numeric(18,4)`,
+  `currency`/`scopes_json` closed vocabularies) plus FTF-0104's own
+  already-CERTIFIED `audit_events` table carrying approval history.
+  negative_acceptance ("Negative/unknown rates and concurrent allocation
+  beyond available reservation cannot be accepted") proven both directly
+  (validation guards, dedicated tests) and by this review's own fault
+  injections below.
+- **Own reproduction, this sandbox** (`git worktree add` on the real
+  merged PR head, `uv sync --all-packages`, a freshly created local
+  PostgreSQL 16 database/role matching CI's own `sovra_migrate`/
+  `sovra_app` credentials): `tests/tasks/test_ftf_0403.py` — "all checks
+  passed"; `tests/integration/test_ftf_0403_budget_policy.py` against the
+  real database — "all checks passed", including the real concurrent-HTTP
+  reservation proof (two simultaneous over-budget reservations, exactly
+  one 200/one 409).
+- **Own fault injection, this session, distinct run from the producer's
+  own two, both reverted byte-identical and reconfirmed clean afterward:**
+  1. Disabled the reserve headroom guard (removed the
+     `reserved_amount + amount <= total_amount` WHERE clause) — 2 checks
+     failed for real: the over-headroom-refusal check and the central
+     concurrency negative_acceptance check (both reservations committed,
+     `sorted(statuses) != [200, 409]`); independently, the real DB
+     `CHECK (reserved_amount <= total_amount)` constraint itself raised
+     `IntegrityError` — a genuine second, independent backstop.
+  2. Disabled the "project already has a budget policy" guard in
+     `create_budget_policy` (`if False and project.budget_policy_id is
+     not None:`) — 1 check failed for real (duplicate-create-refusal
+     never returned 409), independently caught by the real DB
+     `UNIQUE(project_id)` constraint itself (`IntegrityError`).
+- **No regression, independently re-run:** `tests/tasks/
+  test_ftf_0401.py`/`test_ftf_0402.py`/`test_ftf_0404.py`/
+  `test_ftf_0405.py`/`test_ftf_0406.py`/`test_ftf_0407.py` — all six
+  "all checks passed".
+- **Static checks re-run clean, this session:** `ruff check .`/`ruff
+  format --check .` clean; `mypy .` (from `apps/api`) — 2 errors, both
+  the pre-existing, unrelated `authlib.jose` missing-stub gap in
+  `oidc_login.py`, confirmed identical on `main`. `scripts/
+  validate_spec.py --strict` clean after `git fetch --unshallow` (this
+  sandbox's own documented shallow-clone artifact). `scripts/
+  product_truth_check.py --fail-on-unwired` — own run, `11/11`
+  product-true, matching the real CI log exactly.
+- **CI gate-wiring fix confirmed live:** `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0407.py` steps present and `completed`/`success` in the real
+  `gate` job's own step list (steps 51/52) — the disclosed, opportunistic
+  CI gap-fix genuinely landed.
+- Dependencies FTF-0104/FTF-0401 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #163 (merge commit
+  `4afab390b60028cccc489c439d8401252a2c1d8f`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  (`scripts/task_claim.py`) to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-0403']`
+  updated. Certified: 34/300, Product-true: 11/11.
+
+**Conclusion:** Certified L2-CERTIFIED.
