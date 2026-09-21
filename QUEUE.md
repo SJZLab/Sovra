@@ -1,5 +1,73 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0403
+  (Budget policy, deps FTF-0104/FTF-0401 both CERTIFIED). This shift's own
+  designated branch (`claude/wizardly-fermat-zl5g8t`) carried only
+  already-merged history (its own prior PR had landed as part of main),
+  so it was restarted fresh from `origin/main` per this relay's own
+  standing instruction, not stacked on stale history. Independently
+  recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted a
+  prior shift's own "Next shift" note by itself): FTF-0202 (owner ask,
+  still open/unverified — see "## Owner actions — current" below),
+  FTF-0403, FTF-0902, FTF-1001, FTF-1401, FTF-1501, FTF-1701 are the
+  seven dependency-ready items (FTF-0407 itself, this frontier's own
+  prior entry, reached CERTIFIED this same day via PR #156 and dropped
+  out of the frontier); FTF-0403 has the lowest task-ID/CAP ordering
+  among the non-blocked items and no external-service ask of its own.
+  FTF-0401's own `Project.budget_policy_id` column has existed,
+  deliberately unwritten, since that task's own migration — its own
+  `project_routes.py` module docstring disclosed it explicitly as "a
+  schema column this task's own routes never accept, for a later task to
+  write through." This is that later task: a new `apps/api/app/budget/`
+  package (refined from the task packet's own suggested single
+  `services/budget_policy.py` path to a dedicated schema/CRUD/routes
+  split, the same refinement precedent FTF-0305 established) persists a
+  real `decimal.Decimal` `total_amount`, a closed ISO-4217 `currency`
+  allowlist and a closed, Section-41-grounded `scopes_json` vocabulary
+  (training/evaluation/serving), and wires the real, DB-enforced
+  composite FK `projects(organization_id, budget_policy_id)` ->
+  `budget_policies(organization_id, id)`.
+  `reserve_budget_allocation`/`release_budget_allocation`
+  (`budget_policy_crud.py`) are this task's own central
+  negative_acceptance ("Negative/unknown rates and concurrent allocation
+  beyond available reservation cannot be accepted") made real: a single,
+  conditional SQL `UPDATE` against the row's own aggregate
+  `reserved_amount`, never a read-then-write race — proven under two
+  real, concurrently issued HTTP reservations that together exceed the
+  policy's own total in `tests/integration/test_ftf_0403_budget_policy.py`
+  (exactly one commits, backed by a real DB `CHECK` constraint as a
+  second, independent backstop). "Approval history" is carried by
+  FTF-0104's own already-CERTIFIED, append-only `audit_events` table, no
+  second table of its own. Live-wired into `app.main`
+  (`build_budget_policy_router`, the seventh live-wired product-runtime
+  path in this repository).
+  20 no-DB test functions (`tests/tasks/test_ftf_0403.py`) plus a real
+  Postgres proof (create/duplicate-refusal/IDOR/negative-rate-refusal/
+  reserve/revise/release/history/concurrency/grant-surface). Own fault
+  injection, two distinct vectors on each suite, all reverted
+  byte-identical and reconfirmed clean afterward — full detail in
+  `docs/spec-matrix.yaml`'s own FTF-0403 entry and
+  `docs/certifications/queue.md`. No regression to FTF-0401/FTF-0402/
+  FTF-0404/FTF-0405/FTF-0406/FTF-0407's own certified no-DB suites or to
+  FTF-0404's own live-Postgres suite (re-run against a database carrying
+  this task's own new migration).
+  Also closed a real, disclosed CI gate-wiring gap noticed while already
+  touching `.github/workflows/ci.yml` for this task's own new
+  `budget-policy-integration` job: `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0407.py` were never added to the gate job's own step list
+  after those tasks reached CERTIFIED, so CI never actually re-ran their
+  suites on later PRs — both confirmed passing locally before being
+  wired in, fixed alongside this task's own change to the same file
+  rather than left silently (unrelated to this task's own DoD, but a
+  real regression-protection gap this task was already positioned to
+  close cheaply).
+  `product_truth_check.py --fail-on-unwired` rises to `11/11`;
+  `scripts/status.py`'s own stricter CERTIFIED-only count stays `33/300
+  certified · 10 product-true` until this submission is independently
+  certified. PR opened as PROVISIONAL; not self-certified (Law 4) —
+  awaiting independent Control-plane L2 review.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #156) — independent CERTIFY
   review of FTF-0407 (Critical behavior requirements): **CERTIFIED**.
   Subscribed while CI was still in-flight; the producer session
@@ -841,8 +909,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 33/300 (main; FTF-0407 CERTIFIED 2026-09-21, PR #156 merged as
-`5da3834` — see docs/certifications/ledger.md) · Provisional: 0 ·
-Blocked: 0
+`5da3834` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0403, this shift, awaiting independent Control-plane L2
+certification) · Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -987,8 +1056,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0407 (Critical behavior requirements) was
-independently reviewed and CERTIFIED this shift via PR #156 (merge
+FTF-0403 (Budget policy) — implemented this shift, PR opened as
+PROVISIONAL. See this file's own top "Updated:" entry,
+`docs/spec-matrix.yaml`'s own FTF-0403 entry and
+`docs/certifications/queue.md` for the full submission write-up and
+evidence. Not self-certified (Law 4) — awaiting independent
+Control-plane L2 review.
+
+Prior item: FTF-0407 (Critical behavior requirements) was
+independently reviewed and CERTIFIED a prior shift via PR #156 (merge
 commit `5da3834`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.

@@ -7364,3 +7364,184 @@ with `docs/spec-matrix.yaml`.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_0185UQFPYhDkeasgkhTHrE5K,
   2026-09-21.
+
+## 2026-09-21 — FTF-0403 — Budget policy
+- **PR:** to be opened from `claude/wizardly-fermat-zl5g8t` → `main`,
+  title `[relay] FTF-0403: Budget policy`. Link recorded here once open.
+- **Commit:** `48eb4c6cb46fe2aca621d1c9fed8d3438ed7dce8` (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0404/FTF-0406/FTF-0407
+  two-commit precedent.
+- **Ground truth checked before picking work:** this shift's own
+  designated branch carried only already-merged history (a prior PR had
+  landed as part of `main`), so it was restarted fresh from
+  `origin/main` per this relay's own standing instruction rather than
+  stacked on stale history. `PROGRESS.md`'s own last entry ends mid-way
+  through the FTF-0406 shift, but `git log origin/main`/
+  `docs/spec-matrix.yaml` show FTF-0406 and FTF-0407 both reached
+  CERTIFIED since (PR #153/#156) without `PROGRESS.md` itself ever being
+  updated to record it — noticed, not silently trusted or silently
+  backfilled; state was independently reconciled directly from
+  `git log`/`docs/spec-matrix.yaml`'s own live `certification_state`
+  fields before picking any work. Independently recomputed the
+  dependency-ready frontier from scratch by parsing `docs/TASK_INDEX.md`'s
+  own `deps` column against `docs/spec-matrix.yaml`'s live
+  `certification_state`: FTF-0202 (owner ask, still open/unverified),
+  FTF-0403, FTF-0902, FTF-1001, FTF-1401, FTF-1501, FTF-1701 are the
+  seven dependency-ready items. FTF-0403 has the lowest task-ID ordering
+  among the non-blocked items and no external-service ask of its own.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0403 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Persist
+  decimal budget authorization, cost currency, scopes and approval
+  history"), negative_acceptance ("Negative/unknown rates and concurrent
+  allocation beyond available reservation cannot be accepted"),
+  `database_changes: "Own forward Alembic migration for this resource;
+  tenant/composite constraints/RLS and upgrade tests per Sections
+  6/65/71. Serialize migration chain."`, `files: [apps/api/app/services/
+  budget_policy.py, tests/tasks/test_ftf_0403.py]`,
+  `dependencies: [FTF-0104, FTF-0401]` (both CERTIFIED),
+  `contract_owner: FTF-0401`, `shared_lock_required: [contracts:04,
+  migration:application]`.
+- **The real gap this task closes (disclosed, not assumed):** FTF-0401's
+  own `Project.budget_policy_id` column has existed, deliberately
+  unwritten, since that task's own migration (`0005_projects.py`) — its
+  own `project_routes.py` module docstring says so explicitly: "stays a
+  schema column this task's own routes never accept, for a later task to
+  write through." This is that later task.
+- **Path refinement (disclosed, not silently taken):** the packet's own
+  suggested single `apps/api/app/services/budget_policy.py` path was
+  refined to a dedicated `apps/api/app/budget/` package split across
+  `budget_policy_schema.py`/`_crud.py`/`_routes.py` — `services/` is this
+  repository's own convention for a *pure, DB-free* enforcement module
+  with no table of its own (`project_security_profile.py`,
+  `side_effect_classification.py`, `critical_behavior_requirements.py`);
+  this task genuinely needs a real, persisted table, so the closer
+  structural analog is FTF-0404's own `apps/api/app/tools/` package. The
+  same refinement precedent FTF-0305 already established for its own
+  suggested path.
+- **Design (disclosed):** `BudgetPolicy` (`budget_policy_schema.py`)
+  persists a real `decimal.Decimal` `total_amount` (never a float,
+  validated finite/positive/scale-bounded at construction), a closed,
+  real-ISO-4217 `currency` allowlist, and a closed `scopes_json`
+  vocabulary grounded directly in Section 41's own named cost-bearing
+  Temporal workflow list (`TrainingWorkflow`/`EvaluationWorkflow`/
+  `DeploymentWorkflow` → `training`/`evaluation`/`serving`) — no upstream
+  section fixes a richer vocabulary for either. `reserve_budget_
+  allocation`/`release_budget_allocation` (`budget_policy_crud.py`) are
+  this task's own central negative_acceptance made real: each issues a
+  single, conditional SQL `UPDATE` against the row's own aggregate
+  `reserved_amount`, guarded in the *same statement* by
+  `reserved_amount +/- amount` vs. `total_amount`/`0` — never a
+  read-then-compare-then-write sequence two concurrent requests could
+  both pass before either commits — backed by a real DB
+  `CHECK (reserved_amount <= total_amount)`/`CHECK (reserved_amount >=
+  0)` constraint as a second, independent backstop
+  (`0007_budget_policies.py`). "Approval history" (acceptance clause 1)
+  is carried by FTF-0104's own already-CERTIFIED, append-only
+  `audit_events` table — every create/revise/reserve/release writes one
+  in the same transaction, the same discipline FTF-0201/FTF-0301/
+  FTF-0401/FTF-0404 already established — rather than a second,
+  independent approval table, matching `database_changes`'s own "Own
+  forward Alembic migration for this resource" (singular).
+- **Wiring (disclosed):** the real, DB-enforced composite foreign key
+  `projects(organization_id, budget_policy_id) ->
+  budget_policies(organization_id, id)` is added purely additively
+  (`budget_policy_id` stays nullable — no existing certified `Project`
+  row is invalidated); `create_budget_policy` writes it through for
+  real. `app.main` now includes `build_budget_policy_router` — the
+  seventh live-wired product-runtime path in this repository, following
+  the exact `TenantContext`/`authorize_resource_ownership`/
+  `execute_tenant_scoped` composition FTF-0201/FTF-0301/FTF-0401/
+  FTF-0404 already established, with the same `{workspace_admin,
+  organization_admin}` write-role split FTF-0401/FTF-0404 already
+  applied (Section 45 names no dedicated sentence for budget
+  authorization specifically). Deliberately does NOT bump
+  `project.row_version` when attaching a budget policy — that field is
+  FTF-0401's own optimistic-concurrency contract over a different set of
+  fields (`project_crud.py`'s own `apply_edits`); attaching a budget
+  policy is additive to a column that contract never covers.
+- **Regression risk checked before implementation, not after:** read
+  `project_crud.py`'s own `apply_edits`/`ProjectConcurrencyError` and
+  `tool_definition_crud.py`'s own `apply_new_version` to confirm neither
+  touches `budget_policy_id` and neither would be affected by this
+  task's own new FK/column-write. Re-ran FTF-0401/FTF-0402/FTF-0404/
+  FTF-0405/FTF-0406/FTF-0407's own certified no-DB suites (all six "all
+  checks passed") and FTF-0404's own live-Postgres suite (re-run "all
+  checks passed" against a database carrying this task's own new
+  `0007_budget_policies` migration) — no regression.
+- **Evidence:** `tests/tasks/test_ftf_0403.py`, 20 no-DB test functions —
+  validation shape checks, `BudgetPolicy.__init__` construction guards,
+  `apply_revise_budget_policy`'s own row_version/reservation-floor
+  guards, a source-inspection proof that reserve/release build the real
+  atomic conditional-`UPDATE` shape and route every query through the
+  real, imported `execute_tenant_scoped`/`authorize_resource_ownership`,
+  and a real local uvicorn server proving unauthenticated (401)/
+  role-boundary (403) denial never opens a session. Own fault injection
+  (Law 1, two distinct vectors, both reverted byte-identical via
+  re-applying the exact original source and reconfirmed by `diff`/
+  re-running the suite clean afterward): (1) disabled the row_version
+  staleness guard (`if False and expected_row_version !=
+  policy.row_version:`) — caught for real by the exact named stale-
+  row_version check; (2) disabled the reservation-floor guard (`if False
+  and total_amount < policy.reserved_amount:`) — caught for real by the
+  exact named negative_acceptance check.
+  `tests/integration/test_ftf_0403_budget_policy.py`: a real Postgres
+  proof (two real organizations, four real projects, a real uvicorn
+  server bound to the real, restricted `sovra_app` role) covering
+  create/duplicate-refusal(409)/cross-project-and-cross-organization
+  IDOR(404)/negative-unknown-rate-refusal(400)/reserve/unauthorized-
+  scope-refusal(400)/over-headroom-refusal(409)/revise(shrink-below-
+  reserved and stale-row_version both 409, real change 200)/release
+  (within/over reserved)/real approval-and-allocation history in
+  order/**two real, concurrently issued HTTP reserve requests that
+  together exceed the policy's own total (60+60=120 > 100) never both
+  succeed** (exactly one 200/one 409, final `reserved_amount` reflecting
+  exactly the one reservation that committed)/missing-tenant-context
+  refusal/`sovra_app` cannot `DELETE` a row directly/the real
+  `UNIQUE(project_id)` constraint refuses a second row even at the raw
+  SQL level. Own fault injection (Law 1, two distinct vectors against
+  the live database, both reverted byte-identical and the suite re-run
+  clean on a fresh database afterward): (1) disabled the reserve
+  headroom guard — caught for real by both the over-headroom-refusal and
+  concurrency checks, *and* independently by the real DB `CHECK`
+  constraint itself (`IntegrityError`) — a genuine second, independent
+  backstop; (2) disabled the "project already has a budget policy" guard
+  — caught for real by the duplicate-create-refusal check, *and*
+  independently by the real DB `UNIQUE(project_id)` constraint itself
+  (`IntegrityError`).
+- **Tooling:** `ruff check`/`ruff format --check`/`mypy` clean repo-wide
+  (`uv run ruff check .` / `uv run mypy .`, 133 source files).
+  `scripts/validate_spec.py --strict` clean (after `git fetch
+  --unshallow`, this sandbox's own documented shallow-clone artifact).
+  `pnpm install --frozen-lockfile` had never been run in this sandbox
+  before this shift (pre-existing environment gap, not caused by this
+  task — confirmed by re-running FTF-0002/FTF-0003/FTF-H001's own no-DB
+  suites clean immediately after installing); full repo-wide
+  `tests/tasks/test_ftf_*.py` sweep clean afterward.
+  `product_truth_check.py --fail-on-unwired` rises to `11/11`
+  (`reserve_budget_allocation`, called for real by the real
+  `/budget-policy/reserve` route — a genuine new live caller, not
+  inflation); `scripts/status.py`'s own stricter CERTIFIED-only count
+  stays `33/300 certified · 10 product-true` until this submission is
+  independently certified.
+- **Disclosed scope boundary:** this task is the *policy* authorization
+  layer, not the full per-job atomic reservation/settlement system
+  Section 70.3 itself still leaves open — `docs/TASK_INDEX.md` records
+  FTF-H018 ("Atomic cost reservations and bounded stop-lag controls") as
+  depending on this task, not the reverse.
+- **Separately, outside this task's own DoD:** closed a real, disclosed
+  CI gate-wiring gap noticed while this shift was already touching
+  `.github/workflows/ci.yml` for this task's own new
+  `budget-policy-integration` job — `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0407.py` were never added to the `gate` job's own step list
+  after those tasks reached CERTIFIED (PR #153/#156), so CI never
+  actually re-ran their suites on any later PR. Both confirmed passing
+  locally before being wired in as two additional `gate` steps in the
+  same commit that touches this file for this task's own reason. A
+  Control-plane/owner judgment call on whether anything further is
+  needed here (e.g. auditing other CERTIFIED tasks for the same gap) —
+  not expanded further by this producer session, to stay inside this
+  task's own write set.
+- **PR opened as PROVISIONAL; not self-certified (Law 4)** — awaiting
+  independent Control-plane L2 review.
