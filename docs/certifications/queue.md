@@ -7616,3 +7616,157 @@ triggered by the `pull_request.opened` webhook for PR #163.
   34/300, Product-true: 11/11.
 
 Full entry: docs/certifications/ledger.md.
+
+## 2026-09-21 — FTF-1701 — Reference agent specification
+- **PR:** opened from `claude/wizardly-fermat-k8uxnh` → `main`, title
+  `[relay] FTF-1701: Reference agent specification`.
+- **Commit:** `408ac045c623112b25397443f665794af6207621` (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  established two-commit precedent.
+- **Ground truth checked before picking work:** independently recomputed
+  the dependency-ready frontier from `docs/spec-matrix.yaml`'s live
+  `certification_state` against every non-`CERTIFIED` task's own `deps=`
+  field, rather than trusting the prior shift's own "Next shift" note.
+  Found FTF-0202 (owner ask), FTF-0408 (newly dependency-ready — FTF-0403
+  reached CERTIFIED since the prior note), FTF-0902, FTF-1001, FTF-1401,
+  FTF-1501, FTF-1701. Cross-checked live GitHub state via
+  `list_pull_requests` before picking (not just this repo's own docs) and
+  found QUEUE.md's own "Provisional" section was stale: PR #159/#160/#161
+  (FTF-1501/FTF-1001/FTF-1401) are real, open, unmerged PROVISIONAL
+  submissions it did not reflect; PR #158 duplicates the already-merged
+  FTF-0403 (PR #163); PR #162 claims to resolve the FTF-0202 owner ask via
+  an unverifiable "live conversation" this scheduled/automated shift has
+  no means to check. Full reasoning in QUEUE.md's own newly flagged note
+  (Law 9) — none of these five PRs were merged, closed, or otherwise
+  acted on by this shift beyond flagging.
+  FTF-1001/FTF-1401/FTF-1501 were not re-implemented (would duplicate PRs
+  #160/#161/#159). FTF-0408's own acceptance clause reads on
+  `AgentManifest.mandate_json` fields (Section 22 Screen D) that do not
+  exist as real storage anywhere in this repository yet (`AgentManifest`
+  is FTF-04A19's own, later, separately dependency-gated schema), and
+  `Project` itself has no mandate/scope/languages/outputs/SLO columns to
+  edit — a real DoD-clarity gap, disclosed rather than improvised.
+  FTF-0902's own acceptance clause names a real enforcing Kubernetes/CNI
+  cluster as its own `resource_gate` prerequisite, unavailable in this
+  sandbox. FTF-1701 is the lowest-task-ID item among what remains
+  genuinely unclaimed with no external-service/infra ask, both its own
+  deps (FTF-0407, FTF-0405) already CERTIFIED.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-1701 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Specify
+  bounded actual reference agent with approved tools, deterministic
+  business state and explicit risk/language profile"),
+  negative_acceptance ("Reference success cannot claim every arbitrary
+  customer agent is production-qualified"), `database_changes: "No
+  independent schema change. Consume frozen contract."`,
+  `files: [evals/reference/reference_agent_specification.py,
+  tests/reference/test_ftf_1701.py]`, `dependencies: [FTF-0407, FTF-0405]`
+  (both CERTIFIED), `shared_lock_required: [contracts:17]`.
+- **The real gap this task closes (disclosed, not assumed):** Section
+  55's own named reference tools (`search_records`, `get_record`,
+  `create_note`, `request_approval`, `execute_approved_action`) and its
+  "deterministic independent server [that] owns permission/approval
+  records" so that "tool clients cannot fabricate grants" did not exist
+  anywhere in this repository. The full reference *product* (Section 54's
+  own end-to-end release qualification scenario — a real connected
+  repository, >=1,000 training traces, a sealed final suite, real
+  training/evaluation runs) is a chain of later, separately
+  dependency-gated tasks (`docs/TASK_INDEX.md`: FTF-1702 "Tool
+  environment" through FTF-1715 "Final cost/quality report" all name this
+  task as their own dependency, not the reverse) — this task's own
+  narrower acceptance clause is what was implemented, disclosed explicitly
+  in the module's own docstring.
+- **Design (disclosed):** `evals/reference/reference_agent_specification.py`
+  defines the five tools as `ReferenceToolSpec` dataclasses and constructs
+  each as a real `app.tools.tool_definition_schema.ToolDefinition` row —
+  genuinely passing FTF-0404/FTF-0406/FTF-0407's own already-CERTIFIED
+  construction-time guards (`enforce_side_effect_classification`,
+  `enforce_critical_behavior_requirement`), not merely matching their
+  shape. `ReferenceBusinessServer` is a deterministic, in-memory
+  implementation of the described business domain: `_authorized_record`
+  enforces tenant scoping and per-record subject/resource ownership
+  (cross-tenant and cross-subject/IDOR access both refused);
+  `create_note`/`execute_approved_action` are idempotent on a caller-
+  supplied `idempotency_key`; `decide_approval`/`revoke_approval` are the
+  only methods that can move an `ApprovalRequest` into `approved`/
+  `denied`/`revoked` and are deliberately never registered as one of the
+  five dispatchable tool names — `execute_approved_action` only ever
+  reads that state, making "tool clients cannot fabricate grants" true by
+  construction. `dispatch_tool_call` is the real first live caller of
+  FTF-0405's own `validate_instance` (disclosed in that module's own
+  docstring as having no live caller yet): both call arguments and
+  handler results are validated against the tool's own frozen input/
+  output schema. `ReferenceAgentProfile.qualifies_this_reference_
+  workload_only` is always `True` with no constructor path to set it
+  `False`, making this task's own negative_acceptance real by
+  construction rather than by policy text.
+- **Path refinement (disclosed):** none — the packet's own declared
+  `evals/reference/reference_agent_specification.py`/
+  `tests/reference/test_ftf_1701.py` paths were used exactly as given,
+  the first files in either directory (added `evals/__init__.py`/
+  `evals/reference/__init__.py` for real Python package resolution —
+  `mypy` genuinely failed with "Source file found twice under different
+  module names" without them, confirmed directly, not a guess).
+- **Contracts:** `packages/contracts/{openapi,jsonschema}/17-*` (contract
+  slot 17, first claim) freeze the real `ReferenceToolSpec`/
+  `ReferenceAgentProfile`/`ApprovalRequestRecord` shapes; `paths: {}`
+  since this task owns no live HTTP route, matching the FTF-1401/
+  FTF-1501/FTF-1601 precedent.
+- **Tests:** `tests/reference/test_ftf_1701.py` — 24 no-DB test
+  functions: construction-guard conformance (all five specs), profile
+  derivation, cross-tenant/cross-subject IDOR denial, idempotency
+  (`create_note`/`execute_approved_action`), denial/rollback state tested
+  directly (pending/denied/revoked, plus re-execution under a different
+  idempotency key), the "clients cannot fabricate grants" proof
+  (`decide_approval`/`revoke_approval` are not dispatchable), the
+  dispatcher's own input/output schema enforcement (including a
+  monkeypatched out-of-contract handler result), a full five-tool happy
+  path through the real dispatcher, and frozen-contract validation
+  against real constructed instances (with two genuine-rejection cases
+  proving the hand-rolled structural validator — the same one FTF-1601's
+  own suite established, not the third-party `jsonschema` package — is
+  not a decorative always-pass check).
+- **Own fault injection (Law 1, two distinct vectors, both reverted
+  byte-identical and the suite re-run clean afterward):**
+  1. Disabled the resource-scoped ownership check in `_authorized_record`
+     (`if False and record.owner_subject_id != subject_id:`) — failed
+     with exactly `FAIL [FTF-1701] cross-subject (IDOR) get_record within
+     the same tenant is refused`.
+  2. Disabled the "must be approved" guard in `execute_approved_action`
+     (`if False and approval.status != "approved":`) — failed with
+     exactly four named checks: the pending-, denied-, and
+     revoked-approval denial checks, plus the different-idempotency-key
+     re-execution check.
+- **Incidental, real evidence the reused guards are genuinely live, not
+  merely imported:** the first run of this task's own test suite
+  genuinely failed — two of the five tool specs' own first-draft
+  descriptions (`request_approval`, `execute_approved_action`) tripped
+  FTF-0406's real `enforce_side_effect_classification` risk-floor
+  detector for real (keyword roots in ordinary English description text:
+  "archive"/"escalate", then "grant"/"set"), before either description
+  was reworded. Not a fault injection (no test asserted this), but direct
+  evidence the guard runs on real input, not a mock.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep (24 files) all "all checks passed" or equivalent;
+  `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (137
+  source files); `pnpm run lint`/`typecheck`/`format:check` clean.
+  `scripts/validate_spec.py --strict` clean after `git fetch
+  --unshallow`. `scripts/product_truth_check.py --fail-on-unwired` —
+  `11/11` (unchanged; `proving_symbol` deliberately empty, this task adds
+  no live caller into any `SOURCE_ROOTS` path, matching FTF-1401/
+  FTF-1601's own precedent, not inflation). `python3 scripts/status.py` —
+  `34/300 certified · 11 product-true` (unchanged — PROVISIONAL, not yet
+  CERTIFIED).
+- **CI:** one new `gate` job step (`uv run python3
+  tests/reference/test_ftf_1701.py`) added to `.github/workflows/ci.yml`
+  right after the FTF-0403 step; no new integration job, since this task
+  touches no database/network/GPU resource. Confirmed the workflow file
+  still parses as valid YAML after the edit.
+- Dependencies FTF-0407/FTF-0405 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**
+  `docs/spec-matrix.yaml` FTF-1701 set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+  implementation commit, `proving_test:
+  tests/reference/test_ftf_1701.py`. Certified stays 34/300; Product-true
+  stays 11/11. Awaiting independent Control-plane L2 review.

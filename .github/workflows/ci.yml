@@ -164,6 +164,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0407.py
       - name: FTF-0403 negative-test proof (Budget policy catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0403.py
+      - name: FTF-1701 negative-test proof (Reference agent specification catches real defects, no DB required)
+        run: uv run python3 tests/reference/test_ftf_1701.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

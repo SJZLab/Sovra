@@ -10021,7 +10021,7 @@ FTF-0402/FTF-0404/FTF-0406/FTF-0407 two-commit precedent.
 reporting and stopping to await independent Control-plane L2
 certification, per Law 4 (producer never certifies own work).
 
-## Next shift
+## Next shift (superseded by the entry below — kept for the record)
 An independent Control-plane CERTIFY review of FTF-0403 (this shift's
 own PR) is the natural next action, matching the established
 relay/certifier alternation. If a certifier session is not what fires
@@ -10038,3 +10038,172 @@ dependency-ready per `docs/TASK_INDEX.md` — recompute fresh rather than
 trusting this note alone). Separately, still open and unverified per
 QUEUE.md "Owner actions — current": FTF-0202's secret-backend selection
 ask, and PR #143's own unverified claim to have resolved it.
+
+---
+
+## 2026-09-21T13:04:31Z — scheduled relay shift — FTF-1701 (Reference agent specification)
+
+**STEP 0:** CLAUDE.md.sha256 verified clean (`sha256sum CLAUDE.md`
+matches). Read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh,
+not from prior context. BLOCKER.md checked: no open blockers (both
+entries resolved history).
+
+**STEP 1:** Independently recomputed the dependency-ready frontier via
+`docs/spec-matrix.yaml`'s live `certification_state` against every
+non-`CERTIFIED` task's own `deps=` field, rather than trusting the prior
+shift's own "Next shift" note by itself. Found: FTF-0202 (owner ask, see
+below), FTF-0408 (newly dependency-ready — FTF-0403 reached CERTIFIED
+since the prior shift's note was written), FTF-0902, FTF-1001, FTF-1401,
+FTF-1501, FTF-1701.
+
+Cross-checked against live GitHub state (`list_pull_requests`, not this
+repo's own docs) before picking, and found a real discrepancy: QUEUE.md's
+own "Provisional" section claimed "None currently", but PR #159
+(FTF-1501), PR #160 (FTF-1001), and PR #161 (FTF-1401) are real, open,
+unmerged PROVISIONAL submissions from prior shifts, plus PR #158 (a stale
+FTF-0403 duplicate, superseded by the already-merged PR #163) and PR #162
+(an unverified claim to have resolved the FTF-0202 owner ask via "a live
+owner conversation" this shift has no means to check — this is a
+scheduled, automated run with no live user input of its own). Full
+reasoning recorded in QUEUE.md's own newly flagged note (Law 9,
+gate-weakening is watched) — not silently worked around.
+
+Consequence for this shift's own pick: implementing FTF-1501/FTF-1001/
+FTF-1401 again would duplicate work already sitting in open PRs (exactly
+the PR #158/FTF-0403 duplication this file's own history already shows
+happened once). FTF-0202 stays a genuine open owner ask — PR #162's own
+claim was not treated as sufficient, matching this file's own standing
+skepticism toward PR #143's earlier, similarly under-evidenced claim.
+FTF-0408's own acceptance clause reads on `AgentManifest.mandate_json`
+fields (Section 22 Screen D) that do not exist as real storage anywhere
+in this repository yet (`AgentManifest` is FTF-04A19's own, later,
+separately dependency-gated schema), and `Project` itself has no
+mandate/scope/languages/outputs/SLO columns — a real DoD-clarity gap, not
+picked under time pressure rather than improvised. FTF-0902's own
+acceptance clause names a real enforcing Kubernetes/CNI cluster as its
+own `resource_gate` prerequisite, not available in this sandbox.
+FTF-1701 is the lowest-task-ID item among what remains: genuinely
+unclaimed, no external-service/infra ask, both its own deps (FTF-0407,
+FTF-0405) already CERTIFIED.
+
+**STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-1701` fresh (the
+real DoD, not improvised). Read the existing FTF-0404/0405/0406/0407
+modules in full (`tool_definition_schema.py`,
+`json_schema_tool_validation.py`, `side_effect_classification.py`,
+`critical_behavior_requirements.py`) to reuse their real, already-live
+guards rather than reimplementing risk classification. Formed the
+hypothesis: this task's own acceptance clause narrows to a bounded
+specification module (five real tools + a deterministic business-state
+server + an explicit risk/language profile), not Section 54/55's own
+full end-to-end reference-product qualification scenario (a chain of
+seven later, separately dependency-gated tasks per `docs/TASK_INDEX.md`)
+— no code written yet at this point.
+
+**STEP 2 (E):** Implemented `evals/reference/reference_agent_specification.py`
+and `tests/reference/test_ftf_1701.py` together (this task's own PEV
+order matched the FTF-0406/FTF-0407/FTF-0403 precedent: implement with
+tests, run, then fault-inject against the delivered code). First run
+genuinely failed for real, before any test was written to expect it: two
+of the five reference tool specs (`request_approval`,
+`execute_approved_action`) tripped FTF-0406's own real
+`enforce_side_effect_classification` risk-floor guard on their first
+description wording (`"archive or escalate"` and `"grant"`/`"set"`
+respectively triggered real keyword-root detections) — direct evidence
+the already-CERTIFIED guard is live and enforcing, not merely imported;
+both descriptions were reworded to remove the ambiguity and the specs
+then constructed cleanly. `uv sync --all-packages` (sqlalchemy not yet
+installed in this session) and `pnpm install --frozen-lockfile` (frontend
+deps not yet installed) were both run before the full suite would pass —
+pre-existing environment gaps, not caused by this task, confirmed by
+`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py` all passing
+clean immediately after.
+
+**Failure output shown by fault injection (Law 1, two distinct vectors,
+both reverted byte-identical and the suite re-run clean afterward):**
+(1) disabled the resource-scoped ownership check in
+`_authorized_record` (`if False and record.owner_subject_id !=
+subject_id:`) — `uv run python3 tests/reference/test_ftf_1701.py` failed
+with exactly `FAIL [FTF-1701] cross-subject (IDOR) get_record within the
+same tenant is refused`; (2) disabled the "must be approved" guard in
+`execute_approved_action` (`if False and approval.status !=
+"approved":`) — failed with exactly four named checks: the pending-,
+denied-, and revoked-approval denial checks, plus the
+different-idempotency-key re-execution check. Both reverted
+byte-identical (`diff` against the pre-injection copy confirmed empty)
+and the suite re-confirmed "all checks passed" afterward.
+
+`packages/contracts/{openapi,jsonschema}/17-*` (contract slot 17, first
+claim, `shared_lock_required: contracts:17`) freeze the real
+`ReferenceToolSpec`/`ReferenceAgentProfile`/`ApprovalRequestRecord`
+shapes; `paths: {}` since this task owns no live HTTP route, matching the
+FTF-1401/FTF-1501/FTF-1601 precedent. Added contract-conformance tests
+using the same hand-rolled, stdlib-only structural validator FTF-1601's
+own test suite already established (not the third-party `jsonschema`
+package — a second, unapproved new-runtime-dependency ask), including two
+genuine-rejection cases proving the validator is not a decorative
+always-pass check.
+
+**V:** Independently reconfirmed no regression: full
+`tests/tasks/test_ftf_*.py` sweep (24 files) all "all checks passed" or
+equivalent; `ruff check .`/`ruff format --check .`/`mypy .` clean
+repo-wide (137 source files); `pnpm run lint`/`typecheck`/`format:check`
+clean; `git fetch --unshallow origin` first (this sandbox's own clone is
+shallow by default — the same pre-existing artifact every prior
+relay/certifying session has already documented), then `validate_spec.py
+--strict` clean. `product_truth_check.py --fail-on-unwired` stays `11/11`
+(`proving_symbol` deliberately left empty — this task adds no live
+caller into any `SOURCE_ROOTS` path, matching FTF-1401/FTF-1601's own
+precedent for a specification/measurement tool, not inflation).
+`python3 scripts/status.py` — `34/300 certified · 11 product-true`
+(unchanged — FTF-1701 is PROVISIONAL, not yet CERTIFIED).
+
+Wired `.github/workflows/ci.yml` with one new `gate` job step
+(`uv run python3 tests/reference/test_ftf_1701.py`, right after the
+FTF-0403 step) — no new integration job, since this task touches no
+database/network/GPU resource.
+
+**Disclosed, not hidden:** this task's own scope is the specification
+layer only — five real tool definitions, a deterministic reference
+business-state server, and an explicit risk/language profile. The full
+reference *product* (a real connected GitHub repository, >=1,000
+approved training traces, 150 validation traces, 250 development
+evaluation cases, a sealed >=1,000-task final suite, real LoRA/QLoRA
+training, real evaluation) is Section 54/55's own end-to-end release
+qualification scenario — `docs/TASK_INDEX.md` records FTF-1702 ("Tool
+environment") through FTF-1715 ("Final cost/quality report") as this
+task's own dependents, not the reverse. `qualifies_this_reference_
+workload_only` stays `True` by construction — this module's own
+negative_acceptance made real, not merely documented.
+
+**STEP 3 metrics after this shift:** 34/300 certified (unchanged — this
+shift implements, it does not certify); 1 new provisional this shift
+(FTF-1701) plus three pre-existing, previously-untracked provisionals
+discovered via direct GitHub inspection (FTF-1501/FTF-1001/FTF-1401, PRs
+#159/#160/#161 — see QUEUE.md's own newly flagged note); one stale
+duplicate PR flagged for closure (PR #158); one owner-ask resolution
+claim flagged as unverified (PR #162, FTF-0202 stays open).
+`scripts/status.py`'s own authoritative "product-true" count stays 11;
+`product_truth_check.py --fail-on-unwired` — `11/11`. PR opened as
+PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/`docs/certifications/queue.md`
+all updated in a second, tracking-doc-only commit on the same branch,
+matching the established two-commit precedent.
+
+**STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+reporting and stopping to await independent Control-plane L2
+certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+Five open PRs need Control-plane attention ahead of any further relay
+implementation (full reasoning in QUEUE.md's own flagged note and "Next
+shift" section): (1) close PR #158 without merging (superseded by the
+already-merged PR #163); (2) certify or reject PR #159/#160/#161
+(FTF-1501/FTF-1001/FTF-1401, all real, open, and previously untracked in
+this file); (3) resolve PR #162's own FTF-0202 claim one way or the
+other — verify the live conversation genuinely occurred, or close it
+unmerged like PR #143 before it, never treat the bare claim as
+sufficient. If a relay session fires next instead: recompute the
+dependency-ready frontier fresh — FTF-1701 reaching CERTIFIED will newly
+unblock FTF-1702 ("Tool environment") per `docs/TASK_INDEX.md`;
+FTF-0408/FTF-0902 are still real, unpicked items but need the
+DoD-clarity/resource-gate gaps disclosed above resolved first, not
+improvised under time pressure.
