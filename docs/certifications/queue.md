@@ -7546,3 +7546,73 @@ with `docs/spec-matrix.yaml`.
   task's own write set.
 - **PR opened as PROVISIONAL; not self-certified (Law 4)** — awaiting
   independent Control-plane L2 review.
+
+## 2026-09-21 — Control plane: FTF-0403 (PR#163) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #163.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01VV6XRzSwbobfnvyZfLfg6q`; all 3 commits on PR #163 carry
+  `Claude-Session: .../session_017jneh8CPxEPmfPrbC5PJrg` — no match,
+  independent per Law 4.
+- **CI checked on the real head, not a stale claim:** subscribed while 16
+  of 17 checks were still `in_progress`/`queued`; polled to completion —
+  all 17 real GitHub Actions check runs `completed`/`success` on the real
+  final head (`6a59384e09326c8cecfd0e3dd78472376486b0df`, run
+  `35592841192`), `gate` included. Pulled the real `gate` job log
+  directly (`get_job_logs`): `Product-truth: 11/11 product-true`,
+  `Status: 33/300 certified · 10 product-true` (status.py's own
+  CERTIFIED-only count, still 10 at CI time — expected).
+- **Diff read directly:** `apps/api/app/budget/budget_policy_crud.py`/
+  `budget_policy_schema.py`/`budget_policy_routes.py`/
+  `apps/api/alembic/versions/0007_budget_policies.py`/
+  `apps/api/app/main.py`. Confirmed `reserve_budget_allocation`/
+  `release_budget_allocation` are each a single conditional SQL `UPDATE`,
+  never read-then-write, backed by the real `CHECK`/`UNIQUE(project_id)`
+  constraints as an independent DB-level backstop. Confirmed `app.main`
+  live-wires `build_budget_policy_router` by direct source read.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0403 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — the
+  committed `docs/implementation/task-packets/FTF-0403.md` matched the
+  tool's own deterministic output byte-for-byte. Acceptance clause 1 and
+  negative_acceptance both confirmed met by the code above and by this
+  review's own fault injections.
+- **Own reproduction, this sandbox** (`git worktree add` on the real
+  merged PR head, `uv sync --all-packages`, a freshly created local
+  PostgreSQL 16 database/role matching CI's own `sovra_migrate`/
+  `sovra_app` credentials): `tests/tasks/test_ftf_0403.py` and
+  `tests/integration/test_ftf_0403_budget_policy.py` (including the real
+  concurrent-HTTP reservation proof) both "all checks passed."
+- **Own fault injection, distinct from the producer's own two, both
+  reverted byte-identical and reconfirmed clean afterward:**
+  1. Disabled the reserve headroom guard — 2 checks failed for real (the
+     over-headroom-refusal check and the central concurrency
+     negative_acceptance check); independently, the real DB `CHECK`
+     constraint itself raised `IntegrityError`.
+  2. Disabled the duplicate-budget-policy guard — 1 check failed for
+     real (duplicate-create-refusal); independently caught by the real
+     DB `UNIQUE(project_id)` constraint itself (`IntegrityError`).
+- **No regression, independently re-run:** `tests/tasks/
+  test_ftf_0401.py`/`test_ftf_0402.py`/`test_ftf_0404.py`/
+  `test_ftf_0405.py`/`test_ftf_0406.py`/`test_ftf_0407.py` — all six
+  "all checks passed."
+- **Static checks re-run clean:** `ruff check .`/`ruff format --check .`
+  clean; `mypy .` (from `apps/api`) — 2 errors, both the pre-existing,
+  unrelated `authlib.jose` missing-stub gap in `oidc_login.py`, confirmed
+  identical on `main`. `scripts/validate_spec.py --strict` clean after
+  `git fetch --unshallow`. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `11/11` product-true.
+- **CI gate-wiring fix confirmed live:** `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0407.py` steps present and `completed`/`success` in the real
+  `gate` job's own step list.
+- Dependencies FTF-0104/FTF-0401 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** Merged PR #163 (merge commit
+  `4afab390b60028cccc489c439d8401252a2c1d8f`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` — `['FTF-0403']` updated. Certified:
+  34/300, Product-true: 11/11.
+
+Full entry: docs/certifications/ledger.md.

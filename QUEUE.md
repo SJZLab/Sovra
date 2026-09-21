@@ -1,5 +1,33 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0403
+Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #163) — independent CERTIFY
+  review of FTF-0403 (Budget policy): **CERTIFIED**. Session-ID clean (all
+  3 commits on PR #163 carry a different session than this reviewer's
+  own). Subscribed while 16 of 17 checks were still in-flight; polled to
+  completion — all 17 real GitHub Actions check runs `completed`/
+  `success` on the real final head, `gate` included, its real job log
+  read directly (`Product-truth: 11/11 product-true`). Own reproduction
+  in a fresh `git worktree` at the real merged head (`uv sync
+  --all-packages`, a freshly created local PostgreSQL 16 database/role):
+  both `tests/tasks/test_ftf_0403.py` and `tests/integration/
+  test_ftf_0403_budget_policy.py` (including the real concurrent-HTTP
+  reservation proof) "all checks passed." Own fault injection, two
+  distinct vectors against the real database, distinct from the
+  producer's own two, both caught for real and reverted byte-identical:
+  disabling the reserve headroom guard (caught by the over-headroom and
+  concurrency checks, independently backstopped by a real DB `CHECK`
+  constraint `IntegrityError`) and disabling the duplicate-budget-policy
+  guard (caught by the duplicate-create-refusal check, independently
+  backstopped by the real DB `UNIQUE(project_id)` constraint). No
+  regression to FTF-0401/FTF-0402/FTF-0404/FTF-0405/FTF-0406/FTF-0407's
+  own no-DB suites. Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-0403` and both acceptance clauses plus negative_acceptance
+  confirmed met. Merged PR #163 (merge commit `4afab390b60028cccc489c439d8401252a2c1d8f`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Certified: 34/300, Product-true: 11/11.
+  Full review: `docs/certifications/ledger.md`/`docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-0403
   (Budget policy, deps FTF-0104/FTF-0401 both CERTIFIED). This shift's own
   designated branch (`claude/wizardly-fermat-zl5g8t`) carried only
   already-merged history (its own prior PR had landed as part of main),
@@ -908,10 +936,8 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 33/300 (main; FTF-0407 CERTIFIED 2026-09-21, PR #156 merged as
-`5da3834` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0403, this shift, awaiting independent Control-plane L2
-certification) · Blocked: 0
+Certified: 34/300 (main; FTF-0403 CERTIFIED 2026-09-21, PR #163 merged as
+`4afab39` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1056,12 +1082,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0403 (Budget policy) — implemented this shift, PR opened as
-PROVISIONAL. See this file's own top "Updated:" entry,
-`docs/spec-matrix.yaml`'s own FTF-0403 entry and
-`docs/certifications/queue.md` for the full submission write-up and
-evidence. Not self-certified (Law 4) — awaiting independent
-Control-plane L2 review.
+None currently. FTF-0403 (Budget policy) was the only item here; it was
+independently reviewed and CERTIFIED 2026-09-21 via PR #163 (merge commit
+`4afab390b60028cccc489c439d8401252a2c1d8f`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 Prior item: FTF-0407 (Critical behavior requirements) was
 independently reviewed and CERTIFIED a prior shift via PR #156 (merge
@@ -2020,6 +2045,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-0403 — Budget policy. CERTIFIED 2026-09-21, PR #163 (merge commit
+  `4afab390b60028cccc489c439d8401252a2c1d8f`). Independently re-verified in
+  a fresh `git worktree` at the real merged head: session-ID clean (all 3
+  commits carry a different session than this reviewer's own); all 17 real
+  GitHub Actions check runs `completed`/`success` on the real final head,
+  `gate` included, its real job log read directly (`Product-truth: 11/11
+  product-true`). Own reproduction (`uv sync --all-packages`, a freshly
+  created local PostgreSQL 16 database/role): `tests/tasks/
+  test_ftf_0403.py` and `tests/integration/test_ftf_0403_budget_policy.py`
+  (including the real concurrent-HTTP reservation proof) both "all checks
+  passed." Own fault injection, distinct from the producer's own two: (1)
+  disabled the reserve headroom guard — 2 checks failed for real, and
+  independently the real DB `CHECK` constraint raised `IntegrityError`;
+  (2) disabled the duplicate-budget-policy guard — 1 check failed for
+  real, independently caught by the real DB `UNIQUE(project_id)`
+  constraint. No regression to FTF-0401/FTF-0402/FTF-0404/FTF-0405/
+  FTF-0406/FTF-0407's own no-DB suites. `ruff`/`mypy` re-run clean (only
+  the pre-existing, unrelated `authlib.jose` stub gap remains).
+  `validate_spec.py --strict` clean after `git fetch --unshallow`. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0403` — the
+  committed task-packet file matched the tool's own deterministic output
+  byte-for-byte; acceptance/negative_acceptance clauses confirmed met.
+  Dependencies FTF-0104/FTF-0401 confirmed genuinely `CERTIFIED`. No
+  blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`. `scripts/status.py`'s own stricter
+  "product-true" count: `33/300` certified before, `34/300` after;
+  "Product-true" `10` before, `11` after, matching
+  `product_truth_check.py`'s own `11/11`. This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
