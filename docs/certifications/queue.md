@@ -7977,3 +7977,7 @@ Full entry: docs/certifications/ledger.md.
   implementation commit, `proving_test:
   tests/reference/test_ftf_1702.py`. Certified stays 35/300; Product-true
   stays 11/11. Awaiting independent Control-plane L2 review.
+
+## 2026-09-21 — FTF-1702 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/167
+  (`claude/wizardly-fermat-hlz51t` → `main`).
