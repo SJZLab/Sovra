@@ -7247,3 +7247,7 @@ with `docs/spec-matrix.yaml`.
   "Requirements UI" task assemble this view alongside project privacy/
   budget policy into one screen; this task ships the real enforcement and
   the real API surface that screen will read from, not the screen itself.
+
+## 2026-09-21 — FTF-0407 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/156
+  (`claude/wizardly-fermat-i56nvv` → `main`).
