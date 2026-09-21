@@ -5,20 +5,24 @@ info:
   description: >-
     Frozen shared component schemas and real live routes for the
     workspace-scoped Project resource (Section 6.8/7A/22/45/65-66/77/81,
-    FTF-0401) and the project-scoped ToolDefinition resource (Section
-    6.9/7A/22/45/65-66/77/81, FTF-0404, extending this same
-    contract-owner-locked file per its own original note below).
+    FTF-0401), the project-scoped ToolDefinition resource (Section
+    6.9/7A/22/45/65-66/77/81, FTF-0404), and the read-only
+    CriticalBehaviorRequirement view over that same resource (Section
+    6.9/7A.6/22/45/65-66/77/81, FTF-0407) -- each extending this same
+    contract-owner-locked file per its own original note below.
     `paths` declares exactly the surface each task actually implements
     and wires into `apps/api/app/main.py` -- Project's own create/get/
-    list/edit/save-ui-state/archive, and ToolDefinition's own
-    create/get/list/edit -- and nothing else. It still deliberately does
-    NOT declare `/requirements` routes: that is FTF-0407 ("Critical
-    behavior requirements")/FTF-0408 ("Requirements UI")'s own, later,
-    separately dependency-gated acceptance criteria (see
-    docs/TASK_INDEX.md). Declaring that surface here without a real
-    backing handler would be exactly the "placeholder endpoint" Law 11
-    forbids. Whichever later task adds its own real route extends this
-    same file under this same contract-owner lock (shared_lock_required:
+    list/edit/save-ui-state/archive, ToolDefinition's own create/get/
+    list/edit, and `/requirements`'s own read-only list -- and nothing
+    else. `/requirements` is deliberately GET-only: it is a derived
+    projection over already-enforced `ToolDefinition` fields, never a
+    separately stored claim (see
+    `app.services.critical_behavior_requirements`'s own module
+    docstring) -- FTF-0408 ("Requirements UI")'s own, later, separately
+    dependency-gated task assembles this alongside project privacy/budget
+    policy into one screen; it does not add its own new route here.
+    Whichever later task adds its own real route extends this same file
+    under this same contract-owner lock (shared_lock_required:
     contracts:04).
 paths:
   /api/v1/organizations/{organization_id}/projects:
@@ -319,6 +323,40 @@ paths:
           description: Missing, wrong organization, or wrong project -- identical.
         '409':
           description: The named row is not the current version of this tool.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/requirements:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        List the project's current critical-behavior-requirement view, one
+        row per current ToolDefinition. Derived and read-only -- every row
+        already passed enforce_critical_behavior_requirement at write
+        time, this endpoint only reports that already-enforced state.
+      operationId: listCriticalBehaviorRequirements
+      responses:
+        '200':
+          description: The project's current critical-behavior-requirement view.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CriticalBehaviorRequirement'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
 components:
   responses:
     NotAuthenticated:
@@ -561,4 +599,43 @@ components:
         - created_by
         - created_at
         - updated_at
+      additionalProperties: false
+    CriticalBehaviorRequirement:
+      type: object
+      description: >-
+        Section 6.9/7A.6 -- the derived critical-behavior-requirement view
+        for one current ToolDefinition. `measurable`/`runtime_enforced`
+        describe why this row's own is_critical/side_effect_class pair is
+        already consistent (FTF-0407's own enforce_critical_behavior_requirement
+        refuses any row for which they would not be), they are not a
+        separate re-validation.
+      properties:
+        tool_definition_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        side_effect_class:
+          $ref: '#/components/schemas/ToolSideEffectClass'
+        is_critical:
+          type: boolean
+        requires_confirmation:
+          type: boolean
+        measurable:
+          type: boolean
+          description: >-
+            False only for a read_only tool -- a read_only resolution has
+            no enforced side effect for a deterministic outcome test or
+            runtime enforcement mechanism to bind to.
+        runtime_enforced:
+          type: boolean
+          description: Mirrors requires_confirmation -- whether a real runtime guard applies.
+      required:
+        - tool_definition_id
+        - name
+        - side_effect_class
+        - is_critical
+        - requires_confirmation
+        - measurable
+        - runtime_enforced
       additionalProperties: false

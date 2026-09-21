@@ -31,6 +31,20 @@ against the tool's own actual definition. FTF-0406
 name/description/schema evidence does not justify -- see that module's
 own docstring for the full rationale.
 
+FTF-0407 (`app.services.critical_behavior_requirements`) closes a related
+but narrower gap: until this task, nothing checked an `is_critical=True`
+claim against `side_effect_class`/`requires_confirmation` at all, so a
+purely `read_only` tool could be created `is_critical=True` (nothing for
+that claim to bind a test/enforcement to), or a `reversible_write` tool
+could be created `is_critical=True` with `requires_confirmation=False` (a
+"critical" claim with no runtime guard behind it, since FTF-0406's own
+confirmation floor only starts at `irreversible_write`).
+`ToolDefinition.__init__` now also calls
+`enforce_critical_behavior_requirement` for real, after
+`side_effect_class` has already been resolved -- see that module's own
+docstring for the full rationale, including why the *reverse* direction
+(a high-risk tool left `is_critical=False`) is deliberately not enforced.
+
 Real forward Alembic migration
 (`apps/api/alembic/versions/0006_tool_definitions.py`) FORCEs row-level
 security on `tool_definitions` scoped to the same
@@ -66,6 +80,10 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.auth.organization_workspace_schema import Base
+from app.services.critical_behavior_requirements import (
+    CriticalBehaviorRequirementError,
+    enforce_critical_behavior_requirement,
+)
 from app.services.json_schema_tool_validation import (
     JsonSchemaValidationError,
     validate_json_schema_document,
@@ -295,4 +313,13 @@ class ToolDefinition(Base):
                 )
             except SideEffectClassificationError as exc:
                 raise ToolDefinitionValidationError(str(exc)) from exc
+            if "is_critical" in kwargs:
+                try:
+                    enforce_critical_behavior_requirement(
+                        is_critical=bool(kwargs["is_critical"]),
+                        side_effect_class=str(kwargs["side_effect_class"]),
+                        requires_confirmation=bool(kwargs.get("requires_confirmation", False)),
+                    )
+                except CriticalBehaviorRequirementError as exc:
+                    raise ToolDefinitionValidationError(str(exc)) from exc
         super().__init__(**kwargs)
