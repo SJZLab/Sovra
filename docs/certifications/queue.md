@@ -8106,3 +8106,94 @@ triggered by the `pull_request.opened` webhook for PR #168.
   only); left flagged in QUEUE.md for a future Control-plane pass.
 
 Full entry: docs/certifications/ledger.md.
+
+### Control plane review — 2026-09-21 — FTF-1302 (PR #170) — NOT CERTIFIED (CI cannot show a genuine pass; GitHub Actions runner-provisioning failure, not a code defect)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #170 (https://github.com/SJZLab/Sovra/pull/170,
+  `claude/wizardly-fermat-c7g9v1` → `main`).
+- **Session-ID check:** every commit on PR #170 (`2ebf978`, `2e0065d`,
+  `a631d11`, and two later pushes `718a908`/`9faf7ea` the producer made
+  while this review was already in progress) carries `Claude-Session:
+  .../session_01Fy9YNo5oaA2HZLWRud1Xma`; this reviewing session's own ID
+  is `session_01U9fapCAPqWfq9QZeRdwpkM` — no match, independent per Law 4.
+- **Diff read directly:** the implementation commit (`2ebf978`) touches
+  exactly the two files the task packet's own `files` list names
+  (`apps/api/app/services/local_compute_costing.py`,
+  `tests/tasks/test_ftf_1302.py`) plus one new `gate` step in
+  `.github/workflows/ci.yml` — no scope creep.
+- **Own reproduction, this sandbox (workspace was pre-populated with this
+  exact PR content; `git diff` against `origin/claude/wizardly-fermat-
+  c7g9v1` showed only two cosmetic PR-link-text lines, confirmed
+  byte-identical otherwise):** `uv run python3 tests/tasks/test_ftf_1302.py`
+  → "all checks passed". Own fault injection, both vectors, distinct
+  execution from the producer's own (I edited the shipped module directly
+  rather than trusting the producer's own account): (1) replaced
+  `cost_per_success`'s real window-total division with the naive
+  per-request GPU-second-summing mistake — 5 checks failed for real
+  (`uv run python3 tests/tasks/test_ftf_1302.py` exit 1); (2) disabled the
+  non-negative-amount guard (`if False and value < 0:`) — 1 named check
+  failed for real. Both reverted byte-identical (`diff` against the
+  pre-injection copy empty) and the suite re-confirmed clean immediately
+  after each. Full sweep `tests/tasks/test_ftf_*.py` (32 files, including
+  `test_ftf_0002`/`test_ftf_0003`/`test_ftf_h001` after `pnpm install
+  --frozen-lockfile` + `git fetch --unshallow` closed this sandbox's own
+  pre-existing, already-documented setup gaps) — all clean. `uv run ruff
+  check .` / `uv run ruff format --check .` / `uv run mypy .` clean
+  repo-wide (146 files); `pnpm run lint`/`typecheck`/`format:check` clean;
+  `pnpm run test` (vitest) 19/19. `scripts/validate_spec.py --strict`
+  clean. `scripts/product_truth_check.py --fail-on-unwired` → real `12/12`
+  (unchanged — `proving_symbol` genuinely empty, a disclosed 0/0, not
+  inflation, matching the FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent).
+  `scripts/status.py` → `36/300 certified · 12 product-true` (unchanged).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-1302 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  ("Allocate real total service-window GPU/CPU/storage/idle cost to
+  declared completed workload") and negative_acceptance ("Per-request
+  overlapping GPU seconds cannot double count batches or omit idle/
+  multi-replica capacity") both confirmed met by the fault-injection
+  evidence above; `files`/`database_changes`/`api_contract` all match the
+  shipped diff exactly. Dependencies FTF-0006/FTF-1301 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **The shipped code and its evidence are sound — this review's finding
+  is not a code defect.** What blocks certification is that GitHub
+  Actions is not provisioning runners for this repository at all, so no
+  genuine passing CI conclusion exists to confirm on the real head:
+  `get_check_runs` on PR #170's original head (`a631d11`) showed 11/18
+  jobs (`gate` included) `completed`/`failure` with no `steps` array at
+  all and 2–12s completion times, vs. 2m12s for `gate`'s real full run on
+  PR #168 minutes earlier; `get_job_logs` returned HTTP 404 for every
+  failed job (no runner was ever assigned, so no log exists). I
+  independently triggered `rerun_failed_jobs` on that run myself (before
+  discovering the producer had already used, and disclosed using, this
+  repo's own one-re-run CI-red allowance) — by the time it completed the
+  PR head had advanced to a documentation-only commit (`9faf7ea`), and
+  the resulting rerun showed **18/18** jobs failing identically fast, ruling
+  out ordinary matrix concurrency as the explanation. This independently
+  reproduces and confirms the producer's own finding, already correctly
+  recorded as the sole "Owner actions — current" item in QUEUE.md on PR
+  #170's own branch (added by the producer session itself, not by this
+  review) and posted as a PR comment
+  (https://github.com/SJZLab/Sovra/pull/170#issuecomment-5766005518).
+  Per CLAUDE.md's "Owner actions live in ONE place" rule, that ask is not
+  yet visible on `main` (PR #170 is unmerged) — a separate small,
+  doc-only PR from this review lands the same ask on `main` directly
+  (crediting the producer's finding, adding this review's own independent
+  confirmation), matching the FTF-0202/OpenBao precedent
+  (`docs/certifications/queue.md`, 2026-09-21) for the same
+  branch-visibility gap.
+- **Not merged, not certified, per Law 1/Law 4.** `docs/spec-matrix.yaml`
+  for FTF-1302 is not yet `PROVISIONAL` on `main` — PR #170 is unmerged,
+  so `main` still shows `certification_state: NONE` for FTF-1302; nothing
+  to downgrade there. On PR #170's own branch the PROVISIONAL entry stands
+  as submitted — not altered by this review, since the shipped code is
+  sound; what's missing is a genuine passing CI run, which needs the
+  GitHub Actions runner-provisioning issue resolved first. PR #170 stays
+  open, unmerged. **Action needed before re-requesting certification:**
+  once GitHub Actions is confirmed provisioning runners again (owner
+  action, tracked in QUEUE.md "Owner actions — current"), re-run PR #170's
+  CI to get a genuine passing conclusion on the real head, then a fresh
+  Control-plane review can certify on that basis alone — no code change
+  is expected or needed.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01U9fapCAPqWfq9QZeRdwpkM,
+  2026-09-21.

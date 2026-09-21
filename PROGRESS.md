@@ -1,10 +1,71 @@
 # PROGRESS — Sovra
 Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #170) — independent CERTIFY
+  review of FTF-1302 (Local compute costing): **NOT CERTIFIED**, but not
+  for a code reason — the shipped code, tests, and fault-injection
+  evidence were independently reproduced and confirmed sound.
+  Certification is blocked solely because GitHub Actions is not
+  provisioning CI runners for this repository (18/18 jobs failing with no
+  runner ever assigned, confirmed independently of the producer's own
+  finding on the same PR), elevated to "Owner actions — current" on
+  `main` in this same shift. See the new section directly below for the
+  full review. `docs/certifications/queue.md` carries the complete
+  evidence.
+
+## 2026-09-21 — Control plane: FTF-1302 (PR#170) independently reviewed, NOT CERTIFIED (CI runner-provisioning failure, not a code defect)
+Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
+triggered by the `pull_request.opened` webhook for PR #170.
+
+Session-independence check: this reviewing session's own ID is
+`session_01U9fapCAPqWfq9QZeRdwpkM`; every commit on PR #170 (including two
+the producer pushed while this review was already in progress) carries
+`Claude-Session: .../session_01Fy9YNo5oaA2HZLWRud1Xma` — no match,
+independent per Law 4.
+
+Diff read directly (two files exactly as the task packet's `files` list
+names, plus one new CI step — no scope creep). Own reproduction in this
+sandbox (pre-populated with the PR's own content, confirmed byte-identical
+via `git diff` except two cosmetic PR-link-text lines): `tests/tasks/
+test_ftf_1302.py` — all checks passed. Own fault injection, both vectors,
+executed independently by editing the shipped module directly: (1) the
+naive per-request GPU-second-summing mistake — 5 checks failed for real;
+(2) the disabled non-negative-amount guard — 1 named check failed for
+real. Both reverted byte-identical, suite re-confirmed clean. Full
+`tests/tasks/test_ftf_*.py` sweep (32 files) clean after `pnpm install
+--frozen-lockfile`/`git fetch --unshallow` closed this sandbox's own
+pre-existing setup gaps; `ruff`/`mypy`/`pnpm lint+typecheck+format` clean;
+vitest 19/19; `validate_spec.py --strict` clean; `product_truth_check.py
+--fail-on-unwired` real `12/12` (unchanged, genuine disclosed 0/0). Task
+contract re-pulled via `tools/r1_handoff.py packet FTF-1302` — acceptance
+and negative_acceptance both confirmed met. Dependencies FTF-0006/FTF-1301
+confirmed genuinely `CERTIFIED`.
+
+**Not certified — GitHub Actions is not provisioning CI runners for this
+repository**, so no genuine passing CI conclusion exists on the real head
+to confirm: 11/18 jobs (`gate` included) on PR #170's original head
+completed/failure with zero recorded steps and 2–12s completion (vs.
+2m12s for a real `gate` run minutes earlier on PR #168); `get_job_logs`
+returned HTTP 404 for every one (no runner ever assigned, no log exists).
+This review independently triggered a re-run and got 18/18 failures,
+identically fast — this session's own confirmation, separate from the
+producer's own identical finding already disclosed on PR #170 (PR comment
++ PR-branch-only QUEUE.md note). The shipped code and its evidence are
+sound; this is purely a CI-infrastructure blocker. Elevated the finding
+from PR #170's own unmerged branch onto `main` directly (this shift,
+doc-only) so it's visible to every future session, not just PR #170's
+own — see `QUEUE.md` "Owner actions — current" and
+`docs/certifications/queue.md`'s full entry for this review.
+
+`docs/spec-matrix.yaml` for FTF-1302 stays `NONE` on `main` (PR #170
+unmerged, nothing to downgrade). PR #170 stays open, unmerged, its own
+PROVISIONAL submission unaltered. Action needed before re-requesting
+certification: once GitHub Actions is confirmed provisioning runners
+again (owner action), re-run PR #170's CI for a genuine passing
+conclusion — no code change expected or needed.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #165) — independent CERTIFY
-  review of FTF-1701 (Reference agent specification): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+  review of FTF-1701 (Reference agent specification): **CERTIFIED**.
 
 ## 2026-09-21 — Control plane: FTF-1701 (PR#165) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),

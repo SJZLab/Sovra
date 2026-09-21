@@ -1375,6 +1375,37 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+2026-09-21 (surfaced to `main` by an independent Control-plane review;
+originally found and disclosed by the producer session on PR #170's own
+unmerged branch — see below): **GitHub Actions appears to have stopped
+provisioning runners for this repository — likely a billing/spend limit
+or account-level capacity cap, outside any session's access to diagnose
+or fix.** Evidence, all on PR #170
+(https://github.com/SJZLab/Sovra/pull/170): (1) the producer's own first
+push — 10/18 jobs failed with `runner_id: 0` (no runner ever assigned),
+2–12s "completion," no logs available; the other 8 jobs ran and passed
+normally. The producer cancelled a stale duplicate run and re-ran just
+the 10 failed jobs once (this repo's own one-allowed re-run for this
+failure class) — failed identically, even faster (2s), with no other
+workflow run active anywhere in the repo at the time (ruling out ordinary
+concurrency contention from duplicate pushes). (2) A third push — a pure
+documentation commit touching zero code — came back with all 18/18 jobs
+failing the same way. (3) This independent review re-confirmed it a
+second time, separately: triggering `rerun_failed_jobs` on the run again
+produced 18/18 failures, identically fast, with `get_job_logs` returning
+HTTP 404 for every one (no runner was ever assigned, so no log exists).
+The same 18-job matrix ran clean in full minutes earlier on this
+identical workflow file (run #255, PR #168) and takes ~2 minutes for a
+real `gate` run when it actually executes — a job "completing" in 2–12s
+with zero recorded steps is GitHub Actions declining to schedule the
+work, not a test failure. This blocks the entire CI-gated
+PROVISIONAL→CERTIFIED pipeline, not just PR #170: no PR can show a
+genuine passing CI conclusion until this clears. See
+`docs/certifications/queue.md`'s "2026-09-21 — FTF-1302 (PR #170) — NOT
+CERTIFIED" entry for the full independent-review detail. Remove this item
+the moment the owner resolves it (or a session confirms CI is
+provisioning runners again on a fresh PR event).
+
 2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
 backend selected before it can be implemented for real.** Its own
 acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
@@ -1420,6 +1451,19 @@ CERTIFIED 2026-09-21 via PR #168 (merge commit
 `9a47458118ee46095270f4aa9758b5ec35efeea5`) — see "## Done" for the
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
+
+FTF-1302 (Local compute costing, PR #170
+https://github.com/SJZLab/Sovra/pull/170) was independently reviewed
+2026-09-21 and **NOT CERTIFIED — not a code defect.** The shipped code,
+its tests, and its fault-injection evidence were independently
+reproduced and confirmed sound; certification is blocked only because
+GitHub Actions cannot show a genuine passing CI run on the real head
+(see "## Owner actions — current" above and
+`docs/certifications/queue.md`'s "2026-09-21 — FTF-1302 (PR #170)" entry
+for full detail). PR #170 stays open, unmerged. No further relay action
+needed on FTF-1302 itself until the CI owner-ask clears — re-running its
+CI at that point should be sufficient for a fresh Control-plane review to
+certify.
 
 Also genuinely open and PROVISIONAL, unreviewed as of this shift: PR #167
 ("[relay] FTF-1702: Tool environment"), opened by a prior shift shortly
