@@ -949,10 +949,10 @@ FTF-0406:
   proving_symbol: enforce_side_effect_classification
   proving_test: tests/tasks/test_ftf_0406.py
 FTF-0407:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Critical behavior requirements
-  evidence_hash: 7a3305718278c638236e47eae7c49ca92f0a0019
+  evidence_hash: 5da3834194b0e2b8a84cdd3e7161ff8d43a29885
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q01, Q04, Q05; deps=FTF-0401, FTF-0406
@@ -1029,7 +1029,49 @@ FTF-0407:
     submission; this task's own proving_symbol, enforce_critical_behavior_requirement, has a real,
     source-inspection-confirmed live caller in ToolDefinition.__init__. PR opened as PROVISIONAL.
     Awaiting independent Control plane L2 certification -- not self-certified (Law 4).
-  proof_state: L1-PROVEN
+
+    Control plane independent CERTIFY review (session_0185UQFPYhDkeasgkhTHrE5K): session-ID clean
+    against all 4 commits on PR #156 (session_01QNESA4CVHysioQybmQCNPB, no match). CI's real
+    `gate` job initially still had one head in flight when this review subscribed
+    (`pull_request.opened` webhook); the producer session independently pushed a real fix commit
+    (`00641ac`) for a genuine `ruff` import-sort failure and a genuine `mypy` dict-variance error in
+    its own new test helper before this review acted -- both reproduced and confirmed via the real
+    CI job history, not a self-report. CI on the real final head (`00641ac`) is genuinely green:
+    all 16 GitHub Actions check runs `completed`/`success` (run `35550374321`), `gate` included.
+    Re-read the diff directly (`git diff` against the real PR base `f73bbd6`, 13 files, no
+    migration file touched -- `database_changes` charter honored). Ran this task's own no-DB suite
+    (`tests/tasks/test_ftf_0407.py`, "all checks passed") and, independently of the producer,
+    performed three distinct fault injections against a real `git worktree` checkout of the exact
+    merged head, each reverted byte-identical afterward: (1) disabled the `read_only`/unmeasurable
+    refusal (`if False and rank == RISK_RANK["read_only"]:`) -- 1 test failed for real; (2)
+    disabled the `requires_confirmation`/conflicting refusal (`if False and not
+    requires_confirmation:`) -- 3 tests failed for real; (3) disabled the live wiring call site in
+    `ToolDefinition.__init__` (`if False and "is_critical" in kwargs:`) -- 2 tests failed for real,
+    including the direct real-construction proof. Independently re-ran the no-DB regression suite
+    (FTF-0401/FTF-0404/FTF-0405/FTF-0406, all four "all checks passed") and this task's own real
+    live-Postgres integration suite (`tests/integration/test_ftf_0407_critical_behavior_requirements.py`,
+    a freshly created local PostgreSQL 16 database/role, "all checks passed" -- 15/15 real checks)
+    plus FTF-0404's own live-Postgres suite against a separately, freshly recreated database/role
+    ("all checks passed" -- no regression). `ruff check`/`ruff format --check`/`mypy` independently
+    re-run clean from the repo root on the merged head; confirmed the 2 remaining `mypy` errors are
+    the pre-existing, unrelated `authlib.jose` stub gap in `oidc_login.py` (identical on `main`).
+    `scripts/validate_spec.py --strict` was initially flagged by 17 `stale_commit` defects in this
+    reviewing sandbox's own shallow clone (unrelated tasks, FTF-0001-0006/FTF-H001/H002/H028/H034/
+    FTF-1810/FTF-1601/FTF-R011/R014/R015/R017 -- none touching FTF-0407); ran `git fetch
+    --unshallow`, which resolved every one of them -- confirmed a sandbox artifact, not a real
+    defect, matching this repository's own documented shallow-clone precedent. `python
+    tools/r1_handoff.py packet FTF-0407 --plan FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled directly:
+    acceptance clause 1's "critical responsibility" half met by
+    `enforce_critical_behavior_requirement` and its confirmed live wiring plus the real
+    `/requirements` view; the "forbidden action" half's deferral to FTF-04A19/FTF-04A22 confirmed
+    accurate by direct inspection of `docs/TASK_INDEX.md` (FTF-04A19's own row lists FTF-0407 as
+    its dependency, not the reverse); acceptance clause 2 (independent review/evidence) satisfied by
+    this review itself; negative_acceptance proven both by the dedicated tests and by this review's
+    own three fault injections. Dependencies FTF-0401/FTF-0406 confirmed genuinely `CERTIFIED` in
+    `docs/spec-matrix.yaml` before relying on them. No blocking defect found. Merged PR #156 (merge
+    commit `5da3834194b0e2b8a84cdd3e7161ff8d43a29885`). Certified: 33/300, Product-true: 10/10.
+    Validated-by: session https://claude.ai/code/session_0185UQFPYhDkeasgkhTHrE5K, 2026-09-21.
+  proof_state: L2-CERTIFIED
   proving_symbol: enforce_critical_behavior_requirement
   proving_test: tests/tasks/test_ftf_0407.py
 FTF-0408:

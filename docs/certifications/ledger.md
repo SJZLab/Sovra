@@ -4023,3 +4023,108 @@ reasons given above.
   Certified: 32/300, Product-true: 9/9.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0407 — Critical behavior requirements
+- Criterion ID: FTF-0407
+- PR: https://github.com/SJZLab/Sovra/pull/156 (`claude/wizardly-fermat-i56nvv` → `main`)
+- Merge commit: 5da3834194b0e2b8a84cdd3e7161ff8d43a29885
+- Implementation commit: 7a3305718278c638236e47eae7c49ca92f0a0019 (CI-gate
+  fix commit: 00641ac0f1e0770eb38e8d4e275766ce6e76150b)
+- Validated-by: session https://claude.ai/code/session_0185UQFPYhDkeasgkhTHrE5K
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #156)
+- Date: 2026-09-21
+- **Session-ID check:** all 4 commits on PR #156 carry `Claude-Session:
+  .../session_01QNESA4CVHysioQybmQCNPB`; this reviewing session's own ID
+  is `session_0185UQFPYhDkeasgkhTHrE5K` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** subscribed to the
+  PR's own activity (16 checks were still `in_progress` when this review
+  first looked, immediately after the PR opened). The producer session
+  independently pushed a real fix (`00641ac`) for a genuine `ruff`
+  import-sort failure (`tests/integration/
+  test_ftf_0407_critical_behavior_requirements.py`'s own import block,
+  un-sorted because the producer's own pre-push `ruff check` run had been
+  scoped to `apps/api` only, missing the repo-root `tests/` tree CI
+  actually lints) and a genuine `mypy` dict-variance error in
+  `tests/tasks/test_ftf_0407.py`'s own unannotated `_make_tool` schema
+  dict literals. Pulled the real check-run list after the `check_suite.
+  completed` webhook fired: all 16 GitHub Actions check runs on the real
+  final head (`00641ac`, run `35550374321`) `completed`/`success`,
+  `gate` included.
+- **Diff read directly:** `git diff` against the real PR base
+  (`f73bbd6ced4d9eaaa95b177ba05dcdee025d9ff5`) — 13 files, no `alembic`
+  migration file among them (`database_changes` charter honored). Read
+  `apps/api/app/services/critical_behavior_requirements.py` in full and
+  the exact `ToolDefinition.__init__` wiring in
+  `apps/api/app/tools/tool_definition_schema.py`: `enforce_side_effect_
+  classification` (a pure validator that raises rather than mutating
+  `kwargs`) runs first, so `requires_confirmation` is already
+  structurally consistent with `side_effect_class` by the time
+  `enforce_critical_behavior_requirement` reads it — no staleness gap.
+  Confirmed `apply_new_version` (`tool_definition_crud.py`) always
+  constructs a fresh `ToolDefinition(...)` with `is_critical` present, so
+  the guard runs on both the create and the edit path, not create-only.
+- **Own fault injection, this session, distinct run from the producer's
+  own two** (`git worktree add` on the real merged head, `uv sync
+  --all-packages`), three vectors, each reverted byte-identical
+  (`git checkout --`) and reconfirmed clean immediately after:
+  1. Disabled the unmeasurable (`read_only`) refusal (`if False and rank
+     == RISK_RANK["read_only"]:`) — 1 test failed for real
+     (`the same refusal holds even if requires_confirmation is
+     (meaninglessly) set True`).
+  2. Disabled the conflicting-claim (`requires_confirmation`) refusal
+     (`if False and not requires_confirmation:`) — 3 tests failed for
+     real, including the direct negative_acceptance check and the
+     higher-rank defense-in-depth check.
+  3. Disabled the live wiring call site itself (`if False and
+     "is_critical" in kwargs:`) — 2 tests failed for real, including the
+     direct real-`ToolDefinition`-construction proof.
+- **No regression, independently re-run:** `tests/tasks/
+  test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/
+  `test_ftf_0406.py`/`test_ftf_0407.py` — all five "all checks passed."
+  This task's own real live-Postgres suite
+  (`tests/integration/test_ftf_0407_critical_behavior_requirements.py`)
+  run against a freshly created local PostgreSQL 16 database/role —
+  "all checks passed" (15/15 real checks, a real uvicorn server, both
+  routers). FTF-0404's own live-Postgres suite
+  (`tests/integration/test_ftf_0404_tool_schema_crud.py`) separately
+  re-run against another freshly recreated database/role — "all checks
+  passed," no regression.
+- **Static checks re-run clean, this session, from the repo root**
+  (matching CI's own working directory): `ruff check .` / `ruff format
+  --check .` clean; `mypy .` (from `apps/api`) — 2 errors, both the
+  pre-existing, unrelated `authlib.jose` missing-stub gap in
+  `oidc_login.py`, confirmed identical on `main`.
+- **`scripts/validate_spec.py --strict`:** this reviewing sandbox's own
+  shallow clone initially surfaced 17 `stale_commit` defects, none
+  touching FTF-0407 (FTF-0001–0006, FTF-H001/H002/H028/H034, FTF-1810,
+  FTF-1601, FTF-R011/R014/R015/R017); `git fetch --unshallow` resolved
+  every one of them, confirming a sandbox artifact (this repository's own
+  already-documented shallow-clone precedent), not a real defect. Clean
+  ("task graph and verification-map are clean") after unshallowing.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0407 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance
+  clause 1's "critical responsibility" half (deterministic outcome tests
+  and runtime enforcement) met directly by
+  `enforce_critical_behavior_requirement`'s confirmed live wiring plus
+  the real `/requirements` view; the "forbidden action" half's deferral
+  to FTF-04A19/FTF-04A22 confirmed accurate by direct inspection of
+  `docs/TASK_INDEX.md` (FTF-04A19's own row lists FTF-0407 as its own
+  dependency, not the reverse — the deferral is real, not a dodge).
+  Acceptance clause 2 (independent review, exact merged commit, real
+  integration/negative-test evidence) satisfied by this review itself.
+  negative_acceptance ("Unmeasurable or conflicting critical mandate
+  blocks activation; no model-generated self-certification") proven both
+  directly (dedicated tests for each half, confirmed present in both
+  suites) and by this review's own three fault injections above.
+  Dependencies FTF-0401/FTF-0406 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** Merged PR #156 (merge commit
+  `5da3834194b0e2b8a84cdd3e7161ff8d43a29885`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  (`scripts/task_claim.py`) to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-0407']`
+  updated. Certified: 33/300, Product-true: 10/10.
+
+**Conclusion:** Certified L2-CERTIFIED.

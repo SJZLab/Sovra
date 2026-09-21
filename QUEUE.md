@@ -1,5 +1,22 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0407
+Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #156) — independent CERTIFY
+  review of FTF-0407 (Critical behavior requirements): **CERTIFIED**.
+  Subscribed while CI was still in-flight; the producer session
+  independently pushed a real fix (`00641ac`) for a genuine `ruff`
+  import-sort failure and a genuine `mypy` dict-variance error before this
+  review acted, then CI reconfirmed genuinely green (16/16) on the real
+  final head. Own fault injection, three distinct vectors against a real
+  `git worktree` checkout of the merged head, all caught for real and
+  reverted byte-identical; no regression to FTF-0401/FTF-0404/FTF-0405/
+  FTF-0406's own no-DB and live-Postgres suites; task contract re-pulled
+  and both acceptance clauses plus negative_acceptance confirmed met.
+  Merged PR #156 (merge commit `5da3834`). `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Certified: 33/300, Product-true: 10/10. Full review:
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-0407
   (Critical behavior requirements, deps FTF-0401/FTF-0406 both CERTIFIED).
   Independently recomputed the dependency-ready frontier fresh against
   `docs/spec-matrix.yaml`'s live certification state (never trusted the
@@ -823,9 +840,8 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 32/300 (main; FTF-0406 CERTIFIED 2026-09-20, PR #153 merged as
-`80dcd4b2` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0407, this shift's own PR, not yet independently certified) ·
+Certified: 33/300 (main; FTF-0407 CERTIFIED 2026-09-21, PR #156 merged as
+`5da3834` — see docs/certifications/ledger.md) · Provisional: 0 ·
 Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
@@ -971,10 +987,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0407 (Critical behavior requirements) — this shift's own PR, opened
-against `main` from `claude/wizardly-fermat-i56nvv`. Awaiting independent
-Control-plane L2 certification; see the top of this file and
-`docs/certifications/queue.md` for the full submission.
+None currently. FTF-0407 (Critical behavior requirements) was
+independently reviewed and CERTIFIED this shift via PR #156 (merge
+commit `5da3834`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0406 (Side-effect classification) was independently
 reviewed and CERTIFIED a prior shift via PR #153 (merge commit
@@ -1881,6 +1898,52 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   own `9/9`. This certification's own doc updates were pushed on a branch
   and opened as a PR against `main` rather than pushed directly, per
   `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
+- FTF-0407 — Critical behavior requirements. CERTIFIED 2026-09-21, PR
+  #156, merge commit `5da3834`. Independent Control-plane review
+  triggered by the `pull_request.opened` webhook: session-ID check clean
+  against all 4 PR #156 commits (session_01QNESA4CVHysioQybmQCNPB, no
+  match to this reviewing session). Subscribed while CI was still
+  in-flight; the producer session independently pushed a real fix
+  (`00641ac`) for a genuine `ruff` import-sort failure and a genuine
+  `mypy` dict-variance error in its own test helper before this review
+  acted — CI on the real final head is genuinely green (16/16, `gate`
+  included, pulled from the real check-run list, not a self-report).
+  Diff read directly (13 files, no migration file — `database_changes`
+  charter honored). Own fault injection, this session, three distinct
+  vectors against a real `git worktree` checkout of the merged head, each
+  reverted byte-identical: (1) disabled the unmeasurable/`read_only`
+  refusal — 1 test failed for real; (2) disabled the
+  conflicting/`requires_confirmation` refusal — 3 tests failed for real;
+  (3) disabled the live wiring call site in `ToolDefinition.__init__` —
+  2 tests failed for real, including the direct real-construction proof.
+  No regression: FTF-0401/FTF-0404/FTF-0405/FTF-0406/FTF-0407's own no-DB
+  suites all re-run "all checks passed"; this task's own real
+  live-Postgres suite re-run against a freshly created database/role —
+  "all checks passed" (15/15 real checks); FTF-0404's own live-Postgres
+  suite separately re-run against another freshly recreated database/role
+  — "all checks passed," no regression. `ruff`/`mypy` re-run clean from
+  the repo root (only the pre-existing, unrelated `authlib.jose` stub gap
+  remains). `validate_spec.py --strict` — this sandbox's own shallow
+  clone surfaced 17 unrelated `stale_commit` defects (none touching
+  FTF-0407); `git fetch --unshallow` resolved every one, confirming a
+  sandbox artifact, not a real defect. Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0407`: acceptance clause 1's "critical
+  responsibility" half met directly; the "forbidden action" half's
+  deferral to FTF-04A19/FTF-04A22 confirmed accurate by direct inspection
+  of `docs/TASK_INDEX.md` (FTF-04A19 lists FTF-0407 as its own
+  dependency, not the reverse); negative_acceptance proven both directly
+  and by this review's own fault injections; dependencies FTF-0401/
+  FTF-0406 confirmed genuinely `CERTIFIED`. No blocking defect found.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Ran `sync_certified_status()` to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`.
+  `scripts/status.py`'s own stricter "product-true" count: `32/300`
+  certified before, `33/300` after; "Product-true" `9` before, `10`
+  after, matching `product_truth_check.py`'s own `10/10`. This
+  certification's own doc updates were pushed on a branch and opened as a
+  PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+  Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
