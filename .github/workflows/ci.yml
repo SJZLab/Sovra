@@ -166,6 +166,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0403.py
       - name: FTF-1701 negative-test proof (Reference agent specification catches real defects, no DB required)
         run: uv run python3 tests/reference/test_ftf_1701.py
+      - name: FTF-1301 negative-test proof (CostProfile catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1301.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -782,3 +784,54 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real Budget policy evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0403_budget_policy.py
+
+  cost-profile-integration:
+    # FTF-1301: real Postgres CostProfile evidence. Two real organizations,
+    # a real uvicorn server proving: role gating (organization_admin-only,
+    # including reads, per Section 45) -> real create (persists decimal
+    # rate_amount/currency/source, unverified by default) -> cross-org IDOR
+    # (404) -> negative rate refused (400) -> search returns every
+    # disqualified rate with an honest reason, never silently filtered ->
+    # verify genuinely advances verified_at -> a verified, unexpired,
+    # non-zero provider rate certifies cheapest for real -> a verified,
+    # unexpired provider rate of exactly zero still never certifies
+    # ("token price zero is not local compute free") -> a verified,
+    # unexpired local_hardware zero rate DOES certify (the zero-rate rule
+    # is provider-specific) -> expired takes priority even once verified
+    # -> current_cheapest_certified picks the real minimum among certified
+    # candidates -> missing tenant context refused -> real FORCE ROW LEVEL
+    # SECURITY backstop (a raw SELECT by ID under org1's own tenant context
+    # returns zero rows for org2's own row) -> sovra_app cannot DELETE a
+    # row directly -> the real CHECK(rate_amount >= 0) constraint refuses a
+    # negative rate even at the raw SQL level. Same real
+    # `services: postgres` container pattern as budget-policy-integration
+    # (this repo's interactive dev sandbox has no container-registry
+    # egress; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1301
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1301"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1301
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real CostProfile evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_1301_cost_profile.py

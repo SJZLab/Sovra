@@ -1,0 +1,340 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 13 Interface (CostProfile)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and real live routes for the
+    organization-scoped CostProfile rate-card resource (Section
+    28/31/32/45/64/69-70/77/81, FTF-1301). `paths` declares exactly the
+    create/get/list/verify/search surface this task actually implements
+    and wires into `apps/api/app/main.py` -- and nothing else. It
+    deliberately does NOT declare a cost-per-success computation route
+    against real usage data: that full Section-32 pipeline is FTF-1304
+    ("Cost-per-success calculator")'s own, later, separately
+    dependency-gated acceptance criterion. Declaring that surface here
+    with no real usage/billing data anywhere in this repository yet to
+    compute it from would be exactly the "placeholder endpoint" Law 11
+    and this task's own acceptance clause ("no placeholder endpoints")
+    forbid. Whichever later task adds its own real computation route
+    extends this same file under this same contract-owner lock
+    (shared_lock_required: contracts:13).
+paths:
+  /api/v1/organizations/{organization_id}/cost-profiles:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the organization's cost profiles (rate card).
+      operationId: listCostProfiles
+      parameters:
+        - name: profile_type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProfileType'
+        - name: rate_unit
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/RateUnit'
+      responses:
+        '200':
+          description: The organization's cost profiles, most recently dated first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CostProfile'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: Record a new, dated, sourced TCO rate observation.
+      operationId: createCostProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostProfileCreateRequest'
+      responses:
+        '201':
+          description: The created cost profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostProfile'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+  /api/v1/organizations/{organization_id}/cost-profiles/{cost_profile_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: cost_profile_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one cost profile.
+      operationId: getCostProfile
+      responses:
+        '200':
+          description: The cost profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostProfile'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing or belongs to a different organization -- identical in
+            both cases (the same IDOR discipline every other resource in
+            this repository already established).
+  /api/v1/organizations/{organization_id}/cost-profiles/{cost_profile_id}/verify:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: cost_profile_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Independently re-confirm this rate observation is still accurate.
+      operationId: verifyCostProfile
+      responses:
+        '200':
+          description: The cost profile with verified_at advanced to now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostProfile'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing or belongs to a different organization -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/costs/cost-per-success/search:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        Search the project's own organization's cost profiles, honestly
+        annotated with this task's own negative_acceptance verdict --
+        "Token price zero is not local compute free; unverified/expired
+        rate cannot certify cheapest."
+      operationId: searchCostPerSuccess
+      parameters:
+        - name: profile_type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProfileType'
+        - name: rate_unit
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/RateUnit'
+      responses:
+        '200':
+          description: >-
+            Every matching cost profile (never silently filtered), each
+            annotated with certifiable_cheapest/disqualified_reason, plus
+            the single cheapest certified rate if one exists -- null,
+            never a fabricated fallback, if none currently qualifies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostPerSuccessSearchResponse'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            The project is missing or belongs to a different organization
+            -- identical in both cases.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: "organization_admin:
+        connections, security profiles, cost profiles" is the only role
+        Section 45 names for cost profiles -- every route here is
+        organization_admin-only, including reads).
+    ValidationFailed:
+      description: The request body failed schema/policy validation.
+  schemas:
+    ProfileType:
+      type: string
+      enum: [provider, local_hardware]
+    RateUnit:
+      type: string
+      enum:
+        - per_input_token
+        - per_output_token
+        - per_gpu_hour
+        - per_cpu_hour
+        - per_ram_gb_hour
+        - per_hour
+        - per_request
+    DisqualifiedReason:
+      type: [string, 'null']
+      enum: [null, expired, unverified, zero_provider_rate_unconfirmed]
+      description: >-
+        Why a profile is not currently certifiable_cheapest -- null only
+        when certifiable_cheapest is true. Never omitted or silently
+        blank: "display unknowns honestly."
+    CostProfileCreateRequest:
+      type: object
+      properties:
+        profile_type:
+          $ref: '#/components/schemas/ProfileType'
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+        rate_unit:
+          $ref: '#/components/schemas/RateUnit'
+        rate_amount:
+          type: string
+          description: A non-negative decimal string (never a bare JSON number).
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        source:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        rate_recorded_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+      required: [profile_type, label, rate_unit, rate_amount, currency, source, rate_recorded_at]
+      additionalProperties: false
+    CostProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        profile_type:
+          $ref: '#/components/schemas/ProfileType'
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+        rate_unit:
+          $ref: '#/components/schemas/RateUnit'
+        rate_amount:
+          type: string
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        source:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        rate_recorded_at:
+          type: string
+          format: date-time
+        verified_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        row_version:
+          type: integer
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - profile_type
+        - label
+        - rate_unit
+        - rate_amount
+        - currency
+        - source
+        - rate_recorded_at
+        - verified_at
+        - expires_at
+        - row_version
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    CostProfileSearchResult:
+      allOf:
+        - $ref: '#/components/schemas/CostProfile'
+        - type: object
+          properties:
+            certifiable_cheapest:
+              type: boolean
+            disqualified_reason:
+              $ref: '#/components/schemas/DisqualifiedReason'
+          required: [certifiable_cheapest, disqualified_reason]
+    CostPerSuccessSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostProfileSearchResult'
+        current_cheapest_certified:
+          oneOf:
+            - $ref: '#/components/schemas/CostProfile'
+            - type: 'null'
+      required: [results, current_cheapest_certified]
+      additionalProperties: false
