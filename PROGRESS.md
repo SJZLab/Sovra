@@ -1,10 +1,166 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #156) — independent CERTIFY
-  review of FTF-0407 (Critical behavior requirements): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1001
+  (ModelVersion schema/API): PR #160 opened as PROVISIONAL, awaiting
+  independent Control plane L2 certification. See the new section
+  directly below for the full submission. `docs/certifications/queue.md`
+  carries the complete evidence.
+
+## 2026-09-21 — Relay: FTF-1001 (ModelVersion schema/API) implemented, PROVISIONAL
+Ran the PEV procedure (`docs/CONTROL_PLANE_MODES.md`) for a scheduled
+relay shift.
+
+**Step 0 — ground state, never assumed from prior context:** read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. CLAUDE.md
+self-check: `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` exactly — no mismatch, shift proceeded. Confirmed the
+assigned branch `claude/wizardly-fermat-4ez7fq` sat exactly at `main`'s
+own tip (`5100bac`, FTF-0407 CERTIFIED by the immediately-prior
+certifier shift) with zero divergent commits — a genuinely fresh shift.
+
+**Step 1 — picked FTF-1001:** independently recomputed the
+dependency-ready frontier from `docs/spec-matrix.yaml`'s live
+`certification_state` (33 CERTIFIED, 0 PROVISIONAL on `main` at shift
+start) against every task's own `deps=` field, rather than trusting
+`QUEUE.md`'s own prior "Next shift" note by itself. Checked GitHub
+directly (`list_pull_requests`) before picking anything: two open,
+unmerged `[relay]` PRs already existed from other concurrent
+shifts — PR #158 (FTF-0403, Budget policy) and PR #159 (FTF-1501, Tenant
+isolation suite) — confirmed by reading `docs/spec-matrix.yaml` on `main`
+directly that neither task's own row had actually moved off
+`certification_state: NONE` yet, i.e. genuinely still in flight, not a
+completed claim; neither was duplicated. Of the remaining
+dependency-ready, unclaimed items (FTF-0202 — owner ask, still open;
+FTF-0902; FTF-1001; FTF-1401), pulled FTF-0902's own real task contract
+first and found its own acceptance/negative_acceptance ("Install and test
+actual CNI/firewall/DNS/IPv6/metadata restrictions"; "NetworkPolicy YAML
+on a nonenforcing cluster is not a pass") requires a real,
+policy-enforcing Kubernetes cluster this sandbox does not have — set
+aside as a likely `BLOCKED_EXTERNAL` risk rather than picked into a shift
+it would probably not finish. FTF-1001 matches the well-established
+schema/crud/routes-triplet-plus-migration pattern FTF-0201/FTF-0301/
+FTF-0401/FTF-0404 already proved repeatedly, with no external-service ask
+of its own.
+
+**Step 2 — P (plan, no changes yet):** pulled the real task contract
+(`tools/r1_handoff.py packet FTF-1001 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) and read every existing precedent file
+end to end before writing any code: `artifact_schema.py`/`artifact_crud.py`/
+`artifact_routes.py` (FTF-0301), `tool_definition_schema.py`/
+`tool_definition_crud.py`/`tool_definition_routes.py` (FTF-0404),
+`project_schema.py` (FTF-0401), migrations `0004`-`0006`, and
+`resource_authorization.py` (FTF-H003). Checked `docs/TASK_INDEX.md`
+directly before scoping: FTF-1003/FTF-1005/FTF-1008 (serving/health/
+deployment) and FTF-1101 (PromotionPolicy engine, tag/production-slot
+governance) each list FTF-1001 as their own dependency, not the reverse —
+confirming the packet's own much larger `api_contract`/`files` sketch
+(`/model-imports`, `/deployments`, "owned health adapters and serving
+client", a full vLLM serving controller) is genuinely later, separately
+dependency-gated scope, not a gap this task's own contract requires
+filling. Narrowed to exactly this task's own acceptance clause: a real
+ModelVersion schema/CRUD/API supporting `endpoint`/`full_weight`/
+`adapter` imports and a real training-lineage link to a `TrainableArtifact`
+(FTF-0301, CERTIFIED). Resolved this task's own compressed
+negative_acceptance sentence ("Required nonexistent weights/hash for
+endpoint import, mutable production artifact or cross-tenant parent
+denied") into three concrete, disclosed denial paths before writing any
+code — see `model_version_schema.py`'s own module docstring for the full
+reasoning.
+
+**Step 2 — E (write code + test, show FAIL first, bound to the
+criterion):** implemented `apps/api/app/model_versions/
+{model_version_schema,model_version_crud,model_version_routes}.py`, the
+real `/api/v1/organizations/{organization_id}/projects/{project_id}/
+model-versions` create/get/list routes (no edit/delete — Section 35's
+"every model version is immutable" means there is nothing to edit), wired
+into `apps/api/app/main.py`. `apps/api/alembic/versions/
+0007_model_versions.py`: FORCE-RLS, two composite foreign keys
+(`(organization_id, project_id)` -> `projects`;
+`(organization_id, trainable_artifact_id)` -> `trainable_artifacts` via a
+purely additive `UNIQUE(organization_id, id)` constraint on that
+already-CERTIFIED table), a real `ck_model_versions_kind_consistency`
+database CHECK constraint enforcing the endpoint-vs-artifact structural
+rule at the database level (defense in depth), and a SELECT/INSERT-only
+grant — never UPDATE/DELETE, since this table has no legitimate in-place
+mutation at all. Wrote `tests/tasks/test_ftf_1001.py` (24 no-DB test
+functions) and `tests/integration/test_ftf_1001_model_version_schema_api.py`
+(26 real live-Postgres checks) alongside the implementation, then proved
+Law 1 directly with three distinct fault-injection vectors, each reverted
+byte-identical afterward (`git diff --stat` empty):
+- Disabled the mutable-artifact guard in `create_model_version`
+  (`if artifact.status != "ready":` → `if False:`) — the live-Postgres
+  suite's own negative_acceptance check for that exact case flipped for
+  real (409 became 201; two further checks cascaded downstream, since the
+  wrongly-admitted row shifted `version_number` sequencing — an expected
+  side effect of the fault, not a separate bug).
+- Disabled the structural endpoint-vs-artifact consistency block in
+  `ModelVersion.__init__` — exactly the 7 named structural checks in the
+  no-DB suite failed for real (`FAIL [FTF-1001] negative_acceptance: an
+  endpoint import claiming a trainable_artifact_id is refused...`, and six
+  others naming each specific combination this task's own
+  negative_acceptance forbids).
+- Dropped the real `ck_model_versions_kind_consistency` CHECK constraint
+  directly against the live test database (`ALTER TABLE ... DROP
+  CONSTRAINT`) and re-ran the exact bypassing raw INSERT the integration
+  suite's own defense-in-depth check uses — it succeeded (previously
+  refused with the constraint present), confirming the constraint itself,
+  not something else, is genuinely what catches it. Database rebuilt from
+  a fresh `alembic upgrade head` afterward, not a partial patch.
+Both reverted by restoring the exact original source; both suites re-ran
+clean each time.
+
+**Step 2 — V (verify):** stood up a real local PostgreSQL 16 cluster
+(role `sovra_migrate` with the same real superuser privilege this
+repository's own CI `services: postgres` container grants that role name,
+database `sovra_ftf1001`), ran this task's own migration for real, then
+ran this task's own new integration suite clean (26/26). Re-ran
+`test_ftf_0301.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/
+`test_ftf_0406.py`/`test_ftf_0407.py` (no-DB) — all five "all checks
+passed." FTF-0301's and FTF-0404's own live-Postgres suites re-run
+against this task's own already-migrated database (which adds a purely
+additive `UNIQUE(organization_id, id)` constraint to `trainable_artifacts`,
+the same precedent FTF-0401/FTF-0404's own migrations already established
+for `workspaces`/`projects`) — both "all checks passed," no regression.
+`ruff check`/`ruff format`/`mypy` clean on every file this task touched
+and across the full `apps/api` tree (the 6 pre-existing `UP042` errors
+and 2 pre-existing reformat-needed files confirmed byte-identical on
+`main` via `git stash` before/after comparison — not this task's own; the
+repo-wide `alembic.op`/`alembic.context` stub-attribute mypy gap is the
+same pre-existing class of error every migration file in this chain
+already carries). `git fetch --unshallow origin` (this sandbox's own
+clone is shallow by default, the same pre-existing artifact every prior
+session has already documented), then `validate_spec.py --strict` →
+clean. `product_truth_check.py --fail-on-unwired` rose `10/10` → `11/11`
+once `docs/spec-matrix.yaml`'s own `proving_symbol`
+(`build_model_version_router`) was set (a genuine new live caller, wired
+into `apps/api/app/main.py` — not a TRACKER); `scripts/status.py`
+correctly stayed at 10 product-true (PROVISIONAL does not count until
+independently certified). Wired this task's own tests into CI
+(`.github/workflows/ci.yml`): a new `gate` job step
+(`tests/tasks/test_ftf_1001.py`) and a dedicated
+`model-version-schema-api-integration` job mirroring
+`tool-schema-crud-integration`'s own real `services: postgres` container
+pattern — validated the YAML parses cleanly (`python3 -c "import yaml;
+yaml.safe_load(...)"`).
+
+**Discovered but not acted on, flagged for Control plane:** while adding
+this task's own CI wiring, confirmed by direct `grep` that
+`test_ftf_0406.py`/`test_ftf_0407.py` are not wired into
+`.github/workflows/ci.yml` at all — neither task ID appears anywhere in
+that file before this task's own commit. Both tasks' own prior submission
+entries stated CI ran green, which is consistent with the *existing*
+checks all passing, but the new tests those two tasks each added were
+apparently never actually exercised by CI. This is a different,
+already-CERTIFIED task's own concern, not this relay shift's to improvise
+a fix for — left exactly as found, flagged in `QUEUE.md`'s own "Next
+shift" note and here for Control plane/a future shift to pick up as its
+own dependency-ready item.
+
+PR opened as PROVISIONAL (title `[relay] FTF-1001: ModelVersion
+schema/API`, https://github.com/SJZLab/Sovra/pull/160);
+`docs/spec-matrix.yaml` FTF-1001 set to `PROVISIONAL`/`L1-PROVEN`,
+`proving_symbol` `build_model_version_router`. Awaiting independent
+Control plane certification — not self-certified (Law 4). Certified
+stays 33/300. Full submission report: `docs/certifications/queue.md`.
 
 ## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
