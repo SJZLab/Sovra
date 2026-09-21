@@ -1,5 +1,133 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1301
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1302 (Local
+  compute costing, deps FTF-0006/FTF-1301 both CERTIFIED). STEP 0: verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean,
+  no BLOCKER needed. The designated branch `claude/wizardly-fermat-c7g9v1`
+  did not exist on the remote yet — started fresh from `origin/main`.
+  STEP 1: read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`, then
+  cross-checked GitHub directly (`list_pull_requests`) rather than trusting
+  this file's own prior state alone: six PRs remain open and unmerged —
+  #158 (stale FTF-0403 duplicate, superseded by the already-merged #163),
+  #159 (FTF-1501), #160 (FTF-1001), #161 (FTF-1401), #162 (unverified
+  FTF-0202 claim), #167 (FTF-1702) — all genuine Control-plane review
+  items this relay shift has no standing to act on (Law 4). Recomputed the
+  dependency-ready frontier fresh, this time by parsing every non-CERTIFIED
+  task's own `deps=` field out of `docs/spec-matrix.yaml`'s `notes`
+  directly (not by memory of a prior shift's own list): FTF-0202 (owner
+  ask, still open), FTF-0408/FTF-0902 (same real DoD-clarity/resource-gate
+  gaps prior shifts already disclosed), FTF-1001/FTF-1401/FTF-1501/
+  FTF-1702 (claimed by the open PRs above), and two genuinely new,
+  unclaimed items now that FTF-1301 reached CERTIFIED: FTF-1302 ("Local
+  compute costing") and FTF-R016 ("Measure selected coding-model/executor
+  pilot cost"). Pulled both fresh packets before choosing: FTF-R016 is
+  build-tooling metadata, self-referential to a live multi-worker parallel
+  implementation session this relay shift is not running — not picked,
+  disclosed rather than silently skipped, so a future shift does not
+  re-discover the same gap from scratch. FTF-1302's own `resource_gate`
+  field text is confirmed (by direct `grep` comparison against FTF-1301's/
+  FTF-0403's own packets) to be the same generic boilerplate every
+  implementable task in this repository already carries, not a genuine
+  live-GPU requirement like FTF-0902's own acceptance clause names
+  directly — FTF-1302 is the lower-task-ID, genuinely unblocked, unclaimed
+  item with a tractable narrowing, picked this shift.
+
+  **STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-1302` fresh, plus
+  `apps/api/app/costs/cost_profile_schema.py`/`cost_profile_crud.py`
+  (FTF-1301) and `apps/api/app/config/observability_foundation.py`
+  (FTF-0006) in full. Formed the hypothesis: `database_changes` charters
+  "No independent schema change" and `api_contract`/`shared_lock_required`
+  both point at FTF-1301's own already-frozen contract slot 13 with no new
+  lock claimed — this task is a pure computation module (Section 32's own
+  `window_self_hosted_cost`/`cost_per_success` formula) over a **declared**
+  service-window bill and workload, not a live GPU metering pipeline (no
+  GPU worker/Temporal workflow exists anywhere in this repository yet to
+  emit real telemetry from — FTF-0901's own, later, separately
+  dependency-gated scope). No code written yet at this point.
+
+  **STEP 2 (E):** Implemented `apps/api/app/services/
+  local_compute_costing.py` (`ServiceWindow`/`RequestUsage`/
+  `window_total_cost`/`unique_successful_task_ids`/`cost_per_success`) and
+  `tests/tasks/test_ftf_1302.py` together. The suite passed clean on its
+  first run (no genuine mid-implementation failure this shift, unlike
+  FTF-1301's own two) — Law 1 evidence instead comes from two deliberate
+  fault injections against the delivered code, both reverted
+  byte-identical and the suite re-confirmed clean afterward: (1) swapped
+  `cost_per_success`'s own real window-total division for exactly the
+  naive "sum each request's own GPU-second interval at a bill-implied
+  per-second rate" mistake this task's own negative_acceptance forbids —
+  `uv run python3 tests/tasks/test_ftf_1302.py` failed with 6 named
+  checks across Section 32's own golden example, the overlap case, and
+  both dedicated comparison tests, all producing the wrong dollar figure;
+  (2) disabled the non-negative-amount construction guard (`if False and
+  value < 0:`) — failed with exactly the named "storage_cost must not be
+  negative" check. `uv sync --all-packages`/`pnpm install
+  --frozen-lockfile` were both run first (this sandbox's own pre-existing,
+  undocumented-until-now dependency gap — confirmed pre-existing by the
+  full `tests/tasks/test_ftf_*.py` sweep failing identically before and
+  passing clean immediately after, with no other change); `git fetch
+  --unshallow origin` closed the same documented shallow-clone artifact
+  every prior relay/certifying session has already hit. Also discovered
+  and resolved a real, disclosed tooling-version gap this shift: this
+  sandbox's own globally-installed `ruff 0.15.8`/an unpinned `mypy`
+  produced false-positive failures (`ruff format` wanted to reformat 25
+  unrelated files; bare `mypy .` reported 9 spurious `alembic.op`/
+  `alembic.context` errors) that the project's own pinned versions (`uv
+  run ruff`/`uv run mypy`, matching `pyproject.toml`'s
+  `ruff>=0.6.9,<0.7`) do not reproduce — confirmed by running both the
+  global and pinned tools side by side before trusting the pinned ones,
+  the same tools CI itself actually invokes.
+
+  **V:** Independently reconfirmed no regression: full `tests/tasks/
+  test_ftf_*.py` sweep (32 files) all "all checks passed" or equivalent;
+  `uv run ruff check .`/`uv run ruff format --check .`/`uv run mypy .`
+  clean repo-wide (146 source files); `pnpm run
+  lint`/`typecheck`/`format:check` clean; `pnpm run test` (vitest) —
+  19/19 passed across all 5 spec files, no regression. `scripts/
+  validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` stays `12/12` (`proving_symbol` deliberately left
+  empty — this task adds no live HTTP route, matching the
+  FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent, disclosed not hidden).
+  `python3 scripts/status.py` — `36/300 certified · 12 product-true`
+  (unchanged — FTF-1302 is PROVISIONAL, not yet CERTIFIED).
+
+  Wired `.github/workflows/ci.yml` with one new `gate` job step (`uv run
+  python3 tests/tasks/test_ftf_1302.py`) — no dedicated integration job
+  needed (no database, network egress, or GPU/external resource of any
+  kind is touched anywhere in this task) — no other job's steps touched.
+
+  **STEP 3 metrics after this shift:** 36/300 certified (unchanged — this
+  shift implements, it does not certify); 1 new provisional this shift
+  (FTF-1302); `scripts/status.py`'s own authoritative "product-true" count
+  stays 12; `product_truth_check.py --fail-on-unwired` — `12/12` (both
+  unchanged, disclosed above). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml`/QUEUE.md/`docs/certifications/queue.md` all
+  updated in a second, tracking-doc-only commit on the same branch,
+  matching the established two-commit precedent.
+
+  **STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+  reporting and stopping to await independent Control-plane L2
+  certification, per Law 4. This shift did not touch, merge, or close any
+  of the six open PRs flagged above — that remains Control-plane's job,
+  not this relay's.
+
+## Next shift
+Seven open PRs now need Control-plane attention ahead of any further relay
+implementation: (1) close PR #158 without merging (superseded by the
+already-merged PR #163); (2) certify or reject PR #159/#160/#161/#167
+(FTF-1501/FTF-1001/FTF-1401/FTF-1702, all real, open, and unreviewed);
+(3) resolve PR #162's own FTF-0202 claim one way or the other; (4) review
+this shift's own FTF-1302 submission. If a relay session fires next
+instead: recompute the dependency-ready frontier fresh rather than
+trusting this note alone — FTF-R016 stays disclosed-not-picked (build
+tooling, self-referential to a live parallel-execution session this relay
+is not); FTF-0408/FTF-0902 still need their disclosed DoD-clarity/
+resource-gate gaps resolved first, not improvised; FTF-0202 remains the
+single highest-leverage owner ask still open. FTF-1302 reaching CERTIFIED
+will newly unblock FTF-1303 ("Provider token costing") only once its own
+other, not-yet-implemented prerequisites also land — recompute against
+`docs/spec-matrix.yaml`'s live state directly rather than assuming.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1301
   (CostProfile schema/UI, deps FTF-0401/FTF-0403/FTF-0103 all CERTIFIED).
   STEP 0: verified `sha256sum CLAUDE.md` against the committed
   `CLAUDE.md.sha256` — clean, no BLOCKER needed. Found the designated
@@ -1268,9 +1396,9 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
-`9a47458` — see docs/certifications/ledger.md) · Provisional: 0 (this
-shift's own item; PR #167/#159/#160/#161 remain genuinely open and
-PROVISIONAL, unreviewed — see "## Provisional" below) · Blocked: 0
+`9a47458` — see docs/certifications/ledger.md) · Provisional: 1 (this
+shift's own FTF-1302 item; PR #167/#159/#160/#161 remain genuinely open
+and PROVISIONAL, unreviewed — see "## Provisional" below) · Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1415,6 +1543,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1302 (Local compute costing, PR opened from `claude/wizardly-fermat-
+c7g9v1`, implementation commit `2ebf9788ac644fc250e8cc9bc621a42815b549f7`)
+is this shift's own new item — not yet reviewed. See
+`docs/certifications/queue.md`'s own "2026-09-21 — FTF-1302" entry for the
+full submission.
+
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
 `9a47458118ee46095270f4aa9758b5ec35efeea5`) — see "## Done" for the

@@ -1,5 +1,54 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1302 (Local
+  compute costing, deps FTF-0006/FTF-1301 both CERTIFIED). CLAUDE.md
+  hash verified clean against `CLAUDE.md.sha256`. Six PRs (#158/#159/
+  #160/#161/#162/#167) remain open, unmerged, genuine Control-plane
+  review items this relay shift has no standing to act on. Recomputed
+  the dependency-ready frontier fresh by parsing every non-CERTIFIED
+  task's own `deps=` field against `docs/spec-matrix.yaml`'s live
+  `certification_state`: FTF-1302 and FTF-R016 are newly dependency-ready
+  now that FTF-1301 reached CERTIFIED, neither claimed by any open PR.
+  FTF-R016 (build-tooling metadata, self-referential to a live
+  multi-worker parallel-execution session this relay shift is not) not
+  picked, disclosed rather than silently skipped. FTF-1302's own
+  `resource_gate` field confirmed (direct `grep` comparison) to be the
+  same generic boilerplate every already-implemented task carries, not a
+  genuine live-GPU requirement — narrowed, per its own `database_changes`/
+  `api_contract` charter, to Section 32's own `window_self_hosted_cost`/
+  `cost_per_success` formula over a **declared** service-window bill and
+  workload, never re-derived from live GPU telemetry this repository has
+  no worker to emit yet. `apps/api/app/services/local_compute_costing.py`
+  (`ServiceWindow`/`RequestUsage`/`window_total_cost`/
+  `unique_successful_task_ids`/`cost_per_success`) plus 15 no-DB test
+  functions (`tests/tasks/test_ftf_1302.py`), including Section 32's own
+  literal golden example ($12 GPU bill incl. idle + $2 CPU + $1 other /
+  100 successes = $0.15/success). The negative_acceptance ("per-request
+  overlapping GPU seconds cannot double count batches or omit idle/
+  multi-replica capacity") is enforced by construction — `cost_per_
+  success` never reads per-request GPU-second timing at all, only the
+  window's own real bill — proven by two fault injections (a naive
+  per-request-summing swap producing 6 named wrong-answer check failures;
+  a disabled non-negative-amount guard), both reverted byte-identical.
+  No regression: full `tests/tasks/test_ftf_*.py` sweep (32 files) clean;
+  `uv run ruff check .`/`uv run ruff format --check .`/`uv run mypy .`
+  clean repo-wide (146 files, after resolving a real, disclosed
+  tooling-version gap — this sandbox's own newer, globally-installed
+  `ruff`/unpinned `mypy` produced false-positive failures the project's
+  own pinned `uv run` tools do not reproduce); `pnpm run
+  lint`/`typecheck`/`format:check` clean; `pnpm run test` (vitest) —
+  19/19 passed, no regression. `product_truth_check.py --fail-on-unwired`
+  stays `12/12` (`proving_symbol` deliberately empty — no live HTTP route
+  added by this task, matching the FTF-1401/FTF-1601/FTF-1701/FTF-1810
+  precedent). Wired `.github/workflows/ci.yml` with one new `gate` job
+  step; no integration job needed (no DB/network/GPU touched). PR opened
+  as PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/
+  `docs/certifications/queue.md` updated in a second, tracking-doc-only
+  commit. Certified stays 36/300; product-true stays 12/12 (unchanged —
+  PROVISIONAL, not yet CERTIFIED). Awaiting independent Control-plane L2
+  certification, per Law 4 — not self-certified. Full submission:
+  `docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #165) — independent CERTIFY
   review of FTF-1701 (Reference agent specification): **CERTIFIED**. See
   the new section directly below for the full review.

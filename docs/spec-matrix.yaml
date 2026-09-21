@@ -2834,15 +2834,75 @@ FTF-1301:
   proving_symbol: is_certifiable_cheapest
   proving_test: tests/tasks/test_ftf_1301.py
 FTF-1302:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Local compute costing
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0006, FTF-1301
-  proof_state: UNPROVEN
+  evidence_hash: 2ebf9788ac644fc250e8cc9bc621a42815b549f7
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0006, FTF-1301 (both
+    CERTIFIED). `database_changes` charters "No independent schema change. Consume frozen
+    contract" -- there is no GPU worker, Temporal workflow or resource-lease table anywhere in
+    this repository yet to auto-emit real per-request GPU-second telemetry from (FTF-0901's own,
+    later, separately dependency-gated GPU worker family). This task is narrowed, disclosed
+    explicitly in `apps/api/app/services/local_compute_costing.py`'s own module docstring, to
+    Section 32's own named formula made real and callable against a **declared**, already-
+    reconciled real service-window bill (`ServiceWindow.total_billed_gpu_cpu_ram_cost` -- itself
+    the real bill, inclusive of idle time and every replica's own capacity, exactly the same
+    "no fake metrics; a real, disclosed, entered number, not an auto-scraped one" pattern
+    FTF-1301's own `CostProfile` rate entry already established) and a declared workload
+    (`RequestUsage`, Section 69.2's own closed terminal-outcome vocabulary):
+    `window_total_cost` sums the four cost categories exactly once each;
+    `unique_successful_task_ids` dedupes retries of the same `request_id` to Section 69.2's own
+    "not independent tasks" rule; `cost_per_success` divides the real window total by the unique
+    success count and raises explicitly on zero successes (Section 32: "undefined/infinite," never
+    a silent $0). This task's own negative_acceptance ("Per-request overlapping GPU seconds cannot
+    double count batches or omit idle/multi-replica capacity") is enforced by construction:
+    `cost_per_success`/`window_total_cost` never sum, integrate or otherwise derive a dollar figure
+    from `RequestUsage.gpu_seconds_start`/`gpu_seconds_end` at all -- there is structurally no code
+    path here capable of re-summing continuously-batched, overlapping per-request GPU seconds into
+    a second, larger total, nor one capable of crediting only the replica-seconds some request
+    happened to touch. 15 no-DB test functions
+    (`tests/tasks/test_ftf_1302.py`): construction guards for both `ServiceWindow`/`RequestUsage`;
+    `window_total_cost`'s own four-category sum; `unique_successful_task_ids`'s own outcome-filter
+    and retry-dedup behavior; Section 32's own literal golden example ($12 GPU bill including idle,
+    $2 CPU, $1 other cost, 100 successful tasks -> exactly $0.15 per success); a positive proof
+    that fully overlapping per-request GPU-second intervals do not change `cost_per_success`; and
+    the negative_acceptance case (zero successes raises explicitly). Own fault injection (Law 1,
+    two distinct vectors, both reverted byte-identical and the suite re-confirmed clean
+    afterward): (1) replaced `cost_per_success`'s own real window-total division with exactly the
+    naive "sum each request's own GPU-second interval at a bill-implied per-second rate" mistake
+    this task's own negative_acceptance forbids -- `uv run python3 tests/tasks/test_ftf_1302.py`
+    failed with 6 named checks across the golden example, the overlap case and both dedicated
+    fault-injection comparison tests, all producing the wrong dollar figure; (2) disabled the
+    non-negative-amount guard in `_validate_non_negative_decimal` (`if False and value < 0:`) --
+    failed with exactly the named "storage_cost must not be negative" construction-guard check.
+    No live HTTP route is added by this task (`api_contract`/`shared_lock_required` in the task
+    packet both point at FTF-1301's own, already-frozen contract slot 13 -- this task claims no
+    new lock and adds no new path); `proving_symbol` is deliberately left empty, matching the
+    FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent for a computation module with no live
+    product-runtime caller in this repository yet -- a genuine, disclosed 0/0, not inflation.
+    Independently reconfirmed no regression: full `tests/tasks/test_ftf_*.py` sweep (32 files, all
+    "all checks passed" or equivalent, after `uv sync --all-packages`/`pnpm install
+    --frozen-lockfile` to close this sandbox's own pre-existing, undocumented-until-now dependency
+    gap, and `git fetch --unshallow origin` to close the same documented shallow-clone artifact
+    every prior relay/certifying session has already hit); `uv run ruff check .`/`uv run ruff
+    format --check .`/`uv run mypy .` clean repo-wide (146 source files; the pinned `uv run` tool
+    versions, not this sandbox's own newer globally-installed `ruff`/`mypy`, are what CI actually
+    runs -- confirmed by reproducing and then resolving a false-positive mismatch against the
+    global tools before trusting the pinned ones); `pnpm run lint`/`typecheck`/`format:check`
+    clean; `pnpm run test` (vitest) -- 19/19 passed across 5 spec files, no regression.
+    `scripts/validate_spec.py --strict` clean. `scripts/product_truth_check.py --fail-on-unwired`
+    stays `12/12` (unchanged, as disclosed above -- this task's own `proving_symbol` is genuinely
+    empty). `scripts/status.py` stays `36/300 certified · 12 product-true` (unchanged --
+    FTF-1302 is PROVISIONAL, not yet CERTIFIED). Wired `.github/workflows/ci.yml` with one new
+    `gate` job step (`uv run python3 tests/tasks/test_ftf_1302.py`) -- no dedicated integration job
+    needed (no database, network egress or GPU/external resource of any kind is touched anywhere
+    in this task) -- no other job's steps touched. PR opened as PROVISIONAL; not self-certified
+    (Law 4) -- awaiting independent Control plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1302.py
 FTF-1303:
   certification_state: NONE
   criticality: MUST
