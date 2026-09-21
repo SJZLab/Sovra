@@ -7770,3 +7770,61 @@ Full entry: docs/certifications/ledger.md.
   implementation commit, `proving_test:
   tests/reference/test_ftf_1701.py`. Certified stays 34/300; Product-true
   stays 11/11. Awaiting independent Control-plane L2 review.
+
+## 2026-09-21 — Control plane: FTF-1701 (PR#165) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #165.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01HFJZbt5ECMgJbGqx6Yx7Tq`; both commits on PR #165 carry
+  `Claude-Session: .../session_01WvavBhWpFYv4MAW3yytpgt` — no match,
+  independent per Law 4.
+- **CI checked on the real head, not a stale claim:** subscribed while
+  `docker-local-stack-integration`/`gate` were still `in_progress`;
+  polled to completion — all 17 real GitHub Actions check runs
+  `completed`/`success` on the real final head
+  (`f3d06e5e5fb581b243cbd511a91d45368a632ba4`, run `35603489043`), `gate`
+  included, with the new FTF-1701 gate step confirmed present in
+  `.github/workflows/ci.yml`.
+- **Diff read directly:** `evals/reference/reference_agent_specification.py`,
+  `tests/reference/test_ftf_1701.py`,
+  `packages/contracts/{openapi,jsonschema}/17-*`. Confirmed the
+  approval-granting surface (`decide_approval`/`revoke_approval`) is
+  genuinely unreachable through `dispatch_tool_call`, and that both call
+  arguments and handler results are validated against the tool's own
+  frozen schema.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1701 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — the
+  committed `docs/implementation/task-packets/FTF-1701.md` matched the
+  tool's own deterministic output byte-for-byte. Acceptance clause 1 and
+  negative_acceptance both confirmed met by the code above.
+- **Own reproduction, this sandbox** (`uv sync --all-packages`, `pnpm
+  install`, `git fetch --unshallow`): `tests/reference/test_ftf_1701.py`
+  — "all checks passed" (24/24).
+- **Own fault injection, distinct from the producer's own two, both
+  reverted byte-identical and reconfirmed clean afterward:**
+  1. Reproduced the producer's own cross-subject-IDOR injection — failed
+     with exactly the same named check.
+  2. A second, independent vector the producer did not claim: disabled
+     the requester-only guard in `execute_approved_action` — failed with
+     exactly the named "only the original requester may execute their
+     own approved action" check.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep (30 files) all "all checks passed" or equivalent;
+  `ruff`/`mypy`/`pnpm lint+typecheck+format` all clean repo-wide.
+- **Static checks re-run clean:** `scripts/validate_spec.py --strict`
+  clean after `git fetch --unshallow`. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `11/11` product-true, unchanged
+  (`proving_symbol` confirmed deliberately empty — 0/0 legitimate for
+  this no-live-route task).
+- Dependencies FTF-0407/FTF-0405 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** Merged PR #165 (merge commit
+  `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` — `['FTF-1701']` updated. Certified:
+  35/300, Product-true: 11/11.
+
+Full entry: docs/certifications/ledger.md.

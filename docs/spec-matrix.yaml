@@ -3047,10 +3047,10 @@ FTF-1606:
   proving_symbol: ''
   proving_test: ''
 FTF-1701:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Reference agent specification
-  evidence_hash: 408ac045c623112b25397443f665794af6207621
+  evidence_hash: bbdf0c8278d39d1f3fa7ed87c11e240a109075a3
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0407, FTF-0405
@@ -3090,9 +3090,54 @@ FTF-1701:
     schema change; resource_gate moot). product_truth_check.py stays 11/11 -- proving_symbol
     deliberately empty, matching FTF-1401/FTF-1601's own precedent for a task that is not itself a
     served product route. No regression: full tests/tasks/test_ftf_*.py sweep, ruff/mypy
-    repo-wide, validate_spec.py --strict all clean. PR opened as PROVISIONAL; not self-certified
-    (Law 4) -- awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    repo-wide, validate_spec.py --strict all clean.
+
+    Control plane independent CERTIFY review (session_01HFJZbt5ECMgJbGqx6Yx7Tq, scheduled
+    certifier shift, `pull_request.opened` webhook for PR #165): session-ID clean against both
+    commits on PR #165 (both carry session_01WvavBhWpFYv4MAW3yytpgt, no match). CI checked on the
+    real head, not a self-report: subscribed while 2 of 17 checks (`docker-local-stack-integration`,
+    `gate`) were still `in_progress`, polled `get_check_runs` to completion -- all 17 GitHub
+    Actions check runs `completed`/`success` on head `f3d06e5e5fb581b243cbd511a91d45368a632ba4`
+    (run `35603489043`), `gate` included; the new `FTF-1701 negative-test proof` gate step
+    confirmed present. Diff read directly
+    (`evals/reference/reference_agent_specification.py`/`tests/reference/test_ftf_1701.py`/
+    `packages/contracts/{openapi,jsonschema}/17-*`): the five `ReferenceToolSpec` rows, the
+    tenant/subject-scoped `ReferenceBusinessServer`, the never-dispatchable
+    `decide_approval`/`revoke_approval` approval surface, and `dispatch_tool_call`'s real
+    `validate_instance` calls all confirmed present exactly as described.
+    `python tools/r1_handoff.py packet FTF-1701 --plan FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled
+    directly into a scratch directory (own run, not trusted from the producer's own claim) -- the
+    committed `docs/implementation/task-packets/FTF-1701.md` matched byte-for-byte. Acceptance
+    clause 1 ("Freeze the minimum shared phase interface and domain schemas... Specify bounded
+    actual reference agent with approved tools, deterministic business state and explicit
+    risk/language profile") and negative_acceptance ("Reference success cannot claim every
+    arbitrary customer agent is production-qualified") confirmed met by the code above; both
+    `files:` entries and both `dependencies:` (FTF-0407, FTF-0405) confirmed genuinely
+    `CERTIFIED` in `docs/spec-matrix.yaml`; `shared_lock_required: contracts:17` confirmed as the
+    first and only claim on contract slot 17 (grepped the full spec-matrix, no other task
+    references `contracts:17`). Own reproduction, this sandbox (`uv sync --all-packages`,
+    `pnpm install`, `git fetch --unshallow`): `tests/reference/test_ftf_1701.py` -- "all checks
+    passed" (24/24). Own fault injection (Law 1, distinct from the producer's own two, both
+    reverted byte-identical and the suite re-run clean afterward): (1) reproduced the producer's
+    own cross-subject-IDOR injection (`_authorized_record`) -- failed with exactly the same named
+    check; (2) a second, independent vector the producer did not claim -- disabled the
+    requester-only guard in `execute_approved_action`
+    (`if False and approval.requested_by_subject_id != subject_id:`) -- failed with exactly
+    `FAIL [FTF-1701] only the original requester may execute their own approved action`. No
+    regression, independently re-run: full `tests/tasks/test_ftf_*.py` sweep (30 files, all "all
+    checks passed" or equivalent, after `pnpm install` resolved node_modules-missing failures in
+    FTF-0002/FTF-0003/FTF-H001 that were sandbox artifacts, not real); `ruff check .`/`ruff format
+    --check .`/`mypy .` clean repo-wide (137 source files); `pnpm run lint`/`typecheck`/
+    `format:check` clean. `scripts/validate_spec.py --strict` clean after `git fetch --unshallow`
+    (this sandbox's own documented shallow-clone artifact -- 17 stale_commit defects present
+    before unshallowing, none after). `scripts/product_truth_check.py --fail-on-unwired` -- own
+    run, `11/11` product-true, unchanged (0/0 accepted as legitimate: `proving_symbol` is
+    deliberately empty for this task, matching FTF-1401/FTF-1601's own precedent). `scripts/
+    status.py` -- own run, `34/300 certified` (pre-certification baseline, matches claim). No
+    blocking defect found. Merged PR #165 (merge commit
+    `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`). Certified: 35/300, Product-true: 11/11.
+    Validated-by: session https://claude.ai/code/session_01HFJZbt5ECMgJbGqx6Yx7Tq, 2026-09-21.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1701.py
 FTF-1702:

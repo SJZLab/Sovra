@@ -1106,8 +1106,8 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 34/300 (main; FTF-0403 CERTIFIED 2026-09-21, PR #163 merged as
-`4afab39` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+Certified: 35/300 (main; FTF-1701 CERTIFIED 2026-09-21, PR #165 merged as
+`bbdf0c8` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1252,8 +1252,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1701 (Reference agent specification) — this shift's own submission,
-PR opened, awaiting independent Control-plane L2 certification.
+FTF-1701 (Reference agent specification) is no longer in this section; it
+was independently reviewed and CERTIFIED 2026-09-21 via PR #165 (merge
+commit `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 Also genuinely open and PROVISIONAL as of this shift, found via direct
 GitHub inspection rather than trusted from this file's own prior (stale)
@@ -2260,6 +2263,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
+- FTF-1701 — Reference agent specification. CERTIFIED 2026-09-21, PR #165
+  (merge commit `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`). Independently
+  re-verified: session-ID clean (both commits carry a different session
+  than this reviewer's own); all 17 real GitHub Actions check runs
+  `completed`/`success` on the real final head, `gate` included, the new
+  FTF-1701 gate step confirmed present. Own reproduction (`uv sync
+  --all-packages`, `pnpm install`, `git fetch --unshallow`):
+  `tests/reference/test_ftf_1701.py` — "all checks passed" (24/24). Own
+  fault injection, distinct from the producer's own two: (1) reproduced
+  the producer's own cross-subject-IDOR injection — failed with the same
+  named check; (2) a second, independent vector the producer did not
+  claim — disabled the requester-only guard in
+  `execute_approved_action` — failed with the named "only the original
+  requester may execute their own approved action" check. No regression:
+  full `tests/tasks/test_ftf_*.py` sweep (30 files) clean;
+  `ruff`/`mypy`/`pnpm lint+typecheck+format` clean repo-wide.
+  `validate_spec.py --strict` clean after `git fetch --unshallow`. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-1701` — the
+  committed task-packet file matched the tool's own deterministic output
+  byte-for-byte; acceptance/negative_acceptance clauses confirmed met.
+  Dependencies FTF-0407/FTF-0405 confirmed genuinely `CERTIFIED`.
+  `shared_lock_required: contracts:17` confirmed as the first and only
+  claim on that contract slot. No blocking defect found.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Ran `sync_certified_status()` to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py`'s own stricter "product-true" count: `34/300` certified
+  before, `35/300` after; "Product-true" stays `11` (unchanged —
+  `proving_symbol` deliberately empty, this task owns no live HTTP
+  route), matching `product_truth_check.py`'s own `11/11`. This
+  certification's own doc updates were pushed on a branch and opened as a
+  PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+  Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

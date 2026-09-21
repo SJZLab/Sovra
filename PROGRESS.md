@@ -1,9 +1,101 @@
 # PROGRESS — Sovra
 Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #163) — independent CERTIFY
-  review of FTF-0403 (Budget policy): **CERTIFIED**. See the new section
-  directly below for the full review. `docs/certifications/ledger.md`/
-  `docs/certifications/queue.md` carry the complete evidence.
+  the `pull_request.opened` webhook for PR #165) — independent CERTIFY
+  review of FTF-1701 (Reference agent specification): **CERTIFIED**. See
+  the new section directly below for the full review.
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
+  the complete evidence.
+
+## 2026-09-21 — Control plane: FTF-1701 (PR#165) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
+triggered by the `pull_request.opened` webhook for PR #165.
+
+Session-independence check: this reviewing session's own ID is
+`session_01HFJZbt5ECMgJbGqx6Yx7Tq`; both commits on PR #165 carry
+`Claude-Session: .../session_01WvavBhWpFYv4MAW3yytpgt` — no match,
+independent per Law 4.
+
+Subscribed to PR #165's own activity right away
+(`docker-local-stack-integration`/`gate` were still `in_progress`) rather
+than certifying against a stale snapshot. Polled `get_check_runs` to
+completion: all 17 GitHub Actions check runs on the real final head
+(`f3d06e5e5fb581b243cbd511a91d45368a632ba4`, run `35603489043`)
+`completed`/`success`, `gate` included, with the new FTF-1701 gate step
+(`uv run python3 tests/reference/test_ftf_1701.py`) confirmed genuinely
+wired into `.github/workflows/ci.yml`.
+
+Read the diff directly: `evals/reference/reference_agent_specification.py`,
+`tests/reference/test_ftf_1701.py`,
+`packages/contracts/{openapi,jsonschema}/17-*`. Confirmed the five
+reference tool specs construct real `ToolDefinition` rows through
+FTF-0404/FTF-0406/FTF-0407's own already-CERTIFIED construction guards;
+confirmed `_authorized_record` enforces both tenant and owner-subject
+scoping; confirmed `decide_approval`/`revoke_approval` are not
+dispatchable tool names, so `dispatch_tool_call` cannot reach the
+approval-granting surface; confirmed `dispatch_tool_call` validates both
+call arguments and handler results against the tool's own frozen schema
+via FTF-0405's `validate_instance`; confirmed `17-interface.yaml`
+declares `paths: {}`.
+
+Task contract re-pulled directly, not trusted from the producer's own
+claim: `python tools/r1_handoff.py packet FTF-1701 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` into a fresh scratch directory — the
+committed `docs/implementation/task-packets/FTF-1701.md` matched the
+tool's own deterministic output byte-for-byte. Acceptance clause 1 and
+negative_acceptance both confirmed met by the code above; both
+`dependencies:` (FTF-0407, FTF-0405) confirmed genuinely `CERTIFIED` in
+`docs/spec-matrix.yaml`; `shared_lock_required: contracts:17` confirmed
+as the first and only claim on contract slot 17.
+
+Own reproduction, this sandbox (`uv sync --all-packages`, `pnpm
+install`, `git fetch --unshallow` to clear the documented shallow-clone
+artifact): `tests/reference/test_ftf_1701.py` — "all checks passed"
+(24/24 no-DB checks).
+
+Own fault injection, distinct from the producer's own two, both
+reverted byte-identical and reconfirmed clean afterward:
+1. Reproduced the producer's own vector (disabled
+   `record.owner_subject_id != subject_id` in `_authorized_record`) —
+   failed with exactly the named cross-subject (IDOR) check, matching
+   the producer's own claim exactly.
+2. A second, independent vector the producer did not claim: disabled the
+   requester-only guard in `execute_approved_action`
+   (`if False and approval.requested_by_subject_id != subject_id:`) —
+   failed with exactly the named "only the original requester may
+   execute their own approved action" check — real evidence the suite
+   catches an authorization bug beyond the two the producer itself
+   exercised.
+
+No regression, independently re-run: full `tests/tasks/test_ftf_*.py`
+sweep (30 files) — all "all checks passed" or equivalent (after `pnpm
+install`, which cleared transient node_modules-missing failures in
+FTF-0002/FTF-0003/FTF-H001 — confirmed sandbox artifacts of this fresh
+checkout, not real regressions). `ruff check .`/`ruff format --check
+.`/`mypy .` clean repo-wide (137 source files). `pnpm run
+lint`/`typecheck`/`format:check` clean. `scripts/validate_spec.py
+--strict` clean after `git fetch --unshallow` (17 `stale_commit`
+defects present before, none after — the same documented shallow-clone
+artifact prior certifications have hit). `scripts/product_truth_check.py
+--fail-on-unwired` — own run, `11/11` product-true, unchanged
+(`proving_symbol` confirmed deliberately empty in
+`docs/spec-matrix.yaml` — 0/0 legitimate for a task that owns no live
+HTTP route, matching the FTF-1401/FTF-1601 precedent).
+
+Dependencies FTF-0407/FTF-0405 confirmed genuinely `CERTIFIED` in
+`docs/spec-matrix.yaml` before relying on them.
+
+No blocking defect found. Merged PR #165 (merge commit
+`bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`). `docs/spec-matrix.yaml` set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+(`scripts/task_claim.py`) to write the real status into
+`spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-1701']`
+updated. `scripts/status.py`'s own stricter "product-true" count:
+`34/300` certified before, `35/300` after; "Product-true" stays `11`
+(unchanged), matching `product_truth_check.py`'s own `11/11`. This
+certification's own doc updates were pushed on a branch and opened as a
+PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+Full entry: `docs/certifications/ledger.md`.
 
 ## 2026-09-21 — Control plane: FTF-0403 (PR#163) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
