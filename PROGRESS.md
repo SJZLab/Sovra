@@ -101,7 +101,14 @@ Step 3's own requirement.
 
 **STEP 4** — stop condition (a): this task reached L1-PROVEN, PR opened
 PROVISIONAL, awaiting independent Control-plane L2 certification (Law 4 —
-never self-certified). Reporting and stopping this shift here.
+never self-certified). PR #158 pushed a doc-only follow-up commit
+(`c5f1a6e`, recording the PR link) after the implementation/tracking
+commits; polled CI once more (single check, no further polling) and
+confirmed all 17/17 checks `completed`/`success` on the real final head
+`c5f1a6e` — the `gate` job (including this task's own new
+`FTF-0403`/restored `FTF-0406`/`FTF-0407` steps) and the new
+`budget-policy-integration` job both green. No fix needed. Reporting and
+stopping this shift here.
 
 Certified: 33/300 (unchanged — PROVISIONAL does not count). Product-true
 (`product_truth_check.py`, includes PROVISIONAL wiring): 11/11.
