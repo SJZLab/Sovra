@@ -1,5 +1,81 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-20 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0407
+  (Critical behavior requirements, deps FTF-0401/FTF-0406 both CERTIFIED).
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted the
+  prior shift's own "Next shift" note by itself): FTF-0202 (owner ask,
+  still open/unverified — see the flagged note below), FTF-0403,
+  FTF-0407, FTF-0902, FTF-1001, FTF-1401, FTF-1501 are the seven
+  dependency-ready items; FTF-0407 has the lowest CAP number (CAP-05)
+  with no external-service ask of its own, matching this file's own prior
+  prediction that FTF-0406 reaching CERTIFIED would unblock it.
+  Section 7A.6/6.8D's own mandate fields (`AgentManifest.mandate_json`/
+  `forbidden_actions_json`) do not exist as real storage anywhere in this
+  repository yet — `AgentManifest` is FTF-04A19's own, later, separately
+  dependency-gated schema that itself depends on *this* task, not the
+  other way around — so this task is narrowed to the one real,
+  already-frozen structural analog that exists today: FTF-0404's own
+  `ToolDefinition.is_critical` field, checked for the first time against
+  `side_effect_class`/`requires_confirmation`.
+  `apps/api/app/services/critical_behavior_requirements.py`'s
+  `enforce_critical_behavior_requirement` refuses an `is_critical=True`
+  claim that is unmeasurable (`read_only`, no side effect to bind a
+  test/enforcement to) or conflicting (a real side effect but
+  `requires_confirmation=False`, i.e. a critical claim with no runtime
+  guard behind it) — a no-op whenever `is_critical=False`. Deliberately
+  does **not** force `is_critical=True` on a high-risk resolution the
+  other way, since FTF-0406's own already-CERTIFIED evidence constructs
+  exactly such a tool (`irreversible_write`, confirmed, `is_critical=
+  False`) and this task must not regress it (Law 14) — checked directly
+  against every existing certified fixture before finalizing the rule,
+  not discovered after. Wired into `ToolDefinition.__init__`, the same
+  point FTF-0402/FTF-0405/FTF-0406 already use. Also adds the real,
+  read-only `/api/v1/organizations/{organization_id}/projects/
+  {project_id}/requirements` route (this task's own `api_contract` names
+  it as new surface FTF-0404's own contract deliberately left undeclared)
+  — a derived projection over already-enforced `ToolDefinition` rows,
+  never a separately stored claim; the sixth live-wired product-runtime
+  path in this repository. `database_changes` honored ("No independent
+  schema change") — consumes FTF-0404's own frozen columns exactly as
+  they exist. 22 no-DB test functions (`tests/tasks/test_ftf_0407.py`,
+  including three that construct a real `ToolDefinition` proving the
+  guard runs before any database is touched, and an explicit no-regression
+  test reproducing FTF-0406's own certified high-risk/non-critical/
+  confirmed fixture shape) + 15 real live-Postgres checks
+  (`tests/integration/test_ftf_0407_critical_behavior_requirements.py`, a
+  real uvicorn server serving both the tools router and this task's own
+  new requirements router). Own fault injection (Law 1, two, distinct
+  vectors, both reverted byte-identical and reconfirmed clean in both
+  suites, including over real Postgres): (1) disabled the live wiring in
+  `ToolDefinition.__init__` — caught for real by the two named
+  live-wiring tests and, in the live-Postgres suite, by a real downstream
+  unique-constraint collision; (2) disabled the `requires_confirmation`
+  conflict check inside the enforcement function itself — caught for real
+  by the exact named negative_acceptance checks in both suites.
+  Independently reconfirmed no regression to FTF-0401/FTF-0404/FTF-0405/
+  FTF-0406's own certified no-DB suites (all four "all checks passed")
+  and to FTF-0404's own live-Postgres suite (re-run "all checks passed"
+  on a freshly recreated database/role). `ruff check`/`ruff format
+  --check`/`mypy` clean on every file this task touched, and clean across
+  the full `apps/api/app` tree (49 source files; the 2 remaining mypy
+  errors are the pre-existing, unrelated `authlib.jose` stub gap,
+  confirmed identical on `main` via `git stash`). `validate_spec.py
+  --strict` clean (`git fetch --unshallow origin` first — this sandbox's
+  own clone is shallow by default, the same pre-existing artifact every
+  prior relay/certifying session has already documented).
+  `product_truth_check.py --fail-on-unwired` — `9/9` before this shift,
+  `10/10` after (this task's own `proving_symbol`,
+  `enforce_critical_behavior_requirement`, has a real caller in
+  `ToolDefinition.__init__` — not a TRACKER). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-0407 set to `PROVISIONAL`/`L1-PROVEN`,
+  `proving_symbol` `enforce_critical_behavior_requirement` (matching the
+  FTF-0201/FTF-0301/FTF-0401/FTF-0404/FTF-0406 producer-shift precedent).
+  Awaiting independent Control plane certification — not self-certified
+  (Law 4). Certified stays 32/300; `scripts/status.py`'s own stricter
+  "product-true" count (CERTIFIED-only) stays 9. Full submission report:
+  `docs/certifications/queue.md`.
+
+Previously, 2026-09-20 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #153) — independent CERTIFY
   review of FTF-0406 (Side-effect classification): **CERTIFIED**. First
   pass found CI's real `gate` job genuinely failing on mypy in the PR's
@@ -262,26 +338,28 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0406 (this shift's own submission, see the top of this file) is now
+FTF-0407 (this shift's own submission, see the top of this file) is now
 PROVISIONAL, PR opened, awaiting independent Control-plane L2
 certification — that review is the natural next action, matching the
 established relay/certifier alternation. If a certifier session is not
 what fires next: recompute the dependency-ready frontier fresh rather
 than trusting this note — as of this shift, parsing every
-non-`CERTIFIED` task's own `deps=` field against the live
-`certification_state` set found exactly one other dependency-ready item,
-FTF-1501 (CAP-14, no external-service ask of its own); FTF-0406 reaching
-CERTIFIED will newly unblock FTF-0407 (per `docs/TASK_INDEX.md`, once its
-own other dependencies are also met). Before merging PR #143 (still open
-and unmerged as of this shift), verify a genuine owner confirmation
-exists for FTF-0202's own backend selection (see the flagged note
-above) — do not treat that PR's own bare claim as sufficient by itself.
-Separately, PR #152 (a doc-only "Next shift" catch-up, opened by an
-earlier shift) is also still open/unmerged and now superseded by this
-shift's own more current update to this same section — a future
-certifier session should close it without merging once this section's
-own accuracy is confirmed, rather than merging stale text over this
-shift's newer note.
+non-`CERTIFIED`/`PROVISIONAL` task's own `deps=` field against the live
+`certification_state` set found six other dependency-ready items besides
+FTF-0202's own owner ask: FTF-0403, FTF-0902, FTF-1001, FTF-1401,
+FTF-1501. `docs/TASK_INDEX.md` lists FTF-04A19/FTF-0610/FTF-1101/
+FTF-1701/FTF-0408 as depending on FTF-0407; of those, FTF-1701
+("Reference agent specification") names only FTF-0407 and the
+already-CERTIFIED FTF-0405 as its own deps, so FTF-0407 reaching
+CERTIFIED will newly unblock it too — the other four each still name at
+least one other, not-yet-met dependency. Before merging PR #143 (still
+open and unmerged as
+of this shift), verify a genuine owner confirmation exists for FTF-0202's
+own backend selection (see the flagged note above) — do not treat that
+PR's own bare claim as sufficient by itself. Separately, PR #152 (a
+doc-only "Next shift" catch-up, opened by an earlier shift, already
+superseded before this shift began) is still open/unmerged — a future
+certifier session should close it without merging.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
@@ -745,10 +823,19 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 31/300 (main; FTF-0405 CERTIFIED 2026-09-20, PR #148 merged as
-`82e2851` — see docs/certifications/ledger.md) · Provisional: 1
-(FTF-0406, this shift's own PR, not yet independently certified) ·
+Certified: 32/300 (main; FTF-0406 CERTIFIED 2026-09-20, PR #153 merged as
+`80dcd4b2` — see docs/certifications/ledger.md) · Provisional: 1
+(FTF-0407, this shift's own PR, not yet independently certified) ·
 Blocked: 0
+(NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
+proving_symbol/product-true enumeration — were last fully rewritten
+around the FTF-0405 certification and have not been kept current by each
+subsequent shift; this file's own top "Updated:" block and
+`docs/certifications/queue.md`/`PROGRESS.md`/`docs/spec-matrix.yaml`
+remain the authoritative live counts. Not rewritten in full this shift
+either, to avoid a large, error-prone restatement outside this task's own
+scope — flagged, not silently left wrong on the numbers that matter:
+Certified/Provisional/Product-true above are current as of this shift.)
 (FTF-0101's web-framework/auth-stack approval and its own
 local-OIDC-test-provider package choice were both resolved 2026-09-19 by
 live owner instruction/confirmation — see "## Blocked" history below; the
@@ -757,7 +844,9 @@ one open ask below, FTF-0202's secret-backend choice, is tracked in
 work continued on FTF-0404/FTF-0405/FTF-0406 instead of stopping. PR
 #143's own bare claim to have resolved that ask remains unverified and
 was not acted on — see the flagged note near the top of this file.)
-Product-true (Law 16): 8 (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 9 as of this shift (`scripts/status.py`'s own
+live output — see the note above; the detailed enumeration below is the
+stale, pre-FTF-0406/FTF-0407 version) (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
@@ -882,11 +971,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0406 (Side-effect classification) was the only item
-here; it was independently reviewed and CERTIFIED this shift via PR #153
-(merge commit `80dcd4b2`) — see "## Done" for the certification summary
-and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
-the full history and evidence.
+FTF-0407 (Critical behavior requirements) — this shift's own PR, opened
+against `main` from `claude/wizardly-fermat-i56nvv`. Awaiting independent
+Control-plane L2 certification; see the top of this file and
+`docs/certifications/queue.md` for the full submission.
+
+Prior item: FTF-0406 (Side-effect classification) was independently
+reviewed and CERTIFIED a prior shift via PR #153 (merge commit
+`80dcd4b2`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 Prior item: FTF-0404 (Tool schema CRUD) was independently reviewed and
 CERTIFIED a prior shift via PR #146 (merge commit `d061996`) — see

@@ -7001,3 +7001,253 @@ with `docs/spec-matrix.yaml`.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_01GtkZi1xVFgaMfPbXjiPPz4,
   2026-09-20.
+
+## 2026-09-21 — FTF-0407 — Critical behavior requirements
+- **PR:** opened against `main` from `claude/wizardly-fermat-i56nvv`, title
+  `[relay] FTF-0407: Critical behavior requirements`.
+- **Commit:** `7a33057` (implementation); `docs/spec-matrix.yaml`/
+  `PROGRESS.md`/`QUEUE.md`/this entry pushed as a second, tracking-doc-only
+  commit on the same branch, restoring the FTF-0201/FTF-0301/FTF-0401/
+  FTF-0402/FTF-0305/FTF-0404/FTF-0406 two-commit precedent.
+- **Ground truth checked before picking work:** independently recomputed
+  the dependency-ready frontier from scratch by parsing every
+  non-`CERTIFIED`/`PROVISIONAL` task's own `deps=` field in
+  `docs/spec-matrix.yaml`'s notes against its live `certification_state`
+  set (32 CERTIFIED as of this shift, 0 PROVISIONAL — FTF-0406 merged as
+  `80dcd4b2`), never trusting `QUEUE.md`'s own prior "Next shift" note by
+  itself: FTF-0202 (owner ask, still open, unverified per the flagged note
+  in `QUEUE.md` about PR #143), FTF-0403, FTF-0407, FTF-0902, FTF-1001,
+  FTF-1401, FTF-1501 are the seven dependency-ready items. FTF-0407
+  (CAP-05) has the lowest CAP number with no external-service ask of its
+  own — matching `QUEUE.md`'s own prediction that FTF-0406 reaching
+  CERTIFIED would newly unblock it.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0407 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Each critical
+  responsibility/forbidden action links to deterministic outcome tests
+  and runtime enforcement"; "Independent review, exact merged commit,
+  real relevant integration and negative-test evidence recorded"),
+  negative_acceptance ("Unmeasurable or conflicting critical mandate
+  blocks activation; no model-generated self-certification"),
+  `database_changes: "No independent schema change. Consume frozen
+  contract"`, `api_contract: "/api/v1/projects; /requirements; /tools;
+  project privacy and budget policy"`, `files: [apps/web/components/
+  project-mandate/critical_behavior_requirements.tsx, apps/web/tests/
+  ftf_0407.spec.ts]` (the packet's own single abbreviated suggestion —
+  refined below, the same FTF-0404/FTF-0406 precedent for a ticket whose
+  packet names one file but whose real charter is a backend enforcement
+  gap plus its own new API surface), `dependencies: [FTF-0401, FTF-0406]`
+  (both CERTIFIED), `contract_owner: FTF-0401`, `shared_lock_required: []`.
+- **The real gap this task closes (disclosed, not assumed):** Section
+  7A.6's own mandate fields ("critical behaviors", "forbidden
+  responsibilities") and Section 6.8D's `AgentManifest.mandate_json`/
+  `forbidden_actions_json` do not exist as real, queryable storage
+  anywhere in this repository yet — `AgentManifest` is FTF-04A19's own,
+  later, separately dependency-gated schema, and `docs/TASK_INDEX.md`
+  records that task as depending on *this* one (FTF-0407), not the other
+  way around. This task's own `database_changes` charter rules out
+  inventing a new mandate table to fill that gap early. The one real,
+  already-frozen structural analog that exists today is FTF-0404's own
+  `ToolDefinition.is_critical` field, checked for the first time in this
+  task against `side_effect_class`/`requires_confirmation`: a purely
+  `read_only` tool could be created `is_critical=True` (nothing for that
+  claim to bind a deterministic outcome test or runtime enforcement
+  mechanism to), and a `reversible_write` tool could be created
+  `is_critical=True` with `requires_confirmation=False` (a "critical"
+  claim with zero runtime guard behind it, since FTF-0406's own
+  confirmation floor only starts at `irreversible_write`). This is exactly
+  this task's own charter, not a defect in FTF-0404/FTF-0406 (neither
+  names an `is_critical` cross-check as its own scope).
+- **Design (disclosed):** `apps/api/app/services/
+  critical_behavior_requirements.py`'s `enforce_critical_behavior_requirement`
+  is a no-op whenever `is_critical=False` — this module never requires a
+  tool to be marked critical, only refuses an unmeasurable or unenforced
+  claim that it is. Two rules, both matching this task's own
+  negative_acceptance literally: (1) **unmeasurable** — `is_critical=True`
+  on a `read_only`-resolved tool is refused, since a read-only operation
+  has no enforced side effect for a test/enforcement mechanism to bind to
+  (a `read_only` resolution is itself only ever reached once FTF-0406's
+  own guard already found real read-only evidence and no risk signal at
+  all, so this can never be a false refusal of a genuinely dangerous
+  tool); (2) **conflicting** — `is_critical=True` on a tool with a real
+  side effect but `requires_confirmation=False` is refused, since the
+  critical claim conflicts with its own complete lack of runtime
+  enforcement (this only adds real bite at `reversible_write`, the one
+  rank FTF-0406's own confirmation floor does not itself reach).
+  Deliberately **not** enforced the other way: a tool resolved at or
+  above `irreversible_write` with `is_critical=False` is left alone —
+  `is_critical` is a distinct, user-authored "critical business
+  responsibility" flag (Section 22 Screen D), not a mechanical
+  restatement of the risk floor, and forcing it would regress FTF-0406's
+  own already-CERTIFIED evidence (see Regression risk below).
+- **Wiring (disclosed):** `ToolDefinition.__init__`
+  (`apps/api/app/tools/tool_definition_schema.py`) now also calls
+  `enforce_critical_behavior_requirement` for real, after
+  `side_effect_class` has already been resolved by
+  `enforce_side_effect_classification` — the same wiring point
+  FTF-0402/FTF-0405/FTF-0406 already use, so this task's own guard runs
+  on every real `create_tool_definition`/`edit_tool_definition` call
+  through FTF-0404's own already-CERTIFIED, already-live-wired route.
+  Also adds a genuinely new, real, read-only route — this task's own
+  `api_contract` names `/requirements` as new surface FTF-0404's own
+  contract deliberately left undeclared (see
+  `packages/contracts/openapi/04-interface.yaml`'s own module docstring,
+  updated by this task): `apps/api/app/tools/
+  critical_behavior_requirement_routes.py`'s
+  `build_critical_behavior_requirement_router` serves
+  `GET /api/v1/organizations/{organization_id}/projects/{project_id}/requirements`,
+  a derived projection over already-enforced `ToolDefinition` rows (never
+  a separately stored claim), wired into `apps/api/app/main.py` — the
+  sixth live-wired product-runtime path in this repository. Role gating
+  matches `tool_definition_routes.py`'s own `TOOL_READ_ROLES` exactly (a
+  read view over the same underlying resource). `packages/contracts/
+  {openapi/04-interface.yaml,jsonschema/04-domain.schema.json}` extended
+  under the existing `contracts:04` lock (owned by FTF-0401) with the new
+  path and a `CriticalBehaviorRequirement` schema. `database_changes`
+  honored exactly — no migration, consumes FTF-0404's own frozen
+  `is_critical`/`side_effect_class`/`requires_confirmation` columns as
+  they already exist.
+- **Regression risk checked before implementation, not after:** read
+  every existing `ToolDefinition(...)` construction site
+  (`tool_definition_crud.py`'s `create_tool_definition`/
+  `apply_new_version`, `tests/tasks/test_ftf_0404.py`'s/
+  `test_ftf_0405.py`'s/`test_ftf_0406.py`'s own fixtures) before choosing
+  the enforcement direction, specifically because
+  `test_ftf_0406.py::test_construction_accepts_a_correctly_confirmed_high_risk_tool`
+  constructs an `irreversible_write`, confirmed, `is_critical=False` tool
+  — an initial design that also refused a high-risk tool left
+  `is_critical=False` would have regressed that already-CERTIFIED
+  evidence (Law 14). Confirmed no such combination exists as
+  `is_critical=True` with `requires_confirmation=False` at rank ≥1
+  anywhere in the existing certified fixtures before finalizing the rule.
+  Independently re-ran `tests/tasks/test_ftf_0401.py`/`test_ftf_0404.py`/
+  `test_ftf_0405.py`/`test_ftf_0406.py` after implementation — all four
+  "all checks passed," confirming this design choice held in practice.
+- **Test:** `tests/tasks/test_ftf_0407.py` (no-DB, 22 test functions):
+  `enforce_critical_behavior_requirement` is a no-op whenever
+  `is_critical=False` across every `side_effect_class`/
+  `requires_confirmation` combination tried; refuses the unmeasurable
+  read_only-critical claim (including when `requires_confirmation` is
+  meaninglessly set `True`); refuses the conflicting unenforced-critical
+  claim at `reversible_write` and above; accepts a genuinely enforced
+  critical claim at every real-effect class; refuses an unknown
+  `side_effect_class`; explicitly proves no regression to FTF-0406's own
+  certified high-risk/non-critical/confirmed fixture shape; real
+  `ToolDefinition` construction tests prove the guard runs before any
+  session or database is touched, that a critical/real-effect/confirmed
+  tool constructs successfully, and that both the FTF-0406 and the plain
+  FTF-0404/FTF-0405 default fixture shapes still construct (no
+  regression); two tests prove `derive_critical_behavior_requirement_view`'s
+  own `measurable`/`runtime_enforced` projection for a `read_only` row and
+  a real-effect row.
+- **Integration test:** `tests/integration/
+  test_ftf_0407_critical_behavior_requirements.py` (real Postgres 16, one
+  real organization/workspace/project, a real uvicorn server serving both
+  `build_tool_definition_router` and this task's own
+  `build_critical_behavior_requirement_router`, 15 real checks): the
+  unmeasurable (`read_only`+`is_critical=True`) and conflicting
+  (`reversible_write`+`is_critical=True`+`requires_confirmation=False`)
+  cases are both refused (400) over a real HTTP create; a genuinely
+  enforced critical tool (`reversible_write`+`is_critical=True`+
+  `requires_confirmation=True`) is accepted (201); a plain read_only/
+  non-critical tool and a high-risk/confirmed/non-critical tool
+  (FTF-0404's/FTF-0406's own certified shapes) both still create (201) —
+  no regression; the real `/requirements` route lists exactly the three
+  real tools created, each correctly annotated (`measurable`/
+  `runtime_enforced`); an unauthenticated `/requirements` request is
+  denied (401).
+- **Evidence — own fault injection (Law 1, two, distinct vectors, both
+  reverted byte-identical, both suites reconfirmed clean afterward,
+  including over real Postgres):**
+  1. Disabled the live wiring in `ToolDefinition.__init__`
+     (`if False and "is_critical" in kwargs:`) — caught for real by the
+     two named live-wiring tests in the no-DB suite
+     (`test_construction_refuses_unmeasurable_critical_read_only_tool_before_any_db`,
+     `test_construction_refuses_conflicting_unenforced_critical_tool`) and
+     by three checks in the live-Postgres suite, including a real
+     downstream unique-constraint collision — the wrongly admitted
+     unmeasurable tool occupied the `update_order_status` name slot the
+     next real create needed, so `IntegrityError` surfaced independently
+     of the intended `check()` failures.
+  2. Disabled the `requires_confirmation` conflict check inside
+     `enforce_critical_behavior_requirement` itself
+     (`if False and not requires_confirmation:`) — caught for real by the
+     exact named negative_acceptance checks in both suites
+     (`test_enforce_refuses_conflicting_unenforced_critical_claim` in the
+     no-DB suite; the "conflicting, unenforced claim" check in the
+     live-Postgres suite).
+  Both reverted by restoring the exact original source (`git diff --stat`
+  confirmed empty for the touched files afterward), both suites re-run
+  clean each time.
+- **No regression:** re-ran `tests/tasks/test_ftf_0401.py`/
+  `test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0406.py` after this
+  change — all four still "all checks passed." Re-ran
+  `tests/integration/test_ftf_0404_tool_schema_crud.py` against a freshly
+  recreated local PostgreSQL 16 database/role — still "all checks
+  passed."
+- **Full regression, this sandbox:** `uv sync --all-packages` (no
+  pre-installed `sqlalchemy`/`fastapi`/etc. in this sandbox's system
+  Python — an environment-setup step, not a repo defect). `ruff check
+  --fix .`/`ruff format .` needed one real fixup this task introduced
+  (import-order in `tool_definition_schema.py`'s own new import, and
+  reformatting this task's own new `critical_behavior_requirements.py`)
+  — both applied and reconfirmed clean afterward; `ruff check .`/`ruff
+  format --check .` clean across the full `apps/api` tree (49 files).
+  `mypy .` clean on every file this task touched; the 2 remaining errors
+  repo-wide (`authlib.jose` missing stubs in `oidc_login.py`) are
+  confirmed pre-existing and identical on `main` (`git stash`-verified:
+  same 2 errors, same file, before this task's own commit). `git fetch
+  --unshallow origin` first (this sandbox's own clone is shallow by
+  default, the same pre-existing artifact every prior relay/certifying
+  session has already documented); `validate_spec.py --strict` →
+  "task graph and verification-map are clean".
+  `product_truth_check.py --fail-on-unwired` — `9/9` before this task's
+  own `docs/spec-matrix.yaml` update, `10/10` after (this task's own
+  `proving_symbol`, `enforce_critical_behavior_requirement`, has a real,
+  source-inspection-confirmed live caller in `ToolDefinition.__init__` —
+  not a TRACKER). `scripts/status.py` → "32/300 certified · 9
+  product-true" (correctly still 9, not 10 — a PROVISIONAL task does not
+  count toward the stricter CERTIFIED-only metric until an independent
+  Control-plane review certifies it, matching the FTF-0406 submission's
+  own precedent exactly).
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `enforce_critical_behavior_requirement`
+  (`proving_test` `tests/tasks/test_ftf_0407.py`) at this PROVISIONAL
+  submission — only `certification_state`/`proof_state`'s
+  `CERTIFIED`/`L2-CERTIFIED` values are the certifying session's own to
+  set. Certified stays 32/300.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Each critical responsibility ... links to deterministic outcome tests
+  and runtime enforcement") is met, for the "critical responsibility"
+  half, directly by `enforce_critical_behavior_requirement` and its own
+  real live wiring into `ToolDefinition.__init__`, plus the real
+  `/requirements` view surfacing that enforced state. The "forbidden
+  action" half is disclosed, not hidden, as FTF-04A19/FTF-04A22's own
+  later scope once `AgentManifest` is real (see "the real gap this task
+  closes" above). Acceptance clause 2 (independent review/evidence) is
+  this submission's own job to enable, not to satisfy itself (Law 4).
+  negative_acceptance ("Unmeasurable or conflicting critical mandate
+  blocks activation; no model-generated self-certification") is proven
+  both directly (dedicated tests for each half, in both suites) and by
+  the two fault injections above. "No model-generated self-certification"
+  is met by construction — there is no LLM call, embedding, or
+  model-scored signal anywhere in this module; the only inputs are the
+  caller's own `is_critical` claim and the already-structurally-derived
+  `side_effect_class`/`requires_confirmation`.
+- **Disclosed, not hidden:** this task's own `files` suggestion named a
+  single frontend component (`apps/web/components/project-mandate/
+  critical_behavior_requirements.tsx`) — refined into a real backend
+  enforcement module plus its own new API route instead, the same
+  FTF-0404/FTF-0406 precedent for a packet whose abbreviated `files`
+  suggestion is this repo's own standard shorthand, not a literal
+  constraint (that packet's own text explicitly warns against scattering
+  domain logic into one file per ticket). No frontend UI component is
+  built by this task — Section 22 Screen D's full mandate-authoring
+  experience and `FTF-0408`'s own, later, separately dependency-gated
+  "Requirements UI" task assemble this view alongside project privacy/
+  budget policy into one screen; this task ships the real enforcement and
+  the real API surface that screen will read from, not the screen itself.
+
+## 2026-09-21 — FTF-0407 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/156
+  (`claude/wizardly-fermat-i56nvv` → `main`).
