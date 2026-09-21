@@ -1,5 +1,69 @@
 # PROGRESS — Sovra
 Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #172) — independent CERTIFY
+  review of FTF-R016 (Measure selected coding-model/executor pilot cost and
+  enforce budget tree): **NOT CERTIFIED**, but not for a code reason — the
+  shipped code, tests, and two fault-injection vectors independent of the
+  producer's own were reproduced and confirmed sound. Certification is
+  blocked solely because the same GitHub Actions runner-provisioning
+  outage first found on PR #170 is still ongoing, now independently
+  reconfirmed a further time on this completely different PR/branch/task
+  (jobs `queued` then `completed`/`failure` in ~3s with `runner_id: 0`, no
+  runner ever assigned). See the new section directly below for the full
+  review. `docs/certifications/queue.md` carries the complete evidence.
+
+## 2026-09-21 — Control plane: FTF-R016 (PR#172) independently reviewed, NOT CERTIFIED (same CI runner-provisioning failure as PR #170, not a code defect)
+Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
+triggered by the `pull_request.opened` webhook for PR #172.
+
+Session-independence check: this reviewing session's own ID is
+`session_01AWerxtiNNPmTwcW3rPzZRy`; all three commits on PR #172 carry
+`Claude-Session: .../session_019xvKNprddWsv6qXhodDCkZ` — no match,
+independent per Law 4.
+
+Diff read directly (exactly the task packet's `files` list plus the
+expected tracking docs and one new CI step — no scope creep). Own
+reproduction on a clean `origin/main` base (this session's designated
+branch had been pre-populated with the producer's own PR172 commits, reset
+before any review commit): `tests/implementation/test_executor_budget_
+limits.py` — "All 34 checks passed." Own fault injection, two vectors
+distinct from the producer's own (marker-filename mismatch was a first-run
+bug fix, not a fault-injection claim; the producer's own real vector was
+the unknown-cost guard): (1) made `BudgetNode.available_usd()` ignore the
+parent chain — 2 checks failed for real, confirming "budget reset per
+subagent" is genuinely refused; (2) short-circuited
+`enforce_model_route_policy`'s guard — 1 named check failed for real,
+confirming the Section 81.3 private-route guard is genuinely enforced.
+Both reverted byte-identical, suite re-confirmed clean. No regression to
+`test_r1_execution_binding.py` (24/24) or `test_safe_parallel_executor.py`
+(36/36). `ruff check` clean on the new files; `product_truth_check.py
+--fail-on-unwired` real `12/12` (unchanged, genuine disclosed 0/0). Task
+contract re-pulled via `tools/r1_handoff.py packet FTF-R016` — both
+acceptance clauses and all five negative_acceptance legs confirmed met,
+including by source-reading `accepted_from_wave` (never accepts a task's
+own self-reported flag). Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed
+genuinely `CERTIFIED`.
+
+**Not certified — the same GitHub Actions runner-provisioning outage first
+found on PR #170** blocks this PR too: `list_workflow_jobs` on this PR's
+own run showed jobs going `queued` → `completed`/`failure` in ~3s each,
+`get_workflow_job` confirmed `runner_id: 0`/`runner_name: ""`, and
+`get_job_logs` returned HTTP 404 (no runner ever assigned). Independently
+reconfirming this on a second, unrelated PR/task rules out anything PR
+#170-specific as the cause — this reads as a genuine, still-open,
+account/repo-level GitHub Actions capacity issue. The shipped code and its
+evidence are sound; this is purely a CI-infrastructure blocker, same as
+PR #170. `QUEUE.md` "Owner actions — current" updated with this
+reconfirmation.
+
+`docs/spec-matrix.yaml` for FTF-R016 stays `PROVISIONAL`/`L1-PROVEN`
+exactly as the producer submitted it — not altered by this review. PR #172
+stays open, unmerged. Action needed before re-requesting certification:
+once GitHub Actions is confirmed provisioning runners again (owner
+action), re-run PR #172's CI for a genuine passing conclusion — no code
+change expected or needed.
+
+Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #170) — independent CERTIFY
   review of FTF-1302 (Local compute costing): **NOT CERTIFIED**, but not
   for a code reason — the shipped code, tests, and fault-injection

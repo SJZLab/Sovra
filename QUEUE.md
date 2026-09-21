@@ -1406,6 +1406,17 @@ CERTIFIED" entry for the full independent-review detail. Remove this item
 the moment the owner resolves it (or a session confirms CI is
 provisioning runners again on a fresh PR event).
 
+**Reconfirmed 2026-09-21, later the same date, on a second and completely
+unrelated PR/branch/task** (Control-plane review of PR #172, FTF-R016 —
+see `docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172) —
+NOT CERTIFIED" entry): identical signature (`runner_id: 0`, no runner ever
+assigned, ~3s "completion," `get_job_logs` HTTP 404) reproduced on PR
+#172's own run, ruling out anything PR #170-specific as the cause — this
+is a genuine, still-open, account/repo-level GitHub Actions capacity
+issue, not tied to one branch. Still nothing any session's own access can
+fix. Remove this item the moment the owner resolves it (or a session
+confirms CI is provisioning runners again on a fresh PR event).
+
 2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
 backend selected before it can be implemented for real.** Its own
 acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
@@ -1464,6 +1475,19 @@ for full detail). PR #170 stays open, unmerged. No further relay action
 needed on FTF-1302 itself until the CI owner-ask clears — re-running its
 CI at that point should be sufficient for a fresh Control-plane review to
 certify.
+
+FTF-R016 (Measure selected coding-model/executor pilot cost and enforce
+budget tree, PR #172 https://github.com/SJZLab/Sovra/pull/172) was
+independently reviewed 2026-09-21 and **NOT CERTIFIED — not a code
+defect.** The shipped code, its tests, and two fault-injection vectors
+independent of the producer's own were independently reproduced and
+confirmed sound; certification is blocked only because the same GitHub
+Actions runner-provisioning outage that blocked PR #170 is still ongoing
+(see "## Owner actions — current" above and `docs/certifications/
+queue.md`'s "2026-09-21 — FTF-R016 (PR #172)" entry for full detail). PR
+#172 stays open, unmerged. No further relay action needed on FTF-R016
+itself until the CI owner-ask clears — re-running its CI at that point
+should be sufficient for a fresh Control-plane review to certify.
 
 Also genuinely open and PROVISIONAL, unreviewed as of this shift: PR #167
 ("[relay] FTF-1702: Tool environment"), opened by a prior shift shortly
