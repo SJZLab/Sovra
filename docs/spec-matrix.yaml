@@ -3047,15 +3047,54 @@ FTF-1606:
   proving_symbol: ''
   proving_test: ''
 FTF-1701:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Reference agent specification
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0407, FTF-0405
-  proof_state: UNPROVEN
+  evidence_hash: 408ac045c623112b25397443f665794af6207621
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0407, FTF-0405
+    (both CERTIFIED). Narrowed to this task's own acceptance clause -- "Specify bounded actual
+    reference agent with approved tools, deterministic business state and explicit risk/language
+    profile" -- not Section 54/55's own full end-to-end reference-product qualification scenario,
+    which is a chain of later, separately dependency-gated tasks (docs/TASK_INDEX.md: FTF-1702
+    "Tool environment" through FTF-1715 "Final cost/quality report" all name this task as their
+    own dependency, not the reverse). evals/reference/reference_agent_specification.py defines the
+    five Section-55-named reference tools (search_records, get_record, create_note,
+    request_approval, execute_approved_action) as real ToolDefinition rows -- each genuinely
+    passes FTF-0404/FTF-0406/FTF-0407's own already-CERTIFIED construction-time guards.
+    ReferenceBusinessServer is a deterministic, in-memory implementation of the described business
+    domain: real tenant/subject/resource-scoped authorization (cross-tenant and cross-subject/IDOR
+    access both refused), idempotency on every effect (create_note/execute_approved_action), and
+    an approval workflow where only decide_approval/revoke_approval -- never a dispatchable tool
+    name -- can move an ApprovalRequest to approved/denied/revoked, making "tool clients cannot
+    fabricate grants" true by construction. execute_approved_action refuses a pending, denied, or
+    revoked (rolled back) approval, tested directly per Section 55's own named requirement.
+    dispatch_tool_call is the real first live caller of FTF-0405's own validate_instance (that
+    module's own docstring disclosed "no live caller in this repository yet" pending "a live agent
+    runtime" -- this is that runtime's own tool-call boundary): call arguments and handler results
+    are both validated against the tool's own frozen input/output schema. negative_acceptance
+    ("Reference success cannot claim every arbitrary customer agent is production-qualified") is
+    enforced by construction: ReferenceAgentProfile.qualifies_this_reference_workload_only is
+    always True, with no constructor path to set it False. packages/contracts/{openapi,jsonschema}
+    /17-* freeze the real ReferenceToolSpec/ReferenceAgentProfile/ApprovalRequestRecord shapes
+    (contract slot 17, first claim, shared_lock_required contracts:17); paths: {} since this task
+    owns no live HTTP route, matching the FTF-1401/FTF-1501/FTF-1601 precedent for a
+    specification/measurement tool. tests/reference/test_ftf_1701.py: 24 no-DB test functions
+    (construction-guard conformance, profile derivation, cross-tenant/cross-subject IDOR denial,
+    idempotency, denial/rollback state tested directly, dispatcher input/output schema
+    enforcement, a full five-tool happy path, and frozen-contract validation). Two own fault
+    injections (the resource-scoped ownership check in _authorized_record; the "must be approved"
+    guard in execute_approved_action), both caught for real by name and reverted byte-identical.
+    No database/network/GPU/external resource touched anywhere (database_changes: no independent
+    schema change; resource_gate moot). product_truth_check.py stays 11/11 -- proving_symbol
+    deliberately empty, matching FTF-1401/FTF-1601's own precedent for a task that is not itself a
+    served product route. No regression: full tests/tasks/test_ftf_*.py sweep, ruff/mypy
+    repo-wide, validate_spec.py --strict all clean. PR opened as PROVISIONAL; not self-certified
+    (Law 4) -- awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/reference/test_ftf_1701.py
 FTF-1702:
   certification_state: NONE
   criticality: MUST
