@@ -1267,8 +1267,10 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 35/300 (main; FTF-1701 CERTIFIED 2026-09-21, PR #165 merged as
-`bbdf0c8` — see docs/certifications/ledger.md) · Provisional: 0 · Blocked: 0
+Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
+`9a47458` — see docs/certifications/ledger.md) · Provisional: 0 (this
+shift's own item; PR #167/#159/#160/#161 remain genuinely open and
+PROVISIONAL, unreviewed — see "## Provisional" below) · Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1413,11 +1415,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1301 (CostProfile schema/UI) — this shift's own submission, PR
-opened, awaiting independent Control-plane L2 certification. See this
-file's own top "Updated:" block for the full write-up and fault-injection
-evidence, and `docs/certifications/queue.md` for the full submission
-report.
+FTF-1301 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-21 via PR #168 (merge commit
+`9a47458118ee46095270f4aa9758b5ec35efeea5`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 Also genuinely open and PROVISIONAL, unreviewed as of this shift: PR #167
 ("[relay] FTF-1702: Tool environment"), opened by a prior shift shortly
@@ -2466,6 +2468,49 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   before, `35/300` after; "Product-true" stays `11` (unchanged —
   `proving_symbol` deliberately empty, this task owns no live HTTP
   route), matching `product_truth_check.py`'s own `11/11`. This
+  certification's own doc updates were pushed on a branch and opened as a
+  PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+  Full entry: docs/certifications/ledger.md.
+- FTF-1301 — CostProfile schema/UI. CERTIFIED 2026-09-21, PR #168 (merge
+  commit `9a47458118ee46095270f4aa9758b5ec35efeea5`). Independently
+  re-verified: session-ID clean (both commits carry
+  `session_0175jrFsfGmpVqpjJFqPTiAE`, a different session than this
+  reviewer's own `session_01GWAaJpcZSaNqKJ9zmk2CDz`); the webhook fired
+  at PR-open time before CI had completed, so this shift polled
+  `get_check_runs` to completion rather than trusting a self-report — all
+  18 real GitHub Actions check runs `completed`/`success` on the real
+  final head, `gate` and the new `cost-profile-integration` job included;
+  the PR was still open/unmerged at review time and was merged directly
+  at the confirmed green head before certifying (pre-authorized "merge on
+  green + L1 doc (PROVISIONAL)"). Own reproduction (`uv sync
+  --all-packages`, `pnpm install`, `git fetch --unshallow`, a real
+  directly-installed PostgreSQL 16 cluster): `tests/tasks/
+  test_ftf_1301.py` and `tests/integration/test_ftf_1301_cost_profile.py`
+  against the live database both "all checks passed". Own fault
+  injection, reproducing both of the producer's own vectors: (1) disabled
+  the zero-provider-rate disqualification in `is_certifiable_cheapest` —
+  failed with the exact named negative_acceptance check; (2) disabled the
+  negative-rate application-layer guard — failed with the exact named
+  check, independently caught a second time by the real
+  `CHECK(rate_amount >= 0)` constraint (`IntegrityError`). No regression:
+  full `tests/tasks/test_ftf_*.py` sweep clean; `ruff`/`mypy`/`pnpm
+  lint+typecheck+format` clean repo-wide (2 pre-existing, unrelated
+  `authlib.jose` mypy stub gaps only). `validate_spec.py --strict` clean
+  after `git fetch --unshallow`. Task contract re-pulled via `tools/
+  r1_handoff.py packet FTF-1301` — matched the committed task-packet file;
+  acceptance/negative_acceptance clauses confirmed met. Dependencies
+  FTF-0401/FTF-0403/FTF-0103 confirmed genuinely `CERTIFIED`.
+  `shared_lock_required: contracts:13` confirmed as the first and only
+  claim on that contract slot. `product_truth_check.py --fail-on-unwired`
+  — own run, `12/12`, `is_certifiable_cheapest` confirmed a genuine
+  non-test live caller. No blocking defect found.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Ran `sync_certified_status()` to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py`: `35/300` certified before, `36/300` after; "Product-true"
+  rises from `11` to `12` (`is_certifiable_cheapest` is a real live
+  caller), matching `product_truth_check.py`'s own `12/12`. This
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.

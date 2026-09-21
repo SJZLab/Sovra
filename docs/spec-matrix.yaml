@@ -2695,10 +2695,10 @@ FTF-1206:
   proving_symbol: ''
   proving_test: ''
 FTF-1301:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: CostProfile schema/UI
-  evidence_hash: 61995ac572eb732392e698f53565a5fec3bf5064
+  evidence_hash: 9a47458118ee46095270f4aa9758b5ec35efeea5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0401, FTF-0403, FTF-0103
@@ -2779,9 +2779,58 @@ FTF-1301:
     CERTIFIED-vs-PROVISIONAL count distinction. Wired `.github/workflows/ci.yml` with
     one new `gate` job step (`uv run python3 tests/tasks/test_ftf_1301.py`) plus a new dedicated
     `cost-profile-integration` job (real `services: postgres` container) -- no other job's steps
-    touched. PR opened as PROVISIONAL; not self-certified (Law 4) -- awaiting independent
-    Control-plane L2 review.
-  proof_state: L1-PROVEN
+    touched.
+
+    Control plane independent CERTIFY review (session_01GWAaJpcZSaNqKJ9zmk2CDz, scheduled
+    certifier shift, `pull_request.opened` webhook for PR #168): session-ID clean against both
+    commits on PR #168 (both carry session_0175jrFsfGmpVqpjJFqPTiAE, no match). CI checked on the
+    real head, not a self-report: polled `get_check_runs` to completion -- all 18 GitHub Actions
+    check runs `completed`/`success` on head `cadb3202103ab3c56811af722406bfb1bac38eeb` (run
+    `35631327707`), `gate` and the new `cost-profile-integration` job both included. Diff read
+    directly (`apps/api/app/costs/{cost_profile_schema,cost_profile_crud,cost_profile_routes}.py`,
+    `apps/api/alembic/versions/0008_cost_profiles.py`,
+    `apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx`,
+    `packages/contracts/{openapi,jsonschema}/13-*`): `is_certifiable_cheapest`'s three
+    disqualifying conditions (expired/unverified/zero-provider-rate) confirmed present exactly as
+    described; `validate_rate_amount` confirmed refusing negative amounts at the application
+    layer; the migration confirmed FORCE ROW LEVEL SECURITY, `sovra_app` granted SELECT/INSERT/
+    UPDATE only (no DELETE), and a real `CHECK(rate_amount >= 0)` constraint; `cost_profile_routes.py`
+    confirmed gating every route (including reads and search) to `organization_admin` alone.
+    `python tools/r1_handoff.py packet FTF-1301 --plan FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled
+    directly -- the committed `docs/implementation/task-packets/FTF-1301.md` matched. Acceptance
+    clause 1 and negative_acceptance ("Token price zero is not local compute free;
+    unverified/expired rate cannot certify cheapest") confirmed met by the code above; all three
+    `dependencies:` (FTF-0401, FTF-0403, FTF-0103) confirmed genuinely `CERTIFIED`;
+    `shared_lock_required: contracts:13` confirmed as the first and only claim on contract slot 13.
+    Own reproduction, this sandbox (`uv sync --all-packages`, `pnpm install`, `git fetch
+    --unshallow`, a real directly-installed PostgreSQL 16 cluster migrated by the integration
+    script itself): `tests/tasks/test_ftf_1301.py` -- "all checks passed"; `tests/integration/
+    test_ftf_1301_cost_profile.py` against the live database -- "all checks passed". Own fault
+    injection (Law 1, reproducing both of the producer's own vectors, both reverted
+    byte-identical and the suites re-confirmed clean afterward): (1) disabled the zero-provider-rate
+    disqualification in `is_certifiable_cheapest` -- failed with exactly the named
+    negative_acceptance check; (2) disabled the negative-rate application-layer guard in
+    `validate_rate_amount` against the real live database -- failed with exactly the named "a
+    negative rate is refused (400)" check, independently caught a second time by the real
+    `CHECK(rate_amount >= 0)` constraint itself (`IntegrityError`), confirming the defense-in-depth
+    claim. No regression, independently re-run: full `tests/tasks/test_ftf_*.py` sweep (all "all
+    checks passed" or equivalent, after `pnpm install` resolved a pre-existing, undocumented
+    frontend-dependency gap in this sandbox affecting FTF-0002/FTF-0003/FTF-H001, confirmed a
+    sandbox artifact, not a regression); `ruff check .`/`ruff format --check .` clean repo-wide;
+    `mypy .` (from `apps/api`) -- 2 errors, both the pre-existing, unrelated `authlib.jose`
+    missing-stub gap, confirmed identical on `main`; `pnpm run lint`/`typecheck`/`format:check`
+    clean; `pnpm run test` (vitest) -- 19/19 passed across 5 spec files. `scripts/
+    validate_spec.py --strict` clean after `git fetch --unshallow` (this sandbox's own documented
+    shallow-clone artifact -- 18 `stale_commit` defects present before unshallowing, none after).
+    `scripts/product_truth_check.py --fail-on-unwired` -- own run, `12/12` product-true;
+    `is_certifiable_cheapest` confirmed a genuine, non-test live caller in
+    `cost_profile_crud.py`'s own `search_cost_profiles` (not 0/0, not inflation). No blocking
+    defect found. Merged PR #168 (merge commit `9a47458118ee46095270f4aa9758b5ec35efeea5`). Ran
+    `scripts.task_claim.sync_certified_status()` to write the real status into
+    `spec/tasks.json`/`docs/implementation/TRACKER.json` -- `['FTF-1301']` updated. Certified:
+    36/300, Product-true: 12/12. Validated-by: session
+    https://claude.ai/code/session_01GWAaJpcZSaNqKJ9zmk2CDz, 2026-09-21.
+  proof_state: L2-CERTIFIED
   proving_symbol: is_certifiable_cheapest
   proving_test: tests/tasks/test_ftf_1301.py
 FTF-1302:
