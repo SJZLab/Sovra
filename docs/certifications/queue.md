@@ -7366,8 +7366,9 @@ with `docs/spec-matrix.yaml`.
   2026-09-21.
 
 ## 2026-09-21 — FTF-0403 — Budget policy
-- **PR:** to be opened from `claude/wizardly-fermat-zl5g8t` → `main`,
-  title `[relay] FTF-0403: Budget policy`. Link recorded here once open.
+- **PR:** https://github.com/SJZLab/Sovra/pull/163
+  (`claude/wizardly-fermat-zl5g8t` → `main`, title
+  `[relay] FTF-0403: Budget policy`).
 - **Commit:** `48eb4c6cb46fe2aca621d1c9fed8d3438ed7dce8` (implementation);
   `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
   second, tracking-doc-only commit on the same branch, matching the
