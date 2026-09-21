@@ -1,10 +1,190 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #156) — independent CERTIFY
-  review of FTF-0407 (Critical behavior requirements): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1501
+  (Tenant isolation suite): PROVISIONAL, PR to be opened. Also found and
+  fixed a real CI-wiring gap (FTF-0406/FTF-0407 had no gate step, FTF-0407
+  no live-Postgres integration job — already CERTIFIED without CI ever
+  running their own test files). See the new section directly below for
+  the full write-up. `docs/certifications/queue.md` carries the complete
+  evidence.
+
+## 2026-09-21 — Relay: FTF-1501 (Tenant isolation suite) implemented, PROVISIONAL
+Ran the PEV procedure (`docs/CONTROL_PLANE_MODES.md`) for a scheduled
+relay shift.
+
+**STEP 0.1:** read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh rather than assuming prior context. `QUEUE.md`'s own top entry
+(FTF-0407 certification, merge commit `5da3834`) was the latest genuinely
+merged state on `main` (confirmed: this session's own branch HEAD matched
+`origin/main` exactly at `5100bac` before any work began).
+
+**STEP 0.2:** `cognee-cli` not available in this sandbox; text-search
+fallback in effect for this shift (declared, not silently assumed).
+
+**STEP 1: picking the item.** Independently recomputed the
+dependency-ready frontier from `docs/spec-matrix.yaml`'s live
+`certification_state` (33 CERTIFIED) rather than trusting the prior
+shift's own "Next shift" note by itself, which predated FTF-0407 reaching
+CERTIFIED. Found six dependency-ready items: FTF-0403, FTF-0902, FTF-1001,
+FTF-1401, FTF-1501, FTF-1701 (newly unblocked now that FTF-0407 is
+CERTIFIED — `docs/TASK_INDEX.md` names only FTF-0407/FTF-0405 as its own
+deps). Checked GitHub for open PRs before picking (`mcp__github__
+list_pull_requests`) and found PR #158 ("[relay] FTF-0403: Budget
+policy") already open from an earlier same-day relay shift — inspected it
+directly (CI 17/17 green, PR body documents a complete PROVISIONAL
+submission, `mergeable_state: clean`, last updated the same day) and
+confirmed it is genuinely complete, not abandoned. Picking FTF-0403 again
+would have duplicated already-submitted work, so this shift excluded it
+and picked from the remaining five instead. Of those, FTF-1501 (CAP-14)
+is the only one carrying an actual `CAP-xx` requirements tag in
+`docs/TASK_INDEX.md` (the rest are `AF-xx`), matching this repo's own
+established "lowest CAP number, no external-service ask" pick precedent
+(FTF-0402/FTF-0404/FTF-0407 were each picked the same way). FTF-0202
+stays excluded per the standing flagged owner-ask note (PR #143's bare
+claim, no corroborating live-conversation record found in any prior
+`PROGRESS.md`/`QUEUE.md` history).
+
+**Real gate-integrity gap found and fixed first (Law 9 — "gate-weakening
+is watched," this needed surfacing and fixing, not quiet continuation):**
+before starting FTF-1501's own implementation, `git log --oneline --
+.github/workflows/ci.yml` showed the last CI-file change was `2bc435b`
+(FTF-0405's own fix for a CI-wiring gap on FTF-0404) — no commit since
+touched `ci.yml` for FTF-0406 or FTF-0407, even though both are already
+CERTIFIED and merged. `grep -in "0406\|0407" .github/workflows/ci.yml`
+returned zero matches, confirmed directly. `tests/tasks/test_ftf_0406.py`,
+`tests/tasks/test_ftf_0407.py`, and `tests/integration/
+test_ftf_0407_critical_behavior_requirements.py` all exist and are real,
+but `ci.yml`'s `gate` job never runs the first two and no integration job
+ever ran the third. This calls into question what the FTF-0406/FTF-0407
+certifier reviews' own "CI reconfirmed green (16/16)"/"(17/17)" checks
+actually verified, since those counts necessarily came from jobs
+unrelated to these two tasks' own new files. Reconfirmed both no-DB
+suites and the live-Postgres suite genuinely pass locally (`uv sync
+--all-packages` first; `uv run python3 tests/tasks/test_ftf_0406.py`/
+`test_ftf_0407.py` → "all checks passed" each; `tests/integration/
+test_ftf_0407_critical_behavior_requirements.py` against a freshly
+created local PostgreSQL 16 database/role → "all checks passed") before
+wiring them into `ci.yml`'s `gate` job (two new steps) and a new
+`critical-behavior-requirements-integration` job. Disclosed in
+`docs/certifications/queue.md`/`QUEUE.md`, not silently patched over — a
+future Control-plane session should re-verify the FTF-0406/FTF-0407
+certifications' own CI-green claims now that the jobs actually exist.
+
+**STEP 2 (P):** read FTF-1501's own task contract
+(`tools/r1_handoff.py packet FTF-1501`): acceptance names "real two-tenant
+API/DB/worker/storage/cache/model paths"; negative_acceptance "No
+security result from mocked auth or superuser-only DB tests";
+`database_changes: "No independent schema change"`; `files:
+[tests/security/tenant_isolation_suite.py, tests/tasks/test_ftf_1501.py,
+packages/contracts/openapi/15-interface.yaml,
+packages/contracts/jsonschema/15-domain.schema.json]`;
+`shared_lock_required: [contracts:15]` (first claim of that slot — no
+`15-*` contract files existed before this task). Before writing any code,
+inspected what actually exists as live infrastructure: `apps/api/app/
+main.py`'s own module docstring enumerates exactly six live-wired routes;
+`find workers -maxdepth 2` showed `workers/{training,evaluation,data,
+deploy}` are still README/pyproject-only scaffolds; `grep -rln
+"tenant_policy" apps/api/app` found zero callers of `packages/storage/
+tenant_policy.py` (FTF-H003) anywhere. Narrowed scope honestly (Law 5/7)
+to API + DB, the only parts of the acceptance clause's own list with real
+live existence today — declaring worker/storage/cache/model checks
+against non-existent infrastructure would be fabricated evidence under
+Law 11. Read FTF-0106's own `apps/api/app/auth/rbac_idor_security_tests.py`
+in full: its own module docstring names FTF-1501 directly as an intended
+dependent of its `TwoTenantRoleMatrixFixture`, so this task reuses it
+rather than re-deriving a narrower one, and reuses FTF-H003's own
+`authorize_resource_ownership`/`tenant_scoped_session_for` for the
+DB-layer guard.
+
+**STEP 2 (E):** wrote `tests/security/tenant_isolation_suite.py` (the
+live suite) and `tests/tasks/test_ftf_1501.py` (no-DB) together, then ran
+both. Seeded two real organizations (each with a real workspace/project),
+created one real connection/artifact/tool in org1 via the already-live
+routers, then for each of connection/artifact/project/tool proved:
+`owner_read_reachable` (200), `cross_tenant_api_read_denied` (403),
+`cross_tenant_api_write_denied` (403), `unauthenticated_denied` (401),
+and `cross_tenant_db_read_denied` (a real restricted `sovra_app`-role
+session scoped to org2, probing org1's real row through
+`authorize_resource_ownership`). Plus a cross-layer check on the nested
+`tool` resource (org1's own admin denied 404 against a tool reached via a
+project that genuinely belongs to org2) and three checks on the read-only
+`/requirements` view. First run against a real local PostgreSQL 16
+database surfaced a genuine design error in this task's own new test, not
+in production code: the cross-layer `/requirements` check expected 404
+for a foreign `project_id`, but the real server correctly returned 200
+with an empty list — `/requirements` is a list view, not an item lookup,
+so a foreign `project_id` naturally matches zero rows in the real
+tenant-scoped query (no data leaked), exactly matching `tool_definition_
+routes.py`'s own `list_all` convention. Corrected the suite's own
+expectation to assert the empty list rather than weakening or removing
+the check. Re-run: 25/25 real checks passed.
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` — `10/10`
+before and after (this task's own `proving_symbol` is deliberately empty:
+no new `apps/api` production module, no live-wiring claim — matching the
+FTF-0106/FTF-H003 precedent, confirmed not a TRACKER). `ruff check`/
+`ruff format --check`/`mypy` clean across the full tree (128 source
+files) — one real mypy conflict surfaced and fixed along the way: the
+no-DB test's own `from tests.security.tenant_isolation_suite import
+(...)` made mypy see that one source file under two module names
+(dotted-package vs. bare-module) and refuse to check the whole tree;
+fixed by using a bare top-level import consistent with this repository's
+own established "no `__init__.py` anywhere in `tests/`" convention,
+documented in the test file's own comment so a future session does not
+reintroduce the same dotted import. `python3 scripts/validate_spec.py
+--strict` clean (`git fetch --unshallow origin` first — this sandbox's
+own clone is shallow by default, the same pre-existing artifact every
+prior relay/certifying session has already documented).
+
+**Law 1 fault injection, two independent vectors, both reverted
+byte-identical:** (1) disabled `build_evidence`'s own empty-results guard
+(`if False and not results:`) — `uv run python3 tests/tasks/
+test_ftf_1501.py` failed with exactly the named Law-1 check; reverted,
+re-ran clean. (2) disabled the real, already-CERTIFIED `authorize_
+resource_ownership`'s own ownership check (`if False and (row is None or
+row[0] != context.organization_id):`) in `apps/api/app/auth/
+resource_authorization.py` — the live suite dropped from 25/25 to 21/25,
+failing exactly the 4 `cross_tenant_db_read_denied` checks (one per
+resource kind) and nothing else, both false-negative-free and
+false-positive-free; reverted (`diff` confirmed byte-identical), re-ran
+clean (25/25). Independently reconfirmed no regression to FTF-H003's/
+FTF-0106's own no-DB suites (`test_ftf_h003.py`/`test_ftf_0106.py`, both
+"all checks passed" after the revert).
+
+**Full regression re-run clean:** every `tests/tasks/test_ftf_*.py` file
+needing `uv run` (0102, 0104, 0101, 0103, 0105, h003, 0106, 0201, 0301,
+0401, 0402, 0305, 0404, 0405, 0406, 0407, 1501) — all "all checks
+passed". `scripts/status.py` — `33/300 certified · 10 product-true`,
+unchanged (PROVISIONAL never moves the certified count, Law 2).
+
+PR opened as PROVISIONAL; `docs/spec-matrix.yaml` FTF-1501 set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash: 778f6f2` (the implementation commit), `proving_test:
+tests/tasks/test_ftf_1501.py`, `proving_symbol: ''` (no live-wiring
+claim). Docs (this file, `QUEUE.md`, `docs/certifications/queue.md`)
+pushed as a second, tracking-doc-only commit on the same branch, matching
+the FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404/FTF-0406/
+FTF-0407 two-commit precedent. Awaiting independent Control plane
+certification — not self-certified (Law 4).
+
+**STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+reporting and stopping to await independent Control-plane L2
+certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+Two items now await independent Control-plane L2 certification:
+FTF-0403 (PR #158, opened by an earlier same-day relay shift, CI green
+17/17) and FTF-1501 (this shift's own submission, PR to be opened).
+Certify FTF-0403 first if only one certifier shift fires (opened first,
+no external-service ask). If a certifier session is not what fires next,
+recompute the dependency-ready frontier fresh: FTF-0902, FTF-1001,
+FTF-1401, FTF-1701 remain dependency-ready, none carrying an actual
+`CAP-xx` tag (all `AF-xx`) — read each one's own task packet before
+picking rather than assuming CAP-number order applies. Also flagged: a
+future Control-plane session should re-verify the FTF-0406/FTF-0407
+certifications' own "CI reconfirmed green" claims now that this shift
+added the CI jobs that were silently missing. PR #143 (FTF-0202 backend
+selection) and PR #152 (superseded doc-only catch-up) both remain
+open/unmerged — a Control-plane/owner judgment call, not a relay one.
 
 ## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),

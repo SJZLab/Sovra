@@ -1,5 +1,84 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1501
+  (Tenant isolation suite, deps FTF-0106/FTF-H003 both CERTIFIED).
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted the
+  prior shift's own "Next shift" note by itself, which predated FTF-0407
+  reaching CERTIFIED): FTF-0403, FTF-0902, FTF-1001, FTF-1401, FTF-1501,
+  FTF-1701 are the six dependency-ready items (FTF-0202 stays excluded,
+  owner ask still unresolved per the standing flagged note below).
+  FTF-0403 already has a complete, CI-green PROVISIONAL PR open (#158,
+  from an earlier same-day relay shift not yet reflected in this file's
+  own prior top entry) — this shift did not redo it. Of the remaining
+  five, FTF-1501 (CAP-14) is the only one carrying an actual `CAP-xx`
+  requirements tag, matching this repo's own established "lowest CAP
+  number, no external-service ask" pick precedent.
+  Found and fixed a real gate-integrity gap first (Law 9): FTF-0406/
+  FTF-0407 (both already CERTIFIED/merged) had no `gate` job step, and
+  FTF-0407 had no live-Postgres integration job — `.github/workflows/
+  ci.yml` never ran any of their own test files at all (confirmed:
+  `grep -in "0406\|0407" .github/workflows/ci.yml` returned zero matches;
+  last CI-file touch was `2bc435b`, FTF-0405's own fix for the identical
+  class of gap on FTF-0404). Reconfirmed both no-DB suites and FTF-0407's
+  own live-Postgres suite genuinely pass locally before wiring them in.
+  This calls into question what the FTF-0406/FTF-0407 certifier reviews'
+  own "CI reconfirmed green" claims actually verified — flagged for a
+  future Control-plane session, not silently patched over.
+  Scope honestly narrowed (Law 5/7, disclosed not assumed): this task's
+  own acceptance clause names "real two-tenant API/DB/worker/storage/
+  cache/model paths", but only API and DB paths have any live existence
+  in this repository today — `workers/{training,evaluation,data,deploy}`
+  are still README/pyproject-only scaffolds, and `packages/storage/
+  tenant_policy.py` (FTF-H003) has zero live callers anywhere in
+  `apps/api/app` (grepped directly). Declaring checks against
+  infrastructure that does not exist would be fabricated evidence under
+  Law 11. `tests/security/tenant_isolation_suite.py` reuses FTF-0106's
+  own `TwoTenantRoleMatrixFixture` and FTF-H003's own
+  `authorize_resource_ownership`/`tenant_scoped_session_for` (FTF-0106's
+  own module docstring names this task directly as an intended
+  dependent) to prove, for every currently live-wired resource kind
+  (connections, artifacts, projects, tools) plus the read-only
+  requirements view: owner-reachable, cross-tenant API read/write denied,
+  unauthenticated denied, and a real DB-layer cross-tenant probe through
+  the exact same production ownership guard every CRUD module already
+  calls (never a hand-rolled query) — plus a cross-layer foreign-project
+  check on the nested `tool`/`requirements` resources. 25 real checks
+  against a live PostgreSQL 16 cluster. negative_acceptance ("No security
+  result from mocked auth or superuser-only DB tests") made real:
+  `assert_not_superuser_role` refuses to proceed against a real Postgres
+  superuser connection (checked via `pg_roles.rolsuper`, fail-closed if
+  unresolved), proven against a plain stub in the no-DB suite; every HTTP
+  call goes through a real socket to a real running uvicorn server.
+  `packages/contracts/{openapi,jsonschema}/15-*` frozen (first claim of
+  contract slot 15), `paths: {}` since this task adds no new production
+  HTTP route (matching FTF-1601's own precedent). 25 no-DB checks
+  (`tests/tasks/test_ftf_1501.py`: pure evidence-building/guard logic,
+  content-free-by-construction field introspection, contract
+  conformance). Two own fault injections (Law 1), both reverted
+  byte-identical: (1) disabled `build_evidence`'s own empty-results
+  guard — caught for real by the no-DB suite; (2) disabled the real,
+  already-CERTIFIED `authorize_resource_ownership`'s own ownership check —
+  caught for real by all 4 `cross_tenant_db_read_denied` checks in the
+  live suite (25/25 → 21/25, the exact 4 expected failures, no false
+  negatives/positives elsewhere). Independently reconfirmed no regression
+  to FTF-H003's/FTF-0106's own no-DB suites (both "all checks passed").
+  `ruff check`/`ruff format --check`/`mypy` clean across the full
+  `apps/api`+`tests` tree (128 source files). `validate_spec.py --strict`
+  clean (`git fetch --unshallow origin` first — this sandbox's own clone
+  is shallow by default, the same pre-existing artifact every prior
+  relay/certifying session has already documented).
+  `product_truth_check.py --fail-on-unwired` — `10/10` before and after
+  this shift (this task's own `proving_symbol` is deliberately empty: no
+  new apps/api production module, no live-wiring claim — matching the
+  FTF-0106/FTF-H003 precedent). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1501 set to `PROVISIONAL`/`L1-PROVEN`,
+  `evidence_hash` = the implementation commit (`778f6f2`), `proving_test`
+  `tests/tasks/test_ftf_1501.py`. Awaiting independent Control plane
+  certification — not self-certified (Law 4). Certified stays 33/300;
+  `scripts/status.py`'s own stricter "product-true" count stays 10.
+  Full submission report: `docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #156) — independent CERTIFY
   review of FTF-0407 (Critical behavior requirements): **CERTIFIED**.
   Subscribed while CI was still in-flight; the producer session
@@ -355,28 +434,35 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0407 (this shift's own submission, see the top of this file) is now
-PROVISIONAL, PR opened, awaiting independent Control-plane L2
-certification — that review is the natural next action, matching the
-established relay/certifier alternation. If a certifier session is not
-what fires next: recompute the dependency-ready frontier fresh rather
-than trusting this note — as of this shift, parsing every
-non-`CERTIFIED`/`PROVISIONAL` task's own `deps=` field against the live
-`certification_state` set found six other dependency-ready items besides
-FTF-0202's own owner ask: FTF-0403, FTF-0902, FTF-1001, FTF-1401,
-FTF-1501. `docs/TASK_INDEX.md` lists FTF-04A19/FTF-0610/FTF-1101/
-FTF-1701/FTF-0408 as depending on FTF-0407; of those, FTF-1701
-("Reference agent specification") names only FTF-0407 and the
-already-CERTIFIED FTF-0405 as its own deps, so FTF-0407 reaching
-CERTIFIED will newly unblock it too — the other four each still name at
-least one other, not-yet-met dependency. Before merging PR #143 (still
-open and unmerged as
-of this shift), verify a genuine owner confirmation exists for FTF-0202's
-own backend selection (see the flagged note above) — do not treat that
-PR's own bare claim as sufficient by itself. Separately, PR #152 (a
-doc-only "Next shift" catch-up, opened by an earlier shift, already
-superseded before this shift began) is still open/unmerged — a future
-certifier session should close it without merging.
+Two items are now PROVISIONAL and awaiting independent Control-plane L2
+certification: FTF-0403 (PR #158, CI green 17/17, from an earlier same-day
+relay shift) and FTF-1501 (this shift's own submission, PR to be opened).
+A certifier session picking either is the natural next action, matching
+the established relay/certifier alternation — FTF-0403 was opened first
+and has no external-service ask, so certify it first if only one certifier
+shift fires. If a certifier session is not what fires next: recompute the
+dependency-ready frontier fresh rather than trusting this note — as of
+this shift, parsing every non-`CERTIFIED`/`PROVISIONAL` task's own
+`deps=` field against the live `certification_state` set found FTF-0902,
+FTF-1001, FTF-1401, FTF-1701 as the remaining dependency-ready items
+besides FTF-0202's own owner ask (FTF-1701 newly unblocked now that
+FTF-0407 is CERTIFIED — it names only FTF-0407 and the already-CERTIFIED
+FTF-0405 as its own deps). None of FTF-0902/FTF-1001/FTF-1401/FTF-1701
+carries an actual `CAP-xx` requirements tag (all are `AF-xx`), so the
+next relay shift should read each one's own task packet before picking,
+rather than assuming CAP-number order applies. Also fixed this shift,
+disclosed above: `.github/workflows/ci.yml` had no gate step for
+FTF-0406/FTF-0407 and no integration job for FTF-0407 — both already
+CERTIFIED before this gap was found. A future Control-plane session
+should treat those two certifications' own "CI reconfirmed green" claims
+as needing re-verification now that the jobs actually exist and can run
+for real. Before merging PR #143 (still open and unmerged as of this
+shift), verify a genuine owner confirmation exists for FTF-0202's own
+backend selection (see the flagged note above) — do not treat that PR's
+own bare claim as sufficient by itself. Separately, PR #152 (a doc-only
+"Next shift" catch-up, opened by an earlier shift, already superseded) is
+still open/unmerged — a future certifier session should close it without
+merging.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
@@ -987,9 +1073,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0407 (Critical behavior requirements) was
-independently reviewed and CERTIFIED this shift via PR #156 (merge
-commit `5da3834`) — see "## Done" for the certification summary and
+- FTF-0403 (Budget policy) — PR #158, open, CI green (17/17). Implemented
+  by an earlier 2026-09-21 relay shift; this shift found it already
+  complete and did not redo it, picking a different dependency-ready item
+  instead (see the new top-of-file entry). Awaiting independent
+  Control-plane L2 review.
+- FTF-1501 (Tenant isolation suite) — this shift's own submission (see
+  the top of this file), PROVISIONAL, PR to be opened. Awaiting
+  independent Control-plane L2 review.
+
+FTF-0407 (Critical behavior requirements) was independently reviewed and
+CERTIFIED a prior shift via PR #156 (merge commit `5da3834`) — see
+"## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 
