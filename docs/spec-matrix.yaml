@@ -2321,15 +2321,62 @@ FTF-0909:
   proving_symbol: ''
   proving_test: ''
 FTF-1001:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: ModelVersion schema/API
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0301, FTF-0401, FTF-0103
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0301, FTF-0401, FTF-0103
+    (all CERTIFIED). Real, live-wired
+    `/api/v1/organizations/{organization_id}/projects/{project_id}/model-versions` routes (the
+    seventh live-wired product-runtime path in this repository). `apps/api/app/model_versions/
+    {model_version_schema,model_version_crud,model_version_routes}.py` (refined from the packet's
+    own single abbreviated `services/serving-controller/vllm/modelversion_schema_api.py`
+    suggestion into the same schema/crud/routes triplet FTF-0201/FTF-0301/FTF-0401/FTF-0404
+    already established, matching Section 75.1's own "do not scatter domain logic into one file
+    per ticket" instruction). Real forward Alembic migration
+    (`apps/api/alembic/versions/0007_model_versions.py`), FORCE-RLS scoped to the same tenant
+    context every prior migration established, plus two composite foreign keys --
+    `(organization_id, project_id)` -> `projects` (the same precedent FTF-0404 applied) and
+    `(organization_id, trainable_artifact_id)` -> `trainable_artifacts` via a purely additive
+    `UNIQUE(organization_id, id)` on the already-CERTIFIED `trainable_artifacts` table. Every
+    model version is immutable by construction (Section 35): no edit/delete route exists, and the
+    migration's own grant is SELECT/INSERT only, never UPDATE/DELETE. This task's own
+    negative_acceptance ("Required nonexistent weights/hash for endpoint import, mutable
+    production artifact or cross-tenant parent denied") resolves to three disclosed denial paths
+    -- see `model_version_schema.py`'s own module docstring for the full reasoning: (1) an
+    `endpoint` import structurally forbids `trainable_artifact_id`/`weights_digest`/
+    `base_model_revision`, enforced both in `ModelVersion.__init__` and by a real
+    `ck_model_versions_kind_consistency` database CHECK constraint (defense in depth); (2) a
+    `full_weight`/`adapter` import's parent `TrainableArtifact` must be `ready` (immutable,
+    resolved), never `registered` (mutable) or `archived`, checked in `create_model_version`
+    against a real database fetch; (3) the parent artifact must belong to the same organization,
+    reusing FTF-0301's own already-certified `get_artifact`/`authorize_resource_ownership`
+    directly rather than a second, duplicated IDOR primitive.  `weights_digest`/
+    `base_model_revision` are always copied server-side from the real, resolved parent artifact,
+    never accepted as a client-supplied claim. Deliberately out of scope, disclosed not hidden:
+    promotion/tag assignment (`candidate`/`approved`/`production`/etc, FTF-1101's own later job,
+    which lists this task as ITS dependency) and real vLLM serving/deployment/health endpoints
+    (FTF-1003/FTF-1005/FTF-1008's own later, separately dependency-gated surface). 24 no-DB test
+    functions (`tests/tasks/test_ftf_1001.py`) + 26 real live-Postgres checks
+    (`tests/integration/test_ftf_1001_model_version_schema_api.py`, seeding real `ready`/
+    `registered` artifacts across two real organizations). Own fault injection (Law 1, three
+    distinct vectors, all reverted byte-identical and reconfirmed clean): (1) disabled the
+    mutable-artifact guard in `create_model_version` -- caught for real by the live-Postgres
+    suite's own negative_acceptance check (409 became 201); (2) disabled the structural
+    endpoint-vs-artifact consistency check in `ModelVersion.__init__` -- caught for real by 7
+    named checks in the no-DB suite; (3) dropped the real `ck_model_versions_kind_consistency`
+    CHECK constraint directly against the live database and confirmed a bypassing raw INSERT,
+    refused with the constraint present, is genuinely admitted without it. No regression:
+    `test_ftf_0301`/`test_ftf_0401`/`test_ftf_0404`/`test_ftf_0406`/`test_ftf_0407` (no-DB) all
+    "all checks passed"; FTF-0301's and FTF-0404's own live-Postgres suites re-run clean against
+    a freshly recreated database/role (both tables gained a purely additive
+    `UNIQUE(organization_id, id)` constraint this task's migration adds). `ruff`/`ruff format`/
+    `mypy` clean on every file this task touched.
+  proof_state: L1-PROVEN
+  proving_symbol: build_model_version_router
+  proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
   certification_state: NONE
   criticality: MUST

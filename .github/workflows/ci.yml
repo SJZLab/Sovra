@@ -152,6 +152,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0404.py
       - name: FTF-0405 negative-test proof (JSON Schema tool validation catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0405.py
+      - name: FTF-1001 negative-test proof (ModelVersion schema/API catches real defects, real local sockets, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1001.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -720,3 +722,52 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real Tool schema CRUD evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0404_tool_schema_crud.py
+
+  model-version-schema-api-integration:
+    # FTF-1001: real Postgres ModelVersion schema/API evidence. Two real
+    # organizations, three real TrainableArtifact rows (ready/registered/
+    # cross-tenant-ready), a real uvicorn server proving: a real endpoint
+    # import (version 1, no local weight lineage) -> a full_weight import
+    # referencing a still-mutable (`registered`) artifact is refused (409)
+    # -> a full_weight import referencing a real `ready` artifact
+    # belonging to a DIFFERENT organization is refused (404), identical to
+    # missing -> a full_weight import referencing a genuinely nonexistent
+    # artifact_id is refused (404) -> a full_weight import with no lineage
+    # at all is refused (400) -> a real full_weight import (version 2)
+    # succeeds, with weights_digest/base_model_revision copied server-side
+    # from the real, resolved parent artifact -> listing shows both real
+    # imports in version order -> cross-project scoping (404) -> the
+    # cross-organization IDOR case (404) -> a raw INSERT bypassing the
+    # ORM's own check is refused by the real ck_model_versions_kind_
+    # consistency CHECK constraint -> sovra_app cannot UPDATE a row
+    # directly. Same real `services: postgres` container pattern as
+    # tool-schema-crud-integration (this repo's interactive dev sandbox
+    # has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1001
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1001"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1001
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real ModelVersion schema/API evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_1001_model_version_schema_api.py
