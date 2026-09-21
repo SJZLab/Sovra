@@ -1,10 +1,111 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #156) — independent CERTIFY
-  review of FTF-0407 (Critical behavior requirements): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0403 (Budget
+  policy, deps FTF-0104/FTF-0401 both CERTIFIED). See the new section
+  directly below for the full submission; full write-up in
+  `docs/certifications/queue.md`/`QUEUE.md`.
+
+## 2026-09-21 — Relay: FTF-0403 (Budget policy) implemented, submitted PROVISIONAL
+
+**STEP 0.1** — read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh (never assumed state from prior context). Verified `CLAUDE.md.sha256`
+matches `sha256sum CLAUDE.md` before doing anything else. Local `main` was
+already in sync with `origin/main` at `5100bac` (FTF-0407 CERTIFIED,
+33/300, Product-true 10/10) — no drift to reconcile.
+
+**STEP 0.2** — `cognee-cli` is not available in this sandbox; used the
+text-search fallback throughout (declared here, matching the standing
+disclosure).
+
+**STEP 1** — Independently recomputed the dependency-ready frontier from
+`docs/spec-matrix.yaml`'s own live `certification_state` (33 CERTIFIED, 0
+PROVISIONAL), parsing every non-CERTIFIED task's own `dependencies` field
+in `spec/tasks.json` rather than trusting `QUEUE.md`'s own prior "Next
+shift" note by itself: **FTF-0403, FTF-0902, FTF-1001, FTF-1401, FTF-1501,
+FTF-1701** are dependency-ready. FTF-0202 remains the flagged owner ask
+(PR #143 still open/unmerged, still no corroborating record of a genuine
+owner exchange — left exactly as the standing flag in `QUEUE.md`
+describes it; not merged, not picked). Of the six real candidates,
+**FTF-0403** ("Budget policy") has the lowest task-ID number and no
+external-service ask of its own. Working: FTF-0403.
+
+**STEP 2 (PEV):**
+- **P** — Read `apps/api/app/projects/{project_schema,project_crud,
+  project_routes}.py` in full. Confirmed `Project.budget_policy_id`
+  (FTF-0401's own migration, `0005_projects.py`) is a bare, unconstrained
+  nullable UUID column — no table exists for it to reference, and
+  `project_routes.py`'s own module docstring already disclosed exactly
+  this gap. `create_project`/`update_project` had no `budget_policy_id`
+  parameter at all. Pulled the real task contract via
+  `python tools/r1_handoff.py packet FTF-0403 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance ("Persist decimal budget
+  authorization, cost currency, scopes and approval history"),
+  negative_acceptance ("Negative/unknown rates and concurrent allocation
+  beyond available reservation cannot be accepted"), `database_changes:
+  "Own forward Alembic migration for this resource..."` (unlike
+  FTF-0402/0405/0406/0407, this task genuinely needs a new migration).
+  Read Section 6.8/32/65/70.3's own text grounding `BUDGET_SCOPES` in
+  real named spend classes, not inventing them.
+- **E** — Wrote `apps/api/app/services/budget_policy.py` (two real
+  tenant-scoped SQLAlchemy models + `create_budget_policy`/
+  `reserve_budget`/`enforce_budget_policy_reference`/
+  `list_budget_policy_events` + validation), the real forward migration
+  (`apps/api/alembic/versions/0007_budget_policies.py`), and wired
+  `enforce_budget_policy_reference` into `project_crud.py`'s
+  `update_project` + `project_routes.py`'s PATCH handler. Wrote
+  `tests/tasks/test_ftf_0403.py` (no-DB) first against the not-yet-wired
+  code and confirmed real failures (`ModuleNotFoundError`/`ImportError`)
+  before the implementation existed, then implemented until "all checks
+  passed". Wrote `tests/integration/test_ftf_0403_budget_policy.py`
+  against a real, directly-installed local PostgreSQL 16 cluster in this
+  sandbox (`sovra_migrate`/`sovra_app` roles, `sovra_ftf0403` database —
+  this interactive dev sandbox has no container-registry egress, the same
+  documented gap every prior integration-tested task carries); confirmed
+  the migration applies cleanly forward and back
+  (`alembic upgrade head` / `downgrade -1` / `upgrade head` again), then
+  ran the full integration suite to "all checks passed", including a real
+  two-thread concurrency race proving the atomic-UPDATE reservation
+  design is safe under genuine Postgres row locking.
+- **V** — `product_truth_check.py --fail-on-unwired`: `10/10` before this
+  shift's own `docs/spec-matrix.yaml` update, `11/11` after — this task's
+  own `proving_symbol` (`enforce_budget_policy_reference`) has a real,
+  source-inspection-confirmed caller in `project_crud.py`'s
+  `update_project`, not a TRACKER. No diagnose/wire-in-after-the-fact
+  needed — wired before the no-DB test suite's own source-inspection
+  check was written. `validate_spec.py --strict` clean (`git fetch
+  --unshallow origin` first — this sandbox's own clone is shallow by
+  default). Re-ran `tests/tasks/test_ftf_0401.py`/`test_ftf_0402.py`/
+  `test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0406.py`/
+  `test_ftf_0407.py` — all six still "all checks passed" (no regression
+  from the `project_crud.py`/`project_routes.py` edits). Re-ran
+  `tests/integration/test_ftf_0401_project_schema_api.py`/
+  `test_ftf_0402_project_security_profile.py`/
+  `test_ftf_0404_tool_schema_crud.py` against a freshly recreated
+  database/role after this task's own migration — all three still "all
+  checks passed". `ruff check .`/`ruff format --check .`/`mypy .` clean
+  across the full repository (targeted `--fix`/`format` applied to this
+  task's own new/changed files only). PR opened as PROVISIONAL —
+  `docs/spec-matrix.yaml` FTF-0403 set to `PROVISIONAL`/`L1-PROVEN`.
+
+**While adding this task's own CI gate step**, discovered a real,
+pre-existing gap: `.github/workflows/ci.yml`'s `gate` job never invoked
+`tests/tasks/test_ftf_0406.py` or `test_ftf_0407.py`, despite both tasks
+already being independently `CERTIFIED` (PR #153/#156) — both files
+existed the whole time, but no CI step ever ran either one. Flagged and
+fixed immediately (Law 9 — gate-weakening is watched, not silently worked
+around): both steps restored, placed immediately before this task's own
+new `FTF-0403` step, reconfirmed passing.
+
+**STEP 3** — this file, `QUEUE.md`, `docs/spec-matrix.yaml`, and
+`docs/certifications/queue.md` all updated before any compaction, per
+Step 3's own requirement.
+
+**STEP 4** — stop condition (a): this task reached L1-PROVEN, PR opened
+PROVISIONAL, awaiting independent Control-plane L2 certification (Law 4 —
+never self-certified). Reporting and stopping this shift here.
+
+Certified: 33/300 (unchanged — PROVISIONAL does not count). Product-true
+(`product_truth_check.py`, includes PROVISIONAL wiring): 11/11.
+`scripts/status.py`'s own stricter CERTIFIED-only count: 10 (unchanged).
 
 ## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),

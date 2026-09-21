@@ -7364,3 +7364,244 @@ with `docs/spec-matrix.yaml`.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_0185UQFPYhDkeasgkhTHrE5K,
   2026-09-21.
+
+## 2026-09-21 — FTF-0403 — Budget policy
+- **PR:** opened against `main` from `claude/wizardly-fermat-khiwyv`, title
+  `[relay] FTF-0403: Budget policy`.
+- **Commit:** `7d969f5` (implementation); `docs/spec-matrix.yaml`/
+  `PROGRESS.md`/`QUEUE.md`/this entry pushed as a second, tracking-doc-only
+  commit on the same branch, matching the FTF-0201/FTF-0301/FTF-0401/
+  FTF-0402/FTF-0305/FTF-0404/FTF-0406/FTF-0407 two-commit precedent.
+- **Ground truth checked before picking work:** independently recomputed
+  the dependency-ready frontier from scratch by parsing every
+  non-`CERTIFIED` task's own `deps=` field in `docs/spec-matrix.yaml`'s
+  notes against its live `certification_state` set (33 CERTIFIED, 0
+  PROVISIONAL as of this shift), never trusting `QUEUE.md`'s own prior
+  "Next shift" note by itself: FTF-0403, FTF-0902, FTF-1001, FTF-1401,
+  FTF-1501, FTF-1701 are dependency-ready (FTF-0202 is the flagged owner
+  ask, PR #143 still unmerged/unverified, excluded per the standing flag
+  in `QUEUE.md`). FTF-0403 has the lowest task-ID number with no
+  external-service ask of its own.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0403 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Persist decimal budget
+  authorization, cost currency, scopes and approval history";
+  "Independent review, exact merged commit, real relevant integration and
+  negative-test evidence recorded"), negative_acceptance ("Negative/
+  unknown rates and concurrent allocation beyond available reservation
+  cannot be accepted"), `database_changes: "Own forward Alembic migration
+  for this resource; tenant/composite constraints/RLS and upgrade tests
+  per Sections 6/65/71. Serialize migration chain."`, `api_contract:
+  "/api/v1/projects; /requirements; /tools; project privacy and budget
+  policy."`, `files: [apps/api/app/services/budget_policy.py,
+  tests/tasks/test_ftf_0403.py]`, `dependencies: [FTF-0104, FTF-0401]`
+  (both CERTIFIED), `contract_owner: FTF-0401`, `shared_lock_required:
+  [contracts:04, migration:application]`.
+- **The real gap this task closes (disclosed, not assumed):** Section
+  6.8's own `Project.budget_policy_id` (FTF-0401's own migration) was a
+  bare, unconstrained nullable UUID column — nothing existed for it to
+  reference, and `project_routes.py`'s own module docstring already
+  disclosed exactly this gap ("nor real security-profile enforcement
+  (FTF-0402) or a real BudgetPolicy row to reference (FTF-0403)").
+  `project_crud.py`'s `create_project`/`update_project` had no
+  `budget_policy_id` parameter at all — a project could never reference
+  one, real or otherwise.
+- **Design (disclosed):** two real, tenant-scoped tables
+  (`apps/api/alembic/versions/0007_budget_policies.py`): `BudgetPolicy`
+  (decimal `authorized_amount`, a live `remaining_amount` this task's own
+  reservation mechanism decrements, `currency`, a closed `scopes` set —
+  `("training", "evaluation", "coding_agent", "serving")`, grounded in
+  Section 2148/70.3/32's own named spend classes, not invented) and
+  `BudgetPolicyEvent` (an append-only ledger — never UPDATEd or DELETEd,
+  the same discipline Section 6.24's own `AuditEvent` already establishes
+  — recording both this task's own "approval history" half
+  (`authorized`/`revoked` events) and every real reservation
+  (`reserved` events) in one directly-queryable place).
+  `validate_amount`/`validate_currency`/`validate_scopes` enforce this
+  task's own negative_acceptance verbatim: a caller must supply a real
+  `decimal.Decimal` (Section 32: "All monetary computation uses decimal
+  arithmetic") — a bare `float`/`int`/`None`/`NaN`/`Infinity`/negative/
+  zero(where disallowed)/over-precision/over-`Numeric(18,6)`-ceiling value
+  is refused before it ever reaches the database, never silently coerced.
+  `reserve_budget`'s own negative_acceptance half ("concurrent allocation
+  beyond available reservation cannot be accepted") is enforced by
+  construction, not a read-then-write race: a single atomic conditional
+  `UPDATE budget_policies SET remaining_amount = remaining_amount -
+  :amount WHERE id = :id AND remaining_amount >= :amount` — Postgres's own
+  row-level locking, not application code, is what makes two concurrent
+  reservations against the same policy safe (the first to execute holds
+  the row lock until commit; the second blocks, then re-evaluates the
+  `WHERE` clause against the real post-commit value once unblocked, so a
+  reservation that would push the allocated total beyond the authorized
+  ceiling always affects zero rows).
+- **Wiring (disclosed):** `enforce_budget_policy_reference` is called
+  from `project_crud.py`'s `update_project` whenever a caller supplies
+  `budget_policy_id` — the same wiring point FTF-0402's own
+  `enforce_security_profile_selection` already established for
+  `security_profile`. Denied identically (`BudgetPolicyNotFoundError`,
+  404) whether the referenced policy is missing, belongs to a different
+  organization, or belongs to a *different project in the same
+  organization* (the IDOR case a bare foreign key alone cannot express —
+  a composite `(organization_id, id)` FK stops cross-tenant references but
+  not cross-project-same-tenant ones), or (`BudgetPolicyStateError`, 409)
+  is not `active`. `create_project` deliberately does **not** accept
+  `budget_policy_id`: a `BudgetPolicy` row's own composite foreign key
+  requires an already-existing `project_id`, so attaching one is
+  structurally always a later edit, not a creation-time field — unlike
+  `security_profile`, which has no such ordering dependency. Also adds a
+  real composite foreign key `projects(organization_id, budget_policy_id)`
+  → `budget_policies(organization_id, id)` — Section 65.1's own
+  "composite (organization_id, id) keys where the parent is tenant-owned"
+  precedent, completing the reference FTF-0401's own migration left as a
+  bare, unconstrained column (`ON DELETE RESTRICT`; `budget_policy_id`
+  stays nullable, so MATCH SIMPLE only checks it when set).
+  `database_changes` honored exactly ("Own forward Alembic migration for
+  this resource").
+- **Disclosed, not hidden:** `create_budget_policy`/`reserve_budget` have
+  no live HTTP route of their own yet — authoring a policy and recording
+  a spend reservation are FTF-0719 ("Budget kill switch")/FTF-R016
+  ("...enforce budget tree")'s own, later, separately dependency-gated
+  consumers (both name FTF-0403 as their own dependency in
+  `docs/TASK_INDEX.md`, not the reverse — checked directly before relying
+  on this), and Section 42's `enforce_budget` `TrainingWorkflow` activity
+  is the eventual real caller of `reserve_budget` once Temporal wiring
+  exists. Same disclosed "no live caller yet" class already accepted for
+  FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0402's own
+  `require_profile_at_least` before each one's own first live caller
+  existed — proven directly (no-DB and real live-Postgres) rather than
+  left untested while unwired.
+- **Test:** `tests/tasks/test_ftf_0403.py` (no-DB, 9 test functions, 40
+  checks): `validate_amount`'s own negative_acceptance at the
+  pure-function level (negative/non-`Decimal`/`NaN`/`Infinity`/
+  zero-when-disallowed/over-precision/over-ceiling all refused; a real
+  in-bounds `Decimal` accepted unchanged); `validate_currency`/
+  `validate_scopes` closed-shape validation; `BudgetPolicy.__init__`/
+  `BudgetPolicyEvent.__init__` refuse bad input before any session or
+  database is touched; `create_budget_policy`'s own validation runs to
+  completion (and raises) before `session` is ever touched (every call
+  passes `session=None`); source-inspection proof that `update_project`
+  genuinely calls `enforce_budget_policy_reference` and that the live
+  PATCH route threads `budget_policy_id` through to it.
+- **Integration test:** `tests/integration/
+  test_ftf_0403_budget_policy.py` (real Postgres 16, two real
+  organizations, three real projects, 19 real checks): `create_budget_policy`
+  persists for real through a live round-trip; a real 'authorized' event
+  is queryable via `list_budget_policy_events` after a real commit;
+  cross-project IDOR (same organization) and cross-organization IDOR both
+  refused identically to missing; currency-mismatch and
+  scope-not-authorized both refused; **two real threads, two real database
+  connections, race $70.00 + $70.00 against a real $100.00 remaining
+  budget** — exactly one succeeds, the other is refused
+  `InsufficientBudgetError`, and the real post-race `remaining_amount` is
+  exactly $30.00 (neither double-decremented nor left untouched) with
+  exactly one real `'reserved'` approval-history event recorded; a real
+  revoked policy is refused by both `enforce_budget_policy_reference` and
+  `reserve_budget`; real HTTP evidence through a real uvicorn server and
+  FTF-0401's own real `build_project_router` — `PATCH .../projects/{id}`
+  with a real active budget policy succeeds (200) and the persisted
+  `budget_policy_id` genuinely matches; the cross-project-IDOR case (404)
+  and cross-organization-IDOR case (404) are both refused over real HTTP;
+  attaching a real, already-revoked policy is refused (409) over real
+  HTTP.
+- **Evidence — real concurrency, not asserted (the actual point of a
+  live-Postgres suite over a no-DB one):** the no-DB suite cannot prove
+  `reserve_budget`'s own negative_acceptance half at all — its own
+  currency/scope/IDOR/state checks and `create_budget_policy`'s own
+  validation are the only parts provable without a real Postgres session
+  (`execute_tenant_scoped` requires a real `current_setting(...)`
+  session-local tenant context, a Postgres-only SQL function that does
+  not exist on SQLite, so this module deliberately never fakes a DB
+  session for those functions in the no-DB suite). The live-Postgres
+  suite's own two-thread race against a real $100.00 remaining budget is
+  the only genuine proof of the atomic-UPDATE design: it directly shows
+  `sorted(results.values()) == ["insufficient", "ok"]` and
+  `remaining_amount == Decimal("30.00")` afterward, over two real,
+  separate database connections — a design flaw here (e.g. a
+  read-then-write race instead of the single conditional `UPDATE`) would
+  have shown `["ok", "ok"]` and a negative or double-decremented
+  `remaining_amount` instead, which is exactly what this check would have
+  caught.
+- **No regression:** re-ran `tests/tasks/test_ftf_0401.py`/
+  `test_ftf_0402.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/
+  `test_ftf_0406.py`/`test_ftf_0407.py` after this change — all six still
+  "all checks passed". Re-ran `tests/integration/
+  test_ftf_0401_project_schema_api.py`/
+  `test_ftf_0402_project_security_profile.py`/
+  `test_ftf_0404_tool_schema_crud.py` against a freshly recreated local
+  PostgreSQL 16 database/role (the new migration applied) — all three
+  still "all checks passed".
+- **Full regression, this sandbox:** `uv sync --all-packages` (no
+  pre-installed `sqlalchemy`/`fastapi`/etc. in this sandbox's system
+  Python — an environment-setup step, not a repo defect). `ruff check
+  --fix .`/`ruff format .` needed real fixups this task introduced
+  (import wrapping/line length in the new `budget_policy.py`/migration/
+  test files, one `isinstance(x, (list, tuple))` → `isinstance(x, list |
+  tuple)` UP038 modernization) — applied and reconfirmed clean
+  afterward; `ruff check .`/`ruff format --check .` clean across the full
+  repository. `mypy .` clean on every file this task touched (one
+  targeted `# type: ignore[attr-defined]` on `CursorResult.rowcount`,
+  matching this repository's own established precedent for a known
+  SQLAlchemy-stub gap rather than a real type error — see
+  `project_schema.py`'s/`organization_workspace_schema.py`'s own
+  identical-shaped `# type: ignore[arg-type]` lines on the same
+  `kwargs[...] = validate_x(kwargs[...])` pattern); the only repo-wide
+  `mypy` note is `test_ftf_h034.py`'s own pre-existing
+  `annotation-unchecked` note, unrelated to this task. `git fetch
+  --unshallow origin` first (this sandbox's own clone is shallow by
+  default, the same pre-existing artifact every prior relay/certifying
+  session has already documented); `validate_spec.py --strict` →
+  "task graph and verification-map are clean".
+  `product_truth_check.py --fail-on-unwired` — `10/10` before this task's
+  own `docs/spec-matrix.yaml` update, `11/11` after (this task's own
+  `proving_symbol`, `enforce_budget_policy_reference`, has a real,
+  source-inspection-confirmed live caller in `project_crud.py`'s
+  `update_project` — not a TRACKER). `scripts/status.py` → "33/300
+  certified · 10 product-true" (correctly still 10, not 11 — a
+  PROVISIONAL task does not count toward the stricter CERTIFIED-only
+  metric until an independent Control-plane review certifies it, matching
+  every prior PROVISIONAL submission's own precedent). The
+  `pnpm run lint`/`typecheck`/`vitest run` (FTF-0002/FTF-0003/FTF-H001's
+  own frontend-tooling checks) fail in this sandbox because `node_modules`
+  is not installed by default here — confirmed unrelated to this task
+  (no JS/TS file touched), the same pre-existing sandbox gap every prior
+  relay session has already documented.
+- **Also restores two CI gate steps** (flagged, not silently worked
+  around — Law 9): `.github/workflows/ci.yml`'s `gate` job never invoked
+  `tests/tasks/test_ftf_0406.py` or `test_ftf_0407.py` despite both tasks
+  already being independently `CERTIFIED` (PR #153/#156) — both files
+  existed in the repository the whole time, but no CI step ever ran
+  either one, so neither task's own no-DB negative-test proof actually
+  executed in CI, only in each certifying session's own local
+  reproduction. Discovered while adding this task's own gate step
+  (grepped `.github/workflows/ci.yml` for "0406"/"0407" and found no
+  match). Fixed here rather than left for a future session to
+  rediscover — both steps restored immediately before this task's own new
+  `FTF-0403` step, and reconfirmed passing.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified — awaiting Control plane L2 review per Law 4.
+  `proving_symbol` set to `enforce_budget_policy_reference`
+  (`proving_test` `tests/tasks/test_ftf_0403.py`) at this PROVISIONAL
+  submission — only `certification_state`/`proof_state`'s
+  `CERTIFIED`/`L2-CERTIFIED` values are the certifying session's own to
+  set. Certified stays 33/300.
+- **Full acceptance/negative_acceptance mapping:** acceptance clause 1
+  ("Persist decimal budget authorization, cost currency, scopes and
+  approval history") is met directly by `BudgetPolicy`/`BudgetPolicyEvent`
+  and `create_budget_policy`/`list_budget_policy_events`, proven against
+  real Postgres. Acceptance clause 2 (independent review/evidence) is
+  this submission's own job to enable, not to satisfy itself (Law 4).
+  negative_acceptance ("Negative/unknown rates and concurrent allocation
+  beyond available reservation cannot be accepted") is proven both
+  directly (dedicated no-DB tests for the "unknown rates" half) and by
+  the real two-thread concurrency race for the "concurrent allocation"
+  half — the one negative_acceptance clause in this repository's history
+  so far whose real proof structurally requires genuine Postgres
+  concurrency rather than a single-threaded negative test or a fault
+  injection, and this submission built that proof rather than asserting
+  the design is safe.
+- **Disclosed, not hidden:** no dedicated `/budget-policies` authoring
+  route exists yet (see "Disclosed, not hidden" above) — `docs/TASK_INDEX.md`
+  names no task that separately owns this route either, so it is this
+  task's own honest scope narrowing, not a deferred-elsewhere gap; a
+  future task adding real spend enforcement (FTF-0719/FTF-R016) will need
+  to add it, or extend this task's own module, when it wires a real
+  caller.

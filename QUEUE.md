@@ -1,5 +1,103 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-0403 (Budget
+  policy, deps FTF-0104/FTF-0401 both CERTIFIED). Independently recomputed
+  the dependency-ready frontier fresh against `docs/spec-matrix.yaml`'s
+  live certification state (never trusted the prior shift's own "Next
+  shift" note by itself, per this repo's own established convention):
+  33 CERTIFIED, 0 PROVISIONAL as of this shift; FTF-0403, FTF-0902,
+  FTF-1001, FTF-1401, FTF-1501, FTF-1701 are dependency-ready (FTF-0202
+  remains the flagged owner ask — PR #143 still open/unmerged/unverified,
+  see the standing flag below — excluded from the pick). FTF-0403 has the
+  lowest task-ID number with no external-service ask of its own.
+  Section 6.8's own `Project.budget_policy_id` (FTF-0401's own migration)
+  was a bare, unconstrained nullable UUID column with nothing to
+  reference — `project_routes.py`'s own module docstring already
+  disclosed exactly this gap. Two real, tenant-scoped tables
+  (`apps/api/alembic/versions/0007_budget_policies.py`): `BudgetPolicy`
+  (decimal `authorized_amount`, a live `remaining_amount`, `currency`, a
+  closed `scopes` set grounded in Section 2148/70.3/32's own named spend
+  classes) and `BudgetPolicyEvent` (an append-only ledger — this task's
+  own "approval history" half, plus every real reservation).
+  `apps/api/app/services/budget_policy.py`'s `validate_amount` enforces
+  this task's own negative_acceptance verbatim ("Negative/unknown
+  rates... cannot be accepted") at the type level — a bare
+  `float`/`None`/`NaN`/`Infinity`/negative/over-precision/over-ceiling
+  value is refused before it ever reaches the database.
+  `reserve_budget`'s own negative_acceptance half ("concurrent allocation
+  beyond available reservation cannot be accepted") is enforced by a
+  single atomic conditional `UPDATE ... WHERE remaining_amount >=
+  :amount` — real Postgres row locking, not application code, makes
+  concurrent reservations safe, proven directly with two real racing
+  threads/database connections (not merely asserted) in
+  `tests/integration/test_ftf_0403_budget_policy.py`. Real, live-wired:
+  `enforce_budget_policy_reference` is called from `project_crud.py`'s
+  `update_project` whenever a caller supplies `budget_policy_id` (PATCH
+  `.../projects/{id}`), the same wiring point FTF-0402's own
+  `enforce_security_profile_selection` already established — denied
+  identically whether the referenced policy is missing, foreign-tenant,
+  foreign-project-same-tenant (IDOR), or not `active`. `create_project`
+  deliberately does not accept `budget_policy_id` (a `BudgetPolicy`'s own
+  composite FK requires an already-existing `project_id`, so attaching
+  one is structurally always a later edit). Disclosed, not hidden:
+  `create_budget_policy`/`reserve_budget` have no live HTTP route of
+  their own yet — FTF-0719/FTF-R016's own later, separately
+  dependency-gated consumers, and Section 42's `enforce_budget`
+  `TrainingWorkflow` activity is the eventual real caller once Temporal
+  wiring exists. 9 no-DB test functions (40 checks,
+  `tests/tasks/test_ftf_0403.py`) + 19 real live-Postgres checks
+  (`tests/integration/test_ftf_0403_budget_policy.py`: persistence,
+  cross-project IDOR, cross-organization IDOR, revoked-state refusal,
+  currency mismatch, scope-not-authorized, a genuine concurrent
+  $70+$70 reservation race against a real $100.00 remaining budget —
+  exactly one succeeds, `remaining_amount` ends exactly $30.00 — and real
+  HTTP evidence through `build_project_router`). Independently
+  reconfirmed no regression to FTF-0401/FTF-0402/FTF-0404/FTF-0405/
+  FTF-0406/FTF-0407's own certified no-DB suites (all six "all checks
+  passed") and to FTF-0401/FTF-0402/FTF-0404's own live-Postgres suites
+  (re-run "all checks passed" on a freshly recreated database/role after
+  this task's own migration). `ruff check`/`ruff format --check`/`mypy`
+  clean on every file this task touched, and clean across the full repo.
+  Also restores two CI gate steps genuinely missing despite both tasks
+  already being CERTIFIED: `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0407.py` existed but no `.github/workflows/ci.yml` step ever
+  invoked either — flagged and fixed rather than left silently unwired
+  (Law 9), not something this shift quietly worked around.
+  `validate_spec.py --strict` clean (`git fetch --unshallow origin`
+  first — this sandbox's own clone is shallow by default, the same
+  pre-existing artifact every prior relay/certifying session has already
+  documented). `product_truth_check.py --fail-on-unwired` — `10/10`
+  before this shift, `11/11` after (this task's own `proving_symbol`,
+  `enforce_budget_policy_reference`, has a real caller in
+  `project_crud.py`'s `update_project` — not a TRACKER). PR opened as
+  PROVISIONAL; `docs/spec-matrix.yaml` FTF-0403 set to
+  `PROVISIONAL`/`L1-PROVEN`, `proving_symbol`
+  `enforce_budget_policy_reference` (matching the FTF-0201/FTF-0301/
+  FTF-0401/FTF-0402/FTF-0404/FTF-0406/FTF-0407 producer-shift precedent).
+  Awaiting independent Control plane certification — not self-certified
+  (Law 4). Certified stays 33/300; `scripts/status.py`'s own stricter
+  "product-true" count (CERTIFIED-only) stays 10. Full submission report:
+  `docs/certifications/queue.md`.
+
+## Next shift
+FTF-0403 (this shift's own submission, see the top of this file) is now
+PROVISIONAL, PR opened, awaiting independent Control-plane L2
+certification — that review is the natural next action, matching the
+established relay/certifier alternation. If a certifier session is not
+what fires next: recompute the dependency-ready frontier fresh rather
+than trusting this note — as of this shift, the other five
+dependency-ready items besides FTF-0403 and FTF-0202's own owner ask are
+FTF-0902, FTF-1001, FTF-1401, FTF-1501, and FTF-1701 (FTF-1701 became
+dependency-ready once FTF-0407 reached CERTIFIED — it names only FTF-0407
+and the already-CERTIFIED FTF-0405 as its own deps). Before merging PR
+#143 (still open and unmerged as of this shift), verify a genuine owner
+confirmation exists for FTF-0202's own backend selection (see the
+flagged note further below) — do not treat that PR's own bare claim as
+sufficient by itself. Separately, PR #152 (a doc-only "Next shift"
+catch-up, opened by an earlier shift, already superseded before this
+shift began) is still open/unmerged — a future certifier session should
+close it without merging.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #156) — independent CERTIFY
   review of FTF-0407 (Critical behavior requirements): **CERTIFIED**.
   Subscribed while CI was still in-flight; the producer session
@@ -354,29 +452,10 @@ relay one: recommend the owner either confirm directly (in which case
 merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
-## Next shift
-FTF-0407 (this shift's own submission, see the top of this file) is now
-PROVISIONAL, PR opened, awaiting independent Control-plane L2
-certification — that review is the natural next action, matching the
-established relay/certifier alternation. If a certifier session is not
-what fires next: recompute the dependency-ready frontier fresh rather
-than trusting this note — as of this shift, parsing every
-non-`CERTIFIED`/`PROVISIONAL` task's own `deps=` field against the live
-`certification_state` set found six other dependency-ready items besides
-FTF-0202's own owner ask: FTF-0403, FTF-0902, FTF-1001, FTF-1401,
-FTF-1501. `docs/TASK_INDEX.md` lists FTF-04A19/FTF-0610/FTF-1101/
-FTF-1701/FTF-0408 as depending on FTF-0407; of those, FTF-1701
-("Reference agent specification") names only FTF-0407 and the
-already-CERTIFIED FTF-0405 as its own deps, so FTF-0407 reaching
-CERTIFIED will newly unblock it too — the other four each still name at
-least one other, not-yet-met dependency. Before merging PR #143 (still
-open and unmerged as
-of this shift), verify a genuine owner confirmation exists for FTF-0202's
-own backend selection (see the flagged note above) — do not treat that
-PR's own bare claim as sufficient by itself. Separately, PR #152 (a
-doc-only "Next shift" catch-up, opened by an earlier shift, already
-superseded before this shift began) is still open/unmerged — a future
-certifier session should close it without merging.
+(Superseded "Next shift" note, kept for history — see the top of this
+file for the current one.) FTF-0407 (that shift's own submission) was
+then PROVISIONAL, PR opened, awaiting independent Control-plane L2
+certification (since certified — PR #156, merge commit `5da3834`).
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
