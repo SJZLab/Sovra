@@ -8199,7 +8199,7 @@ Full entry: docs/certifications/ledger.md.
   2026-09-21.
 
 ## 2026-09-21 — FTF-R016 — Measure selected coding-model/executor pilot cost and enforce budget tree
-- **PR:** pending open (branch `claude/wizardly-fermat-dtzhzo` → main)
+- **PR:** https://github.com/SJZLab/Sovra/pull/172 (claude/wizardly-fermat-dtzhzo → main)
 - **Commit:** c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
 - **Deps:** FTF-R015, FTF-H002, FTF-0403 — all confirmed genuinely
   `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.

@@ -158,7 +158,8 @@ Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-R016
   shift implements, it does not certify); 1 new provisional this shift
   (FTF-R016); `scripts/status.py`'s own authoritative "product-true" count
   stays 12; `product_truth_check.py --fail-on-unwired` — `12/12`. PR
-  opened as PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/PROGRESS.md/
+  opened as PROVISIONAL (https://github.com/SJZLab/Sovra/pull/172);
+  `docs/spec-matrix.yaml`/QUEUE.md/PROGRESS.md/
   `docs/certifications/queue.md` all updated in a second, tracking-doc-only
   commit on the same branch, matching the established two-commit
   precedent.
@@ -178,7 +179,8 @@ relay implementation (CI-runner provisioning still down as of this shift
 — genuine review may be blocked until it clears): (1) close PR #158
 without merging (superseded by the already-merged PR #163); (2) certify
 or reject PR #159/#160/#161/#167 (FTF-1501/FTF-1001/FTF-1401/FTF-1702, all
-real, open, and unreviewed) and this shift's own FTF-R016 PR; (3) resolve
+real, open, and unreviewed) and this shift's own FTF-R016 PR
+(https://github.com/SJZLab/Sovra/pull/172); (3) resolve
 PR #162's own FTF-0202 claim one way or the other — verify the live
 conversation genuinely occurred, or close it unmerged like PR #143 before
 it; (4) resolve or re-verify the CI-runner-provisioning owner-ask (`##
