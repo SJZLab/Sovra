@@ -1,5 +1,166 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1701
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1301
+  (CostProfile schema/UI, deps FTF-0401/FTF-0403/FTF-0103 all CERTIFIED).
+  STEP 0: verified `sha256sum CLAUDE.md` against the committed
+  `CLAUDE.md.sha256` — clean, no BLOCKER needed. Found the designated
+  branch `claude/wizardly-fermat-togs1a` already fully merged into `main`
+  (its own head commit, `f3141c4`, is an ancestor of `origin/main`, and
+  the remote branch no longer existed) — restarted it fresh from
+  `origin/main` per this session's own instructions rather than stacking
+  new work on already-merged history. STEP 1: read PROGRESS.md/QUEUE.md/
+  `docs/certifications/queue.md`, then cross-checked GitHub directly
+  (`list_pull_requests`) rather than trusting this file's own prior
+  "Next shift" note by itself: PR #167 ("[relay] FTF-1702: Tool
+  environment") had already been opened by a prior shift very shortly
+  before this one fired (2026-09-21T15:01Z) — genuinely claimed, not
+  picked again. PR #158 (stale FTF-0403 duplicate)/#159 (FTF-1501)/#160
+  (FTF-1001)/#161 (FTF-1401)/#162 (unverified FTF-0202 claim) remain open
+  and unmerged, all Control-plane review items this relay shift has no
+  standing to act on (per Law 4, producer never certifies own work, and
+  this session's own relay role is execution-only). Recomputed the
+  dependency-ready frontier directly against `docs/spec-matrix.yaml`'s
+  live `certification_state`, not by title alone: FTF-0202 stays a
+  genuine, unresolved owner ask (Secret-manager backend selection) that
+  blocks a large fraction of the graph transitively through
+  `FTF-H006`/`FTF-0203`+; FTF-0408 still carries the same real DoD-clarity
+  gap the FTF-1701 shift already found and disclosed (its own acceptance
+  clause reads on `AgentManifest.mandate_json`, a field with no real
+  storage anywhere in this repository yet — re-confirmed this shift by
+  re-pulling `docs/implementation/task-packets/FTF-0408.md` fresh, not
+  trusted from the prior shift's own claim); FTF-0902 still names a real
+  enforcing Kubernetes/CNI cluster as its own `resource_gate`
+  prerequisite, unavailable in this sandbox. FTF-1301 is the
+  lowest-task-ID item among what remains genuinely unblocked and
+  unclaimed by any open PR: all three of its own dependencies
+  (FTF-0401/FTF-0403/FTF-0103) are independently confirmed CERTIFIED in
+  `docs/spec-matrix.yaml`, and no open PR names FTF-1301.
+
+  **STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-1301` fresh. Read
+  the existing FTF-0403 (`budget_policy_schema.py`/`_crud.py`/`_routes.py`/
+  `0007_budget_policies.py`) and FTF-0201 (`connection_schema.py`/
+  `_crud.py`/`_routes.py`) modules in full to reuse their already-live,
+  already-CERTIFIED composition (`TenantContext`/
+  `tenant_scoped_session_for`/`authorize_resource_ownership`/
+  `execute_tenant_scoped`/`require_role`/RLS-migration pattern) rather
+  than reinventing it. Formed the hypothesis: this task's own acceptance
+  clause narrows to a rate-card *record* (dated provider/local-hardware
+  TCO rate, currency, source, plus an honest certifiability verdict) —
+  not Section 32's own full cost-per-success computation pipeline against
+  real usage/billing data, which `docs/TASK_INDEX.md` records as
+  FTF-1302/FTF-1303/FTF-1304's own, later, separately dependency-gated
+  acceptance criteria, all three naming this task as their own
+  dependency, never the reverse. No code written yet at this point.
+
+  **STEP 2 (E):** Implemented `apps/api/app/costs/`
+  (`cost_profile_schema.py`/`_crud.py`/`_routes.py`),
+  `apps/api/alembic/versions/0008_cost_profiles.py`,
+  `packages/contracts/{openapi,jsonschema}/13-*` (contract slot 13, first
+  claim), `apps/web/components/cost-and-model-search/
+  costprofile_schema_ui.tsx`, and both test suites together (matching the
+  FTF-0403/FTF-1701 precedent: implement with tests, run, then fault-inject
+  against the delivered code). The no-DB unit suite's first real run
+  genuinely failed before any test was written to expect it:
+  `_serialize`'s own decimal-to-string quantization used `str(Decimal)`,
+  which Python switches to scientific notation for this column's own real
+  small-magnitude range (a $0.00000015-per-token rate) — direct evidence
+  the round-trip-shape test was exercising real code, not a foregone
+  conclusion; fixed with `format(value, "f")`, matching
+  `budget_policy_routes.py`'s own `_money` helper's plain-decimal
+  guarantee for its own, larger-magnitude column. The live-Postgres
+  integration suite's first real run against a real, locally-installed
+  PostgreSQL 16 cluster (`pg_ctlcluster 16 main start`; no
+  container-registry egress in this sandbox, same documented finding as
+  every prior integration-tested task) also genuinely failed before any
+  test was written to expect it: the search route computed
+  `current_cheapest_certified` from detached ORM instances *after* their
+  owning `tenant_scoped_session_for` block had already closed, raising a
+  real `sqlalchemy.orm.exc.DetachedInstanceError` — fixed by moving that
+  computation inside the session block. `uv sync --all-packages` and
+  `pnpm install --frozen-lockfile` were both run first (a pre-existing,
+  previously-undocumented-in-this-shift frontend-dependency gap in this
+  sandbox — closed, not silently worked around; confirmed pre-existing by
+  `test_ftf_0003.py`/`test_ftf_0002.py` both failing identically before
+  and passing clean immediately after, with no other change).
+
+  **Failure output shown by fault injection (Law 1, two distinct vectors,
+  both reverted byte-identical and the suite re-run clean afterward):**
+  (1) disabled the zero-provider-rate disqualification in
+  `is_certifiable_cheapest` (`if False and profile.profile_type ==
+  "provider" and ...`) — `uv run python3 tests/tasks/test_ftf_1301.py`
+  failed with exactly the named negative_acceptance check ("token price
+  zero is not local compute free... still cannot certify cheapest"); (2)
+  disabled the negative-rate refusal in `validate_rate_amount`
+  (`if False and value < 0:`) against the real live database — `uv run
+  python3 tests/integration/test_ftf_1301_cost_profile.py` failed with
+  exactly the named "a negative rate is refused (400)" check, and the
+  malformed row was independently caught a second time by the real,
+  migration-defined `CHECK(rate_amount >= 0)` constraint itself (a raw
+  `IntegrityError` surfaced through the route as an uncaught 500, proving
+  the DB-level backstop is live even when the application-level guard is
+  bypassed — the same defense-in-depth class FTF-0403's own fault
+  injection already demonstrated for a different resource). Both vectors
+  reverted byte-identical (`diff` against the pre-injection copy
+  confirmed empty) and both suites re-confirmed clean afterward.
+
+  **V:** Independently reconfirmed no regression: full
+  `tests/tasks/test_ftf_*.py` sweep (25 files) all "all checks passed" or
+  equivalent; `ruff check .`/`ruff format --check .` clean repo-wide;
+  `mypy .` (from `apps/api`) — 2 errors, both the pre-existing, unrelated
+  `authlib.jose` missing-stub gap in `oidc_login.py`, confirmed identical
+  on `main`; `pnpm run lint`/`typecheck`/`format:check` clean; `pnpm run
+  test` (vitest) — 19/19 passed across all 5 spec files, no regression to
+  FTF-0401's own suite. `git fetch --unshallow origin` first (this
+  sandbox's own documented shallow-clone artifact), then
+  `validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` rises to `12/12` (`proving_symbol` set to
+  `is_certifiable_cheapest`, called for real by `cost_profile_crud.py`'s
+  own `search_cost_profiles` — a real, newly-wired live caller, not
+  inflation). `python3 scripts/status.py` — `35/300 certified · 11
+  product-true` (unchanged — FTF-1301 is PROVISIONAL, not yet CERTIFIED).
+
+  Wired `.github/workflows/ci.yml` with one new `gate` job step (`uv run
+  python3 tests/tasks/test_ftf_1301.py`) plus a new dedicated
+  `cost-profile-integration` job (real `services: postgres` container,
+  same pattern as `budget-policy-integration`) — no other job's steps
+  touched.
+
+  **STEP 3 metrics after this shift:** 35/300 certified (unchanged — this
+  shift implements, it does not certify); 1 new provisional this shift
+  (FTF-1301); `scripts/status.py`'s own authoritative "product-true"
+  count stays 11; `product_truth_check.py --fail-on-unwired` — `12/12`.
+  PR opened as PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/
+  `docs/certifications/queue.md` all updated in a second,
+  tracking-doc-only commit on the same branch, matching the established
+  two-commit precedent.
+
+  **STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+  reporting and stopping to await independent Control-plane L2
+  certification, per Law 4 (producer never certifies own work). The five
+  open PRs flagged by the FTF-1701 shift (#158/#159/#160/#161/#162,
+  see below) remain open and still need Control-plane attention; PR #167
+  (FTF-1702) is now also open and unreviewed. This shift did not touch,
+  merge, or close any of them — that is Control-plane's job, not this
+  relay's.
+
+## Next shift
+Six open PRs now need Control-plane attention ahead of any further relay
+implementation: (1) close PR #158 without merging (superseded by the
+already-merged PR #163); (2) certify or reject PR #159/#160/#161/#167
+(FTF-1501/FTF-1001/FTF-1401/FTF-1702, all real, open, and unreviewed);
+(3) resolve PR #162's own FTF-0202 claim one way or the other — verify
+the live conversation genuinely occurred, or close it unmerged like PR
+#143 before it, never treat the bare claim as sufficient; (4) review this
+shift's own FTF-1301 submission. If a relay session fires next instead:
+recompute the dependency-ready frontier fresh rather than trusting this
+note alone — FTF-1301 reaching CERTIFIED will newly unblock FTF-1305
+("Candidate ranking") only once FTF-1302/FTF-1303/FTF-1304 also land
+first per `docs/TASK_INDEX.md`; FTF-0408/FTF-0902 are still real, unpicked
+items but need the DoD-clarity/resource-gate gaps disclosed above resolved
+first, not improvised under time pressure; FTF-0202 remains the single
+highest-leverage owner ask still open, blocking a large fraction of the
+remaining graph transitively.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1701
   (Reference agent specification, deps FTF-0407/FTF-0405 both CERTIFIED).
   Independently recomputed the dependency-ready frontier fresh against
   `docs/spec-matrix.yaml`'s live certification state rather than trusting
@@ -1252,6 +1413,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1301 (CostProfile schema/UI) — this shift's own submission, PR
+opened, awaiting independent Control-plane L2 certification. See this
+file's own top "Updated:" block for the full write-up and fault-injection
+evidence, and `docs/certifications/queue.md` for the full submission
+report.
+
+Also genuinely open and PROVISIONAL, unreviewed as of this shift: PR #167
+("[relay] FTF-1702: Tool environment"), opened by a prior shift shortly
+before this one fired. Not acted on by this shift (Control-plane's job,
+not this relay's).
+
 FTF-1701 (Reference agent specification) is no longer in this section; it
 was independently reviewed and CERTIFIED 2026-09-21 via PR #165 (merge
 commit `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`) — see "## Done" for the
