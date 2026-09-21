@@ -1,11 +1,39 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
-  the `pull_request.opened` webhook for PR #156) — independent CERTIFY
-  review of FTF-0407 (Critical behavior requirements): **CERTIFIED**. See
-  the new section directly below for the full review.
-  `docs/certifications/ledger.md`/`docs/certifications/queue.md` carry
-  the complete evidence.
+Updated: 2026-09-21 — small, dedicated doc-only PR resolving FTF-0202's
+  own long-open "Owner actions — current" ask on `main` directly (see the
+  new section directly below). Not a task submission — no code touched.
 
+## 2026-09-21 — Doc-only: FTF-0202 owner-ask resolution landed on `main`
+The owner asked directly, live, in this conversation, why they kept
+seeing FTF-0202's secret-backend selection reported as still blocked
+despite already having answered it. Investigated rather than assuming:
+the owner's OpenBao decision (with reasoning: a self-hosted/self-built
+solution is too complex to deploy, a cloud-provider-managed store adds
+external dependency/cost OpenBao avoids) had genuinely already been
+recorded, correctly and with full evidence, by a separate session working
+PR #159 (FTF-1501, `claude/wizardly-fermat-bhjs9m`, commit `efec3c0`,
+2026-09-21) — but that record lives only on PR #159's own unmerged
+branch. PR #159 itself is still open, awaiting independent Control-plane
+L2 certification for its own, unrelated FTF-1501 implementation, so its
+QUEUE.md update never reached `main` — every fresh session (including
+this repository's own scheduled owner-report generation, which reads
+`main`) kept seeing the stale, still-open framing from before either
+resolution. Confirmed directly: PR #143 (the original, under-evidenced
+"Owner decision" claim) was already closed without merging by the PR
+#159 session, citing the exact same evidence-bar gap a prior
+Control-plane certifier shift had flagged.
+
+Rather than wait for PR #159's own, unrelated review cycle to also carry
+this fix to `main`, opened a small, dedicated, doc-only PR
+(`claude/resolve-ftf-0202-owner-ask`) touching only `QUEUE.md`'s "Owner
+actions — current" section — mirrors PR #159's own resolution text,
+credits it as the first record, and adds this live conversation as a
+second, independent confirmation of the same decision. No code, tests,
+or spec-matrix changes. FTF-0202 is now dependency-ready for a future
+relay shift to implement for real against an actual OpenBao instance;
+implementing it is a separate task with its own PEV cycle, not done here.
+
+## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 ## 2026-09-21 — Control plane: FTF-0407 (PR#156) independently reviewed, CERTIFIED
 Ran the CERTIFY procedure end to end (`docs/CONTROL_PLANE_MODES.md`),
 triggered by the `pull_request.opened` webhook for PR #156.

@@ -947,37 +947,54 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
-backend selected before it can be implemented for real.** Its own
+None currently. FTF-0202's own secret-backend ask (open since 2026-09-20)
+is resolved — see "RESOLVED" immediately below.
+
+**RESOLVED (2026-09-21, live owner conversation):** the owner directly
+confirmed selection of **OpenBao** (self-hosted, Vault's open-source
+fork) as FTF-0202's secret-management backend, with reasoning: a
+self-hosted/self-built custom solution was judged too complex to deploy,
+and a cloud-provider-managed secret store (AWS Secrets Manager / GCP
+Secret Manager / etc.) introduces both an external dependency and
+ongoing cost that a self-hosted open-source backend avoids — matching
+the option list preserved below and the existing `vault://`/`openbao://`
+reference-string shape convention FTF-0101/FTF-0201 already validate
+against.
+
+This is the *second* independent live reconfirmation of the same
+decision: a session working PR #159 (FTF-1501, `claude/wizardly-fermat-
+bhjs9m`, commit `efec3c0`) recorded an identical owner confirmation with
+the same reasoning on 2026-09-21, closing PR #143 ("Owner decision:
+FTF-0202 backend selected (OpenBao)" — the original claim, correct but
+under-evidenced: no live-conversation citation, no reasoning tied to the
+architecture, unlike every other resolution in this file's own history,
+which is why a prior Control-plane certifier shift declined to act on it
+and why it stayed open through several subsequent shifts). That PR #159
+record has not yet reached `main` (PR #159 itself is still open,
+awaiting independent Control-plane L2 certification for its own
+unrelated FTF-1501 implementation) — this is a small, dedicated,
+doc-only PR whose only job is landing the same resolution on `main`
+directly, without waiting on that unrelated PR's own review cycle, since
+the owner asked directly (in a live conversation with a relay session)
+why this kept appearing as still-blocked despite already having
+answered it. FTF-0202 is now genuinely dependency-ready for a future
+relay shift to implement for real against an actual OpenBao instance —
+implementing it is a separate task with its own PEV cycle, not done as
+part of this resolution.
+
+Original ask (2026-09-20), preserved for context: FTF-0202's own
 acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
-through the actual selected secret backend") names no concrete system
+through the actual selected secret backend") named no concrete system
 anywhere in this repository's architecture docs
 (`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's
 own Section 77/81 seven-reused-component list — a secret manager is not
-one of the seven). The only existing artifact is a `vault://`/
-`openbao://`/`secret://` reference-string *shape* convention (already
-used by two CERTIFIED tasks, FTF-0201/FTF-0101, to validate how a
-`secret_ref` value must look) — it fixes the shape, not the backend.
-Standing up a real resolver means selecting and deploying a real external
-secret-management system: both a "new runtime dep" and a "keyed external
-service," explicit "Ask owner first" hard stops. Options observed in the
-existing `vault://`/`openbao://` scheme names (not a recommendation,
-just what the naming already anticipates): (1) self-hosted HashiCorp
-Vault, (2) self-hosted OpenBao (Vault's OSS fork), (3) a cloud provider
-secret manager reachable from Railway (AWS Secrets Manager / GCP Secret
-Manager / etc.), (4) some other backend entirely. Per CLAUDE.md's default
-resolution rule this was checked against the architecture first — it
-genuinely does not fix the answer, so this is a real open ask, not a
-reopened decision. Remove this item the moment the owner responds.
-
-**Still open as of 2026-09-20 (this shift):** PR #143 ("Owner decision:
-FTF-0202 backend selected (OpenBao)") exists, open and unmerged, claiming
-this ask is resolved — this shift found no genuine corroborating
-evidence for that claim (no live-conversation detail, no option
-enumerated, unlike every other resolution in this file's own history)
-and did not act on it. See the flagged note near the top of this file for
-the full reasoning. This item stays open until a real owner confirmation
-is recorded, whether via that PR (once genuinely verified) or otherwise.
+one of the seven), so standing up a real resolver meant selecting and
+deploying a real external secret-management system: both a "new runtime
+dep" and a "keyed external service," explicit "Ask owner first" hard
+stops. Options that were on the table: (1) self-hosted HashiCorp Vault,
+(2) self-hosted OpenBao (Vault's OSS fork) — **selected**, (3) a cloud
+provider secret manager reachable from Railway, (4) some other backend
+entirely.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
