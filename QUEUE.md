@@ -1550,6 +1550,24 @@ is this shift's own new item — not yet reviewed. See
 `docs/certifications/queue.md`'s own "2026-09-21 — FTF-1302" entry for the
 full submission.
 
+**CI note (flagged, not silently worked around):** on push, 10 of 18 real
+GitHub Actions jobs on this PR's head failed with no runner ever assigned
+(`runner_id: 0`, completed in 2-12s, no logs) — not a test failure, and
+none of the failing jobs touch code this PR changes. Cancelled a stale
+duplicate CI run from two rapid pushes on the same PR (ruled out as the
+full explanation: the re-run of just the failed jobs, with no other
+workflow in flight anywhere in the repo, failed identically and faster).
+The same job matrix on this same workflow file had run clean in full
+minutes earlier (run #255, PR #168) — this looks like an account/runner-
+provisioning-level issue (possibly a spend/usage limit), outside this
+session's access to diagnose further. Used this repo's own "one allowed
+re-run" for a runner-loss-class failure; stood down rather than
+re-running again, per the standing CI-red policy. Posted this finding as
+a PR comment and subscribed to PR #170's own activity so a future event
+(or a Control-plane check-in) picks up any CI status change. All of this
+submission's own evidence was independently reproduced and verified
+locally against the pinned toolchain regardless of this remote CI gap.
+
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
 `9a47458118ee46095270f4aa9758b5ec35efeea5`) — see "## Done" for the
