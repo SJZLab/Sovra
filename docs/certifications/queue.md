@@ -7605,3 +7605,7 @@ with `docs/spec-matrix.yaml`.
   future task adding real spend enforcement (FTF-0719/FTF-R016) will need
   to add it, or extend this task's own module, when it wires a real
   caller.
+
+## 2026-09-21 — FTF-0403 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/158
+  (`claude/wizardly-fermat-khiwyv` → `main`).
