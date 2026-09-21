@@ -206,8 +206,14 @@ def test_no_regression_high_risk_tool_may_stay_non_critical() -> None:
 
 def _make_tool(**overrides: object) -> ToolDefinition:
     now = datetime.now(UTC)
-    input_schema = {"type": "object", "properties": {"order_id": {"type": "string"}}}
-    output_schema = {"type": "object", "properties": {"status": {"type": "string"}}}
+    input_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {"order_id": {"type": "string"}},
+    }
+    output_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {"status": {"type": "string"}},
+    }
     kwargs: dict[str, object] = {
         "organization_id": uuid.uuid4(),
         "project_id": uuid.uuid4(),

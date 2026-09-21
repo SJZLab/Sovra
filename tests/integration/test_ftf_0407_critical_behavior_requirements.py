@@ -51,7 +51,11 @@ from fastapi import FastAPI  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
-from app.auth.organization_workspace_schema import APP_ROLE_NAME, Organization, Workspace  # noqa: E402
+from app.auth.organization_workspace_schema import (  # noqa: E402
+    APP_ROLE_NAME,
+    Organization,
+    Workspace,
+)
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
 from app.tools.critical_behavior_requirement_routes import (  # noqa: E402
