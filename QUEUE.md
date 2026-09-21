@@ -1543,7 +1543,8 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1302 (Local compute costing, PR opened from `claude/wizardly-fermat-
+FTF-1302 (Local compute costing, PR #170
+https://github.com/SJZLab/Sovra/pull/170 from `claude/wizardly-fermat-
 c7g9v1`, implementation commit `2ebf9788ac644fc250e8cc9bc621a42815b549f7`)
 is this shift's own new item — not yet reviewed. See
 `docs/certifications/queue.md`'s own "2026-09-21 — FTF-1302" entry for the

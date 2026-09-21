@@ -8108,7 +8108,8 @@ triggered by the `pull_request.opened` webhook for PR #168.
 Full entry: docs/certifications/ledger.md.
 
 ## 2026-09-21 — FTF-1302 — Local compute costing
-- **PR:** opened from `claude/wizardly-fermat-c7g9v1` → `main`, title
+- **PR:** https://github.com/SJZLab/Sovra/pull/170
+  (`claude/wizardly-fermat-c7g9v1` → `main`), title
   `[relay] FTF-1302: Local compute costing`.
 - **Commit:** `2ebf9788ac644fc250e8cc9bc621a42815b549f7` (implementation);
   `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
