@@ -147,8 +147,16 @@ def _secret_ref(path: str = _SECRET_PATH) -> str:
 
 _TLS_TMP = Path(tempfile.mkdtemp(prefix="ftf-0203-tls-"))
 _CA_TRUST_TARGET = Path("/usr/local/share/ca-certificates/ftf-0203-test-ca.crt")
+# Installing into the system trust store needs root -- neither this
+# sandbox's own default user nor GitHub Actions' `runner` user owns
+# `/usr/local/share/ca-certificates/` directly, so every privileged step
+# below goes through `sudo` (passwordless on both, confirmed via `sudo -n
+# true`) rather than a raw `Path.write_bytes`/un-prefixed subprocess call.
 _UPDATE_CA_AVAILABLE = (
-    shutil.which("update-ca-certificates") is not None and shutil.which("openssl") is not None
+    shutil.which("update-ca-certificates") is not None
+    and shutil.which("openssl") is not None
+    and shutil.which("sudo") is not None
+    and subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0
 )
 
 
@@ -212,15 +220,17 @@ def _generate_trusted_server_cert() -> tuple[Path, Path]:
         ]
     )
 
-    _CA_TRUST_TARGET.write_bytes(ca_crt.read_bytes())
-    subprocess.run(["update-ca-certificates"], check=True, capture_output=True)
+    subprocess.run(
+        ["sudo", "cp", str(ca_crt), str(_CA_TRUST_TARGET)], check=True, capture_output=True
+    )
+    subprocess.run(["sudo", "update-ca-certificates"], check=True, capture_output=True)
     atexit.register(_remove_ca_trust)
     return leaf_crt, leaf_key
 
 
 def _remove_ca_trust() -> None:
-    _CA_TRUST_TARGET.unlink(missing_ok=True)
-    subprocess.run(["update-ca-certificates", "--fresh"], check=False, capture_output=True)
+    subprocess.run(["sudo", "rm", "-f", str(_CA_TRUST_TARGET)], check=False, capture_output=True)
+    subprocess.run(["sudo", "update-ca-certificates", "--fresh"], check=False, capture_output=True)
 
 
 def _generate_untrusted_server_cert() -> tuple[Path, Path]:
