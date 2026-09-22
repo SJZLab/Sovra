@@ -1,5 +1,101 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T12:45:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T14:10:00Z (scheduled relay shift) — implemented FTF-0500
+  (DatasetSourceConnection schema/API/RBAC), submitted PROVISIONAL, not
+  self-certified (Law 4).
+
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`.
+
+  STEP 1: recomputed the dependency-ready frontier fresh (joining
+  `docs/spec-matrix.yaml`'s live `certification_state` against
+  `docs/TASK_INDEX.md`'s real `Dependencies` column), not trusting the
+  prior relay shift's own note alone: the prior shift (2026-09-22T10:50:00Z)
+  found only `FTF-0408`/`FTF-0902` dependency-ready, both genuinely
+  blocked. Since then, a Control-plane certifier shift independently
+  certified all seven previously-PROVISIONAL items (`FTF-0202`/`FTF-1001`/
+  `FTF-1302`/`FTF-1401`/`FTF-1501`/`FTF-1702`/`FTF-R016`) — confirmed
+  genuinely merged to `main` (this session's own branch already matched
+  `main`'s tip at `8f33de0`, PR #193). That newly unblocked seven items:
+  `FTF-0304`, `FTF-0408`, `FTF-0500`, `FTF-0902`, `FTF-1503`, `FTF-1506`,
+  `FTF-H006`. `list_pull_requests` showed two open, unmerged candidate PRs
+  for `FTF-0304` (#194/#195) from other sessions — not picked, to avoid
+  duplicating real work already in flight. `FTF-0408`/`FTF-0902` re-
+  confirmed still genuinely blocked for the same disclosed reasons already
+  on record (direct `grep` re-confirmed no real `AgentManifest`/
+  `mandate_json` storage exists yet; this sandbox has no real CNI-enforcing
+  Kubernetes cluster). `FTF-0500` is the next-lowest task ID, genuinely
+  dependency-ready, unclaimed by any open PR — picked this shift.
+
+  STEP 2 (P): read `tools/r1_handoff.py packet FTF-0500` fresh, plus
+  `apps/api/app/projects/project_schema.py` (FTF-0401's composite-FK/
+  tenant-scoping pattern), `apps/api/app/litellm/connection_schema.py`/
+  `connection_crud.py`/`connection_routes.py` (FTF-0201's credential-
+  bearing-resource RBAC precedent), and `packages/litellm_client/
+  secret_manager_integration.py` (FTF-0202's real client) before writing
+  any code. Hypothesis: `allowed_purposes_json` IS this task's own
+  purpose-scoped grant (Section 6.8F), and a real `authorize_purpose_use`
+  check is the "authorization before import" primitive a later Dataset-
+  import task calls — not Section 67.4's full, later, separately
+  dependency-gated `DataUseGrant` workflow.
+
+  STEP 2 (E): implemented `apps/api/app/datasets/` (schema/CRUD/routes),
+  the real forward Alembic migration (`0010_dataset_source_connections`,
+  single linear head, confirmed via `alembic heads`), and froze
+  `packages/contracts/openapi/05-interface.yaml`/`packages/contracts/
+  jsonschema/05-domain.schema.json` as this task's own first real phase-05
+  contract-owner lock. Before submission, ran this task's own real backend
+  interaction directly against a real local OpenBao server (built from
+  source, the same pinned commit `e98dc184344fe84ee4e69965ac3f4217d5b6a45d`
+  FTF-0202's own CI job uses) and a real local PostgreSQL 16 cluster (Law
+  1) — a genuine defect was found and fixed this way, not merely
+  described: the original design used a dedicated `dataset-sources`
+  OpenBao mount, never auto-enabled by a fresh `-dev` server (only
+  `secret` is); every `store_secret_ref`/`resolve_secret_ref` call
+  against it silently 404'd, misclassified as `SecretNotFoundError`.
+  Fixed by reusing FTF-0202's own already-proven `secret` mount with a
+  `dataset-sources/` path prefix, re-verified clean against the same real
+  server afterward. 27 no-DB test functions (`tests/tasks/test_ftf_0500.py`)
+  plus a real Postgres + real OpenBao integration proof
+  (`tests/integration/test_ftf_0500_dataset_source_connection.py`, new CI
+  job `dataset-source-connection-integration`) reproduce both
+  negative_acceptance clauses — "Source allowed only evaluation cannot be
+  trained" and "grant revocation propagates to future derivative use" —
+  against real live database rows.
+
+  STEP 2 (V): `product_truth_check.py --fail-on-unwired`: `13/13` →
+  `14/14` (`build_dataset_source_connection_router`, this task's own real
+  live route, called for real from `apps/api/app/main.py` as the tenth
+  live product-runtime path). `scripts/validate_spec.py --strict` clean
+  after `git fetch --unshallow origin` (this sandbox's own pre-existing,
+  already-documented shallow-clone artifact — confirmed pre-existing via
+  a direct before/after check, not caused by this task). Full repo-wide
+  `ruff check .`/`ruff format --check .`/`mypy .` clean. Full
+  `tests/tasks/test_ftf_*.py` sweep run directly: every file passes
+  except the same three pre-existing sandbox gaps already on record
+  (`test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py` — a missing
+  `pnpm`/frontend-tooling install in this interactive sandbox, confirmed
+  identical via `git stash` before/after comparison, not a regression
+  this task introduced). `scripts/status.py` stays `43/300 certified · 13
+  product-true` (unchanged — FTF-0500 is PROVISIONAL, not yet CERTIFIED;
+  Law 2's stricter CERTIFIED-only product-true count does not move until
+  independently certified).
+
+  STEP 3: `docs/spec-matrix.yaml` FTF-0500 → PROVISIONAL/L1-PROVEN,
+  `evidence_hash` set to the contracts-freeze commit (this task's own
+  final implementation commit before this tracking-docs commit). PR
+  opened as `[relay] FTF-0500: DatasetSourceConnection schema/API/RBAC`
+  against `main`, appended to `docs/certifications/queue.md` for Control
+  plane review. QUEUE.md's own top entry and "## Provisional" section
+  updated to match.
+
+  STEP 4 stop condition: task implemented, evidence recorded, PR opened
+  PROVISIONAL — normal end-of-shift stopping point, not a blocker. Next
+  shift should recompute the frontier fresh rather than trusting this
+  note alone: once Control plane reviews/merges this PR, FTF-0500 flips
+  to CERTIFIED on `main`, which (per `docs/TASK_INDEX.md`) may newly
+  unblock any task whose own `Dependencies` column names it.
+
+Previously, Updated: 2026-09-22T12:45:00Z (scheduled Control-plane certifier shift,
   complete) — certified FTF-R016 (Measure selected coding-model/executor
   pilot cost and enforce budget tree), PR #172, L2-CERTIFIED by session
   `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding stale unmerged

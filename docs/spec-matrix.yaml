@@ -1727,16 +1727,79 @@ FTF-04A35:
   proving_symbol: ''
   proving_test: ''
 FTF-0500:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: DatasetSourceConnection schema/API/RBAC
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0401, FTF-0202,
-    FTF-H003
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: ce824dd17196680b0441d21288fbc62a3257f225
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0401, FTF-0202,
+    FTF-H003 (all CERTIFIED). Real forward Alembic migration (0010_dataset_source_connections)
+    adds the project-scoped DatasetSourceConnection table (Section 6.8F) with the same
+    FORCE-RLS/composite-tenant-FK discipline every prior migration in this chain applies, reusing
+    the already-real UNIQUE(organization_id, id) constraint on projects FTF-0404's own migration
+    added. This task's own acceptance clause 1 ("Create purpose-scoped source grants and
+    authorization before import") is read narrowly and made real: allowed_purposes_json IS the
+    purpose-scoped grant, declared once at creation from Section 6.8F's own closed purpose
+    vocabulary, and authorize_purpose_use/authorize_dataset_source_purpose is the real, callable
+    "authorization before import" check (also exposed as a live POST .../authorize route) a later
+    Dataset-import task (FTF-0501+, no Dataset entity exists anywhere in this repository yet) will
+    call -- the broader, later DataUseGrant (Section 67.4: approver workflow, retention, rights
+    evidence; not one of Section 6's own listed entities) is a materially larger, separately
+    dependency-gated concept this task does not build, disclosed rather than silently narrowed.
+    Both negative_acceptance clauses are enforced by construction: authorize_purpose_use denies
+    every purpose once connection_status != 'active' (revocation propagates to future derivative
+    use, proven against a real live database row in the new integration test, not only a pure
+    object) and denies any purpose not literally present in the connection's own
+    allowed_purposes_json (a source granted only held_out_evaluation genuinely cannot authorize
+    training). This is the first task with FTF-0202 as a certified dependency and is this
+    repository's first real caller of store_secret_ref: a credential/connection_config value
+    supplied at creation is written for real to a real OpenBao KV v2 path
+    (apps/api/app/datasets/dataset_source_connection_crud.py's own _store_credential_and_config)
+    before the row is ever inserted, and only the resulting openbao:// reference is ever persisted
+    or returned (_serialize never includes either secret_ref field, only has_credential/
+    has_connection_config booleans, Section 46). Real fault injection during this task's own
+    development (Law 1, disclosed rather than hidden) found and fixed a genuine defect before
+    submission: the original design used a dedicated "dataset-sources" OpenBao mount, which is
+    never auto-enabled by a fresh -dev server (only "secret" is) -- every store/resolve call would
+    have silently answered 404, misclassified as SecretNotFoundError; fixed by reusing FTF-0202's
+    own already-proven "secret" mount with a dataset-sources/ path prefix instead of inventing a
+    second, unprovisioned mount, then re-verified clean against a real local OpenBao server built
+    from the same pinned commit FTF-0202's own CI job uses. Role gating (Section 45's own literal
+    "ml_engineer: datasets/training" sentence, the only one naming a role for this class of work):
+    every operation, including reads, is gated to {ml_engineer, workspace_admin,
+    organization_admin} -- this credential-bearing resource does not open reads wider than writes,
+    matching FTF-0201's own LiteLLMConnection precedent for exactly this class of secret-bearing
+    row, rather than FTF-0401/FTF-0404's own wide-read convention for a non-secret-bearing
+    resource. 27 no-DB test functions (tests/tasks/test_ftf_0500.py): every field validator's own
+    closed-set/shape rule, DatasetSourceConnection.__init__ refusing bad input before any session,
+    apply_edits/apply_revoke's pure DB-free cores (refuses to edit a revoked connection; idempotent
+    revoke), authorize_purpose_use's own negative_acceptance in full at the pure-function level,
+    and a real, locally-hosted uvicorn server proving unauthenticated (401)/wrong-role (403)
+    denial never opens a session while ml_engineer reaches the session layer. Real Postgres + real
+    OpenBao integration evidence (tests/integration/test_ftf_0500_dataset_source_connection.py,
+    CI's new dataset-source-connection-integration job): two real organizations/projects seeded as
+    the migration-owner role, every request through the restricted sovra_app role (confirmed
+    distinct from the migration owner); real create with a real credential+connection_config,
+    independently resolved back from the real live OpenBao server at the exact path this task's
+    own code writes to (never merely asserted from this task's own claim); cross-org/cross-project
+    IDOR refused identically to missing (404); the real database's own unique-display-name
+    constraint and DELETE-grant-surface restriction (sovra_app cannot DELETE a row directly,
+    revoke is the only real transition); both negative_acceptance clauses reproduced against real
+    live database rows, not only pure objects; and a credential supplied with no secret-manager
+    backend configured refused (503) with zero rows created, never silently stored in plaintext.
+    Wired into apps/api/app/main.py as the tenth live product-runtime route --
+    build_dataset_source_connection_router is called for real from a live FastAPI app, so
+    proving_symbol is filled (product_truth_check.py --fail-on-unwired: 14/14, this task's own
+    increment). scripts/validate_spec.py --strict clean; full repo-wide ruff check/ruff format
+    --check/mypy clean; no regression to any other CERTIFIED task's own evidence (all other
+    tests/tasks/test_ftf_*.py unaffected, confirmed by direct sweep). Submitted PROVISIONAL, not
+    self-certified (Law 4) -- freezes packages/contracts/openapi/05-interface.yaml and
+    packages/contracts/jsonschema/05-domain.schema.json as this task's own first, real phase-05
+    contract-owner lock (shared_lock_required: contracts:05).
+  proof_state: L1-PROVEN
+  proving_symbol: build_dataset_source_connection_router
+  proving_test: tests/tasks/test_ftf_0500.py
 FTF-0500A:
   certification_state: NONE
   criticality: MUST
