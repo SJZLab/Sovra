@@ -4128,3 +4128,327 @@ reasons given above.
   updated. Certified: 33/300, Product-true: 10/10.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0403 — Budget policy
+- Criterion ID: FTF-0403
+- PR: https://github.com/SJZLab/Sovra/pull/163 (`claude/wizardly-fermat-zl5g8t` → `main`)
+- Merge commit: 4afab390b60028cccc489c439d8401252a2c1d8f
+- Implementation commit: 48eb4c6cb46fe2aca621d1c9fed8d3438ed7dce8
+- Validated-by: session https://claude.ai/code/session_01VV6XRzSwbobfnvyZfLfg6q
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #163)
+- Date: 2026-09-21
+- **Session-ID check:** all 3 commits on PR #163 carry `Claude-Session:
+  .../session_017jneh8CPxEPmfPrbC5PJrg`; this reviewing session's own ID
+  is `session_01VV6XRzSwbobfnvyZfLfg6q` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** all 17 GitHub
+  Actions check runs on the real final head (`6a59384e09326c8cecfd0e3dd78472376486b0df`,
+  run `35592841192`) `completed`/`success`, `gate` included. Pulled the
+  real `gate` job log directly (`get_job_logs`): `Product-truth: 11/11
+  product-true`, `Status: 33/300 certified · 10 product-true`
+  (status.py's own stricter CERTIFIED-only count, still 10 at CI time —
+  expected, since certification had not yet landed).
+- **Diff read directly:** `apps/api/app/budget/budget_policy_crud.py`,
+  `budget_policy_schema.py`, `budget_policy_routes.py`,
+  `apps/api/alembic/versions/0007_budget_policies.py`, `apps/api/app/main.py`.
+  Confirmed `reserve_budget_allocation`/`release_budget_allocation` are
+  each a single conditional SQL `UPDATE` (`WHERE reserved_amount +
+  :amount <= total_amount` / `WHERE reserved_amount - :amount >= 0`),
+  never read-then-write; confirmed the real `CHECK
+  (reserved_amount <= total_amount)`/`CHECK (reserved_amount >= 0)`/
+  `UNIQUE(project_id)` constraints in the migration as an independent
+  DB-level backstop; confirmed `app.main` live-wires
+  `build_budget_policy_router` by direct source read.
+- **Task contract re-pulled directly, not trusted from the producer's own
+  claim:** `python tools/r1_handoff.py packet FTF-0403 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — the committed
+  `docs/implementation/task-packets/FTF-0403.md` matched the tool's own
+  deterministic output byte-for-byte (the tool's own exclusive-create
+  check passed without raising "Refusing to overwrite different
+  content"). Acceptance clause 1 ("Persist decimal budget authorization,
+  cost currency, scopes and approval history") met by the real
+  `BudgetPolicy` table (`total_amount` a genuine `Numeric(18,4)`,
+  `currency`/`scopes_json` closed vocabularies) plus FTF-0104's own
+  already-CERTIFIED `audit_events` table carrying approval history.
+  negative_acceptance ("Negative/unknown rates and concurrent allocation
+  beyond available reservation cannot be accepted") proven both directly
+  (validation guards, dedicated tests) and by this review's own fault
+  injections below.
+- **Own reproduction, this sandbox** (`git worktree add` on the real
+  merged PR head, `uv sync --all-packages`, a freshly created local
+  PostgreSQL 16 database/role matching CI's own `sovra_migrate`/
+  `sovra_app` credentials): `tests/tasks/test_ftf_0403.py` — "all checks
+  passed"; `tests/integration/test_ftf_0403_budget_policy.py` against the
+  real database — "all checks passed", including the real concurrent-HTTP
+  reservation proof (two simultaneous over-budget reservations, exactly
+  one 200/one 409).
+- **Own fault injection, this session, distinct run from the producer's
+  own two, both reverted byte-identical and reconfirmed clean afterward:**
+  1. Disabled the reserve headroom guard (removed the
+     `reserved_amount + amount <= total_amount` WHERE clause) — 2 checks
+     failed for real: the over-headroom-refusal check and the central
+     concurrency negative_acceptance check (both reservations committed,
+     `sorted(statuses) != [200, 409]`); independently, the real DB
+     `CHECK (reserved_amount <= total_amount)` constraint itself raised
+     `IntegrityError` — a genuine second, independent backstop.
+  2. Disabled the "project already has a budget policy" guard in
+     `create_budget_policy` (`if False and project.budget_policy_id is
+     not None:`) — 1 check failed for real (duplicate-create-refusal
+     never returned 409), independently caught by the real DB
+     `UNIQUE(project_id)` constraint itself (`IntegrityError`).
+- **No regression, independently re-run:** `tests/tasks/
+  test_ftf_0401.py`/`test_ftf_0402.py`/`test_ftf_0404.py`/
+  `test_ftf_0405.py`/`test_ftf_0406.py`/`test_ftf_0407.py` — all six
+  "all checks passed".
+- **Static checks re-run clean, this session:** `ruff check .`/`ruff
+  format --check .` clean; `mypy .` (from `apps/api`) — 2 errors, both
+  the pre-existing, unrelated `authlib.jose` missing-stub gap in
+  `oidc_login.py`, confirmed identical on `main`. `scripts/
+  validate_spec.py --strict` clean after `git fetch --unshallow` (this
+  sandbox's own documented shallow-clone artifact). `scripts/
+  product_truth_check.py --fail-on-unwired` — own run, `11/11`
+  product-true, matching the real CI log exactly.
+- **CI gate-wiring fix confirmed live:** `tests/tasks/test_ftf_0406.py`/
+  `test_ftf_0407.py` steps present and `completed`/`success` in the real
+  `gate` job's own step list (steps 51/52) — the disclosed, opportunistic
+  CI gap-fix genuinely landed.
+- Dependencies FTF-0104/FTF-0401 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #163 (merge commit
+  `4afab390b60028cccc489c439d8401252a2c1d8f`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  (`scripts/task_claim.py`) to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-0403']`
+  updated. Certified: 34/300, Product-true: 11/11.
+
+**Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1701 — Reference agent specification
+- Criterion ID: FTF-1701
+- PR: https://github.com/SJZLab/Sovra/pull/165 (`claude/wizardly-fermat-k8uxnh` → `main`)
+- Merge commit: bbdf0c8278d39d1f3fa7ed87c11e240a109075a3
+- Implementation commit: 408ac045c623112b25397443f665794af6207621
+- Validated-by: session https://claude.ai/code/session_01HFJZbt5ECMgJbGqx6Yx7Tq
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #165)
+- Date: 2026-09-21
+- **Session-ID check:** both commits on PR #165 carry `Claude-Session:
+  .../session_01WvavBhWpFYv4MAW3yytpgt`; this reviewing session's own ID
+  is `session_01HFJZbt5ECMgJbGqx6Yx7Tq` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** subscribed while
+  `docker-local-stack-integration` and `gate` were still `in_progress`;
+  polled `get_check_runs` to completion — all 17 GitHub Actions check
+  runs on the real final head (`f3d06e5e5fb581b243cbd511a91d45368a632ba4`,
+  run `35603489043`) `completed`/`success`, `gate` included. Confirmed
+  the new `FTF-1701 negative-test proof (Reference agent specification
+  catches real defects, no DB required)` step (`uv run python3
+  tests/reference/test_ftf_1701.py`) is genuinely present in
+  `.github/workflows/ci.yml`, immediately after the FTF-0403 step.
+- **Diff read directly:** `evals/reference/reference_agent_specification.py`
+  (652 lines), `tests/reference/test_ftf_1701.py` (687 lines),
+  `packages/contracts/openapi/17-interface.yaml`,
+  `packages/contracts/jsonschema/17-domain.schema.json`. Confirmed the
+  five `ReferenceToolSpec` rows (`search_records`, `get_record`,
+  `create_note`, `request_approval`, `execute_approved_action`) construct
+  real `app.tools.tool_definition_schema.ToolDefinition` instances;
+  confirmed `_authorized_record` enforces both tenant and owner-subject
+  scoping; confirmed `decide_approval`/`revoke_approval` are the only
+  methods that can move an `ApprovalRequest` into
+  `approved`/`denied`/`revoked`, and are not present in
+  `_SPEC_BY_NAME`/`REFERENCE_TOOL_SPECS`, so `dispatch_tool_call` cannot
+  reach them; confirmed `dispatch_tool_call` calls
+  `validate_instance` against both `input_schema_json` and
+  `output_schema_json` around the handler invocation; confirmed
+  `17-interface.yaml` declares `paths: {}`.
+- **Task contract re-pulled directly, not trusted from the producer's own
+  claim:** `python tools/r1_handoff.py packet FTF-1701 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` into a fresh scratch directory — the
+  committed `docs/implementation/task-packets/FTF-1701.md` matched the
+  tool's own deterministic output byte-for-byte. Acceptance clause 1
+  ("Freeze the minimum shared phase interface and domain schemas at the
+  declared owner paths, with schema/client validation and no placeholder
+  endpoints. Then: Specify bounded actual reference agent with approved
+  tools, deterministic business state and explicit risk/language
+  profile") met by the frozen `17-interface.yaml`/`17-domain.schema.json`
+  files (zero paths, real schema/client validation exercised in the test
+  suite) plus the real `ReferenceAgentProfile`/`ReferenceBusinessServer`.
+  negative_acceptance ("Reference success cannot claim every arbitrary
+  customer agent is production-qualified") met by construction:
+  `qualifies_this_reference_workload_only` is always `True` with no
+  constructor path to set it `False`. `files:` (all four listed:
+  `evals/reference/reference_agent_specification.py`,
+  `tests/reference/test_ftf_1701.py`,
+  `packages/contracts/openapi/17-interface.yaml`,
+  `packages/contracts/jsonschema/17-domain.schema.json`) and
+  `dependencies:` (FTF-0407, FTF-0405) both confirmed exact matches;
+  both dependencies confirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in
+  `docs/spec-matrix.yaml`. `shared_lock_required: contracts:17` confirmed
+  as the first and only claim on contract slot 17 (grepped the full
+  `docs/spec-matrix.yaml` for `contracts:17` — only this task's own note
+  matches).
+- **Own reproduction, this sandbox** (`uv sync --all-packages`, `pnpm
+  install`, `git fetch --unshallow`): `tests/reference/test_ftf_1701.py`
+  — "all checks passed" (24/24 no-DB checks).
+- **Own fault injection, this session, distinct from the producer's own
+  two, both reverted byte-identical and reconfirmed clean afterward:**
+  1. Reproduced the producer's own vector (disabled
+     `record.owner_subject_id != subject_id` in `_authorized_record`) —
+     failed with exactly `FAIL [FTF-1701] cross-subject (IDOR) get_record
+     within the same tenant is refused`, matching the producer's own
+     claim exactly.
+  2. A second, independent vector the producer did not claim: disabled
+     the requester-only guard in `execute_approved_action`
+     (`if False and approval.requested_by_subject_id != subject_id:`) —
+     failed with exactly `FAIL [FTF-1701] only the original requester may
+     execute their own approved action` — confirming the suite catches a
+     real authorization bug beyond the two the producer itself exercised.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep (30 files) — all "all checks passed" or
+  equivalent, after `pnpm install` resolved transient
+  node_modules-missing failures in FTF-0002/FTF-0003/FTF-H001 (confirmed
+  sandbox artifacts of this fresh checkout, not real regressions —
+  passed clean once `node_modules` existed). `ruff check .`/`ruff format
+  --check .`/`mypy .` clean repo-wide (137 source files). `pnpm run
+  lint`/`typecheck`/`format:check` clean.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` — 17 `stale_commit` defects present before
+  `git fetch --unshallow` (this sandbox's own documented shallow-clone
+  artifact, the same finding recorded against prior certifications),
+  clean after. `scripts/product_truth_check.py --fail-on-unwired` — own
+  run, `11/11` product-true, unchanged; `proving_symbol` confirmed
+  deliberately empty in `docs/spec-matrix.yaml`, so 0/0 (no new
+  proving_symbol added) is accepted as legitimate, not an unproven claim
+  — this task owns no live HTTP route, matching the FTF-1401/FTF-1601
+  precedent. `scripts/status.py` — own run, `34/300 certified` before
+  this entry's own update (matches the producer's own pre-certification
+  claim).
+- Dependencies FTF-0407/FTF-0405 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #165 (merge commit
+  `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  (`scripts/task_claim.py`) to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-1701']`
+  updated. Certified: 35/300, Product-true: 11/11.
+
+**Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1301 — CostProfile schema/UI
+- Criterion ID: FTF-1301
+- PR: https://github.com/SJZLab/Sovra/pull/168 (`claude/wizardly-fermat-togs1a` → `main`)
+- Merge commit: 9a47458118ee46095270f4aa9758b5ec35efeea5
+- Implementation commit: 61995ac572eb732392e698f53565a5fec3bf5064
+- Validated-by: session https://claude.ai/code/session_01GWAaJpcZSaNqKJ9zmk2CDz
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #168)
+- Date: 2026-09-21
+- **Session-ID check:** both commits on PR #168 carry `Claude-Session:
+  .../session_0175jrFsfGmpVqpjJFqPTiAE`; this reviewing session's own ID
+  is `session_01GWAaJpcZSaNqKJ9zmk2CDz` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** the webhook fired at
+  PR-open time, before CI had completed (`gate` still `queued`); polled
+  `get_check_runs` to completion rather than trusting a self-report — all
+  18 GitHub Actions check runs on the real head
+  (`cadb3202103ab3c56811af722406bfb1bac38eeb`, run `35631327707`)
+  `completed`/`success`, `gate` and the new `cost-profile-integration` job
+  both included. The PR was still open/unmerged at review time (relay had
+  not yet merged its own green PROVISIONAL submission) — merged it
+  directly at the confirmed green head (`expectedHeadSha` pinned to
+  `cadb3202...`) before certifying, matching CLAUDE.md's pre-authorized
+  "merge on green + L1 doc (PROVISIONAL)" action; merging is a distinct
+  step from certifying and does not substitute for the independent review
+  below.
+- **Diff read directly:** `apps/api/app/costs/cost_profile_schema.py`,
+  `apps/api/app/costs/cost_profile_crud.py`,
+  `apps/api/app/costs/cost_profile_routes.py`,
+  `apps/api/alembic/versions/0008_cost_profiles.py`,
+  `apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx`,
+  `packages/contracts/{openapi,jsonschema}/13-*`. Confirmed
+  `is_certifiable_cheapest`'s three disqualifying conditions (`expired`,
+  `unverified`, `zero_provider_rate_unconfirmed`) match the negative_
+  acceptance clause exactly, including that a verified, unexpired
+  `local_hardware` zero rate is NOT disqualified (the rule is
+  provider-specific, not a blanket zero refusal); confirmed
+  `validate_rate_amount` refuses negative amounts at the application
+  layer; confirmed the migration FORCEs row-level security scoped to
+  `app.current_organization_id`, grants `sovra_app` SELECT/INSERT/UPDATE
+  only (no DELETE), and adds a real `CHECK(rate_amount >= 0)` constraint;
+  confirmed `cost_profile_routes.py`'s `COST_PROFILE_ROLES` gates every
+  route including reads and search to `organization_admin` alone, matching
+  Section 45's literal role table (`FINE_TUNING_FACTORY_RELEASE_1.md:2551`
+  — "organization_admin: connections, security profiles, cost profiles");
+  confirmed `app.main` includes `build_cost_profile_router` for real.
+- **Task contract re-pulled directly, not trusted from the producer's own
+  claim:** `python tools/r1_handoff.py packet FTF-1301 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — the committed
+  `docs/implementation/task-packets/FTF-1301.md` matched. Acceptance
+  clause 1 ("Record dated provider/local hardware TCO rates/currency/
+  source and display unknowns honestly") and negative_acceptance ("Token
+  price zero is not local compute free; unverified/expired rate cannot
+  certify cheapest") confirmed met by the code above; `files:`,
+  `dependencies:` (FTF-0401, FTF-0403, FTF-0103, all three confirmed
+  genuinely `CERTIFIED`), and `shared_lock_required: contracts:13`
+  (confirmed the first and only claim on contract slot 13, grepped the
+  full `docs/spec-matrix.yaml`) all confirmed.
+- **Own reproduction, this sandbox** (`uv sync --all-packages`, `pnpm
+  install`, `git fetch --unshallow`, a real directly-installed PostgreSQL
+  16 cluster — no container-registry egress in this sandbox, same finding
+  as every prior integration-tested task — migrated by the integration
+  script itself via `SOVRA_DATABASE_URL`/`SOVRA_APP_DB_PASSWORD`):
+  `tests/tasks/test_ftf_1301.py` — "all checks passed"; `tests/
+  integration/test_ftf_1301_cost_profile.py` against the live database —
+  "all checks passed".
+- **Own fault injection, this session, reproducing both of the producer's
+  own vectors, both reverted byte-identical (`diff` against the
+  pre-injection copy confirmed empty) and the suites re-confirmed clean
+  afterward:**
+  1. Disabled the zero-provider-rate disqualification in
+     `is_certifiable_cheapest` (`if False and profile.profile_type ==
+     "provider" and ...`) — `tests/tasks/test_ftf_1301.py` failed with
+     exactly `FAIL [FTF-1301] negative_acceptance: 'token price zero is
+     not local compute free' -- a verified, unexpired provider rate of
+     exactly zero still cannot certify cheapest`, exit code 1.
+  2. Disabled the negative-rate application-layer guard in
+     `validate_rate_amount` (`if False and value < 0:`) against the real
+     live database — `tests/integration/test_ftf_1301_cost_profile.py`
+     failed with exactly `FAIL [FTF-1301] a negative rate is refused
+     (400)`; the raw INSERT reached the database and was independently
+     refused a second time by the real `CHECK(rate_amount >= 0)`
+     constraint (`sqlalchemy.exc.IntegrityError:
+     ck_cost_profiles_rate_amount_non_negative`), confirming the
+     defense-in-depth claim is real, not asserted.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep — all "all checks passed" or equivalent, after
+  `pnpm install` resolved a pre-existing, undocumented frontend-dependency
+  gap in this sandbox affecting FTF-0002/FTF-0003/FTF-H001 (confirmed a
+  sandbox artifact — all three passed clean once `node_modules` existed,
+  not a real regression). `ruff check .`/`ruff format --check .` clean
+  repo-wide. `mypy .` (from `apps/api`) — 2 errors, both the pre-existing,
+  unrelated `authlib.jose` missing-stub gap in `oidc_login.py`, confirmed
+  identical on `main`. `pnpm run lint`/`typecheck`/`format:check` clean.
+  `pnpm run test` (vitest) — 19/19 passed across all 5 spec files, no
+  regression to FTF-0401's own suite.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` — 18 `stale_commit` defects present before
+  `git fetch --unshallow` (this sandbox's own documented shallow-clone
+  artifact, the same finding recorded against prior certifications),
+  clean after. `scripts/product_truth_check.py --fail-on-unwired` — own
+  run, `12/12` product-true; `is_certifiable_cheapest` confirmed a
+  genuine, non-test live caller in `cost_profile_crud.py`'s own
+  `search_cost_profiles` (grepped for non-test callers directly — not
+  0/0, not inflation). `scripts/status.py` — own run, `35/300 certified`
+  before this entry's own update (matches the producer's own
+  pre-certification claim).
+- Dependencies FTF-0401/FTF-0403/FTF-0103 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #168 (merge commit
+  `9a47458118ee46095270f4aa9758b5ec35efeea5`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
+
+**Conclusion:** Certified L2-CERTIFIED.

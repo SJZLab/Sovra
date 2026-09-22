@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 17 Interface (Reference agent specification)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas for the reference agent specification
+    (Section 22/54-55/65-66/68-69, FTF-1701). `paths` is deliberately empty:
+    this task's own `api_contract` is "Reference target container/HTTP
+    protocol and standard Factory APIs only" -- there is no new live FastAPI
+    route for this task, the same disclosed scope limit FTF-1401/FTF-1501/
+    FTF-1601 already established for a measurement/specification tool that
+    is not itself a served product route. Whichever later task (FTF-1702
+    "Tool environment" and beyond) first wires a real live route for the
+    reference workload adds its own path item here, backed by a genuine
+    handler, under this same contract-owner lock (shared_lock_required:
+    contracts:17).
+paths: {}
+components:
+  schemas:
+    ReferenceToolSpec:
+      type: object
+      description: >-
+        One of the five reference tools' own frozen definition
+        (evals/reference/reference_agent_specification.py). Every real
+        instance also passes FTF-0404/FTF-0406/FTF-0407's own construction
+        guards for real, not merely matches this shape.
+      properties:
+        name:
+          type: string
+          enum:
+            - search_records
+            - get_record
+            - create_note
+            - request_approval
+            - execute_approved_action
+        description:
+          type: string
+          minLength: 1
+        side_effect_class:
+          type: string
+          enum: [read_only, reversible_write, irreversible_write, financial, privileged]
+        requires_confirmation:
+          type: boolean
+        is_critical:
+          type: boolean
+      required: [name, description, side_effect_class, requires_confirmation, is_critical]
+      additionalProperties: false
+    ReferenceAgentProfile:
+      type: object
+      description: >-
+        This task's own "explicit risk/language profile" acceptance clause,
+        made real -- derived from the five real ReferenceToolSpec rows, never
+        a separately hand-maintained claim.
+      properties:
+        agent_name:
+          type: string
+          minLength: 1
+        supported_languages:
+          type: array
+          items:
+            type: string
+        critical_tool_names:
+          type: array
+          items:
+            type: string
+        max_side_effect_class:
+          type: string
+          enum: [read_only, reversible_write, irreversible_write, financial, privileged]
+        qualifies_this_reference_workload_only:
+          type: boolean
+          const: true
+          description: >-
+            negative_acceptance: reference success cannot claim every
+            arbitrary customer agent is production-qualified. Always true.
+      required:
+        - agent_name
+        - supported_languages
+        - critical_tool_names
+        - max_side_effect_class
+        - qualifies_this_reference_workload_only
+      additionalProperties: false
+    RecordSummary:
+      type: object
+      properties:
+        record_id:
+          type: string
+          minLength: 1
+        title:
+          type: string
+      required: [record_id, title]
+      additionalProperties: false
+    ApprovalRequestRecord:
+      type: object
+      description: >-
+        The deterministic independent server's own approval ledger row --
+        `status` can only move via `decide_approval`/`revoke_approval`,
+        never via the `execute_approved_action` tool a model-driven agent
+        can call.
+      properties:
+        approval_id:
+          type: string
+          minLength: 1
+        record_id:
+          type: string
+          minLength: 1
+        action:
+          type: string
+          enum: [archive_record, escalate_record]
+        status:
+          type: string
+          enum: [pending, approved, denied, revoked, executed]
+        requested_by_subject_id:
+          type: string
+          minLength: 1
+      required: [approval_id, record_id, action, status, requested_by_subject_id]
+      additionalProperties: false

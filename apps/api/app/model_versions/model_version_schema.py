@@ -23,7 +23,7 @@ literal rule, applied here even more strongly than FTF-0301/FTF-0404's
 own "immutable once ready"/"immutable once superseded" rules): there is
 no edit path anywhere in this module or `model_version_crud.py` at all,
 and the migration's own database grant (see
-`apps/api/alembic/versions/0007_model_versions.py`) is SELECT/INSERT
+`apps/api/alembic/versions/0009_model_versions.py`) is SELECT/INSERT
 only -- never UPDATE, unlike every prior versioned resource in this
 chain. A new import is always a new row; nothing about an existing row
 ever changes after creation.
@@ -75,7 +75,7 @@ truth already exists" discipline Section 65.1 established for license-
 acceptance attribution (`artifact_crud.py`'s own `ActorInfo.actor_id`).
 
 Real forward Alembic migration
-(`apps/api/alembic/versions/0007_model_versions.py`) FORCEs row-level
+(`apps/api/alembic/versions/0009_model_versions.py`) FORCEs row-level
 security on `model_versions` scoped to the same
 `app.current_organization_id` tenant context every prior migration in
 this chain already established, and adds two real composite foreign keys

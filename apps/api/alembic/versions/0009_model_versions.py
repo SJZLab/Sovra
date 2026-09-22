@@ -25,9 +25,18 @@ enforcement of this task's own negative_acceptance structural half (see
 `app/model_versions/model_version_schema.py`'s own docstring) -- never
 only an application-level check a bypassing write could evade.
 
-Revision ID: 0007_model_versions
-Revises: 0006_tool_definitions
+Revision ID: 0009_model_versions
+Revises: 0008_cost_profiles
 Create Date: 2026-09-21
+
+Renumbered from the original `0007_model_versions` (this task's own
+first submission, PR #160) to `0009_model_versions` while resolving a
+real merge conflict on `main`: two other tasks (FTF-0403 "Budget policy"
+and FTF-1301 "CostProfile") were independently merged in the meantime and
+together occupy `0007_budget_policies`/`0008_cost_profiles`, leaving two
+genuine Alembic heads (`0007_model_versions` and `0008_cost_profiles`)
+had this file kept its original number -- confirmed directly via `alembic
+heads` before renumbering. No other content changed.
 """
 
 from __future__ import annotations
@@ -37,8 +46,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0007_model_versions"
-down_revision = "0006_tool_definitions"
+revision = "0009_model_versions"
+down_revision = "0008_cost_profiles"
 branch_labels = None
 depends_on = None
 
