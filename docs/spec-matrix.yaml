@@ -1727,10 +1727,10 @@ FTF-04A35:
   proving_symbol: ''
   proving_test: ''
 FTF-0500:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: DatasetSourceConnection schema/API/RBAC
-  evidence_hash: ce824dd17196680b0441d21288fbc62a3257f225
+  evidence_hash: 07b831d44d3c5a5875c5a63b40382c687455d1de
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0401, FTF-0202,
@@ -1797,7 +1797,7 @@ FTF-0500:
     self-certified (Law 4) -- freezes packages/contracts/openapi/05-interface.yaml and
     packages/contracts/jsonschema/05-domain.schema.json as this task's own first, real phase-05
     contract-owner lock (shared_lock_required: contracts:05).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_dataset_source_connection_router
   proving_test: tests/tasks/test_ftf_0500.py
 FTF-0500A:

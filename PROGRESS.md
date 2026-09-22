@@ -12073,3 +12073,130 @@ all real, open, and unreviewed — out of scope for this shift, whose job
 was `docs/certifications/queue.md` review only); (3) resolve PR #162's
 own FTF-0202 claim one way or the other. FTF-0202 remains the single
 highest-leverage owner ask still open.
+
+## 2026-09-22 — Control plane: FTF-0500 (PR#196) independently reviewed, CERTIFIED
+Scheduled Control-plane certifier session, triggered by PR #197's own
+`pull_request.opened` webhook (FTF-H006, this same shift's producer PR).
+Per the standing OPERATE→CERTIFY procedure, checked
+`docs/certifications/queue.md` for anything PROVISIONAL and not yet
+certified before touching the triggering PR itself: two items were
+pending — FTF-0500 (PR #196, already merged to `main`) and FTF-H006
+(PR #197, the triggering PR itself, still open). This entry covers only
+FTF-0500; FTF-H006 is addressed separately (see below).
+
+**Session-ID check:** PR #196's three commits (`3e2253c`, `ec6a3e7`,
+`ce824dd`, `d016f75`) all carry `Claude-Session:
+.../session_013G1NHePkjpX2VLPJb57on2`; this reviewing session's own ID is
+`session_0179fcCZuwbpcEh8NMQVj997` — no overlap, independent per Law 4.
+
+**Merge genuinely confirmed:** `pull_request_read` on PR #196 —
+`state: closed`, `merged: true`, `merged_by: samerzakaria` (the human
+owner), merge commit `07b831d44d3c5a5875c5a63b40382c687455d1de`, which is
+also PR #197's own stated base — confirms #196 landed on `main` before
+this shift's producer PR branched.
+
+**CI re-confirmed on the real pre-merge head, not a stale ref:**
+`get_check_runs` on PR #196's head
+(`d016f751511073d41f63e1f52ffbd3a8cc214e76`, run 35760776024) — 24/24
+jobs `success`, including the required `gate` job and the new
+`dataset-source-connection-integration` job this task itself added; job
+timestamps fall between PR creation and merge.
+
+**Diff read directly** (`git diff 8f33de0..d016f75`): new
+`apps/api/app/datasets/dataset_source_connection_{schema,crud,routes}.py`,
+a real forward Alembic migration (`0010_dataset_source_connections.py`)
+confirmed by direct grep to carry `ALTER TABLE ... ENABLE ROW LEVEL
+SECURITY`, `... FORCE ROW LEVEL SECURITY`, and a real `CREATE POLICY
+tenant_isolation` scoped to `app.current_organization_id` — the same
+discipline every prior migration in this chain applies; the phase-05
+contract freeze (`packages/contracts/openapi/05-interface.yaml`,
+`packages/contracts/jsonschema/05-domain.schema.json`, both new files);
+CI job wiring in `.github/workflows/ci.yml`.
+
+**Own reproduction, fresh git worktree at the real merged head:**
+`uv sync --all-packages` then `uv run pytest tests/tasks/test_ftf_0500.py
+-q` — 22/22 passed. Noted a real quirk in how this suite is built: it
+uses a module-level `FAILURES` list and a `check()` helper that only
+*appends* to it (never raises), with the actual pass/fail signal produced
+by the file's own `main()` (`sys.exit(1)` if `FAILURES`) — and CI itself
+invokes it as `uv run python3 tests/tasks/test_ftf_0500.py`, not via
+`pytest`. Under plain `pytest`, every `test_*` function reports as
+"passed" even if a `check()` call inside it silently recorded a failure.
+Re-ran it CI's own way both before and after the fault injection below to
+get a trustworthy signal, rather than trusting the (misleadingly green)
+`pytest` run alone.
+
+**Own fault injection (Law 1), a vector distinct from the producer's own
+two (a tuple-order bug in `outbound_guard.py` and an OpenBao
+mount-provisioning gap, neither in this module):** disabled the
+`connection_status != "active"` denial branch in `authorize_purpose_use`
+(`apps/api/app/datasets/dataset_source_connection_crud.py`) — the half of
+the negative_acceptance clause covering "grant revocation propagates to
+future derivative use." Re-ran `uv run python3
+tests/tasks/test_ftf_0500.py` (CI's own invocation) — exit code 1, "2
+failed", naming exactly the two broken checks ("once revoked, a
+PREVIOUSLY granted purpose (training) is now denied", "once revoked,
+every other declared purpose is denied too"). Reverted from a pre-edit
+backup copy, confirmed `diff` empty (byte-identical), re-ran — "all
+checks passed", exit 0.
+
+**`product_truth_check.py --fail-on-unwired`** — own run on the real
+merged tip, `14/14`; `proving_symbol: build_dataset_source_connection_router`
+confirmed a real, non-test live caller wired into `apps/api/app/main.py`
+(grepped directly), matching the task's own claimed `13/13` → `14/14`
+delta, not inflation.
+
+**Task contract re-pulled** via `tools/r1_handoff.py packet FTF-0500
+--plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses
+("Freeze the minimum shared phase interface and domain schemas at the
+declared owner paths... Create purpose-scoped source grants and
+authorization before import; link every dataset to approved source") and
+the full negative_acceptance ("Source allowed only evaluation cannot be
+trained; grant revocation propagates to future derivative use") confirmed
+genuinely met by the diff and this session's own fault injection above —
+not merely "tests pass". `contract_owner: FTF-0500` confirmed real: both
+frozen contract files did not exist before this task.
+
+Dependencies FTF-0401/FTF-0202/FTF-H003 confirmed genuinely `CERTIFIED`
+in `docs/spec-matrix.yaml` before relying on them. `ruff check` on the
+touched files clean. `scripts/validate_spec.py --strict` clean after
+`git fetch --unshallow origin` (this sandbox's own pre-existing
+shallow-clone artifact, not caused by this task).
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`07b831d44d3c5a5875c5a63b40382c687455d1de`). Ran
+`scripts.task_claim.sync_certified_status()` to write the real status
+into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+`['FTF-0500']` updated. `scripts/status.py`: `43/300` certified before,
+`44/300` after; "Product-true" rises from `13` to `14`, matching
+`product_truth_check.py`'s own `14/14`. QUEUE.md/`docs/certifications/
+ledger.md`/`docs/certifications/queue.md` all updated. This
+certification's own doc updates are pushed on a branch and opened as a PR
+against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
+
+**Conclusion:** Certified L2-CERTIFIED. Full entry: `docs/certifications/ledger.md`.
+
+**FTF-H006 (PR #197, this shift's own triggering/producer PR):** left
+PROVISIONAL, not certified in this entry. At review time, `get_check_runs`
+on PR #197's real head (`0e1054c919d1d123b14745de424e5d217ba4f106`, run
+35771884617) showed 18/24 jobs `success` and 6 still `in_progress`
+(including the required `gate` job, which itself completed `success`
+partway through but two integration jobs — `secret-manager-integration`,
+`dataset-source-connection-integration` — had not yet concluded). Per the
+CERTIFY procedure, a PR whose CI has not genuinely finished cannot be
+certified from a self-reported or partial signal; deferred to a follow-up
+review once CI concludes on the real head commit. Session-ID already
+checked as non-overlapping with this reviewer (PR #197's commits carry
+`session_019ApmY6ESBah3nPdBDYq1XL`).
+
+## Next shift
+Follow up on PR #197 (FTF-H006) once its CI run
+(35771884617) concludes — if all 24 jobs are genuinely `success` on the
+real head commit, complete the CERTIFY procedure (own reproduction, own
+fault injection distinct from the producer's own two, `product_truth_check`
+re-run, task contract re-pull) before setting CERTIFIED. FTF-0500 reaching
+CERTIFIED newly unblocks nothing further on its own (its own dependents —
+FTF-0500A/B/C/D, FTF-0501, FTF-0506 per `docs/TASK_INDEX.md` — still need
+their own separate dependency chains satisfied first).
