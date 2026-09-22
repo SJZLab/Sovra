@@ -12364,3 +12364,144 @@ re-run, task contract re-pull) before setting CERTIFIED. FTF-0500 reaching
 CERTIFIED newly unblocks nothing further on its own (its own dependents —
 FTF-0500A/B/C/D, FTF-0501, FTF-0506 per `docs/TASK_INDEX.md` — still need
 their own separate dependency chains satisfied first).
+
+## 2026-09-22 — Control plane: FTF-H006 (PR#197) independently reviewed, CERTIFIED
+Follow-up to the FTF-0500 entry above, same scheduled certifier shift,
+same reviewing session (`session_0179fcCZuwbpcEh8NMQVj997`). PR #197's
+CI had not finished when this shift's `pull_request.opened` webhook
+first fired; used the wait to independently certify FTF-0500 (PR #196,
+the other PROVISIONAL item already in the queue) instead of idling.
+
+**Session-ID check:** PR #197's three original commits all carry
+`Claude-Session: .../session_019ApmY6ESBah3nPdBDYq1XL`; this reviewing
+session's own ID is `session_0179fcCZuwbpcEh8NMQVj997` — no overlap,
+independent per Law 4.
+
+**CI re-checked once finished — a real merge conflict found and
+resolved, not worked around:** by the time PR #197's CI genuinely
+completed (24/24 on its original head), FTF-0500's own certification PR
+(#198) had already merged to `main`. A `merge_pull_request` call against
+PR #197 failed for real with `405 ... merge conflicts` — both shifts'
+tracking-doc commits touched `QUEUE.md`/`docs/certifications/queue.md`.
+Resolved directly per the standing PR-driving rules (merge the base
+branch into the PR head, never rewrite another session's commits):
+checked out PR #197's head, merged `origin/main` in, resolved both
+conflicts by keeping both sides' content in full — the producer's own
+FTF-H006 PROVISIONAL submission narrative, unmodified, followed by this
+session's own FTF-0500 certification entry, nothing dropped from either
+side. Re-ran `scripts/status.py` (44/300, clean), `product_truth_check.py
+--fail-on-unwired` (14/14), `scripts/validate_spec.py --strict` (clean),
+and the `CLAUDE.md.sha256` check (matched) on the merged result before
+pushing. Pushed the real merge commit
+(`ea1862687e026d9c7855b3489487b9b0cdce24fc`) to PR #197's own branch —
+a merge, not a force-push or rebase. `get_check_runs` on this new,
+genuinely real head (run 35773705816) — 24/24 `success`, including
+`gate` and the two slower integration jobs
+(`dataset-source-connection-integration`, `secret-manager-integration`)
+that were still running at the very first check. Merged PR #197
+(`99e3d3d0be60d7f5491e99965809a29c62efb4ce`).
+
+**Diff read directly** (`git diff 07b831d..0e1054c`): new
+`packages/security/url_policy.py` (pure policy — scheme/userinfo/port
+shape, resolved-address validation with an explicit private-destination
+allowlist, unconditional cloud-metadata denial checked *before* the
+general private/link-local rule, alternate-IP-literal-encoding
+normalization covering bare-integer/octal/hex-dotted/legacy inet_aton
+forms) and `packages/security/outbound_guard.py` (`guarded_fetch` —
+real `socket.getaddrinfo` resolution, every returned address validated,
+connection pinned to the exact validated address via
+`_PinnedHTTPConnection`/`_PinnedHTTPSConnection` custom `http.client`
+subclasses, TLS still validated against the real hostname; redirects not
+followed unless the policy opts in, then fully revalidated and redialed
+from scratch, bounded by `max_redirects`). No new runtime dependency —
+stdlib `socket`/`ssl`/`http.client`/`ipaddress` only.
+
+**Own reproduction, fresh git worktree at the real merged head:**
+`uv run python3 tests/tasks/test_ftf_h006.py` — "all checks passed" (run
+CI's own way, a script-style suite like FTF-0500's own).
+
+**Own fault injection (Law 1), a vector distinct from the producer's own
+two (a tuple-order bug in `resolve_and_validate`'s return value; a
+DNS-rebinding-proof test mock that needed to leave an unrelated internal
+call untouched):** disabled the cloud-metadata identity check in
+`validate_resolved_address` (`if is_cloud_metadata_address(ip) or
+hostname.lower() in _CLOUD_METADATA_HOSTNAMES:` → `if False:`). The
+suite's own embedded fault-injection self-test
+(`test_fault_injection_removing_the_metadata_check_is_caught`) failed
+for real (a source-text assertion, exit 1). To confirm this was a
+genuine, exploitable defect and not merely a text-match artifact,
+independently exercised the runtime behavior directly: with the check
+disabled, calling `validate_resolved_address` on `169.254.169.254`
+under a policy whose `explicit_private_allowlist` covers
+`169.254.0.0/16` — the exact scenario this task's own negative_acceptance
+clause names ("a blanket private-address rejection cannot break intended
+internal LiteLLM/storage while metadata remains denied") — genuinely
+returned without raising: a real SSRF-to-cloud-credentials exposure, not
+a hypothetical one. Reverted from a pre-edit backup, `diff` confirmed
+byte-identical, re-ran the same call — correctly denied; full suite
+re-confirmed "all checks passed".
+
+**DNS-rebinding proof read directly**
+(`test_dns_resolved_once_and_connection_pinned_to_that_address`): a real
+local `ThreadingHTTPServer`, a mocked `socket.getaddrinfo` that answers a
+safe address on the first call and a disallowed one on any second call
+for the hostname under test (every other host, including the real
+internal literal-IP lookup `create_connection` performs internally,
+passed straight through to the real resolver), and a spying
+`socket.create_connection` — confirms `getaddrinfo` is consulted exactly
+once and the real socket connects only to the first, already-validated
+address.
+
+**`product_truth_check.py --fail-on-unwired`** — own run on the real
+merged tip, `14/14`, unchanged; `proving_symbol: ''` confirmed
+legitimate: this task builds the shared guard library itself, not a live
+route — `apps/api/app/litellm/connection_schema.py`'s own
+`validate_base_url` docstring states "this module never dials the URL --
+that is FTF-0203's job", and no live FastAPI route calls `guarded_fetch`
+yet (confirmed by direct grep), the same disclosed "no live caller yet"
+class already accepted for FTF-0202/FTF-R016 and others before their own
+first live caller existed.
+
+**Task contract re-pulled** via `tools/r1_handoff.py packet FTF-H006
+--plan FINE_TUNING_FACTORY_RELEASE_1.md`: the acceptance clause
+("Exercise real controlled HTTP endpoints and DNS/redirect fixtures
+covering loopback, private allowlist, link-local metadata, IPv6,
+alternate encodings and rebinding") and the full negative_acceptance
+("Private destinations can be explicitly authorized; a blanket
+private-address rejection cannot break intended internal LiteLLM/storage
+while metadata remains denied") confirmed genuinely met by the diff and
+this session's own fault injection above — not merely "tests pass".
+`files:` scope (`packages/security/outbound_guard.py`,
+`packages/security/url_policy.py`) matches the diff exactly.
+
+Dependencies FTF-0005/FTF-0201/FTF-0202/FTF-H003 confirmed genuinely
+`CERTIFIED` in `docs/spec-matrix.yaml` before relying on them. `ruff
+check` on the touched files clean. `scripts/validate_spec.py --strict`
+clean.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`99e3d3d0be60d7f5491e99965809a29c62efb4ce`). Ran
+`scripts.task_claim.sync_certified_status()` to write the real status
+into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+`['FTF-H006']` updated. `scripts/status.py`: `44/300` certified before,
+`45/300` after; "Product-true" stays `14/14` (unchanged — this task adds
+no live caller by design). QUEUE.md/`docs/certifications/ledger.md`/
+`docs/certifications/queue.md` all updated. This certification's own doc
+updates are pushed on a branch and opened as a PR against `main` rather
+than pushed directly, per `BRANCH_PROTECTION`.
+
+**Conclusion:** Certified L2-CERTIFIED. Full entry: `docs/certifications/ledger.md`.
+
+## Next shift
+Both PROVISIONAL items found at the start of this certifier shift
+(FTF-0500 via PR #196, FTF-H006 via PR #197) are now CERTIFIED — 45/300,
+Product-true 14/14. `docs/certifications/queue.md` has no remaining
+PROVISIONAL entries as of this writing. FTF-H006 reaching CERTIFIED
+newly unblocks the highest-leverage frontier item it was itself picked
+for: FTF-0203/FTF-0302/FTF-0303/FTF-04A01/FTF-0500B/FTF-0500C/FTF-H007/
+FTF-H012/FTF-H027 (per `docs/TASK_INDEX.md`) can now proceed once their
+own remaining dependencies are also satisfied — none of them are wholly
+unblocked by FTF-H006 alone, so re-check the dependency-ready frontier
+fresh rather than assuming any one of them is immediately claimable.

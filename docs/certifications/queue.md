@@ -10181,3 +10181,85 @@ FTF-H006 (PR #197) remains PROVISIONAL — this scheduled shift's
 commit at review time (6 of 24 jobs still `in_progress`, including
 `gate`). Not certified in this entry; left for a follow-up review once
 CI concludes and, if applicable, the PR merges.
+
+## 2026-09-22 — Control plane: FTF-H006 (PR#197) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #197): `session_0179fcCZuwbpcEh8NMQVj997`. Follow-up to the entry
+above: PR #197's CI had not finished at first review; by the time
+FTF-0500's own certification PR (#198) merged, PR #197 could be checked
+again.
+
+Session-ID compared against PR #197's original three commits (all carry
+`session_019ApmY6ESBah3nPdBDYq1XL`) — no overlap, independent per Law 4.
+
+- `get_check_runs` on PR #197's original head — now 24/24 `success`.
+- `merge_pull_request` failed with `405 ... merge conflicts` — real, not
+  assumed: PR #198 (merged just before) touched the same tracking files
+  (`QUEUE.md`, `docs/certifications/queue.md`) PR #197's own tracking
+  commit touched. Resolved directly: checked out PR #197's head, merged
+  `origin/main` in, resolved both conflicts by keeping both sides'
+  content in full (the producer's own FTF-H006 submission narrative,
+  then this session's own FTF-0500 certification entry, concatenated,
+  nothing dropped), re-validated (`scripts/status.py`,
+  `product_truth_check.py --fail-on-unwired`, `validate_spec.py
+  --strict`, `CLAUDE.md.sha256`) — all clean, pushed the real merge
+  commit (`ea1862687e026d9c7855b3489487b9b0cdce24fc`) to PR #197's own
+  branch (a merge, not a rewrite of the producer's own commits).
+  `get_check_runs` on this new head — 24/24 `success`, including `gate`
+  and the two slower integration jobs. Merged PR #197
+  (`99e3d3d0be60d7f5491e99965809a29c62efb4ce`).
+- Diff read directly: `packages/security/url_policy.py` (scheme/
+  userinfo/port shape validation, resolved-address validation with an
+  explicit private-destination allowlist, unconditional cloud-metadata
+  denial checked before the general private-range rule, alternate-IP-
+  literal-encoding normalization) and `packages/security/
+  outbound_guard.py` (`guarded_fetch` — DNS-resolve-and-validate-once,
+  connect pinned to the exact validated address via a custom
+  `http.client` connection subclass, default-no-redirects with full
+  revalidation on explicit opt-in).
+- Own reproduction, fresh git worktree: `uv run python3
+  tests/tasks/test_ftf_h006.py` — "all checks passed" (run CI's own way,
+  a script-style suite like FTF-0500's own).
+- Own fault injection, a vector distinct from the producer's own two:
+  disabled the cloud-metadata identity check in
+  `validate_resolved_address`. The suite's own embedded fault-injection
+  self-test failed for real (source-text assertion, exit 1). Also
+  independently exercised the runtime behavior directly (not just the
+  self-test): with the check disabled, an operator allowlisting
+  `169.254.0.0/16` (the exact "blanket private-address rejection cannot
+  break intended internal ... while metadata remains denied"
+  negative_acceptance scenario) genuinely let the metadata address
+  `169.254.169.254` through unvalidated — a real SSRF-to-cloud-
+  credentials exposure. Reverted from a pre-edit backup, `diff`
+  confirmed byte-identical, re-ran — correctly denied again; full suite
+  re-confirmed clean.
+- DNS-rebinding proof (`test_dns_resolved_once_and_connection_pinned_to_
+  that_address`) read directly: real local HTTP server, mocked DNS
+  resolution answering a hostile second address only for the hostname
+  under test, spying `socket.create_connection` — confirms resolution
+  happens exactly once and the real socket connects only to the
+  first-validated address.
+- `scripts/product_truth_check.py --fail-on-unwired` — own run, `14/14`,
+  unchanged; `proving_symbol: ''` confirmed legitimate — this task
+  builds the shared guard library, not a live route (no FastAPI route
+  calls `guarded_fetch` yet, confirmed by direct grep; that is FTF-0203's
+  job per `connection_schema.py`'s own docstring).
+- `python3 tools/r1_handoff.py packet FTF-H006 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — the acceptance clause and the full
+  negative_acceptance clause confirmed genuinely met by the diff and
+  this session's own fault injection above.
+- Dependencies FTF-0005/FTF-0201/FTF-0202/FTF-H003 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml`.
+- `ruff check` on the touched files clean. `scripts/validate_spec.py
+  --strict` clean.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`99e3d3d0be60d7f5491e99965809a29c62efb4ce`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-H006 — Shared outbound URL and
+credential guard"). Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-H006']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-H006 moved to
+Done, Certified count bumped to 45/300, Product-true stays 14/14
+(unchanged — this task adds no live caller by design).

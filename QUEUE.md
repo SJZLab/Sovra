@@ -2695,13 +2695,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-H006 (Shared outbound URL and credential guard) was implemented and
-submitted this shift (PR #197) — see this file's own top "Updated:"
-entry for the full narrative and `docs/certifications/queue.md` for the
-complete submission record. `docs/spec-matrix.yaml`: PROVISIONAL/
-L1-PROVEN, `evidence_hash` = the implementation commit. Independently
-reviewed by Control plane this same shift (`pull_request.opened` webhook
-for PR #197) — see "## Done" for the certification summary once landed.
+None currently.
+
+FTF-H006 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-22 via PR #197 (merge commit
+`99e3d3d0be60d7f5491e99965809a29c62efb4ce`, after resolving a real
+tracking-file merge conflict against the FTF-0500 certification that
+landed just before it) — see "## Done" for the certification summary
+and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
+the full history and evidence.
 
 FTF-0500 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-22 via PR #196 (merge commit
@@ -4125,6 +4127,41 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   docs/certifications/ledger.md. FTF-H006 (PR #197, this same shift's
   triggering PR) remains PROVISIONAL — CI had not finished on its head
   commit at review time.
+- FTF-H006 — Shared outbound URL and credential guard. CERTIFIED
+  2026-09-22, PR #197 (merge commit
+  `99e3d3d0be60d7f5491e99965809a29c62efb4ce`). Follow-up to the FTF-0500
+  entry above, same shift, same reviewing session
+  (`session_0179fcCZuwbpcEh8NMQVj997`, no overlap with PR #197's own
+  `session_019ApmY6ESBah3nPdBDYq1XL`, independent per Law 4). CI had not
+  finished at first review; once FTF-0500's own certification PR merged
+  to `main`, PR #197 developed a real merge conflict in `QUEUE.md`/
+  `docs/certifications/queue.md` (both tracking-doc commits touched the
+  same files) — resolved directly (merged `origin/main` into PR #197's
+  own branch, kept both sides' content in full, re-validated, pushed the
+  real merge commit), then re-confirmed CI genuinely green on the new
+  head (24/24). Diff read directly: `packages/security/url_policy.py`/
+  `outbound_guard.py` — DNS-resolve-and-validate-once, connection pinned
+  to the exact validated address, cloud-metadata denial checked before
+  the general private-range rule. Own reproduction:
+  `tests/tasks/test_ftf_h006.py` — "all checks passed". Own fault
+  injection distinct from the producer's own two: disabled the
+  cloud-metadata identity check — the suite's own fault-injection
+  self-test failed for real; independently confirmed the runtime defect
+  directly (not just the self-test): with the check disabled, an
+  operator allowlisting `169.254.0.0/16` let the real metadata address
+  `169.254.169.254` through unvalidated — exactly the negative_acceptance
+  scenario this task exists to prevent. Reverted byte-identical,
+  re-confirmed clean. `product_truth_check.py --fail-on-unwired` —
+  `14/14`, unchanged; `proving_symbol: ''` confirmed legitimate (shared
+  library, no live route yet — that's FTF-0203's job). Task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-H006` — the acceptance
+  and full negative_acceptance clauses confirmed genuinely met.
+  Dependencies FTF-0005/FTF-0201/FTF-0202/FTF-H003 confirmed genuinely
+  `CERTIFIED`. No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`.
+  `scripts/status.py`: `44/300` certified before, `45/300` after;
+  "Product-true" stays `14/14`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
