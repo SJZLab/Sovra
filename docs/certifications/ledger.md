@@ -4636,3 +4636,78 @@ reasons given above.
   `['FTF-1001']` updated. Certified: 38/300, Product-true: 13/13.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1302 — Local compute costing
+- Criterion ID: FTF-1302
+- PR: https://github.com/SJZLab/Sovra/pull/170 (`claude/wizardly-fermat-c7g9v1` → `main`)
+- Merge commit: acce2b4d9a3d636b06065f11de3958239ba5b917
+- Implementation commit: 2ebf9788ac644fc250e8cc9bc621a42815b549f7
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Prior history:** reviewed sound but NOT CERTIFIED on 2026-09-21 solely
+  because GitHub Actions could not show a genuine passing CI run — a
+  runner-provisioning outage (ghost jobs: `runner_id: 0`, ~3s instant
+  "completions"), not a code defect.
+- **Session-ID check:** PR #170's commits carry `Claude-Session:
+  .../session_01Fy9YNo5oaA2HZLWRud1Xma`; this reviewing session's own ID
+  is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match, independent per Law 4.
+  A separate stale, unmerged candidate certification (PR #184, opened by
+  a third session `session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded/
+  closed by this entry rather than trusted at face value.
+- **CI outage genuinely re-confirmed cleared, not trusted from prose:**
+  `get_check_runs` on PR #170's real merge-head run — 23/23 jobs
+  `success`, real distinct non-zero `runner_id`s, genuine multi-second/
+  minute per-job durations (`secret-manager-integration` ~5m43s) —
+  structurally the opposite of the prior ghost-job signature.
+- **Diff read directly:** `apps/api/app/costs/local_compute_costing.py`
+  (or equivalent module path) — a pure computation module over FTF-1301's
+  already-frozen `CostProfile` contract, no database/network/GPU touch of
+  any kind. `window_total_cost` sums the four Section-32 cost categories
+  once each; `cost_per_success` divides by unique `pass`-outcome
+  `request_id`s (retry-dedup), matching the golden example ($12+$2+$1 /
+  100 → $0.15).
+- **Own reproduction, this sandbox** (fresh git worktree at the real
+  merged head): `tests/tasks/test_ftf_1302.py` — "all checks passed".
+- **Own fault injection, this session:** disabled the retry-dedup in
+  `unique_successful_task_ids`, making every `pass` record count
+  separately instead of collapsing repeated `request_id`s — two named
+  checks failed for exactly the right reason ("a retried request_id that
+  eventually passes counts once, not once per attempt"; "only
+  pass-outcome requests count toward unique_successful_tasks"). Reverted;
+  `diff` against the pre-injection copy confirmed byte-identical; suite
+  re-confirmed clean.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `13/13`; FTF-1302's own `proving_symbol`
+  confirmed legitimately `''` (no live HTTP route — consumes FTF-1301's
+  frozen contract slot as a pure computation).
+- Dependencies FTF-0006/FTF-1301 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-1302
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses
+  ("Allocate real total service-window GPU/CPU/storage/idle cost to
+  declared completed workload"; independent review clause) and the
+  negative_acceptance ("Per-request overlapping GPU seconds cannot double
+  count batches or omit idle/multi-replica capacity") confirmed genuinely
+  met by direct code read — `cost_per_success`/`window_total_cost` never
+  touch per-request GPU-second fields at all, ruling out double-counting
+  by construction.
+- **Documentation-accuracy correction (disclosed, not hidden):** PR
+  #184's own body/commit message attributed `main`'s `product_truth_
+  check.py` count rising from 12 to 13 to FTF-1302's own certification.
+  Independently confirmed this is inaccurate: the 13/13 figure was
+  already reached on `main` before FTF-1302's certification, driven by
+  other already-certified/wired symbols entirely unrelated to this task;
+  FTF-1302 contributes `proving_symbol: ''` either way. Not repeated in
+  this entry's own count language.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`acce2b4d9a3d636b06065f11de3958239ba5b917`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1302']` updated. Certified: 39/300, Product-true: 13/13.
+
+**Conclusion:** Certified L2-CERTIFIED.

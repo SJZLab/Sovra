@@ -3037,10 +3037,10 @@ FTF-1301:
   proving_symbol: is_certifiable_cheapest
   proving_test: tests/tasks/test_ftf_1301.py
 FTF-1302:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local compute costing
-  evidence_hash: 2ebf9788ac644fc250e8cc9bc621a42815b549f7
+  evidence_hash: acce2b4d9a3d636b06065f11de3958239ba5b917
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0006, FTF-1301 (both
@@ -3103,7 +3103,37 @@ FTF-1302:
     needed (no database, network egress or GPU/external resource of any kind is touched anywhere
     in this task) -- no other job's steps touched. PR opened as PROVISIONAL; not self-certified
     (Law 4) -- awaiting independent Control plane L2 review.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-22 by an independent Control-plane session
+    (session_01GngkvFCtGtTnDnW9d2HC1j; session-ID checked clean against PR #170's
+    session_01Fy9YNo5oaA2HZLWRud1Xma -- no overlap, independent per Law 4; a separate stale,
+    unmerged candidate certification, PR #184 by session_01DzyLpJHy35M2BeGRfHfwL5, is a third
+    distinct session and is superseded/closed here rather than trusted at face value). This task
+    was previously reviewed sound but NOT CERTIFIED (2026-09-21) solely because GitHub Actions
+    could not show a genuine passing CI run -- a runner-provisioning outage, not a code defect.
+    Independently re-confirmed the outage is genuinely cleared, not merely trusted from a prior
+    shift's prose: `get_check_runs` on PR #170's real merge-head run showed 23/23 jobs
+    `success` with real, distinct, non-zero `runner_id`s and genuine multi-second/minute per-job
+    durations (`secret-manager-integration` alone ~5m43s) -- structurally the opposite of the
+    prior ghost-job signature (`runner_id: 0`, ~3s instant completions). Re-verified in a fresh
+    git worktree at the real merged head: `tests/tasks/test_ftf_1302.py` reproduced clean; an
+    independent fault injection (disabled the retry-dedup in `unique_successful_task_ids`, making
+    every `pass` record count separately instead of collapsing repeated `request_id`s) caught for
+    real -- two named checks failed for exactly the right reason (a retried request counting once
+    per attempt; a non-pass outcome counting toward uniqueness) -- reverted byte-identical, suite
+    re-confirmed clean; `product_truth_check.py --fail-on-unwired` confirmed `13/13`, with
+    FTF-1302's own `proving_symbol` legitimately `''` (a pure computation module with no live HTTP
+    route, consuming FTF-1301's already-frozen contract slot); task contract re-pulled via
+    `tools/r1_handoff.py packet FTF-1302` and both acceptance clauses plus the negative_acceptance
+    confirmed genuinely met against the golden example; dependencies FTF-0006/FTF-1301 confirmed
+    genuinely CERTIFIED. `validate_spec.py --strict` clean.
+
+    Documentation-accuracy correction (Law 1): PR #184's own body/commit message attributed
+    `main`'s `product_truth_check.py` count rising from 12 to 13 to FTF-1302's own certification.
+    Independently confirmed this is inaccurate -- the 13/13 figure was already reached on `main`
+    before FTF-1302's certification, driven entirely by other already-certified/wired symbols;
+    FTF-1302 itself contributes `proving_symbol: ''` either way (no live route). Not repeated here.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1302.py
 FTF-1303:

@@ -1,5 +1,25 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T11:45:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T11:55:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1302 (Local compute costing), PR #170,
+  superseding the stale unmerged candidate PR #184. This task was
+  previously reviewed sound but NOT CERTIFIED (2026-09-21) solely because
+  CI could not show a genuine pass (a runner-provisioning outage) —
+  independently re-confirmed the outage is genuinely cleared this shift
+  (real, non-instant per-job durations, real `runner_id`s on PR #170's
+  own merge-head run) before certifying. Full independent re-verification
+  (session-ID check, own fault injection on the retry-dedup logic,
+  `product_truth_check.py`, task contract re-pulled via
+  `tools/r1_handoff.py`) recorded in `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` and the new "## Done" entry below. Also
+  corrected a documentation-accuracy gap: PR #184 attributed a
+  product-true count rise (12→13) to FTF-1302's own certification, which
+  is inaccurate (that rise was already reached by unrelated work).
+  `scripts/status.py`: 38/300 → 39/300 certified. Four further
+  PROVISIONAL items (FTF-1401/FTF-1501/FTF-1702/FTF-R016) remain, all
+  already confirmed HOLDS UP by independent background verification —
+  continuing to process them one at a time.
+
+Previously, Updated: 2026-09-22T11:45:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1001 (ModelVersion schema/API), PR #160,
   superseding the stale unmerged candidate PR #181. Full independent
   re-verification (session-ID check, CI re-check, own fault injection on
@@ -3610,6 +3630,43 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   stays `13/13`. This certification's own doc updates were pushed on a
   branch and opened as a PR against `main` rather than pushed directly,
   per `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
+- FTF-1302 — Local compute costing. CERTIFIED 2026-09-22, PR #170 (merge
+  commit `acce2b4d9a3d636b06065f11de3958239ba5b917`). Previously reviewed
+  sound but NOT CERTIFIED (2026-09-21) solely because CI could not show a
+  genuine pass (a runner-provisioning outage, not a code defect).
+  Independently re-verified: session-ID clean (PR #170's commits carry
+  `session_01Fy9YNo5oaA2HZLWRud1Xma`, a different session than this
+  reviewer's own `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale,
+  unmerged candidate certification PR, #184, opened by yet a third
+  session, was superseded rather than trusted). Re-confirmed the outage
+  is genuinely cleared, not trusted from prior prose: `get_check_runs` on
+  PR #170's real merge-head run — 23/23 jobs `success`, real distinct
+  non-zero `runner_id`s and genuine multi-second/minute per-job durations
+  (`secret-manager-integration` ~5m43s) — structurally opposite the prior
+  ghost-job signature. Own reproduction in a fresh git worktree at the
+  real merged head: `tests/tasks/test_ftf_1302.py` — "all checks passed".
+  Own fault injection: disabled the retry-dedup in
+  `unique_successful_task_ids` — two named checks failed for exactly the
+  right reason; reverted byte-identical; suite re-confirmed clean. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-1302` — both
+  acceptance clauses and the negative_acceptance (no double-counting by
+  construction) confirmed genuinely met. Dependencies FTF-0006/FTF-1301
+  confirmed genuinely `CERTIFIED`. `validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired` — own run, `13/13`;
+  FTF-1302's own `proving_symbol` confirmed legitimately `''` (pure
+  computation, no live route). Documentation-accuracy correction
+  disclosed: PR #184's own body attributed a product-true count rise
+  (12→13) to FTF-1302's own certification — independently confirmed
+  inaccurate, that rise was already reached by unrelated work; not
+  repeated here. No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `38/300` certified before, `39/300`
+  after; "Product-true" stays `13/13`. This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
