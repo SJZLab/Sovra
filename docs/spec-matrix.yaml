@@ -392,10 +392,10 @@ FTF-0203:
   proving_symbol: validate_connection
   proving_test: tests/tasks/test_ftf_0203.py
 FTF-0204:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: '`/v1/models` discovery'
-  evidence_hash: c1ac87cdeb6fef3b412c248ab2b01472614e6e02
+  evidence_hash: 9a3dd7e52040cca60ec7ae72b38676d253a32824
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201,
     FTF-0203 (both CERTIFIED). This task''s own acceptance clause ("List current
@@ -446,10 +446,39 @@ FTF-0204:
     role + sovra_ftf0204 database, same directly-installed PostgreSQL 16 precedent
     FTF-0201/FTF-0203 already established); FTF-0201/FTF-0203''s own integration suites
     re-confirmed passing afterward against the same fresh database -- no regression
-    to the shared connection_routes.py file. PR opened, awaiting independent Control-plane
-    L2 review.'
-  proof_state: L1-PROVEN
-  proving_symbol: ''
+    to the shared connection_routes.py file.
+
+    INDEPENDENTLY CERTIFIED (session_014jayxcTTyU7RpJJXSP3B8p, PR #203, scheduled
+    certifier for pull_request.opened): session ID compared against both of PR #203''s
+    commits (c1ac87c, 15f96de -- both session_013yJsjReu7yKdQyMxjAxZgD) -- no overlap,
+    independent per Law 4. Watched the real CI run on the real PR head (15f96de,
+    run 35795565157) to completion -- 26/26 real jobs success, including
+    model-discovery-integration and gate -- not a stale or self-reported claim. Diff
+    read directly (v1_models_discovery.py, connection_routes.py'' new /models route)
+    -- matches the task packet''s own files list, no scope creep. Own reproduction
+    in a separate git worktree at the real merged head: tests/tasks/test_ftf_0204.py
+    (all checks passed, no DB), tests/integration/test_ftf_0204_v1_models_discovery.py
+    against a real local PostgreSQL 16 (sovra_migrate/sovra_ftf0204) (all checks
+    passed), and FTF-0201/FTF-0203''s own integration suites re-run clean against
+    the same fresh database -- no regression to the shared connection_routes.py file.
+    Own fault injection, a vector distinct from the producer''s own (authorization-union
+    reintroduction): disabled the `response.status in (401, 403)` invalid-token
+    check (`if False and response.status in (401, 403):`) and re-ran the no-DB suite
+    -- exactly 1 check failed for real ("a real gateway 401 on a resolved credential
+    reports invalid_token, not discovered"), proving the fail-closed check is
+    load-bearing; reverted, diff confirmed byte-identical. ruff check/ruff format
+    --check clean (183 files); mypy clean (183 files, "Success: no issues found").
+    product_truth_check.py --fail-on-unwired -- own run, 15/15 before this
+    certification; proving_symbol discover_models confirmed a real, non-test,
+    live-caller match in connection_routes.py (grepped directly). CLAUDE.md.sha256
+    verified against sha256sum CLAUDE.md. python3 tools/r1_handoff.py packet FTF-0204
+    confirmed both acceptance clauses and the negative_acceptance clause genuinely
+    met by the diff and this session''s own fault injection, not merely "tests pass".
+    Dependencies FTF-0201/FTF-0202/FTF-0203/FTF-H006 confirmed genuinely CERTIFIED
+    in docs/spec-matrix.yaml before relying on them. No blocking defect found. Merged
+    PR #203 (merge commit 9a3dd7e52040cca60ec7ae72b38676d253a32824).'
+  proof_state: L2-CERTIFIED
+  proving_symbol: discover_models
   proving_test: tests/tasks/test_ftf_0204.py
 FTF-0205:
   certification_state: NONE

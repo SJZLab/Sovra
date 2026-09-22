@@ -1,4 +1,29 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22 (scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #203) — independently certified FTF-0204 (`/v1/models`
+  discovery), the sole PROVISIONAL item in `docs/certifications/queue.md`
+  at shift start. Session-ID compared against both of PR #203's commits
+  (`session_013yJsjReu7yKdQyMxjAxZgD`) — no overlap with this session
+  (`session_014jayxcTTyU7RpJJXSP3B8p`), independent per Law 4. Watched
+  the real CI run on PR #203's real head (`15f96de`, run 35795565157) to
+  completion — 26/26 jobs green, including `model-discovery-integration`
+  and `gate` — before merging. Own reproduction (no-DB suite,
+  live-Postgres integration suite, FTF-0201/FTF-0203 regression suites,
+  all clean) and an own fault injection distinct from the producer's own
+  (disabled the invalid-token check in `discover_models` — the exact
+  negative_acceptance case failed for real) both confirmed the shipped
+  code sound. Merged PR #203 (`9a3dd7e52040cca60ec7ae72b38676d253a32824`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `proving_symbol: discover_models`. Ledger
+  entry appended (`docs/certifications/ledger.md`). Ran
+  `scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` updated for `['FTF-0204']`.
+  `scripts/status.py`: `46/300` certified / `15` product-true before,
+  `47/300` certified / `16` product-true after. Full record: "## Done"
+  below and `docs/certifications/ledger.md`/`docs/certifications/
+  queue.md`.
+
+## Previous shift
 Updated: 2026-09-22 (scheduled relay shift) — implemented FTF-0204
   (`/v1/models` discovery, deps FTF-0201/FTF-0203 both CERTIFIED). STEP 0:
   `sha256sum CLAUDE.md` verified clean against the committed
@@ -2921,10 +2946,20 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0204 (`/v1/models` discovery, PR opened from
-`claude/wizardly-fermat-pkklwn` → `main`, commit
-`c1ac87cdeb6fef3b412c248ab2b01472614e6e02`) — submitted this shift, not
-self-certified (Law 4). Full entry: `docs/certifications/queue.md`.
+None currently.
+
+FTF-0204 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-22 via PR #203 (merge commit
+`9a3dd7e52040cca60ec7ae72b38676d253a32824`). This review watched the
+real CI run on PR #203's real head to completion (26/26 jobs green,
+including `model-discovery-integration` and `gate`) before certifying.
+Own reproduction (no-DB suite, live-Postgres integration suite,
+FTF-0201/FTF-0203 regression suites, all clean) and an own fault
+injection distinct from the producer's own (disabled the invalid-token
+check in `discover_models` — the exact negative_acceptance case failed
+for real, reverted byte-identical) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0203 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-22 via PR #200 (merge commit
@@ -4453,6 +4488,50 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `scripts/status.py`: `45/300` certified before, `46/300` after;
   "Product-true" `14/14` before, `15/15` after (this task's own first
   live caller of `validate_connection`). Full entry:
+  docs/certifications/ledger.md.
+- FTF-0204 — `/v1/models` discovery. CERTIFIED 2026-09-22, PR #203
+  (merge commit `9a3dd7e52040cca60ec7ae72b38676d253a32824`). Scheduled
+  Control-plane certifier shift, `pull_request.opened` webhook for PR
+  #203 itself (`session_014jayxcTTyU7RpJJXSP3B8p`, no overlap with PR
+  #203's own two commits' `session_013yJsjReu7yKdQyMxjAxZgD`,
+  independent per Law 4). Watched the real CI run on PR #203's real head
+  (`15f96de`, run 35795565157) to completion via the GitHub REST API —
+  26/26 jobs green, including `model-discovery-integration` and `gate`,
+  not a stale signal. Diff read directly:
+  `packages/litellm_client/v1_models_discovery.py` (`discover_models` —
+  resolves `secret_ref` via FTF-0202's `resolve_secret_ref`, dials
+  `GET /v1/models` via FTF-H006's `guarded_fetch`, enriches via
+  `GET /model/info` on a strict left-join basis so a metadata-only name
+  never becomes callable, stateless/fresh per call so a removed model or
+  revoked credential is never retained from a prior call) and
+  `apps/api/app/litellm/connection_routes.py` (the new
+  `GET .../connections/litellm/{connection_id}/models` route,
+  `organization_admin`-only, 404 on a foreign-tenant connection ID, 409
+  on a revoked one). Own reproduction in a separate git worktree at the
+  real merged head: `tests/tasks/test_ftf_0204.py` — "all checks
+  passed"; a real local Postgres 16 role/db,
+  `tests/integration/test_ftf_0204_v1_models_discovery.py` — "all checks
+  passed"; `tests/integration/test_ftf_0201_litellm_connection_crud.py`/
+  `tests/integration/test_ftf_0203_connection_validation.py` re-run
+  clean — no regression to the shared route file. Own fault injection
+  distinct from the producer's own (which reintroduced the Section 3.2
+  authorization-union bug): disabled the `response.status in (401, 403)`
+  invalid-token check in `discover_models` — exactly the named "invalid_token,
+  not discovered" check failed for real, reverted byte-identical,
+  re-confirmed clean. `ruff check`/`ruff format --check`/`mypy` clean
+  (183 files each). `product_truth_check.py --fail-on-unwired` — `15/15`
+  before, `proving_symbol: discover_models` confirmed a real live-caller
+  match in `connection_routes.py`. Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0204` — both acceptance clauses and
+  the full negative_acceptance clause confirmed genuinely met.
+  Dependencies FTF-0201/FTF-0202/FTF-0203/FTF-H006 confirmed genuinely
+  `CERTIFIED`. No blocking defect found.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `proving_symbol: discover_models`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`.
+  `scripts/status.py`: `46/300` certified before, `47/300` after;
+  "Product-true" `15/15` before, `16/16` after (this task's own first
+  live caller of `discover_models`). Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

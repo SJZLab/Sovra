@@ -10629,3 +10629,89 @@ Done, Certified count bumped to 46/300, Product-true 14/14 → 15/15.
 
 **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
 self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-22 — Control plane: FTF-0204 (PR#203) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #203): `session_014jayxcTTyU7RpJJXSP3B8p`. PR #203 was the sole
+PROVISIONAL item in this file at shift start.
+
+Session-ID compared against PR #203's two commits (`c1ac87c`, `15f96de`,
+both carry `session_013yJsjReu7yKdQyMxjAxZgD`) — no overlap, independent
+per Law 4.
+
+- The webhook fired the instant PR #203 opened, with CI still
+  `in_progress`. Rather than certify against a partial signal, this
+  review polled `repos/SJZLab/Sovra/commits/15f96de.../check-runs`
+  directly via the GitHub REST API until every job reported `completed`
+  — **26/26 real jobs `success`**, including `model-discovery-integration`
+  (real Postgres + real gateway) and `gate`, on the real, unmodified PR
+  head (`15f96de`).
+- Diff read directly: `packages/litellm_client/v1_models_discovery.py`
+  (`discover_models` — resolves `secret_ref` via FTF-0202's already-
+  CERTIFIED `resolve_secret_ref`, dials `GET /v1/models` via FTF-H006's
+  already-CERTIFIED `guarded_fetch`, enriches each authorized model with
+  `GET /model/info` on a strict left-join basis — Section 3.2's "no
+  authorization union" — and is stateless/fresh per call, so a removed
+  model or a credential that starts failing 401/403 is simply absent
+  from the current `ModelDiscoveryResult`, never retained from a prior
+  call) and `apps/api/app/litellm/connection_routes.py` (the new `GET
+  .../connections/litellm/{connection_id}/models` route,
+  `organization_admin`-only, same tenant-scoped session and IDOR-denial
+  pattern as `/validate`, denies a foreign-tenant connection ID
+  identically to missing (404), refuses a revoked connection (409)).
+  Diff scope matches the task packet's own `files` list (plus the
+  route/CI wiring the acceptance clause requires) — no scope creep.
+- Own reproduction, a separate git worktree at the real merged head
+  (`15f96de`, not the producer's own claimed run): `uv sync
+  --all-packages`; `uv run python3 tests/tasks/test_ftf_0204.py` — "all
+  checks passed". A real local PostgreSQL 16 role/db
+  (`sovra_migrate`/`sovra_ftf0204`, `sovra_migrate` granted `SUPERUSER`
+  to match the official `postgres` Docker image's `POSTGRES_USER`-is-
+  superuser default GitHub Actions' `services: postgres:` container
+  relies on); `uv run python3
+  tests/integration/test_ftf_0204_v1_models_discovery.py` — "all checks
+  passed". `tests/integration/test_ftf_0201_litellm_connection_crud.py`/
+  `tests/integration/test_ftf_0203_connection_validation.py` re-run
+  clean against the same fresh database — no regression to the shared
+  `connection_routes.py` file this task also touches.
+- Own fault injection, a vector distinct from the producer's own
+  (reintroducing the Section 3.2 authorization-union bug and proving it
+  in a subprocess): disabled the `response.status in (401, 403)`
+  invalid-token check in `discover_models` (`if False and
+  response.status in (401, 403):`) and re-ran the no-DB suite — exactly
+  1 check failed for real: "a real gateway 401 on a resolved credential
+  reports invalid_token, not discovered" — precisely the
+  negative_acceptance risk this task exists to prevent (a revoked
+  credential silently retaining a stale model list). Reverted from a
+  pre-edit backup, `diff` confirmed byte-identical, suite re-ran clean.
+- `ruff check .`/`ruff format --check .` clean (183 files); `mypy .`
+  clean (183 files, "Success: no issues found"). `CLAUDE.md.sha256`
+  verified against `sha256sum CLAUDE.md` on the real merged head.
+- `scripts/product_truth_check.py --fail-on-unwired` — own run, `15/15`
+  before this certification; `proving_symbol: discover_models`
+  confirmed a real, non-test, live-caller match in
+  `apps/api/app/litellm/connection_routes.py` (grepped directly, not
+  assumed) — this repository's first live-wired product-runtime path to
+  actually call this symbol.
+- `python3 tools/r1_handoff.py packet FTF-0204 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance clauses ("List
+  current credential-visible model IDs through tested gateway route and
+  record timestamp/count/hash"; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence
+  recorded") and the full negative_acceptance clause ("Metadata-only or
+  stale deleted model is not callable; auth errors fail closed instead
+  of retaining permission") confirmed genuinely met by the diff and this
+  session's own fault injection above, not merely "tests pass" —
+  `contract_owner: FTF-0201` confirmed real.
+- Dependencies FTF-0201/FTF-0202/FTF-0203/FTF-H006 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`proving_symbol: discover_models`, `evidence_hash` set to the merge
+commit (`9a3dd7e52040cca60ec7ae72b38676d253a32824`). Ledger entry
+appended (`docs/certifications/ledger.md`, "FTF-0204 — `/v1/models`
+discovery"). Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-0204']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0204 moved to
+Done, Certified count bumped to 47/300, Product-true 15/15 → 16/16.
