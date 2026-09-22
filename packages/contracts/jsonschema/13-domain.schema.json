@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-13/domain.schema.json",
+  "title": "Sovra Phase 13 Domain Schemas (FTF-1301 — CostProfile rate card)",
+  "description": "Frozen shared domain schemas for the organization-scoped CostProfile rate-card resource (Section 28/31/32/45/64/69-70/77/81). Field constraints (patterns, lengths, enums) are copied verbatim from the single real enforcing source, apps/api/app/costs/cost_profile_schema.py, and tested against it directly in tests/tasks/test_ftf_1301.py so this file cannot silently drift from the code that actually validates these shapes. DisqualifiedReason's three real values are exactly the three conditions apps/api/app/costs/cost_profile_schema.py::is_certifiable_cheapest checks, in the same order — this task's own negative_acceptance ('Token price zero is not local compute free; unverified/expired rate cannot certify cheapest') made real and testable.",
+  "$defs": {
+    "ProfileType": {
+      "type": "string",
+      "enum": ["provider", "local_hardware"]
+    },
+    "RateUnit": {
+      "type": "string",
+      "enum": [
+        "per_input_token",
+        "per_output_token",
+        "per_gpu_hour",
+        "per_cpu_hour",
+        "per_ram_gb_hour",
+        "per_hour",
+        "per_request"
+      ]
+    },
+    "Currency": {
+      "type": "string",
+      "description": "A real ISO-4217 code from apps/api/app/budget/budget_policy_schema.py::ALLOWED_CURRENCIES (FTF-0403), reused directly rather than a second, duplicate currency vocabulary.",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "Label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "Source": {
+      "type": "string",
+      "description": "Where this dated rate came from (a provider pricing-page URL, or a description of the local TCO worksheet it was computed from). Required and non-empty — Section 32/69.3's own 'no guessed performance or cost values' rule, applied to this record's own provenance.",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "DisqualifiedReason": {
+      "type": ["string", "null"],
+      "enum": [null, "expired", "unverified", "zero_provider_rate_unconfirmed"],
+      "description": "Why a profile is not currently certifiable_cheapest — null only when certifiable_cheapest is true. Never omitted: 'display unknowns honestly.'"
+    },
+    "CostProfileCreateRequest": {
+      "type": "object",
+      "description": "The create request body. rate_amount always arrives as a decimal string, never a bare JSON number (Section 6's own 'money uses Decimal + currency' rule).",
+      "properties": {
+        "profile_type": { "$ref": "#/$defs/ProfileType" },
+        "label": { "$ref": "#/$defs/Label" },
+        "rate_unit": { "$ref": "#/$defs/RateUnit" },
+        "rate_amount": { "type": "string" },
+        "currency": { "$ref": "#/$defs/Currency" },
+        "source": { "$ref": "#/$defs/Source" },
+        "rate_recorded_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": ["profile_type", "label", "rate_unit", "rate_amount", "currency", "source", "rate_recorded_at"],
+      "additionalProperties": false
+    },
+    "CostProfile": {
+      "type": "object",
+      "description": "Section 28/31/32/45/64/69-70/77/81 — one dated, sourced, immutable rate observation. Only verified_at/row_version/updated_at ever change after creation (apps/api/app/costs/cost_profile_crud.py::verify_cost_profile) — a new dated observation is always a new row, never an edit of an old one.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "profile_type": { "$ref": "#/$defs/ProfileType" },
+        "label": { "$ref": "#/$defs/Label" },
+        "rate_unit": { "$ref": "#/$defs/RateUnit" },
+        "rate_amount": { "type": "string" },
+        "currency": { "$ref": "#/$defs/Currency" },
+        "source": { "$ref": "#/$defs/Source" },
+        "rate_recorded_at": { "type": "string", "format": "date-time" },
+        "verified_at": { "type": ["string", "null"], "format": "date-time" },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" },
+        "row_version": { "type": "integer" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "organization_id", "profile_type", "label", "rate_unit", "rate_amount",
+        "currency", "source", "rate_recorded_at", "verified_at", "expires_at",
+        "row_version", "created_by", "created_at", "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "CostProfileSearchResult": {
+      "type": "object",
+      "description": "A CostProfile as returned by the /costs/cost-per-success/search endpoint, annotated with this task's own negative_acceptance verdict.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "profile_type": { "$ref": "#/$defs/ProfileType" },
+        "label": { "$ref": "#/$defs/Label" },
+        "rate_unit": { "$ref": "#/$defs/RateUnit" },
+        "rate_amount": { "type": "string" },
+        "currency": { "$ref": "#/$defs/Currency" },
+        "source": { "$ref": "#/$defs/Source" },
+        "rate_recorded_at": { "type": "string", "format": "date-time" },
+        "verified_at": { "type": ["string", "null"], "format": "date-time" },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" },
+        "row_version": { "type": "integer" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "certifiable_cheapest": { "type": "boolean" },
+        "disqualified_reason": { "$ref": "#/$defs/DisqualifiedReason" }
+      },
+      "required": [
+        "id", "organization_id", "profile_type", "label", "rate_unit", "rate_amount",
+        "currency", "source", "rate_recorded_at", "verified_at", "expires_at",
+        "row_version", "created_by", "created_at", "updated_at",
+        "certifiable_cheapest", "disqualified_reason"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

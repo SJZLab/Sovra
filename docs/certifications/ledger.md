@@ -4334,3 +4334,121 @@ reasons given above.
   updated. Certified: 35/300, Product-true: 11/11.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1301 — CostProfile schema/UI
+- Criterion ID: FTF-1301
+- PR: https://github.com/SJZLab/Sovra/pull/168 (`claude/wizardly-fermat-togs1a` → `main`)
+- Merge commit: 9a47458118ee46095270f4aa9758b5ec35efeea5
+- Implementation commit: 61995ac572eb732392e698f53565a5fec3bf5064
+- Validated-by: session https://claude.ai/code/session_01GWAaJpcZSaNqKJ9zmk2CDz
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #168)
+- Date: 2026-09-21
+- **Session-ID check:** both commits on PR #168 carry `Claude-Session:
+  .../session_0175jrFsfGmpVqpjJFqPTiAE`; this reviewing session's own ID
+  is `session_01GWAaJpcZSaNqKJ9zmk2CDz` — no match, independent per Law 4.
+- **CI checked on the real head, not a stale claim:** the webhook fired at
+  PR-open time, before CI had completed (`gate` still `queued`); polled
+  `get_check_runs` to completion rather than trusting a self-report — all
+  18 GitHub Actions check runs on the real head
+  (`cadb3202103ab3c56811af722406bfb1bac38eeb`, run `35631327707`)
+  `completed`/`success`, `gate` and the new `cost-profile-integration` job
+  both included. The PR was still open/unmerged at review time (relay had
+  not yet merged its own green PROVISIONAL submission) — merged it
+  directly at the confirmed green head (`expectedHeadSha` pinned to
+  `cadb3202...`) before certifying, matching CLAUDE.md's pre-authorized
+  "merge on green + L1 doc (PROVISIONAL)" action; merging is a distinct
+  step from certifying and does not substitute for the independent review
+  below.
+- **Diff read directly:** `apps/api/app/costs/cost_profile_schema.py`,
+  `apps/api/app/costs/cost_profile_crud.py`,
+  `apps/api/app/costs/cost_profile_routes.py`,
+  `apps/api/alembic/versions/0008_cost_profiles.py`,
+  `apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx`,
+  `packages/contracts/{openapi,jsonschema}/13-*`. Confirmed
+  `is_certifiable_cheapest`'s three disqualifying conditions (`expired`,
+  `unverified`, `zero_provider_rate_unconfirmed`) match the negative_
+  acceptance clause exactly, including that a verified, unexpired
+  `local_hardware` zero rate is NOT disqualified (the rule is
+  provider-specific, not a blanket zero refusal); confirmed
+  `validate_rate_amount` refuses negative amounts at the application
+  layer; confirmed the migration FORCEs row-level security scoped to
+  `app.current_organization_id`, grants `sovra_app` SELECT/INSERT/UPDATE
+  only (no DELETE), and adds a real `CHECK(rate_amount >= 0)` constraint;
+  confirmed `cost_profile_routes.py`'s `COST_PROFILE_ROLES` gates every
+  route including reads and search to `organization_admin` alone, matching
+  Section 45's literal role table (`FINE_TUNING_FACTORY_RELEASE_1.md:2551`
+  — "organization_admin: connections, security profiles, cost profiles");
+  confirmed `app.main` includes `build_cost_profile_router` for real.
+- **Task contract re-pulled directly, not trusted from the producer's own
+  claim:** `python tools/r1_handoff.py packet FTF-1301 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — the committed
+  `docs/implementation/task-packets/FTF-1301.md` matched. Acceptance
+  clause 1 ("Record dated provider/local hardware TCO rates/currency/
+  source and display unknowns honestly") and negative_acceptance ("Token
+  price zero is not local compute free; unverified/expired rate cannot
+  certify cheapest") confirmed met by the code above; `files:`,
+  `dependencies:` (FTF-0401, FTF-0403, FTF-0103, all three confirmed
+  genuinely `CERTIFIED`), and `shared_lock_required: contracts:13`
+  (confirmed the first and only claim on contract slot 13, grepped the
+  full `docs/spec-matrix.yaml`) all confirmed.
+- **Own reproduction, this sandbox** (`uv sync --all-packages`, `pnpm
+  install`, `git fetch --unshallow`, a real directly-installed PostgreSQL
+  16 cluster — no container-registry egress in this sandbox, same finding
+  as every prior integration-tested task — migrated by the integration
+  script itself via `SOVRA_DATABASE_URL`/`SOVRA_APP_DB_PASSWORD`):
+  `tests/tasks/test_ftf_1301.py` — "all checks passed"; `tests/
+  integration/test_ftf_1301_cost_profile.py` against the live database —
+  "all checks passed".
+- **Own fault injection, this session, reproducing both of the producer's
+  own vectors, both reverted byte-identical (`diff` against the
+  pre-injection copy confirmed empty) and the suites re-confirmed clean
+  afterward:**
+  1. Disabled the zero-provider-rate disqualification in
+     `is_certifiable_cheapest` (`if False and profile.profile_type ==
+     "provider" and ...`) — `tests/tasks/test_ftf_1301.py` failed with
+     exactly `FAIL [FTF-1301] negative_acceptance: 'token price zero is
+     not local compute free' -- a verified, unexpired provider rate of
+     exactly zero still cannot certify cheapest`, exit code 1.
+  2. Disabled the negative-rate application-layer guard in
+     `validate_rate_amount` (`if False and value < 0:`) against the real
+     live database — `tests/integration/test_ftf_1301_cost_profile.py`
+     failed with exactly `FAIL [FTF-1301] a negative rate is refused
+     (400)`; the raw INSERT reached the database and was independently
+     refused a second time by the real `CHECK(rate_amount >= 0)`
+     constraint (`sqlalchemy.exc.IntegrityError:
+     ck_cost_profiles_rate_amount_non_negative`), confirming the
+     defense-in-depth claim is real, not asserted.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep — all "all checks passed" or equivalent, after
+  `pnpm install` resolved a pre-existing, undocumented frontend-dependency
+  gap in this sandbox affecting FTF-0002/FTF-0003/FTF-H001 (confirmed a
+  sandbox artifact — all three passed clean once `node_modules` existed,
+  not a real regression). `ruff check .`/`ruff format --check .` clean
+  repo-wide. `mypy .` (from `apps/api`) — 2 errors, both the pre-existing,
+  unrelated `authlib.jose` missing-stub gap in `oidc_login.py`, confirmed
+  identical on `main`. `pnpm run lint`/`typecheck`/`format:check` clean.
+  `pnpm run test` (vitest) — 19/19 passed across all 5 spec files, no
+  regression to FTF-0401's own suite.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` — 18 `stale_commit` defects present before
+  `git fetch --unshallow` (this sandbox's own documented shallow-clone
+  artifact, the same finding recorded against prior certifications),
+  clean after. `scripts/product_truth_check.py --fail-on-unwired` — own
+  run, `12/12` product-true; `is_certifiable_cheapest` confirmed a
+  genuine, non-test live caller in `cost_profile_crud.py`'s own
+  `search_cost_profiles` (grepped for non-test callers directly — not
+  0/0, not inflation). `scripts/status.py` — own run, `35/300 certified`
+  before this entry's own update (matches the producer's own
+  pre-certification claim).
+- Dependencies FTF-0401/FTF-0403/FTF-0103 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #168 (merge commit
+  `9a47458118ee46095270f4aa9758b5ec35efeea5`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
+
+**Conclusion:** Certified L2-CERTIFIED.

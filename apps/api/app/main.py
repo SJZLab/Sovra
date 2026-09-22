@@ -24,7 +24,15 @@ router from
 -- the sixth, and (FTF-0403) the real
 `/api/v1/organizations/{organization_id}/projects/{project_id}/budget-policy`
 router from `app.budget.budget_policy_routes.build_budget_policy_router`
--- the seventh.
+-- the seventh, and (FTF-1301) the real
+`/api/v1/organizations/{organization_id}/cost-profiles` and
+`/api/v1/organizations/{organization_id}/projects/{project_id}/costs/
+cost-per-success/search` routes from
+`app.costs.cost_profile_routes.build_cost_profile_router` -- the eighth,
+and (FTF-1001) the real
+`/api/v1/organizations/{organization_id}/projects/{project_id}/model-versions`
+router from `app.model_versions.model_version_routes.build_model_version_router`
+-- the ninth.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -71,7 +79,9 @@ from app.auth.oidc_settings import OidcSettings
 from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_guard
 from app.budget.budget_policy_routes import build_budget_policy_router
 from app.config.configuration_system import Settings
+from app.costs.cost_profile_routes import build_cost_profile_router
 from app.litellm.connection_routes import build_litellm_connection_router
+from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
 from app.tools.critical_behavior_requirement_routes import (
     build_critical_behavior_requirement_router,
@@ -103,6 +113,8 @@ def create_app() -> FastAPI:
     app.include_router(build_tool_definition_router(session_factory))
     app.include_router(build_critical_behavior_requirement_router(session_factory))
     app.include_router(build_budget_policy_router(session_factory))
+    app.include_router(build_cost_profile_router(session_factory))
+    app.include_router(build_model_version_router(session_factory))
     return app
 
 
