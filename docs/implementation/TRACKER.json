@@ -1422,9 +1422,11 @@
       "blockers": []
     },
     "FTF-1401": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "c2fda5b6ad472aa6d38a977896b339a484a9a483"
+      ],
       "independent_review": null,
       "blockers": []
     },

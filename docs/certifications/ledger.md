@@ -4711,3 +4711,83 @@ reasons given above.
   `['FTF-1302']` updated. Certified: 39/300, Product-true: 13/13.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1401 — API load test
+- Criterion ID: FTF-1401
+- PR: https://github.com/SJZLab/Sovra/pull/161 (`claude/wizardly-fermat-uec7js` → `main`)
+- Merge commit: c2fda5b6ad472aa6d38a977896b339a484a9a483
+- Implementation commit: 4000f0d5c94a789cc4f3971cd4321716e0dde1e0
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Session-ID check:** all four PR #161 commits carry `Claude-Session:
+  .../session_01CDP3isFaUkJtHPU91hNz2j`; this reviewing session's own ID
+  is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match, independent per Law 4.
+  A separate stale, unmerged candidate certification (PR #182, opened by
+  a third session `session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded/
+  closed by this entry rather than trusted at face value.
+- **CI checked on the real head:** `get_check_runs` on PR #161's real
+  head (run `35704415542`) — 23/23 jobs `completed`/`success`, with real,
+  non-instant per-job durations (e.g. `api-load-test-integration` 47s,
+  `gate` 117s, `secret-manager-integration` ~7m8s) — no
+  runner-provisioning ghost-job pattern.
+- **Diff read directly:** `tests/performance/api_load_test.py` drives the
+  real, already-live project/tool routers over a real uvicorn HTTP round
+  trip and a real local PostgreSQL database. Disclosed, honest partial
+  profile against Section 49's full "Control API" target (smaller
+  process/DB/org counts and duration), `WorkloadSpec.is_partial_profile`
+  always true with `disclosed_gaps` naming every reduction. "No lost/
+  duplicate admitted jobs" substituted with a real, independently
+  re-queried DB-count-vs-response-count check, disclosed as narrower than
+  full idempotency-key dedup (a later task's own scope).
+  `negative_acceptance` ("no ... dropped timed-out requests") enforced by
+  construction: `execute_request` always returns exactly one
+  `RequestSample` per request, including a failed connection.
+- **Own reproduction, this sandbox** (fresh git worktree at the real
+  merged head): `tests/tasks/test_ftf_1401.py` — "all checks passed"
+  (17 no-DB test functions).
+- **Own fault injection, this session, a vector distinct from the
+  producer's own two and PR #182's own one (the write/submit P95
+  branch):** disabled the read P95 threshold branch in
+  `evaluate_acceptance` (`if read_stats is not None and
+  read_stats.p95_ms > thresholds.read_p95_ms:` → `if False and ...`) —
+  the named "read P95 above threshold fails, and the reason names the
+  read P95 clause" check failed for exactly the right reason. Reverted;
+  `diff` against the pre-injection copy confirmed byte-identical; suite
+  re-confirmed clean.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `13/13`; FTF-1401's own `proving_symbol`
+  confirmed legitimately `''` (a measurement/load-test tool with no new
+  served route — `paths: {}` in its own frozen OpenAPI contract).
+- Dependencies FTF-0006/FTF-0401/FTF-0106 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them. **Confirmed FTF-1001
+  is not actually a declared dependency of FTF-1401 at all** — neither in
+  the real task contract's `dependencies` list nor in code (no
+  `model_version`/`ModelVersion` import anywhere in the task's source,
+  only disclosure text explaining "Models" traffic is deliberately
+  excluded from the request mix because FTF-1001 was not yet certified at
+  submission time). This is an honest scope reduction, not a
+  relied-upon dependency — FTF-1001's own prior `PROVISIONAL` state was
+  never a disqualifying gap for this task (and FTF-1001 is itself now
+  `CERTIFIED` as of this same shift, regardless).
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-1401
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and
+  the negative_acceptance confirmed genuinely met by the diff.
+- **Disclosed, unresolved gap noted but out of this task's own scope:**
+  FTF-0406/FTF-0407's own no-DB and live-Postgres test suites remain
+  wired into neither `ci.yml`'s `gate` job nor a dedicated integration
+  job — their own CERTIFIED evidence was genuinely reproduced by their
+  own certifier reviews, but is not continuously re-enforced by CI going
+  forward the way every other CERTIFIED task's is. Flagged again here for
+  a future relay/control-plane shift; not this task's own fix to make.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`c2fda5b6ad472aa6d38a977896b339a484a9a483`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1401']` updated. Certified: 40/300, Product-true: 13/13.
+
+**Conclusion:** Certified L2-CERTIFIED.
