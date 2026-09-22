@@ -1,5 +1,68 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22 (live, interactive session) — **FTF-0202 resolved for
+Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+  FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201
+  all CERTIFIED). STEP 0 clean (`sha256sum CLAUDE.md` matches
+  `CLAUDE.md.sha256`). Verified directly on GitHub (not just this file's
+  own prose) that the FTF-0202 owner-ask resolution below is genuinely
+  merged to `main` (commit `e9e63b4`, via PR #173) before treating it as
+  dependency-ready — PR #143/#162 (the three earlier, unverifiable
+  claims) both confirmed closed/unmerged. FTF-0202 has the lowest task ID
+  among the dependency-ready frontier PR #175 already computed
+  (`FTF-0202, FTF-0408, FTF-0902, FTF-1001, FTF-1302, FTF-1401, FTF-1501,
+  FTF-1702, FTF-R016`) and no open PR claims it.
+
+  Verified every real OpenBao backend interaction directly (Law 1) before
+  writing any test: no prebuilt release binary or container image was
+  reachable from this sandbox (same class of gap as Postgres/Docker/
+  SeaweedFS elsewhere in this file's history), so built a real OpenBao
+  server from source (commit `e98dc184344fe84ee4e69965ac3f4217d5b6a45d`)
+  and ran it locally. That check caught a genuine surprise: a soft-deleted
+  or destroyed KV v2 version answers real HTTP 404 with a body attached,
+  not HTTP 200 with a null payload as an under-checked first probe
+  suggested — corrected before any test was written to expect the wrong
+  shape.
+
+  `packages/litellm_client/secret_manager_integration.py` (path refined
+  from the packet's own hyphenated, non-importable
+  `packages/litellm-client/...` suggestion) resolves `openbao://<mount>/
+  <path>/<field>` refs via stdlib-only `urllib.request` (no new runtime
+  dependency), with real store/resolve/rotate against OpenBao's KV v2 API
+  and this task's own full negative_acceptance (unknown/expired/denied
+  secrets block call, never returned). 22 no-DB checks
+  (`tests/tasks/test_ftf_0202.py`, fake transport) + 12 real checks
+  (`tests/integration/test_ftf_0202_secret_manager.py`, a real
+  locally-built-and-spawned OpenBao server). Two fault injections (expiry
+  check; 404-to-`SecretNotFoundError` mapping), both caught for real in
+  both suites and reverted byte-identical. No regression across the full
+  `tests/tasks/test_ftf_*.py` sweep (32 files), `ruff`/`mypy`/`pnpm`
+  checks (the 9 `mypy` alembic-stub errors confirmed pre-existing on
+  `main` via `git stash`), `validate_spec.py --strict` (after `git fetch
+  --unshallow`), `product_truth_check.py --fail-on-unwired` (`12/12`,
+  unchanged — `proving_symbol` deliberately empty, no live route wires
+  this module in yet; that is FTF-0203's job). `scripts/status.py` —
+  `36/300 certified · 12 product-true` (unchanged — PROVISIONAL, not
+  CERTIFIED). CI: one new `gate` step plus a dedicated
+  `secret-manager-integration` job building the pinned OpenBao commit
+  fresh on the hosted runner.
+
+  PR opened as PROVISIONAL; not self-certified (Law 4) — awaiting
+  independent Control-plane L2 review. Full submission report:
+  `docs/certifications/queue.md`.
+
+## Next shift
+FTF-0202 now needs independent Control-plane L2 certification before
+anything depending on it (transitively, a large fraction of the graph
+through FTF-H006/FTF-0203+) can be picked. The standing GitHub Actions
+runner-provisioning outage (open since 2026-09-21, see "Owner actions —
+current" below) and the backlog of open, unreviewed relay PRs (#158/#159/
+#160/#161/#167/#170/#172 and now this shift's own FTF-0202 PR) remain
+Control-plane's responsibility, not this relay's. If a relay session
+fires next instead of a certifier: recompute the dependency-ready
+frontier fresh rather than trusting this note alone — FTF-0408/FTF-0902
+are still real, unpicked items but need their own disclosed DoD-clarity/
+resource-gate gaps resolved first, not improvised under time pressure.
+
+Previously, 2026-09-22 (live, interactive session) — **FTF-0202 resolved for
   real:** backend is OpenBao. The owner raised directly, in this
   conversation, why the decision kept reporting as unresolved despite
   three prior automated sessions each claiming a confirmation; none of
@@ -1486,6 +1549,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-0202 (Secret-manager integration) -- this shift's own PR (see the
+2026-09-22T05:15:00Z entry above for the full submission detail): real
+OpenBao store/resolve/rotate, 22 no-DB + 12 real-OpenBao-integration
+checks, two fault injections caught for real. PROVISIONAL/L1-PROVEN;
+`proving_symbol` deliberately empty (no live route wires it in yet).
+Awaiting independent Control-plane L2 review -- not self-certified.
+
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
 `9a47458118ee46095270f4aa9758b5ec35efeea5`) — see "## Done" for the

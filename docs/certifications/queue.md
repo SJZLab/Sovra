@@ -8296,3 +8296,122 @@ Full entry: docs/certifications/ledger.md.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_01AWerxtiNNPmTwcW3rPzZRy,
   2026-09-21.
+
+## 2026-09-22 — FTF-0202 — Secret-manager integration
+**Submitted by:** scheduled relay shift, session
+https://claude.ai/code/session_01CKZy4kupyKhLZEjNUTzcpC. Branch
+`claude/wizardly-fermat-3c0uoh`, implementation commit `c0c8409d80c1e2e0222f8fed6912dc0355a046d2`.
+
+**Dependency readiness:** FTF-0005/FTF-0103/FTF-0201 all independently
+confirmed `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+The FTF-0202 owner-ask itself (secret backend selection) is resolved on
+`main` (commit `e9e63b4`, "OpenBao, anchored to a live conversation",
+merged via PR #173) — verified directly via `git log origin/main --
+QUEUE.md` rather than trusted from this file's own prose alone, and the
+three earlier, unverifiable "OpenBao confirmed" claims (PR #143, a commit
+on PR #159, PR #162) confirmed closed/unmerged, not acted on.
+
+**Acceptance clause 1** ("Store/resolve/rotate short-lived secret refs
+through the actual selected secret backend"): `packages/litellm_client/
+secret_manager_integration.py` resolves `openbao://<mount>/<path>/<field>`
+refs (a strict subset of FTF-0201/FTF-0005's own already-certified, frozen
+`^[a-z]+://[A-Za-z0-9_\-./]+$` shape — neither certified validator was
+touched) against a real OpenBao backend via stdlib-only `urllib.request`
+(no new third-party runtime dependency, e.g. `hvac` — deliberately
+avoiding a CLAUDE.md "Ask owner first" ask). `store_secret_ref`/
+`rotate_secret_ref` merge onto (never silently replace) a co-located
+field at the same KV v2 path; `rotate_secret_ref` reads the current
+version first, writes the new one, then soft-deletes exactly the version
+it superseded (never a hard-coded number) and refuses to rotate a ref
+with no existing secret. `_request` retries only a real 429/5xx, up to
+three attempts (Section 3.3), honoring a real `Retry-After` header.
+
+**Acceptance clause 2** ("Independent review, exact merged commit, real
+relevant integration and negative-test evidence recorded"): every real
+backend interaction was verified directly against a real OpenBao server
+*before* any test was written (Law 1) — no prebuilt release binary or
+container image was reachable from this sandbox (the same documented
+class of gap FTF-0004/FTF-0102/FTF-R017 already established for
+Postgres/Docker/SeaweedFS), so a real OpenBao server was built from
+source (`go build` against `github.com/openbao/openbao/v2` commit
+`e98dc184344fe84ee4e69965ac3f4217d5b6a45d`, both a real Git remote and the
+Go module proxy reachable) and run locally in `-dev` mode. That direct
+verification caught a genuine, load-bearing surprise: reading a
+soft-deleted or destroyed KV v2 version answers real HTTP 404 with a JSON
+body still attached, not HTTP 200 with a null payload as an uncontrolled
+first `curl | json.tool` pass (no `-w '%{http_code}'`) misleadingly
+suggested — caught and corrected before any test was written to expect
+the wrong shape, not discovered after a false-negative test passed.
+
+**negative_acceptance** ("Unknown/expired/ref-denied secrets block call
+and are never returned to browser or plaintext DB") — all three legs
+independently proven: an unknown path and a soft-deleted/destroyed
+version both raise `SecretNotFoundError` via the same ordinary 404
+handling; a denied token raises `SecretAccessDeniedError` (HTTP 403); a
+secret past its own recorded `custom_metadata.expires_at` (a Factory-level
+honesty layer this module adds, since OpenBao's own KV v2 secrets do not
+expire on their own) raises `SecretExpiredError` and is never returned
+even though the backend itself would still serve it. "Never... plaintext
+DB" holds by construction, not by convention: a source-level test
+confirms no `sqlalchemy`/`fastapi`/`hvac`/`requests` import exists
+anywhere in the module — it is structurally incapable of writing this
+repository's own Postgres or serving a browser route.
+
+**Tests:** `tests/tasks/test_ftf_0202.py` — 22 no-DB, no-network checks
+against a fake `urllib.request.urlopen` transport (ref parsing/building/
+redaction, `OpenBaoConfig.from_env` validation, the full
+negative_acceptance in isolation, the retry policy including a real
+`Retry-After` header and the three-attempt ceiling, store/rotate merge
+behavior, and the source-level no-DB/no-web-framework-import proof).
+`tests/integration/test_ftf_0202_secret_manager.py` — 12 real checks
+against a real, locally-built-and-spawned OpenBao `-dev` server (store,
+resolve, cross-field merge, rotate + real old-version unreadability
+confirmed via a raw version-pinned read, rotate-of-nothing refusal,
+unknown path, access-denied, expired, not-yet-expired, real hard-destroy
+unreadability).
+
+**Own fault injection (Law 1, two distinct vectors, both reverted
+byte-identical and both suites re-confirmed clean immediately after
+each):**
+1. Disabled the expiry check in `resolve_secret_ref` (`if False and
+   isinstance(expires_raw, str) and expires_raw:`) — both suites failed
+   with exactly the named "expired secrets block call" check.
+2. Disabled the 404-to-`SecretNotFoundError` mapping in `_request` (`if
+   False and status == 404:`) — the no-DB suite failed 2 named checks
+   (unknown path, rotate-of-nothing refusal), and the real integration
+   suite crashed with a genuine `SecretBackendError` instead of completing
+   cleanly, proving the specific 404 classification is real and
+   load-bearing, not decorative.
+
+**No regression:** full `tests/tasks/test_ftf_*.py` sweep (32 files) all
+"all checks passed" or equivalent, after `uv sync --all-packages`/`pnpm
+install --frozen-lockfile` (both pre-existing, previously-undocumented-
+this-shift sandbox gaps, confirmed pre-existing by FTF-0002/FTF-0003/
+FTF-H001 all failing identically before and passing clean immediately
+after, with no other change); `ruff check .`/`ruff format --check .`
+clean repo-wide (148 source files); `mypy .` — 9 errors, all the
+pre-existing, unrelated `alembic` `op`/`context` missing-stub gap across
+every existing migration file, confirmed byte-for-byte identical on
+`main` via `git stash`; `pnpm run lint`/`typecheck`/`format:check` clean;
+`pnpm exec vitest run` — 19/19; `uv run pytest tests/unit` — 3/3. `git
+fetch --unshallow origin` first (this sandbox's own documented
+shallow-clone artifact), then `validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired` stays `12/12` (`proving_symbol`
+deliberately empty — this task owns no live HTTP route or wired
+product-runtime caller yet; FTF-0203 "Connection validation" is the later
+task that will call this module for real). `scripts/status.py` — `36/300
+certified · 12 product-true` (unchanged — PROVISIONAL, not CERTIFIED).
+
+**CI:** `.github/workflows/ci.yml` gets one new `gate` job step (`uv run
+python3 tests/tasks/test_ftf_0202.py`) plus a new dedicated
+`secret-manager-integration` job that builds the identical pinned OpenBao
+commit fresh on the hosted runner's own real network and runs it as a
+real local `-dev` process (no `services:` container needed, since
+OpenBao's dev mode is a single self-contained process) — no other job's
+steps touched.
+
+**Not self-certified (Law 4).** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
+tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
+Control-plane L2 certification.
