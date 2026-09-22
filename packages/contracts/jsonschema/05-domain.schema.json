@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-05/domain.schema.json",
+  "title": "Sovra Phase 05 Domain Schemas (FTF-0500 — DatasetSourceConnection schema/API/RBAC)",
+  "description": "Frozen shared domain schemas for the project-scoped DatasetSourceConnection resource (Section 6.8F/7A.10/9/45/65-67/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source — apps/api/app/datasets/dataset_source_connection_schema.py (tested in tests/tasks/test_ftf_0500.py) — so this file cannot silently drift from the code that actually validates these shapes.",
+  "$defs": {
+    "DatasetSourceType": {
+      "type": "string",
+      "enum": ["upload", "s3", "minio", "database", "agent_traces", "production_conversations", "api"]
+    },
+    "DatasetSourcePurpose": {
+      "type": "string",
+      "enum": ["training", "validation", "held_out_evaluation", "candidate_development", "baseline_only"]
+    },
+    "DatasetSourceSecurityClassification": {
+      "type": "string",
+      "enum": ["public", "internal", "confidential", "restricted"]
+    },
+    "DatasetSourceConnectionStatus": {
+      "type": "string",
+      "enum": ["active", "revoked"]
+    },
+    "DisplayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "DatasetSourceConnectionCreateRequest": {
+      "type": "object",
+      "properties": {
+        "source_type": { "$ref": "#/$defs/DatasetSourceType" },
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "allowed_purposes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DatasetSourcePurpose" },
+          "minItems": 1
+        },
+        "security_classification": { "$ref": "#/$defs/DatasetSourceSecurityClassification" },
+        "credential": { "type": ["string", "null"] },
+        "connection_config": { "type": ["object", "null"] }
+      },
+      "required": ["source_type", "display_name", "allowed_purposes", "security_classification"],
+      "additionalProperties": false
+    },
+    "DatasetSourceConnectionUpdateRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of the mutable fields. Refused once the connection is revoked.",
+      "properties": {
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "allowed_purposes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DatasetSourcePurpose" },
+          "minItems": 1
+        },
+        "security_classification": { "$ref": "#/$defs/DatasetSourceSecurityClassification" }
+      },
+      "additionalProperties": false
+    },
+    "DatasetSourceAuthorizeRequest": {
+      "type": "object",
+      "properties": {
+        "purpose": { "$ref": "#/$defs/DatasetSourcePurpose" }
+      },
+      "required": ["purpose"],
+      "additionalProperties": false
+    },
+    "DatasetSourceAuthorizeResponse": {
+      "type": "object",
+      "properties": {
+        "authorized": { "type": "boolean" },
+        "purpose": { "$ref": "#/$defs/DatasetSourcePurpose" }
+      },
+      "required": ["authorized", "purpose"],
+      "additionalProperties": false
+    },
+    "DatasetSourceConnection": {
+      "type": "object",
+      "description": "Section 6.8F — the read-facing representation. Never includes credential_secret_ref/connection_config_encrypted_ref.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "project_id": { "type": "string", "format": "uuid" },
+        "source_type": { "$ref": "#/$defs/DatasetSourceType" },
+        "display_name": { "type": "string" },
+        "has_credential": { "type": "boolean" },
+        "has_connection_config": { "type": "boolean" },
+        "allowed_purposes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DatasetSourcePurpose" }
+        },
+        "security_classification": { "$ref": "#/$defs/DatasetSourceSecurityClassification" },
+        "connection_status": { "$ref": "#/$defs/DatasetSourceConnectionStatus" },
+        "last_validated_at": { "type": ["string", "null"], "format": "date-time" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "revoked_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "organization_id",
+        "project_id",
+        "source_type",
+        "display_name",
+        "has_credential",
+        "has_connection_config",
+        "allowed_purposes",
+        "security_classification",
+        "connection_status",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

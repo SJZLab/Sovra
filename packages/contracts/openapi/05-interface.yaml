@@ -1,0 +1,372 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 05 Interface (DatasetSourceConnection)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and real live routes for the
+    project-scoped DatasetSourceConnection resource (Section 6.8F/7A.10/9/
+    45/65-67/77/81, FTF-0500). `paths` declares exactly the surface this
+    task actually implements and wires into `apps/api/app/main.py` --
+    create/get/list/edit/revoke plus one real authorization check
+    (`/authorize`) -- and nothing else. It deliberately does not declare a
+    `/preview` or `/import` route: no `Dataset` entity exists anywhere in
+    this repository yet to import into (Section 8's own dataset import
+    pipeline is a later, separately dependency-gated task). Whichever
+    later task adds its own real route (dataset import, source
+    validation) extends this same file under this same contract-owner
+    lock (shared_lock_required: contracts:05).
+paths:
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the project's dataset source connections.
+      operationId: listDatasetSourceConnections
+      responses:
+        '200':
+          description: The project's dataset source connections.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatasetSourceConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: >-
+        Create a new dataset source connection. `allowed_purposes` is this
+        task's own real purpose-scoped grant, declared once at creation
+        from the closed Section 6.8F vocabulary. A supplied `credential`/
+        `connection_config` value is written for real to the real
+        OpenBao-backed secret store before the row exists; only the
+        resulting reference is ever persisted or returned.
+      operationId: createDatasetSourceConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetSourceConnectionCreateRequest'
+      responses:
+        '201':
+          description: The created dataset source connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSourceConnection'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: project_id missing or belongs to a different organization -- identical.
+        '503':
+          description: >-
+            A credential/connection_config value was supplied but no
+            secret-manager backend is configured -- refused, never stored
+            in plaintext.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources/{connection_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one dataset source connection.
+      operationId: getDatasetSourceConnection
+      responses:
+        '200':
+          description: The dataset source connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSourceConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case.
+    patch:
+      summary: >-
+        Edit a non-revoked connection's display_name/allowed_purposes/
+        security_classification (any non-empty subset). Re-granting
+        allowed_purposes here is this task's own real re-authorization
+        path -- there is no separate grant object.
+      operationId: updateDatasetSourceConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetSourceConnectionUpdateRequest'
+      responses:
+        '200':
+          description: The updated dataset source connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSourceConnection'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing, wrong organization, or wrong project -- identical.
+        '409':
+          description: The connection is revoked and cannot be edited.
+    delete:
+      summary: Revoke (soft-delete) a dataset source connection. Idempotent.
+      operationId: revokeDatasetSourceConnection
+      responses:
+        '200':
+          description: >-
+            The connection in its revoked state -- returned unchanged,
+            with no new audit event, if it was already revoked. From this
+            point on, authorize denies every purpose for this connection,
+            including one it was previously granted for.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSourceConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing, wrong organization, or wrong project -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources/{connection_id}/authorize:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        This task's own "authorization before import" acceptance clause
+        made real and callable. A later Dataset-import task calls this
+        exact real check before creating any Dataset from this
+        connection. Never a silent 200 for a denied purpose.
+      operationId: authorizeDatasetSourcePurpose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetSourceAuthorizeRequest'
+      responses:
+        '200':
+          description: The purpose is authorized for this connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSourceAuthorizeResponse'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The connection is not active, or the requested purpose is not
+            in its own allowed_purposes -- content-free reason only, never
+            the connection's own secret material.
+        '404':
+          description: Missing, wrong organization, or wrong project -- identical.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: "ml_engineer: datasets/
+        training" is the only sentence naming a role for this class of
+        work; every operation, including reads, is gated to {ml_engineer,
+        workspace_admin, organization_admin} -- this credential-bearing
+        resource does not open reads wider than writes).
+    ValidationFailed:
+      description: The request body failed schema/policy validation.
+  schemas:
+    DatasetSourceType:
+      type: string
+      enum:
+        [upload, s3, minio, database, agent_traces, production_conversations, api]
+    DatasetSourcePurpose:
+      type: string
+      enum: [training, validation, held_out_evaluation, candidate_development, baseline_only]
+    DatasetSourceSecurityClassification:
+      type: string
+      enum: [public, internal, confidential, restricted]
+    DatasetSourceConnectionStatus:
+      type: string
+      enum: [active, revoked]
+    DatasetSourceConnectionCreateRequest:
+      type: object
+      properties:
+        source_type:
+          $ref: '#/components/schemas/DatasetSourceType'
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        allowed_purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasetSourcePurpose'
+          minItems: 1
+        security_classification:
+          $ref: '#/components/schemas/DatasetSourceSecurityClassification'
+        credential:
+          type: [string, 'null']
+          description: >-
+            A raw credential value, written for real to the secret
+            backend and never persisted or echoed back as-is.
+        connection_config:
+          type: [object, 'null']
+          description: >-
+            Non-secret-but-sensitive connection configuration (e.g.
+            bucket/region), stored the same way as credential.
+      required: [source_type, display_name, allowed_purposes, security_classification]
+      additionalProperties: false
+    DatasetSourceConnectionUpdateRequest:
+      type: object
+      description: Any non-empty subset of the mutable fields. Refused (409) once revoked.
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        allowed_purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasetSourcePurpose'
+          minItems: 1
+        security_classification:
+          $ref: '#/components/schemas/DatasetSourceSecurityClassification'
+      additionalProperties: false
+    DatasetSourceAuthorizeRequest:
+      type: object
+      properties:
+        purpose:
+          $ref: '#/components/schemas/DatasetSourcePurpose'
+      required: [purpose]
+      additionalProperties: false
+    DatasetSourceAuthorizeResponse:
+      type: object
+      properties:
+        authorized:
+          type: boolean
+        purpose:
+          $ref: '#/components/schemas/DatasetSourcePurpose'
+      required: [authorized, purpose]
+      additionalProperties: false
+    DatasetSourceConnection:
+      type: object
+      description: >-
+        Section 6.8F -- the read-facing representation. Never includes
+        credential_secret_ref/connection_config_encrypted_ref (Section 46:
+        "Secret values never returned to browser after creation") --
+        has_credential/has_connection_config disclose only whether each is
+        set.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        source_type:
+          $ref: '#/components/schemas/DatasetSourceType'
+        display_name:
+          type: string
+        has_credential:
+          type: boolean
+        has_connection_config:
+          type: boolean
+        allowed_purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasetSourcePurpose'
+        security_classification:
+          $ref: '#/components/schemas/DatasetSourceSecurityClassification'
+        connection_status:
+          $ref: '#/components/schemas/DatasetSourceConnectionStatus'
+        last_validated_at:
+          type: [string, 'null']
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - project_id
+        - source_type
+        - display_name
+        - has_credential
+        - has_connection_config
+        - allowed_purposes
+        - security_classification
+        - connection_status
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
