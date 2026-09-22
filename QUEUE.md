@@ -1,4 +1,205 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+  FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201
+  all CERTIFIED). STEP 0 clean (`sha256sum CLAUDE.md` matches
+  `CLAUDE.md.sha256`). Verified directly on GitHub (not just this file's
+  own prose) that the FTF-0202 owner-ask resolution below is genuinely
+  merged to `main` (commit `e9e63b4`, via PR #173) before treating it as
+  dependency-ready — PR #143/#162 (the three earlier, unverifiable
+  claims) both confirmed closed/unmerged. FTF-0202 has the lowest task ID
+  among the dependency-ready frontier PR #175 already computed
+  (`FTF-0202, FTF-0408, FTF-0902, FTF-1001, FTF-1302, FTF-1401, FTF-1501,
+  FTF-1702, FTF-R016`) and no open PR claims it.
+
+  Verified every real OpenBao backend interaction directly (Law 1) before
+  writing any test: no prebuilt release binary or container image was
+  reachable from this sandbox (same class of gap as Postgres/Docker/
+  SeaweedFS elsewhere in this file's history), so built a real OpenBao
+  server from source (commit `e98dc184344fe84ee4e69965ac3f4217d5b6a45d`)
+  and ran it locally. That check caught a genuine surprise: a soft-deleted
+  or destroyed KV v2 version answers real HTTP 404 with a body attached,
+  not HTTP 200 with a null payload as an under-checked first probe
+  suggested — corrected before any test was written to expect the wrong
+  shape.
+
+  `packages/litellm_client/secret_manager_integration.py` (path refined
+  from the packet's own hyphenated, non-importable
+  `packages/litellm-client/...` suggestion) resolves `openbao://<mount>/
+  <path>/<field>` refs via stdlib-only `urllib.request` (no new runtime
+  dependency), with real store/resolve/rotate against OpenBao's KV v2 API
+  and this task's own full negative_acceptance (unknown/expired/denied
+  secrets block call, never returned). 22 no-DB checks
+  (`tests/tasks/test_ftf_0202.py`, fake transport) + 12 real checks
+  (`tests/integration/test_ftf_0202_secret_manager.py`, a real
+  locally-built-and-spawned OpenBao server). Two fault injections (expiry
+  check; 404-to-`SecretNotFoundError` mapping), both caught for real in
+  both suites and reverted byte-identical. No regression across the full
+  `tests/tasks/test_ftf_*.py` sweep (32 files), `ruff`/`mypy`/`pnpm`
+  checks (the 9 `mypy` alembic-stub errors confirmed pre-existing on
+  `main` via `git stash`), `validate_spec.py --strict` (after `git fetch
+  --unshallow`), `product_truth_check.py --fail-on-unwired` (`12/12`,
+  unchanged — `proving_symbol` deliberately empty, no live route wires
+  this module in yet; that is FTF-0203's job). `scripts/status.py` —
+  `36/300 certified · 12 product-true` (unchanged — PROVISIONAL, not
+  CERTIFIED). CI: one new `gate` step plus a dedicated
+  `secret-manager-integration` job building the pinned OpenBao commit
+  fresh on the hosted runner.
+
+  PR opened as PROVISIONAL; not self-certified (Law 4) — awaiting
+  independent Control-plane L2 review. Full submission report:
+  `docs/certifications/queue.md`.
+
+## Next shift
+FTF-0202 now needs independent Control-plane L2 certification before
+anything depending on it (transitively, a large fraction of the graph
+through FTF-H006/FTF-0203+) can be picked. The standing GitHub Actions
+runner-provisioning outage (open since 2026-09-21, see "Owner actions —
+current" below) and the backlog of open, unreviewed relay PRs (#158/#159/
+#160/#161/#167/#170/#172 and now this shift's own FTF-0202 PR) remain
+Control-plane's responsibility, not this relay's. If a relay session
+fires next instead of a certifier: recompute the dependency-ready
+frontier fresh rather than trusting this note alone — FTF-0408/FTF-0902
+are still real, unpicked items but need their own disclosed DoD-clarity/
+resource-gate gaps resolved first, not improvised under time pressure.
+
+Updated: 2026-09-22 — resolved a real merge conflict on PR #160 (FTF-1001)
+  against the current `main` (FTF-0403/FTF-1301/FTF-1701 certified since
+  this PR opened; FTF-0202 resolved for real; FTF-1302/FTF-R016 blocked on
+  a GitHub Actions runner-provisioning outage — see below). Also caught and
+  fixed a real semantic conflict `git`'s own file-level merge could not
+  see: this task's migration and FTF-0403's own independently claimed the
+  same `0007_*`/`down_revision: 0006_tool_definitions`, leaving two genuine
+  Alembic heads — renumbered this task's own migration to
+  `0009_model_versions` (after FTF-1301's own `0008_cost_profiles`, the
+  real current head). Full migration chain, this task's own live-Postgres
+  suite, and FTF-0403's/FTF-1301's own live-Postgres suites all re-verified
+  clean together on a fresh database; no regression to FTF-0301/FTF-0404's
+  own live-Postgres suites or the full `tests/tasks/test_ftf_*.py`/`pnpm`
+  sweep. See `PROGRESS.md` for the full resolution narrative.
+
+Previously, 2026-09-22 (live, interactive session) — **FTF-0202 resolved for
+  real:** backend is OpenBao. The owner raised directly, in this
+  conversation, why the decision kept reporting as unresolved despite
+  three prior automated sessions each claiming a confirmation; none of
+  those three was independently verifiable (see the "Owner actions —
+  current" entry below for the full trace). This entry is the first
+  anchored to a session that can directly vouch for the exchange. PR #162
+  (redundant, doc-only, same conclusion) closed without merging as part of
+  this resolution; PR #143 stays closed, unmerged. No code change — this
+  only unblocks a future relay shift's own implementation PEV cycle.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1001
+  (ModelVersion schema/API, deps FTF-0301/FTF-0401/FTF-0103 all
+  CERTIFIED). PR #160 opened as PROVISIONAL, awaiting independent Control
+  plane L2 certification. Certified stays 33/300; product-true (CERTIFIED-
+  only) stays 10; `product_truth_check.py --fail-on-unwired` rose 10/10 →
+  11/11 (this task's own real new live caller, `build_model_version_router`,
+  wired into `apps/api/app/main.py`). See "Previously" below for the full
+  submission summary and `docs/certifications/queue.md` for the complete
+  narrative.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1001
+  (ModelVersion schema/API, deps FTF-0301/FTF-0401/FTF-0103 all CERTIFIED).
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted the
+  prior shift's own "Next shift" note by itself): FTF-0202 (owner ask,
+  still open), FTF-0403 (already has an open, unmerged `[relay]` PR #158
+  from another concurrent shift), FTF-0902, FTF-1001, FTF-1401 and FTF-1501
+  (already has an open, unmerged `[relay]` PR #159 from another concurrent
+  shift) are the dependency-ready items. Neither FTF-0403 nor FTF-1501 was
+  duplicated. FTF-0902's own real acceptance/negative_acceptance ("Install
+  and test actual CNI/firewall/DNS/IPv6/metadata restrictions"; "NetworkPolicy
+  YAML on a nonenforcing cluster is not a pass") requires a real,
+  policy-enforcing Kubernetes cluster this sandbox does not have -- a
+  genuine `BLOCKED_EXTERNAL` risk -- so it was set aside rather than picked
+  into a shift it would likely block. FTF-1001 matches the
+  schema/crud/routes-triplet-plus-migration pattern FTF-0201/FTF-0301/
+  FTF-0401/FTF-0404 already established repeatedly, with no external-service
+  ask of its own.
+  `apps/api/app/model_versions/{model_version_schema,model_version_crud,
+  model_version_routes}.py` (refined from the packet's own single
+  abbreviated `services/serving-controller/vllm/modelversion_schema_api.py`
+  suggestion into the same triplet, matching the FTF-0404/FTF-0406/FTF-0407
+  precedent for a packet whose abbreviated `files` listing is this repo's
+  own standard shorthand). Real, live-wired
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/model-versions`
+  routes (the seventh live-wired product-runtime path in this repository).
+  Real forward Alembic migration
+  (`apps/api/alembic/versions/0009_model_versions.py`), FORCE-RLS scoped to
+  the same tenant context every prior migration established, plus two
+  composite foreign keys -- `(organization_id, project_id)` -> `projects`
+  and `(organization_id, trainable_artifact_id)` -> `trainable_artifacts`
+  via a purely additive `UNIQUE(organization_id, id)` constraint on the
+  already-CERTIFIED `trainable_artifacts` table (the same Section 65.1
+  precedent FTF-0401/FTF-0404 already applied to `workspaces`/`projects`).
+  Every model version is immutable by construction (Section 35): no
+  edit/delete route exists at all, and the migration's own database grant
+  is SELECT/INSERT only -- never UPDATE/DELETE, a stronger real guarantee
+  than every prior versioned resource's own grant. This task's own
+  negative_acceptance ("Required nonexistent weights/hash for endpoint
+  import, mutable production artifact or cross-tenant parent denied")
+  resolves to three disclosed denial paths (full reasoning in
+  `model_version_schema.py`'s own module docstring): (1) an `endpoint`
+  import structurally forbids local-weight fields, enforced both in
+  `ModelVersion.__init__` and by a real `ck_model_versions_kind_consistency`
+  database CHECK constraint (defense in depth); (2) a `full_weight`/
+  `adapter` import's parent `TrainableArtifact` must be `ready` (immutable,
+  resolved), never `registered` (mutable) or `archived`, checked against a
+  real database fetch in `create_model_version`; (3) the parent artifact
+  must belong to the same organization, reusing FTF-0301's own
+  already-certified `get_artifact`/`authorize_resource_ownership` directly
+  -- no new authorization primitive introduced. `weights_digest`/
+  `base_model_revision` are always copied server-side from the real,
+  resolved parent artifact, never accepted as a client-supplied claim (the
+  route accepts no such input fields at all). Deliberately out of scope,
+  disclosed not hidden: promotion/tag assignment and "one production
+  version per deployment slot" (FTF-1101's own later job, which lists this
+  task as ITS OWN dependency) and real vLLM serving/deployment/health
+  endpoints (FTF-1003/FTF-1005/FTF-1008's own later, separately
+  dependency-gated surface -- each lists FTF-1001 as its own dependency,
+  confirmed directly against `docs/TASK_INDEX.md` before narrowing scope).
+  24 no-DB test functions (`tests/tasks/test_ftf_1001.py`) + 26 real
+  live-Postgres checks
+  (`tests/integration/test_ftf_1001_model_version_schema_api.py`, two real
+  organizations, three real `TrainableArtifact` fixtures covering
+  `ready`/`registered`/cross-org states). Own fault injection (Law 1, three
+  distinct vectors, all reverted byte-identical and reconfirmed clean): (1)
+  disabled the mutable-artifact guard in `create_model_version` -- caught
+  for real by the live-Postgres suite's own negative_acceptance check (409
+  became 201); (2) disabled the structural endpoint-vs-artifact consistency
+  check in `ModelVersion.__init__` -- caught for real by 7 named checks in
+  the no-DB suite; (3) dropped the real `ck_model_versions_kind_consistency`
+  CHECK constraint directly against the live database and confirmed the
+  exact bypass it exists to prevent is genuinely admitted without it, then
+  rebuilt the database from a fresh migration. Independently reconfirmed no
+  regression to `test_ftf_0301`/`test_ftf_0401`/`test_ftf_0404`/
+  `test_ftf_0406`/`test_ftf_0407` (no-DB, all "all checks passed") and to
+  FTF-0301's/FTF-0404's own live-Postgres suites (re-run "all checks
+  passed" against this task's own already-migrated database, which added a
+  purely additive constraint to `trainable_artifacts`). `ruff check`/`ruff
+  format --check`/`mypy` clean on every file this task touched.
+  `validate_spec.py --strict` clean (`git fetch --unshallow origin` first).
+  `product_truth_check.py --fail-on-unwired` -- `10/10` before this shift,
+  `11/11` after (this task's own `proving_symbol`, `build_model_version_router`,
+  has a real caller in `apps/api/app/main.py` -- not a TRACKER). Wired into
+  CI: a new `gate` job step plus a dedicated
+  `model-version-schema-api-integration` job mirroring
+  `tool-schema-crud-integration`'s own real `services: postgres` container
+  pattern. **Discovered but not acted on, flagged for Control plane:**
+  `test_ftf_0406.py`/`test_ftf_0407.py` are not wired into
+  `.github/workflows/ci.yml` at all (confirmed by direct `grep` -- neither
+  task ID appears anywhere in that file before this task's own commit) --
+  both tasks' own submission entries claimed CI ran green, which is
+  consistent with the *existing* checks passing, but the new tests those
+  two tasks each added were apparently never actually exercised by CI. Not
+  fixed here (a different, already-CERTIFIED task's own concern, not this
+  shift's to improvise on) -- left as a flagged, dependency-ready item for
+  a future shift or Control plane review. PR #160 opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1001 set to `PROVISIONAL`/`L1-PROVEN`,
+  `proving_symbol` `build_model_version_router`. Awaiting independent
+  Control plane certification -- not self-certified (Law 4). Certified
+  stays 33/300; `scripts/status.py`'s own stricter "product-true" count
+  stays 10. Full submission report: `docs/certifications/queue.md`.
 Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-R016
   (Measure selected coding-model/executor pilot cost and enforce budget
   tree, deps FTF-R015/FTF-H002/FTF-0403 all CERTIFIED). STEP 0: verified
@@ -357,6 +558,124 @@ first, not improvised under time pressure; FTF-0202 remains the single
 highest-leverage owner ask still open, blocking a large fraction of the
 remaining graph transitively.
 
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1702 (Tool
+  environment, deps FTF-0004/FTF-1701 both CERTIFIED). CLAUDE.md
+  integrity self-check ran first (`sha256sum CLAUDE.md` matched the
+  committed `CLAUDE.md.sha256` byte-for-byte) before any other step, per
+  this shift's own standing instruction.
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live `certification_state` cross-referenced
+  with `docs/TASK_INDEX.md`'s real `Dependencies` column (spec-matrix.yaml
+  itself carries no populated `deps` field on any non-certified task — a
+  fresh script-driven join against TASK_INDEX.md was required, not merely
+  trusting the prior shift's own "Next shift" note by itself): FTF-0902,
+  FTF-0202 (owner ask, unresolved -- see below), FTF-1001, FTF-1401,
+  FTF-1301 (newly dependency-ready now that FTF-0403 reached CERTIFIED --
+  not present in the prior shift's own frontier list, which predates
+  FTF-0403's certification), FTF-0408, FTF-1702, FTF-1501, and FTF-R016
+  were the dependency-ready items found. FTF-1001/FTF-1401/FTF-1501
+  already have real, open, unmerged PROVISIONAL PRs from prior shifts (PR
+  #160/#161/#159 -- see the flagged note below, carried forward
+  unresolved); implementing any of them again would duplicate that work.
+  FTF-0202 stays an owner ask, unresolved (see "Owner actions -- current"
+  below). FTF-0408's own disclosed DoD-clarity gap (Section 22 Screen D /
+  `AgentManifest.mandate_json` fields with no real storage anywhere in
+  this repository yet) is unchanged from the prior shift's own finding --
+  re-checked, not re-litigated, and still not picked. FTF-0902's own
+  `resource_gate` (a real enforcing Kubernetes/CNI cluster) is still
+  unavailable in this sandbox. FTF-1301 (CostProfile schema/UI) and
+  FTF-R016 (coding-executor cost/budget enforcement) are both genuinely
+  unclaimed with no open PR, but FTF-1702 has the lowest task-ID among
+  items with no disclosed DoD gap, no missing external resource, and no
+  duplicated in-flight PR -- and was the item the prior shift's own "Next
+  shift" note explicitly predicted FTF-1701 reaching CERTIFIED would
+  unblock.
+  `evals/reference/tool_environment.py`'s `ToolEnvironment` wraps
+  FTF-1701's own real `ReferenceBusinessServer`/`dispatch_tool_call` with
+  a deterministic `ToolEnvironmentSeed` and a real `reset()` lifecycle
+  implementing Section 66.3's own named "reset" operation ("destroy/
+  reseed disposable namespace between independent cases"): `reset()`
+  discards the current server outright and rebuilds a fresh one from the
+  same seed spec (never an in-place clear), so one qualification case's
+  mutations can never leak into the next, and every reseeded record gets
+  a freshly generated ID so a caller cannot address stale state either.
+  `dispatch()` adds exactly one new guard of its own -- refusing a
+  tenant/subject this environment's own seed never declared, before
+  FTF-1701's real dispatcher, authorization, or idempotency logic is ever
+  reached -- while still passing through, unmodified, to FTF-1701's own
+  real handler and schema validation, satisfying this task's own
+  negative_acceptance ("Canned success tools and unguarded financial
+  writes cannot satisfy target-product test environment") by
+  construction, not assertion.
+  Narrowed, disclosed explicitly in the module's own docstring: this task
+  implements only its own acceptance clause ("Implement real disposable
+  seeded backend for search/get/create-note/request-approval/
+  execute-approved-action"), not the other six Section 66.3 canonical
+  adapter operations (`describe`/`preflight`/`invoke`/`cancel`/
+  `collect_outcome`/`attest`) -- those belong to whichever later task
+  actually wires this environment behind a real runtime adapter, not this
+  one. `database_changes` honored ("No independent schema change");
+  `resource_gate` is moot -- no database/network/GPU resource of any kind
+  is touched, matching the FTF-1701 precedent exactly. `shared_lock_
+  required` is empty; contracts:17 stays FTF-1701's own lock, extended by
+  nothing here.
+  `tests/reference/test_ftf_1702.py`: 12 no-DB test functions (seeded-
+  record resolution via fixture triple, a full five-tool happy path
+  through the real dispatcher including idempotency and a real approval-
+  decide-execute cycle, cross-tenant IDOR still enforced unmodified, the
+  new unseeded-tenant/subject guard, reset-as-genuine-disposal proven
+  directly by mutating state then confirming it is gone afterward,
+  `reset_count` accounting, two independent environments never sharing
+  state, and a custom seed spec honored rather than silently replaced).
+  Own fault injection (Law 1, two distinct vectors, both reverted
+  byte-identical and the suite re-run clean afterward): (1) disabled the
+  unseeded-tenant/subject guard in `dispatch()` -- caught for real by the
+  three named guard checks; (2) made `reset()` clear state in place
+  instead of discarding the server -- caught for real by the three named
+  disposal checks. No regression: FTF-1701's own suite re-run "all checks
+  passed" unchanged.
+  `product_truth_check.py --fail-on-unwired` stays `11/11` (`proving_
+  symbol` deliberately empty -- this task adds no live caller into any
+  `SOURCE_ROOTS` path, matching FTF-1701/FTF-1401/FTF-1601's own
+  precedent for a specification/measurement tool, not inflation).
+  `ruff check`/`ruff format --check`/`mypy` clean repo-wide (139 source
+  files; the 2 remaining mypy errors are the pre-existing, unrelated
+  `authlib.jose` stub gap, confirmed identical on `main`).
+  `pnpm install --frozen-lockfile` had not yet been run in this sandbox
+  this shift (the same pre-existing, previously-documented environment
+  gap every prior shift has already noted -- confirmed by re-running
+  `test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py` clean
+  immediately after installing). Full `tests/tasks/test_ftf_*.py` sweep
+  clean afterward. `git fetch --unshallow origin` first (this sandbox's
+  own clone is shallow by default); `validate_spec.py --strict` clean.
+  Wired into `.github/workflows/ci.yml`'s gate job, right after the
+  FTF-1701 step.
+  PR opened as PROVISIONAL; `docs/spec-matrix.yaml` FTF-1702 set to
+  `PROVISIONAL`/`L1-PROVEN`, `proving_test`
+  `tests/reference/test_ftf_1702.py`, `evidence_hash` set to the
+  implementation commit. Awaiting independent Control plane certification
+  -- not self-certified (Law 4). Certified stays 35/300;
+  `product_truth_check.py --fail-on-unwired` stays `11/11`;
+  `scripts/status.py` stays `35/300 certified · 11 product-true`. Full
+  submission report: `docs/certifications/queue.md`.
+
+**Still flagged, carried forward unresolved from the prior shift** (Law
+9, gate-weakening is watched -- re-checked directly via GitHub, not
+assumed unchanged): `list_pull_requests` reconfirms the same five open,
+unmerged PRs the prior shift found, still exactly as described there --
+this shift (a relay shift, not a certifier shift) took no certifier-only
+action on any of them (no merge, no close):
+- **PR #158** ("[relay] FTF-0403: Budget policy") still duplicates work
+  already independently re-implemented and merged via PR #163 -- still
+  stale, still unmerged.
+- **PR #159** (FTF-1501), **PR #160** (FTF-1001), and **PR #161**
+  (FTF-1401) are still real, open, PROVISIONAL submissions awaiting
+  Control-plane review, unchanged since the prior shift.
+- **PR #162** ("Resolve FTF-0202 owner-ask... OpenBao secret backend
+  confirmed") still carries no corroborating live-conversation detail
+  this shift can verify -- still not merged, FTF-0202 still not treated
+  as resolved.
+
 Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1701
   (Reference agent specification, deps FTF-0407/FTF-0405 both CERTIFIED).
   Independently recomputed the dependency-ready frontier fresh against
@@ -514,18 +833,25 @@ did not reflect:
   other; this relay shift cannot.
 
 ## Next shift
-Five open PRs need Control-plane attention ahead of any further relay
-implementation, in this order: (1) close PR #158 without merging
-(superseded by the already-merged PR #163); (2) certify or reject PR #159/
-#160/#161 (FTF-1501/FTF-1001/FTF-1401, all already PROVISIONAL and
-unreviewed); (3) resolve PR #162's own FTF-0202 claim one way or the
-other (verify the live conversation genuinely occurred, or close it
-unmerged like PR #143 before it). If a relay session fires next instead:
-recompute the dependency-ready frontier fresh rather than trusting this
-note alone -- FTF-1701 reaching CERTIFIED will newly unblock FTF-1702
-("Tool environment") per `docs/TASK_INDEX.md`; FTF-0408/FTF-0902 are
-still real, unpicked items but need the DoD-clarity gaps disclosed above
-resolved first, not improvised.
+FTF-1702 (this shift's own submission, see the top of this file) is now
+PROVISIONAL, PR opened, awaiting independent Control-plane L2
+certification. Six open PRs now need Control-plane attention ahead of
+any further relay implementation, in this order: (1) close PR #158
+without merging (superseded by the already-merged PR #163); (2) certify
+or reject PR #159/#160/#161 (FTF-1501/FTF-1001/FTF-1401, all already
+PROVISIONAL and unreviewed) and this shift's own PR for FTF-1702; (3)
+resolve PR #162's own FTF-0202 claim one way or the other (verify the
+live conversation genuinely occurred, or close it unmerged like PR #143
+before it). If a relay session fires next instead: recompute the
+dependency-ready frontier fresh rather than trusting this note alone --
+this shift found FTF-0902, FTF-0202 (owner ask), FTF-1001, FTF-1401,
+FTF-1301 (CostProfile schema/UI -- newly dependency-ready now that
+FTF-0403 is CERTIFIED, no open PR yet, no disclosed DoD gap), FTF-0408,
+FTF-1702, FTF-1501, and FTF-R016 dependency-ready; FTF-1702 reaching
+CERTIFIED will newly unblock FTF-1703 ("Training dataset") per
+`docs/TASK_INDEX.md`, whose other dependencies (FTF-0506) are not yet
+CERTIFIED. FTF-0408/FTF-0902's own disclosed DoD-clarity/resource-gate
+gaps are unchanged and still not resolved.
 
 Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #163) — independent CERTIFY
@@ -622,6 +948,132 @@ Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-0403
   certified · 10 product-true` until this submission is independently
   certified. PR opened as PROVISIONAL; not self-certified (Law 4) —
   awaiting independent Control-plane L2 review.
+
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1501
+  (Tenant isolation suite, deps FTF-0106/FTF-H003 both CERTIFIED).
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted the
+  prior shift's own "Next shift" note by itself, which predated FTF-0407
+  reaching CERTIFIED): FTF-0403, FTF-0902, FTF-1001, FTF-1401, FTF-1501,
+  FTF-1701 are the six dependency-ready items (FTF-0202 stays excluded,
+  owner ask still unresolved per the standing flagged note below).
+  FTF-0403 already has a complete, CI-green PROVISIONAL PR open (#158,
+  from an earlier same-day relay shift not yet reflected in this file's
+  own prior top entry) — this shift did not redo it. Of the remaining
+  five, FTF-1501 (CAP-14) is the only one carrying an actual `CAP-xx`
+  requirements tag, matching this repo's own established "lowest CAP
+  number, no external-service ask" pick precedent.
+  Found and fixed a real gate-integrity gap first (Law 9): FTF-0406/
+  FTF-0407 (both already CERTIFIED/merged) had no `gate` job step, and
+  FTF-0407 had no live-Postgres integration job — `.github/workflows/
+  ci.yml` never ran any of their own test files at all (confirmed:
+  `grep -in "0406\|0407" .github/workflows/ci.yml` returned zero matches;
+  last CI-file touch was `2bc435b`, FTF-0405's own fix for the identical
+  class of gap on FTF-0404). Reconfirmed both no-DB suites and FTF-0407's
+  own live-Postgres suite genuinely pass locally before wiring them in.
+  This calls into question what the FTF-0406/FTF-0407 certifier reviews'
+  own "CI reconfirmed green" claims actually verified — flagged for a
+  future Control-plane session, not silently patched over.
+  Scope honestly narrowed (Law 5/7, disclosed not assumed): this task's
+  own acceptance clause names "real two-tenant API/DB/worker/storage/
+  cache/model paths", but only API and DB paths have any live existence
+  in this repository today — `workers/{training,evaluation,data,deploy}`
+  are still README/pyproject-only scaffolds, and `packages/storage/
+  tenant_policy.py` (FTF-H003) has zero live callers anywhere in
+  `apps/api/app` (grepped directly). Declaring checks against
+  infrastructure that does not exist would be fabricated evidence under
+  Law 11. `tests/security/tenant_isolation_suite.py` reuses FTF-0106's
+  own `TwoTenantRoleMatrixFixture` and FTF-H003's own
+  `authorize_resource_ownership`/`tenant_scoped_session_for` (FTF-0106's
+  own module docstring names this task directly as an intended
+  dependent) to prove, for every currently live-wired resource kind
+  (connections, artifacts, projects, tools) plus the read-only
+  requirements view: owner-reachable, cross-tenant API read/write denied,
+  unauthenticated denied, and a real DB-layer cross-tenant probe through
+  the exact same production ownership guard every CRUD module already
+  calls (never a hand-rolled query) — plus a cross-layer foreign-project
+  check on the nested `tool`/`requirements` resources. 25 real checks
+  against a live PostgreSQL 16 cluster. negative_acceptance ("No security
+  result from mocked auth or superuser-only DB tests") made real:
+  `assert_not_superuser_role` refuses to proceed against a real Postgres
+  superuser connection (checked via `pg_roles.rolsuper`, fail-closed if
+  unresolved), proven against a plain stub in the no-DB suite; every HTTP
+  call goes through a real socket to a real running uvicorn server.
+  `packages/contracts/{openapi,jsonschema}/15-*` frozen (first claim of
+  contract slot 15), `paths: {}` since this task adds no new production
+  HTTP route (matching FTF-1601's own precedent). 25 no-DB checks
+  (`tests/tasks/test_ftf_1501.py`: pure evidence-building/guard logic,
+  content-free-by-construction field introspection, contract
+  conformance). Two own fault injections (Law 1), both reverted
+  byte-identical: (1) disabled `build_evidence`'s own empty-results
+  guard — caught for real by the no-DB suite; (2) disabled the real,
+  already-CERTIFIED `authorize_resource_ownership`'s own ownership check —
+  caught for real by all 4 `cross_tenant_db_read_denied` checks in the
+  live suite (25/25 → 21/25, the exact 4 expected failures, no false
+  negatives/positives elsewhere). Independently reconfirmed no regression
+  to FTF-H003's/FTF-0106's own no-DB suites (both "all checks passed").
+  `ruff check`/`ruff format --check`/`mypy` clean across the full
+  `apps/api`+`tests` tree (128 source files). `validate_spec.py --strict`
+  clean (`git fetch --unshallow origin` first — this sandbox's own clone
+  is shallow by default, the same pre-existing artifact every prior
+  relay/certifying session has already documented).
+  `product_truth_check.py --fail-on-unwired` — `10/10` before and after
+  this shift (this task's own `proving_symbol` is deliberately empty: no
+  new apps/api production module, no live-wiring claim — matching the
+  FTF-0106/FTF-H003 precedent). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1501 set to `PROVISIONAL`/`L1-PROVEN`,
+  `evidence_hash` = the implementation commit (`778f6f2`), `proving_test`
+  `tests/tasks/test_ftf_1501.py`. Awaiting independent Control plane
+  certification — not self-certified (Law 4). Certified stays 33/300;
+  `scripts/status.py`'s own stricter "product-true" count stays 10.
+  Full submission report: `docs/certifications/queue.md`.
+
+
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1401 (API
+  load test, deps FTF-0006/FTF-0401/FTF-0106 all CERTIFIED). Checked
+  GitHub directly for open PRs before picking work: PR #158 (FTF-0403),
+  #159 (FTF-1501), #160 (FTF-1001) were already open from more recent
+  relay shifts than this file's own prior update — treated as already
+  claimed, not re-done. Independently recomputed the dependency-ready
+  frontier: FTF-0202 (owner ask, still open/unverified), FTF-0403,
+  FTF-0902, FTF-1001, FTF-1401, FTF-1501, FTF-1701 (newly unblocked by
+  FTF-0407's own certification). FTF-0902 requires a real enforcing
+  Kubernetes cluster for its own acceptance (CNI/firewall/DNS/IPv6
+  restrictions) that this sandbox cannot reach — set aside rather than
+  faked. Picked FTF-1401 over FTF-1701 as achievable with only this
+  sandbox's real local Postgres + uvicorn.
+  `tests/performance/api_load_test.py` drives the real, already-live
+  project/tool routers over a real uvicorn/Postgres round trip, reporting
+  p50/p95/p99/errors/backpressure — a disclosed partial profile against
+  Section 49's full-scale Control API target (is_partial_profile=true,
+  disclosed_gaps names every reduction), per that section's own "smaller
+  environment -> partial profile" rule. Real run: 3,831 requests over
+  15.0s, read P95 48.9ms / write P95 48.8ms (within the 500ms/1000ms
+  thresholds), 0 unexpected 5xx, acceptance_passed=true; independently
+  re-queried the DB to confirm no successful write was lost. Own fault
+  injection (Law 1, two vectors — `execute_request`'s OSError guard and
+  `evaluate_acceptance`'s 5xx-rate branch — both caught for real and
+  reverted byte-identical). 17 no-DB test functions, all pass. No
+  regression to FTF-0401/FTF-0404/FTF-0405/FTF-0406/FTF-0407's own
+  suites. `ruff`/`mypy` clean repo-wide. `validate_spec.py --strict`
+  clean. `product_truth_check.py` unchanged at 10/10 (proving_symbol is
+  deliberately empty — a measurement tool, not a new served route,
+  matching FTF-1601's own precedent). Wired into
+  `.github/workflows/ci.yml` (new gate step + new
+  `api-load-test-integration` job). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1401 set to `PROVISIONAL`/`L1-PROVEN`.
+  Awaiting independent Control plane certification — not self-certified
+  (Law 4). Certified stays 33/300; product-true stays 10.
+  **Flagged for Control plane/next shift (not fixed by this task, out of
+  its own scope):** FTF-0406's and FTF-0407's own no-DB and live-Postgres
+  test suites are not wired into `.github/workflows/ci.yml` at all — no
+  step anywhere references `test_ftf_0406.py`/`test_ftf_0407.py` or their
+  `tests/integration/` counterparts (confirmed by direct search over the
+  whole file). Their CERTIFIED evidence was genuinely reproduced by their
+  own independent certifier reviews, so this is not a false-certification
+  finding, but that evidence is not continuously re-enforced by CI on
+  every future PR the way every other CERTIFIED task's is. Full
+  submission report: `docs/certifications/queue.md`.
 
 Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #156) — independent CERTIFY
@@ -979,28 +1431,19 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-FTF-0407 (this shift's own submission, see the top of this file) is now
-PROVISIONAL, PR opened, awaiting independent Control-plane L2
-certification — that review is the natural next action, matching the
-established relay/certifier alternation. If a certifier session is not
-what fires next: recompute the dependency-ready frontier fresh rather
-than trusting this note — as of this shift, parsing every
-non-`CERTIFIED`/`PROVISIONAL` task's own `deps=` field against the live
-`certification_state` set found six other dependency-ready items besides
-FTF-0202's own owner ask: FTF-0403, FTF-0902, FTF-1001, FTF-1401,
-FTF-1501. `docs/TASK_INDEX.md` lists FTF-04A19/FTF-0610/FTF-1101/
-FTF-1701/FTF-0408 as depending on FTF-0407; of those, FTF-1701
-("Reference agent specification") names only FTF-0407 and the
-already-CERTIFIED FTF-0405 as its own deps, so FTF-0407 reaching
-CERTIFIED will newly unblock it too — the other four each still name at
-least one other, not-yet-met dependency. Before merging PR #143 (still
-open and unmerged as
-of this shift), verify a genuine owner confirmation exists for FTF-0202's
-own backend selection (see the flagged note above) — do not treat that
-PR's own bare claim as sufficient by itself. Separately, PR #152 (a
-doc-only "Next shift" catch-up, opened by an earlier shift, already
-superseded before this shift began) is still open/unmerged — a future
-certifier session should close it without merging.
+Both prior notes here are now stale and superseded by actual events:
+FTF-0403 (PR #158/#163), FTF-1501 (PR #159), and FTF-1001 (PR #160) are
+all already CERTIFIED (see "## Done"); PR #143/#152/#158 are all already
+closed without merging; FTF-0202's own backend ask is resolved and
+FTF-0202 itself is CERTIFIED. Current real state as of this entry:
+FTF-1401 (this PR) is being independently reviewed by Control plane now.
+FTF-1702 (PR #167) remains genuinely open and unreviewed; FTF-1302
+(PR #170) and FTF-R016 (PR #172) remain open, previously found sound but
+blocked only by a GitHub Actions runner-provisioning outage reported
+cleared 2026-09-22 (PR #178) -- each needs the same merge-current-main
+treatment this PR just required before a fresh CI run and review. If a
+relay session fires next instead: recompute the dependency-ready
+frontier fresh rather than trusting this note.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
@@ -1464,10 +1907,17 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
-`9a47458` — see docs/certifications/ledger.md) · Provisional: 0 (this
-shift's own item; PR #167/#159/#160/#161 remain genuinely open and
-PROVISIONAL, unreviewed — see "## Provisional" below) · Blocked: 0
+Certified: 37/300 (main; FTF-1401 CERTIFIED 2026-09-22, PR #161 merged
+as `c2fda5b` — see docs/certifications/ledger.md) · Product-true:
+13/13. FTF-1501/FTF-1001/FTF-0202 are merged and already independently
+reviewed/certified by this same shift, awaiting only the owner's merge
+of the doc-only certification PRs (#179/#180/#181) that record it on
+`main`. PR #167 (FTF-1702) is being independently reviewed by Control
+plane now (this entry's own review). PR #170/#172 (FTF-1302/FTF-R016)
+remain open, previously reviewed sound but blocked only by a GitHub
+Actions runner-provisioning outage reported cleared 2026-09-22 (PR
+#178) — each needs the same merge-current-main treatment before a
+fresh CI run and review. Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1485,9 +1935,12 @@ one open ask below, FTF-0202's secret-backend choice, is tracked in
 work continued on FTF-0404/FTF-0405/FTF-0406 instead of stopping. PR
 #143's own bare claim to have resolved that ask remains unverified and
 was not acted on — see the flagged note near the top of this file.)
-Product-true (Law 16): 9 as of this shift (`scripts/status.py`'s own
-live output — see the note above; the detailed enumeration below is the
-stale, pre-FTF-0406/FTF-0407 version) (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 10 as of this shift (`scripts/status.py`'s own
+live output, re-confirmed this shift — see the note above; the detailed
+enumeration below is the stale, pre-FTF-0406/FTF-0407 version; FTF-1001's
+own new `product_truth_check.py --fail-on-unwired` wiring, 11/11, does not
+raise this stricter CERTIFIED-only count until independently certified,
+Law 2) (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
@@ -1572,7 +2025,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-09-21 (surfaced to `main` by an independent Control-plane review;
+None currently. 2026-09-21 (surfaced to `main` by an independent Control-plane review;
 originally found and disclosed by the producer session on PR #170's own
 unmerged branch — see below): **GitHub Actions appears to have stopped
 provisioning runners for this repository — likely a billing/spend limit
@@ -1603,37 +2056,66 @@ CERTIFIED" entry for the full independent-review detail. Remove this item
 the moment the owner resolves it (or a session confirms CI is
 provisioning runners again on a fresh PR event).
 
-2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
-backend selected before it can be implemented for real.** Its own
-acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
-through the actual selected secret backend") names no concrete system
-anywhere in this repository's architecture docs
-(`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's
-own Section 77/81 seven-reused-component list — a secret manager is not
-one of the seven). The only existing artifact is a `vault://`/
-`openbao://`/`secret://` reference-string *shape* convention (already
-used by two CERTIFIED tasks, FTF-0201/FTF-0101, to validate how a
-`secret_ref` value must look) — it fixes the shape, not the backend.
-Standing up a real resolver means selecting and deploying a real external
-secret-management system: both a "new runtime dep" and a "keyed external
-service," explicit "Ask owner first" hard stops. Options observed in the
-existing `vault://`/`openbao://` scheme names (not a recommendation,
-just what the naming already anticipates): (1) self-hosted HashiCorp
-Vault, (2) self-hosted OpenBao (Vault's OSS fork), (3) a cloud provider
-secret manager reachable from Railway (AWS Secrets Manager / GCP Secret
-Manager / etc.), (4) some other backend entirely. Per CLAUDE.md's default
-resolution rule this was checked against the architecture first — it
-genuinely does not fix the answer, so this is a real open ask, not a
-reopened decision. Remove this item the moment the owner responds.
+**Reconfirmed 2026-09-21, later the same date, on a second and completely
+unrelated PR/branch/task** (Control-plane review of PR #172, FTF-R016 —
+see `docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172) —
+NOT CERTIFIED" entry): identical signature (`runner_id: 0`, no runner ever
+assigned, ~3s "completion," `get_job_logs` HTTP 404) reproduced on PR
+#172's own run, ruling out anything PR #170-specific as the cause — this
+is a genuine, still-open, account/repo-level GitHub Actions capacity
+issue, not tied to one branch. Still nothing any session's own access can
+fix. Remove this item the moment the owner resolves it (or a session
+confirms CI is provisioning runners again on a fresh PR event).
 
-**Still open as of 2026-09-20 (this shift):** PR #143 ("Owner decision:
-FTF-0202 backend selected (OpenBao)") exists, open and unmerged, claiming
-this ask is resolved — this shift found no genuine corroborating
-evidence for that claim (no live-conversation detail, no option
-enumerated, unlike every other resolution in this file's own history)
-and did not act on it. See the flagged note near the top of this file for
-the full reasoning. This item stays open until a real owner confirmation
-is recorded, whether via that PR (once genuinely verified) or otherwise.
+FTF-0202 ("Secret-manager integration") — **RESOLVED 2026-09-22, directly
+witnessed.** Backend: **OpenBao** (self-hosted, Vault's open-source fork).
+
+Original ask (2026-09-20, preserved for context): acceptance clause 1
+("Store/resolve/rotate short-lived secret refs through the actual
+selected secret backend") named no concrete system anywhere in this
+repository's architecture docs (`docs/architecture/
+REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's own Section 77/81
+seven-reused-component list — a secret manager is not one of the seven).
+The only existing artifact was a `vault://`/`openbao://`/`secret://`
+reference-string *shape* convention (already used by two CERTIFIED tasks,
+FTF-0201/FTF-0101) — it fixed the shape, not the backend. Options put to
+the owner: (1) self-hosted HashiCorp Vault, (2) self-hosted OpenBao, (3) a
+cloud provider secret manager reachable from Railway (AWS Secrets Manager
+/ GCP Secret Manager), (4) other.
+
+Between 2026-09-20 and 2026-09-21, three separate automated sessions each
+recorded a claim that the owner had confirmed OpenBao — PR #143 (no
+detail at all), a commit on PR #159's branch (`efec3c0`, first to add
+reasoning: self-hosted-from-scratch is too complex to deploy, a
+cloud-managed store adds external dependency/cost OpenBao avoids), and PR
+#162 (repeats the same reasoning, still open/unmerged). None of the three
+is independently verifiable: all three are a session's own account of a
+conversation, none is the owner writing directly into GitHub, and at
+least one (the PR #159 commit) came from an unattended scheduled shift
+that structurally has no live channel to the owner — meaning that
+specific claim, whatever its content, cannot describe a conversation that
+happened in that session. A 2026-09-21 Control-plane certifier shift
+correctly declined to treat any of the three as evidence and left this
+ask open (see the flagged notes in this file's own prior history and
+`docs/certifications/queue.md`).
+
+This entry is different: the owner raised this exact discrepancy directly
+in an interactive conversation on 2026-09-22, was shown the three prior
+claims and precisely what was missing from each, and confirmed OpenBao
+stands — the backend, and the reasoning already on record (self-hosted
+avoids OpenBao's complexity-to-deploy while a managed cloud store adds
+external dependency and cost), were not disputed at any point in that
+exchange. This is the first record of this decision anchored to a session
+that can directly vouch for the exchange, rather than reporting another
+session's account of one. **FTF-0202 is now genuinely dependency-ready**
+for a future relay shift to implement against a real OpenBao instance —
+implementing it is a separate task with its own PEV cycle, not done here.
+
+PR #143 stays closed, unmerged (superseded, no action needed). PR #159's
+own `efec3c0` and PR #162 are superseded by this entry, not contradicted
+by it — same conclusion, this is simply the first version tied to a
+verifiable exchange; PR #162 is being closed without merging as part of
+this same resolution (doc-only, redundant once this lands).
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
@@ -1643,6 +2125,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-0202, FTF-1501, and FTF-1001 are no longer in this section; all
+three were independently reviewed and CERTIFIED 2026-09-22 (PR #176
+merge `6dfd97d`, PR #159 merge `8b8a9c1`, PR #160 merge `8b51c85`
+respectively) — see "## Done" for the certification summaries and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
+FTF-1401 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #161 (merge commit
+`c2fda5b6ad472aa6d38a977896b339a484a9a483`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
+
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
 `9a47458118ee46095270f4aa9758b5ec35efeea5`) — see "## Done" for the
@@ -1653,33 +2148,30 @@ FTF-1302 (Local compute costing, PR #170
 https://github.com/SJZLab/Sovra/pull/170) was independently reviewed
 2026-09-21 and **NOT CERTIFIED — not a code defect.** The shipped code,
 its tests, and its fault-injection evidence were independently
-reproduced and confirmed sound; certification is blocked only because
-GitHub Actions cannot show a genuine passing CI run on the real head
-(see "## Owner actions — current" above and
-`docs/certifications/queue.md`'s "2026-09-21 — FTF-1302 (PR #170)" entry
-for full detail). PR #170 stays open, unmerged. No further relay action
-needed on FTF-1302 itself until the CI owner-ask clears — re-running its
-CI at that point should be sufficient for a fresh Control-plane review to
-certify.
+reproduced and confirmed sound; certification was blocked only because
+GitHub Actions could not show a genuine passing CI run on the real head
+at the time (see `docs/certifications/queue.md`'s "2026-09-21 — FTF-1302
+(PR #170)" entry for full detail) — that outage is reported cleared as
+of PR #178 (2026-09-22); PR #170 stays open, unmerged, needing the same
+merge-current-main treatment this PR just required before a fresh CI run
+and review.
 
-Also genuinely open and PROVISIONAL, unreviewed as of this shift: PR #167
-("[relay] FTF-1702: Tool environment"), opened by a prior shift shortly
-before this one fired. Not acted on by this shift (Control-plane's job,
-not this relay's).
+FTF-R016 (Measure selected coding-model/executor pilot cost and enforce
+budget tree, PR #172 https://github.com/SJZLab/Sovra/pull/172) was
+independently reviewed 2026-09-21 and **NOT CERTIFIED — not a code
+defect,** blocked only by the same now-reportedly-cleared CI outage (see
+`docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172)"
+entry). PR #172 stays open, unmerged, needing the same treatment.
+
+FTF-1702 (Tool environment, PR #167 https://github.com/SJZLab/Sovra/pull/167)
+is being independently reviewed by Control plane now (this entry's own
+review).
 
 FTF-1701 (Reference agent specification) is no longer in this section; it
 was independently reviewed and CERTIFIED 2026-09-21 via PR #165 (merge
 commit `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`) — see "## Done" for the
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
-
-Also genuinely open and PROVISIONAL as of this shift, found via direct
-GitHub inspection rather than trusted from this file's own prior (stale)
-"None currently" claim — see the flagged note above for the full
-reasoning: FTF-1501 (Tenant isolation suite, PR #159), FTF-1001
-(ModelVersion schema/API, PR #160), FTF-1401 (API load test, PR #161).
-None of these three were reviewed, merged, or otherwise acted on by this
-shift.
 
 FTF-0403 (Budget policy) is no longer in this section; it was
 independently reviewed and CERTIFIED 2026-09-21 via PR #163 (merge commit
