@@ -12818,8 +12818,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "99e3d3d0be60d7f5491e99965809a29c62efb4ce"
+      ],
       "ready": false,
       "security": "Deny unapproved effects; signed/scoped identities; no raw dataset/source/secret content in logs, external telemetry or ordinary task evidence.",
       "observability": "Report state, dependency, rejection reason, usage/cleanup and stable correlation IDs; every required assertion points to immutable actual evidence.",

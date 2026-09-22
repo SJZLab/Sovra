@@ -4155,10 +4155,10 @@ FTF-H005:
   proving_symbol: ''
   proving_test: ''
 FTF-H006:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Shared outbound URL and credential guard
-  evidence_hash: ae2dcb9d25983bd471d1e69bc57149d991aa56c7
+  evidence_hash: 99e3d3d0be60d7f5491e99965809a29c62efb4ce
   implementation_state: IMPLEMENTED
   notes: >-
     kind=audit_hardening; requirements=AF-10; scenarios=Q25; deps=FTF-0005, FTF-0201, FTF-0202,
@@ -4223,7 +4223,7 @@ FTF-H006:
     uvicorn/sqlalchemy/node_modules); scripts/validate_spec.py --strict clean;
     scripts/product_truth_check.py --fail-on-unwired 14/14, unchanged. Submitted PROVISIONAL, not
     self-certified (Law 4).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h006.py
 FTF-H007:

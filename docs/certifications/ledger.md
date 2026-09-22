@@ -5135,3 +5135,143 @@ reasons given above.
   `['FTF-0500']` updated. Certified: 44/300, Product-true: 14/14.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-H006 — Shared outbound URL and credential guard
+- Criterion ID: FTF-H006
+- PR: https://github.com/SJZLab/Sovra/pull/197 (`claude/wizardly-fermat-83mm0h` → `main`)
+- Merge commit: 99e3d3d0be60d7f5491e99965809a29c62efb4ce
+- Implementation commit: ae2dcb9d25983bd471d1e69bc57149d991aa56c7
+  (task-packet commit: db727c2f2585f29302057018f231539258d7f569;
+  tracking-doc commit: 0e1054c919d1d123b14745de424e5d217ba4f106)
+- Validated-by: session https://claude.ai/code/session_0179fcCZuwbpcEh8NMQVj997
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #197 itself)
+- Date: 2026-09-22
+- **Session-ID check:** PR #197's three original commits all carry
+  `Claude-Session: .../session_019ApmY6ESBah3nPdBDYq1XL`; this reviewing
+  session's own ID is `session_0179fcCZuwbpcEh8NMQVj997` — no match,
+  independent per Law 4.
+- **First review pass, CI not yet finished:** at the triggering webhook,
+  `get_check_runs` on PR #197's original head
+  (`0e1054c919d1d123b14745de424e5d217ba4f106`, run 35771884617) showed 18
+  of 24 jobs `success` and 6 still `in_progress` (including `gate`,
+  which itself later completed `success` while two integration jobs had
+  not). Per the CERTIFY procedure, a partial/in-progress CI signal is not
+  a genuine pass — deferred rather than certifying from an incomplete
+  run. (This session used the wait to independently certify FTF-0500, PR
+  #196, the other PROVISIONAL item sitting in the queue at the time —
+  see the entry above.)
+- **CI re-checked, genuinely completed:** once PR #196/FTF-0500's own
+  certification PR (#198) merged to `main`, PR #197's `mergeable_state`
+  went `dirty` (a real conflict in `QUEUE.md`/`docs/certifications/
+  queue.md`, both touched by both shifts' tracking-doc commits) — a
+  `merge_pull_request` attempt failed with `405 ... merge conflicts`,
+  confirmed directly rather than assumed. Resolved for real: checked out
+  PR #197's head, merged `origin/main` in, resolved both conflicts by
+  keeping both sides' content (the producer's own FTF-H006 PROVISIONAL
+  submission narrative, unmodified, followed by this session's own
+  FTF-0500 certification entry), re-ran `scripts/status.py`/
+  `product_truth_check.py --fail-on-unwired`/`validate_spec.py --strict`/
+  the `CLAUDE.md.sha256` check on the merged result (all clean), pushed
+  the merge commit (`ea1862687e026d9c7855b3489487b9b0cdce24fc`) to PR
+  #197's own branch (not a rewrite — a real merge commit, matching
+  `BRANCH_PROTECTION`'s "never rewrite another session's branch history"
+  constraint). `get_check_runs` on this real new head (run 35773705816)
+  — 24/24 jobs `success`, including `gate` and the
+  `dataset-source-connection-integration`/`secret-manager-integration`
+  jobs that were still running at first check. Merged PR #197
+  (`99e3d3d0be60d7f5491e99965809a29c62efb4ce`).
+- **Diff read directly** (`git diff 07b831d..0e1054c`, the real range
+  from the prior tip to this task's own tracking commit): new
+  `packages/security/url_policy.py` (pure policy — scheme/userinfo/port
+  shape, resolved-address validation, an explicit private-destination
+  allowlist, unconditional cloud-metadata denial checked *before* the
+  general private/link-local rule, and alternate-IP-literal-encoding
+  normalization covering bare-integer/octal/hex-dotted/inet_aton-legacy
+  forms) and `packages/security/outbound_guard.py` (`guarded_fetch` --
+  resolves via real `socket.getaddrinfo`, validates every returned
+  address, connects pinned to the exact validated address via
+  `_PinnedHTTPConnection`/`_PinnedHTTPSConnection` custom `http.client`
+  subclasses that override `connect()`, TLS still validated against the
+  real hostname via `server_hostname`; a 3xx response is returned as-is
+  unless `policy.allow_redirects`, in which case the target is fully
+  revalidated and redialed from scratch, bounded by `max_redirects`). No
+  new runtime dependency -- stdlib `socket`/`ssl`/`http.client`/
+  `ipaddress` only.
+- **Own reproduction, this session, fresh git worktree at the real
+  merged head:** `uv run python3 tests/tasks/test_ftf_h006.py` -- "all
+  checks passed" (this suite is script-style like FTF-0500's own, so run
+  the same way CI invokes it).
+- **Own fault injection (Law 1), a vector distinct from the producer's
+  own (a tuple-order bug in `resolve_and_validate`'s return value; a DNS-
+  rebinding-proof test mock leaking onto an unrelated internal call):**
+  disabled the cloud-metadata identity check in `validate_resolved_address`
+  (`packages/security/url_policy.py`, `if is_cloud_metadata_address(ip)
+  or ...` -> `if False`). The suite's own embedded fault-injection self-
+  test (`test_fault_injection_removing_the_metadata_check_is_caught`)
+  failed for real via a source-text assertion (exit 1). To confirm this
+  was a genuine, exploitable defect and not just a text-match artifact,
+  independently exercised the runtime behavior directly: with the check
+  disabled, `validate_resolved_address("169.254.169.254",
+  ipaddress.ip_address("169.254.169.254"), ConnectionPolicy(name="test",
+  explicit_private_allowlist=(ipaddress.ip_network("169.254.0.0/16"),)))`
+  -- the exact scenario this task's own negative_acceptance clause names
+  ("a blanket private-address rejection cannot break intended internal
+  LiteLLM/storage while metadata remains denied") -- genuinely returned
+  without raising (cloud-metadata address allowed once an operator
+  allowlists the containing link-local range, a real SSRF-to-cloud-
+  credentials exposure). Reverted from a pre-edit backup, `diff`
+  confirmed byte-identical, re-ran the same call -- correctly denied
+  ("... is a cloud-metadata destination -- never permitted, regardless
+  of any explicit allowlist entry"); full suite re-confirmed "all checks
+  passed".
+- **DNS-rebinding proof read directly**
+  (`test_dns_resolved_once_and_connection_pinned_to_that_address`): a
+  real local `ThreadingHTTPServer`, a mocked `socket.getaddrinfo` that
+  answers a safe address on the first call and a disallowed one on any
+  second call for the hostname under test (passing every other host,
+  including the real internal literal-IP lookup `create_connection`
+  itself performs, straight through to the real resolver), and a spying
+  `socket.create_connection` -- confirms `getaddrinfo` is called exactly
+  once and the real socket connects only to the first, already-validated
+  address, never a hypothetical hostile second answer.
+- **`product_truth_check.py --fail-on-unwired`** -- own run on the real
+  merged tip, `14/14`, unchanged; `proving_symbol: ''` confirmed
+  legitimate (this task builds the shared guard library itself, not a
+  live route -- `apps/api/app/litellm/connection_schema.py`'s own
+  `validate_base_url` docstring states "this module never dials the URL
+  -- that is FTF-0203's job", and no live FastAPI route calls
+  `guarded_fetch` yet, confirmed by direct grep), the same disclosed "no
+  live caller yet" class already accepted for FTF-0202/FTF-R016 and
+  others before their own first live caller existed.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-H006
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: the acceptance clause
+  ("Exercise real controlled HTTP endpoints and DNS/redirect fixtures
+  covering loopback, private allowlist, link-local metadata, IPv6,
+  alternate encodings and rebinding") and the full negative_acceptance
+  ("Private destinations can be explicitly authorized; a blanket
+  private-address rejection cannot break intended internal LiteLLM/
+  storage while metadata remains denied") confirmed genuinely met by the
+  diff and this session's own fault injection above, not merely "tests
+  pass". `files:` scope (`packages/security/outbound_guard.py`,
+  `packages/security/url_policy.py`) matches the diff exactly.
+- IPv6 disclosed, not hidden, independently re-confirmed: this sandbox
+  has no real `AF_INET6` bind to `::1` (confirmed directly, not merely
+  `socket.has_ipv6`) -- the live `::1` `guarded_fetch` sub-check is
+  skipped in this one sandbox condition and says so at test-module load
+  time; the pure IPv6 policy checks (no socket required) always run.
+- Dependencies FTF-0005/FTF-0201/FTF-0202/FTF-H003 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- `ruff check packages/security/ tests/tasks/test_ftf_h006.py` clean.
+  `scripts/validate_spec.py --strict` clean after `git fetch --unshallow
+  origin` (this sandbox's own pre-existing shallow-clone artifact).
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`99e3d3d0be60d7f5491e99965809a29c62efb4ce`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` --
+  `['FTF-H006']` updated. Certified: 45/300, Product-true: 14/14
+  (unchanged -- this task adds no live caller by design).
+
+**Conclusion:** Certified L2-CERTIFIED.
