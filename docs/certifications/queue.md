@@ -8880,6 +8880,160 @@ triggered by the `pull_request.opened` webhook for PR #168.
 
 Full entry: docs/certifications/ledger.md.
 
+## 2026-09-21 — FTF-1302 — Local compute costing
+- **PR:** https://github.com/SJZLab/Sovra/pull/170
+  (`claude/wizardly-fermat-c7g9v1` → `main`), title
+  `[relay] FTF-1302: Local compute costing`.
+- **Commit:** `2ebf9788ac644fc250e8cc9bc621a42815b549f7` (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  established two-commit precedent.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  Designated branch `claude/wizardly-fermat-c7g9v1` did not exist on the
+  remote yet (fresh from `origin/main`, nothing to restart). Cross-checked
+  live GitHub state via `list_pull_requests` before picking, not just this
+  repo's own docs: six PRs were open and unmerged — #158 (stale FTF-0403
+  duplicate, superseded by the already-merged PR #163), #159 (FTF-1501),
+  #160 (FTF-1001), #161 (FTF-1401), #162 (unverified FTF-0202 claim), #167
+  (FTF-1702) — all genuine Control-plane review items this relay shift has
+  no standing to act on. Recomputed the dependency-ready frontier fresh by
+  parsing every non-CERTIFIED task's own `deps=` field in
+  `docs/spec-matrix.yaml`'s `notes` against the live `certification_state`
+  set (not trusted from any prior shift's note by itself): FTF-0202
+  (owner ask, still open — see QUEUE.md "Owner actions — current"),
+  FTF-0408 (same real `AgentManifest.mandate_json` DoD-clarity gap prior
+  shifts already found and disclosed), FTF-0902 (same real enforcing
+  Kubernetes/CNI `resource_gate` prerequisite, unavailable in this
+  sandbox), FTF-1001/FTF-1401/FTF-1501/FTF-1702 (already claimed by the
+  open PRs above), FTF-1302 and FTF-R016 (both newly dependency-ready now
+  that FTF-1301 reached CERTIFIED, neither claimed by any open PR).
+  Pulled both newly-ready packets fresh
+  (`tools/r1_handoff.py packet FTF-1302`/`FTF-R016`) before choosing:
+  FTF-R016 ("Measure selected coding-model/executor pilot cost") is
+  build-tooling metadata about the coding executor's own pilot run, not a
+  product feature, and its own acceptance clause ("Measure one
+  backend/UI/integration task plus parallel run with real tokens/CPU/
+  CI/retries") is self-referential to a live multi-worker parallel
+  implementation session this relay shift is not — picking it would risk
+  exactly the kind of DoD improvisation this relay does not do; not
+  picked, disclosed rather than silently skipped. FTF-1302's own
+  `resource_gate` field is the same generic boilerplate string already
+  present on FTF-1301/FTF-0403's own packets (confirmed by direct `grep`
+  comparison) — those two tasks were fully implementable in this sandbox
+  without any live GPU despite carrying the identical field text, unlike
+  FTF-0902 where the *acceptance clause itself*, not just the boilerplate
+  resource_gate field, names a live enforcing cluster with no narrower
+  reading possible. FTF-1302 is the lower-task-ID, genuinely unblocked,
+  unclaimed item with a tractable narrowing — picked this shift.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-1302 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Allocate real total
+  service-window GPU/CPU/storage/idle cost to declared completed
+  workload"), negative_acceptance ("Per-request overlapping GPU seconds
+  cannot double count batches or omit idle/multi-replica capacity"),
+  `database_changes: "No independent schema change. Consume frozen
+  contract; any required change is a separately claimed migration
+  prerequisite."`, `api_contract: "/api/v1/projects/{id}/costs/
+  cost-per-success/search; /organizations/{id}/cost-profiles."` (FTF-1301's
+  own already-frozen contract slot 13; `shared_lock_required: []` — this
+  task claims no new lock), `files: [apps/api/app/services/
+  local_compute_costing.py, tests/tasks/test_ftf_1302.py]`,
+  `dependencies: [FTF-0006, FTF-1301]` (both CERTIFIED),
+  `contract_owner: FTF-1301`.
+- **Scope disclosed, not hidden:** there is no GPU worker, Temporal
+  workflow, or resource-lease table anywhere in this repository yet to
+  auto-emit real per-request GPU-second telemetry from (FTF-0901's own,
+  later, separately dependency-gated GPU worker family). This module
+  therefore takes a **declared**, already-reconciled real service-window
+  bill (`ServiceWindow.total_billed_gpu_cpu_ram_cost` — itself the real
+  bill, inclusive of idle time and every replica's own capacity, never
+  re-derived from request-level data) and a declared workload
+  (`RequestUsage`, Section 69.2's own closed terminal-outcome
+  vocabulary), the same "no fake metrics; a real, disclosed, entered
+  number, not an auto-scraped one" pattern FTF-1301's own `CostProfile`
+  rate entry already established.
+- **Design:** `window_total_cost` sums Section 32's own four named cost
+  categories exactly once each. `unique_successful_task_ids` dedupes
+  retries of the same `request_id` to a single success, per Section
+  69.2's own "multiple turns/repeated seeds ... are not independent
+  tasks" rule. `cost_per_success` divides the real window total by the
+  unique success count, raising explicitly on zero successes (Section 32:
+  "undefined/infinite," never a silent $0). The negative_acceptance is
+  enforced by construction, not a best-effort filter:
+  `cost_per_success`/`window_total_cost` never sum, integrate or
+  otherwise derive a dollar figure from `RequestUsage.gpu_seconds_start`/
+  `gpu_seconds_end` at all — there is structurally no code path here
+  capable of re-summing continuously-batched, overlapping per-request GPU
+  seconds into a second, larger total (the double-count failure mode),
+  nor one capable of crediting only the replica-seconds some request
+  happened to touch (the "omit idle/multi-replica capacity" failure
+  mode). `RequestUsage.gpu_seconds_start`/`gpu_seconds_end`/`replica_id`
+  are still real, typed fields a caller must declare — they are simply
+  never load-bearing for the cost figure itself.
+- **15 no-DB test functions** (`tests/tasks/test_ftf_1302.py`):
+  construction guards for both `ServiceWindow`/`RequestUsage` (negative
+  amounts, non-Decimal amounts, non-positive window/interval, unknown
+  `task_outcome`, empty `request_id`, non-positive `replica_count`);
+  `window_total_cost`'s own four-category sum; `unique_successful_
+  task_ids`'s own outcome-filter and retry-dedup behavior; Section 32's
+  own literal golden example ($12 GPU bill including idle, $2 CPU, $1
+  other cost, 100 successful tasks → exactly $0.15 per success); a
+  positive proof that fully overlapping per-request GPU-second intervals
+  do not change `cost_per_success`; and the negative_acceptance case
+  (zero successes raises explicitly, never $0).
+- **Failure output shown by fault injection (Law 1, two distinct vectors,
+  both reverted byte-identical and the suite re-confirmed clean
+  afterward):** (1) replaced `cost_per_success`'s own real window-total
+  division with exactly the naive "sum each request's own GPU-second
+  interval at a bill-implied per-second rate" mistake this task's own
+  negative_acceptance forbids — `uv run python3
+  tests/tasks/test_ftf_1302.py` failed with 6 named checks across the
+  golden example, the overlap case, and both dedicated fault-injection
+  comparison tests, all producing the wrong dollar figure; (2) disabled
+  the non-negative-amount guard in `_validate_non_negative_decimal` (`if
+  False and value < 0:`) — failed with exactly the named "storage_cost
+  must not be negative" construction-guard check. Both vectors reverted
+  byte-identical (`diff` against the pre-injection copy confirmed empty)
+  and both re-confirmed clean afterward.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep (32 files, all "all checks passed" or equivalent)
+  after `uv sync --all-packages`/`pnpm install --frozen-lockfile` (this
+  sandbox's own pre-existing, undocumented-until-now dependency gap —
+  confirmed pre-existing, not caused by this task) and `git fetch
+  --unshallow origin` (this sandbox's own documented shallow-clone
+  artifact — `scripts/validate_spec.py --strict` genuinely reported 18
+  `stale_commit` defects before unshallowing, none after). `uv run ruff
+  check .`/`uv run ruff format --check .`/`uv run mypy .` clean
+  repo-wide (146 source files) — confirmed the pinned `uv run` tool
+  versions are what CI actually runs after first reproducing false-
+  positive mismatches against this sandbox's own newer, globally-
+  installed `ruff 0.15.8`/a stray `mypy` picking up `alembic`'s own
+  runtime-generated `op`/`context` attributes as missing; resolved by
+  using `uv run ruff`/`uv run mypy` throughout, matching the project's
+  own pinned `pyproject.toml` versions (`ruff>=0.6.9,<0.7`). `pnpm run
+  lint`/`typecheck`/`format:check` clean; `pnpm run test` (vitest) —
+  19/19 passed across 5 spec files, no regression. `scripts/status.py`
+  stays `36/300 certified · 12 product-true` (unchanged — FTF-1302 is
+  PROVISIONAL, not yet CERTIFIED). `scripts/product_truth_check.py
+  --fail-on-unwired` stays `12/12` (unchanged, as disclosed above — this
+  task's own `proving_symbol` is genuinely empty, no live HTTP route
+  added; matches the FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent for a
+  computation module with no live product-runtime caller in this
+  repository yet).
+- **CI:** one new `gate` job step (`uv run python3
+  tests/tasks/test_ftf_1302.py`) added to `.github/workflows/ci.yml` — no
+  dedicated integration job needed (no database, network egress, or
+  GPU/external resource of any kind is touched anywhere in this task) —
+  no other job's steps touched.
+- Dependencies FTF-0006/FTF-1301 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**
+  `docs/spec-matrix.yaml` FTF-1302 set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+  implementation commit, `proving_symbol: ''` (deliberately empty, no
+  live route added), `proving_test: tests/tasks/test_ftf_1302.py`.
+  Certified stays 36/300; Product-true stays 12/12. Awaiting independent
+  Control-plane L2 review.
 ### Control plane review — 2026-09-21 — FTF-1302 (PR #170) — NOT CERTIFIED (CI cannot show a genuine pass; GitHub Actions runner-provisioning failure, not a code defect)
 - **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
   webhook for PR #170 (https://github.com/SJZLab/Sovra/pull/170,
