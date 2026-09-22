@@ -1,5 +1,69 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+Updated: 2026-09-22T06:52:33Z (scheduled relay shift) — recomputed the
+  dependency-ready frontier fresh (script-based:
+  `scripts.task_claim.load_tasks`/`load_certification_states`, not trusted
+  from PR #174/#175's own prose): 36/300 certified (unchanged), same nine
+  dependency-ready tasks both prior shifts already found
+  (FTF-0202/0408/0902/1001/1302/1401/1501/1702/R016). FTF-0202 itself is
+  now merged to `main` (PR #176, merged directly by the owner —
+  `merged_by: samerzakaria` — at 2026-09-22T05:45:15Z, confirmed via
+  `pull_request_read`) but `docs/spec-matrix.yaml` still correctly shows it
+  `PROVISIONAL`/not `CERTIFIED`, so it does not newly unblock any dependent
+  task: this file's own dependency-ready convention (and the script above)
+  both require CERTIFIED, and merged-but-uncertified is not certified (Law
+  2/4 — a direct owner merge does not substitute for independent
+  Control-plane L2 review). The remaining eight are each already covered
+  by a real, open PR (#160/#170/#161/#159/#167/#172) or carry a previously
+  disclosed DoD-clarity/resource-gate gap (FTF-0408/FTF-0902, both
+  re-confirmed still open this shift, not re-litigated). No new item was
+  genuinely pickable; no code changed.
+
+  **Significant finding, verified directly against real GitHub Actions
+  data, not assumed from PR #177's own prose alone:** the GitHub Actions
+  runner-provisioning outage (open since 2026-09-21, blocking the entire
+  CI-gated PROVISIONAL→CERTIFIED pipeline — see the former "Owner actions
+  — current" entry, now resolved and removed below) has cleared. Checked
+  `actions_list`/`actions_get` directly: run `35690059480` (PR #176's own
+  second commit, attempt 2, completed 2026-09-22T05:43:38Z) and run
+  `35690447815` (PR #177, attempt 2, completed 2026-09-22T05:36:47Z) both
+  show `conclusion: success` across all 19 jobs, each with a real
+  `runner_id`/`runner_name` (e.g. `1000001932`, `ubuntu-latest`) and real
+  per-step timestamps (job `ftf-h003-cross-layer-isolation-integration` on
+  run `35690059480` ran a genuine `Install uv` → `Install Python
+  dependencies` → real test-execution step sequence in ~20s) — structurally
+  different from every failing run since #255 (`runner_id: 0`, no runner
+  ever assigned, 2–12s "completion" with zero real steps executed). Both
+  are attempt 2 (their own attempt 1 still failed with the exact
+  `runner_id: 0` signature PR #177's own body already documented), meaning
+  a rerun on a fresh PR event now provisions a real runner — precisely the
+  bar the former owner-actions entry itself set for resolution ("a session
+  confirms CI is provisioning runners again on a fresh PR event"). Only
+  two data points exist so far; a future session should keep confirming on
+  its own PR/CI events before treating this as permanently closed, but per
+  Law 2 this shift records the evidence it actually has, not more or less.
+  This clears the way for Control-plane to actually certify the existing
+  backlog (PR #159/#160/#161/#167/#170/#172/#176/#177, all still open,
+  either unreviewed or blocked only on this now-cleared outage) — that
+  review remains Control-plane's job, not this relay's; this shift did not
+  review, merge, or close any of them.
+
+## Next shift
+No newly unblocked relay-implementation work exists: the same nine
+dependency-ready tasks PR #174/#175 already found are still either claimed
+by an open PR or carry a disclosed DoD-clarity/resource-gate gap
+(FTF-0408/FTF-0902). The highest-leverage next step is Control-plane
+attention to the open-PR backlog now that CI appears to provision runners
+again: re-run each blocked PR's CI fresh (#159/#160/#161/#167/#170/#172)
+and review on a genuine result rather than the stale `runner_id: 0` one;
+PR #158 (stale FTF-0403 duplicate, superseded by merged PR #163) still
+needs closing without merging; PR #176/#177 (FTF-0202, code-sound per
+PR #177's own independent review, blocked only on the now-cleared outage)
+should get a fresh CI run and certification pass. If a relay session fires
+next instead: recompute the frontier fresh rather than trusting this note
+alone, and re-verify the CI-recovery finding still holds (more than two
+data points) before relying on it further.
+
+Previously, 2026-09-22 (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201
   all CERTIFIED). STEP 0 clean (`sha256sum CLAUDE.md` matches
   `CLAUDE.md.sha256`). Verified directly on GitHub (not just this file's
@@ -1449,97 +1513,17 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-09-21 (surfaced to `main` by an independent Control-plane review;
-originally found and disclosed by the producer session on PR #170's own
-unmerged branch — see below): **GitHub Actions appears to have stopped
-provisioning runners for this repository — likely a billing/spend limit
-or account-level capacity cap, outside any session's access to diagnose
-or fix.** Evidence, all on PR #170
-(https://github.com/SJZLab/Sovra/pull/170): (1) the producer's own first
-push — 10/18 jobs failed with `runner_id: 0` (no runner ever assigned),
-2–12s "completion," no logs available; the other 8 jobs ran and passed
-normally. The producer cancelled a stale duplicate run and re-ran just
-the 10 failed jobs once (this repo's own one-allowed re-run for this
-failure class) — failed identically, even faster (2s), with no other
-workflow run active anywhere in the repo at the time (ruling out ordinary
-concurrency contention from duplicate pushes). (2) A third push — a pure
-documentation commit touching zero code — came back with all 18/18 jobs
-failing the same way. (3) This independent review re-confirmed it a
-second time, separately: triggering `rerun_failed_jobs` on the run again
-produced 18/18 failures, identically fast, with `get_job_logs` returning
-HTTP 404 for every one (no runner was ever assigned, so no log exists).
-The same 18-job matrix ran clean in full minutes earlier on this
-identical workflow file (run #255, PR #168) and takes ~2 minutes for a
-real `gate` run when it actually executes — a job "completing" in 2–12s
-with zero recorded steps is GitHub Actions declining to schedule the
-work, not a test failure. This blocks the entire CI-gated
-PROVISIONAL→CERTIFIED pipeline, not just PR #170: no PR can show a
-genuine passing CI conclusion until this clears. See
-`docs/certifications/queue.md`'s "2026-09-21 — FTF-1302 (PR #170) — NOT
-CERTIFIED" entry for the full independent-review detail. Remove this item
-the moment the owner resolves it (or a session confirms CI is
-provisioning runners again on a fresh PR event).
-
-**Reconfirmed 2026-09-21, later the same date, on a second and completely
-unrelated PR/branch/task** (Control-plane review of PR #172, FTF-R016 —
-see `docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172) —
-NOT CERTIFIED" entry): identical signature (`runner_id: 0`, no runner ever
-assigned, ~3s "completion," `get_job_logs` HTTP 404) reproduced on PR
-#172's own run, ruling out anything PR #170-specific as the cause — this
-is a genuine, still-open, account/repo-level GitHub Actions capacity
-issue, not tied to one branch. Still nothing any session's own access can
-fix. Remove this item the moment the owner resolves it (or a session
-confirms CI is provisioning runners again on a fresh PR event).
-
-FTF-0202 ("Secret-manager integration") — **RESOLVED 2026-09-22, directly
-witnessed.** Backend: **OpenBao** (self-hosted, Vault's open-source fork).
-
-Original ask (2026-09-20, preserved for context): acceptance clause 1
-("Store/resolve/rotate short-lived secret refs through the actual
-selected secret backend") named no concrete system anywhere in this
-repository's architecture docs (`docs/architecture/
-REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's own Section 77/81
-seven-reused-component list — a secret manager is not one of the seven).
-The only existing artifact was a `vault://`/`openbao://`/`secret://`
-reference-string *shape* convention (already used by two CERTIFIED tasks,
-FTF-0201/FTF-0101) — it fixed the shape, not the backend. Options put to
-the owner: (1) self-hosted HashiCorp Vault, (2) self-hosted OpenBao, (3) a
-cloud provider secret manager reachable from Railway (AWS Secrets Manager
-/ GCP Secret Manager), (4) other.
-
-Between 2026-09-20 and 2026-09-21, three separate automated sessions each
-recorded a claim that the owner had confirmed OpenBao — PR #143 (no
-detail at all), a commit on PR #159's branch (`efec3c0`, first to add
-reasoning: self-hosted-from-scratch is too complex to deploy, a
-cloud-managed store adds external dependency/cost OpenBao avoids), and PR
-#162 (repeats the same reasoning, still open/unmerged). None of the three
-is independently verifiable: all three are a session's own account of a
-conversation, none is the owner writing directly into GitHub, and at
-least one (the PR #159 commit) came from an unattended scheduled shift
-that structurally has no live channel to the owner — meaning that
-specific claim, whatever its content, cannot describe a conversation that
-happened in that session. A 2026-09-21 Control-plane certifier shift
-correctly declined to treat any of the three as evidence and left this
-ask open (see the flagged notes in this file's own prior history and
-`docs/certifications/queue.md`).
-
-This entry is different: the owner raised this exact discrepancy directly
-in an interactive conversation on 2026-09-22, was shown the three prior
-claims and precisely what was missing from each, and confirmed OpenBao
-stands — the backend, and the reasoning already on record (self-hosted
-avoids OpenBao's complexity-to-deploy while a managed cloud store adds
-external dependency and cost), were not disputed at any point in that
-exchange. This is the first record of this decision anchored to a session
-that can directly vouch for the exchange, rather than reporting another
-session's account of one. **FTF-0202 is now genuinely dependency-ready**
-for a future relay shift to implement against a real OpenBao instance —
-implementing it is a separate task with its own PEV cycle, not done here.
-
-PR #143 stays closed, unmerged (superseded, no action needed). PR #159's
-own `efec3c0` and PR #162 are superseded by this entry, not contradicted
-by it — same conclusion, this is simply the first version tied to a
-verifiable exchange; PR #162 is being closed without merging as part of
-this same resolution (doc-only, redundant once this lands).
+None currently. The GitHub Actions runner-provisioning outage (open
+2026-09-21 through the morning of 2026-09-22) was removed from this
+section 2026-09-22T06:52:33Z once a session directly confirmed CI is
+provisioning runners again on a fresh PR event (real `runner_id`/real job
+steps on runs `35690059480`/`35690447815`) — see this file's own top
+"Updated:" entry above for the full evidence trail; full original-outage
+detail stays in `docs/certifications/queue.md`'s PR #170/#172 review
+entries, not repeated here. FTF-0202's own secret-backend owner-ask
+(OpenBao, resolved 2026-09-22) was likewise removed from this section once
+resolved — full detail stays in this file's own item history above and in
+`docs/spec-matrix.yaml`'s FTF-0202 entry.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was

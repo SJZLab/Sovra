@@ -1,5 +1,57 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+Updated: 2026-09-22T06:52:33Z (scheduled relay shift) — STEP 0 clean
+  (`sha256sum CLAUDE.md` matches `CLAUDE.md.sha256`). STEP 1: read
+  PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`, then cross-checked
+  GitHub directly (`list_pull_requests`, `actions_list`, `actions_get`)
+  rather than trusting either file's prose alone. Recomputed the
+  dependency-ready frontier fresh (script-based:
+  `scripts.task_claim.load_tasks`/`load_certification_states`): 36/300
+  certified (unchanged), same nine dependency-ready tasks PR #174/#175
+  already found (FTF-0202/0408/0902/1001/1302/1401/1501/1702/R016).
+  FTF-0202 is now merged to `main` (PR #176, merged directly by the owner
+  at 2026-09-22T05:45:15Z, `merged_by: samerzakaria`) but
+  `docs/spec-matrix.yaml` correctly still shows it `PROVISIONAL`/not
+  `CERTIFIED` — a direct owner merge is not the same as independent
+  Control-plane L2 certification (Law 2/4) — so it does not newly unblock
+  any dependent task; the script-based frontier recomputation confirms
+  this directly (CERTIFIED-only gating, not merge state). The remaining
+  eight dependency-ready tasks are each already covered by a real, open PR
+  (#160/#170/#161/#159/#167/#172) or carry a previously disclosed
+  DoD-clarity/resource-gate gap (FTF-0408/FTF-0902). No new item was
+  genuinely pickable; no code changed this shift.
+
+  **Significant finding:** the GitHub Actions runner-provisioning outage
+  (open since 2026-09-21) has cleared. Verified directly via
+  `actions_list`/`actions_get`, not assumed from PR #177's own prose: run
+  `35690059480` (PR #176, attempt 2, completed 2026-09-22T05:43:38Z) and
+  run `35690447815` (PR #177, attempt 2, completed 2026-09-22T05:36:47Z)
+  both show `conclusion: success` on all 19 jobs, each with a real
+  `runner_id`/`runner_name` (`1000001932`, `ubuntu-latest`) and real
+  per-step execution timestamps — structurally different from every
+  failing run since #255 (`runner_id: 0`, no runner ever assigned, 2–12s
+  "completion" with zero real steps). Both are attempt 2 — their own
+  attempt 1 still failed with the exact `runner_id: 0` signature — so a
+  rerun on a fresh PR event now provisions a real runner, meeting the bar
+  the "Owner actions — current" entry itself set for resolution. Removed
+  that entry (and the already-resolved FTF-0202 owner-ask entry) from
+  QUEUE.md's "Owner actions — current" section accordingly, per this
+  repo's "Owner actions live in ONE place" rule (remove the moment
+  resolved, never leave a resolved ask sitting in a place a future session
+  would read as still current). Full evidence trail in QUEUE.md's own top
+  entry.
+
+  This unblocks Control-plane's existing backlog
+  (#159/#160/#161/#167/#170/#172/#176/#177) for real certification review
+  — that review is Control-plane's job, not this relay's; this shift did
+  not review, merge, or close any of them.
+
+  **STEP 4 stop condition:** none of (a)-(e) apply cleanly — there is no
+  new work to implement (every dependency-ready item is claimed or
+  blocked) and no blocker of this shift's own to report. Stopping here,
+  matching the PR #174/#175 status-only precedent, with the CI-recovery
+  finding as this shift's genuine, non-noop contribution.
+
+Previously, 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201 all
   CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the
   committed `CLAUDE.md.sha256` — no BLOCKER needed. STEP 1: read
