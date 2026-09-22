@@ -1,4 +1,38 @@
 # PROGRESS — Sovra
+Control plane certifier — 2026-09-22 (continuing a certifier shift, user
+  requested the open-PR backlog be worked through end to end): closed 8
+  dead PRs. Independently reviewed and CERTIFIED FTF-1501 (PR #159),
+  FTF-1001 (PR #160), FTF-1401 (PR #161), FTF-1702 (PR #167), and FTF-1302
+  (PR #170, this entry's own certification) — five of the six real
+  backlog items. All five predated `main`'s current tip at the time each
+  was reviewed, each requiring a real merge-conflict resolution before
+  review. A duplicate-job-key bug in `ci.yml` from the first scripted
+  merge (FTF-1501) was caught and fixed, then avoided on every subsequent
+  merge by verifying with a duplicate-key-detecting YAML loader before
+  every push. Each got a genuine green CI run (21/21, 22/22, 23/23,
+  23/23, 23/23 including a real ~5m38s OpenBao build) before merging —
+  FTF-1302's own run (PR #170, the exact PR the GitHub Actions
+  runner-provisioning outage was first found on) is the most definitive
+  confirmation yet that the outage is genuinely cleared. Own fault
+  injection distinct from each producer's own vectors, all caught for
+  real and reverted byte-identical: FTF-1501's unauthenticated-401 guard,
+  FTF-1001's cross-org project IDOR guard, FTF-1401's write/submit P95
+  threshold branch, FTF-1702's record_id_for unseeded-triple guard,
+  FTF-1302's zero-successes guard (a genuine unhandled
+  `decimal.DivisionByZero` crash, since the test harness's own `_rejects`
+  helper only catches the domain-specific error type — accepted as valid
+  "caught for real" evidence). `scripts/status.py`: `36/300` → `37/300`
+  certified on `main`'s real tip (several of these certification records
+  are in this session's still-open, doc-only certification PRs awaiting
+  owner merge — see `docs/certifications/queue.md` for the authoritative
+  per-item history).
+
+  This is the fifth of the six real open-PR backlog items found this
+  shift. Remaining: FTF-R016 (PR #172), previously reviewed sound but
+  blocked only by the now-cleared GitHub Actions runner-provisioning
+  outage — working this next, per the user's explicit request to
+  continue, to close out the sweep.
+
 Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201 all
   CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the

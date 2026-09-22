@@ -9342,3 +9342,106 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-1302 (PR#170) independently reviewed, CERTIFIED
+
+Continuing the same certifier shift (user requested the six-item real
+open-PR backlog be worked end to end after FTF-1501/FTF-1001/FTF-1401/
+FTF-1702). FTF-1302 (Local compute costing, PR #170) was previously
+reviewed 2026-09-21 and found sound but **NOT CERTIFIED** solely because
+GitHub Actions could not show a genuine passing CI run for it (an
+outage, not a code defect) — see this file's own 2026-09-21 entry.
+
+**Session-ID independence:** all 5 commits on PR #170's own branch carry
+`Claude-Session: https://claude.ai/code/session_01Fy9YNo5oaA2HZLWRud1Xma`,
+distinct from this reviewing session's own
+`session_01DzyLpJHy35M2BeGRfHfwL5`.
+
+**Merge conflict resolution:** PR #170's branch (`ftf-1302-work`)
+predated `main`'s current tip (FTF-1701, FTF-0403, FTF-1301, FTF-1501,
+FTF-1001, FTF-1401, and FTF-1702 had all merged since). Merged current
+`main` into the branch, resolving one `.github/workflows/ci.yml` gate-
+step conflict (simple append, no job-header duplication — verified
+clean with the duplicate-key-detecting PyYAML `SafeLoader` this shift
+built after the FTF-1501 merge caught a real bug the same way), plus
+straightforward PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`
+conflicts (rewrote a stale, self-contradictory "Owner actions —
+current" section rather than mechanically splicing both stale sides).
+
+**Own reproduction:** `uv run python3 tests/tasks/test_ftf_1302.py` —
+15/15 passed, independent of the producer's own reported result.
+
+**Own fault injection (Law 1, distinct from the producer's own vector):**
+disabled the zero-successes guard in `cost_per_success`
+(`apps/api/app/services/local_compute_costing.py`) — changed `if not
+successes: raise LocalComputeCostingError(...)` to `if False and not
+successes:`. This did not silently produce a wrong number: with zero
+successes the denominator `Decimal(len(successes))` is `Decimal(0)`,
+and the division raised a genuine, unhandled `decimal.DivisionByZero`
+that propagated straight through the test harness (its own `_rejects`
+helper only catches `LocalComputeCostingError` specifically, not the
+stdlib `decimal` exception), crashing the whole test run instead of
+returning a bogus result. Accepted as valid "caught for real" evidence
+per Law 1 — the guard is load-bearing, its absence produces an
+unhandled crash rather than a silently wrong dollar figure. Reverted;
+`diff` against the original confirmed byte-identical restoration;
+re-ran the suite clean (15/15) immediately after.
+
+**No regression:** full `tests/tasks/test_ftf_*.py` sweep (36 files, one
+more than FTF-0202's own 32-file count reflecting the tasks merged into
+`main` since) all clean; `uv run ruff check .`/`uv run ruff format
+--check .` clean (the pinned 0.6.9 project `ruff`, not the stray system
+0.15.8 install — confirmed the version mismatch directly and used the
+pinned one as authoritative, matching CI); `mypy .` — same pre-existing,
+unrelated `alembic` stub gap as every prior review, confirmed unchanged
+via `git stash`; `pnpm run lint`/`typecheck`/`format:check` clean;
+`validate_spec.py --strict` clean; `product_truth_check.py
+--fail-on-unwired` — `13/13` (FTF-1302 itself carries no
+`proving_symbol`, disclosed and unchanged, matching the FTF-1401/
+FTF-1601/FTF-1701/FTF-1810 no-live-caller precedent this task's own
+module docstring names explicitly).
+
+**Task contract re-pull:** `python tools/r1_handoff.py packet FTF-1302
+--plan FINE_TUNING_FACTORY_RELEASE_1.md` re-read fresh. Both acceptance
+clauses met: "Allocate real total service-window GPU/CPU/storage/idle
+cost to declared completed workload" (`window_total_cost` +
+`cost_per_success`, Section 32's own named formula, implemented exactly
+as specified — verified against the golden example: $12 GPU bill
+including idle + $2 CPU + $1 other for 100 successful tasks gives
+$0.15 per success). `negative_acceptance` ("Per-request overlapping GPU
+seconds cannot double count batches or omit idle/multi-replica
+capacity") enforced by construction, not a best-effort filter —
+confirmed no code path in the module sums or integrates
+`RequestUsage.gpu_seconds_start`/`gpu_seconds_end` into a dollar figure
+at all; the module's own fault-injection test
+(`tests/tasks/test_ftf_1302.py`) demonstrates the naive alternative
+(summing per-request GPU seconds at a per-second rate) produces the
+wrong figure on the same golden example. Dependencies FTF-0006/FTF-1301
+confirmed genuinely `CERTIFIED` on `main` at this review's own tip.
+
+**CI:** pushed to `ftf-1302-work`, got a genuine, fresh 23/23 green run
+(GitHub Actions run `35706830737`), including a real
+`secret-manager-integration` OpenBao build (~5m38s real execution, not a
+2-12s outage-signature stub) — every job showed a real `runner_id`/
+`runner_name` and real per-step timestamps. This is the exact PR the
+GitHub Actions runner-provisioning outage was first discovered and
+reported on (2026-09-21); its own genuine green run today is the most
+definitive confirmation yet, independent of this shift's four earlier
+genuine runs (#159 21/21, #160 22/22, #161 23/23, #167 23/23) and of PR
+#178's own earlier claim, that the outage is fully cleared.
+
+**Merged** PR #170 → merge commit
+`acce2b4d9a3d636b06065f11de3958239ba5b917`.
+
+**Certified.** `docs/spec-matrix.yaml`: FTF-1302 set to
+`certification_state: CERTIFIED`, `proof_state: L2-CERTIFIED`,
+`evidence_hash: acce2b4d9a3d636b06065f11de3958239ba5b917`. Ledger entry
+appended (`docs/certifications/ledger.md`). `sync_certified_status()`
+run — `spec/tasks.json`/`docs/implementation/TRACKER.json` updated.
+`scripts/status.py`: `36/300` → `37/300` certified, product-true `12` →
+`13`. Doc-only certification changes pushed on branch
+`claude/certify-ftf-1302` and opened as a PR against `main` rather than
+pushed directly, per `BRANCH_PROTECTION` (Law 4 — not self-certified;
+this review's own certification record is itself submitted for the
+owner/a future session to merge, same precedent as every certification
+PR this shift).

@@ -1353,9 +1353,11 @@
       "blockers": []
     },
     "FTF-1302": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "acce2b4d9a3d636b06065f11de3958239ba5b917"
+      ],
       "independent_review": null,
       "blockers": []
     },

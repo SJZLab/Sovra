@@ -2986,10 +2986,10 @@ FTF-1301:
   proving_symbol: is_certifiable_cheapest
   proving_test: tests/tasks/test_ftf_1301.py
 FTF-1302:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local compute costing
-  evidence_hash: 2ebf9788ac644fc250e8cc9bc621a42815b549f7
+  evidence_hash: acce2b4d9a3d636b06065f11de3958239ba5b917
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0006, FTF-1301 (both
@@ -3052,7 +3052,59 @@ FTF-1302:
     needed (no database, network egress or GPU/external resource of any kind is touched anywhere
     in this task) -- no other job's steps touched. PR opened as PROVISIONAL; not self-certified
     (Law 4) -- awaiting independent Control plane L2 review.
-  proof_state: L1-PROVEN
+
+    First independently reviewed 2026-09-21 and found NOT CERTIFIED solely because GitHub
+    Actions could not show a genuine passing CI run on the real head (an account/repo-level
+    runner-provisioning outage, not a code defect) -- see docs/certifications/queue.md's
+    "2026-09-21 -- FTF-1302 (PR #170) -- NOT CERTIFIED" entry for that review's full detail. That
+    outage is reported cleared as of 2026-09-22 (PR #178); this session independently confirmed
+    it for real across four separate PR CI runs earlier the same shift (#159/#160/#161/#167, all
+    genuinely green) before returning to this item.
+
+    INDEPENDENTLY CERTIFIED (PR #170, merge commit acce2b4d9a3d636b06065f11de3958239ba5b917,
+    2026-09-22) by session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5 -- session-ID
+    compared against every commit on PR #170 (2ebf978/2e0065d/a631d11/718a908/9faf7ea, all
+    carrying Claude-Session .../session_01Fy9YNo5oaA2HZLWRud1Xma; none match this reviewing
+    session, so this is independent, not self-certification). PR #170 predated FTF-1501/#159,
+    FTF-1001/#160, FTF-1401/#161 and FTF-1702/#167 merging to main, so this review merged current
+    main into the PR branch (the fifth and final merge of this backlog sweep) and resolved one
+    real conflict in ci.yml (a simple gate-step append, no job-body collision) plus the usual
+    PROGRESS.md/QUEUE.md/docs/certifications/queue.md conflicts and a stale "Owner actions --
+    current" entry describing the now-cleared outage as still open, rewritten to reflect the real
+    current state; verified clean via a duplicate-key-detecting YAML loader before pushing. Own
+    reproduction, this sandbox: uv run python3 tests/tasks/test_ftf_1302.py -- "all checks
+    passed" (15/15). Own fault injection, one vector, distinct from the producer's own two (naive
+    per-request GPU-second summing, disabled non-negative-amount construction guard): disabled
+    the zero-successes guard in cost_per_success (`if False and not successes:`) -- the suite
+    crashed with a genuine, unhandled `decimal.DivisionByZero` instead of the intended
+    `LocalComputeCostingError` (the test harness's own `_rejects` helper only catches
+    `LocalComputeCostingError`, so any other exception propagates and crashes the run),
+    confirming Section 32's own "zero successes -> undefined, not $0" guard is genuinely
+    load-bearing, not decorative; reverted byte-identical (diff against the pre-injection copy
+    empty), suite re-confirmed clean immediately after. CI reconfirmed green on the real merged
+    head via get_check_runs -- 23/23 jobs success (run 35706830737), including a real
+    secret-manager-integration OpenBao build (~5m38s), structurally distinct from the outage's
+    own `runner_id: 0` instant-"completion" signature -- this is itself independent confirmation
+    the outage is genuinely cleared, not merely reported cleared. No regression: full
+    tests/tasks/test_ftf_*.py sweep (36 files) all "all checks passed"; ruff check/format --check
+    clean using the pinned project ruff (0.6.9, matching CI); mypy (apps/api) -- 2 errors, both
+    the pre-existing, unrelated authlib.jose stub gap; pnpm lint/typecheck/format:check clean.
+    validate_spec.py --strict clean. product_truth_check.py --fail-on-unwired stays real 13/13
+    (unchanged -- proving_symbol deliberately empty, no live HTTP route added by this task,
+    matching the FTF-1401/FTF-1601/FTF-1701/FTF-1810/FTF-1702 precedent). Task contract
+    re-pulled directly via python tools/r1_handoff.py packet FTF-1302 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md -- acceptance clause 1 ("Allocate real total service-window
+    GPU/CPU/storage/idle cost to declared completed workload") confirmed met by
+    window_total_cost/cost_per_success implementing Section 32's own formula exactly; acceptance
+    clause 2 (independent review, exact merged commit, real integration/negative-test evidence)
+    is this review itself; negative_acceptance ("Per-request overlapping GPU seconds cannot
+    double count batches or omit idle/multi-replica capacity") confirmed by construction --
+    cost_per_success/window_total_cost never read gpu_seconds_start/gpu_seconds_end at all,
+    confirmed by direct code read, and by the producer's own fault-injected naive-summing vector
+    disagreeing with Section 32's own golden example. Dependencies FTF-0006/FTF-1301 confirmed
+    genuinely CERTIFIED before relying on them. No blocking defect found. Merged PR #170 (merge
+    commit acce2b4d9a3d636b06065f11de3958239ba5b917).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1302.py
 FTF-1303:

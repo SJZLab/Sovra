@@ -1839,17 +1839,18 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 37/300 (main; FTF-1702 CERTIFIED 2026-09-22, PR #167 merged
-as `099a075` — see docs/certifications/ledger.md) · Product-true:
-13/13. FTF-1501/FTF-1001/FTF-1401/FTF-0202 are merged and already
-independently reviewed/certified by this same shift, awaiting only the
-owner's merge of the doc-only certification PRs (#179/#180/#181/#182)
-that record it on `main`. FTF-1302 (PR #170) is being independently
-re-reviewed by Control plane now (this entry's own review) after its
-prior NOT-CERTIFIED verdict, which was blocked only by a GitHub Actions
-runner-provisioning outage reported cleared 2026-09-22 (PR #178).
-FTF-R016 (PR #172) remains open with the same prior verdict and needs
-the same treatment next. Blocked: 0
+Certified: 37/300 (main; FTF-1302 CERTIFIED 2026-09-22, PR #170 merged
+as `acce2b4` — see docs/certifications/ledger.md) · Product-true:
+13/13. FTF-1501/FTF-1001/FTF-1401/FTF-1702/FTF-0202 are merged and
+already independently reviewed/certified by this same shift, awaiting
+only the owner's merge of the doc-only certification PRs
+(#179/#180/#181/#182/#183) that record it on `main`. This merge and
+its own genuine 23/23 green CI run (including a real OpenBao build)
+is definitive, independent confirmation that the GitHub Actions
+runner-provisioning outage first found 2026-09-21 is fully cleared.
+FTF-R016 (PR #172) is the last item of the six real open-PR backlog
+items found this shift — same prior NOT-CERTIFIED-only-for-the-outage
+verdict, being worked next with the same treatment. Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1960,20 +1961,22 @@ real live route) is a Control-plane judgment call, not a relay one.
 None currently. The GitHub Actions runner-provisioning outage first
 found on PR #170 (2026-09-21, escalated to an owner ask the same day)
 and independently reconfirmed on PR #172 (FTF-R016) and PR #176
-(FTF-0202) is now confirmed genuinely cleared: this same certifier
-shift independently ran real, fresh CI on four separate PRs today
-(#159, #160, #161, #167) -- 21/21, 22/22, 23/23, and 23/23 real jobs,
-every one with a real `runner_id`/`runner_name` and real per-step
-execution timestamps, structurally different from every failing run
-during the outage (`runner_id: 0`, no runner ever assigned). This
-directly confirms the resolution bar the original owner-ask entry
-itself set ("a session confirms CI is provisioning runners again on a
-fresh PR event"), independently of PR #178's own earlier claim to the
-same effect. FTF-1302 (PR #170) and FTF-R016 (PR #172), both previously
-reviewed sound but NOT CERTIFIED solely because of this outage, are
-being re-reviewed now with a fresh, genuine CI run each -- see this
-file's own top status note and `docs/certifications/queue.md` for the
-full history.
+(FTF-0202) is now confirmed genuinely cleared, with five separate
+genuine, fresh CI runs today alone: #159 (21/21), #160 (22/22), #161
+(23/23), #167 (23/23), and #170 itself (23/23, including a real
+`secret-manager-integration` OpenBao build, ~5m38s) — every one with a
+real `runner_id`/`runner_name` and real per-step execution timestamps,
+structurally different from every failing run during the outage
+(`runner_id: 0`, no runner ever assigned). PR #170's own genuine green
+run is the most definitive confirmation yet, since it is the exact PR
+the outage was first found on. This directly confirms the resolution
+bar the original owner-ask entry itself set ("a session confirms CI is
+provisioning runners again on a fresh PR event"), independently of PR
+#178's own earlier claim to the same effect. FTF-1302 (PR #170) has
+since been independently reviewed and CERTIFIED (see "## Done").
+FTF-R016 (PR #172), previously reviewed sound but NOT CERTIFIED solely
+because of this outage, is next — see this file's own top status note
+and `docs/certifications/queue.md` for the full history.
 
 2026-09-20: **FTF-0202 ("Secret-manager integration")'s own
 secret-backend-selection ask is RESOLVED** (2026-09-21, live owner
@@ -2059,11 +2062,13 @@ CERTIFIED 2026-09-22 via PR #167 (merge commit
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
 
-FTF-1302 (Local compute costing, PR #170
-https://github.com/SJZLab/Sovra/pull/170) is being independently
-re-reviewed by Control plane now (this entry's own review), after its
-prior NOT-CERTIFIED verdict was blocked solely by the now-reportedly-
-cleared GitHub Actions runner-provisioning outage.
+FTF-1302 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-22 via PR #170 (merge commit
+`acce2b4d9a3d636b06065f11de3958239ba5b917`) — its own genuine 23/23
+green CI run is the definitive confirmation the GitHub Actions
+runner-provisioning outage is fully cleared — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
@@ -3174,6 +3179,47 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-1302 — Local compute costing. CERTIFIED 2026-09-22, PR #170
+  (merge commit `acce2b4d9a3d636b06065f11de3958239ba5b917`). First
+  reviewed 2026-09-21 and found NOT CERTIFIED solely because GitHub
+  Actions could not show a genuine passing CI run (an outage, not a
+  code defect) — the code, tests, and fault-injection evidence were
+  already confirmed sound then. This review picks up where that one
+  left off: predating `main`'s current tip (FTF-1501/FTF-1001/
+  FTF-1401/FTF-1702 had all merged since), merged current `main` into
+  the PR branch (the fifth and final merge of this backlog sweep) and
+  resolved one real conflict in `ci.yml` plus a stale "Owner actions"
+  entry still describing the outage as open, rewritten to reflect the
+  real, confirmed-cleared state — confirmed via a duplicate-key-
+  detecting YAML loader before pushing. Independently re-verified:
+  session-ID clean (all five PR commits carry
+  `session_01Fy9YNo5oaA2HZLWRud1Xma`, different from this reviewer's
+  own `session_01DzyLpJHy35M2BeGRfHfwL5`); CI reconfirmed green on the
+  real merged head — 23/23 jobs `success` (run `35706830737`),
+  including a real `secret-manager-integration` OpenBao build
+  (~5m38s), the definitive confirmation the runner-provisioning outage
+  is genuinely cleared. Own reproduction: `tests/tasks/
+  test_ftf_1302.py` — 15/15. Own fault injection, one vector distinct
+  from the producer's own two: disabled the zero-successes guard in
+  `cost_per_success` — the suite crashed with a genuine, unhandled
+  `decimal.DivisionByZero` instead of the intended
+  `LocalComputeCostingError`, confirming Section 32's own "zero
+  successes -> undefined, not $0" rule is genuinely load-bearing,
+  reverted byte-identical. No regression: full `tests/tasks/
+  test_ftf_*.py` sweep (36 files) clean; `ruff`/`mypy`/`pnpm
+  lint+typecheck+format` clean (only pre-existing, unrelated
+  `authlib.jose` gaps). `validate_spec.py --strict` clean. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-1302` — both
+  acceptance clauses and the negative_acceptance clause reconfirmed
+  met. Dependencies FTF-0006/FTF-1301 confirmed genuinely `CERTIFIED`.
+  No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`. `product_truth_check.py
+  --fail-on-unwired` stays real `13/13` (unchanged — `proving_symbol`
+  deliberately empty, matching the FTF-1401/FTF-1601/FTF-1701/
+  FTF-1702/FTF-1810 precedent). Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

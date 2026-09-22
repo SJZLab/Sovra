@@ -4452,3 +4452,85 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1302 — Local compute costing
+- Criterion ID: FTF-1302
+- PR: https://github.com/SJZLab/Sovra/pull/170 (`claude/wizardly-fermat-c7g9v1` → `main`)
+- Merge commit: acce2b4d9a3d636b06065f11de3958239ba5b917
+- Implementation commit: 2ebf9788ac644fc250e8cc9bc621a42815b549f7
+- Validated-by: session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5
+  (continuing the same certifier shift, user-requested backlog sweep —
+  the fifth and final item of the six real open-PR backlog items)
+- Date: 2026-09-22
+- **Session-ID check:** all five commits on PR #170 (`2ebf978`,
+  `2e0065d`, `a631d11`, `718a908`, `9faf7ea`) carry `Claude-Session:
+  .../session_01Fy9YNo5oaA2HZLWRud1Xma`; this reviewing session's own
+  ID is `session_01DzyLpJHy35M2BeGRfHfwL5` — no match, independent per
+  Law 4.
+- **Prior review, not superseded lightly:** PR #170 was first
+  independently reviewed 2026-09-21 and found NOT CERTIFIED solely
+  because GitHub Actions could not show a genuine passing CI run on
+  the real head (an account/repo-level runner-provisioning outage, not
+  a code defect) — the code, tests, and fault-injection evidence were
+  already confirmed sound at that time. This review picks up exactly
+  where that one left off, now that the outage is confirmed cleared.
+- **Merge-conflict resolution required a fifth time (the last of this
+  sweep):** PR #170 predated FTF-1501/#159, FTF-1001/#160,
+  FTF-1401/#161 and FTF-1702/#167 all merging to `main`. Merged current
+  `main` into the PR branch and resolved one real conflict in `ci.yml`
+  (a simple gate-step append) plus the usual `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` conflicts — including a stale "Owner
+  actions — current" entry still describing the outage as open, which
+  this review rewrote to reflect the real, confirmed-cleared state.
+  Verified clean via a duplicate-key-detecting YAML loader before
+  pushing.
+- **CI reconfirmed green on the real merged head — the definitive
+  confirmation the outage is genuinely cleared, not merely reported
+  cleared:** `get_check_runs` — all 23 jobs `completed`/`success`
+  (run `35706830737`), including a real `secret-manager-integration`
+  OpenBao build (~5m38s) — structurally distinct from the outage's own
+  `runner_id: 0` instant-"completion" signature.
+- **Own reproduction, this sandbox:** `uv run python3
+  tests/tasks/test_ftf_1302.py` — "all checks passed" (15/15).
+- **Own fault injection, one vector, distinct from the producer's own
+  two (naive per-request GPU-second summing, disabled non-negative-
+  amount construction guard), reverted byte-identical and the suite
+  re-confirmed clean immediately after:** disabled the zero-successes
+  guard in `cost_per_success` — the suite crashed with a genuine,
+  unhandled `decimal.DivisionByZero` instead of the intended
+  `LocalComputeCostingError` (the test harness's own `_rejects` helper
+  only catches `LocalComputeCostingError`, so any other exception
+  propagates and crashes the run), confirming Section 32's own "zero
+  successes -> undefined, not $0" guard is genuinely load-bearing, not
+  decorative.
+- **No regression:** full `tests/tasks/test_ftf_*.py` sweep (36 files)
+  all "all checks passed". `ruff check`/`ruff format --check` clean
+  using the pinned project ruff (0.6.9, matching CI). `mypy` (apps/api)
+  — 2 errors, both the pre-existing, unrelated `authlib.jose` stub gap.
+  `pnpm run lint`/`typecheck`/`format:check` clean. `validate_spec.py
+  --strict` clean. `product_truth_check.py --fail-on-unwired` stays
+  real `13/13` (unchanged — `proving_symbol` deliberately empty,
+  matching the FTF-1401/FTF-1601/FTF-1701/FTF-1702/FTF-1810
+  precedent).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1302 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance
+  clause 1 ("Allocate real total service-window GPU/CPU/storage/idle
+  cost to declared completed workload") confirmed met by
+  `window_total_cost`/`cost_per_success` implementing Section 32's own
+  formula exactly. Acceptance clause 2 (independent review, exact
+  merged commit, real integration/negative-test evidence) is this
+  review itself. `negative_acceptance` ("Per-request overlapping GPU
+  seconds cannot double count batches or omit idle/multi-replica
+  capacity") confirmed by construction — `cost_per_success`/
+  `window_total_cost` never read `gpu_seconds_start`/`gpu_seconds_end`
+  at all, confirmed by direct code read, and by the producer's own
+  fault-injected naive-summing vector disagreeing with Section 32's own
+  golden example.
+- Dependencies FTF-0006/FTF-1301 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `acce2b4d9a3d636b06065f11de3958239ba5b917`.
+
+**Conclusion:** Certified L2-CERTIFIED.
