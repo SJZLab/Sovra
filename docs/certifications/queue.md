@@ -9943,3 +9943,168 @@ closed as superseded.
 - Dependencies FTF-0401/FTF-0202/FTF-H003 confirmed genuinely `CERTIFIED`
   in `docs/spec-matrix.yaml` before relying on them.
 - **Submitted PROVISIONAL, not self-certified (Law 4).**
+
+## 2026-09-22 — FTF-H006 — Shared outbound URL and credential guard
+- **PR:** to be opened from `claude/wizardly-fermat-83mm0h` → `main`,
+  title `[relay] FTF-H006: Shared outbound URL and credential guard`.
+- **Commits:** `db727c2` (generated task packet), `ae2dcb9` (implementation
+  — `packages/security/url_policy.py`/`outbound_guard.py` and
+  `tests/tasks/test_ftf_h006.py`), and a third, tracking-doc-only commit
+  (`docs/spec-matrix.yaml`/`QUEUE.md`/`PROGRESS.md`/this entry) on the
+  same branch, matching the established two/three-commit precedent.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  This session's designated branch did not exist on `origin` yet; its
+  local starting history turned out to be identical to PR #196 (FTF-0500,
+  merged), so it was reset to fresh `origin/main` per the merged-branch
+  instruction rather than stacked on already-merged history. Recomputed
+  the dependency-ready frontier fresh by joining `docs/spec-matrix.yaml`'s
+  live `certification_state` against `docs/TASK_INDEX.md`'s real
+  `Dependencies` column: `FTF-0304` (two open, unmerged candidate PRs
+  #194/#195 from other sessions — not picked, to avoid duplicating real
+  work), `FTF-0408`/`FTF-0902` (both re-confirmed still genuinely blocked
+  for the same disclosed reasons already on record), `FTF-1503`,
+  `FTF-1506`, `FTF-H006` (all three genuinely dependency-ready and
+  unclaimed). Picked `FTF-H006` over the other two dependency-ready items
+  because `docs/TASK_INDEX.md` lists it as a direct dependency of the most
+  other still-blocked tasks (`FTF-0203`, `FTF-0302`, `FTF-0303`,
+  `FTF-04A01`, `FTF-0500B`, `FTF-0500C`, `FTF-H007`, `FTF-H012`,
+  `FTF-H027`) — the highest-leverage unblocked item this shift, not merely
+  the lowest task ID. `FTF-H006`'s own dependencies (`FTF-0005`,
+  `FTF-0201`, `FTF-0202`, `FTF-H003`) were independently confirmed
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-H006 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — goal ("Validate scheme/host/port/
+  redirect/DNS resolved addresses against explicit connection policies,
+  with SSRF and cloud metadata protections for all outbound clients"),
+  acceptance ("Exercise real controlled HTTP endpoints and DNS/redirect
+  fixtures covering loopback, private allowlist, link-local metadata,
+  IPv6, alternate encodings and rebinding"), negative_acceptance ("Private
+  destinations can be explicitly authorized; a blanket private-address
+  rejection cannot break intended internal LiteLLM/storage while metadata
+  remains denied"), `shared_lock_required: [security:trust-boundary]`,
+  `files: [packages/security/outbound_guard.py,
+  packages/security/url_policy.py]`, `dependencies: [FTF-0005, FTF-0201,
+  FTF-0202, FTF-H003]` (all CERTIFIED).
+- **Scope disclosed, not hidden:** this task's own `files:` list scopes it
+  to the shared guard library itself, not to wiring it into any existing
+  route. `apps/api/app/litellm/connection_schema.py`'s own
+  `validate_base_url` already states this in its own docstring ("this
+  module never dials the URL -- that is FTF-0203's job") — `FTF-0203`
+  ("Connection validation") is this task's own first listed dependent in
+  `docs/TASK_INDEX.md`, and is the task that will actually construct a
+  `ConnectionPolicy`/call `guarded_fetch` from a live route. No live
+  FastAPI route does either yet; `product_truth_check.py` stays `14/14`,
+  unchanged, same disclosed "no live caller yet" class already accepted
+  for FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003
+  before each one's own first live caller existed.
+- **Design:** `packages/security/url_policy.py` — `ConnectionPolicy`
+  (allowed schemes/ports, `explicit_private_allowlist` of real internal
+  networks, `allow_redirects`/`max_redirects`); `validate_url_shape`
+  refuses `file`/`gopher`/`ftp` schemes and URL userinfo unconditionally
+  (no policy can re-enable them), and any scheme/port outside the
+  policy's own allowlist; `validate_resolved_address` denies loopback/
+  link-local/private/reserved/multicast/unspecified addresses by default,
+  overridable per policy, **except** cloud-metadata addresses
+  (`169.254.169.254`, `100.100.100.200`, `fd00:ec2::254`, and the literal
+  metadata hostnames), which are refused even under a broad allowlist
+  entry that would otherwise cover them — this task's own
+  negative_acceptance read literally: an allowlist authorizes a real
+  internal destination, never the metadata identity itself;
+  `normalize_host_literal` recognizes every alternate IPv4/IPv6 encoding
+  named in the acceptance clause (bare 32-bit integer, octal/hex dotted-
+  quad, the legacy `inet_aton` "fewer than four parts" collapsing form,
+  bracketed/IPv4-mapped IPv6) so a URL host component can never smuggle a
+  real address past a naive string check. `packages/security/
+  outbound_guard.py` — `guarded_fetch` is the only function in this
+  repository allowed to open a socket on a caller-supplied host:
+  `resolve_and_validate` resolves via real `socket.getaddrinfo` and
+  validates **every** returned address (fail-closed on any one disallowed
+  answer, not just the one used), then the connection is pinned to that
+  exact validated address via `_PinnedHTTPConnection`/
+  `_PinnedHTTPSConnection` (custom `http.client` subclasses overriding
+  `connect()`) — a later, separate DNS answer can never substitute a
+  different address for the one actually checked (the rebinding defense
+  this task's own acceptance clause names), while TLS still validates the
+  real hostname via `server_hostname` despite the pinned-IP connect. A
+  3xx response is returned as-is unless `policy.allow_redirects`, in which
+  case the target is fully revalidated and redialed from scratch via a
+  recursive `guarded_fetch` call, bounded by `max_redirects` — both halves
+  of Section 65.4's "default no redirects... revalidate ... every allowed
+  redirect." No new runtime dependency: stdlib `socket`/`ssl`/
+  `http.client` only, consistent with CLAUDE.md's ask-first bar for new
+  runtime deps.
+- **Two real defects found and fixed before submission (Law 1, disclosed
+  rather than hidden), neither merely described:**
+  1. `resolve_and_validate` originally returned `(ip_str, family)` tuples
+     while `guarded_fetch` destructured them as `(family, ip_str)` —
+     invisible until the first real end-to-end `guarded_fetch` call
+     against this suite's own local HTTP server actually attempted a
+     connection and the raw socket-family integer (not an IP string) hit
+     `socket.create_connection`, raising immediately. Fixed by making the
+     return order match what the caller actually consumes.
+  2. The DNS-rebinding proof test's own `socket.getaddrinfo` mock
+     initially escalated to a disallowed address on *every* second call
+     to it, not scoped to the hostname under test — since the real
+     `socket.create_connection` internally re-resolves even a literal IP
+     it was already given, this tripped the test's own hostile-second-
+     answer logic on that unrelated internal call and produced a spurious
+     connection timeout, not a real defect in `outbound_guard.py` itself.
+     Fixed by scoping the mock's escalation to the specific test hostname
+     and passing every other host straight through to the real resolver
+     — matching how DNS rebinding actually works (a literal IP is never
+     subject to it; only a named host is).
+- **Evidence:** `tests/tasks/test_ftf_h006.py`, 33 no-DB, no-external-
+  egress checks. Real, not mocked, wherever real is possible: a genuine
+  `http.server.ThreadingHTTPServer` on `127.0.0.1` this suite itself
+  starts and drives `guarded_fetch` against — denied by default, reachable
+  once explicitly allowlisted, unreachable via a decimal/hex/octal-encoded
+  host string until that same encoding normalizes to the same allowlisted
+  loopback address; a default (no `allow_redirects`) fetch against a real
+  redirecting endpoint returns the 3xx itself rather than following it; an
+  `allow_redirects` fetch genuinely follows and re-dials; a real redirect
+  loop is bounded by `max_redirects`, not infinite. Cloud-metadata denial
+  is proven at the pure policy layer (this sandbox has no route to a real
+  metadata service and must not attempt one — a real connection attempt
+  would consult exactly this same check first). The rebinding proof mocks
+  only DNS resolution (this sandbox controls no real DNS zone) while the
+  socket connection stays real: `getaddrinfo` is proven to run exactly
+  once per fetch and the live connection is proven to land on exactly the
+  one validated address, even though a rigged second resolution would
+  have answered with a disallowed one. A real fault-injection test
+  disables the cloud-metadata check on the tracked `url_policy.py` module
+  on disk, confirms in a fresh subprocess that the metadata address this
+  suite depends on being denied genuinely flips to allowed, then restores
+  byte-identical (`read_bytes()` comparison, not merely re-running the
+  suite).
+- **IPv6 disclosed, not hidden:** this sandbox has no IPv6 stack at all
+  (confirmed via a real `AF_INET6` bind attempt to `::1`, not merely
+  `socket.has_ipv6`) — disclosed explicitly at test-module load time. The
+  live `::1` `guarded_fetch` sub-check is skipped only in that one sandbox
+  condition; GitHub Actions' own `ubuntu-latest` runners support IPv6
+  loopback, so CI exercises it for real. The pure IPv6 policy checks
+  (`::1` denial, an IPv4-mapped IPv6 literal normalizing correctly) do not
+  depend on IPv6 sockets at all and always run regardless.
+- **Full regression:** `ruff check .`/`ruff format --check .` clean for
+  this task's own files; 7 pre-existing `UP042` findings and 34
+  pre-existing reformat-needed files confirmed unrelated (none are files
+  this task touched). `mypy .`: found and fixed one real typing gap in
+  this task's own new code — typeshed's `HTTPSConnection` stub omits the
+  real (but underscore-prefixed) `_context` attribute CPython actually
+  sets, so `_PinnedHTTPSConnection` stores the TLS context under its own
+  attribute name instead — clean after the fix. `pnpm run lint`/
+  `typecheck` clean. `scripts/validate_spec.py --strict` clean, after
+  `git fetch --unshallow` — this sandbox's own pre-existing, already-
+  documented shallow-clone artifact (confirmed pre-existing via a before/
+  after check on `tests/tasks/test_ftf_h001.py`'s own `stale_commit`
+  defects, not caused by this task). Full `tests/tasks/test_ftf_*.py`
+  sweep run directly: every file passes after `uv sync --all-packages` +
+  `pnpm install` resolved this fresh sandbox's own missing `uvicorn`/
+  `sqlalchemy`/`node_modules` (same documented precedent as prior shifts).
+  `scripts/product_truth_check.py --fail-on-unwired`: `14/14`, unchanged
+  (this task adds no live caller by design). `scripts/status.py` stays
+  `43/300 certified · 13 product-true` (unchanged — FTF-H006 is
+  PROVISIONAL, not yet CERTIFIED, Law 2).
+- Dependencies FTF-0005/FTF-0201/FTF-0202/FTF-H003 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**

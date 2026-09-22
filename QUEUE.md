@@ -1,5 +1,89 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T14:10:00Z (scheduled relay shift) — implemented FTF-0500
+Updated: 2026-09-22T19:05:00Z (scheduled relay shift) — implemented FTF-H006
+  (Shared outbound URL and credential guard, deps FTF-0005/FTF-0201/FTF-0202/
+  FTF-H003 all CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean
+  against the committed `CLAUDE.md.sha256`. STEP 0.2: `cognee-cli` not
+  present in this sandbox — text-search fallback active, same as every prior
+  shift. STEP 1: re-fetched `origin/main` fresh rather than trusting this
+  session's own designated branch, which turned out to have no unmerged
+  commits of its own (its history was identical to a just-merged PR #196 —
+  FTF-0500 — so it was reset to `origin/main` per the merged-branch
+  instruction rather than reused). Recomputed the dependency-ready frontier
+  fresh (joining `docs/spec-matrix.yaml`'s live `certification_state`
+  against `docs/TASK_INDEX.md`'s real `Dependencies` column): six items
+  came back — `FTF-0304`, `FTF-0408`, `FTF-0902`, `FTF-1503`, `FTF-1506`,
+  `FTF-H006`. Checked `list_pull_requests` before picking: `FTF-0304`
+  already had two open, unmerged candidate PRs (#194/#195) from other
+  sessions — not picked, to avoid duplicating real work; `FTF-0408`/
+  `FTF-0902` re-confirmed still genuinely blocked for the same disclosed
+  reasons already on record. `FTF-H006` was picked over `FTF-1503`/
+  `FTF-1506` (also genuinely unblocked and unclaimed) because it is a
+  direct dependency of the most other still-blocked tasks
+  (`FTF-0203`/`FTF-0302`/`FTF-0303`/`FTF-04A01`/`FTF-0500B`/`FTF-0500C`/
+  `FTF-H007`/`FTF-H012`/`FTF-H027` all list it in `docs/TASK_INDEX.md`) —
+  the highest-leverage unblocked item, not merely the lowest task ID.
+
+  **STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py packet
+  FTF-H006`. Read `apps/api/app/litellm/connection_schema.py`'s own
+  `validate_base_url` (confirms it is shape-only — "this module never dials
+  the URL -- that is FTF-0203's job") and `packages/storage/tenant_policy.py`/
+  `packages/litellm_client/secret_manager_integration.py` for this repo's
+  own `packages/<area>/` layout and import convention
+  (`from packages.security.X import Y`, already proven reachable via
+  `pythonpath = ["."]`). Formed the hypothesis: this task's own scope is the
+  shared SSRF/credential-destination guard library itself (Section 65.4),
+  not wiring it into any existing route — that is explicitly a later,
+  separately dependency-gated task (`FTF-0203`). No code written yet at
+  this point.
+
+  **STEP 2 (E):** Implemented `packages/security/url_policy.py` (pure
+  policy — scheme/userinfo/port shape, resolved-address validation with an
+  explicit private-destination allowlist, unconditional cloud-metadata
+  denial, and alternate-IP-literal-encoding normalization) and
+  `packages/security/outbound_guard.py` (the only module that dials a
+  socket — DNS-resolve-and-validate-once, connect pinned to the exact
+  validated address via a custom `http.client` connection subclass,
+  default-no-redirects with full revalidation on explicit opt-in). No new
+  runtime dependency — stdlib `socket`/`ssl`/`http.client` only. Wrote
+  `tests/tasks/test_ftf_h006.py` (33 checks) against a real local HTTP
+  server this suite itself starts, not a mocked response object; caught and
+  fixed two real bugs this way before submission (Law 1, disclosed): a
+  tuple-field-order mismatch between `resolve_and_validate`'s return value
+  and its caller that silently connected to the wrong "address" (a stray
+  socket family int, not an IP string) until the first real end-to-end
+  fetch attempt surfaced it; and a DNS-rebinding-proof test whose own mock
+  needed to leave the real `create_connection`'s own internal literal-IP
+  `getaddrinfo` call untouched, or it would (correctly, but confusingly)
+  trip the same hostile-second-answer logic the test itself installs.
+
+  **STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays `14/14`
+  (unchanged — this task adds no live caller by design, same disclosed
+  "no live caller yet" class already accepted for
+  FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003).
+  `scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`
+  — this sandbox's own pre-existing, already-documented shallow-clone
+  artifact, confirmed pre-existing via a before/after check on
+  `tests/tasks/test_ftf_h001.py`, not caused by this task). Full repo-wide
+  `ruff check .`/`ruff format --check .` clean (7 pre-existing `UP042`
+  findings and 34 pre-existing reformat-needed files confirmed unrelated to
+  this task's own files). `mypy .` clean (own new modules; found and fixed
+  one real typing gap — `HTTPSConnection._context` is not in typeshed's
+  stub — by storing the TLS context under this task's own attribute name
+  instead of relying on the parent class's private one). `pnpm run
+  lint`/`typecheck` clean. Full `tests/tasks/test_ftf_*.py` sweep run
+  directly: every file passes after `uv sync --all-packages` + `pnpm
+  install` resolved this fresh sandbox's own missing
+  `uvicorn`/`sqlalchemy`/`node_modules` (same documented precedent as prior
+  shifts). `scripts/status.py` stays `43/300 certified · 13 product-true`
+  (unchanged — FTF-H006 is PROVISIONAL, not yet CERTIFIED; Law 2).
+
+  STEP 3: `docs/spec-matrix.yaml` FTF-H006 → PROVISIONAL/L1-PROVEN,
+  `evidence_hash` set to the implementation commit. PR opened as
+  `[relay] FTF-H006: Shared outbound URL and credential guard`, appended to
+  `docs/certifications/queue.md` for Control plane. **Submitted
+  PROVISIONAL, not self-certified (Law 4).**
+
+Previously, Updated: 2026-09-22T14:10:00Z (scheduled relay shift) — implemented FTF-0500
   (DatasetSourceConnection schema/API/RBAC, deps FTF-0401/FTF-0202/FTF-H003
   all CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the
   committed `CLAUDE.md.sha256`. STEP 1: recomputed the dependency-ready
@@ -2611,6 +2695,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-H006 (Shared outbound URL and credential guard) was implemented and
+submitted this shift — see this file's own top "Updated:" entry for the
+full narrative and `docs/certifications/queue.md` for the complete
+submission record. `docs/spec-matrix.yaml`: PROVISIONAL/L1-PROVEN,
+`evidence_hash` = the implementation commit. Not yet independently
+reviewed by Control plane.
+
 FTF-0500 (DatasetSourceConnection schema/API/RBAC) was implemented and
 submitted this shift — see this file's own top "Updated:" entry for the
 full narrative and `docs/certifications/queue.md` for the complete

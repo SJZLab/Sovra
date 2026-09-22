@@ -1,5 +1,169 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T14:10:00Z (scheduled relay shift) — implemented FTF-0500
+Updated: 2026-09-22T19:05:00Z (scheduled relay shift) — implemented FTF-H006
+  (Shared outbound URL and credential guard), submitted PROVISIONAL, not
+  self-certified (Law 4).
+
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`.
+
+  STEP 0.2: `cognee-cli` not present in this sandbox (`command not found`)
+  — text-search fallback active, same as every prior shift.
+
+  STEP 1: this session's designated branch (`claude/wizardly-fermat-83mm0h`)
+  did not exist on `origin` yet; its local history turned out to be
+  identical to PR #196 (FTF-0500), already merged to `main` — per the
+  merged-branch instruction, reset the branch to fresh `origin/main` rather
+  than stack new work on already-merged history. Recomputed the
+  dependency-ready frontier fresh (joining `docs/spec-matrix.yaml`'s live
+  `certification_state` against `docs/TASK_INDEX.md`'s real `Dependencies`
+  column): six items — `FTF-0304`, `FTF-0408`, `FTF-0902`, `FTF-1503`,
+  `FTF-1506`, `FTF-H006`. `list_pull_requests` showed two open, unmerged
+  candidate PRs for `FTF-0304` (#194/#195) from other sessions — not
+  picked, to avoid duplicating real work already in flight. `FTF-0408`/
+  `FTF-0902` re-confirmed still genuinely blocked for the same disclosed
+  reasons already on record. Of the two remaining genuinely unblocked,
+  unclaimed items (`FTF-1503`, `FTF-1506`), picked `FTF-H006` instead —
+  not the lowest task ID, but the one `docs/TASK_INDEX.md` lists as a
+  direct dependency of the most other still-blocked tasks
+  (`FTF-0203`/`FTF-0302`/`FTF-0303`/`FTF-04A01`/`FTF-0500B`/`FTF-0500C`/
+  `FTF-H007`/`FTF-H012`/`FTF-H027`), the highest-leverage unblocked item
+  this shift.
+
+  STEP 2 (P): read `tools/r1_handoff.py packet FTF-H006` fresh, plus
+  `apps/api/app/litellm/connection_schema.py`'s own `validate_base_url`
+  (confirms it is shape-only — its own docstring: "this module never dials
+  the URL -- that is FTF-0203's job") and `packages/storage/tenant_policy.py`/
+  `packages/litellm_client/secret_manager_integration.py` for this repo's
+  `packages/<area>/` layout/import convention. Formed the hypothesis: this
+  task's real scope, per its own task packet (`files:
+  packages/security/outbound_guard.py, packages/security/url_policy.py`),
+  is the shared SSRF/credential-destination guard library itself (Section
+  65.4's "one shared outbound-connection guard"), not wiring it into any
+  existing route — that is explicitly `FTF-0203`'s job, a separate,
+  dependency-gated later task. No code written yet at this point.
+
+  STEP 2 (E): implemented `packages/security/url_policy.py` (pure policy —
+  `ConnectionPolicy`, `validate_url_shape` refusing forbidden schemes/
+  userinfo/disallowed ports, `validate_resolved_address` denying loopback/
+  link-local/private/reserved/multicast by default with an explicit
+  per-policy allowlist, cloud-metadata addresses denied unconditionally
+  even under a broad allowlist entry, `normalize_host_literal` recognizing
+  every alternate IPv4/IPv6 encoding this task's acceptance clause names)
+  and `packages/security/outbound_guard.py` (`guarded_fetch` — resolve or
+  normalize, validate every candidate address, connect pinned to the exact
+  validated address via a custom `http.client.HTTPConnection`/
+  `HTTPSConnection` subclass so a later DNS answer can never substitute a
+  different address for the one actually checked; TLS still validates the
+  real hostname via `server_hostname` despite the pinned-IP connect;
+  redirects not followed by default, fully revalidated/redialed from
+  scratch when explicitly opted in). No new runtime dependency — stdlib
+  `socket`/`ssl`/`http.client` only, per CLAUDE.md's ask-first bar for new
+  deps.
+
+  Real fault injection during this task's own development (Law 1,
+  disclosed rather than hidden) found and fixed two genuine defects before
+  submission, neither merely described: (1) `resolve_and_validate`
+  returned `(ip_str, family)` tuples but its own caller destructured them
+  as `(family, ip_str)`, so `guarded_fetch` was dialing a raw socket-family
+  integer instead of an IP string — invisible until the first real
+  end-to-end fetch against this suite's own local HTTP server actually
+  attempted a connection and raised; fixed by making the return order
+  match the documented/consumed shape. (2) The DNS-rebinding proof test's
+  own `socket.getaddrinfo` mock initially escalated to a disallowed
+  address on *every* second call, not just a second call for the hostname
+  under test — since the real `socket.create_connection` internally
+  re-resolves even a literal IP it was already given, this tripped the
+  test's own hostile-second-answer logic on that internal call and
+  produced a spurious connection timeout; fixed by scoping the mock's
+  escalation to the specific test hostname and passing every other host
+  straight through to the real resolver, matching how DNS rebinding
+  actually works (a literal IP is never subject to it; only a named host
+  is).
+
+  Wrote `tests/tasks/test_ftf_h006.py` (33 checks, no DB, no external
+  egress) — a real `http.server.ThreadingHTTPServer` on `127.0.0.1` this
+  suite itself starts and drives `guarded_fetch` against for the loopback/
+  private-allowlist/alternate-encoding/redirect acceptance clauses: denied
+  by default, reachable once explicitly allowlisted, unreachable via a
+  decimal/hex/octal-encoded host string until that same encoding
+  normalizes to the same allowlisted loopback address. Cloud-metadata
+  denial is proven at the pure policy layer (this sandbox has no route to
+  a real metadata service and must not attempt one). The rebinding proof
+  mocks only DNS resolution while the socket connection stays real,
+  proving `getaddrinfo` runs exactly once per fetch and the live
+  connection lands on exactly the one validated address, even though a
+  rigged second resolution would have answered with a disallowed one. A
+  real fault-injection test disables the cloud-metadata check on the
+  tracked module on disk, confirms in a fresh subprocess that the metadata
+  address this suite depends on being denied genuinely flips to allowed,
+  then restores byte-identical.
+
+  This sandbox was found to have no IPv6 stack at all (confirmed via a
+  real `AF_INET6` bind attempt to `::1`, not merely `socket.has_ipv6`) —
+  disclosed explicitly at test-module load time rather than silently
+  skipped, same `resource_gate` class already accepted for
+  FTF-0004/FTF-0102/FTF-0104/FTF-1601/FTF-H003's own
+  no-container-registry-egress notes. The live `::1` `guarded_fetch`
+  sub-check is skipped only in that one sandbox condition (GitHub Actions'
+  own `ubuntu-latest` runners support IPv6 loopback, so CI exercises it
+  for real); the pure IPv6 policy checks (`::1` denial, an IPv4-mapped
+  IPv6 literal normalizing correctly) do not depend on IPv6 sockets at all
+  and always run.
+
+  STEP 2 (V): `product_truth_check.py --fail-on-unwired` stays `14/14`,
+  unchanged — this task adds no live caller by design (its own task
+  packet's scope is the library only; `FTF-0203` is the task that dials it
+  into a live route), same disclosed "no live caller yet" class already
+  accepted for FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105/
+  FTF-H003 before each one's own first live caller existed.
+  `scripts/validate_spec.py --strict` clean, after `git fetch --unshallow`
+  — this sandbox's own pre-existing, already-documented shallow-clone
+  artifact (confirmed pre-existing via a before/after check on
+  `tests/tasks/test_ftf_h001.py`'s own `stale_commit` defects, not caused
+  by this task). Full repo-wide `ruff check .`/`ruff format --check .`
+  clean for this task's own files; the 7 pre-existing `UP042` findings
+  (`scripts/product_truth_check.py`/`scripts/release_evidence_gate.py`)
+  and 34 pre-existing reformat-needed files confirmed unrelated to this
+  task (none of them are files this task touched). `mypy .`: found and
+  fixed one real typing gap in this task's own new code — typeshed's
+  `HTTPSConnection` stub does not declare the real (but "private",
+  underscore-prefixed) `_context` attribute CPython's own implementation
+  sets, so this task's `_PinnedHTTPSConnection` stores the TLS context
+  under its own attribute name instead of relying on the inherited one —
+  clean after the fix. `pnpm run lint`/`typecheck` clean (no frontend
+  files touched by this task; run anyway as part of full regression). Full
+  `tests/tasks/test_ftf_*.py` sweep run directly (not merely
+  re-described): every file passes after `uv sync --all-packages` + `pnpm
+  install` resolved this fresh sandbox's own missing
+  `uvicorn`/`sqlalchemy`/`node_modules` (same documented precedent as
+  prior shifts — confirmed a sandbox artifact, not a regression, since it
+  affected files this task never touched). `scripts/status.py` stays
+  `43/300 certified · 13 product-true` (unchanged — FTF-H006 is
+  PROVISIONAL, not yet CERTIFIED; the stricter CERTIFIED-only counts do
+  not move until independently certified, Law 2).
+
+  STEP 3: `docs/spec-matrix.yaml` FTF-H006 → PROVISIONAL/L1-PROVEN,
+  `evidence_hash` set to the implementation commit (`ae2dcb9`, the final
+  commit of this task's own implementation, before this tracking-docs
+  commit). PR to be opened as
+  `[relay] FTF-H006: Shared outbound URL and credential guard`, appended
+  to `docs/certifications/queue.md` for Control plane. **Submitted
+  PROVISIONAL, not self-certified (Law 4).**
+
+## Next shift
+`FTF-H006` reaching CERTIFIED will newly unblock (per `docs/TASK_INDEX.md`)
+`FTF-0203` (Connection validation), `FTF-0302`/`FTF-0303` (artifact
+resolvers, alongside their own other prerequisites), `FTF-04A01`,
+`FTF-0500B`/`FTF-0500C`, and the `FTF-H007`/`FTF-H012`/`FTF-H027`
+audit-hardening chain — none of that is available to pick yet on the
+current, still-PROVISIONAL `main`. `FTF-1503` (CSRF suite) and `FTF-1506`
+(Dependency scanning) remain genuinely dependency-ready and unclaimed for
+a future shift. `FTF-0304` still has two open, unmerged, competing
+candidate PRs (#194/#195) — a Control-plane/owner call to resolve (close
+one as a duplicate), not a relay one. `FTF-0408`/`FTF-0902` remain
+genuinely blocked for the same disclosed reasons on record.
+
+Previously, Updated: 2026-09-22T14:10:00Z (scheduled relay shift) — implemented FTF-0500
   (DatasetSourceConnection schema/API/RBAC), submitted PROVISIONAL, not
   self-certified (Law 4).
 

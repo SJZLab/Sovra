@@ -4155,15 +4155,77 @@ FTF-H005:
   proving_symbol: ''
   proving_test: ''
 FTF-H006:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Shared outbound URL and credential guard
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-10; scenarios=Q25; deps=FTF-0005, FTF-0201, FTF-0202, FTF-H003
-  proof_state: UNPROVEN
+  evidence_hash: ae2dcb9d25983bd471d1e69bc57149d991aa56c7
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=audit_hardening; requirements=AF-10; scenarios=Q25; deps=FTF-0005, FTF-0201, FTF-0202,
+    FTF-H003 (all CERTIFIED). This task's own acceptance clause ("exercise real controlled HTTP
+    endpoints and DNS/redirect fixtures covering loopback, private allowlist, link-local
+    metadata, IPv6, alternate encodings and rebinding") is Section 65.4's "one shared
+    outbound-connection guard" built for real: packages/security/url_policy.py (pure policy --
+    ConnectionPolicy, validate_url_shape, validate_resolved_address, normalize_host_literal) and
+    packages/security/outbound_guard.py (the only module that dials a socket -- guarded_fetch
+    resolves/normalizes, validates every candidate address, then connects pinned to the exact
+    validated address via a custom http.client connection subclass, so a later, separate DNS
+    answer can never substitute a different address for the one actually checked; TLS still
+    validates the real hostname via server_hostname despite the pinned-IP connect). Cloud-metadata
+    addresses (169.254.169.254, 100.100.100.200, fd00:ec2::254, and the literal metadata
+    hostnames) are refused unconditionally, even under a broad private-range allowlist entry that
+    would otherwise cover them -- this task's own negative_acceptance ("a blanket private-address
+    rejection cannot break intended internal LiteLLM/storage while metadata remains denied") read
+    literally: an explicit allowlist authorizes a real internal destination, never the metadata
+    identity itself. normalize_host_literal recognizes every alternate IPv4/IPv6 encoding this
+    task's acceptance clause names (bare 32-bit integer, octal/hex dotted-quad, the legacy
+    inet_aton "fewer than four parts" collapsing form, bracketed/mapped IPv6), so a URL host
+    component can never smuggle a real private/metadata address past a naive string check.
+    Redirects are not followed by default; policy.allow_redirects fully revalidates and redials
+    the target from scratch, bounded by max_redirects -- both halves of Section 65.4's "default
+    no redirects... revalidate ... every allowed redirect" literal. No new runtime dependency
+    (stdlib socket/ssl/http.client only). tests/tasks/test_ftf_h006.py (33 checks, no DB, no
+    external egress) drives guarded_fetch against a real local HTTP server
+    (http.server.ThreadingHTTPServer on 127.0.0.1) the suite itself starts -- denied by default,
+    reachable once explicitly allowlisted, unreachable via a decimal/hex/octal-encoded host
+    string until that same encoding normalizes to the same allowlisted loopback address; the
+    rebinding proof mocks only DNS resolution (this sandbox controls no real DNS zone) while the
+    socket connection stays real, proving getaddrinfo runs exactly once per fetch and the live
+    connection lands on exactly the one validated address, even though a rigged second resolution
+    would have answered with a disallowed one; cloud-metadata denial is proven at the pure policy
+    layer (this sandbox has no route to a real metadata service and must not attempt one). Real
+    fault injection (Law 1): disabling the cloud-metadata check on the tracked module on disk, in
+    a fresh subprocess, genuinely flips the metadata address this suite depends on being denied
+    to allowed, then restores byte-identical. This sandbox has no IPv6 stack at all (confirmed
+    via a real AF_INET6 bind, not just socket.has_ipv6) -- disclosed explicitly at test-module
+    load time, same resource_gate class already accepted for
+    FTF-0004/FTF-0102/FTF-0104/FTF-1601/FTF-H003's own no-container-registry-egress notes; the
+    live ::1 guarded_fetch sub-check is skipped only in that one sandbox condition (GitHub
+    Actions' own ubuntu-latest
+    runners support IPv6 loopback, so CI exercises it for real), while the pure IPv6 policy
+    checks (::1 denial, an IPv4-mapped IPv6 literal normalizing correctly) do not depend on IPv6
+    sockets at all and always run. Disclosed, not hidden -- no live FastAPI route constructs a
+    ConnectionPolicy or calls guarded_fetch yet; this task's own scope, per its task packet, is
+    the shared guard itself, and FTF-0203 ("Connection validation", this task's own first
+    dependent) is the task that dials it into a live caller, matching connection_schema.py's own
+    validate_base_url docstring ("this module never dials the URL -- that is FTF-0203's job");
+    same "no live caller yet" class already accepted for
+    FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003 before each one's own first
+    live caller existed --
+    product_truth_check.py stays 14/14, unchanged, not inflated. shared_lock_required
+    (security:trust-boundary) -- this task's own first, real claim on that lock; no other
+    in-flight task touches packages/security/. Full regression: ruff check/ruff format --check
+    clean (own files and repo-wide, after unshallowing this sandbox's shallow clone -- the only
+    pre-existing gap found, tests/tasks/test_ftf_h001.py's stale_commit defects, cleared by git
+    fetch --unshallow, same established sandbox-artifact class as prior shifts); mypy clean; pnpm
+    run lint/typecheck clean; every existing tests/tasks/test_ftf_*.py still passes (uv sync
+    --all-packages + pnpm install resolved this fresh sandbox's own missing
+    uvicorn/sqlalchemy/node_modules); scripts/validate_spec.py --strict clean;
+    scripts/product_truth_check.py --fail-on-unwired 14/14, unchanged. Submitted PROVISIONAL, not
+    self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h006.py
 FTF-H007:
   certification_state: NONE
   criticality: MUST
