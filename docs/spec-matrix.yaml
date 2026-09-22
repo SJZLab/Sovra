@@ -132,10 +132,10 @@ FTF-0201:
   proving_symbol: build_litellm_connection_router
   proving_test: tests/tasks/test_ftf_0201.py
 FTF-0202:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Secret-manager integration
-  evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2
+  evidence_hash: 6dfd97d2444c43a9b981099c8bb9f60368ad8b21
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-10; scenarios=Q02, Q21; deps=FTF-0005, FTF-0103,
@@ -243,7 +243,41 @@ FTF-0202:
 
     PR opened as PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control-plane
     L2 review. Full submission report: `docs/certifications/queue.md`.
-  proof_state: L1-PROVEN
+
+    INDEPENDENTLY CERTIFIED (PR #176, merge commit 6dfd97d2444c43a9b981099c8bb9f60368ad8b21,
+    2026-09-22) by session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5 -- session-ID
+    compared against both commits on PR #176 (87e1ee9/c0c8409, both carry Claude-Session
+    .../session_01CKZy4kupyKhLZEjNUTzcpC; neither matches this reviewing session, so this is
+    independent, not self-certification). Steps: read the real diff (`packages/litellm_client/
+    secret_manager_integration.py`, stdlib-only, no sqlalchemy/fastapi/hvac/requests import
+    confirmed directly); re-confirmed CI genuinely ran and passed on the real PR head via
+    `get_check_runs` -- run 35690059480, all 19 jobs `conclusion: success` with real per-job
+    timestamps (the dedicated `secret-manager-integration` job alone ran ~5m26s, consistent with
+    building OpenBao from source, not a runner-provisioning ghost job); ran
+    `python3 tests/tasks/test_ftf_0202.py` clean (22/22), then a real fault-injection vector of
+    my own, distinct from the producer's own two (expiry-check disable, 404-classification
+    disable) -- disabled the 403-to-`SecretAccessDeniedError` mapping in `_request`
+    (`if False and status == 403:`) -- caught for real, exactly the named "ref-denied secrets
+    block call" check failed, confirming the negative_acceptance access-denied guard is genuinely
+    load-bearing; reverted byte-identical (`diff` against the pre-injection copy empty, `git
+    status --short` clean) and the suite re-confirmed clean immediately after. `ruff check` on
+    the three touched files -- clean. `product_truth_check.py --fail-on-unwired` -- real `12/12`
+    (unchanged -- `proving_symbol` genuinely empty, this task owns no live HTTP route yet,
+    matching the FTF-R014/R015/R017/FTF-0202-self-disclosed precedent, not inflation). Task
+    contract re-pulled directly via `python tools/r1_handoff.py packet FTF-0202 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`, then `docs/implementation/task-packets/FTF-0202.md` read
+    for the resolved acceptance/negative_acceptance clauses -- both acceptance clauses
+    ("store/resolve/rotate ... through the actual selected secret backend" and "independent
+    review, exact merged commit, real relevant integration and negative-test evidence recorded")
+    and the negative_acceptance clause ("unknown/expired/ref-denied secrets block call and are
+    never returned to browser or plaintext DB") confirmed met -- the "never ... plaintext DB" leg
+    holds by construction (no DB/web-framework import exists in the module, confirmed above), not
+    merely by convention. Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed genuinely CERTIFIED
+    in this file before relying on them. No blocking defect found. Merged PR #176 (already merged
+    directly by the owner, 2026-09-22T05:45:15Z, per PR #178's own disclosure -- a direct owner
+    merge is not independent Control-plane L2 certification per Law 2/4, which is what this
+    review performs and records now).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0202.py
 FTF-0203:

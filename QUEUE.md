@@ -1,4 +1,26 @@
 # QUEUE — Sovra (Model Factory)
+Control plane certifier — 2026-09-22 (scheduled certifier shift, triggered
+  by PR #178's `pull_request.opened` webhook — PR #178 itself was a relay
+  status report, not a certification submission, so this session worked
+  `docs/certifications/queue.md`'s own actual pending item instead):
+  independently reviewed and CERTIFIED FTF-0202 (PR #176, merge commit
+  `6dfd97d2444c43a9b981099c8bb9f60368ad8b21`, already merged directly by
+  the owner but not yet Control-plane L2 certified per Law 2/4 at review
+  start). Session-ID clean, real diff read, CI's real 19/19-job pass on
+  the actual PR head independently confirmed via `get_check_runs`, own
+  fault-injection vector (403-to-`SecretAccessDeniedError` mapping)
+  caught for real and reverted byte-identical, task contract re-pulled
+  and acceptance/negative_acceptance clauses confirmed met. `docs/
+  spec-matrix.yaml`/`docs/certifications/ledger.md`/`spec/tasks.json`/
+  `docs/implementation/TRACKER.json` updated; `scripts/status.py`:
+  36/300 → 37/300 certified, product-true stays 12/12. Full detail: "##
+  Done" below and `docs/certifications/ledger.md`. Did not touch anything
+  outside certification — the open PR #170/#172 (FTF-1302/FTF-R016, both
+  previously NOT CERTIFIED only for the now-reportedly-cleared GitHub
+  Actions runner-provisioning outage) and the unreviewed PR #159/#160/
+  #161/#167 backlog were left exactly as found, flagged in "## Status"
+  below for a future certifier pass, not acted on this shift.
+
 Updated: 2026-09-22T06:52:33Z (scheduled relay shift) — recomputed the
   dependency-ready frontier fresh (script-based:
   `scripts.task_claim.load_tasks`/`load_certification_states`, not trusted
@@ -1405,10 +1427,14 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
-`9a47458` — see docs/certifications/ledger.md) · Provisional: 0 (this
-shift's own item; PR #167/#159/#160/#161 remain genuinely open and
-PROVISIONAL, unreviewed — see "## Provisional" below) · Blocked: 0
+Certified: 37/300 (main; FTF-0202 CERTIFIED 2026-09-22, PR #176 merged as
+`6dfd97d` — see docs/certifications/ledger.md) · Provisional: 0 · PR
+#167/#159/#160/#161 remain genuinely open and PROVISIONAL, unreviewed by
+Control plane (see "## Provisional" below); PR #170/#172 (FTF-1302/
+FTF-R016) remain open, previously reviewed NOT CERTIFIED only for a
+GitHub Actions runner-provisioning outage now reported cleared (PR #178)
+— re-running their CI and a fresh Control-plane pass is the next
+certification step for those two, not yet done this session · Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1533,12 +1559,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0202 (Secret-manager integration) -- this shift's own PR (see the
-2026-09-22T05:15:00Z entry above for the full submission detail): real
-OpenBao store/resolve/rotate, 22 no-DB + 12 real-OpenBao-integration
-checks, two fault injections caught for real. PROVISIONAL/L1-PROVEN;
-`proving_symbol` deliberately empty (no live route wires it in yet).
-Awaiting independent Control-plane L2 review -- not self-certified.
+FTF-0202 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #176 (merge commit
+`6dfd97d2444c43a9b981099c8bb9f60368ad8b21`, already merged directly by the
+owner before this review — a direct owner merge is not itself Control-plane
+L2 certification per Law 2/4, so this review was still required and
+performed) — real OpenBao store/resolve/rotate, 22/22 no-DB checks
+reproduced, CI's real 19/19-job pass on the actual head independently
+confirmed via `get_check_runs`, and one fault-injection vector of this
+reviewing session's own (403-to-`SecretAccessDeniedError` mapping disabled,
+caught for real, reverted byte-identical) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
@@ -2665,6 +2697,42 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-0202 — Secret-manager integration. CERTIFIED 2026-09-22, PR #176
+  (merge commit `6dfd97d2444c43a9b981099c8bb9f60368ad8b21`). PR #176 was
+  already merged directly by the owner (2026-09-22T05:45:15Z) before this
+  review — a direct owner merge is not independent Control-plane L2
+  certification per Law 2/4, so this session still performed and recorded
+  that separate review. Independently re-verified: session-ID clean (both
+  commits carry `session_01CKZy4kupyKhLZEjNUTzcpC`, a different session
+  than this reviewer's own `session_01DzyLpJHy35M2BeGRfHfwL5`); the real
+  diff read directly (`packages/litellm_client/
+  secret_manager_integration.py`, stdlib-only, no sqlalchemy/fastapi/hvac/
+  requests import); CI genuinely ran and passed on the real head —
+  `get_check_runs` on PR #176 showed all 19 jobs `completed`/`success`
+  with real per-job timestamps, the dedicated `secret-manager-integration`
+  job alone running ~5m26s (real OpenBao build from source, not a
+  runner-provisioning ghost job). Own reproduction: `tests/tasks/
+  test_ftf_0202.py` — 22/22 "all checks passed". Own fault injection, one
+  vector distinct from the producer's own two (expiry-check disable,
+  404-classification disable): disabled the 403-to-`SecretAccessDeniedError`
+  mapping in `_request` — failed with exactly the named "ref-denied
+  secrets block call" negative_acceptance check; reverted byte-identical,
+  suite re-confirmed clean. Task contract re-pulled via `tools/
+  r1_handoff.py packet FTF-0202` — both acceptance clauses and the
+  negative_acceptance clause confirmed met, the "never ... plaintext DB"
+  leg confirmed by construction (no DB/web-framework import exists in the
+  module). Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed genuinely
+  `CERTIFIED`. `product_truth_check.py --fail-on-unwired` — own run,
+  `12/12` (unchanged — `proving_symbol` deliberately empty, no live route
+  wires this module in yet; FTF-0203 is the later task that will). No
+  blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`. `scripts/status.py`: `36/300`
+  certified before, `37/300` after; "Product-true" stays `12` (unchanged
+  — no proving_symbol yet), matching `product_truth_check.py`'s own
+  `12/12`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

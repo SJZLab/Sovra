@@ -8415,3 +8415,116 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-0202 (PR#176) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+triggered by the `pull_request.opened` webhook for PR #178. PR #178
+itself turned out to be a relay status report (QUEUE.md/PROGRESS.md
+updates only, no product code, no new certification submission) rather
+than a PR requiring review, so this session worked this file's own actual
+pending item instead: the FTF-0202 entry immediately above, submitted
+PROVISIONAL and awaiting independent Control-plane L2 review.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5`; both commits on PR #176
+  (`87e1ee9`, `c0c8409`) carry `Claude-Session: .../
+  session_01CKZy4kupyKhLZEjNUTzcpC` — no match, independent per Law 4.
+- **Already merged, not by this review:** PR #176 was merged directly by
+  the owner at `2026-09-22T05:45:15Z` (confirmed via `pull_request_read`
+  — `merged: true`, `merged_by: samerzakaria`) before this review began.
+  A direct owner merge is not independent Control-plane L2 certification
+  (Law 2/4); `docs/spec-matrix.yaml` correctly still showed
+  `PROVISIONAL` at review start, so this review supplies the still-missing
+  step.
+- **CI checked on the real head, not a stale or self-reported claim:**
+  `get_check_runs` on PR #176 — all 19 real GitHub Actions check runs
+  `completed`/`success`, real per-job start/completion timestamps. The
+  dedicated `secret-manager-integration` job ran `05:38:11Z`–`05:43:36Z`
+  (~5m26s), consistent with a real OpenBao server built from source on
+  the runner, not the `runner_id: 0`/instant-"completion" signature the
+  prior GitHub Actions runner-provisioning outage produced on PR #170/
+  #172.
+- **Diff read directly:** `packages/litellm_client/
+  secret_manager_integration.py` (492 lines) — confirmed stdlib-only
+  (`json`/`re`/`time`/`urllib.error`/`urllib.request`/`collections.abc`/
+  `dataclasses`/`datetime`/`urllib.parse` only, no `sqlalchemy`/
+  `fastapi`/`hvac`/`requests` import anywhere in the module); confirmed
+  `resolve_secret_ref`/`store_secret_ref`/`rotate_secret_ref` operate
+  against a real `openbao://<mount>/<path>/<field>` ref, a strict subset
+  of FTF-0201/FTF-0005's own already-certified, frozen
+  `_SECRET_REF_PATTERN`; confirmed `_request` retries only 429/5xx up to
+  three attempts honoring a real `Retry-After` header, and maps 403→
+  `SecretAccessDeniedError`/404→`SecretNotFoundError` with no retry;
+  confirmed `resolve_secret_ref` enforces `custom_metadata.expires_at`
+  itself since OpenBao's own KV v2 secrets do not expire on their own.
+- **Own reproduction, this sandbox:** `python3 tests/tasks/
+  test_ftf_0202.py` — "all checks passed" (22/22, no-DB/no-network
+  suite). The real-OpenBao integration suite
+  (`tests/integration/test_ftf_0202_secret_manager.py`) was not re-run
+  locally — no outbound access in this sandbox to build a real OpenBao
+  server from source — relied instead on the independently-confirmed
+  real CI job above, which does build and run it for real on the hosted
+  runner's own network.
+- **Own fault injection, one vector, distinct from the producer's own
+  two (expiry-check disable, 404-classification disable), reverted
+  byte-identical and the suite re-confirmed clean immediately after:**
+  disabled the 403-to-`SecretAccessDeniedError` mapping in `_request`
+  (`if False and status == 403:`) — the suite failed with exactly `FAIL
+  [FTF-0202] resolve_secret_ref raises SecretAccessDeniedError for a
+  denied token (403) -- this task's own negative_acceptance ('ref-denied
+  secrets block call')`, exit code 1 — confirming the negative_acceptance
+  access-denied guard is genuinely load-bearing, not decorative. `diff`
+  against the pre-injection copy — empty; `git status --short` on the
+  file — clean after revert; suite re-run — clean.
+- **Static checks re-run clean, this session:** `ruff check` on the three
+  touched files — clean. `python3 scripts/product_truth_check.py
+  --fail-on-unwired` — own run, real `12/12` (unchanged — `proving_symbol`
+  genuinely empty in `docs/spec-matrix.yaml`, this task owns no live HTTP
+  route or wired product-runtime caller yet, matching the
+  FTF-R014/R015/R017 precedent, not inflation — FTF-0203 "Connection
+  validation" is the later task that will call this module for real).
+  `scripts/status.py` — own run, `36/300 certified` before this entry's
+  own update.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0202 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-0202.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1
+  ("Store/resolve/rotate short-lived secret refs through the actual
+  selected secret backend") confirmed met by the code read above.
+  Acceptance clause 2 ("Independent review, exact merged commit, real
+  relevant integration and negative-test evidence recorded") is this
+  review itself, combined with the real CI-run integration evidence
+  confirmed above. `negative_acceptance` ("Unknown/expired/ref-denied
+  secrets block call and are never returned to browser or plaintext DB")
+  — all three legs confirmed: ref-denied by this session's own fault
+  injection above; unknown/expired by the reproduced no-DB suite (22/22,
+  including the named unknown-path and expired-secret checks) plus the
+  producer's own two independently reverted fault-injection vectors
+  already recorded in this file's FTF-0202 submission entry above; the
+  plaintext-DB leg by construction (no DB/web-framework import exists in
+  the module, confirmed above).
+- Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `6dfd97d2444c43a9b981099c8bb9f60368ad8b21`. Appended a signed entry to
+  `docs/certifications/ledger.md`. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0202']` written
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py`: `36/300` certified before, `37/300` after; product-true
+  stays `12/12` (unchanged — no `proving_symbol` yet). QUEUE.md/
+  PROGRESS.md updated (FTF-0202 moved to Done, Certified count bumped).
+- **Out of scope, flagged not silently dropped:** PR #170/#172
+  (FTF-1302/FTF-R016) remain open, previously reviewed NOT CERTIFIED
+  solely for the GitHub Actions runner-provisioning outage PR #178
+  reports now cleared — re-running their CI and a fresh Control-plane
+  pass is the next certification step for those two, not performed this
+  shift (this shift's trigger and scope was the FTF-0202 item already
+  pending in this file). PR #159/#160/#161/#167 (FTF-1501/FTF-1001/
+  FTF-1401/FTF-1702) remain genuinely open and PROVISIONAL with no
+  `docs/certifications/queue.md` entry of their own — not reviewed this
+  shift either, left flagged for a future Control-plane pass.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5,
+  2026-09-22.

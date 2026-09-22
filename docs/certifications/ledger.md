@@ -4452,3 +4452,93 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0202 — Secret-manager integration
+- Criterion ID: FTF-0202
+- PR: https://github.com/SJZLab/Sovra/pull/176 (`claude/wizardly-fermat-3c0uoh` → `main`)
+- Merge commit: 6dfd97d2444c43a9b981099c8bb9f60368ad8b21
+- Implementation commit: c0c8409d80c1e2e0222f8fed6912dc0355a046d2
+- Validated-by: session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #178 — this session's own trigger; PR #178 was itself a relay
+  status report, not a certification submission, so this session worked
+  the actual pending item, `docs/certifications/queue.md`'s own
+  outstanding FTF-0202 entry, per its assigned job)
+- Date: 2026-09-22
+- **Session-ID check:** both commits on PR #176 (`87e1ee9`, `c0c8409`)
+  carry `Claude-Session: .../session_01CKZy4kupyKhLZEjNUTzcpC`; this
+  reviewing session's own ID is `session_01DzyLpJHy35M2BeGRfHfwL5` — no
+  match, independent per Law 4.
+- **Already merged, not by this review:** PR #176 was merged directly by
+  the owner (`2026-09-22T05:45:15Z`, per PR #178's own disclosure) before
+  this review began. `docs/spec-matrix.yaml` correctly still showed
+  `PROVISIONAL` at review start — a direct owner merge is not independent
+  Control-plane L2 certification (Law 2/4); this entry is that separate,
+  required certification step.
+- **CI checked on the real merged commit, not a stale/self-reported
+  claim:** `get_check_runs` on PR #176 — 19/19 GitHub Actions check runs
+  `completed`/`success`, real per-job start/completion timestamps (the
+  dedicated `secret-manager-integration` job ran 05:38:11Z–05:43:36Z,
+  ~5m26s, consistent with building a real OpenBao server from source on
+  the runner, not a runner-provisioning ghost job with `runner_id: 0`).
+- **Own reproduction, this sandbox:** `python3 tests/tasks/
+  test_ftf_0202.py` — "all checks passed" (22/22, no-DB/no-network
+  suite). The real-OpenBao integration suite
+  (`tests/integration/test_ftf_0202_secret_manager.py`) was not
+  re-run locally (no outbound access in this sandbox to build/run a real
+  OpenBao server); relied instead on the independently-confirmed real CI
+  job above, which does run it against a real, freshly built OpenBao
+  `-dev` server on the runner's own network.
+- **Own fault injection, this session, one vector, distinct from the
+  producer's own two (expiry-check disable, 404-classification
+  disable), reverted byte-identical and the suite re-confirmed clean
+  immediately after:** disabled the 403-to-`SecretAccessDeniedError`
+  mapping in `_request` (`if False and status == 403:`) — the suite
+  failed with exactly `FAIL [FTF-0202] resolve_secret_ref raises
+  SecretAccessDeniedError for a denied token (403) -- this task's own
+  negative_acceptance ('ref-denied secrets block call')`, confirming the
+  negative_acceptance access-denied guard is genuinely load-bearing, not
+  decorative. `diff` against the pre-injection copy — empty; `git status
+  --short` on the file — clean after revert.
+- **Static/structural checks, this session:** `ruff check` on the three
+  touched files (`packages/litellm_client/secret_manager_integration.py`,
+  `tests/tasks/test_ftf_0202.py`,
+  `tests/integration/test_ftf_0202_secret_manager.py`) — clean. Read the
+  module's own import list directly — only `json`/`re`/`time`/
+  `urllib.error`/`urllib.request`/`collections.abc`/`dataclasses`/
+  `datetime`/`urllib.parse` — structurally no `sqlalchemy`/`fastapi`/
+  `hvac`/`requests` import, confirming the "never ... plaintext DB"
+  negative_acceptance leg holds by construction, not convention.
+  `python3 scripts/product_truth_check.py --fail-on-unwired` — own run,
+  real `12/12` (unchanged; `proving_symbol` genuinely empty in
+  `docs/spec-matrix.yaml` — this task owns no live HTTP route or wired
+  product-runtime caller yet, matching the FTF-R014/R015/R017 precedent
+  for a module with no caller of its own yet, not inflation — FTF-0203
+  "Connection validation" is the later task that calls this module for
+  real).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-0202 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-0202.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1
+  ("Store/resolve/rotate short-lived secret refs through the actual
+  selected secret backend") confirmed met by `store_secret_ref`/
+  `resolve_secret_ref`/`rotate_secret_ref` against the real,
+  owner-selected OpenBao backend. Acceptance clause 2 ("Independent
+  review, exact merged commit, real relevant integration and
+  negative-test evidence recorded") is this entry itself, plus the real
+  CI-run integration evidence confirmed above. `negative_acceptance`
+  ("Unknown/expired/ref-denied secrets block call and are never returned
+  to browser or plaintext DB") — all three legs confirmed: ref-denied by
+  this session's own fault injection above; unknown/expired covered by
+  the reproduced no-DB suite (22/22, including the named unknown-path and
+  expired-secret checks) plus the producer's own two independently
+  reverted fault-injection vectors recorded in `docs/certifications/
+  queue.md`'s FTF-0202 submission entry; the plaintext-DB leg by
+  construction as above.
+- Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit `6dfd97d2444c43a9b981099c8bb9f60368ad8b21`.
+
+**Conclusion:** Certified L2-CERTIFIED.

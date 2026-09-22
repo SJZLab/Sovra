@@ -1,4 +1,64 @@
 # PROGRESS — Sovra
+Control plane certifier — 2026-09-22 (scheduled certifier shift, triggered
+  by PR #178's `pull_request.opened` webhook): PR #178 turned out to be a
+  relay status report (QUEUE.md/PROGRESS.md updates only, no product
+  code), not a certification submission, so this session's actual job —
+  per its own assigned task — was `docs/certifications/queue.md`'s real
+  pending item: FTF-0202 (Secret-manager integration), PROVISIONAL/
+  L1-PROVEN, submitted via PR #176 and already merged directly by the
+  owner (2026-09-22T05:45:15Z) but not yet independently Control-plane L2
+  certified (Law 2/4 — a direct owner merge is not the same thing).
+
+  Session-ID check: both commits on PR #176 (`87e1ee9`/`c0c8409`) carry
+  `Claude-Session: .../session_01CKZy4kupyKhLZEjNUTzcpC`; this session's
+  own ID is `session_01DzyLpJHy35M2BeGRfHfwL5` — no match, independent.
+  Read the real diff (`packages/litellm_client/
+  secret_manager_integration.py` — stdlib-only, confirmed no sqlalchemy/
+  fastapi/hvac/requests import). Re-checked CI on the real PR head via
+  `get_check_runs` rather than trusting PR #178's own prose: run
+  `35690059480`, 19/19 jobs `completed`/`success`, real per-job
+  timestamps (`secret-manager-integration` job ran ~5m26s, consistent
+  with building a real OpenBao server from source, not a
+  runner-provisioning ghost job). Reproduced `tests/tasks/
+  test_ftf_0202.py` locally — 22/22 "all checks passed". Ran one own
+  fault-injection vector, distinct from the producer's own two (expiry
+  check, 404 classification): disabled the 403-to-`SecretAccessDeniedError`
+  mapping in `_request` — failed with exactly the named "ref-denied
+  secrets block call" negative_acceptance check; reverted byte-identical
+  (`diff`/`git status --short` both clean), suite re-confirmed clean.
+  `ruff check` on the three touched files clean.
+  `product_truth_check.py --fail-on-unwired` — real `12/12` (unchanged;
+  `proving_symbol` genuinely empty, no live route wires this module in
+  yet). Pulled the real task contract fresh via `tools/r1_handoff.py
+  packet FTF-0202 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed
+  both acceptance clauses and the negative_acceptance clause against
+  `docs/implementation/task-packets/FTF-0202.md` — all met, the
+  "never ... plaintext DB" leg by construction (no DB/web-framework
+  import in the module). Dependencies FTF-0005/FTF-0103/FTF-0201
+  confirmed genuinely `CERTIFIED` first.
+
+  No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED`/`proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `6dfd97d2444c43a9b981099c8bb9f60368ad8b21`. Appended a signed entry to
+  `docs/certifications/ledger.md`. Ran `scripts.task_claim.
+  sync_certified_status()` — `['FTF-0202']` written into `spec/
+  tasks.json`/`docs/implementation/TRACKER.json`. `scripts/status.py`:
+  `36/300` certified before, `37/300` after; product-true stays `12/12`
+  (unchanged — no proving_symbol yet). QUEUE.md updated: FTF-0202 moved
+  from "## Provisional" to "## Done", "## Status" Certified count bumped
+  to 37/300, new top status note added.
+
+  Out of scope, flagged not silently dropped: PR #170/#172 (FTF-1302/
+  FTF-R016) remain open, previously reviewed NOT CERTIFIED solely for the
+  GitHub Actions runner-provisioning outage PR #178 reports now cleared —
+  re-running their CI and a fresh review is the next certification step,
+  not performed this shift. PR #159/#160/#161/#167 (FTF-1501/FTF-1001/
+  FTF-1401/FTF-1702) remain open, PROVISIONAL, and genuinely unreviewed by
+  Control plane — also not acted on this shift, consistent with this
+  session's mandate to work only `docs/certifications/queue.md`'s actual
+  pending item and touch nothing else.
+
 Updated: 2026-09-22T06:52:33Z (scheduled relay shift) — STEP 0 clean
   (`sha256sum CLAUDE.md` matches `CLAUDE.md.sha256`). STEP 1: read
   PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`, then cross-checked
