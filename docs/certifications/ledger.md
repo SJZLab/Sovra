@@ -5027,3 +5027,111 @@ reasons given above.
   `['FTF-R016']` updated. Certified: 43/300, Product-true: 13/13.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0500 — DatasetSourceConnection schema/API/RBAC
+- Criterion ID: FTF-0500
+- PR: https://github.com/SJZLab/Sovra/pull/196 (`claude/wizardly-fermat-i9x1tk` → `main`)
+- Merge commit: 07b831d44d3c5a5875c5a63b40382c687455d1de
+- Implementation commit: ec6a3e7239552024e13f19ac06d18792501a244e (contracts-freeze:
+  ce824dd17196680b0441d21288fbc62a3257f225; tracking-doc commit:
+  d016f751511073d41f63e1f52ffbd3a8cc214e76)
+- Validated-by: session https://claude.ai/code/session_0179fcCZuwbpcEh8NMQVj997
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #197 — this review independently picked up PR #196, the other
+  PROVISIONAL item already sitting in `docs/certifications/queue.md`,
+  in the same shift)
+- Date: 2026-09-22
+- **Session-ID check:** PR #196's three commits all carry `Claude-Session:
+  .../session_013G1NHePkjpX2VLPJb57on2`; this reviewing session's own ID is
+  `session_0179fcCZuwbpcEh8NMQVj997` — no match, independent per Law 4.
+- **Merge genuinely confirmed, not self-reported:** `pull_request_read` on
+  PR #196 shows `state: closed`, `merged: true`, `merged_by: samerzakaria`
+  (the human owner), merge commit `07b831d44d3c5a5875c5a63b40382c687455d1de`,
+  which is also PR #197's own stated base — confirms #196 landed on `main`
+  before this shift's other item (FTF-H006, PR #197) branched.
+- **CI re-confirmed on the real pre-merge head, not a stale ref:**
+  `get_check_runs` on PR #196's head `d016f751511073d41f63e1f52ffbd3a8cc214e76`
+  (run 35760776024) — 24/24 jobs `success`, including the required `gate`
+  job and the new `dataset-source-connection-integration` job this task
+  itself added; job timestamps (17:27–17:34Z) fall between PR creation
+  (17:27:06Z) and merge (17:35:33Z).
+- **Diff read directly** (`git diff 8f33de0..d016f75`, the real range from
+  the prior certified tip to this task's own tracking commit): new
+  `apps/api/app/datasets/dataset_source_connection_{schema,crud,routes}.py`,
+  a real forward Alembic migration (`0010_dataset_source_connections.py`,
+  FORCE ROW LEVEL SECURITY + a real `CREATE POLICY tenant_isolation`
+  scoped to `app.current_organization_id`, confirmed by direct grep — the
+  same discipline every prior migration in this chain applies), the
+  phase-05 contract freeze (`packages/contracts/openapi/05-interface.yaml`,
+  `packages/contracts/jsonschema/05-domain.schema.json`), and the CI job
+  wiring in `.github/workflows/ci.yml`.
+- **Own reproduction, this session, fresh git worktree at the real merged
+  head (`d016f75`):** `uv sync --all-packages` then
+  `uv run pytest tests/tasks/test_ftf_0500.py -q` — 22/22 passed. Note:
+  this file is a script-style suite (`main()` aggregates a module-level
+  `FAILURES` list via its own `check()` helper and calls `sys.exit(1)` if
+  non-empty) that CI itself invokes as `uv run python3
+  tests/tasks/test_ftf_0500.py`, not via `pytest` — under plain `pytest`
+  every `test_*` function still "passes" even if a `check()` call inside
+  it silently records a failure, since `check()` never raises. Re-ran it
+  CI's own way (`uv run python3 tests/tasks/test_ftf_0500.py`) both before
+  and after the fault injection below to get a trustworthy signal.
+- **Own fault injection (Law 1), a vector distinct from the producer's own
+  two (tuple-order bug in a different module; OpenBao mount-provisioning
+  gap):** disabled the `connection_status != "active"` denial in
+  `authorize_purpose_use` (`apps/api/app/datasets/
+  dataset_source_connection_crud.py`), i.e. the half of the negative_
+  acceptance clause covering "grant revocation propagates to future
+  derivative use." Re-ran `uv run python3 tests/tasks/test_ftf_0500.py`
+  (CI's own invocation) — exit code 1, "2 failed", naming exactly the two
+  broken checks ("once revoked, a PREVIOUSLY granted purpose (training) is
+  now denied" and "once revoked, every other declared purpose is denied
+  too"). Reverted from a pre-edit backup copy, confirmed `diff` empty
+  (byte-identical), re-ran — "all checks passed", exit 0. This also
+  surfaced a real gap in the suite's own `pytest` compatibility (noted
+  above), not a defect in the shipped feature itself.
+- **`product_truth_check.py --fail-on-unwired`** — own run on the real
+  merged tip, `14/14`; `proving_symbol: build_dataset_source_connection_router`
+  confirmed a real, non-test live caller wired into `apps/api/app/main.py`
+  (grepped directly), not inflation — `13/13` before this task, `14/14`
+  after, matching the task's own claimed delta.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-0500
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses
+  ("Freeze the minimum shared phase interface and domain schemas at the
+  declared owner paths... Create purpose-scoped source grants and
+  authorization before import; link every dataset to approved source")
+  and the full negative_acceptance ("Source allowed only evaluation cannot
+  be trained; grant revocation propagates to future derivative use")
+  confirmed genuinely met by the diff and this session's own fault
+  injection above — not merely "tests pass". `contract_owner: FTF-0500`
+  confirmed real: `packages/contracts/openapi/05-interface.yaml` and
+  `packages/contracts/jsonschema/05-domain.schema.json` did not exist
+  before this task (both are new files in the diff).
+- **RLS confirmed real, not merely claimed:** `apps/api/alembic/versions/
+  0010_dataset_source_connections.py` — direct grep confirms `ALTER TABLE
+  dataset_source_connections ENABLE ROW LEVEL SECURITY`, `... FORCE ROW
+  LEVEL SECURITY`, and a real `CREATE POLICY tenant_isolation` scoped to
+  `current_setting('app.current_organization_id', true)`.
+- **Full regression, this session:** `ruff check` on the touched
+  `apps/api/app/datasets/`, `tests/tasks/test_ftf_0500.py`,
+  `tests/integration/test_ftf_0500_dataset_source_connection.py`, and the
+  new migration file — clean.
+- Dependencies FTF-0401/FTF-0202/FTF-H003 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **Scope disclosed, not hidden, independently re-confirmed:** this task's
+  own `files:` scope (per the packet) is the phase-05 interface/domain
+  freeze plus the `DatasetSourceConnection` resource itself; it does not
+  build the later, broader `DataUseGrant` entity (Section 67.4) or the
+  Dataset/DatasetRecord import pipeline (Section 8) — no such entity
+  exists anywhere in this repository yet, confirmed by direct search, so
+  nothing is silently narrowed relative to what actually exists to check
+  against.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`07b831d44d3c5a5875c5a63b40382c687455d1de`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-0500']` updated. Certified: 44/300, Product-true: 14/14.
+
+**Conclusion:** Certified L2-CERTIFIED.

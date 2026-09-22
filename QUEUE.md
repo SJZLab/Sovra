@@ -2696,18 +2696,18 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-H006 (Shared outbound URL and credential guard) was implemented and
-submitted this shift — see this file's own top "Updated:" entry for the
-full narrative and `docs/certifications/queue.md` for the complete
-submission record. `docs/spec-matrix.yaml`: PROVISIONAL/L1-PROVEN,
-`evidence_hash` = the implementation commit. Not yet independently
-reviewed by Control plane.
+submitted this shift (PR #197) — see this file's own top "Updated:"
+entry for the full narrative and `docs/certifications/queue.md` for the
+complete submission record. `docs/spec-matrix.yaml`: PROVISIONAL/
+L1-PROVEN, `evidence_hash` = the implementation commit. Independently
+reviewed by Control plane this same shift (`pull_request.opened` webhook
+for PR #197) — see "## Done" for the certification summary once landed.
 
-FTF-0500 (DatasetSourceConnection schema/API/RBAC) was implemented and
-submitted this shift — see this file's own top "Updated:" entry for the
-full narrative and `docs/certifications/queue.md` for the complete
-submission record. `docs/spec-matrix.yaml`: PROVISIONAL/L1-PROVEN,
-`evidence_hash` = the contracts-freeze commit. Not yet independently
-reviewed by Control plane.
+FTF-0500 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-22 via PR #196 (merge commit
+`07b831d44d3c5a5875c5a63b40382c687455d1de`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0202, FTF-1501, FTF-1001, and FTF-1401 are no longer in this
 section; all four were independently reviewed and CERTIFIED 2026-09-22
@@ -4089,6 +4089,42 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   docs/certifications/ledger.md. **This was the seventh and last of the
   seven PROVISIONAL items found at the start of this certifier shift —
   see the shift-complete summary at the top of this file.**
+- FTF-0500 — DatasetSourceConnection schema/API/RBAC. CERTIFIED
+  2026-09-22, PR #196 (merge commit
+  `07b831d44d3c5a5875c5a63b40382c687455d1de`). Independently reviewed by
+  a scheduled Control-plane certifier session triggered by PR #197's own
+  `pull_request.opened` webhook — session-ID checked against PR #196's
+  commits (all three carry `session_013G1NHePkjpX2VLPJb57on2`, no
+  overlap with this reviewer's own `session_0179fcCZuwbpcEh8NMQVj997`).
+  Re-verified: `get_check_runs` on the real pre-merge head
+  (`d016f751...`, run 35760776024) — 24/24 jobs `success`, including
+  `gate` and the new `dataset-source-connection-integration` job this
+  task added; the diff read directly, confirming a real forward Alembic
+  migration with FORCE ROW LEVEL SECURITY and a real tenant-scoped
+  `CREATE POLICY`; own reproduction of `tests/tasks/test_ftf_0500.py`
+  (22/22, run CI's own way — as a script, not via bare `pytest`, since
+  its `check()` helper only raises through the script's own `main()`);
+  own fault injection distinct from the producer's own two (disabled the
+  `connection_status != "active"` revocation-denial branch in
+  `authorize_purpose_use`) — the suite failed for real, naming exactly
+  the two negative_acceptance checks this covers, reverted
+  byte-identical; `product_truth_check.py --fail-on-unwired` — own run,
+  `14/14`, `proving_symbol: build_dataset_source_connection_router`
+  confirmed a real live caller in `apps/api/app/main.py`; task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-0500` — both acceptance
+  clauses and the full negative_acceptance confirmed genuinely met.
+  Dependencies FTF-0401/FTF-0202/FTF-H003 confirmed genuinely
+  `CERTIFIED`. No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `43/300` certified before, `44/300`
+  after; "Product-true" rises from `13` to `14`. This certification's own
+  doc updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md. FTF-H006 (PR #197, this same shift's
+  triggering PR) remains PROVISIONAL — CI had not finished on its head
+  commit at review time.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

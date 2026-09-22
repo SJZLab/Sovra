@@ -10108,3 +10108,76 @@ closed as superseded.
 - Dependencies FTF-0005/FTF-0201/FTF-0202/FTF-H003 confirmed genuinely
   `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
 - **Submitted PROVISIONAL, not self-certified (Law 4).**
+
+## 2026-09-22 — Control plane: FTF-0500 (PR#196) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #197): `session_0179fcCZuwbpcEh8NMQVj997`. This review independently
+picked up PR #196 (FTF-0500), the other PROVISIONAL item already sitting
+in this file at the time this shift started, alongside PR #197
+(FTF-H006, still CI-in-progress and not yet merged at review time — left
+PROVISIONAL, not reviewed in this entry).
+
+Session-ID compared against PR #196's commits (all three carry
+`session_013G1NHePkjpX2VLPJb57on2`) — no overlap, independent per Law 4.
+
+Re-ran the CERTIFY procedure in this session's own worktree at the real
+merged tip:
+- `pull_request_read` on PR #196 — `state: closed`, `merged: true`,
+  `merged_by: samerzakaria`, merge commit
+  `07b831d44d3c5a5875c5a63b40382c687455d1de` (also PR #197's own stated
+  base — confirms ordering).
+- `get_check_runs` on PR #196's real pre-merge head
+  (`d016f751511073d41f63e1f52ffbd3a8cc214e76`, run 35760776024) — 24/24
+  jobs `success`, including `gate` and the new
+  `dataset-source-connection-integration` job this task added.
+- Diff read directly (`git diff 8f33de0..d016f75`): schema/CRUD/routes,
+  a real forward Alembic migration with FORCE ROW LEVEL SECURITY and a
+  real tenant-scoped `CREATE POLICY` (confirmed by direct grep), the
+  phase-05 contract freeze, CI wiring.
+- Own reproduction in a fresh git worktree: `uv run pytest
+  tests/tasks/test_ftf_0500.py -q` — 22/22. Noted this suite is
+  script-style (CI runs it as `uv run python3 tests/tasks/test_ftf_0500.py`,
+  aggregating a `FAILURES` list and calling `sys.exit(1)`, not via
+  `pytest`) — re-ran it CI's own way for a trustworthy fault-injection
+  signal.
+- Own fault injection, a vector distinct from the producer's own two:
+  disabled the `connection_status != "active"` denial in
+  `authorize_purpose_use` — re-ran CI's own invocation, exit 1, "2
+  failed", naming exactly the two negative_acceptance checks this covers
+  ("once revoked, a PREVIOUSLY granted purpose (training) is now
+  denied", "once revoked, every other declared purpose is denied too").
+  Reverted from a pre-edit backup, `diff` confirmed byte-identical,
+  re-ran clean (exit 0, "all checks passed").
+- `scripts/product_truth_check.py --fail-on-unwired` — own run, `14/14`;
+  `proving_symbol: build_dataset_source_connection_router` confirmed a
+  real, non-test live caller in `apps/api/app/main.py` (grepped
+  directly), matching the task's own claimed `13/13` → `14/14` delta.
+- `python3 tools/r1_handoff.py packet FTF-0500 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance clauses and the
+  full negative_acceptance clause confirmed genuinely met by the diff
+  and this session's own fault injection above, not merely "tests
+  pass". `contract_owner: FTF-0500` confirmed real — both
+  `packages/contracts/openapi/05-interface.yaml` and
+  `packages/contracts/jsonschema/05-domain.schema.json` are new files in
+  this diff, did not exist before.
+- Dependencies FTF-0401/FTF-0202/FTF-H003 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml`.
+- `ruff check` on the touched files clean. `scripts/validate_spec.py
+  --strict` clean after `git fetch --unshallow origin` (this sandbox's
+  own pre-existing shallow-clone artifact, not caused by this task).
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`07b831d44d3c5a5875c5a63b40382c687455d1de`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-0500 — DatasetSourceConnection
+schema/API/RBAC"). Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-0500']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0500 moved to
+Done, Certified count bumped to 44/300, Product-true 14/14.
+
+FTF-H006 (PR #197) remains PROVISIONAL — this scheduled shift's
+`pull_request.opened` trigger event, but CI had not finished on its head
+commit at review time (6 of 24 jobs still `in_progress`, including
+`gate`). Not certified in this entry; left for a follow-up review once
+CI concludes and, if applicable, the PR merges.
