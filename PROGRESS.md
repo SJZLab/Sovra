@@ -1,5 +1,15 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T11:45:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1001 (ModelVersion schema/API), PR #160,
+  L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
+  stale unmerged candidate PR #181. Full re-verification recorded in
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md`; a
+  documentation-accuracy gap in the recorded test counts (claimed 24/26,
+  actual 21/19) was found and corrected, not propagated. `scripts/
+  status.py`: 37/300 → 38/300 certified. Continuing to process the
+  remaining five PROVISIONAL items this same shift.
+
+Previously, Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #186) — certified FTF-0202
   (Secret-manager integration), L2-CERTIFIED by session
   `session_01GngkvFCtGtTnDnW9d2HC1j`. Full independent re-verification

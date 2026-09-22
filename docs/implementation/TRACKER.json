@@ -1185,9 +1185,11 @@
       "blockers": []
     },
     "FTF-1001": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "8b51c85edd35652ba3263dd6a6fcbf590f2f81bd"
+      ],
       "independent_review": null,
       "blockers": []
     },

@@ -1,5 +1,21 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T11:45:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1001 (ModelVersion schema/API), PR #160,
+  superseding the stale unmerged candidate PR #181. Full independent
+  re-verification (session-ID check, CI re-check, own fault injection on
+  the cross-project scoping guard, `product_truth_check.py`, task
+  contract re-pulled via `tools/r1_handoff.py`) recorded in
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md` and the
+  new "## Done" entry below. Also corrected a documentation-accuracy gap:
+  PR #160/#181 both recorded "24/26" test counts; the real counts are
+  21 no-DB test functions / 19 real integration checks — both suites
+  genuinely pass, only the recorded counts were wrong. `scripts/status.py`:
+  37/300 → 38/300 certified. Five further PROVISIONAL items
+  (FTF-1302/FTF-1401/FTF-1501/FTF-1702/FTF-R016) remain under independent
+  review this same shift, all six background verifications having already
+  reported HOLDS UP — being processed and certified one at a time.
+
+Previously, Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #186) — certified FTF-0202
   (Secret-manager integration). Found seven `PROVISIONAL` items in
   `docs/spec-matrix.yaml` (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/
@@ -3557,6 +3573,43 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   This certification's own doc updates were pushed on a branch and opened
   as a PR against `main` rather than pushed directly, per
   `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
+- FTF-1001 — ModelVersion schema/API. CERTIFIED 2026-09-22, PR #160
+  (merge commit `8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`). Independently
+  re-verified: session-ID clean (PR #160's commits carry
+  `session_017j5b6PyPwyvoYyubyzrAcr`, a different session than this
+  reviewer's own `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale,
+  unmerged candidate certification PR, #181, opened by yet a third
+  session, was superseded rather than trusted). `get_check_runs` on
+  PR #160's real head — 22/22 jobs `success`, real non-instant per-job
+  durations (12s–390s), no runner-provisioning ghost-job pattern. Own
+  reproduction in a fresh git worktree at the real merged head:
+  `tests/tasks/test_ftf_1001.py` and the real-Postgres integration suite
+  (against a freshly isolated local database) both "all checks passed".
+  Own fault injection, a vector distinct from the producer's own three
+  and PR #181's own one: disabled the cross-project-within-same-org
+  scoping guard in `_fetch_or_raise` — the named cross-project-404 check
+  failed for exactly the right reason; reverted byte-identical; suite
+  re-confirmed clean. Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-1001` — both acceptance clauses and the full
+  negative_acceptance (three denial paths) confirmed genuinely met.
+  Dependencies FTF-0301/FTF-0401/FTF-0103 confirmed genuinely
+  `CERTIFIED`. `validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired` — own run, `13/13`;
+  `build_model_version_router` confirmed a genuine, non-test live caller
+  in `apps/api/app/main.py`. Evidence-count correction disclosed: PR
+  #160/#181 both recorded "24 no-DB test functions"/"26 real
+  live-Postgres checks"; actual counts are 21 no-DB test functions
+  (43 `check()` calls) and 19 real integration `check()` calls — both
+  suites genuinely pass, only the recorded counts were wrong; corrected
+  in `docs/spec-matrix.yaml`'s own FTF-1001 notes. No blocking defect
+  found. `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED`
+  / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Ran `sync_certified_status()` to write the real status into
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py`: `37/300` certified before, `38/300` after; "Product-true"
+  stays `13/13`. This certification's own doc updates were pushed on a
+  branch and opened as a PR against `main` rather than pushed directly,
+  per `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

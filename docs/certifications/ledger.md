@@ -4552,3 +4552,87 @@ reasons given above.
   FTF-1302/FTF-R016 merging by the time of this review).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1001 — ModelVersion schema/API
+- Criterion ID: FTF-1001
+- PR: https://github.com/SJZLab/Sovra/pull/160 (`claude/wizardly-fermat-4ez7fq` → `main`)
+- Merge commit: 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd
+- Implementation commit: bd5380256d8bfc0700d3bdb95a02a68cf10e4403
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Session-ID check:** all four PR #160 commits carry `Claude-Session:
+  .../session_017j5b6PyPwyvoYyubyzrAcr`; this reviewing session's own ID
+  is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match, independent per Law 4.
+  A separate stale, unmerged candidate certification (PR #181, opened by a
+  third session `session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded/closed
+  by this entry rather than trusted at face value.
+- **CI checked on the real head:** `get_check_runs` on PR #160's real head
+  (run `35703139831`) — 22/22 jobs `completed`/`success`, with real,
+  non-instant per-job durations (12s–390s, `gate` 94s,
+  `model-version-schema-api-integration` 27s) — no runner-provisioning
+  ghost-job pattern.
+- **Diff read directly:** `apps/api/app/models/model_version_schema.py`,
+  `model_version_crud.py`, `model_version_routes.py`,
+  `apps/api/alembic/versions/0009_model_versions.py`,
+  `packages/contracts/{openapi,jsonschema}/15-*`, `apps/api/app/main.py`
+  wiring. Confirmed: `ModelVersion` is immutable by construction (no
+  edit/delete route; migration grant is SELECT/INSERT only); an `endpoint`
+  import structurally forbids local-weight fields both in
+  `ModelVersion.__init__` and via a real `ck_model_versions_kind_consistency`
+  CHECK constraint; a `full_weight`/`adapter` import's parent
+  `TrainableArtifact` must be `ready`; the parent must belong to the same
+  organization, reusing FTF-0301's own already-certified
+  `get_artifact`/`authorize_resource_ownership`.
+- **Own reproduction, this sandbox** (fresh git worktree at the real
+  merged head): `tests/tasks/test_ftf_1001.py` — "all checks passed";
+  `tests/integration/test_ftf_1001_model_version_schema_api.py` against a
+  freshly created, isolated local PostgreSQL 16 cluster (to avoid
+  colliding with other concurrent certifier work sharing this sandbox) —
+  "all checks passed". Single Alembic head confirmed (`0009_model_versions`,
+  `down_revision: 0008_cost_profiles`, no fork).
+- **Own fault injection, this session, a vector distinct from all three
+  of the producer's own and from PR #181's own vector:** disabled the
+  cross-project-within-same-org scoping guard in `model_version_crud.py`'s
+  `_fetch_or_raise` (`if row.project_id != project_id:` → `if False and
+  ...`) — exactly one named check failed for the right reason: a model
+  version belonging to project1, requested under a different project in
+  the same organization, was no longer denied (expected 404, same as
+  missing). Reverted; `diff` against the pre-injection copy confirmed
+  byte-identical; suite re-confirmed clean.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean (repo not shallow — no unshallow-fetch
+  needed). `scripts/product_truth_check.py --fail-on-unwired` — own run,
+  `13/13`; confirmed `build_model_version_router` is a genuine, non-test
+  live caller (`apps/api/app/main.py` calls it unconditionally inside
+  `create_app()`, alongside every other product-runtime router — not a
+  0/0 or existence-only claim).
+- Dependencies FTF-0301/FTF-0401/FTF-0103 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-1001
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and
+  the full negative_acceptance ("Required nonexistent weights/hash for
+  endpoint import, mutable production artifact or cross-tenant parent
+  denied") confirmed genuinely met by the diff, all three denial paths
+  verified directly in code, not merely "tests pass".
+- **Evidence-count correction (disclosed, not hidden):** PR #160/PR #181
+  both record "24 no-DB test functions" and "26 real live-Postgres
+  checks." Independently counted on the real merged code:
+  `tests/tasks/test_ftf_1001.py` has 21 `def test_*` functions (43
+  individual `check()` calls once a loop over `ALLOWED_IMPORT_KINDS` is
+  accounted for), and the integration suite executes 19 `check()` calls
+  at runtime, not 26. Both suites genuinely pass and genuinely cover the
+  acceptance/negative_acceptance surface — this is a documentation
+  inaccuracy in the recorded counts, not a fabricated pass. Corrected in
+  `docs/spec-matrix.yaml`'s own FTF-1001 notes rather than propagated
+  further, per Law 1's "evidence bound accurately" requirement.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1001']` updated. Certified: 38/300, Product-true: 13/13.
+
+**Conclusion:** Certified L2-CERTIFIED.
