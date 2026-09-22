@@ -4791,3 +4791,85 @@ reasons given above.
   `['FTF-1401']` updated. Certified: 40/300, Product-true: 13/13.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1501 — Tenant isolation suite
+- Criterion ID: FTF-1501
+- PR: https://github.com/SJZLab/Sovra/pull/159 (`claude/wizardly-fermat-bhjs9m` → `main`)
+- Merge commit: 8b8a9c12e04277a62149ab28de2c9c2db3a9ff16
+- Implementation commit: 778f6f29c5f994495ceee7446203d688624eb216
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Session-ID check:** all four of PR #159's original commits carry
+  `Claude-Session: .../session_01X4QYt5B4DQroufdM796nBD`; this reviewing
+  session's own ID is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match,
+  independent per Law 4. A separate stale, unmerged candidate
+  certification (PR #180, opened by a third session
+  `session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded/closed by this entry
+  rather than trusted at face value.
+- **Process note, disclosed not hidden:** PR #180's own certifying
+  session pushed 2 further commits directly onto PR #159's branch (a
+  merge-to-main conflict resolution and a YAML bug fix) before merging —
+  infrastructure-only, does not touch the actual security-test code, and
+  does not compromise independence (all four original commits still
+  carry only the producer's own session ID).
+- **CI checked on the real head:** `get_check_runs` on PR #159's real
+  final head (run `35701775852`) — 21/21 jobs `completed`/`success`, real
+  non-instant per-job durations (`secret-manager-integration` ~7m,
+  `gate` ~2m9s). An earlier "0 jobs parsed" run on an intermediate commit
+  was a real, disclosed transient failure, not the final merged state.
+- **Own reproduction, this sandbox:** stood up a fully isolated local
+  PostgreSQL role/database from scratch (temporarily renaming the
+  cluster's shared `sovra_app` role aside so migration 0001's
+  unconditional `CREATE ROLE` could run clean, then restoring it
+  byte-for-byte afterward — no other database's grants touched, only a
+  rename which preserves OID-based dependencies).
+  `tests/tasks/test_ftf_1501.py` (no-DB) — "all checks passed";
+  `tests/security/tenant_isolation_suite.py` against the real, freshly
+  migrated database — "all checks passed (25/25)".
+- **Own fault injection, this session, reproducing the producer's own
+  documented vector for real (not merely re-described):** disabled the
+  application-level ownership check in `authorize_resource_ownership`
+  (`if row is None or row[0] != context.organization_id:` → `if False
+  and (...)：`), leaving the real Postgres RLS policy on each table
+  untouched. Result: exactly 25/25 → 21/25, with precisely the 4 named
+  `cross_tenant_db_read_denied` checks failing (connection/artifact/
+  project/tool), each real HTTP-equivalent `200` instead of denied —
+  confirming genuine **defense-in-depth**: RLS alone already blocks a
+  cross-tenant read, so disabling only the application-level check does
+  not leak by itself in general, but this specific check's own
+  `authorize_resource_ownership` call path is independently proven
+  load-bearing for the four resource kinds it directly gates. Reverted
+  the source file; `diff` against the pre-injection copy confirmed
+  byte-identical; suite re-confirmed clean against a fresh database
+  (25/25) immediately after.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `13/13`; FTF-1501's own `proving_symbol`
+  confirmed legitimately `''` (a consolidated evidence suite over
+  already-certified primitives, no new live-wiring claim of its own).
+  `ruff check` on the touched file clean.
+- Dependencies FTF-0106/FTF-H003 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-1501
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("real
+  two-tenant API/DB/worker/storage/cache/model paths") is honestly
+  narrowed to API+DB only — confirmed directly that
+  `workers/{training,evaluation,data,deploy}` are still README/
+  pyproject-only scaffolds and `packages/storage/tenant_policy.py` has
+  zero live callers, so declaring worker/storage/cache/model checks would
+  be fabricated evidence under Law 11; this narrowing is disclosed, not
+  hidden. The negative_acceptance ("no mocked auth or superuser-only DB
+  tests") holds by construction — `assert_not_superuser_role` is
+  genuinely invoked against `pg_roles.rolsuper` at runtime, and all HTTP
+  calls go through a real socket, never a mock.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`8b8a9c12e04277a62149ab28de2c9c2db3a9ff16`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1501']` updated. Certified: 41/300, Product-true: 13/13.
+
+**Conclusion:** Certified L2-CERTIFIED.

@@ -9633,3 +9633,52 @@ No blocking defect found. `docs/spec-matrix.yaml` set to
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-1401']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1401 moved to Done,
 Certified count bumped to 40/300 (product-true stays 13/13).
+
+## 2026-09-22 — Control plane: FTF-1501 (PR#159) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. Session-ID compared against
+PR #159's four original commits (`session_01X4QYt5B4DQroufdM796nBD`) —
+no overlap, independent per Law 4. A separate stale, unmerged candidate
+certification (PR #180, opened by a third session
+`session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded and closed by this
+entry rather than trusted at face value. Noted, not blocking: PR #180's
+own certifying session pushed 2 infrastructure-only commits (merge +
+YAML fix) directly onto PR #159's branch before merging — disclosed, does
+not touch the security-test code itself.
+
+Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`:
+- `get_check_runs` on PR #159's real final head — 21/21 jobs `success`,
+  real non-instant per-job durations.
+- Stood up a fully isolated local PostgreSQL database from scratch
+  (temporarily renamed the shared `sovra_app` role aside so migration
+  0001's unconditional `CREATE ROLE` could run clean, then restored it
+  byte-for-byte). `tests/tasks/test_ftf_1501.py` and
+  `tests/security/tenant_isolation_suite.py` both reproduced clean
+  (25/25 on the live suite).
+- Own fault injection, reproducing the producer's own documented vector
+  for real: disabled the application-level ownership check in
+  `authorize_resource_ownership` (RLS left untouched) — exactly 21/25,
+  the 4 named `cross_tenant_db_read_denied` checks failing, confirming
+  genuine defense-in-depth (RLS and the app-level check are each
+  independently load-bearing). Reverted byte-identical; suite
+  re-confirmed clean (25/25) against a fresh database.
+- `product_truth_check.py --fail-on-unwired` — `13/13`; `proving_symbol`
+  confirmed legitimately `''` (consolidated evidence suite, no new
+  live-wiring claim).
+- `tools/r1_handoff.py packet FTF-1501` — acceptance clause 1's honest
+  narrowing to API+DB paths confirmed genuinely warranted (workers/
+  storage/cache/model paths have no real live wiring yet); the
+  negative_acceptance (no mocked auth, no superuser-only DB tests) holds
+  by construction.
+- Dependencies FTF-0106/FTF-H003 confirmed genuinely `CERTIFIED`.
+- `scripts/validate_spec.py --strict` clean.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`8b8a9c12e04277a62149ab28de2c9c2db3a9ff16`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-1501 — Tenant isolation suite").
+Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-1501']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1501 moved to Done,
+Certified count bumped to 41/300 (product-true stays 13/13).
