@@ -1,0 +1,96 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 15 Interface (Tenant isolation suite)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas for the tenant-isolation evidence
+    records (Section 45-47, 52-53, 65-66, 77, 81, FTF-1501). `paths` is
+    deliberately empty: this task's own `api_contract` names "no
+    production authorization bypass; security scenario inputs and
+    immutable evidence outputs" -- it adds no new production HTTP
+    route of its own, only a real security-test suite exercising the
+    already-live-wired routes FTF-0201/FTF-0301/FTF-0401/FTF-0404/
+    FTF-0407 own, plus this task's own new evidence-record shape.
+    Declaring a route here with no genuine handler would be a
+    placeholder endpoint under Law 11. Whichever task first wires a
+    real `/api/v1/security/tenant-isolation-evidence` (or similar)
+    route adds its own path item here, backed by a genuine handler,
+    under this same contract-owner lock (shared_lock_required:
+    contracts:15).
+paths: {}
+components:
+  schemas:
+    TenantIsolationScenarioResult:
+      type: object
+      description: >-
+        One real check `tests/security/tenant_isolation_suite.py`
+        performed -- content-free by construction: only resource kind,
+        check name, method/path and the observed/expected status are
+        recorded, never a request/response body.
+      properties:
+        resource_kind:
+          type: string
+          minLength: 1
+        check:
+          type: string
+          minLength: 1
+        method:
+          type: string
+          minLength: 1
+        path:
+          type: string
+          minLength: 1
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        expected_denied:
+          type: boolean
+        passed:
+          type: boolean
+      required:
+        - resource_kind
+        - check
+        - method
+        - path
+        - status
+        - expected_denied
+        - passed
+      additionalProperties: false
+    TenantIsolationEvidence:
+      type: object
+      description: >-
+        The immutable evidence output this task's own `api_contract`
+        names, derived only from real `TenantIsolationScenarioResult`s.
+      properties:
+        suite_id:
+          type: string
+          minLength: 1
+        executed_at:
+          type: string
+          format: date-time
+        resource_kinds_covered:
+          type: array
+          items:
+            type: string
+        scenarios_total:
+          type: integer
+          minimum: 1
+        scenarios_passed:
+          type: integer
+          minimum: 0
+        scenarios_failed:
+          type: integer
+          minimum: 0
+        content_free:
+          type: boolean
+          enum: [true]
+      required:
+        - suite_id
+        - executed_at
+        - resource_kinds_covered
+        - scenarios_total
+        - scenarios_passed
+        - scenarios_failed
+        - content_free
+      additionalProperties: false

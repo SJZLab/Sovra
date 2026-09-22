@@ -132,15 +132,120 @@ FTF-0201:
   proving_symbol: build_litellm_connection_router
   proving_test: tests/tasks/test_ftf_0201.py
 FTF-0202:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Secret-manager integration
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-10; scenarios=Q02, Q21; deps=FTF-0005, FTF-0103, FTF-0201
-  proof_state: UNPROVEN
+  evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-10; scenarios=Q02, Q21; deps=FTF-0005, FTF-0103,
+    FTF-0201 (all CERTIFIED). Dependency-ready only as of 2026-09-22: the owner-ask this task's
+    own acceptance clause names ("Store/resolve/rotate short-lived secret refs through the
+    actual selected secret backend") was blocked pending backend selection until QUEUE.md's own
+    "Owner actions -- current" FTF-0202 entry resolved it for real (OpenBao, self-hosted,
+    anchored to a live conversation; merged to main as commit e9e63b4 via PR #173) -- three
+    earlier, unverifiable claims of the same conclusion (PR #143, a commit on PR #159, PR #162)
+    were each independently declined by prior sessions as insufficiently evidenced, not acted on.
+
+    `packages/litellm_client/secret_manager_integration.py` (path refined from the task packet's
+    own literal `packages/litellm-client/secret_manager_integration.py` -- a hyphenated
+    directory is not a valid Python package segment; `packages/litellm_client/` matches
+    `packages/storage/tenant_policy.py`'s (FTF-H003) own standalone-library-under-packages/
+    precedent exactly) resolves the `openbao://<mount>/<path>/<field>` secret references
+    FTF-0201/FTF-0005 already store/validate the shape of but never resolve
+    (`connection_schema.py`'s own disclosed "No secret-manager integration exists anywhere in
+    this repository yet"). Stdlib-only (`urllib.request`) -- deliberately no new third-party
+    runtime dependency (e.g. `hvac`), matching `configuration_system.py`'s own explicit
+    precedent and avoiding a CLAUDE.md "Ask owner first" ask entirely. The ref shape is a strict
+    subset of FTF-0201/FTF-0005's own already-certified, frozen `^[a-z]+://[A-Za-z0-9_\-./]+$`
+    pattern (no `#`/`?`/`@`), so neither certified validator was touched, relocked or put at
+    requalification risk.
+
+    Every real backend interaction was verified directly against a real OpenBao server before
+    any test was written (Law 1): no prebuilt release binary or container image was reachable
+    from this sandbox (the same documented class of gap FTF-0004/FTF-0102/FTF-R017 already
+    established for Postgres/Docker/SeaweedFS), so this evidence used a real OpenBao server
+    built from source (`go build` against `github.com/openbao/openbao/v2` commit
+    `e98dc184344fe84ee4e69965ac3f4217d5b6a45d`) and run locally in `-dev` mode. That direct
+    verification caught one genuine, load-bearing surprise a guess would have missed: reading a
+    soft-deleted or destroyed KV v2 version answers real HTTP 404 with a JSON body still
+    attached, not HTTP 200 with `data.data: null` as an uncontrolled first `curl | json.tool`
+    pass (no `-w '%{http_code}'`) misleadingly suggested -- caught and corrected by this task's
+    own explicit `-w` re-check before the module's negative-path logic was finalized around it,
+    not after a test failure surfaced it.
+
+    `resolve_secret_ref`/`store_secret_ref`/`rotate_secret_ref` realize this task's own full
+    negative_acceptance ("Unknown/expired/ref-denied secrets block call and are never returned
+    to browser or plaintext DB"): an unknown path and a soft-deleted/destroyed version both
+    raise `SecretNotFoundError` via the same ordinary 404 handling; a denied token raises
+    `SecretAccessDeniedError` (403); a secret past its own recorded `custom_metadata.expires_at`
+    (a Factory-level honesty layer this module adds, since OpenBao's own KV v2 secrets do not
+    expire on their own) raises `SecretExpiredError` and is never returned even though the
+    backend itself would still serve it. `store_secret_ref`/`rotate_secret_ref` merge onto
+    (never silently replace) a co-located field at the same KV v2 path -- a real write replaces
+    the whole path's data object, not one field -- and `rotate_secret_ref` soft-deletes exactly
+    the version it superseded (read first, deleted after the new write, never a hard-coded
+    number) so a version-pinned read of the old value genuinely fails afterward, and refuses to
+    "rotate" a ref with no existing secret at all. `_request` retries only a real 429/5xx, up to
+    three attempts (Section 3.3), honoring a real `Retry-After` header; 403/404/2xx are never
+    retried. The module is returned to its caller and nowhere else -- this task's own
+    `database_changes` ("No independent schema change") holds by construction: no
+    sqlalchemy/fastapi import exists anywhere in this module, verified by a source-level test,
+    not merely a doc claim, so it is structurally incapable of writing this repository's own
+    Postgres or serving a browser route.
+
+    `tests/tasks/test_ftf_0202.py`: 22 no-DB, no-network checks against a fake `urllib.request.
+    urlopen` transport (ref parsing/building/redaction, `OpenBaoConfig.from_env` validation, the
+    full negative_acceptance in isolation, the retry policy including a real `Retry-After`
+    header and the three-attempt ceiling, store/rotate merge behavior, and the source-level
+    no-DB/no-web-framework-import proof). `tests/integration/test_ftf_0202_secret_manager.py`:
+    12 real checks against a real, locally-built-and-spawned OpenBao `-dev` server (store,
+    resolve, cross-field merge, rotate + real old-version unreadability confirmed via a raw
+    version-pinned read, rotate-of-nothing refusal, unknown path, access-denied, expired,
+    not-yet-expired, real hard-destroy unreadability) -- CI's own `secret-manager-integration`
+    job builds the identical pinned commit fresh on the hosted runner's real network and runs
+    this suite for real; `proving_symbol` deliberately empty since this task owns no live HTTP
+    route or wired product-runtime caller yet (matching the FTF-1401/FTF-1601/FTF-1701/
+    FTF-0102/FTF-0104/FTF-0105/FTF-H003 precedent for a task not itself a served product path --
+    FTF-0203 "Connection validation" is the later, separately dependency-gated task that will
+    call this module for real from a live route).
+
+    Own fault injection (Law 1, two distinct vectors, both reverted byte-identical and both
+    suites re-confirmed clean immediately after each): (1) disabled the expiry check in
+    `resolve_secret_ref` (`if False and isinstance(expires_raw, str)...`) -- caught for real by
+    the named expired-secret check in both the fake-transport suite and the real-OpenBao
+    integration suite; (2) disabled the 404-to-`SecretNotFoundError` mapping in `_request`
+    (`if False and status == 404:`) -- caught for real by two named no-DB checks (unknown path,
+    rotate-of-nothing) and, in the real integration suite, surfaced as a genuine
+    `SecretBackendError` instead of a clean pass, proving the specific 404 classification is
+    real and load-bearing, not decorative.
+
+    No regression: independently re-ran the full `tests/tasks/test_ftf_*.py` sweep (32 files,
+    all "all checks passed" or equivalent, after `uv sync --all-packages`/`pnpm install
+    --frozen-lockfile` -- both pre-existing, previously-undocumented-this-shift sandbox gaps,
+    closed rather than silently worked around, confirmed pre-existing by FTF-0002/FTF-0003/
+    FTF-H001 all failing identically before and passing clean immediately after, with no other
+    change); `ruff check .`/`ruff format --check .` clean repo-wide (148 source files); `mypy .`
+    -- 9 errors, all the pre-existing, unrelated `alembic` `op`/`context` stub gap across every
+    existing migration file, confirmed byte-for-byte identical on `main` via `git stash`;
+    `pnpm run lint`/`typecheck`/`format:check` clean; `pnpm exec vitest run` -- 19/19, no
+    regression; `uv run pytest tests/unit` -- 3/3. `git fetch --unshallow origin` first (this
+    sandbox's own clone is shallow by default, the same pre-existing artifact every prior
+    relay/certifying session has already documented); `validate_spec.py --strict` clean.
+    `product_truth_check.py --fail-on-unwired` stays `12/12` (unchanged -- `proving_symbol`
+    deliberately empty, not inflation). `python3 scripts/status.py` -- `36/300 certified · 12
+    product-true` (unchanged -- FTF-0202 is PROVISIONAL, not yet CERTIFIED).
+
+    Wired `.github/workflows/ci.yml` with one new `gate` job step (`uv run python3
+    tests/tasks/test_ftf_0202.py`) plus a new dedicated `secret-manager-integration` job (a real
+    locally-built-and-spawned OpenBao `-dev` server, no `services:` container needed since
+    OpenBao's dev mode is a single self-contained process) -- no other job's steps touched.
+
+    PR opened as PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control-plane
+    L2 review. Full submission report: `docs/certifications/queue.md`.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0202.py
 FTF-0203:
   certification_state: NONE
   criticality: MUST
@@ -3054,15 +3159,60 @@ FTF-1408:
   proving_symbol: ''
   proving_test: ''
 FTF-1501:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tenant isolation suite
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0106, FTF-H003
-  proof_state: UNPROVEN
+  evidence_hash: 778f6f2
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0106, FTF-H003
+    (both CERTIFIED). Reuses FTF-0106's own apps/api/app/auth/rbac_idor_security_tests.py
+    TwoTenantRoleMatrixFixture and FTF-H003's own authorize_resource_ownership/
+    tenant_scoped_session_for rather than re-deriving either -- FTF-0106's own module docstring
+    names this task directly as an intended dependent. Scope honestly narrowed (Law 5/7): this
+    task's own acceptance clause names "real two-tenant API/DB/worker/storage/cache/model paths",
+    but only API and DB paths have any real, live-wired existence in this repository today --
+    apps/api/app/main.py's own module docstring enumerates exactly six live-wired routes, and
+    workers/{training,evaluation,data,deploy} are still README/pyproject-only scaffolds (confirmed
+    by direct inspection); packages/storage/tenant_policy.py (FTF-H003) has no live caller either.
+    Declaring worker/storage/cache/model checks against non-existent infrastructure would be
+    fabricated evidence under Law 11. tests/security/tenant_isolation_suite.py: real two-organization
+    fixture, seeds one connection/artifact/project/tool in org1, then for each of connection/
+    artifact/project/tool proves owner_read_reachable (200), cross_tenant_api_read_denied (403, path
+    org mismatch), cross_tenant_api_write_denied (403), unauthenticated_denied (401) and
+    cross_tenant_db_read_denied (a real restricted-role session scoped to org2, probing org1's real
+    row via authorize_resource_ownership -- the exact same production guard every CRUD module
+    already calls, never a hand-rolled query) -- plus a cross-layer check (org1_admin, legitimately
+    authorized for org1, denied 404 against a tool nested under org2's own real project) and the
+    read-only /requirements view (owner reachable, cross-tenant denied, cross-layer foreign-project
+    returns an empty list rather than leaking org2's data -- the correct behavior for a list
+    endpoint, not a 404, matching tool_definition_routes.py's own list_all convention). 25 real
+    checks against a live PostgreSQL 16 cluster. negative_acceptance ("No security result from
+    mocked auth or superuser-only DB tests") made real by construction: assert_not_superuser_role
+    refuses to proceed if the connection's own current role is a real Postgres superuser (checked
+    via pg_roles.rolsuper before any tenant-scoped session is opened), and every HTTP call in this
+    suite goes through a real socket to a real running uvicorn server, never a mocked auth stub.
+    tests/tasks/test_ftf_1501.py (no-DB): build_evidence computes real counts/covered-kinds from
+    real ScenarioResult inputs and refuses to build evidence from zero results (Law 1); ScenarioResult/
+    TenantIsolationEvidence proven content-free by construction (dataclass field introspection);
+    assert_not_superuser_role proven against a plain stub (refuses for rolsuper=True and for an
+    unresolved current_user, does not raise for rolsuper=False); contract conformance against the new
+    packages/contracts/{openapi,jsonschema}/15-* files. As part of this shift, also fixed a real
+    CI-wiring gap: FTF-0406/FTF-0407 (both already CERTIFIED/merged) had no gate step, and FTF-0407
+    had no live-Postgres integration job -- ci.yml never ran their own test files at all, the same
+    class of gap FTF-0405 previously fixed for FTF-0404 (commit 2bc435b). Both reconfirmed genuinely
+    green locally before wiring them into ci.yml. Two independent fault injections, both reverted
+    byte-identical: (1) build_evidence's own empty-results guard, caught by the no-DB test; (2) the
+    real production authorize_resource_ownership ownership check, caught for real by all 4 DB-layer
+    checks in the live suite (21/25, the exact 4 expected failures, no false negatives elsewhere).
+    No new apps/api production module and no new database schema (database_changes: "No independent
+    schema change") -- this task assembles a consolidated evidence suite over already-certified
+    production primitives, so product_truth_check.py's proving_symbol stays empty (no live-wiring
+    claim), matching the FTF-0106/FTF-H003 precedent. Certified stays 33/300; product-true stays
+    10/10.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1501.py
 FTF-1502:
   certification_state: NONE
   criticality: MUST
