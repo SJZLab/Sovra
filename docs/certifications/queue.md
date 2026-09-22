@@ -9590,3 +9590,46 @@ Ran `scripts.task_claim.sync_certified_status()` —
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-1302']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1302 moved to Done,
 Certified count bumped to 39/300 (product-true stays 13/13).
+
+## 2026-09-22 — Control plane: FTF-1401 (PR#161) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. Session-ID compared against
+PR #161's commits (`session_01CDP3isFaUkJtHPU91hNz2j`) — no overlap,
+independent per Law 4. A separate stale, unmerged candidate certification
+(PR #182, opened by a third session `session_01DzyLpJHy35M2BeGRfHfwL5`)
+is superseded and closed by this entry rather than trusted at face value.
+
+Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`:
+- `get_check_runs` on PR #161's real head — 23/23 jobs `success`, real
+  non-instant per-job durations, no runner-provisioning ghost pattern.
+- `tests/tasks/test_ftf_1401.py` reproduced clean from scratch (17
+  no-DB test functions).
+- Own fault injection, a vector distinct from the producer's two and PR
+  #182's one: disabled the read P95 threshold branch in
+  `evaluate_acceptance` — the named check failed for exactly the right
+  reason; reverted byte-identical; suite re-confirmed clean.
+- `product_truth_check.py --fail-on-unwired` — `13/13`; FTF-1401's own
+  `proving_symbol` confirmed legitimately `''` (measurement tool, no
+  served route).
+- `tools/r1_handoff.py packet FTF-1401` — both acceptance clauses and the
+  negative_acceptance confirmed genuinely met.
+- Dependencies FTF-0006/FTF-0401/FTF-0106 confirmed genuinely
+  `CERTIFIED`. Confirmed FTF-1001 is not actually a dependency of
+  FTF-1401 at all — the diff's exclusion of ModelVersion traffic from
+  the request mix is an honest scope reduction, not a relied-upon
+  dependency, so FTF-1001's prior PROVISIONAL state was never a
+  disqualifying gap (and FTF-1001 is itself now CERTIFIED anyway).
+- `scripts/validate_spec.py --strict` clean.
+- **Disclosed, unresolved gap (not this task's own to fix):**
+  FTF-0406/FTF-0407's own test suites remain unwired from `ci.yml` —
+  flagged again for a future relay/control-plane shift.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`c2fda5b6ad472aa6d38a977896b339a484a9a483`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-1401 — API load test"). Ran
+`scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-1401']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1401 moved to Done,
+Certified count bumped to 40/300 (product-true stays 13/13).

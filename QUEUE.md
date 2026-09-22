@@ -1,5 +1,21 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T11:55:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:05:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1401 (API load test), PR #161, superseding
+  the stale unmerged candidate PR #182. Full independent re-verification
+  (session-ID check, CI re-check, own fault injection on the read P95
+  threshold branch, `product_truth_check.py`, task contract re-pulled via
+  `tools/r1_handoff.py`) recorded in `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` and the new "## Done" entry below.
+  Confirmed FTF-1001 was never actually a dependency of FTF-1401 (an
+  honest scope reduction, not a relied-upon dependency) and is itself now
+  CERTIFIED anyway. Re-flagged FTF-0406/FTF-0407's own disclosed,
+  unresolved CI-wiring gap for a future shift — not this task's own to
+  fix. `scripts/status.py`: 39/300 → 40/300 certified. Three further
+  PROVISIONAL items (FTF-1501/FTF-1702/FTF-R016) remain, all already
+  confirmed HOLDS UP by independent background verification — continuing
+  to process them one at a time.
+
+Previously, Updated: 2026-09-22T11:55:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1302 (Local compute costing), PR #170,
   superseding the stale unmerged candidate PR #184. This task was
   previously reviewed sound but NOT CERTIFIED (2026-09-21) solely because
@@ -3663,6 +3679,39 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
   to write the real status into `spec/tasks.json`/`docs/implementation/
   TRACKER.json`. `scripts/status.py`: `38/300` certified before, `39/300`
+  after; "Product-true" stays `13/13`. This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
+- FTF-1401 — API load test. CERTIFIED 2026-09-22, PR #161 (merge commit
+  `c2fda5b6ad472aa6d38a977896b339a484a9a483`). Independently re-verified:
+  session-ID clean (PR #161's commits carry
+  `session_01CDP3isFaUkJtHPU91hNz2j`, a different session than this
+  reviewer's own `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale,
+  unmerged candidate certification PR, #182, opened by yet a third
+  session, was superseded rather than trusted). `get_check_runs` on
+  PR #161's real head — 23/23 jobs `success`, real non-instant per-job
+  durations. Own reproduction in a fresh git worktree at the real merged
+  head: `tests/tasks/test_ftf_1401.py` — "all checks passed" (17 no-DB
+  test functions). Own fault injection, a vector distinct from the
+  producer's own two and PR #182's own one: disabled the read P95
+  threshold branch in `evaluate_acceptance` — the named check failed for
+  exactly the right reason; reverted byte-identical; suite re-confirmed
+  clean. Task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-1401` — both acceptance clauses and the negative_acceptance
+  confirmed genuinely met. Dependencies FTF-0006/FTF-0401/FTF-0106
+  confirmed genuinely `CERTIFIED` — confirmed FTF-1001 is not actually a
+  dependency of FTF-1401 at all (an honest scope reduction, and now
+  CERTIFIED anyway). `validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired` — own run, `13/13`;
+  `proving_symbol` confirmed legitimately `''` (measurement tool, no
+  served route). Re-flagged FTF-0406/FTF-0407's own disclosed, unresolved
+  CI-wiring gap for a future shift — not this task's own to fix. No
+  blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `39/300` certified before, `40/300`
   after; "Product-true" stays `13/13`. This certification's own doc
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:

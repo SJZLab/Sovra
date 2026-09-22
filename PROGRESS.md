@@ -1,5 +1,13 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T11:55:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:05:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1401 (API load test), PR #161, L2-CERTIFIED
+  by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding stale
+  unmerged candidate PR #182. Confirmed FTF-1001 was never actually a
+  dependency of FTF-1401. `scripts/status.py`: 39/300 → 40/300 certified.
+  Continuing to process the remaining three PROVISIONAL items this same
+  shift.
+
+Previously, Updated: 2026-09-22T11:55:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1302 (Local compute costing), PR #170,
   L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
   stale unmerged candidate PR #184. This task was previously NOT
