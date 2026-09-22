@@ -132,10 +132,10 @@ FTF-0201:
   proving_symbol: build_litellm_connection_router
   proving_test: tests/tasks/test_ftf_0201.py
 FTF-0202:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Secret-manager integration
-  evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2
+  evidence_hash: 6dfd97d2444c43a9b981099c8bb9f60368ad8b21
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-10; scenarios=Q02, Q21; deps=FTF-0005, FTF-0103,
@@ -243,7 +243,28 @@ FTF-0202:
 
     PR opened as PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control-plane
     L2 review. Full submission report: `docs/certifications/queue.md`.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-22 by an independent Control-plane session
+    (session_01GngkvFCtGtTnDnW9d2HC1j; session-ID checked clean against PR #176's
+    session_01CKZy4kupyKhLZEjNUTzcpC -- no overlap, independent per Law 4). Re-verified in a
+    fresh git worktree at the real merged head: `sha256sum CLAUDE.md` matched
+    `CLAUDE.md.sha256`; `tests/tasks/test_ftf_0202.py` reproduced clean (22/22) from scratch;
+    an independent fault injection distinct from the producer's own two vectors (disabled the
+    field-presence check in `resolve_secret_ref`'s `if not isinstance(fields, dict) or
+    parsed.field not in fields:` guard) caught for real -- the named "field is absent" check
+    failed with exactly the expected reason -- then reverted byte-identical (`diff` confirmed
+    empty) and the suite re-confirmed clean; PR #176's real GitHub Actions run (35690059480)
+    re-checked directly via `get_check_runs` -- 19/19 jobs `success`, the dedicated
+    `secret-manager-integration` job ran 05:38:11-05:43:36Z (~5m25s, consistent with a real
+    OpenBao build from source, not a runner-provisioning ghost job); `product_truth_check.py
+    --fail-on-unwired` confirmed `proving_symbol: ''` remains legitimate (this task owns no
+    live HTTP route yet -- FTF-0203 is the later task that wires a real caller); task contract
+    re-pulled via `tools/r1_handoff.py packet FTF-0202 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+    and both acceptance clauses plus the full negative_acceptance clause confirmed genuinely met
+    against the diff, not merely "tests pass"; dependencies FTF-0005/FTF-0103/FTF-0201 confirmed
+    genuinely CERTIFIED in this file. `validate_spec.py --strict` clean after `git fetch
+    --unshallow origin` (pre-existing shallow-clone artifact). No blocking defect found.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0202.py
 FTF-0203:
