@@ -186,6 +186,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0500.py
       - name: FTF-0203 negative-test proof (Connection validation, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0203.py
+      - name: FTF-0204 negative-test proof (`/v1/models` discovery, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0204.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1190,3 +1192,45 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real connection-validation evidence against the live database and live gateway
         run: uv run python3 tests/integration/test_ftf_0203_connection_validation.py
+
+  model-discovery-integration:
+    # FTF-0204: real Postgres + real gateway `/v1/models` discovery
+    # evidence (Section 2-3/38/65/77/81) -- two real organizations, a
+    # real uvicorn server proving the live `GET .../models` route
+    # end-to-end: a real reachable+authorized local HTTPS gateway
+    # (discovered, real credential-visible model IDs, real timestamp/
+    # count/hash), a metadata-only name from `/model/info` never leaking
+    # into the returned list (this task's own negative_acceptance), a
+    # real token-rejecting gateway (invalid_token, no retained model
+    # list -- "auth errors fail closed instead of retaining
+    # permission"), the cross-organization IDOR case denied identically
+    # to missing (404), and a revoked connection refused discovery
+    # (409) -- tests/integration/test_ftf_0204_v1_models_discovery.py.
+    # Same real-ephemeral-CA convention `connection-validation-
+    # integration` immediately above already established.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest already pinned by every prior live-Postgres integration job in this file
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0204
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0204"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0204
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real model-discovery evidence against the live database and live gateway
+        run: uv run python3 tests/integration/test_ftf_0204_v1_models_discovery.py

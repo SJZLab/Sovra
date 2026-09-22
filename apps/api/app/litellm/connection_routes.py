@@ -24,6 +24,13 @@ docstring for the full design. No independent schema change: the
 validation result is computed fresh on every call and returned directly
 in the response, never persisted onto `LiteLLMConnection`.
 
+FTF-0204 adds a real `GET .../connections/litellm/{connection_id}/models`
+route, this repository's first live caller of
+`packages/litellm_client/v1_models_discovery.py::discover_models`. Same
+tenant-scoped read, same revoked-connection 409 and foreign-tenant 404 as
+`/validate`; reuses the same injected `validation_policy_factory`/
+`secret_manager_config_factory` rather than adding a redundant pair.
+
 Path shape (refined from the task packet's own abbreviated
 `api_contract: "/api/v1/connections/litellm"` to include the real
 `{organization_id}` path segment `require_role`'s own
@@ -70,6 +77,10 @@ from packages.litellm_client.secret_manager_integration import (  # noqa: E402
     OpenBaoConfig,
     SecretManagerConfigurationError,
 )
+from packages.litellm_client.v1_models_discovery import (  # noqa: E402
+    ModelDiscoveryResult,
+    discover_models,
+)
 from packages.security.url_policy import ConnectionPolicy  # noqa: E402
 
 from app.auth.rbac_middleware import (  # noqa: E402
@@ -104,6 +115,7 @@ CONNECTION_ADMIN_ROLES: frozenset[Role] = frozenset({Role.ORGANIZATION_ADMIN})
 _COLLECTION_PATH = "/api/v1/organizations/{organization_id}/connections/litellm"
 _ITEM_PATH = _COLLECTION_PATH + "/{connection_id}"
 _VALIDATE_PATH = _ITEM_PATH + "/validate"
+_MODELS_PATH = _ITEM_PATH + "/models"
 
 
 def _default_secret_manager_config() -> OpenBaoConfig | None:
@@ -125,6 +137,24 @@ def _serialize_validation(result: ConnectionValidationResult) -> dict[str, objec
         "inference_state": result.inference_state.value,
         "management_state": result.management_state.value,
         "model_count": result.model_count,
+        "detail": result.detail,
+        "checked_at": result.checked_at.isoformat(),
+    }
+
+
+def _serialize_discovery(result: ModelDiscoveryResult) -> dict[str, object]:
+    """Content-free by construction, same convention as
+    `_serialize_validation`: `result.detail` is already sanitized by
+    `v1_models_discovery.py` (never a raw exception message, credential
+    or gateway response body)."""
+    return {
+        "state": result.state.value,
+        "models": [
+            {"id": model.id, "metadata_status": model.metadata_status.value}
+            for model in result.models
+        ],
+        "model_count": result.model_count,
+        "content_hash": result.content_hash,
         "detail": result.detail,
         "checked_at": result.checked_at.isoformat(),
     }
@@ -325,6 +355,38 @@ def build_litellm_connection_router(
             policy=validation_policy_factory(),
         )
         return JSONResponse(_serialize_validation(result), status_code=200)
+
+    @router.get(_MODELS_PATH)
+    async def models(
+        organization_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        ctx: AuthorizedContext = admin_dependency,
+    ) -> JSONResponse:
+        """FTF-0204: lists the connection's real credential-visible
+        model IDs. Same tenant-scoped read, same revoked-connection 409
+        and foreign-tenant 404 pattern as `/validate` -- the stored
+        `base_url`/`secret_ref` are never trusted from the client."""
+        del organization_id
+        tenant_context = TenantContext.from_authorized_context(ctx)
+        try:
+            with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                connection = get_connection(session, tenant_context, connection_id)
+                if connection.status == "revoked":
+                    raise ConnectionStateError("cannot list models for a revoked connection")
+                base_url = connection.base_url
+                secret_ref = connection.secret_ref
+        except (ConnectionNotFoundError, TenantContextError) as exc:
+            raise HTTPException(status_code=404, detail="not_found") from exc
+        except ConnectionStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        result = discover_models(
+            base_url=base_url,
+            secret_ref=secret_ref,
+            secret_config=secret_manager_config_factory(),
+            policy=validation_policy_factory(),
+        )
+        return JSONResponse(_serialize_discovery(result), status_code=200)
 
     @router.patch(_ITEM_PATH)
     async def update(
