@@ -178,6 +178,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1401.py
       - name: FTF-1702 negative-test proof (Tool environment catches real defects, no DB required)
         run: uv run python3 tests/reference/test_ftf_1702.py
+      - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1302.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
