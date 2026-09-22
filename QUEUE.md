@@ -19,10 +19,44 @@ Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
   prose; each will be certified or rejected on its own merits as those
   reviews land, appended here as they complete rather than batched.
 
-Previously, Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new item
-  implemented; drove two already-implemented PROVISIONAL submissions
-  (FTF-1302/FTF-R016) to a genuine current-`main` state instead. STEP 0
+Previously, Updated: 2026-09-22T10:50:00Z (scheduled relay shift) — no new item
+  implemented; no relay-side maintenance was left undone either. STEP 0
   clean (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`).
+  STEP 0.2: `cognee-cli` not present in this sandbox — text-search
+  fallback active, same as every prior shift.
+
+  This session's own branch (`claude/wizardly-fermat-qkido4`) was already
+  even with `origin/main` at `ce1d2f0` — no drift to reconcile.
+  Independently recomputed the dependency-ready frontier fresh (script
+  joining `docs/spec-matrix.yaml`'s live `certification_state`, 36
+  CERTIFIED / 7 PROVISIONAL, against `docs/TASK_INDEX.md`'s real
+  `Dependencies` column, never trusting the prior shift's own note by
+  itself): came back exactly `FTF-0408`, `FTF-0902` — both `FTF-1302`
+  and `FTF-R016` are already merged to `main` (PRs #170/#172, both
+  confirmed via `pull_request_read`), so neither is open PR work left to
+  drive; the 7 PROVISIONAL items (FTF-0202/FTF-1001/FTF-1302/FTF-1401/
+  FTF-1501/FTF-1702/FTF-R016) are all waiting only on Control-plane's own
+  doc-only "Control plane: certify" PRs (#179–#183, #185) to merge —
+  confirmed PR #185's own CI green (23/23) but did not merge it: that PR's
+  entire content is flipping `certification_state` to `CERTIFIED`, which
+  is Control-plane's own act of certification under Law 4, not this
+  relay's "merge on green + L1 doc (PROVISIONAL)" permission — every
+  prior shift has consistently deferred these same PRs to Control plane,
+  and this shift found no reason to depart from that.
+
+  Re-verified (not re-litigated) both frontier items are still genuinely
+  blocked for the same disclosed reasons already on record: FTF-0408 —
+  `grep -rn "mandate_json\|AgentManifest" apps/ packages/` still returns
+  only disclosure comments, no real `AgentManifest` storage exists for
+  the "model/runtime resolution... explicit lock" acceptance clause to
+  lock against. FTF-0902 — the task packet's own negative_acceptance is
+  explicit on its face ("NetworkPolicy YAML on nonenforcing cluster is
+  not pass") and this sandbox has no real CNI-enforcing Kubernetes
+  cluster to test a real deny against. Neither gap is new.
+
+  **STEP 4 stop condition:** no genuinely fresh, unblocked, unclaimed item
+  and no undone relay-side maintenance existed this shift to act on —
+  disclosed as a no-op shift, not a manufactured or duplicate submission.
 
   **STEP 1:** Read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`
   fresh, then independently recomputed the dependency-ready frontier with
@@ -98,25 +132,23 @@ Previously, Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new ite
   submission under time pressure.
 
 ## Next shift
-Once PR #172's fresh CI run (triggered by this shift's own push) reaches a
-real `completed`/`success` conclusion on head `62a946c`, it should be
-merged the same way PR #170 just was (merge-on-green is pre-authorized;
-this is a distinct step from Control-plane L2 certification, per Law 4).
-After that, no dependency-ready, unclaimed item remains -- FTF-0408/
+PR #172 has since merged (`ce1d2f0`) — that part of the prior note below
+is resolved. Nothing dependency-ready remains unclaimed: FTF-0408/
 FTF-0902 stay blocked on their own disclosed DoD-clarity/resource-gate
-gaps, unchanged. A future relay shift should recompute the frontier fresh
-rather than trusting this note alone, since FTF-1302/FTF-R016 reaching
-CERTIFIED (a Control-plane job, not this relay's) would newly unblock
-FTF-1303/FTF-1304/FTF-1305 and downstream `FTF-R0xx` build-tooling tasks
-respectively, per `docs/TASK_INDEX.md`. The five open "Control plane:
-certify FTF-XXXX" PRs (#179/#180/#181/#182/#183) still need Control-plane
-review/merge to actually flip `docs/spec-matrix.yaml` to `CERTIFIED` for
-FTF-0202/FTF-1501/FTF-1001/FTF-1401/FTF-1702 -- their code is already
-merged to `main`, but `certification_state` stays `PROVISIONAL` on `main`
-until those doc-only PRs land; this relay shift did not merge or certify
-any of them (Law 4, producer/relay never certifies own or others' work).
+gaps, re-confirmed unchanged this shift. A future relay shift should
+still recompute the frontier fresh rather than trusting this note alone,
+since the seven PROVISIONAL items reaching CERTIFIED (a Control-plane
+job, not this relay's) would newly unblock FTF-0203, FTF-1002+,
+FTF-1303/FTF-1304/FTF-1305, and downstream `FTF-R0xx` build-tooling
+tasks, per `docs/TASK_INDEX.md`. The six open "Control plane: certify
+FTF-XXXX" PRs (#179/#180/#181/#182/#183/#185, all confirmed CI-green as
+of this shift) still need Control-plane review/merge to actually flip
+`docs/spec-matrix.yaml` to `CERTIFIED` for FTF-0202/FTF-1001/FTF-1302/
+FTF-1401/FTF-1501/FTF-1702/FTF-R016 — this relay shift did not merge or
+certify any of them (Law 4, producer/relay never certifies own or
+others' work).
 
-Previously, Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+Historical note (superseded by the entry above): Previously, Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201
   all CERTIFIED). STEP 0 clean (`sha256sum CLAUDE.md` matches
   `CLAUDE.md.sha256`). Verified directly on GitHub (not just this file's
