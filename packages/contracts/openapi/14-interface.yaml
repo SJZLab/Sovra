@@ -1,0 +1,158 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 14 Interface (API load test)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas for the API load-test workload
+    specification and raw measurement report (Section 49/50/71, FTF-1401).
+    `paths` is deliberately empty: this task's own deliverable is a
+    measurement tool (`tests/performance/api_load_test.py`) that drives the
+    six already-live routers wired in `apps/api/app/main.py`, not a new
+    served route of its own -- declaring HTTP routes here for a tool that
+    is not itself a served endpoint would be a placeholder path under Law
+    11. The same disclosed-scope precedent as `16-interface.yaml`
+    (FTF-1601): whichever task first needs a live `/api/v1/load-tests`
+    route adds its own path item here, backed by a genuine handler, under
+    this same contract-owner lock (shared_lock_required: contracts:14).
+paths: {}
+components:
+  schemas:
+    LatencyStats:
+      type: object
+      description: >-
+        Nearest-rank percentile summary over one category's (read or
+        write) recorded request latencies from one real run.
+      properties:
+        count:
+          type: integer
+          minimum: 1
+        p50_ms:
+          type: number
+          minimum: 0
+        p95_ms:
+          type: number
+          minimum: 0
+        p99_ms:
+          type: number
+          minimum: 0
+        max_ms:
+          type: number
+          minimum: 0
+      required: [count, p50_ms, p95_ms, p99_ms, max_ms]
+      additionalProperties: false
+    WorkloadSpec:
+      type: object
+      description: >-
+        The declared workload this run actually drove against the real
+        API -- disclosed as a partial profile whenever it is smaller than
+        Section 49's full "Control API" target (2 API replicas, DB 4
+        vCPU/16GiB, 10 organizations/100 projects/1,000 models, 50 RPS for
+        30 minutes), per that section's own "if the environment is
+        smaller, report a partial profile, not full-scale PASS" rule.
+      properties:
+        profile_name:
+          type: string
+          minLength: 1
+        planned_duration_seconds:
+          type: number
+          exclusiveMinimum: 0
+        worker_count:
+          type: integer
+          minimum: 1
+        read_fraction:
+          type: number
+          minimum: 0
+          maximum: 1
+        organizations_count:
+          type: integer
+          minimum: 1
+        projects_count:
+          type: integer
+          minimum: 1
+        declared_api_replicas:
+          type: integer
+          minimum: 1
+        is_partial_profile:
+          type: boolean
+        disclosed_gaps:
+          type: array
+          items:
+            type: string
+      required:
+        - profile_name
+        - planned_duration_seconds
+        - worker_count
+        - read_fraction
+        - organizations_count
+        - projects_count
+        - declared_api_replicas
+        - is_partial_profile
+        - disclosed_gaps
+      additionalProperties: false
+    LoadTestReport:
+      type: object
+      description: >-
+        The raw measurement output of one real run: every issued request
+        is accounted for exactly once (never silently dropped, per this
+        task's own negative_acceptance), whether it completed, failed, or
+        timed out.
+      properties:
+        workload:
+          $ref: '#/components/schemas/WorkloadSpec'
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        actual_duration_seconds:
+          type: number
+          minimum: 0
+        total_requests:
+          type: integer
+          minimum: 0
+        achieved_rps:
+          type: number
+          minimum: 0
+        read_stats:
+          anyOf:
+            - $ref: '#/components/schemas/LatencyStats'
+            - type: 'null'
+        write_stats:
+          anyOf:
+            - $ref: '#/components/schemas/LatencyStats'
+            - type: 'null'
+        unexpected_5xx_count:
+          type: integer
+          minimum: 0
+        unexpected_5xx_rate:
+          type: number
+          minimum: 0
+        backpressure_signal_count:
+          type: integer
+          minimum: 0
+        failed_or_timed_out_count:
+          type: integer
+          minimum: 0
+        acceptance_passed:
+          type: boolean
+        acceptance_failure_reasons:
+          type: array
+          items:
+            type: string
+      required:
+        - workload
+        - started_at
+        - finished_at
+        - actual_duration_seconds
+        - total_requests
+        - achieved_rps
+        - read_stats
+        - write_stats
+        - unexpected_5xx_count
+        - unexpected_5xx_rate
+        - backpressure_signal_count
+        - failed_or_timed_out_count
+        - acceptance_passed
+        - acceptance_failure_reasons
+      additionalProperties: false
