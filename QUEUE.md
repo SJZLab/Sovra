@@ -1,4 +1,77 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22 (scheduled relay shift) — implemented FTF-0204
+  (`/v1/models` discovery, deps FTF-0201/FTF-0203 both CERTIFIED). STEP 0:
+  `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`. Recomputed the dependency-ready frontier fresh
+  (joining `spec/tasks.json`'s real `dependencies` field against
+  `docs/implementation/TRACKER.json`'s live `status`): 14 items came
+  back — `FTF-0204`, `FTF-0302`, `FTF-0303`, `FTF-0304`, `FTF-0408`,
+  `FTF-04A01`, `FTF-0500A`, `FTF-0500D`, `FTF-0506`, `FTF-0902`,
+  `FTF-1201`, `FTF-1503`, `FTF-1506`, `FTF-R002` (FTF-0203 reaching
+  CERTIFIED newly unblocked `FTF-0204`/`FTF-1201`). Checked
+  `list_pull_requests` before picking: `FTF-0304` still had two open,
+  unmerged candidate PRs (#194/#195) from other sessions — not picked,
+  to avoid duplicating real work. Picked `FTF-0204` (lowest task ID
+  among the remaining unclaimed items).
+
+  **STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+  packet FTF-0204`. Read `connection_validation.py` (FTF-0203, the
+  sibling `/validate` route's own design) and `connection_routes.py`
+  (confirmed only CRUD + `/validate` exist, `/models` deliberately
+  absent). Formed the hypothesis: a new `packages/litellm_client/
+  v1_models_discovery.py` resolves `secret_ref` via `resolve_secret_ref`,
+  calls `GET /v1/models` via `guarded_fetch`, and reports the full
+  credential-visible model ID list plus a left-join-only `/model/info`
+  enrichment (Section 3.2's "no authorization union") — never a merge
+  with a previous call's result (Section 3.3). No code written yet at
+  this point.
+
+  **STEP 2 (E):** Implemented `packages/litellm_client/
+  v1_models_discovery.py` (`discover_models`, `DiscoveryState`,
+  `DiscoveredModel`/`ModelMetadataStatus`), wired a new `GET
+  .../connections/litellm/{connection_id}/models` route onto the
+  existing `build_litellm_connection_router` (organization_admin-only,
+  same IDOR/revoked-409 pattern as `/validate`, reusing the same
+  injected `secret_manager_config_factory`/`validation_policy_factory`).
+  Wrote `tests/tasks/test_ftf_0204.py` (12 no-DB checks, including two
+  real live round-trip checks for this task's own negative_acceptance —
+  a metadata-only name never becoming callable, and a removed model/
+  revoked credential never being retained across two real calls against
+  a mutable gateway fixture) and `tests/integration/
+  test_ftf_0204_v1_models_discovery.py` (real live-Postgres + real local
+  gateway checks, mirroring FTF-0203's own fixture/IDOR pattern).
+
+  **STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays
+  `15/15` (unchanged — Law 2, certification is a separate Control-plane
+  act; `proving_symbol` deliberately left blank). `scripts/status.py`
+  stays `46/300 certified · 15 product-true`. `scripts/validate_spec.py
+  --strict` clean after `git fetch --unshallow` (this sandbox's own
+  pre-existing shallow-clone artifact). Full repo-wide `ruff check .`/
+  `ruff format --check .` clean (183 files). `mypy .` clean (183 files).
+  `pnpm run lint`/`typecheck` clean after `pnpm install` resolved this
+  fresh sandbox's own missing `node_modules` (same documented precedent
+  as prior shifts). Full `tests/tasks/test_ftf_*.py` sweep run directly:
+  every file passes. Real live-Postgres integration evidence produced
+  locally (`sovra_migrate` role + `sovra_ftf0204` database, same
+  directly-installed PostgreSQL 16 precedent FTF-0201/FTF-0203 already
+  established). `FTF-0201`'s and `FTF-0203`'s own integration suites
+  re-confirmed passing afterward (no regression to the shared
+  `connection_routes.py` file). Fault injection (Law 1): a regex-based
+  mutation of the real on-disk `v1_models_discovery.py` reintroduces the
+  Section 3.2 authorization-union bug (unions `enrichment_ids` into the
+  returned model list) — run in a fresh subprocess against a real
+  gateway advertising a metadata-only unauthorized name, the mutated
+  module genuinely lets that name leak into the result; reverted
+  byte-identical.
+
+  `docs/spec-matrix.yaml` set to `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN`, `evidence_hash` set to the implementation
+  commit (`c1ac87cdeb6fef3b412c248ab2b01472614e6e02`). **Submitted
+  PROVISIONAL, not self-certified (Law 4)** — PR opened, awaiting
+  independent Control-plane L2 review. Full entry:
+  `docs/certifications/queue.md`.
+
+## Previous shift
 Updated: 2026-09-22 (scheduled Control-plane certifier shift, `pull_request.opened`
   webhook for PR #200) — independently certified FTF-0203 (Connection
   validation), the sole PROVISIONAL item in `docs/certifications/queue.md`
@@ -23,8 +96,6 @@ Updated: 2026-09-22 (scheduled Control-plane certifier shift, `pull_request.open
   `46/300` certified / `15` product-true after. Full record: "## Done"
   below and `docs/certifications/ledger.md`/`docs/certifications/
   queue.md`.
-
-## Previous shift
 Updated: 2026-09-22 (scheduled relay shift) — implemented FTF-0203
   (Connection validation, deps FTF-0201/FTF-0202/FTF-H006 all CERTIFIED).
   STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
@@ -2850,7 +2921,10 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-0204 (`/v1/models` discovery, PR opened from
+`claude/wizardly-fermat-pkklwn` → `main`, commit
+`c1ac87cdeb6fef3b412c248ab2b01472614e6e02`) — submitted this shift, not
+self-certified (Law 4). Full entry: `docs/certifications/queue.md`.
 
 FTF-0203 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-22 via PR #200 (merge commit

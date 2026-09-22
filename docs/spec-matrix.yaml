@@ -392,15 +392,65 @@ FTF-0203:
   proving_symbol: validate_connection
   proving_test: tests/tasks/test_ftf_0203.py
 FTF-0204:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: '`/v1/models` discovery'
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203
-  proof_state: UNPROVEN
+  evidence_hash: c1ac87cdeb6fef3b412c248ab2b01472614e6e02
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201,
+    FTF-0203 (both CERTIFIED). This task''s own acceptance clause ("List current
+    credential-visible model IDs through tested gateway route and record timestamp/count/hash")
+    and negative_acceptance ("Metadata-only or stale deleted model is not callable;
+    auth errors fail closed instead of retaining permission") are built for real:
+    packages/litellm_client/v1_models_discovery.py''s discover_models resolves the
+    connection''s own secret_ref through FTF-0202''s already-CERTIFIED resolve_secret_ref,
+    calls the real gateway''s GET /v1/models (Section 3.1) through FTF-H006''s already-CERTIFIED
+    guarded_fetch, and enriches each authorized model with GET /model/info on a strict
+    left-join basis (Section 3.2''s "no authorization union" -- a name known only
+    through enrichment is never added to the returned list, only ever sets metadata_status=enriched
+    on an already-authorized entry). Every call is stateless and fresh -- nothing
+    here merges with a previous result, so a model removed from the current authoritative
+    response, or a credential that starts failing 401/403, is simply absent from
+    the current ModelDiscoveryResult rather than retained from an earlier call. A
+    real sha256 content_hash over the sorted authorized id set is recorded alongside
+    a real timestamp and count, never a sentinel/invented value on a failure state.
+    apps/api/app/litellm/connection_routes.py adds the real GET .../connections/litellm/{connection_id}/models
+    route (organization_admin only, same tenant-scoped session and IDOR-denial pattern
+    as /validate, denies a foreign connection ID identically to missing (404) before
+    the real gateway is ever dialed on the wrong tenant''s behalf, refuses a revoked
+    connection (409)); reuses the existing secret_manager_config_factory/validation_policy_factory
+    injection points rather than adding a redundant pair. No independent schema change
+    (this task''s own database_changes clause): the result is computed fresh per
+    call, never persisted onto LiteLLMConnection. tests/tasks/test_ftf_0204.py (no
+    DB, no external egress -- real local HTTP/HTTPS servers, a real ephemeral CA installed
+    into the sandbox''s own system trust store for the run) covers discovered/invalid_token/certificate_error/malformed_response/secret-backend/destination_denied
+    states, the metadata-only-name exclusion and stale-model-removal negative_acceptance
+    cases through real, live two-call round trips against a mutable gateway fixture,
+    and a fault injection (Law 1) that mutates the real on-disk module to union enrichment
+    into the authorized list, proven in a fresh subprocess against a real gateway
+    to genuinely leak the metadata-only name into the result, then reverted byte-identical.
+    tests/integration/test_ftf_0204_v1_models_discovery.py (real Postgres + real
+    gateway, mirroring FTF-0203''s own integration suite) drives the actual FastAPI
+    route end-to-end: two real organizations, a real uvicorn server, real create/discover/revoke
+    through the live route (never a direct call to discover_models bypassing the
+    HTTP layer), the cross-organization IDOR case denied identically to missing (404),
+    and a revoked connection refused discovery (409). .github/workflows/ci.yml wires
+    the no-DB suite into the gate job and adds model-discovery-integration (real Postgres
+    service, same pinned image digest every other integration job in this file already
+    uses). SUBMITTED PROVISIONAL, not self-certified (Law 4) -- own verification this
+    shift: ruff check/ruff format --check clean (183 files); mypy clean (183 files,
+    "no issues found"); full tests/tasks/test_ftf_*.py sweep passes; product_truth_check.py
+    stays 15/15 (proving_symbol deliberately left blank here -- certification is a
+    separate Control-plane act); scripts/status.py stays 46/300 certified / 15 product-true,
+    unchanged. Real live-Postgres integration evidence produced locally (sovra_migrate
+    role + sovra_ftf0204 database, same directly-installed PostgreSQL 16 precedent
+    FTF-0201/FTF-0203 already established); FTF-0201/FTF-0203''s own integration suites
+    re-confirmed passing afterward against the same fresh database -- no regression
+    to the shared connection_routes.py file. PR opened, awaiting independent Control-plane
+    L2 review.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0204.py
 FTF-0205:
   certification_state: NONE
   criticality: MUST
