@@ -1,5 +1,156 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T12:45:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T13:15:00Z (scheduled relay shift) — implemented
+  FTF-0304 (Local artifact resolver, deps FTF-0202/FTF-0301 both
+  CERTIFIED), PR #194 (`claude/wizardly-fermat-gi3xxs` → `main`).
+
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`.
+
+  STEP 1: read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`
+  fresh. `git fetch origin main` — this session's own branch
+  (`claude/wizardly-fermat-gi3xxs`) was already even with `main`
+  (`8f33de0`, no drift). Confirmed all seven prior `PROVISIONAL` items
+  (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/FTF-1702/FTF-R016) are
+  now `CERTIFIED` in `docs/spec-matrix.yaml`; `list_pull_requests`
+  returned zero open PRs. Recomputed the dependency-ready frontier fresh
+  (a script joining `docs/spec-matrix.yaml`'s live `certification_state`
+  against `docs/TASK_INDEX.md`'s real `Dependencies` column): exactly
+  seven items — `FTF-0304`, `FTF-0408`, `FTF-0500`, `FTF-0902`,
+  `FTF-1503`, `FTF-1506`, `FTF-H006`. FTF-0304 has the lowest task ID;
+  both its own dependencies (FTF-0202, FTF-0301) independently confirmed
+  `CERTIFIED` before relying on them. FTF-0408/FTF-0902 left unclaimed,
+  not re-litigated — both still carry the same previously-disclosed real
+  gaps (FTF-0408's own acceptance clause reads on
+  `AgentManifest.mandate_json`, no real storage anywhere in this
+  repository yet; FTF-0902 names a real CNI-enforcing Kubernetes cluster
+  as its own `resource_gate` prerequisite, unavailable in this sandbox).
+  `FTF-0500`/`FTF-1503`/`FTF-1506`/`FTF-H006` are newly dependency-ready
+  this shift and genuinely unexamined — left for a future shift rather
+  than claimed without first pulling their own real task packets.
+
+  **STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-0304` fresh. Read
+  FTF-0301's own `_validate_local_filesystem_uri`
+  (`apps/api/app/artifacts/artifact_schema.py` — the registration-time
+  shape check this task's own resolver must never merely trust across
+  the layer boundary) and `packages/storage/tenant_policy.py` (this
+  repo's own style precedent for a pure, dependency-light `packages/`
+  module). Formed the hypothesis: this task's own acceptance scope is
+  resolution + deterministic manifest computation for `source_type ==
+  "local_filesystem"` only, with its own independent negative-path
+  checks — not FTF-0302/FTF-0303's own, later, separately
+  dependency-gated Hugging Face Hub/S3 resolvers, and not FTF-0306's own
+  `weights_digest` verification. No code written yet at this point.
+
+  **STEP 2 (E):** Implemented `packages/model_catalog/
+  local_artifact_resolver.py` and `tests/tasks/test_ftf_0304.py`.
+  Path refinement (disclosed): the task packet's own `files` path,
+  `packages/model-catalog/local_artifact_resolver.py`, uses a hyphen —
+  not a valid Python package-directory name. Every existing sibling
+  package (`packages/litellm_client`, `packages/storage`) already uses
+  an underscore for the identical reason, and FTF-0305 already
+  established the same refinement precedent for this exact directory
+  (moved its own suggestion into `apps/api/app/artifacts/` instead).
+  Refined to `packages/model_catalog/local_artifact_resolver.py` — kept
+  at the `packages/` level rather than moved into `apps/api` (unlike
+  FTF-0305's own choice), since a local-filesystem artifact resolver is
+  plausibly reusable by a future training worker, not only the API
+  process; deliberately does not import from `apps.api` as a result — it
+  re-runs its own independent shape/escape/symlink/TOCTOU/executable
+  checks rather than reaching upward into FTF-0301's own schema-layer
+  validation (defense-in-depth, not duplication, the same "checked
+  again, not merely trusted" posture FTF-1301's negative-rate check
+  already established across an application-layer guard and a database
+  CHECK constraint).
+
+  First run of the TOCTOU negative test genuinely failed — `FAIL
+  [FTF-0304] a file mutated on disk between the pre-read and post-read
+  stat is rejected`, `exit=1`. Root-caused: the test's own patched
+  `Path.open` called `target.write_bytes(...)` to mutate the file, but
+  `Path.write_bytes` itself calls `self.open('wb')`, re-entering the
+  very mock being installed and causing unbounded recursive writes
+  instead of the intended single mutation. Fixed by writing through the
+  captured real, unpatched `open` directly. Full suite then "all checks
+  passed".
+
+  Ran one additional fault injection (Law 1), a vector distinct from the
+  bug above: disabled the executable-bit guard for real
+  (`if before.st_mode & _EXECUTABLE_BITS:` → `if False and ...`) and
+  re-ran the corresponding negative test via an isolated subprocess
+  probe — the probe's own output flipped from `REJECTED` to
+  `NOT_REJECTED`, proving the suite genuinely depends on that guard.
+  Reverted byte-identical (confirmed by a direct byte comparison inside
+  the test itself) and the full suite re-confirmed clean afterward.
+
+  **V:** full `tests/tasks/test_ftf_*.py` sweep (26 files, including
+  this task's own new one) all "all checks passed" or equivalent, after
+  `git fetch --unshallow origin` (this sandbox's own documented
+  shallow-clone `stale_commit` artifact) and `pnpm install
+  --frozen-lockfile` / `uv sync --all-packages` (pre-existing,
+  previously-documented sandbox dependency gaps — every failure present
+  before these commands and absent after, with no other change,
+  confirming pre-existing rather than caused by this task). `ruff check
+  .`/`ruff format --check .` clean repo-wide; `mypy .` (repo-wide,
+  matching FTF-0002's own `mypy .` check) clean — 169 source files, zero
+  errors (this task's own module and test both included, no new
+  exceptions needed); `mypy` on the module directly — clean. `pnpm run
+  lint`/`typecheck`/`format:check` clean; `pnpm exec vitest run` —
+  19/19 across 5 spec files, no regression; `uv run pytest tests/unit`
+  — 3/3. `scripts/validate_spec.py --strict` clean.
+  `scripts/product_truth_check.py --fail-on-unwired` unchanged at
+  `13/13` (no `proving_symbol` claimed — no live caller yet, disclosed
+  in both the module docstring and `docs/spec-matrix.yaml`'s own notes,
+  the same disclosed class already accepted for
+  FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305). `python3
+  scripts/status.py` unchanged at `43/300 certified · 13 product-true`
+  (PROVISIONAL, not yet CERTIFIED — this submission does not
+  self-certify, per Law 4). `verify_task.py --task FTF-0304 --stage
+  task` correctly reports `BLOCKED — no merged verification evidence
+  yet` (expected pre-merge, per established convention).
+
+  Wired `.github/workflows/ci.yml` with one new `gate` job step (plain
+  `python3 tests/tasks/test_ftf_0304.py` — no `uv sync` needed, this
+  task's own suite is stdlib-only) — no other job's steps touched, no
+  new dedicated integration job needed (no DB/network/GPU resource).
+  Confirmed the workflow file still parses as valid YAML after the edit.
+
+  **Disclosed, not hidden:** this task's own scope is resolution +
+  deterministic manifest computation only, for `source_type ==
+  "local_filesystem"` alone — not FTF-0302/FTF-0303's own, later,
+  separately dependency-gated Hugging Face Hub/S3 resolvers, and not
+  FTF-0306's own `weights_digest` verification against the resolved
+  bytes. No live caller exists yet (this task's own `files` list names
+  only this module and its test, not a route) — the same disclosed "no
+  live caller yet" class already accepted for
+  FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 before each
+  one's own first live caller existed.
+
+  **STEP 3 metrics after this shift:** 43/300 certified (unchanged —
+  this shift implements, it does not certify); 1 new provisional this
+  shift (FTF-0304). `scripts/status.py`'s own authoritative
+  "product-true" count stays 13/13, unchanged by this entry's own
+  `proving_symbol: ''`. PR #194 opened as PROVISIONAL;
+  `docs/spec-matrix.yaml`/QUEUE.md/`docs/certifications/queue.md` all
+  updated in a second, tracking-doc-only commit on the same branch,
+  matching the established two-commit precedent.
+
+  **STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL
+  — reporting and stopping to await independent Control-plane L2
+  certification, per Law 4 (producer never certifies own work).
+
+## Next shift
+FTF-0304 (PR #194) needs Control-plane L2 certification. Six further
+dependency-ready items remain unclaimed after this shift's own frontier
+recomputation: FTF-0408/FTF-0902 (both previously disclosed
+DoD-clarity/resource-gate gaps — re-confirm, don't re-litigate, before
+claiming either), and FTF-0500/FTF-1503/FTF-1506/FTF-H006 (newly
+dependency-ready this shift, genuinely unexamined — pull each real task
+packet via `tools/r1_handoff.py` before claiming, per "Relay is
+execution-only"). If a relay session fires next instead: recompute the
+dependency-ready frontier fresh rather than trusting this note alone —
+FTF-0304 reaching CERTIFIED may newly unblock further dependents per
+`docs/TASK_INDEX.md`.
+
+Previously, Updated: 2026-09-22T12:45:00Z (scheduled Control-plane certifier shift,
   complete) — certified FTF-R016 (Measure selected coding-model/executor
   pilot cost and enforce budget tree), PR #172, L2-CERTIFIED by session
   `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding stale unmerged

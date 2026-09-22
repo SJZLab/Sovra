@@ -432,15 +432,74 @@ FTF-0303:
   proving_symbol: ''
   proving_test: ''
 FTF-0304:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Local artifact resolver
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301
-  proof_state: UNPROVEN
+  evidence_hash: eb0f80f1886b72363297b3141edd6ecc65538f53
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301 (both
+    CERTIFIED). Refined from the task packet's own unimportable/hyphenated
+    `packages/model-catalog/local_artifact_resolver.py` suggestion to
+    `packages/model_catalog/local_artifact_resolver.py` -- a valid Python package name, the same
+    refinement precedent FTF-0301/FTF-0305 already established for the same directory. Resolves a
+    `TrainableArtifact` with `source_type == "local_filesystem"` against one real,
+    operator-approved local root and computes a deterministic file manifest (acceptance clause 1)
+    -- `resolve_local_artifact`. Deliberately does not import from `apps.api`: this package sits
+    beneath `apps/api` in the dependency direction (reusable by a future worker, not only the API
+    process), so it re-runs its own independent shape/escape/symlink/TOCTOU/executable checks
+    rather than reaching upward into FTF-0301's own schema-layer validation for them --
+    defense-in-depth, not duplication, the same "checked again, not merely trusted" posture
+    FTF-1301's negative-rate check already established across an application-layer guard and a
+    database CHECK constraint. negative_acceptance ("Symlink/path escape, changing file during
+    read and unsafe executable artifact are rejected") is enforced by independent, redundant
+    checks: a shape-level path-escape refusal before any filesystem call; symlink rejection both
+    at the unresolved-path-component level (before `Path.resolve()` can ever follow one) and
+    anywhere nested inside a resolved directory artifact, however deep; a before/after `stat()`
+    comparison around every file read to catch a TOCTOU mutation (size/mtime/inode/device); and a
+    per-file executable-permission-bit / non-regular-file (device/FIFO/socket) refusal.
+    `database_changes`: "No independent schema change" honored -- no migration, no new table. No
+    live caller yet (this task's own `files` list names only this module and its test, not a
+    route) -- the same disclosed "no live caller yet" class already accepted for
+    FTF-0102/FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0305 before each one's own first live caller
+    existed; `proving_symbol` intentionally left unset in this submission, not a hidden gap. Real
+    relevant integration evidence (acceptance clause 2): `tests/tasks/test_ftf_0304.py` runs every
+    check against a real local filesystem under `tempfile.TemporaryDirectory()` -- real files,
+    real nested directories, real symlinks (both escaping and non-escaping), a real `chmod +x`
+    file, a real FIFO (`os.mkfifo`), and a real TOCTOU mutation performed via a patched
+    `Path.open` that writes through the genuine unpatched `open` directly. No separate
+    `tests/integration/` suite exists for this task: local filesystem access needs no DB/network/
+    GPU resource gate, so this suite alone is the real integration evidence, disclosed explicitly
+    in both the module's own docstring and this note rather than silently assumed. Law 1: the
+    first run of the TOCTOU negative test genuinely failed (`FAIL [FTF-0304] a file mutated on
+    disk between the pre-read and post-read stat is rejected`) -- the patched `Path.open` was
+    calling `target.write_bytes(...)`, which itself calls `self.open()` and recursed into the very
+    mock being installed; fixed by writing through the captured real, unpatched `open` directly;
+    full suite then "all checks passed". Fault injection (Law 1): the executable-bit guard
+    (`if before.st_mode & _EXECUTABLE_BITS:`) disabled for real via a subprocess probe -- the
+    corresponding negative test's own probe genuinely stopped rejecting the file (`NOT_REJECTED`),
+    proving the suite actually depends on that guard; reverted byte-identical (confirmed via a
+    direct byte comparison inside the test itself) and the full suite re-confirmed clean
+    afterward. Verification this submission: `ruff check`/`ruff format --check` clean repo-wide;
+    `mypy .` (repo-wide, matching FTF-0002's own `mypy .` check) clean (169 source files) and
+    `mypy` on the module directly clean; full `tests/tasks/test_ftf_*.py` sweep (26 files) re-run
+    clean after `git fetch --unshallow` (pre-existing shallow-clone `stale_commit` artifact, same
+    as every prior session) and `pnpm install`/`uv sync --all-packages` (pre-existing sandbox gap,
+    same as every prior session); `pnpm run lint`/`typecheck`/`format:check` clean; `pnpm exec
+    vitest run` -- 19/19; `uv run pytest tests/unit` -- 3/3; `scripts/validate_spec.py --strict`
+    clean; `product_truth_check.py --fail-on-unwired` unchanged at 13/13 (no `proving_symbol`
+    claimed by this entry); `scripts/status.py` unchanged at 43/300 certified (this submission
+    does not self-certify, per Law 4). `verify_task.py --task FTF-0304 --stage task` correctly
+    reports `BLOCKED -- no merged verification evidence yet` (expected pre-merge, per established
+    convention -- the verification-map.json entry is added by the certifying commit, once this
+    implementation commit already exists in history). New CI step added to the existing `gate`
+    job using plain `python3` (no `uv sync` needed -- this task's own suite is stdlib-only,
+    matching the FTF-0002/FTF-0003/FTF-0005/FTF-0004/FTF-0006/FTF-H001/... precedent, not the
+    `uv run python3` cutover below it). `evidence_hash` here points at the implementation commit
+    (`eb0f80f`) on branch `claude/wizardly-fermat-gi3xxs`; not yet merged, not yet certified.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0304.py
 FTF-0305:
   certification_state: CERTIFIED
   criticality: MUST

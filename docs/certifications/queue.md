@@ -9778,3 +9778,168 @@ the start of this shift (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/
 FTF-1702/FTF-R016) — all now independently CERTIFIED, and all six
 stale duplicate "Control plane: certify" candidate PRs (#179-185)
 closed as superseded.
+
+## 2026-09-22 — FTF-0304 — Local artifact resolver
+- **PR:** https://github.com/SJZLab/Sovra/pull/194, opened from
+  `claude/wizardly-fermat-gi3xxs` → `main`, title `[relay] FTF-0304:
+  Local artifact resolver`.
+- **Commit:** `eb0f80f1886b72363297b3141edd6ecc65538f53` (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  established two-commit precedent.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` —
+  clean. `git fetch origin main` — this session's own branch was already
+  even with `main` (`8f33de0`); confirmed all seven prior `PROVISIONAL`
+  items (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/FTF-1702/FTF-R016)
+  are now `CERTIFIED` in `docs/spec-matrix.yaml`, and `list_pull_requests`
+  returned zero open PRs — nothing already claimed. Recomputed the
+  dependency-ready frontier fresh (a script joining
+  `docs/spec-matrix.yaml`'s live `certification_state` against
+  `docs/TASK_INDEX.md`'s real `Dependencies` column): exactly seven
+  items — FTF-0304, FTF-0408, FTF-0500, FTF-0902, FTF-1503, FTF-1506,
+  FTF-H006. FTF-0304 is the lowest task ID; both its own dependencies
+  (FTF-0202, FTF-0301) independently confirmed `CERTIFIED` before relying
+  on them. FTF-0408/FTF-0902 were left unclaimed rather than
+  re-litigated — both still carry the same previously-disclosed real
+  gaps (FTF-0408's own acceptance clause reads on
+  `AgentManifest.mandate_json`, a field with no real storage anywhere in
+  this repository yet; FTF-0902 names a real CNI-enforcing Kubernetes
+  cluster as its own `resource_gate` prerequisite, unavailable in this
+  sandbox) — not re-verified from scratch this shift, since neither was
+  picked. FTF-0500/FTF-1503/FTF-1506/FTF-H006 are newly dependency-ready
+  this shift and genuinely unexamined — left for a future shift rather
+  than claimed under time pressure without first pulling their own real
+  task packets.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0304 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Resolve
+  artifact beneath approved local root and calculate deterministic file
+  manifest"), negative_acceptance ("Symlink/path escape, changing file
+  during read and unsafe executable artifact are rejected"),
+  `database_changes: "No independent schema change. Consume frozen
+  contract"`, `api_contract: "/api/v1/models/{id}/training-artifact and
+  /capabilities; approved artifact/license resources"`, `files:
+  [packages/model-catalog/local_artifact_resolver.py,
+  tests/tasks/test_ftf_0304.py]`, `dependencies: [FTF-0202, FTF-0301]`
+  (both CERTIFIED), `shared_lock_required: []`, `contract_owner:
+  FTF-0301`.
+- **Path refinement (disclosed, not hidden):** the packet's own `files`
+  path, `packages/model-catalog/local_artifact_resolver.py`, uses a
+  hyphen — not a valid Python package-directory name (`from
+  packages.model-catalog import ...` is a syntax error). Every existing
+  sibling package in this repository (`packages/litellm_client`,
+  `packages/storage`) already uses an underscore for the identical
+  reason, and FTF-0305 already established the exact same refinement
+  precedent for this exact directory (moved its own suggested
+  `packages/model-catalog/license_acceptance_workflow.py` to
+  `apps/api/app/artifacts/license_acceptance_workflow.py` instead).
+  Refined to `packages/model_catalog/local_artifact_resolver.py` — kept
+  as a `packages/`-level module rather than moved into `apps/api`
+  (unlike FTF-0305's own choice) because a local-filesystem artifact
+  resolver is plausibly reusable by a future training worker, not only
+  the API process; this package sits beneath `apps/api` in the
+  dependency direction, so it deliberately does not import from
+  `apps.api` — it re-runs its own independent shape/escape/symlink/
+  TOCTOU/executable checks rather than reaching upward into FTF-0301's
+  own schema-layer validation for them (defense-in-depth, not
+  duplication — never trust a value crossing a layer boundary, the same
+  posture FTF-1301's negative-rate check already established across an
+  application-layer guard and a database CHECK constraint).
+- **Design:** `resolve_local_artifact(approved_root, source_uri) ->
+  ArtifactManifest` — a pure function, no database, no global
+  configuration dependency (the approved root is passed in explicitly by
+  whatever future caller wires this in, left for that caller's own task
+  rather than invented here). `ArtifactManifest` carries a sorted tuple
+  of `ResolvedArtifactFile` (relative_path/size_bytes/sha256/mode) plus a
+  `manifest_sha256` computed deterministically over the sorted,
+  NUL-delimited per-file tuples — stable across repeated resolutions of
+  identical bytes, proven directly in the test suite. negative_acceptance
+  enforced by independent, redundant checks: (1) shape-level path escape
+  (`..`/absolute/home-relative/NUL) refused before any filesystem call;
+  (2) symlink rejection at the *unresolved* path-component level (before
+  `Path.resolve()` can ever follow one) and, separately, anywhere nested
+  inside a resolved directory artifact via `os.walk(..., followlinks=
+  False)` — a symlink that stays inside the approved root is still
+  rejected, since it can still silently point a "file" at bytes the
+  artifact never actually shipped; the resolved-path containment check
+  (`root_real` a real ancestor of `candidate_real`) is kept as a third,
+  redundant check of the same property; (3) a before/after `stat()`
+  comparison (`size`/`mtime_ns`/`ino`/`dev`) around every file read to
+  catch a TOCTOU mutation; (4) a per-file executable-permission-bit
+  refusal plus a separate refusal of any tree member that is neither a
+  regular file nor a directory (device/FIFO/socket).
+- **Real relevant integration evidence (acceptance clause 2):** no
+  separate `tests/integration/` suite exists for this task — local
+  filesystem access needs no DB/network/GPU `resource_gate`, so
+  `tests/tasks/test_ftf_0304.py` alone is the real integration evidence,
+  disclosed explicitly rather than silently assumed. Every check runs
+  against a real filesystem under `tempfile.TemporaryDirectory()`: a
+  real single-file artifact and a real nested-directory artifact (hashes
+  independently cross-checked against `hashlib.sha256` computed outside
+  the module under test); a real top-level symlink escaping the approved
+  root (`os.symlink`); a real top-level symlink staying inside the
+  approved root; a real symlink nested two levels deep inside a
+  directory artifact; a real `chmod(0o755)` executable file; a real FIFO
+  (`os.mkfifo`); a real non-existent/non-directory `approved_root`.
+- **Law 1 — test shown able to fail first:** the TOCTOU negative test's
+  first run genuinely failed — `FAIL [FTF-0304] a file mutated on disk
+  between the pre-read and post-read stat is rejected`, `exit=1`.
+  Root-caused: the test's own patched `Path.open` called
+  `target.write_bytes(...)` to mutate the file, but `Path.write_bytes`
+  itself calls `self.open('wb')`, which re-entered the very mock being
+  installed, causing unbounded recursive writes rather than the intended
+  single mutation. Fixed by writing through the captured real, unpatched
+  `open` directly (`with real_open(target, "wb") as fh: fh.write(...)`).
+  Full suite then "all checks passed".
+- **Fault injection (Law 1), a vector distinct from the bug above:**
+  disabled the executable-bit guard for real
+  (`if before.st_mode & _EXECUTABLE_BITS:` → `if False and
+  before.st_mode & _EXECUTABLE_BITS:`) and re-ran the corresponding
+  negative test via an isolated subprocess probe — the probe's own
+  output flipped from `REJECTED` to `NOT_REJECTED`, `returncode == 0`,
+  proving the suite genuinely depends on that guard rather than passing
+  regardless. Reverted byte-identical, confirmed by a direct byte
+  comparison inside the test itself (`RESOLVER_PATH.read_bytes() ==
+  original`), and the full suite re-confirmed clean afterward.
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep (26 files, including this task's own new one) all
+  "all checks passed" or equivalent, after `git fetch --unshallow origin`
+  (this sandbox's own documented shallow-clone `stale_commit` artifact)
+  and `pnpm install --frozen-lockfile` / `uv sync --all-packages`
+  (pre-existing, previously-documented sandbox dependency gaps — every
+  failure present before these commands and absent after, with no other
+  change, confirming pre-existing rather than caused by this task).
+  `ruff check .`/`ruff format --check .` clean repo-wide; `mypy .`
+  (repo-wide, matching FTF-0002's own `mypy .` check) clean — 169 source
+  files, zero errors (this task's own module and test both included,
+  zero pre-existing-gap exceptions needed); `mypy` on the module
+  directly — clean. `pnpm run lint`/`typecheck`/`format:check` clean;
+  `pnpm exec vitest run` — 19/19 across 5 spec files, no regression;
+  `uv run pytest tests/unit` — 3/3. `scripts/validate_spec.py --strict`
+  clean. `scripts/product_truth_check.py --fail-on-unwired` unchanged at
+  `13/13` (no `proving_symbol` claimed by this entry). `python3
+  scripts/status.py` unchanged at `43/300 certified · 13 product-true`
+  (PROVISIONAL, not yet CERTIFIED — this submission does not self-
+  certify, per Law 4).
+- **CI:** one new `gate` job step added to `.github/workflows/ci.yml`
+  (`python3 tests/tasks/test_ftf_0304.py`, plain `python3` — no `uv
+  sync` needed, since this task's own suite is stdlib-only, matching the
+  FTF-0002/FTF-0003/FTF-0005/FTF-0004/FTF-0006/FTF-H001/... precedent
+  below the file's own `uv run python3` cutover point) — no other job's
+  steps touched, no new dedicated integration job needed (no DB/
+  network/GPU resource). Confirmed the workflow file still parses as
+  valid YAML after the edit.
+- `verify_task.py --task FTF-0304 --stage task` correctly reports
+  `BLOCKED — no merged verification evidence yet` (expected pre-merge,
+  per established convention — the `spec/verification-map.json` entry is
+  added by the certifying commit, once this implementation commit
+  already exists in history).
+- Dependencies FTF-0202/FTF-0301 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**
+  `docs/spec-matrix.yaml` FTF-0304 set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+  implementation commit, `proving_symbol: ''` (no live caller yet,
+  disclosed), `proving_test: tests/tasks/test_ftf_0304.py`. Certified
+  stays 43/300; Product-true stays 13/13 (unchanged by this submission).
+  Awaiting independent Control-plane L2 review.
