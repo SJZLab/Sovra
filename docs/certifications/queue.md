@@ -9441,3 +9441,58 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-0202 (PR#176) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. Session-ID compared against
+PR #176's commits (`session_01CKZy4kupyKhLZEjNUTzcpC`) — no overlap,
+independent per Law 4. A separate prior candidate certification PR (#179,
+opened by a third session `session_01DzyLpJHy35M2BeGRfHfwL5`) was found
+open and unmerged, had gone stale against `main`'s subsequent unrelated
+FTF-R016 merge (`mergeable_state: dirty`), and its own certification
+changes were never landed — this review reproduces the work fresh rather
+than trusting that PR's prose, and closes it as a duplicate once this
+entry lands.
+
+Re-ran the full CERTIFY procedure in a fresh git worktree at `origin/main`
+(`sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` first):
+- Confirmed PR #176's implementation commit (`c0c8409d80c1e2e0222f8fed6912dc0355a046d2`)
+  is a real ancestor of `main`'s current tip via `git merge-base
+  --is-ancestor` (merged directly, not through GitHub's own merge button —
+  consistent with `merged: false`/`state: closed` on the GitHub API
+  despite the commit being genuinely on `main`).
+- `get_check_runs` on PR #176's real head — 19/19 jobs `success`, the
+  dedicated `secret-manager-integration` job ran ~5m25s (05:38:11Z–
+  05:43:36Z), a real build-from-source duration, not a runner-provisioning
+  ghost job.
+- `python3 tests/tasks/test_ftf_0202.py` reproduced clean from scratch —
+  22/22.
+- Own fault injection, a vector distinct from both the producer's two and
+  PR #179's one: disabled the field-presence guard in `resolve_secret_ref`
+  — the named "field is absent" check failed for exactly the right reason;
+  reverted byte-identical (`diff` confirmed empty); suite re-confirmed
+  clean.
+- `scripts/product_truth_check.py --fail-on-unwired` — `13/13`
+  product-true on `main`'s current tip (unrelated work merged since this
+  task's own submission moved the total from 12 to 13; FTF-0202 itself
+  still legitimately contributes `proving_symbol: ''`, not inflation).
+- `python3 tools/r1_handoff.py packet FTF-0202 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance clauses and the full
+  negative_acceptance clause confirmed genuinely met by the diff, not
+  merely "tests pass".
+- Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml`.
+- `scripts/validate_spec.py --strict` — 19 `stale_commit` defects before
+  `git fetch --unshallow origin` (pre-existing shallow-clone artifact),
+  clean after.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`6dfd97d2444c43a9b981099c8bb9f60368ad8b21`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-0202 — Secret-manager
+integration"). Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-0202']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0202 moved to Done,
+Certified count bumped to 37/300 (product-true stays at whatever
+`main`'s current tip independently shows, 13/13 as of this review).

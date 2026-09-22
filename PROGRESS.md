@@ -1,5 +1,22 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new task
+Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #186) — certified FTF-0202
+  (Secret-manager integration), L2-CERTIFIED by session
+  `session_01GngkvFCtGtTnDnW9d2HC1j`. Full independent re-verification
+  (session-ID check, real CI check-run re-check, own fault injection
+  distinct from prior vectors, `product_truth_check.py`, task contract
+  re-pulled via `tools/r1_handoff.py`) recorded in
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md` and
+  `QUEUE.md`'s "## Done" entry. A stale, unmerged duplicate certification
+  PR (#179) from a prior session was superseded and closed rather than
+  trusted at face value. `scripts/status.py`: 36/300 → 37/300 certified.
+  Six further `PROVISIONAL` items (FTF-1001/FTF-1302/FTF-1401/FTF-1501/
+  FTF-1702/FTF-R016), each with its own stale candidate certify PR
+  (#180-185) from prior sessions, are under independent, report-only
+  re-verification this same shift — not yet certified; results to follow
+  as separate entries once each review completes.
+
+Previously, Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new task
   implemented this shift; drove two already-implemented PROVISIONAL
   submissions to a genuinely current, re-validated state instead of
   leaving them stale behind `main`.

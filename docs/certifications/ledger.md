@@ -4452,3 +4452,103 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0202 — Secret-manager integration
+- Criterion ID: FTF-0202
+- PR: https://github.com/SJZLab/Sovra/pull/176 (`claude/wizardly-fermat-3c0uoh` → `main`)
+- Merge commit: 6dfd97d2444c43a9b981099c8bb9f60368ad8b21
+- Implementation commit: c0c8409d80c1e2e0222f8fed6912dc0355a046d2
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Session-ID check:** both commits on PR #176 carry `Claude-Session:
+  .../session_01CKZy4kupyKhLZEjNUTzcpC`; this reviewing session's own ID
+  is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match, independent per Law 4.
+  (A separate prior candidate certification, PR #179, was opened by yet a
+  third session, `session_01DzyLpJHy35M2BeGRfHfwL5`, but was left open and
+  unmerged, and had gone stale against `main`'s subsequent, unrelated
+  FTF-R016 merge — this entry supersedes it with a fresh, independently
+  reproduced review rather than trusting its prose; PR #179 is closed as a
+  duplicate below.)
+- **CI checked on the real head, not a stale claim:** `get_check_runs` on
+  PR #176's real head (`c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, run
+  `35690059480`) — all 19 GitHub Actions jobs `completed`/`success`,
+  including the dedicated `secret-manager-integration` job, which ran
+  05:38:11Z–05:43:36Z (~5m25s) — a genuine real-execution duration
+  consistent with building the real, pinned OpenBao commit from source on
+  the hosted runner's own network, not an instant runner-provisioning
+  "ghost" job (this repo's own documented failure mode elsewhere: `gate`
+  itself also genuinely ran 05:38:47Z–05:40:59Z). PR #176 was already
+  merged directly to `main` before this review began (owner action, not
+  this session's).
+- **Diff read directly:** `packages/litellm_client/secret_manager_integration.py`
+  (the only production file). Confirmed: stdlib-only (`urllib.request`,
+  no `hvac`/`requests`/`sqlalchemy`/`fastapi` import anywhere in the
+  module); the `openbao://<mount>/<path>/<field>` ref shape is a strict
+  subset of FTF-0201/FTF-0005's own already-certified, frozen
+  `^[a-z]+://[A-Za-z0-9_\-./]+$` pattern (neither certified validator
+  touched); `_request` retries only 429/5xx up to 3 attempts honoring a
+  real `Retry-After` header, and never retries 403/404/2xx/other 4xx;
+  `store_secret_ref`/`rotate_secret_ref` read-then-merge existing fields
+  at a path before writing (never silently wipe a co-located field);
+  `rotate_secret_ref` reads the current version first, writes the new
+  value, then soft-deletes exactly the superseded version (never a
+  hard-coded number) and refuses to rotate a ref with nothing to rotate;
+  `resolve_secret_ref` enforces `SecretExpiredError` from a
+  Factory-recorded `custom_metadata.expires_at` since OpenBao's own KV v2
+  secrets never expire on their own.
+- **Own reproduction, this sandbox** (fresh git worktree at the real
+  merged head, `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` first):
+  `python3 tests/tasks/test_ftf_0202.py` — "all checks passed" (22/22),
+  no DB/network required for this suite (fake `urllib.request.urlopen`
+  transport). The paired real-backend suite,
+  `tests/integration/test_ftf_0202_secret_manager.py` (12 checks against
+  a real, locally-built OpenBao `-dev` server), was not independently
+  rebuilt from source in this review session — relied instead on CI's own
+  real, non-ghost `secret-manager-integration` job run above, which
+  executes this exact suite fresh on every PR; this is a resource-gate
+  judgment call disclosed here rather than silently assumed.
+- **Own fault injection, this session, a vector distinct from both the
+  producer's own two and PR #179's own one (403 mapping):** disabled the
+  field-presence guard in `resolve_secret_ref` (`if not isinstance(fields,
+  dict) or parsed.field not in fields:` → `if False and (...)：`) —
+  `tests/tasks/test_ftf_0202.py` failed with exactly `FAIL [FTF-0202]
+  resolve_secret_ref raises SecretNotFoundError when the path exists but
+  the ref's own field is absent from it`. Reverted; `diff` against the
+  pre-injection copy confirmed byte-identical; suite re-confirmed clean
+  immediately after.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` — 19 `stale_commit` defects present before
+  `git fetch --unshallow origin` (this sandbox's own documented
+  shallow-clone artifact, the same finding recorded against every prior
+  certification in this ledger), clean after. `scripts/
+  product_truth_check.py --fail-on-unwired` — own run, `13/13`
+  product-true (this count reflects `main`'s current tip, which already
+  includes unrelated work merged after FTF-0202 — FTF-0202 itself
+  legitimately contributes `proving_symbol: ''`, not a live route yet;
+  confirmed not 0/0 inflation, since it was never expected to move this
+  count). `docs/spec-matrix.yaml` confirmed `certification_state:
+  PROVISIONAL` on `main` before this entry's own update, matching the
+  producer's own claim.
+- Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-0202
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses
+  ("Store/resolve/rotate short-lived secret refs through the actual
+  selected secret backend"; "Independent review, exact merged commit,
+  real relevant integration and negative-test evidence recorded") and the
+  full negative_acceptance ("Unknown/expired/ref-denied secrets block
+  call and are never returned to browser or plaintext DB") confirmed
+  genuinely met by the diff and this review, not merely "tests pass".
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`6dfd97d2444c43a9b981099c8bb9f60368ad8b21`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-0202']` updated. Certified: 37/300, Product-true: 13/13 (both
+  counts reflect `main`'s current tip, which had already advanced past
+  FTF-1302/FTF-R016 merging by the time of this review).
+
+**Conclusion:** Certified L2-CERTIFIED.

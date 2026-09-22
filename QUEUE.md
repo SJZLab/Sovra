@@ -1,5 +1,25 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new item
+Updated: 2026-09-22T11:30:00Z (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #186) — certified FTF-0202
+  (Secret-manager integration). Found seven `PROVISIONAL` items in
+  `docs/spec-matrix.yaml` (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/
+  FTF-1702/FTF-R016) and six already-open "Control plane: certify
+  FTF-XXXX" candidate PRs (#179-#185) from prior sessions, all unmerged
+  and increasingly stale against `main`'s own advancing tip — treated
+  those PRs as an unverified starting hypothesis, not ground truth,
+  consistent with this repo's own standing rule for exactly this class of
+  claim (the flagged PR #143/#162 pattern). Independently re-ran the full
+  CERTIFY procedure for FTF-0202 myself (session_01GngkvFCtGtTnDnW9d2HC1j)
+  end to end — see the new "## Done" entry below and the matching
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md` entries
+  for the complete evidence trail — and closed the stale, superseded PR
+  #179 as a duplicate. Dispatched independent, report-only verification
+  (no commits) for the remaining six PROVISIONAL items to separate
+  worktree-isolated review passes rather than trusting PRs #180-185's own
+  prose; each will be certified or rejected on its own merits as those
+  reviews land, appended here as they complete rather than batched.
+
+Previously, Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new item
   implemented; drove two already-implemented PROVISIONAL submissions
   (FTF-1302/FTF-R016) to a genuine current-`main` state instead. STEP 0
   clean (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`).
@@ -3467,6 +3487,44 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-0202 — Secret-manager integration. CERTIFIED 2026-09-22, PR #176
+  (merge commit `6dfd97d2444c43a9b981099c8bb9f60368ad8b21`). Independently
+  re-verified: session-ID clean (PR #176's commits carry
+  `session_01CKZy4kupyKhLZEjNUTzcpC`, a different session than this
+  reviewer's own `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale,
+  unmerged candidate certification PR, #179, opened by yet a third
+  session, was superseded rather than trusted). `get_check_runs` on
+  PR #176's real head — 19/19 jobs `success`, the dedicated
+  `secret-manager-integration` job ran a genuine ~5m25s (consistent with
+  a real from-source OpenBao build, not a runner-provisioning ghost job).
+  Own reproduction in a fresh git worktree at the real merged head:
+  `tests/tasks/test_ftf_0202.py` — 22/22 "all checks passed"; the paired
+  real-OpenBao integration suite was not independently rebuilt in this
+  review (no prebuilt OpenBao binary/image reachable in this sandbox,
+  same disclosed class of gap as Postgres/Docker elsewhere) — relied on
+  CI's own real, non-ghost `secret-manager-integration` job instead, a
+  disclosed resource-gate judgment call. Own fault injection, a vector
+  distinct from both the producer's own two and PR #179's own one:
+  disabled the field-presence guard in `resolve_secret_ref` — the named
+  "field is absent" check failed for exactly the right reason; reverted
+  byte-identical (`diff` confirmed empty); suite re-confirmed clean. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0202` — both
+  acceptance clauses and the full negative_acceptance clause confirmed
+  genuinely met. Dependencies FTF-0005/FTF-0103/FTF-0201 confirmed
+  genuinely `CERTIFIED`. `validate_spec.py --strict` clean after `git
+  fetch --unshallow origin` (pre-existing shallow-clone artifact). No
+  blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `36/300` certified before, `37/300`
+  after; "Product-true" stays at whatever `main`'s current tip
+  independently shows (`13/13` as of this review — unrelated work landed
+  since FTF-0202's own PROVISIONAL submission; FTF-0202 itself
+  legitimately contributes `proving_symbol: ''`, not a live route yet).
+  This certification's own doc updates were pushed on a branch and opened
+  as a PR against `main` rather than pushed directly, per
+  `BRANCH_PROTECTION`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
