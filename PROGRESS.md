@@ -1,5 +1,135 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22 (live, interactive session) — **FTF-0202 ("Secret-
+Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+  FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201 all
+  CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the
+  committed `CLAUDE.md.sha256` — no BLOCKER needed. STEP 1: read
+  PROGRESS.md/QUEUE.md/`docs/certifications/queue.md`, then cross-checked
+  GitHub directly (`list_pull_requests`) rather than trusting either file's
+  prose alone: confirmed the FTF-0202 owner-ask resolution (commit
+  `e9e63b4`, "OpenBao, anchored to a live conversation") is genuinely
+  merged into `main` via PR #173 (not just written to a QUEUE.md entry
+  this shift could not itself verify) — `git log origin/main -- QUEUE.md`
+  shows it as `main`'s own most recent history, and PR #143/#162 (the
+  three earlier, unverifiable "OpenBao confirmed" claims this file's own
+  history already treated with standing skepticism) are both closed,
+  unmerged, exactly as that resolution's own text describes. FTF-0202 has
+  the lowest task ID among the dependency-ready frontier PR #175's own
+  independent recomputation already found (`FTF-0202, FTF-0408, FTF-0902,
+  FTF-1001, FTF-1302, FTF-1401, FTF-1501, FTF-1702, FTF-R016`) and no open
+  PR claims it.
+
+  **STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-0202` fresh. Read
+  FTF-0201's `connection_schema.py`/`connection_crud.py` (the `vault://`/
+  `openbao://`/`secret://` reference-shape convention this task must
+  resolve, never invent) and FTF-0005's `configuration_system.py` (the
+  stdlib-only, no-third-party-runtime-dependency precedent this task
+  follows instead of adding `hvac`). Formed the hypothesis: this task's
+  own acceptance clause narrows to a real store/resolve/rotate client
+  against the owner-selected backend (OpenBao) plus its own negative-path
+  rules — not FTF-0203/FTF-0204/FTF-0210's own, later, separately
+  dependency-gated gateway-calling scope. No code written yet at this
+  point.
+
+  **STEP 2 (E):** Before writing any code, verified every real backend
+  interaction directly against a real OpenBao server (Law 1) — no
+  prebuilt release binary or container image was reachable from this
+  sandbox (the same documented class of gap FTF-0004/FTF-0102/FTF-R017
+  already established for Postgres/Docker/SeaweedFS: `docker pull`
+  fails with no daemon socket, `api.github.com` is scoped to this repo
+  only), so built a real OpenBao server from source (`git clone` +
+  `go build` against `github.com/openbao/openbao/v2` commit
+  `e98dc184344fe84ee4e69965ac3f4217d5b6a45d` — both a real Git remote and
+  the Go module proxy were reachable) and ran it locally in `-dev` mode.
+  That direct, pre-code verification caught a genuine, load-bearing
+  surprise a guess would have missed: reading a soft-deleted or destroyed
+  KV v2 version answers real HTTP 404 with a JSON body still attached, not
+  HTTP 200 with a null payload as an uncontrolled first `curl | json.tool`
+  pass (no `-w '%{http_code}'`) misleadingly suggested — caught by this
+  task's own explicit `-w` re-check before any test was written to expect
+  the wrong shape.
+
+  Implemented `packages/litellm_client/secret_manager_integration.py`
+  (path refined from the task packet's own literal
+  `packages/litellm-client/...` — a hyphenated directory is not a valid
+  Python package segment — to `packages/litellm_client/...`, matching
+  `packages/storage/tenant_policy.py`'s (FTF-H003) own standalone-library
+  precedent), `tests/tasks/test_ftf_0202.py` (22 no-DB/no-network checks
+  against a fake `urllib.request.urlopen` transport), and
+  `tests/integration/test_ftf_0202_secret_manager.py` (12 real checks
+  against the real, locally-built-and-spawned OpenBao server) — matching
+  the implement-with-tests-then-fault-inject precedent. Both suites
+  genuinely failed before their own logic was correct (the first version
+  of the module's own docstring/comments described the deletion behavior
+  as HTTP 200/null, based on an under-checked first probe; corrected once
+  the explicit `-w` status-code check contradicted it, before any test was
+  written to expect either shape — direct evidence the investigation was
+  real, not asserted after the fact).
+
+  **Failure output shown by fault injection (Law 1, two distinct vectors,
+  both reverted byte-identical and both suites re-run clean afterward):**
+  (1) disabled the expiry check in `resolve_secret_ref` (`if False and
+  isinstance(expires_raw, str) and expires_raw:`) — both
+  `uv run python3 tests/tasks/test_ftf_0202.py` and
+  `SOVRA_BAO_BINARY=... python3 tests/integration/test_ftf_0202_secret_manager.py`
+  failed with exactly the named "expired secrets block call" check; (2)
+  disabled the 404-to-`SecretNotFoundError` mapping in `_request` (`if
+  False and status == 404:`) — the no-DB suite failed 2 named checks
+  (unknown path, rotate-of-nothing refusal) and the real integration suite
+  crashed with a genuine `SecretBackendError` instead of completing
+  cleanly, proving the specific 404 classification is real and
+  load-bearing, not decorative. Both vectors reverted byte-identical
+  (`diff` against the pre-injection copy empty) and both suites
+  re-confirmed clean immediately after each.
+
+  **V:** Independently reconfirmed no regression: full
+  `tests/tasks/test_ftf_*.py` sweep (32 files) all "all checks passed" or
+  equivalent, after `uv sync --all-packages`/`pnpm install --frozen-lockfile`
+  (both pre-existing, previously-undocumented-this-shift sandbox gaps,
+  closed rather than silently worked around — confirmed pre-existing by
+  FTF-0002/FTF-0003/FTF-H001 all failing identically before and passing
+  clean immediately after, with no other change); `ruff check .`/`ruff
+  format --check .` clean repo-wide (148 source files); `mypy .` — 9
+  errors, all the pre-existing, unrelated `alembic` `op`/`context`
+  missing-stub gap across every existing migration file, confirmed
+  byte-for-byte identical on `main` via `git stash`; `pnpm run
+  lint`/`typecheck`/`format:check` clean; `pnpm exec vitest run` — 19/19,
+  no regression; `uv run pytest tests/unit` — 3/3. `git fetch --unshallow
+  origin` first (this sandbox's own shallow-clone artifact, the same
+  pre-existing finding every prior relay/certifying session has already
+  documented), then `validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired` stays `12/12` (`proving_symbol`
+  deliberately empty — this task owns no live HTTP route or wired
+  product-runtime caller yet, matching the FTF-1401/FTF-1601/FTF-1701/
+  FTF-0102/FTF-0104/FTF-0105/FTF-H003 precedent; FTF-0203 "Connection
+  validation" is the later task that will call this module for real).
+  `python3 scripts/status.py` — `36/300 certified · 12 product-true`
+  (unchanged — FTF-0202 is PROVISIONAL, not yet CERTIFIED).
+
+  Wired `.github/workflows/ci.yml` with one new `gate` job step (`uv run
+  python3 tests/tasks/test_ftf_0202.py`) plus a new dedicated
+  `secret-manager-integration` job that builds the identical pinned
+  OpenBao commit fresh on the hosted runner's own real network and runs
+  the real server as a local `-dev` process (no `services:` container
+  needed) — no other job's steps touched.
+
+  **STEP 3 metrics after this shift:** 36/300 certified (unchanged — this
+  shift implements, it does not certify); 1 new provisional this shift
+  (FTF-0202); `scripts/status.py`'s own authoritative "product-true" count
+  stays 12; `product_truth_check.py --fail-on-unwired` — `12/12`. PR
+  opened as PROVISIONAL; `docs/spec-matrix.yaml`/QUEUE.md/
+  `docs/certifications/queue.md` all updated in a second, tracking-doc-only
+  commit on the same branch, matching the established two-commit
+  precedent.
+
+  **STEP 4 stop condition:** (a) this item reached L1-PROVEN/PROVISIONAL —
+  reporting and stopping to await independent Control-plane L2
+  certification, per Law 4 (producer never certifies own work). The
+  standing GitHub Actions runner-provisioning outage (still open per
+  QUEUE.md "Owner actions — current" as of this shift's own last check)
+  and the backlog of open, unreviewed relay PRs remain Control-plane's own
+  responsibility, not touched by this shift.
+
+Previously, 2026-09-22 (live, interactive session) — **FTF-0202 ("Secret-
   manager integration") resolved for real: OpenBao.** The owner raised
   directly, in this conversation, that the decision kept reporting as
   still-unresolved despite having already been told to (at least) three
