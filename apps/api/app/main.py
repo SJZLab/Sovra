@@ -55,11 +55,17 @@ tracked gap for whichever task first wires the OIDC bootstrap path through
 it too, not a production mock of the OIDC/session logic itself, which is
 fully real from this point on.
 
-FTF-0201's own connection router never needs that same secret-resolution
-step at all (see `app/litellm/connection_schema.py`'s own module
-docstring): it only stores/validates a connection's `secret_ref` shape,
-never resolves it to a value, since this task never calls the gateway.
-What it does need is a real database engine: `SOVRA_DATABASE_URL` (FTF-0005's
+FTF-0201's own CRUD routes never need that same secret-resolution step
+(see `app/litellm/connection_schema.py`'s own module docstring): they
+only store/validate a connection's `secret_ref` shape, never resolve it
+to a value. This router's own `/validate` route (FTF-0203, added later
+on the same router) is different -- it is this repository's first real
+caller of `packages/litellm_client/secret_manager_integration.py`'s
+`resolve_secret_ref` for the LiteLLM connection family, using the same
+lazy `secret_manager_config_factory` convention FTF-0500's dataset-source
+router below established (`OpenBaoConfig.from_env`, called fresh per
+request, `None` when unset rather than a boot-time failure).
+What this router does need is a real database engine: `SOVRA_DATABASE_URL` (FTF-0005's
 own `Settings.from_env()`) is trusted here to already be a real connection
 string for the restricted `sovra_app` role in a real deployment -- the
 same migration-owner/app-role operational split every integration test in

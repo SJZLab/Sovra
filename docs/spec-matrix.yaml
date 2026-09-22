@@ -268,15 +268,91 @@ FTF-0202:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0202.py
 FTF-0203:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Connection validation
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201, FTF-0202, FTF-H006
-  proof_state: UNPROVEN
+  evidence_hash: 712ebbf9467e5c8154d24391e1c9b0abad52fd59
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201, FTF-0202,
+    FTF-H006 (all CERTIFIED). This task's own acceptance clause ("Validate real gateway
+    TLS/auth/reachability and safe management/inference capabilities separately") and
+    negative_acceptance ("Timeout, certificate error, invalid token and management-403 produce
+    distinct sanitized states, not connected badge") are built for real:
+    packages/litellm_client/connection_validation.py's validate_connection resolves the
+    connection's own secret_ref through FTF-0202's already-CERTIFIED resolve_secret_ref (this
+    repository's first real caller of it for the LiteLLM connection family), then calls the
+    real gateway's GET /v1/models (Section 3.1) through FTF-H006's already-CERTIFIED
+    guarded_fetch (this repository's first real caller of it) -- InferenceCheckState gives every
+    real distinct failure (invalid_token on a real 401/403, certificate_error on a real
+    ssl.SSLCertVerificationError, timeout, dns_failed, connection_refused, destination_denied at
+    the policy layer, malformed_response, and every distinct secret-resolution failure) its own
+    sanitized state, never folded into a generic "not connected" and never fabricated as
+    "connected". GET /model/info enrichment (Section 3.1's "optional enrichment... 403/404 on
+    enrichment does not invalidate a successful standard model list") is a fully separate
+    ManagementCheckState dimension, only attempted once the inference dimension itself reports
+    connected. No independent schema change (this task's own database_changes clause): the
+    result is computed fresh per call, never persisted onto LiteLLMConnection.
+    apps/api/app/litellm/connection_routes.py adds the real POST .../connections/litellm/
+    {connection_id}/validate route (organization_admin only, same tenant-scoped session and
+    IDOR-denial pattern -- a foreign connection ID under the wrong organization's own path is
+    denied identically to missing, 404, before the real gateway is ever dialed on the wrong
+    tenant's behalf); refuses to validate a revoked connection (409, matching the existing
+    edit-of-revoked precedent). secret_manager_config_factory/validation_policy_factory both
+    follow the exact call-time-only DI convention FTF-0500 established for
+    secret_manager_config_factory, so a real live-Postgres proof of this route can point the
+    policy at a real local test gateway without weakening the production default (no private/
+    loopback allowlist -- a real production LiteLLM gateway is never on a loopback address; an
+    org-level network-policy allowlist for a genuine internal gateway is FTF-0902, a separate,
+    still-unclaimed task, disclosed rather than silently defaulted to "allow everything
+    private"). tests/tasks/test_ftf_0203.py (48 no-DB, no-external-egress checks) -- a real
+    local HTTP server standing in for the OpenBao secret backend (exercising FTF-0202's own
+    resolve_secret_ref unmodified, never mocked); real local HTTPS gateways, with a real,
+    freshly generated CA this suite installs into the sandbox's own system trust store for the
+    duration of the run (removed again in atexit) so the "connected" happy path exercises real,
+    unmodified ssl.create_default_context() certificate validation, and a second, deliberately
+    never-installed self-signed leaf for the certificate_error path; a real accepted connection
+    that never answers within the bounded timeout; a real closed TCP port for
+    connection_refused; DNS-failure classification proven as a direct real-exception-instance
+    unit check of the classifier (Section 84.4's "test doubles... exercise isolated unit...
+    cases" -- this sandbox has no egress-independent way to force a real socket.gaierror). Own
+    fault injection (Law 1): a regex-based mutation of the real on-disk module (survives
+    ruff format reflow, unlike a literal-text match) makes a denied secret-backend token
+    silently fabricate a credential string instead of returning SECRET_ACCESS_DENIED; the
+    mutated module, run in a fresh subprocess against a real gateway configured to accept that
+    exact fabricated string, genuinely reports "connected" -- proving the removed check was
+    load-bearing, not decorative -- then the file is restored byte-identical (confirmed by a
+    direct bytes comparison, not merely re-running the suite).
+    tests/integration/test_ftf_0203_connection_validation.py (real live-Postgres + real local
+    gateway proof, 16 checks) -- two real organizations, a real uvicorn server, real
+    create/validate/revoke through the actual FastAPI route (never a direct call to
+    validate_connection bypassing the HTTP layer); a real reachable+authorized gateway reports
+    connected with a real model_count and management_state=available; a real token-rejecting
+    gateway reports invalid_token, distinct from connected, at the same 200 HTTP status (the
+    negative_acceptance state lives in the response body, matching this task's own acceptance
+    clause 2's "independent review... negative-test evidence recorded" without inventing an
+    HTTP-status-level distinction the acceptance clause never asked for); the cross-organization
+    IDOR case (a real connection ID belonging to org1, requested under org2's own path by a real
+    org2 organization_admin) denied identically to missing (404), confirmed the real gateway
+    is never dialed for that request; a real revoke followed by a real validate attempt refused
+    (409). .github/workflows/ci.yml wires the no-DB suite into the gate job and adds
+    connection-validation-integration (real Postgres service, same pinned image digest every
+    other integration job in this file already uses). The integration suite's own secret
+    backend is a real local HTTP server implementing exactly the OpenBao KV v2 read shape
+    secret_manager_integration.py actually calls, not the real OpenBao binary
+    secret-manager-integration/dataset-source-connection-integration build from source --
+    FTF-0202's own backend behavior is already independently proven there; this task's own
+    acceptance clause is about the gateway TLS/auth/reachability dimension, disclosed as a
+    deliberately right-sized choice, not a silent scope narrowing.
+    scripts/product_truth_check.py --fail-on-unwired stays 14/14 until this submission is
+    independently certified (Law 2); once certified, proving_symbol=validate_connection (a real,
+    non-test source-root match in apps/api/app/litellm/connection_routes.py's own live
+    /validate route) would newly raise it -- left to the certifying session, not set here.
+    Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2
+    review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0203.py
 FTF-0204:
   certification_state: NONE
   criticality: MUST

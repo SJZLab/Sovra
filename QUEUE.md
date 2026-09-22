@@ -1,4 +1,133 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22 (scheduled relay shift) — implemented FTF-0203
+  (Connection validation, deps FTF-0201/FTF-0202/FTF-H006 all CERTIFIED).
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`. Designated branch `claude/wizardly-fermat-0knkdx` did
+  not exist on `origin` (no PR under that name was ever opened, confirmed
+  via `search_pull_requests`) — reset to fresh `origin/main` per the
+  merged-branch instruction rather than reused; a stale local
+  remote-tracking ref for it briefly made `origin/main` look 4 commits
+  behind until `git fetch origin main` was re-run in isolation (the
+  combined `git fetch origin main <missing-branch>` had silently aborted
+  the whole fetch, including `main`, on the missing-ref error — a real,
+  disclosed local-fetch quirk, not a repo-state anomaly). Recomputed the
+  dependency-ready frontier fresh (joining `spec/tasks.json`'s real
+  `dependencies` field against `docs/implementation/TRACKER.json`'s live
+  `status`): 13 items came back — `FTF-0203`, `FTF-0302`, `FTF-0303`,
+  `FTF-0304`, `FTF-0408`, `FTF-04A01`, `FTF-0500A`, `FTF-0500D`,
+  `FTF-0506`, `FTF-0902`, `FTF-1503`, `FTF-1506`, `FTF-R002`. Checked
+  `list_pull_requests` before picking: `FTF-0304` already had two open,
+  unmerged candidate PRs (#194/#195) from other sessions — not picked, to
+  avoid duplicating real work. Picked `FTF-0203` (lowest task ID among the
+  remaining unclaimed items, no external-service ask of its own) — it is
+  also the task `FTF-H006`'s own prior submission named as "this
+  repository's first real caller" of both `guarded_fetch` and
+  `resolve_secret_ref`, so implementing it closes two disclosed "no live
+  caller yet" gaps at once.
+
+  **STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+  packet FTF-0203`. Read `connection_schema.py` (confirms FTF-0203 is
+  literally named as the task that dials the gateway), `connection_routes.py`
+  (confirms only CRUD exists, `/validate` deliberately absent), and
+  `secret_manager_integration.py`/`outbound_guard.py`/`url_policy.py` (the
+  two already-CERTIFIED primitives this task composes). Formed the
+  hypothesis: a new `packages/litellm_client/connection_validation.py`
+  resolves `secret_ref` via `resolve_secret_ref`, calls `GET /v1/models`
+  via `guarded_fetch`, and reports the inference and management
+  (`/model/info`) dimensions as two fully separate, distinctly-stated
+  results — never a single boolean. No code written yet at this point.
+
+  **STEP 2 (E):** Implemented `packages/litellm_client/connection_validation.py`
+  (`InferenceCheckState`/`ManagementCheckState`, `validate_connection`),
+  wired a new `POST .../connections/litellm/{connection_id}/validate`
+  route onto the existing `build_litellm_connection_router` (refuses a
+  revoked connection, 409), and added `validation_policy_factory` as a
+  new injectable alongside the existing `secret_manager_config_factory`
+  so a real live-Postgres proof of the route can point the outbound
+  policy at a real local test gateway without weakening the production
+  default (no loopback allowlist). Wrote `tests/tasks/test_ftf_0203.py`
+  (48 no-DB checks — real local HTTP/HTTPS servers, a real ephemeral CA
+  installed into this sandbox's own system trust store so the "connected"
+  path exercises real, unmodified TLS certificate validation) and
+  `tests/integration/test_ftf_0203_connection_validation.py` (16 real
+  live-Postgres + real local gateway checks, mirroring FTF-0201's own
+  fixture/IDOR pattern). One real design correction found before
+  submission (Law 1, disclosed): the route's default validation policy
+  correctly denies loopback destinations (SSRF protection), which also
+  meant the integration test could never observe a real "connected"
+  result against any locally reachable gateway — this sandbox has no live
+  external network to test against either. Fixed by making the policy
+  injectable (`validation_policy_factory`) rather than weakening the
+  production default, mirroring the existing DI convention exactly.
+
+  **STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays
+  `14/14` (unchanged — Law 2, certification is a separate Control-plane
+  act; `proving_symbol` deliberately left blank in `docs/spec-matrix.yaml`
+  rather than the producer claiming its own product-true count).
+  `scripts/status.py` stays `45/300 certified · 14 product-true`.
+  `scripts/validate_spec.py --strict` clean after `git fetch --unshallow`
+  (this sandbox's own pre-existing, already-documented shallow-clone
+  artifact). Full repo-wide `ruff check .`/`ruff format --check .` clean
+  (180 files). `mypy .` clean (180 files) — found and fixed one real
+  typing gap in this task's own test file (`Path | None` module globals
+  passed where a plain `Path` was declared; fixed by widening the
+  parameter type and asserting once inside the shared helper rather than
+  at every call site). `pnpm run lint`/`typecheck` clean after `pnpm
+  install` resolved this fresh sandbox's own missing `node_modules` (same
+  documented precedent as prior shifts). Full `tests/tasks/test_ftf_*.py`
+  sweep run directly: every file passes. Real live-Postgres integration
+  evidence produced locally (`sovra_migrate` role + `sovra_ftf0203`
+  database, same directly-installed PostgreSQL 16 precedent FTF-0004/
+  FTF-0102/FTF-0201/FTF-0500 already established) — disclosed, not
+  hidden: this shared local cluster's `sovra_app` role is cluster-global,
+  not per-database, so running two different tasks' migrations back to
+  back in the same local cluster without dropping the role/database
+  between runs collides on `CREATE ROLE sovra_app` — a real local-sandbox
+  artifact of reusing one cluster across tasks, not a defect in either
+  migration; CI's own per-job fresh `services: postgres` container never
+  hits this. `FTF-0201`'s own integration suite re-confirmed passing
+  afterward (no regression from this task's edits to the shared
+  `connection_routes.py` file). Fault injection (Law 1): a regex-based
+  (not literal-text) mutation of the real on-disk `connection_validation.py`
+  makes a denied secret-backend token silently fabricate a credential;
+  run in a fresh subprocess against a real gateway configured to accept
+  that exact fabricated string, the mutated module genuinely reports
+  "connected" — proving the removed `SecretAccessDeniedError` handling
+  is load-bearing, not decorative — then the file is restored
+  byte-identical (direct bytes comparison, not merely a clean re-run).
+
+  Task contract re-pulled and matched: acceptance ("Validate real gateway
+  TLS/auth/reachability and safe management/inference capabilities
+  separately") and negative_acceptance ("Timeout, certificate error,
+  invalid token and management-403 produce distinct sanitized states, not
+  connected badge") both genuinely met by the diff — every one of those
+  five failure modes has its own real, live test proving it, not merely
+  asserted. `files:` scope (`packages/litellm-client/connection_validation.py`
+  in the packet, refined to `packages/litellm_client/connection_validation.py`
+  — a hyphenated segment is not a valid Python package name, same
+  refinement precedent `secret_manager_integration.py` already
+  established) matches the diff.
+
+  `docs/spec-matrix.yaml` set to `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN`, `evidence_hash` set to the implementation
+  commit (`712ebbf9467e5c8154d24391e1c9b0abad52fd59`). PR opened as
+  PROVISIONAL, not self-certified (Law 4) — awaiting independent
+  Control-plane L2 review. Full entry:
+  `docs/certifications/queue.md`.
+
+## Next shift
+FTF-0203 is now PROVISIONAL, awaiting independent Control-plane L2
+  certification (own PR, title `[relay] FTF-0203: Connection validation`).
+  Once certified, it newly unblocks nothing on its own dependency chain
+  by itself (`FTF-0203` is a leaf dependency for other tasks per
+  `docs/TASK_INDEX.md`, not a blocker any currently-frontier item is
+  waiting on) — re-check the dependency-ready frontier fresh next shift
+  rather than assuming any specific item is unblocked by this one.
+  `FTF-0304` still has two open, unmerged candidate PRs (#194/#195) from
+  other sessions — do not redo it; either certify one of those or leave
+  it for its own producer session.
+
+## Next shift
 Updated: 2026-09-22T19:05:00Z (scheduled relay shift) — implemented FTF-H006
   (Shared outbound URL and credential guard, deps FTF-0005/FTF-0201/FTF-0202/
   FTF-H003 all CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean

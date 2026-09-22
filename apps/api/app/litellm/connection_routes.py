@@ -1,19 +1,28 @@
 """Live `/api/v1/organizations/{organization_id}/connections/litellm` routes
-(FTF-0201, Section 2-3/38/45/65/77/81) -- the second live-wired
+(FTF-0201/FTF-0203, Section 2-3/38/45/65/77/81) -- the second live-wired
 product-runtime path in this repository, after FTF-0101's `/auth/*`.
 
 Scope (disclosed explicitly, not hidden -- see this task's own
 docs/certifications/queue.md submission entry): this router implements
-**only** create/get/list/edit/revoke. It deliberately does **not**
-declare `validate`/`sync-models`/`syncs`/`/models`/`/models/{id}/probe`
-routes, even as a stub or a `501` -- those require a real call to the
-organization's actual LiteLLM gateway and are FTF-0203 ("Connection
-validation"), FTF-0204 ("`/v1/models` discovery") and FTF-0210 ("Real
+create/get/list/edit/revoke (FTF-0201) plus, as of FTF-0203, a real
+`/validate` route. It deliberately does **not** declare `sync-models`/
+`syncs`/`/models`/`/models/{id}/probe` routes, even as a stub or a `501`
+-- those require FTF-0204 ("`/v1/models` discovery") and FTF-0210 ("Real
 chat probe")'s own, later, separately dependency-gated acceptance
 criteria (see `docs/TASK_INDEX.md`). Declaring that surface here without
 a real backing call would be exactly the "placeholder endpoint" Law 11
 and this task's own acceptance clause ("no placeholder endpoints")
 forbid.
+
+FTF-0203's own `/validate` route is this repository's first real caller
+of both `packages/litellm_client/secret_manager_integration.py`
+(FTF-0202, resolves `secret_ref` to a real credential) and
+`packages/security/outbound_guard.py` (FTF-H006, the only module allowed
+to dial the resolved gateway) -- see
+`packages/litellm_client/connection_validation.py`'s own module
+docstring for the full design. No independent schema change: the
+validation result is computed fresh on every call and returned directly
+in the response, never persisted onto `LiteLLMConnection`.
 
 Path shape (refined from the task packet's own abbreviated
 `api_contract: "/api/v1/connections/litellm"` to include the real
@@ -37,15 +46,33 @@ create/read/versioned update."
 
 from __future__ import annotations
 
+import os
+import sys
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth.rbac_middleware import (
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from packages.litellm_client.connection_validation import (  # noqa: E402
+    ConnectionValidationResult,
+    default_connection_validation_policy,
+    validate_connection,
+)
+from packages.litellm_client.secret_manager_integration import (  # noqa: E402
+    OpenBaoConfig,
+    SecretManagerConfigurationError,
+)
+from packages.security.url_policy import ConnectionPolicy  # noqa: E402
+
+from app.auth.rbac_middleware import (  # noqa: E402
     AuthorizedContext,
     PrincipalResolver,
     Role,
@@ -54,9 +81,9 @@ from app.auth.rbac_middleware import (
     default_role_lookup,
     require_role,
 )
-from app.auth.tenant_isolation_query_guards import TenantContextError
-from app.db.tenant_context import TenantContext, tenant_scoped_session_for
-from app.litellm.connection_crud import (
+from app.auth.tenant_isolation_query_guards import TenantContextError  # noqa: E402
+from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
+from app.litellm.connection_crud import (  # noqa: E402
     ActorInfo,
     ConnectionNotFoundError,
     ConnectionStateError,
@@ -66,7 +93,7 @@ from app.litellm.connection_crud import (
     revoke_connection,
     update_connection,
 )
-from app.litellm.connection_schema import LiteLLMConnection
+from app.litellm.connection_schema import LiteLLMConnection  # noqa: E402
 
 __all__ = ["CONNECTION_ADMIN_ROLES", "build_litellm_connection_router"]
 
@@ -76,6 +103,31 @@ CONNECTION_ADMIN_ROLES: frozenset[Role] = frozenset({Role.ORGANIZATION_ADMIN})
 
 _COLLECTION_PATH = "/api/v1/organizations/{organization_id}/connections/litellm"
 _ITEM_PATH = _COLLECTION_PATH + "/{connection_id}"
+_VALIDATE_PATH = _ITEM_PATH + "/validate"
+
+
+def _default_secret_manager_config() -> OpenBaoConfig | None:
+    """Same lazy, call-time-only convention `dataset_source_connection_routes.py`
+    (FTF-0500) already established: `None` when unset, never an exception
+    at import/app-boot time -- a process that never validates a connection
+    never needs `SOVRA_OPENBAO_ADDR`/`SOVRA_OPENBAO_TOKEN` set at all."""
+    try:
+        return OpenBaoConfig.from_env(os.environ)
+    except SecretManagerConfigurationError:
+        return None
+
+
+def _serialize_validation(result: ConnectionValidationResult) -> dict[str, object]:
+    """Content-free by construction: `result.detail` is already sanitized
+    by `connection_validation.py` (never a raw exception message, never a
+    resolved credential, never a raw gateway response body)."""
+    return {
+        "inference_state": result.inference_state.value,
+        "management_state": result.management_state.value,
+        "model_count": result.model_count,
+        "detail": result.detail,
+        "checked_at": result.checked_at.isoformat(),
+    }
 
 
 def _serialize(connection: LiteLLMConnection) -> dict[str, object]:
@@ -144,8 +196,15 @@ def build_litellm_connection_router(
     *,
     principal_resolver: PrincipalResolver = default_principal_resolver,
     role_lookup: RoleLookup = default_role_lookup,
+    secret_manager_config_factory: Callable[
+        [], OpenBaoConfig | None
+    ] = _default_secret_manager_config,
+    validation_policy_factory: Callable[
+        [], ConnectionPolicy
+    ] = default_connection_validation_policy,
 ) -> APIRouter:
-    """Real FastAPI router for FTF-0201's CRUD surface.
+    """Real FastAPI router for FTF-0201's CRUD surface plus FTF-0203's
+    `/validate` route.
 
     `session_factory` is the already-configured `sessionmaker` bound to
     the restricted `sovra_app` role's engine -- this router never opens
@@ -155,6 +214,17 @@ def build_litellm_connection_router(
     them -- fail-closed defaults until a real session-reader/Membership
     lookup is wired in (same disclosed "no live Membership table yet"
     gap already carried by FTF-0103/FTF-0106).
+    `secret_manager_config_factory` follows the exact same call-time-only
+    injection convention `dataset_source_connection_routes.py` (FTF-0500)
+    established -- called fresh on every `/validate` request, never
+    cached at router-build time, so a rotated `SOVRA_OPENBAO_TOKEN` takes
+    effect on the next request without an app restart. `validation_policy_factory`
+    defaults to `default_connection_validation_policy` (no private/loopback
+    allowlist -- a real production LiteLLM gateway is never on a loopback
+    address) and is injected the same way so a real live-Postgres proof of
+    this route can point it at a real local test gateway without weakening
+    the production default -- see `tests/integration/
+    test_ftf_0203_connection_validation.py`'s own module docstring.
     """
     router = APIRouter()
     admin_dependency = Depends(
@@ -221,6 +291,40 @@ def build_litellm_connection_router(
         except (ConnectionNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         return JSONResponse(body, status_code=200)
+
+    @router.post(_VALIDATE_PATH)
+    async def validate(
+        organization_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        ctx: AuthorizedContext = admin_dependency,
+    ) -> JSONResponse:
+        """FTF-0203: dials the connection's own real gateway. The stored
+        `base_url`/`secret_ref` are read inside the same tenant-scoped
+        session as every other route on this connection (never trusting a
+        client-supplied value for either) -- the foreign-connection-ID
+        IDOR case is denied identically to a missing connection, matching
+        every other route here."""
+        del organization_id
+        tenant_context = TenantContext.from_authorized_context(ctx)
+        try:
+            with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                connection = get_connection(session, tenant_context, connection_id)
+                if connection.status == "revoked":
+                    raise ConnectionStateError("cannot validate a revoked connection")
+                base_url = connection.base_url
+                secret_ref = connection.secret_ref
+        except (ConnectionNotFoundError, TenantContextError) as exc:
+            raise HTTPException(status_code=404, detail="not_found") from exc
+        except ConnectionStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        result = validate_connection(
+            base_url=base_url,
+            secret_ref=secret_ref,
+            secret_config=secret_manager_config_factory(),
+            policy=validation_policy_factory(),
+        )
+        return JSONResponse(_serialize_validation(result), status_code=200)
 
     @router.patch(_ITEM_PATH)
     async def update(

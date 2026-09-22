@@ -184,6 +184,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1302.py
       - name: FTF-0500 negative-test proof (DatasetSourceConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0500.py
+      - name: FTF-0203 negative-test proof (Connection validation, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0203.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1133,3 +1135,58 @@ jobs:
           bao version
       - name: Prove the real DatasetSourceConnection evidence against the live database and live OpenBao
         run: uv run python3 tests/integration/test_ftf_0500_dataset_source_connection.py
+
+  connection-validation-integration:
+    # FTF-0203: real Postgres + real gateway connection-validation
+    # evidence (Section 2-3/38/65/77/81) -- two real organizations, a
+    # real uvicorn server proving the live `/validate` route end-to-end:
+    # a real reachable+authorized local HTTPS gateway (connected, real
+    # model_count, real management-enrichment available), a real
+    # token-rejecting gateway (invalid_token, a distinct state, never
+    # connected -- this task's own negative_acceptance), the
+    # cross-organization IDOR case denied identically to missing (404),
+    # and a revoked connection refused validation (409) --
+    # tests/integration/test_ftf_0203_connection_validation.py. A real,
+    # ephemeral CA this suite generates and installs into the runner's
+    # own system trust store (removed again in `atexit`) so
+    # `packages/security/outbound_guard.py`'s own unmodified
+    # `ssl.create_default_context()` genuinely validates it -- ubuntu-
+    # latest ships openssl/update-ca-certificates already, no extra
+    # install step needed.
+    #
+    # The secret backend here is a real local HTTP server implementing
+    # exactly the OpenBao KV v2 read shape `secret_manager_integration.py`
+    # (FTF-0202, already CERTIFIED, exercised here unmodified) actually
+    # calls -- not the real OpenBao binary `secret-manager-integration`/
+    # `dataset-source-connection-integration` build from source. FTF-0202's
+    # own backend behavior is already independently proven there; this
+    # task's own acceptance clause is about the gateway TLS/auth/
+    # reachability dimension, not re-proving OpenBao, so a lighter, real
+    # (never mocked) HTTP fixture is the right-sized proof here, disclosed
+    # rather than silently reusing a heavier build for no added coverage.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest already pinned by every prior live-Postgres integration job in this file
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0203
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0203"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0203
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real connection-validation evidence against the live database and live gateway
+        run: uv run python3 tests/integration/test_ftf_0203_connection_validation.py

@@ -10263,3 +10263,176 @@ credential guard"). Ran `scripts.task_claim.sync_certified_status()` —
 `['FTF-H006']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-H006 moved to
 Done, Certified count bumped to 45/300, Product-true stays 14/14
 (unchanged — this task adds no live caller by design).
+
+## 2026-09-22 — FTF-0203 — Connection validation
+- **PR:** to be opened from `claude/wizardly-fermat-0knkdx` → `main`,
+  title `[relay] FTF-0203: Connection validation`.
+- **Commits:** `c3cac3a` (generated task packet), `712ebbf9467e5c8154d24391e1c9b0abad52fd59`
+  (implementation — `packages/litellm_client/connection_validation.py`,
+  `apps/api/app/litellm/connection_routes.py`, `apps/api/app/main.py`,
+  `tests/tasks/test_ftf_0203.py`, `tests/integration/
+  test_ftf_0203_connection_validation.py`, `.github/workflows/ci.yml`),
+  and a third, tracking-doc-only commit (`docs/spec-matrix.yaml`/
+  `QUEUE.md`/`PROGRESS.md`/this entry) on the same branch, matching the
+  established two/three-commit precedent.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  This session's designated branch (`claude/wizardly-fermat-0knkdx`) had
+  no PR ever opened under that name anywhere in the repo (confirmed via
+  `search_pull_requests`/`list_pull_requests`) and no longer existed on
+  `origin` — reset to fresh `origin/main` per the merged-branch
+  instruction. Recomputed the dependency-ready frontier fresh, joining
+  `spec/tasks.json`'s real `dependencies` field against
+  `docs/implementation/TRACKER.json`'s live `status`: `FTF-0203`,
+  `FTF-0302`, `FTF-0303`, `FTF-0304`, `FTF-0408`, `FTF-04A01`,
+  `FTF-0500A`, `FTF-0500D`, `FTF-0506`, `FTF-0902`, `FTF-1503`,
+  `FTF-1506`, `FTF-R002` — 13 genuinely dependency-ready items.
+  `FTF-0304` already has two open, unmerged candidate PRs (#194/#195)
+  from other sessions — not picked, to avoid duplicating real work.
+  Picked `FTF-0203`: lowest task ID among the remaining unclaimed items,
+  no external-service ask of its own, and the task FTF-H006's own prior
+  submission explicitly named as "this repository's first real caller"
+  of both `guarded_fetch` and `resolve_secret_ref`.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0203 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — `api_contract`
+  ("/api/v1/connections/litellm; validate/sync-models/syncs; /models and
+  /models/{id}/probe" — this task's own acceptance scopes it to
+  `validate` only, per `connection_routes.py`'s own prior disclosure that
+  `sync-models`/`/models`/probe are FTF-0204/FTF-0210's), acceptance
+  ("Validate real gateway TLS/auth/reachability and safe
+  management/inference capabilities separately"), negative_acceptance
+  ("Timeout, certificate error, invalid token and management-403 produce
+  distinct sanitized states, not connected badge"), `database_changes`:
+  "No independent schema change", `files: [packages/litellm-client/
+  connection_validation.py, tests/tasks/test_ftf_0203.py]`,
+  `dependencies: [FTF-0201, FTF-0202, FTF-H006]` (all CERTIFIED).
+- **Scope disclosed, not hidden:** `files:` path refined from the
+  packet's own hyphenated `packages/litellm-client/` to
+  `packages/litellm_client/` (a hyphenated directory segment is not a
+  valid Python package/module name — same refinement precedent
+  `secret_manager_integration.py` already established under the exact
+  same `packages/litellm_client/` directory). The `api_contract`'s wider
+  `sync-models`/`/models`/`/models/{id}/probe` surface is deliberately
+  not declared here either, matching `connection_routes.py`'s own
+  standing disclosure — those remain FTF-0204/FTF-0210's own, later,
+  separately dependency-gated acceptance criteria.
+- **Design:** `packages/litellm_client/connection_validation.py` —
+  `validate_connection` resolves the connection's own `secret_ref`
+  through FTF-0202's already-CERTIFIED `resolve_secret_ref` (this
+  repository's first real caller of it for the LiteLLM connection
+  family), then calls the real gateway's `GET /v1/models` (Section 3.1)
+  through FTF-H006's already-CERTIFIED `guarded_fetch` (this
+  repository's first real caller of it). `InferenceCheckState` gives
+  every real distinct failure its own sanitized state (`invalid_token`
+  on a real 401/403, `certificate_error` on a real
+  `ssl.SSLCertVerificationError`, `timeout`, `dns_failed`,
+  `connection_refused`, `destination_denied` at the policy layer,
+  `malformed_response`, and every distinct secret-resolution failure) —
+  never folded into a generic "not connected" and never fabricated as
+  "connected". `GET /model/info` enrichment is a fully separate
+  `ManagementCheckState` dimension, only attempted once the inference
+  dimension itself reports `connected` (Section 3.1: "403/404 on
+  enrichment does not invalidate a successful standard model list").
+  `apps/api/app/litellm/connection_routes.py` adds the real `POST
+  .../connections/litellm/{connection_id}/validate` route
+  (`organization_admin` only, same tenant-scoped session and
+  IDOR-denial pattern as every other route on this router — a foreign
+  connection ID under the wrong organization's own path is denied
+  identically to missing, 404, before the real gateway is ever dialed on
+  the wrong tenant's behalf); refuses to validate a revoked connection
+  (409, matching the existing edit-of-revoked precedent).
+  `secret_manager_config_factory`/`validation_policy_factory` both
+  follow the exact call-time-only DI convention FTF-0500 established.
+- **Real design correction found before submission (Law 1, disclosed):**
+  the route's default validation policy correctly denies loopback
+  destinations (SSRF protection, Section 65.4) — which also meant the
+  integration proof could never observe a real "connected" result
+  against any locally reachable gateway, since this sandbox has no live
+  external network to test against either (the relay sandbox's own
+  standing "cannot reach external APIs with open egress" constraint).
+  Fixed by adding `validation_policy_factory` as a new injectable,
+  mirroring the existing `secret_manager_config_factory` DI convention
+  exactly, rather than weakening the production default.
+- **Evidence — `tests/tasks/test_ftf_0203.py`** (48 no-DB,
+  no-external-egress checks): a real local HTTP server standing in for
+  the OpenBao secret backend (exercising FTF-0202's own
+  `resolve_secret_ref` unmodified, never mocked); real local HTTPS
+  gateways, with a real, freshly generated CA this suite installs into
+  the sandbox's own system trust store for the run's duration (removed
+  again in `atexit`) so the "connected" happy path exercises real,
+  unmodified `ssl.create_default_context()` certificate validation, and
+  a second, deliberately never-installed self-signed leaf for the
+  `certificate_error` path; a real accepted connection that never
+  answers within the bounded timeout; a real closed TCP port for
+  `connection_refused`; DNS-failure classification proven as a direct
+  real-exception-instance unit check of the classifier (this sandbox has
+  no egress-independent way to force a real `socket.gaierror` — Section
+  84.4's "test doubles... exercise isolated unit... cases").
+- **Own fault injection (Law 1):** a regex-based mutation of the real
+  on-disk module (survives a future `ruff format` reflow, unlike a
+  literal-text match) makes a denied secret-backend token silently
+  fabricate a credential string instead of returning
+  `SECRET_ACCESS_DENIED`; run in a fresh subprocess against a real
+  gateway configured to accept that exact fabricated string, the mutated
+  module genuinely reports `connected` — proving the removed
+  `SecretAccessDeniedError` handling is load-bearing, not decorative.
+  Reverted from the original bytes; `read_bytes()` comparison confirmed
+  byte-identical; suite re-ran clean.
+- **Evidence — `tests/integration/test_ftf_0203_connection_validation.py`**
+  (real live-Postgres + real local gateway proof, 16 checks, mirroring
+  FTF-0201's own fixture/IDOR pattern): two real organizations, a real
+  uvicorn server, real create/validate/revoke through the actual FastAPI
+  route (never a direct call to `validate_connection` bypassing the HTTP
+  layer); a real reachable+authorized gateway reports `connected` with a
+  real `model_count` and `management_state=available`; a real
+  token-rejecting gateway reports `invalid_token`, distinct from
+  `connected`, at the same 200 HTTP status (the negative_acceptance
+  state lives in the response body); the cross-organization IDOR case (a
+  real connection ID belonging to org1, requested under org2's own path
+  by a real org2 `organization_admin`) denied identically to missing
+  (404); a real revoke followed by a real validate attempt refused
+  (409). Produced against a real, directly-installed local PostgreSQL 16
+  (`sovra_migrate` role + `sovra_ftf0203` database, same precedent
+  FTF-0004/FTF-0102/FTF-0201/FTF-0500 already established); `FTF-0201`'s
+  own integration suite re-confirmed passing afterward against a fresh
+  database (no regression to the shared `connection_routes.py` file).
+  Disclosed, not hidden: this shared local cluster's `sovra_app` role is
+  cluster-global, not per-database, so re-running two different tasks'
+  migrations back to back in the same local cluster without dropping the
+  role/database between runs collides on `CREATE ROLE sovra_app` — a
+  real local-sandbox artifact of reusing one cluster across tasks, not a
+  defect in either migration; CI's own per-job fresh `services: postgres`
+  container never hits this.
+- **CI:** `.github/workflows/ci.yml` wires the no-DB suite into the
+  `gate` job and adds `connection-validation-integration` (real Postgres
+  service, same pinned image digest every other integration job already
+  uses). The integration suite's own secret backend is a real local HTTP
+  server implementing exactly the OpenBao KV v2 read shape
+  `secret_manager_integration.py` actually calls, not the real OpenBao
+  binary `secret-manager-integration`/`dataset-source-connection-integration`
+  build from source — FTF-0202's own backend behavior is already
+  independently proven there; this task's own acceptance clause is about
+  the gateway TLS/auth/reachability dimension, so a lighter, real (never
+  mocked) HTTP fixture is the right-sized proof here, disclosed rather
+  than silently reusing a heavier build for no added coverage.
+- **Full regression:** `ruff check .`/`ruff format --check .` clean (180
+  files). `mypy .` clean (180 files) — found and fixed one real typing
+  gap in this task's own test file (`Path | None` module globals passed
+  where a plain `Path` was declared; fixed by widening the parameter
+  type and asserting once inside the shared helper). `pnpm run
+  lint`/`typecheck` clean after `pnpm install` resolved this fresh
+  sandbox's own missing `node_modules`. `scripts/validate_spec.py
+  --strict` clean after `git fetch --unshallow` (this sandbox's own
+  pre-existing, already-documented shallow-clone artifact). Full
+  `tests/tasks/test_ftf_*.py` sweep run directly: every file passes.
+  `product_truth_check.py --fail-on-unwired`: `14/14`, unchanged (Law 2
+  — certification is a separate Control-plane act; `proving_symbol`
+  deliberately left blank in `docs/spec-matrix.yaml` rather than the
+  producer claiming its own product-true count — once certified,
+  `validate_connection` would be a real, non-test source-root match in
+  `connection_routes.py`'s own live `/validate` route). `scripts/status.py`
+  stays `45/300 certified · 14 product-true` (unchanged — PROVISIONAL,
+  not yet CERTIFIED, Law 2).
+- Dependencies FTF-0201/FTF-0202/FTF-H006 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**
