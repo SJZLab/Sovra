@@ -1,4 +1,32 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22 (same-shift follow-up) — **flagged, not silently
+  normalized: PR #200 (FTF-0203) was merged to `main` directly by the
+  repo owner (`samerzakaria`, GitHub `merged_by`) at
+  2026-09-22T21:31:45Z, ~13 minutes after opening and with CI fully
+  green (25/25) but with `get_reviews` returning empty (0 reviews) and
+  no `docs/certifications/ledger.md` entry -- no independent
+  Control-plane L2 review happened. The GitHub merge commit
+  (`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`) carries the title
+  "Control plane: certify FTF-0203 (Connection validation)" -- this is
+  **only** GitHub's own merge-commit title (a plain two-parent merge of
+  this branch into `main`, diff identical to the PR), not a real
+  certifying commit: confirmed directly by reading
+  `docs/spec-matrix.yaml` **on `main`, post-merge**, which still reads
+  `certification_state: PROVISIONAL` (unchanged from this task's own
+  submission), and by the empty ledger search above. Nothing in the
+  tracker was inflated (Law 2 intact) and this session did not self-
+  certify (Law 4 intact) -- this note exists so a future Control-plane
+  session (or the owner) does not mistake the merge-commit title for
+  real certification evidence the way CLAUDE.md's own
+  `BRANCH_PROTECTION` note already warns a bare status claim can be
+  mistaken for machine-verified fact. FTF-0203's own code is live on
+  `main` right now in a genuinely PROVISIONAL, not-yet-independently-
+  reviewed state -- a real Control-plane L2 review (own reproduction,
+  own fault injection distinct from this task's own two, task-contract
+  re-pull) against the actual `main` tip is still owed before
+  `certification_state`/`proof_state` may honestly move, same as any
+  other PROVISIONAL item's own path to CERTIFIED.
+
 Updated: 2026-09-22 (scheduled relay shift) — implemented FTF-0203
   (Connection validation, deps FTF-0201/FTF-0202/FTF-H006 all CERTIFIED).
   STEP 0: `sha256sum CLAUDE.md` verified clean against the committed

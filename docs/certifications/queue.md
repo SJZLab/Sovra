@@ -10436,3 +10436,34 @@ Done, Certified count bumped to 45/300, Product-true stays 14/14
 - Dependencies FTF-0201/FTF-0202/FTF-H006 confirmed genuinely
   `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
 - **Submitted PROVISIONAL, not self-certified (Law 4).**
+
+## 2026-09-22 — FTF-0203 — flagged, not certified: PR #200 merged without independent review
+- PR #200 (FTF-0203, submitted PROVISIONAL above) was merged directly to
+  `main` by the repo owner (`samerzakaria`, GitHub API `merged_by`) at
+  `2026-09-22T21:31:45Z`, roughly 13 minutes after opening. CI was fully
+  green (25/25 real checks, including the fixed
+  `connection-validation-integration`), but `pull_request_read
+  get_reviews` on the PR returns an empty list -- zero reviews -- and no
+  `docs/certifications/ledger.md` entry exists for `FTF-0203` (checked
+  directly, only incidental mentions inside other tasks' own notes).
+- The merge commit `c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4` carries the
+  title "Control plane: certify FTF-0203 (Connection validation)". Read
+  directly: this is a plain two-parent GitHub merge commit (`Merge:
+  4e2699b 9f94a3c`) whose diff is byte-identical to the PR's own diff --
+  not a separate certifying commit with its own evidence, session ID, or
+  fault injection. Confirmed by reading `docs/spec-matrix.yaml` on
+  `origin/main` **after** the merge: `FTF-0203.certification_state` still
+  reads `PROVISIONAL`, unchanged from this task's own submission commit.
+- **Disclosed, not silently normalized or silently "fixed" either way**
+  (Law 2/9): the tracker was not inflated to `CERTIFIED` (nothing to
+  revert), and this session did not attempt to retroactively certify its
+  own submitted work (Law 4). FTF-0203's code is live on `main` right
+  now in a genuinely PROVISIONAL state with no independent review on
+  record. A real Control-plane L2 review against the actual `main` tip
+  (own reproduction, own fault injection distinct from this task's own
+  two, task-contract re-pull) is still owed before
+  `certification_state`/`proof_state` may honestly move -- flagged for
+  the next Control-plane session (or the owner directly) to act on, same
+  as the FTF-0406/0407 CI-gate-wiring gap and the FTF-0201 IDOR
+  defense-in-depth finding were flagged before it, not silently patched
+  over by the session that found them.

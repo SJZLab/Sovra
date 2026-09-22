@@ -12647,3 +12647,47 @@ dependency-ready frontier fresh next shift. `FTF-0304` still has two
 open, unmerged candidate PRs (#194/#195) from other sessions — leave
 those for their own producer sessions or a certifier, do not redo the
 work.
+
+## 2026-09-22 — Relay same-shift follow-up: PR #200 merged without independent review — flagged
+Subscribed to PR #200 for CI monitoring. First CI run found a real bug
+in this task's own code (disclosed, fixed, not hidden): the CA-install
+helper in both `tests/tasks/test_ftf_0203.py` and
+`tests/integration/test_ftf_0203_connection_validation.py` wrote
+directly to `/usr/local/share/ca-certificates/` and called
+`update-ca-certificates` without `sudo` — worked in this sandbox (root)
+but failed with a real `PermissionError` on GitHub Actions'
+non-root `runner` user. Fixed by routing both privileged steps through
+`sudo` (confirmed passwordless via `sudo -n true` in `_UPDATE_CA_AVAILABLE`,
+degrading to the same disclosed skip path as a genuinely sudo-less
+environment otherwise). Re-verified both suites pass locally; pushed;
+new CI run went 25/25 green (including `connection-validation-integration`),
+`mergeable_state: clean`, no review threads.
+
+**Then PR #200 was merged** — by the repo owner directly
+(`samerzakaria`, GitHub `merged_by`), ~13 minutes after opening, CI green
+but zero reviews recorded. The merge commit's own title, "Control plane:
+certify FTF-0203 (Connection validation)", resembles this repo's
+established automated-certification commit-message convention, but is
+in fact only GitHub's own two-parent merge-commit title — confirmed by
+reading `docs/spec-matrix.yaml` on `origin/main` post-merge, which still
+reads `certification_state: PROVISIONAL`, and by an empty
+`docs/certifications/ledger.md` search for `FTF-0203`. No independent
+Control-plane L2 review occurred. Nothing was silently inflated (Law 2)
+and this session did not retroactively self-certify (Law 4) — instead
+flagged directly in `QUEUE.md`/`docs/certifications/queue.md` so a
+future Control-plane session (or the owner) does not mistake the
+merge-commit title for real certification evidence. FTF-0203's code is
+live on `main` right now, genuinely PROVISIONAL, with a real independent
+L2 review still owed against the actual `main` tip before
+`certification_state`/`proof_state` may honestly move.
+
+## Next shift
+FTF-0203's code is on `main` (via PR #200, merge commit
+`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`) but still genuinely
+PROVISIONAL — a real Control-plane L2 review (own reproduction, own
+fault injection distinct from the producer's own two, task-contract
+re-pull) is owed before certification_state/proof_state may move, same
+DoD bar as any other PROVISIONAL item. `scripts/status.py`/
+`product_truth_check.py` stay unchanged (45/300 certified · 14
+product-true) until that real review happens. `FTF-0304` still has two
+open, unmerged candidate PRs (#194/#195) from other sessions.
