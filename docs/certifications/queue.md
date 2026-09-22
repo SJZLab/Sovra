@@ -9778,3 +9778,168 @@ the start of this shift (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/
 FTF-1702/FTF-R016) — all now independently CERTIFIED, and all six
 stale duplicate "Control plane: certify" candidate PRs (#179-185)
 closed as superseded.
+
+## 2026-09-22 — FTF-0500 — DatasetSourceConnection schema/API/RBAC
+- **PR:** opened from `claude/wizardly-fermat-i9x1tk` → `main`, title
+  `[relay] FTF-0500: DatasetSourceConnection schema/API/RBAC`.
+- **Commits:** `ec6a3e7` (implementation: schema/CRUD/routes/migration/
+  tests/CI wiring), `ce824dd` (phase-05 contract freeze), and a third,
+  tracking-doc-only commit (`docs/spec-matrix.yaml`/`QUEUE.md`/
+  `PROGRESS.md`/this entry) on the same branch, matching the established
+  two/three-commit precedent.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  This session's own branch already matched `main`'s tip at `8f33de0`
+  (PR #193, the last of the seven Control-plane certifications). Cross-
+  checked live GitHub state via `list_pull_requests` before picking:
+  two open PRs (#194/#195), both `[relay] FTF-0304: Local artifact
+  resolver` from other sessions — not this relay's own submissions, not
+  picked to avoid duplicating real work. Recomputed the dependency-ready
+  frontier fresh by joining `docs/spec-matrix.yaml`'s live
+  `certification_state` against `docs/TASK_INDEX.md`'s real
+  `Dependencies` column (not trusted from any prior shift's note alone):
+  `FTF-0304` (claimed by #194/#195), `FTF-0408`/`FTF-0902` (both re-
+  confirmed still genuinely blocked — no real `AgentManifest.mandate_json`
+  storage exists anywhere in this repository yet; no real CNI-enforcing
+  Kubernetes cluster in this sandbox), `FTF-1503`, `FTF-1506`, `FTF-H006`
+  (higher task IDs, not yet examined once a lower, genuinely dependency-
+  ready, unclaimed item was found). `FTF-0500`'s own dependencies
+  (`FTF-0401`, `FTF-0202`, `FTF-H003`) were independently confirmed
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0500 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Freeze the minimum
+  shared phase interface and domain schemas at the declared owner paths
+  ... Create purpose-scoped source grants and authorization before
+  import; link every dataset to approved source"), negative_acceptance
+  ("Source allowed only evaluation cannot be trained; grant revocation
+  propagates to future derivative use"), `database_changes: "Own forward
+  Alembic migration for this resource; tenant/composite constraints/RLS
+  and upgrade tests per Sections 6/65/71. Serialize migration chain."`,
+  `shared_lock_required: [contracts:05, migration:application]`,
+  `dependencies: [FTF-0401, FTF-0202, FTF-H003]` (all CERTIFIED),
+  `contract_owner: FTF-0500` (this task is the phase-05 interface owner —
+  `packages/contracts/openapi/05-interface.yaml`/`packages/contracts/
+  jsonschema/05-domain.schema.json` did not exist before this task,
+  confirmed by direct listing).
+- **Scope disclosed, not hidden:** Section 6.8F's own literal field list
+  (`DatasetSourceConnection`) is this task's real scope. Section 67.4's
+  broader `DataUseGrant` (approver identity, processing boundary,
+  retention, expiry, underlying-rights evidence) is not one of Section
+  6's own listed entities and no dependency task certifies it —
+  `allowed_purposes_json`, declared once at creation from Section 6.8F's
+  own closed purpose vocabulary, is this task's own real, narrower
+  "purpose-scoped grant." No `Dataset`/`DatasetRecord` entity (Section
+  6.10/6.11, Section 8's import pipeline) exists anywhere in this
+  repository yet — "link every dataset to approved source" is read as
+  building the real, callable authorization primitive
+  (`authorize_purpose_use`/`authorize_dataset_source_purpose`, also a
+  live `POST .../authorize` route) a later Dataset-import task
+  (FTF-0501+) will call, not building the Dataset entity itself.
+- **Design:** `DatasetSourceConnection` (Section 6.8F fields plus
+  `organization_id` for direct RLS, per Section 65.1's own established
+  refinement) with closed-set validators for `source_type`/
+  `allowed_purposes`/`security_classification`/`connection_status`.
+  `credential_secret_ref`/`connection_config_encrypted_ref` only ever
+  store an `openbao://...` reference (`validate_secret_ref_or_none`) —
+  structurally incapable of accepting a raw value. `authorize_purpose_use`
+  raises `DatasetSourceAuthorizationError` (never a bare `False`) when the
+  connection is not `active` (covers "grant revocation propagates to
+  future derivative use" — a revoked connection denies every purpose,
+  including one it previously granted) or the requested purpose is not in
+  `allowed_purposes_json` (covers "Source allowed only evaluation cannot
+  be trained"). Role gating: Section 45's literal "ml_engineer:
+  datasets/training" sentence (the only one naming a role for this class
+  of work) plus the standing project-administration superset —
+  `{ml_engineer, workspace_admin, organization_admin}`, gating every
+  operation including reads (this credential-bearing resource does not
+  open reads wider than writes, matching FTF-0201's own
+  `LiteLLMConnection` precedent rather than FTF-0401/FTF-0404's own
+  wide-read convention for a non-secret-bearing resource).
+- **First real caller of FTF-0202:** unlike FTF-0201 (which predates
+  FTF-0202 and only ever validated a generic reference shape),
+  `create_dataset_source_connection` calls `store_secret_ref` for real —
+  a supplied `credential`/`connection_config` value is written to a real
+  OpenBao KV v2 path before the row is ever inserted, and only the
+  resulting reference is persisted; `_serialize` never includes either
+  secret-ref field, only `has_credential`/`has_connection_config`
+  booleans (Section 46).
+- **Failure found and fixed by real fault injection (Law 1), not merely
+  described:** before writing any test, ran this task's own real backend
+  interaction directly against a real local OpenBao server (built from
+  source, the same pinned commit `e98dc184344fe84ee4e69965ac3f4217d5b6a45d`
+  FTF-0202's own CI job uses) and a real local PostgreSQL 16 cluster — no
+  prebuilt release binary/container image reachable from this sandbox,
+  the same documented class of gap FTF-0004/FTF-0102/FTF-0202/FTF-R017
+  already established. The original design used a dedicated
+  `dataset-sources` OpenBao mount; a fresh `-dev` server only auto-enables
+  the `secret` mount, so every `store_secret_ref`/`resolve_secret_ref`
+  call against the new mount answered a real HTTP 404, indistinguishable
+  from `SecretNotFoundError` — reproduced directly (`create` returned
+  500, traced to `SecretNotFoundError: secret backend has no data at
+  /v1/dataset-sources/data/...`). Fixed by reusing FTF-0202's own
+  already-proven `secret` mount with a `dataset-sources/` path prefix
+  instead of inventing a second, unprovisioned mount
+  (`_SECRET_MOUNT = "secret"`, `_SECRET_PATH_PREFIX = "dataset-sources"`);
+  re-ran the full real-backend integration proof afterward — clean.
+- **27 no-DB test functions** (`tests/tasks/test_ftf_0500.py`): every
+  field validator's own closed-set/shape rule (`validate_source_type`/
+  `validate_allowed_purposes`/`validate_security_classification`/
+  `validate_secret_ref_or_none`); `DatasetSourceConnection.__init__`
+  refusing bad input (empty display_name, unknown source_type, empty
+  allowed_purposes, unknown connection_status, a raw non-ref credential)
+  before any session; `apply_edits`/`apply_revoke`'s pure DB-free cores
+  (refuses to edit a revoked connection; requires at least one field;
+  idempotent revoke); `authorize_purpose_use`'s own negative_acceptance
+  in full at the pure-function level (a source granted only
+  `held_out_evaluation` denies `training`; revoking a connection denies a
+  previously-granted purpose); a real, locally-hosted uvicorn server
+  proving unauthenticated (401) and wrong-role/viewer (403) denial never
+  opens a session while `ml_engineer` reaches the session layer; the real
+  imported `require_role`/`authorize_resource_ownership`/
+  `execute_tenant_scoped`/`store_secret_ref` dependencies confirmed (not
+  hand-rolled duplicates); `_serialize` never exposing either secret-ref
+  field.
+- **Real Postgres + real OpenBao integration proof**
+  (`tests/integration/test_ftf_0500_dataset_source_connection.py`, new CI
+  job `dataset-source-connection-integration`): two real organizations
+  (each with a real workspace/project) seeded as the migration-owner
+  role; every request through the restricted `sovra_app` role, confirmed
+  distinct from the migration owner; a real create with a real credential
+  + connection_config, independently resolved back from the real live
+  OpenBao server at the exact path this task's own code writes to (never
+  merely asserted from this task's own claim); a duplicate `display_name`
+  within the same project rejected by the real database's own unique
+  constraint; a real cross-organization/cross-project read refused (404),
+  identical to missing; both negative_acceptance clauses reproduced
+  against real live database rows — authorizing `training` against a
+  source granted only `held_out_evaluation` denied (403), then the same
+  source's own granted purpose authorized (200); `training` authorized
+  while a second connection is active, then genuinely denied (403) after
+  revocation, the same previously-authorized purpose; editing an already-
+  revoked connection refused (409); revoke idempotency (200 on repeat); a
+  credential supplied with no secret-manager backend configured refused
+  (503) with zero rows created (verified directly via a `count(*)` query
+  as the migration owner); the restricted `sovra_app` role's own real
+  grant surface confirmed unable to `DELETE` a row directly (revoke is
+  the only real transition).
+- **No regression, independently re-run:** full `tests/tasks/
+  test_ftf_*.py` sweep run directly — every file passes except the same
+  three pre-existing sandbox gaps already on record before this task
+  touched anything (`test_ftf_0002.py`/`test_ftf_0003.py`/
+  `test_ftf_h001.py` — a missing `pnpm`/frontend-tooling install,
+  confirmed identical via a `git stash` before/after comparison, not a
+  regression this task introduced). `uv run ruff check .`/`ruff format
+  --check .`/`mypy .` clean repo-wide (177 source files). `alembic heads`
+  confirms a single linear head (`0010_dataset_source_connections`) —
+  no fork introduced. `scripts/validate_spec.py --strict` clean after
+  `git fetch --unshallow origin` (this sandbox's own pre-existing,
+  already-documented shallow-clone artifact, confirmed pre-existing via a
+  direct before/after check). `scripts/product_truth_check.py
+  --fail-on-unwired`: `13/13` → `14/14` (this task's own real live route,
+  `build_dataset_source_connection_router`, called for real from
+  `apps/api/app/main.py` as the tenth live product-runtime path).
+  `scripts/status.py` stays `43/300 certified · 13 product-true`
+  (unchanged — FTF-0500 is PROVISIONAL, not yet CERTIFIED, Law 2).
+- Dependencies FTF-0401/FTF-0202/FTF-H003 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**

@@ -182,6 +182,8 @@ jobs:
         run: uv run python3 tests/reference/test_ftf_1702.py
       - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1302.py
+      - name: FTF-0500 negative-test proof (DatasetSourceConnection schema/API/RBAC, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0500.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1073,3 +1075,61 @@ jobs:
         run: uv sync --all-packages
       - name: Run the real API load test against the live database and report p50/p95/p99/errors/backpressure
         run: uv run python3 tests/performance/api_load_test.py
+
+  dataset-source-connection-integration:
+    # FTF-0500: real Postgres + real OpenBao DatasetSourceConnection
+    # evidence (Section 6.8F/7A.10/9/45/65-67/77/81) -- two real
+    # organizations (each with a real workspace/project), a real uvicorn
+    # server proving create/get/list/edit/revoke, RBAC role-boundary
+    # denial (ml_engineer only, Section 45), the cross-tenant/cross-
+    # project IDOR guard, a real credential/connection_config value
+    # written to and resolved back from a real live OpenBao server (never
+    # merely asserted), the real database's own unique-display-name and
+    # DELETE-grant-surface constraints, and this task's own
+    # negative_acceptance in full against real live database rows:
+    # "Source allowed only evaluation cannot be trained" and "grant
+    # revocation propagates to future derivative use" --
+    # tests/integration/test_ftf_0500_dataset_source_connection.py. Same
+    # real `services: postgres` container pattern as
+    # tool-schema-crud-integration, plus the same real from-source OpenBao
+    # build as secret-manager-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 and a
+    # locally-built OpenBao binary -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201/FTF-0301/FTF-0401/FTF-0402/FTF-0305/FTF-0404/FTF-1401 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0500
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0500"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0500
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
+        run: |
+          git clone --filter=blob:none https://github.com/openbao/openbao.git /tmp/openbao-src
+          cd /tmp/openbao-src
+          git checkout e98dc184344fe84ee4e69965ac3f4217d5b6a45d
+          go build -o /usr/local/bin/bao .
+          bao version
+      - name: Prove the real DatasetSourceConnection evidence against the live database and live OpenBao
+        run: uv run python3 tests/integration/test_ftf_0500_dataset_source_connection.py

@@ -32,18 +32,28 @@ cost-per-success/search` routes from
 and (FTF-1001) the real
 `/api/v1/organizations/{organization_id}/projects/{project_id}/model-versions`
 router from `app.model_versions.model_version_routes.build_model_version_router`
--- the ninth.
+-- the ninth, and (FTF-0500) the real
+`/api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources`
+router from
+`app.datasets.dataset_source_connection_routes.build_dataset_source_connection_router`
+-- the tenth.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
 (`vault://...`) for the OIDC client secret and the session-signing key.
-No secret-manager integration exists anywhere in this repository yet, so
-this module resolves them from two directly-injected environment
+This module still resolves them from two directly-injected environment
 variables (`SOVRA_OIDC_CLIENT_SECRET_VALUE`, `SOVRA_SESSION_SIGNING_KEY_VALUE`)
-rather than from the `*_secret_ref` values themselves. This is a real,
-tracked gap for whichever task first wires an actual secret-manager
-resolver -- not a production mock of the OIDC/session logic itself, which
-is fully real from this point on.
+rather than from the `*_secret_ref` values themselves -- FTF-0202's own
+OpenBao integration (`packages/litellm_client/secret_manager_integration.py`,
+now CERTIFIED) exists, but wiring the OIDC/session bootstrap secrets
+through it is this module's own separate, not-yet-claimed follow-up, not
+this task's. FTF-0500's own dataset-source-connection router below *is*
+this repository's first real caller of that integration (a credential/
+config value supplied at connection-creation time is written for real to
+OpenBao; see that router's own module docstring) -- this is a real,
+tracked gap for whichever task first wires the OIDC bootstrap path through
+it too, not a production mock of the OIDC/session logic itself, which is
+fully real from this point on.
 
 FTF-0201's own connection router never needs that same secret-resolution
 step at all (see `app/litellm/connection_schema.py`'s own module
@@ -80,6 +90,9 @@ from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_gua
 from app.budget.budget_policy_routes import build_budget_policy_router
 from app.config.configuration_system import Settings
 from app.costs.cost_profile_routes import build_cost_profile_router
+from app.datasets.dataset_source_connection_routes import (
+    build_dataset_source_connection_router,
+)
 from app.litellm.connection_routes import build_litellm_connection_router
 from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
@@ -115,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(build_budget_policy_router(session_factory))
     app.include_router(build_cost_profile_router(session_factory))
     app.include_router(build_model_version_router(session_factory))
+    app.include_router(build_dataset_source_connection_router(session_factory))
     return app
 
 
