@@ -2132,17 +2132,19 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 37/300 (main; FTF-1702 CERTIFIED 2026-09-22, PR #167 merged
-as `099a075` — see docs/certifications/ledger.md) · Product-true:
-13/13. FTF-1501/FTF-1001/FTF-1401/FTF-0202 are merged and already
-independently reviewed/certified by this same shift, awaiting only the
-owner's merge of the doc-only certification PRs (#179/#180/#181/#182)
-that record it on `main`. FTF-1302 (PR #170) is being independently
-re-reviewed by Control plane now (this entry's own review) after its
-prior NOT-CERTIFIED verdict, which was blocked only by a GitHub Actions
-runner-provisioning outage reported cleared 2026-09-22 (PR #178).
-FTF-R016 (PR #172) remains open with the same prior verdict and needs
-the same treatment next. Blocked: 0
+Certified: 37/300 (main; FTF-R016 CERTIFIED 2026-09-22, PR #172 merged
+as `ce1d2f0` — see docs/certifications/ledger.md) · Product-true:
+13/13. All six real open-PR backlog items found at the start of this
+shift (FTF-1501/PR #159, FTF-1001/PR #160, FTF-1401/PR #161, FTF-1702/PR
+#167, FTF-1302/PR #170, FTF-R016/PR #172) have now been independently
+reviewed and CERTIFIED by this same shift -- this closes out the full
+sweep the user's own explicit "Go then" instruction authorized.
+FTF-1501/FTF-1001/FTF-1401/FTF-1702/FTF-1302/FTF-0202 are already merged
+and independently certified; each certification record is on its own
+doc-only PR (#179/#180/#181/#182/#183/#184) awaiting only the owner's
+merge (this session does not self-merge its own certification PRs --
+Law 4 / the PR #169 precedent). FTF-R016's own certification record is
+this branch's own PR. Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -2263,10 +2265,12 @@ directly confirms the resolution bar the original owner-ask entry
 itself set ("a session confirms CI is provisioning runners again on a
 fresh PR event"), independently of PR #178's own earlier claim to the
 same effect. FTF-1302 (PR #170) and FTF-R016 (PR #172), both previously
-reviewed sound but NOT CERTIFIED solely because of this outage, are
-being re-reviewed now with a fresh, genuine CI run each -- see this
-file's own top status note and `docs/certifications/queue.md` for the
-full history.
+reviewed sound but NOT CERTIFIED solely because of this outage, have
+since been re-reviewed with a fresh, genuine CI run each (23/23 and
+23/23) and both CERTIFIED -- this closes out the full six-item real
+open-PR backlog found at the start of this shift. See this file's own
+top status note and `docs/certifications/queue.md` for the full
+history.
 
 2026-09-20: **FTF-0202 ("Secret-manager integration")'s own
 secret-backend-selection ask is RESOLVED** (2026-09-21, live owner
@@ -2352,11 +2356,11 @@ CERTIFIED 2026-09-22 via PR #167 (merge commit
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
 
-FTF-1302 (Local compute costing, PR #170
-https://github.com/SJZLab/Sovra/pull/170) is being independently
-re-reviewed by Control plane now (this entry's own review), after its
-prior NOT-CERTIFIED verdict was blocked solely by the now-reportedly-
-cleared GitHub Actions runner-provisioning outage.
+FTF-1302 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #170 (merge commit
+`acce2b4d9a3d636b06065f11de3958239ba5b917`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
@@ -2364,28 +2368,18 @@ CERTIFIED 2026-09-21 via PR #168 (merge commit
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
 
-FTF-1302 (Local compute costing, PR #170
-https://github.com/SJZLab/Sovra/pull/170) was independently reviewed
-2026-09-21 and **NOT CERTIFIED — not a code defect.** The shipped code,
-its tests, and its fault-injection evidence were independently
-reproduced and confirmed sound; certification was blocked only because
-GitHub Actions could not show a genuine passing CI run on the real head
-at the time (see `docs/certifications/queue.md`'s "2026-09-21 — FTF-1302
-(PR #170)" entry for full detail) — that outage is reported cleared as
-of PR #178 (2026-09-22); PR #170 stays open, unmerged, needing the same
-merge-current-main treatment this PR just required before a fresh CI run
-and review.
-
-FTF-R016 (Measure selected coding-model/executor pilot cost and enforce
-budget tree, PR #172 https://github.com/SJZLab/Sovra/pull/172) was
-independently reviewed 2026-09-21 and **NOT CERTIFIED — not a code
-defect,** blocked only by the same now-reportedly-cleared CI outage (see
-`docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172)"
-entry). PR #172 stays open, unmerged, needing the same treatment.
-
-FTF-1702 (Tool environment, PR #167 https://github.com/SJZLab/Sovra/pull/167)
-is being independently reviewed by Control plane now (this entry's own
-review).
+FTF-R016 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #172 (merge commit
+`ce1d2f062a830cbb69bfd00353e329585f8efff5`) — its own genuine 23/23
+green CI run (including a real ~5m35s OpenBao build) is the sixth
+genuine green run this shift, further confirming the GitHub Actions
+runner-provisioning outage first found on PR #170 is fully cleared —
+see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence. This was the sixth and last of the six real
+open-PR backlog items found at the start of this shift; all six are now
+independently reviewed and CERTIFIED, per the user's own explicit "Go
+then" instruction.
 
 FTF-1701 (Reference agent specification) is no longer in this section; it
 was independently reviewed and CERTIFIED 2026-09-21 via PR #165 (merge
@@ -3467,6 +3461,35 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-1302 — Local compute costing. CERTIFIED 2026-09-22, PR #170 (merge
+  commit `acce2b4d9a3d636b06065f11de3958239ba5b917`). First reviewed
+  2026-09-21 and found NOT CERTIFIED solely because GitHub Actions could
+  not show a genuine passing CI run (an outage, not a code defect) — the
+  code, tests, and fault-injection evidence were already confirmed sound
+  then. This review re-reproduced the suite (15/15), ran its own fault
+  injection (disabled the zero-successes guard in `cost_per_success` —
+  caused a genuine unhandled `decimal.DivisionByZero` crash, reverted
+  byte-identical), re-pulled the task contract, and got a genuine 23/23
+  green CI run (including a real ~5m38s OpenBao build) — the exact PR
+  the outage was first found on, so this run is the most definitive
+  confirmation yet that the outage is fully cleared. Full entry:
+  docs/certifications/ledger.md.
+- FTF-R016 — Measure selected coding-model/executor pilot cost and
+  enforce budget tree. CERTIFIED 2026-09-22, PR #172 (merge commit
+  `ce1d2f062a830cbb69bfd00353e329585f8efff5`). First reviewed 2026-09-21
+  and found NOT CERTIFIED solely because of the same CI outage. This
+  review found the branch already brought current with `main` by a
+  separate session, reproduced the suite (34/34) plus an independent
+  end-to-end run of `scripts/report_executor_pilot.py`, ran its own
+  fault injection (disabled `BudgetNode._chain()`'s real ancestor walk —
+  caused 4 named "budget reset per subagent" checks to fail for real,
+  reverted byte-identical), re-pulled the task contract, and got a
+  genuine 23/23 green CI run (including a real ~5m35s OpenBao build) —
+  the sixth genuine green run this shift alone. This was the sixth and
+  last of the six real open-PR backlog items found at the start of this
+  shift; all six are now independently reviewed and CERTIFIED, per the
+  user's own explicit "Go then" instruction. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

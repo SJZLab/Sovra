@@ -1,4 +1,50 @@
 # PROGRESS — Sovra
+Control plane certifier — 2026-09-22 (continuing a certifier shift, user
+  requested the open-PR backlog be worked through end to end): closed 8
+  dead PRs, then independently reviewed and CERTIFIED all six real
+  backlog items found at the start of this shift — FTF-1501 (PR #159),
+  FTF-1001 (PR #160), FTF-1401 (PR #161), FTF-1702 (PR #167), FTF-1302
+  (PR #170), and FTF-R016 (PR #172, this entry's own certification, the
+  sixth and last). All six predated `main`'s current tip at the time
+  each was reviewed, most requiring a real merge-conflict resolution
+  before review (FTF-R016 was the exception: its branch had already been
+  brought current with `main` by a separate session before this review
+  started). A duplicate-job-key bug in `ci.yml` from the first scripted
+  merge (FTF-1501) was caught and fixed, then avoided on every
+  subsequent merge by verifying with a duplicate-key-detecting YAML
+  loader before every push. Each got a genuine green CI run (21/21,
+  22/22, 23/23, 23/23, 23/23, 23/23) before merging — the last two
+  (FTF-1302, FTF-R016) each included a real ~5.5-minute OpenBao build in
+  the `secret-manager-integration` job, and FTF-1302's own run (PR #170,
+  the exact PR the GitHub Actions runner-provisioning outage was first
+  found on) is the most definitive confirmation that the outage is fully
+  cleared. Own fault injection distinct from each producer's own
+  vectors, all caught for real and reverted byte-identical: FTF-1501's
+  unauthenticated-401 guard, FTF-1001's cross-org project IDOR guard,
+  FTF-1401's write/submit P95 threshold branch, FTF-1702's
+  record_id_for unseeded-triple guard, FTF-1302's zero-successes guard
+  (a genuine unhandled `decimal.DivisionByZero` crash), and FTF-R016's
+  `BudgetNode._chain()` ancestor-walk guard (4 named "budget reset per
+  subagent" checks failed for real). Also independently ran
+  `scripts/report_executor_pilot.py` end to end as extra evidence beyond
+  FTF-R016's own unit suite.
+
+  A genuine YAML-parsing bug was caught and fixed during this entry's own
+  `docs/spec-matrix.yaml` edit: a plain (unquoted) multi-paragraph
+  `notes:` field containing a `" #<number>"` pattern followed by a
+  `": "` sequence produced a real `yaml.parser.ParserError` on a full
+  `yaml.safe_load` — caught by directly re-parsing the file (not by
+  `validate_spec.py` alone), fixed by converting to the file's own
+  established `notes: >-` folded block-scalar convention.
+
+  `scripts/status.py`: `36/300` → `38/300` certified on `main`'s real
+  tip across this shift; product-true `12` → `13`. This closes out the
+  full six-item real open-PR backlog found at the start of this shift,
+  per the user's own explicit "Go then" instruction. Each certification's
+  own doc-only record is on its own PR (#179–184), awaiting the owner's
+  merge — this session does not self-merge its own certification PRs
+  (Law 4 / the PR #169 precedent).
+
 Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new task
   implemented this shift; drove two already-implemented PROVISIONAL
   submissions to a genuinely current, re-validated state instead of

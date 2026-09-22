@@ -4486,12 +4486,13 @@ FTF-R015:
   proving_symbol: ''
   proving_test: tests/implementation/test_safe_parallel_executor.py
 FTF-R016:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Measure selected coding-model/executor pilot cost and enforce budget tree
-  evidence_hash: c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
+  evidence_hash: ce1d2f062a830cbb69bfd00353e329585f8efff5
   implementation_state: IMPLEMENTED
-  notes: kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q15, Q41, Q42; deps=FTF-R015,
+  notes: >-
+    kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q15, Q41, Q42; deps=FTF-R015,
     FTF-H002, FTF-0403 (all CERTIFIED). tools/implementation/usage_ledger.py -- real per-task
     CPU/wall measurement, real retry counting, an independent accepted-task denominator sourced
     only from TaskOrchestrator.WaveResult.approved_for_downstream (never a task's own self-report),
@@ -4505,8 +4506,83 @@ FTF-R016:
     "missing usage counted free" made structurally impossible). Not a Factory production
     dependency -- build/implementation tooling only, matching FTF-R014/R015's own disclosure.
     proving_symbol deliberately empty (not a served product route), matching FTF-R015/R017's
-    own precedent; product_truth_check.py stays 12/12.
-  proof_state: L1-PROVEN
+    own precedent; product_truth_check.py stays 13/13.
+
+    INDEPENDENTLY CERTIFIED (PR #172, merge commit ce1d2f062a830cbb69bfd00353e329585f8efff5,
+    2026-09-22) by session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5. This is the
+    sixth and last of the six real open-PR backlog items worked this shift (the user's own
+    explicit "Go then"). Previously reviewed 2026-09-21 and found sound but NOT CERTIFIED solely
+    because GitHub Actions could not show a genuine passing CI run for it -- an outage, not a
+    code defect (see docs/certifications/queue.md's own 2026-09-21 entry). By this review, the
+    PR branch (claude/wizardly-fermat-dtzhzo) had already been brought current with main (by a
+    separate, independent session_01SwwQG6gYUUQiifu9yj3QYM, after PR #170/FTF-1302 merged), so no
+    further merge-conflict resolution was needed here.
+
+    Session-ID independence confirmed: producer commits carry session_019xvKNprddWsv6qXhodDCkZ
+    and session_01SwwQG6gYUUQiifu9yj3QYM, both distinct from this reviewing session's own.
+
+    Own reproduction: `uv run python3 tests/implementation/test_executor_budget_limits.py` --
+    34/34 passed, independent of the producer's own reported result. Also independently ran
+    `scripts/report_executor_pilot.py` end to end as extra evidence beyond the unit suite: one
+    real backend task genuinely measured (real CPU/wall seconds via measure_real_command against
+    tests/test_ftf_0001_monorepo_layout.py), one real two-task TaskOrchestrator wave with a
+    genuinely failing task (R016-B, real `sys.exit(1)`) correctly excluded from
+    independent_accepted_task_ids -- confirming accepted_from_wave never accepts a task's own
+    self-report -- and cost_per_success correctly reporting "UNKNOWN" throughout (never a
+    fabricated number), matching the disclosed no-live-token-API resource-gate limitation.
+
+    Own fault injection (Law 1, distinct from the producer's own unknown-cost-guard vector):
+    disabled BudgetNode._chain()'s real parent-walk (temporarily returning only [self] instead of
+    walking the full ancestor chain) -- this is exactly this task's own named negative_acceptance
+    ("budget reset per subagent") made concrete. Caused 4 named checks in
+    test_delegated_tree_budget_reset_per_subagent_refused to fail for real: "a child's own large
+    declared limit cannot escape the real parent remaining balance", "reserving more than the
+    real shared remaining balance is denied (BudgetExceeded)", "a denied reservation leaves the
+    tree's balance unchanged", and "a reservation within the real remaining balance succeeds and
+    is reflected at the root" -- confirming the tree-wide parent-chain walk in available_usd()/
+    reserve() is load-bearing, not decorative. Reverted; `git diff` confirmed byte-identical
+    restoration; re-ran the suite clean (34/34) immediately after.
+
+    No regression: full tests/test_ftf_0001_monorepo_layout.py + tests/tasks/test_ftf_*.py (36
+    files) + tests/implementation/test_*.py + tests/reference/test_ftf_1701.py sweep clean;
+    `uv run ruff check .`/`uv run ruff format --check .` clean (pinned 0.6.9); `uv run mypy .` --
+    0 errors, 166 source files; `pnpm run lint`/`typecheck`/`format:check` clean;
+    `validate_spec.py --strict` clean; `scripts/verify_task.py --task FTF-R016 --stage task` --
+    PASS; `product_truth_check.py --fail-on-unwired` -- 13/13 (FTF-R016 itself carries no
+    proving_symbol, disclosed and unchanged, matching FTF-R014/R015/R017's own no-live-caller
+    build-tooling precedent).
+
+    Task contract re-pulled via `tools/r1_handoff.py packet FTF-R016 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`. Both acceptance clauses confirmed met against the shipped
+    code: clause 1 ("measure one backend/UI/integration task plus parallel run with real
+    tokens/CPU/CI/retries and independent accepted-task denominator") by
+    scripts/report_executor_pilot.py's own real measured run (reproduced above); clause 2
+    ("compare chosen executor/model to approved baseline before broad adoption; enforce
+    delegated-tree reservations and bounded termination") by compare_to_baseline/BudgetNode/
+    run_within_budget, the last confirmed via test_bounded_termination_kills_a_real_running_process
+    (a genuine SIGTERM/SIGKILL of a real OS process). All four negative_acceptance legs confirmed
+    structurally enforced, not merely policy text: "$100/$300 guarantee" (test_no_hardcoded_price_
+    guarantee greps the actual shipped source), "missing usage counted free" (cost_per_success
+    never substitutes Decimal("0") for an unknown cost -- both the producer's own fault injection
+    and this review's independent run confirm), "task self-declared accepted" (accepted_from_wave
+    reads only TaskOrchestrator's own post-integrated-CI approval set), "budget reset per
+    subagent" (this review's own fault injection above) and "external route in private
+    source-code policy" (test_external_route_policy, enforce_model_route_policy denies any route
+    outside the explicit internal allowlist under private_mode). Dependencies FTF-R015/FTF-H002/
+    FTF-0403 confirmed genuinely CERTIFIED on main at this review's own tip.
+
+    CI: PR #172's own branch (already current with main after a separate session's own
+    bring-current push) got a genuine, fresh 23/23 green run (GitHub Actions run 35707832303),
+    including a real ~5m35s secret-manager-integration OpenBao build -- every job showed a real
+    runner_id/runner_name and real per-step timestamps. This is the sixth genuine green run this
+    shift alone (after PR #159 21/21, #160 22/22, #161 23/23, #167 23/23, #170 23/23), further
+    reconfirming the GitHub Actions runner-provisioning outage first found on PR #170 is fully
+    cleared.
+
+    Merged PR #172 -> merge commit ce1d2f062a830cbb69bfd00353e329585f8efff5. This closes out the
+    full six-item real open-PR backlog found at the start of this shift (FTF-1501, FTF-1001,
+    FTF-1401, FTF-1702, FTF-1302, FTF-R016), per the user's own explicit "Go then" instruction.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/implementation/test_executor_budget_limits.py
 FTF-R017:

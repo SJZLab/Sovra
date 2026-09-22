@@ -9441,3 +9441,125 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-R016 (PR#172) independently reviewed, CERTIFIED
+
+Continuing the same certifier shift (user requested the six-item real open-PR
+backlog be worked end to end). FTF-R016 (Measure selected coding-model/executor
+pilot cost and enforce budget tree, PR #172) is the sixth and last item. Previously
+reviewed 2026-09-21 and found sound but **NOT CERTIFIED** solely because GitHub
+Actions could not show a genuine passing CI run for it (an outage, not a code
+defect) — see this file's own 2026-09-21 entry for FTF-R016.
+
+**Session-ID independence:** producer commits carry
+`Claude-Session: https://claude.ai/code/session_019xvKNprddWsv6qXhodDCkZ` (the
+original implementation) and
+`Claude-Session: https://claude.ai/code/session_01SwwQG6gYUUQiifu9yj3QYM` (a
+later, separate session that brought the branch current with `main` after PR
+#170/FTF-1302 merged), both distinct from this reviewing session's own
+`session_01DzyLpJHy35M2BeGRfHfwL5`.
+
+**Merge-conflict check:** by review start, the PR branch
+(`claude/wizardly-fermat-dtzhzo`) had already been brought current with `main`'s
+real tip by the separate session above — confirmed via `git merge-base
+origin/main origin/claude/wizardly-fermat-dtzhzo` matching `main`'s own tip
+exactly (`acce2b4d9a3d636b06065f11de3958239ba5b917`, the FTF-1302 merge commit).
+No further merge-conflict resolution was needed.
+
+**Own reproduction:** `uv run python3 tests/implementation/test_executor_budget_limits.py`
+— 34/34 passed, independent of the producer's own reported result. Also
+independently ran `uv run python3 scripts/report_executor_pilot.py` end to end
+as extra evidence beyond the unit suite: one real backend task genuinely measured
+(real CPU/wall seconds via `measure_real_command` against
+`tests/test_ftf_0001_monorepo_layout.py`); one real two-task `TaskOrchestrator`
+wave with a genuinely failing task (`R016-B`, a real `sys.exit(1)`) correctly
+excluded from `independent_accepted_task_ids` — confirming `accepted_from_wave`
+never accepts a task's own self-report; `cost_per_success_usd` correctly
+reporting `"UNKNOWN"` throughout (never a fabricated number), matching the
+disclosed no-live-token-API resource-gate limitation.
+
+**Own fault injection (Law 1, distinct from the producer's own unknown-cost-guard
+vector):** disabled `BudgetNode._chain()`'s real ancestor walk (temporarily
+returning only `[self]` instead of walking the full parent chain) — exactly this
+task's own named negative_acceptance ("budget reset per subagent") made concrete.
+Caused 4 named checks in `test_delegated_tree_budget_reset_per_subagent_refused`
+to fail for real: "a child's own large declared limit cannot escape the real
+parent remaining balance", "reserving more than the real shared remaining
+balance is denied (BudgetExceeded)", "a denied reservation leaves the tree's
+balance unchanged", and "a reservation within the real remaining balance
+succeeds and is reflected at the root" — confirming the tree-wide parent-chain
+walk in `available_usd()`/`reserve()` is load-bearing, not decorative. Reverted;
+`git diff` confirmed byte-identical restoration; re-ran the suite clean (34/34)
+immediately after.
+
+**No regression:** full `tests/test_ftf_0001_monorepo_layout.py` +
+`tests/tasks/test_ftf_*.py` (36 files) + `tests/implementation/test_*.py` +
+`tests/reference/test_ftf_1701.py` sweep clean; `uv run ruff check .`/`uv run
+ruff format --check .` clean (pinned 0.6.9); `uv run mypy .` — 0 errors, 166
+source files; `pnpm run lint`/`typecheck`/`format:check` clean; `validate_spec.py
+--strict` clean; `scripts/verify_task.py --task FTF-R016 --stage task` — PASS;
+`product_truth_check.py --fail-on-unwired` — `13/13` (FTF-R016 itself carries no
+`proving_symbol`, disclosed and unchanged, matching FTF-R014/R015/R017's own
+no-live-caller build-tooling precedent).
+
+**Task contract re-pull:** `python tools/r1_handoff.py packet FTF-R016 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` re-read fresh. Both acceptance clauses
+confirmed met: clause 1 ("measure one backend/UI/integration task plus parallel
+run with real tokens/CPU/CI/retries and independent accepted-task denominator")
+by `report_executor_pilot.py`'s own real measured run (reproduced above); clause
+2 ("compare chosen executor/model to approved baseline before broad adoption;
+enforce delegated-tree reservations and bounded termination") by
+`compare_to_baseline`/`BudgetNode`/`run_within_budget`, the last confirmed via
+`test_bounded_termination_kills_a_real_running_process` (a genuine
+SIGTERM/SIGKILL of a real OS process). All four `negative_acceptance` legs
+confirmed structurally enforced: "$100/$300 guarantee"
+(`test_no_hardcoded_price_guarantee` greps the actual shipped source), "missing
+usage counted free" (`cost_per_success` never substitutes `Decimal("0")` for an
+unknown cost), "task self-declared accepted" (`accepted_from_wave` reads only
+`TaskOrchestrator`'s own post-integrated-CI approval set), "budget reset per
+subagent" (this review's own fault injection above), and "external route in
+private source-code policy" (`test_external_route_policy`,
+`enforce_model_route_policy` denies any route outside the explicit internal
+allowlist under `private_mode`). Dependencies FTF-R015/FTF-H002/FTF-0403
+confirmed genuinely `CERTIFIED` on `main` at this review's own tip.
+
+**CI:** at review start, 22/23 checks were already `completed`/`success` and
+`secret-manager-integration` was `in_progress`; subscribed to the PR and waited
+for the real `check_suite.completed` webhook. Final state: genuine 23/23 green
+run (GitHub Actions run `35707832303`), including a real `secret-manager-integration`
+OpenBao build (~5m35s real execution) — every job showed a real
+`runner_id`/`runner_name` and real per-step timestamps. This is the sixth
+genuine green CI run this shift alone (after PR #159 21/21, #160 22/22, #161
+23/23, #167 23/23, #170 23/23).
+
+**Merged** PR #172 → merge commit `ce1d2f062a830cbb69bfd00353e329585f8efff5`.
+
+**Discovered during this review, disclosed, and fixed on the spot:** the
+`docs/spec-matrix.yaml` edit for this entry originally used plain (unquoted)
+YAML scalar style for `notes:`; combined with a `" #<number>"` pattern followed
+shortly after by a `": "` (colon-space) sequence in the prose, this produced a
+genuine `yaml.parser.ParserError` on a full `yaml.safe_load` — caught before
+commit by directly re-parsing the edited file with `python3 -c "import yaml;
+yaml.safe_load(...)"` (not just `validate_spec.py`, which did not itself
+independently re-parse the full document in time to catch it first). Fixed by
+converting the field to the file's own established `notes: >-` folded
+block-scalar convention (already used by FTF-0202 and other multi-paragraph
+`notes:` entries), which is immune to this class of plain-scalar
+special-character interaction. Re-verified the full file parses clean and the
+`notes:` content is byte-for-byte the intended text before proceeding.
+
+**Certified.** `docs/spec-matrix.yaml`: FTF-R016 set to `certification_state:
+CERTIFIED`, `proof_state: L2-CERTIFIED`, `evidence_hash:
+ce1d2f062a830cbb69bfd00353e329585f8efff5`. Ledger entry appended
+(`docs/certifications/ledger.md`). `sync_certified_status()` run —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated. `scripts/status.py`:
+`37/300` → `38/300` certified, product-true stays `13/13`. Doc-only
+certification changes pushed on branch `claude/certify-ftf-r016` and opened as
+a PR against `main` rather than pushed directly, per `BRANCH_PROTECTION` (Law 4
+— not self-certified; this review's own certification record is itself
+submitted for the owner/a future session to merge, same precedent as every
+certification PR this shift).
+
+This closes out the full six-item real open-PR backlog found at the start of
+this shift (FTF-1501, FTF-1001, FTF-1401, FTF-1702, FTF-1302, FTF-R016), per
+the user's own explicit "Go then" instruction.

@@ -4452,3 +4452,165 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-R016 — Measure selected coding-model/executor pilot cost and enforce budget tree
+- Criterion ID: FTF-R016
+- PR: https://github.com/SJZLab/Sovra/pull/172 (`claude/wizardly-fermat-dtzhzo` → `main`)
+- Merge commit: ce1d2f062a830cbb69bfd00353e329585f8efff5
+- Implementation commit: c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
+- Validated-by: session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5
+  (continuing the same certifier shift, user requested the six-item real
+  open-PR backlog be worked end to end)
+- Date: 2026-09-22
+- This is the sixth and last of the six real open-PR backlog items found
+  this shift (FTF-1501/PR #159, FTF-1001/PR #160, FTF-1401/PR #161,
+  FTF-1702/PR #167, FTF-1302/PR #170, FTF-R016/PR #172), per the user's
+  own explicit "Go then" instruction to work the whole backlog.
+- Previously reviewed 2026-09-21 and found sound but **NOT CERTIFIED**
+  solely because GitHub Actions could not show a genuine passing CI run
+  for it — an outage, not a code defect (see
+  `docs/certifications/queue.md`'s own 2026-09-21 entry for FTF-R016).
+- **Session-ID check:** producer commits on PR #172's branch carry
+  `Claude-Session: .../session_019xvKNprddWsv6qXhodDCkZ` (the original
+  implementation) and `.../session_01SwwQG6gYUUQiifu9yj3QYM` (a later,
+  separate session that brought the branch current with `main` after PR
+  #170/FTF-1302 merged); this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5` — no match with either, independent
+  per Law 4.
+- **Merge-conflict check:** by the time this review started, PR #172's
+  branch (`claude/wizardly-fermat-dtzhzo`) had already been brought
+  current with `main`'s real tip by the separate session above —
+  confirmed via `git merge-base origin/main origin/claude/wizardly-fermat-dtzhzo`
+  matching `main`'s own tip exactly (`acce2b4d9a3d636b06065f11de3958239ba5b917`,
+  the FTF-1302 merge commit) — so no further merge-conflict resolution
+  was needed by this review.
+- **CI checked on the real head, not a stale claim:** at review start, 22
+  of 23 checks were already `completed`/`success` and
+  `secret-manager-integration` was `in_progress`; subscribed to the PR
+  and waited for the real `check_suite.completed` webhook rather than
+  assuming success. Final state: all 23 GitHub Actions check runs on the
+  real head (`6c63d09d5290c572830fea33560ad587ab3a8620`, run
+  `35707832303`) `completed`/`success`, including a genuine
+  `secret-manager-integration` OpenBao build (started `08:59:37Z`,
+  completed `09:06:12Z`, ~5m35s real execution, not a 2-12s
+  outage-signature stub) — every job showed a real `runner_id`/
+  `runner_name` and real per-step timestamps. This is the sixth genuine
+  green CI run this shift alone.
+- **Diff/implementation read directly:**
+  `tools/implementation/usage_ledger.py` (357 lines) — `UsageMeasurement`,
+  `accepted_from_wave` (denominator sourced only from
+  `TaskOrchestrator.WaveResult.approved_for_downstream`, never a task's
+  own self-report), `measure_real_command`/`execute_with_real_retries`
+  (real `resource.getrusage(RUSAGE_CHILDREN)`/`time.monotonic()`
+  measurement, real retry counting via actual re-invocation),
+  `cost_per_success`/`compare_to_baseline` (Section 32's formula, `None`
+  propagated rather than `Decimal("0")` substituted for an unknown cost),
+  `BudgetNode` (a real parent/child reservation tree sharing one
+  `threading.Lock` per tree, `available_usd()`/`reserve()` always walking
+  the full live ancestor chain via `_chain()`), `run_within_budget`
+  (genuine mid-execution `SIGTERM`/`SIGKILL` of a real
+  `subprocess.Popen` once the tree's remaining budget converts to a
+  wall-clock ceiling), and `enforce_model_route_policy` (Section 81.3's
+  private/air-gapped route policy, denies any route outside an explicit
+  internal allowlist under `private_mode=True`).
+  `scripts/report_executor_pilot.py` (148 lines) — runs acceptance clause
+  1 end to end: one real backend task
+  (`tests/test_ftf_0001_monorepo_layout.py`) measured via
+  `measure_real_command`, plus a real two-task `TaskOrchestrator` wave
+  reusing FTF-R015's own registry/workspace/orchestrator unmodified.
+- **Task contract re-pulled directly, not trusted from the producer's own
+  claim:** `python tools/r1_handoff.py packet FTF-R016 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1 ("Measure one
+  backend/UI/integration task plus parallel run with real
+  tokens/CPU/CI/retries and independent accepted-task denominator") met
+  by `report_executor_pilot.py`'s own real measured run (reproduced
+  independently below). Acceptance clause 2 ("Compare chosen
+  executor/model to approved baseline before broad adoption; enforce
+  delegated-tree reservations and bounded termination") met by
+  `compare_to_baseline`/`BudgetNode`/`run_within_budget`. All four
+  `negative_acceptance` legs confirmed structurally enforced: "$100/$300
+  guarantee" (`test_no_hardcoded_price_guarantee` greps the actual
+  shipped source for the literal strings), "missing usage counted free"
+  (`cost_per_success` never substitutes `Decimal("0")` for an unknown
+  cost), "task self-declared accepted" (`accepted_from_wave` reads only
+  `TaskOrchestrator`'s own post-integrated-CI approval set, no code path
+  accepts a bare boolean the task itself supplies), "budget reset per
+  subagent" (this review's own fault injection below), and "external
+  route in private source-code policy"
+  (`test_external_route_policy`/`enforce_model_route_policy`). `files:`
+  (all three listed) and `dependencies:` (FTF-R015, FTF-H002, FTF-0403)
+  confirmed exact matches; all three dependencies confirmed genuinely
+  `CERTIFIED`/`L2-CERTIFIED` in `docs/spec-matrix.yaml` at this review's
+  own tip.
+- **Own reproduction, this sandbox:** `uv run python3
+  tests/implementation/test_executor_budget_limits.py` — "All 34 checks
+  passed", independent of the producer's own reported result. Also
+  independently ran `uv run python3 scripts/report_executor_pilot.py` end
+  to end as extra evidence beyond the unit suite: one real backend task
+  genuinely measured (real `cpu_seconds`/`wall_seconds`, `accepted: true`
+  since `returncode == 0`); one real two-task `TaskOrchestrator` wave with
+  a genuinely failing task (`R016-B`, a real `sys.exit(1)`) correctly
+  excluded from `independent_accepted_task_ids` — confirming
+  `accepted_from_wave` never accepts a task's own self-report — and
+  `cost_per_success_usd` correctly reporting `"UNKNOWN"` throughout
+  (never a fabricated number), matching the disclosed no-live-token-API
+  resource-gate limitation.
+- **Own fault injection, this session, distinct from the producer's own
+  unknown-cost-guard vector, reverted byte-identical and reconfirmed
+  clean afterward:** disabled `BudgetNode._chain()`'s real ancestor walk
+  (temporarily returning only `[self]` instead of walking the full parent
+  chain) — exactly this task's own named `negative_acceptance` ("budget
+  reset per subagent") made concrete. Caused 4 named checks in
+  `test_delegated_tree_budget_reset_per_subagent_refused` to fail for
+  real: "a child's own large declared limit cannot escape the real parent
+  remaining balance", "reserving more than the real shared remaining
+  balance is denied (BudgetExceeded)", "a denied reservation leaves the
+  tree's balance unchanged", and "a reservation within the real remaining
+  balance succeeds and is reflected at the root" — confirming the
+  tree-wide parent-chain walk in `available_usd()`/`reserve()` is
+  load-bearing, not decorative. `git diff` confirmed byte-identical
+  restoration; re-ran the suite clean (34/34) immediately after.
+- **No regression, independently re-run:** full
+  `tests/test_ftf_0001_monorepo_layout.py` + `tests/tasks/test_ftf_*.py`
+  (36 files) + `tests/implementation/test_*.py` +
+  `tests/reference/test_ftf_1701.py` sweep — all clean. `uv run ruff
+  check .`/`uv run ruff format --check .` clean (pinned 0.6.9, not the
+  stray system 0.15.8 install). `uv run mypy .` — 0 errors, 166 source
+  files.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean; `scripts/verify_task.py --task
+  FTF-R016 --stage task` — PASS; `pnpm run lint`/`typecheck`/
+  `format:check` clean. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `13/13` product-true (FTF-R016 itself
+  carries no `proving_symbol`, disclosed and unchanged, matching
+  FTF-R014/R015/R017's own no-live-caller build-tooling precedent).
+  `scripts/status.py` — own run, `37/300 certified` before this entry's
+  own update.
+- Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **Discovered during this review, disclosed, and fixed on the spot:**
+  the `notes:` field this entry's own `docs/spec-matrix.yaml` edit
+  originally wrote used plain (unquoted) YAML scalar style and, combined
+  with a `" #<number>"` pattern followed shortly after by a `": "`
+  (colon-space) sequence inside prose, produced a genuine
+  `yaml.parser.ParserError`/`ScannerError` on a full `yaml.safe_load` —
+  caught before commit by running `python3 -c "import yaml; yaml.safe_load(...)"`
+  directly against the edited file (not just `validate_spec.py`, which
+  did not itself independently re-parse the full document this way in
+  time to catch it first). Fixed by converting the field to the file's
+  own established `notes: >-` folded block-scalar convention (already
+  used by FTF-0202 and other multi-paragraph `notes:` entries), which is
+  immune to this class of plain-scalar special-character interaction;
+  re-verified the full file parses clean and the `notes:` content is
+  byte-for-byte the intended text before proceeding.
+- No blocking defect found. Merged PR #172 (merge commit
+  `ce1d2f062a830cbb69bfd00353e329585f8efff5`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-R016']` updated. Certified: 37/300 → 38/300, Product-true:
+  13/13. This closes out the full six-item real open-PR backlog found at
+  the start of this shift.
+
+**Conclusion:** Certified L2-CERTIFIED.
