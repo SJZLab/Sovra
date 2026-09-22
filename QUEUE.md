@@ -1,39 +1,50 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1301
-  (CostProfile schema/UI, deps FTF-0401/FTF-0403/FTF-0103 all CERTIFIED).
-  STEP 0: verified `sha256sum CLAUDE.md` against the committed
-  `CLAUDE.md.sha256` — clean, no BLOCKER needed. Found the designated
-  branch `claude/wizardly-fermat-togs1a` already fully merged into `main`
-  (its own head commit, `f3141c4`, is an ancestor of `origin/main`, and
-  the remote branch no longer existed) — restarted it fresh from
-  `origin/main` per this session's own instructions rather than stacking
-  new work on already-merged history. STEP 1: read PROGRESS.md/QUEUE.md/
-  `docs/certifications/queue.md`, then cross-checked GitHub directly
-  (`list_pull_requests`) rather than trusting this file's own prior
-  "Next shift" note by itself: PR #167 ("[relay] FTF-1702: Tool
-  environment") had already been opened by a prior shift very shortly
-  before this one fired (2026-09-21T15:01Z) — genuinely claimed, not
-  picked again. PR #158 (stale FTF-0403 duplicate)/#159 (FTF-1501)/#160
-  (FTF-1001)/#161 (FTF-1401)/#162 (unverified FTF-0202 claim) remain open
-  and unmerged, all Control-plane review items this relay shift has no
-  standing to act on (per Law 4, producer never certifies own work, and
-  this session's own relay role is execution-only). Recomputed the
-  dependency-ready frontier directly against `docs/spec-matrix.yaml`'s
-  live `certification_state`, not by title alone: FTF-0202 stays a
-  genuine, unresolved owner ask (Secret-manager backend selection) that
-  blocks a large fraction of the graph transitively through
-  `FTF-H006`/`FTF-0203`+; FTF-0408 still carries the same real DoD-clarity
-  gap the FTF-1701 shift already found and disclosed (its own acceptance
-  clause reads on `AgentManifest.mandate_json`, a field with no real
-  storage anywhere in this repository yet — re-confirmed this shift by
-  re-pulling `docs/implementation/task-packets/FTF-0408.md` fresh, not
-  trusted from the prior shift's own claim); FTF-0902 still names a real
-  enforcing Kubernetes/CNI cluster as its own `resource_gate`
-  prerequisite, unavailable in this sandbox. FTF-1301 is the
-  lowest-task-ID item among what remains genuinely unblocked and
-  unclaimed by any open PR: all three of its own dependencies
-  (FTF-0401/FTF-0403/FTF-0103) are independently confirmed CERTIFIED in
-  `docs/spec-matrix.yaml`, and no open PR names FTF-1301.
+Updated: 2026-09-22 (scheduled relay shift) — independently reconfirmed
+  the dependency-ready frontier is still fully claimed or blocked (no new,
+  unclaimed item to implement) and that the GitHub Actions
+  runner-provisioning outage is still live, now spanning two calendar
+  days. STEP 0: `sha256sum CLAUDE.md` matches the committed
+  `CLAUDE.md.sha256` — clean, no BLOCKER needed. STEP 0.1: read
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`, then
+  cross-checked directly against GitHub (`list_pull_requests`,
+  `actions_list`) rather than trusting either file's own snapshot: PR
+  #174 ("[relay] status: no new unblocked work this shift") was already
+  open (opened 2026-09-21T22:51Z by the immediately preceding relay
+  shift), unmerged, and not yet reflected on `main`
+  (`origin/main` HEAD was still `3287596`, the commit before that PR's own
+  base). This shift independently re-derived — not copied from PR #174's
+  own body — the same dependency-ready frontier straight from
+  `docs/spec-matrix.yaml`, via a fresh script combining
+  `scripts.spec_verification.load_tasks` (real `dependencies` lists) with
+  `scripts.task_claim.load_certification_states` (live
+  `certification_state`): 36/300 certified; nine dependency-ready tasks —
+  `FTF-0202`, `FTF-0408`, `FTF-0902`, `FTF-1001`, `FTF-1302`, `FTF-1401`,
+  `FTF-1501`, `FTF-1702`, `FTF-R016` — an exact match to PR #174's own
+  list, independently arrived at. Every one remains either a standing,
+  already-declared blocker (`FTF-0202` owner ask, `FTF-0408`
+  DoD-clarity gap, `FTF-0902` resource gate) or already covered by a
+  real, open PR (`FTF-1001`→#160, `FTF-1302`→#170, `FTF-1401`→#161,
+  `FTF-1501`→#159, `FTF-1702`→#167, `FTF-R016`→#172). Implementing any of
+  them again would duplicate work already in progress — the PR #158
+  mistake this file's own history already warns against. No new item
+  picked, no code changed this shift.
+
+  Also independently re-triggered CI rather than only reading the
+  existing record: `rerun_failed_jobs` on run 35664813570 (PR #174's own
+  CI run). Attempt 2 (2026-09-22T02:50:28Z–02:50:35Z) failed identically
+  to every run since #255 — all 18 jobs completed in 3–4 seconds with
+  `conclusion: failure`, the same no-runner-assigned signature first
+  documented on PR #170 (2026-09-21T19:05Z). This is a fresh, independent
+  data point roughly 4 hours after the last one (#263, 21:15Z) and crosses
+  the day boundary — the outage has now persisted essentially
+  continuously across two calendar days, not a brief transient blip. No
+  change to the existing "Owner actions — current" entry's own wording was
+  needed (it already states the finding precisely); this shift only
+  re-verified it still holds. Opened this doc-only tracking PR rather than
+  silently letting the reconfirmation evaporate at session end, matching
+  the PR #171→#173→#174 reconfirmation-chain precedent already
+  established in this file's own history. PR #158/#162 remain open,
+  unmerged, and still Control-plane's own items, not touched this shift.
 
   **STEP 2 (P):** Read `tools/r1_handoff.py packet FTF-1301` fresh. Read
   the existing FTF-0403 (`budget_policy_schema.py`/`_crud.py`/`_routes.py`/
@@ -1405,6 +1416,14 @@ genuine passing CI conclusion until this clears. See
 CERTIFIED" entry for the full independent-review detail. Remove this item
 the moment the owner resolves it (or a session confirms CI is
 provisioning runners again on a fresh PR event).
+
+**Reconfirmed 2026-09-22T02:50Z (scheduled relay shift):** triggered a
+fresh `rerun_failed_jobs` independent of every prior data point above —
+still 18/18 near-instant failures, no runner ever assigned. The outage
+has now persisted continuously across two calendar days (first seen
+2026-09-21T19:05Z). Still no session-level means to diagnose or fix a
+GitHub Actions billing/capacity issue; still an owner action, not a code
+fix.
 
 2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
 backend selected before it can be implemented for real.** Its own
