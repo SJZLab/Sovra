@@ -4486,16 +4486,29 @@ FTF-R015:
   proving_symbol: ''
   proving_test: tests/implementation/test_safe_parallel_executor.py
 FTF-R016:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Measure selected coding-model/executor pilot cost and enforce budget tree
-  evidence_hash: ''
-  implementation_state: ABSENT
+  evidence_hash: c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
+  implementation_state: IMPLEMENTED
   notes: kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q15, Q41, Q42; deps=FTF-R015,
-    FTF-H002, FTF-0403
-  proof_state: UNPROVEN
+    FTF-H002, FTF-0403 (all CERTIFIED). tools/implementation/usage_ledger.py -- real per-task
+    CPU/wall measurement, real retry counting, an independent accepted-task denominator sourced
+    only from TaskOrchestrator.WaveResult.approved_for_downstream (never a task's own self-report),
+    Section 32's cost_per_success formula, a delegated-tree BudgetNode reservation with genuine
+    mid-execution process termination (run_within_budget), compare_to_baseline, and
+    enforce_model_route_policy for Section 81.3's private/air-gapped route policy.
+    token_cost_usd is always None (UNKNOWN) -- disclosed resource-gate limitation, this sandbox
+    exposes no live token-usage-reporting API to the executing coding-agent session, the same
+    class of limitation FTF-R015 already recorded for true multi-host dispatch.
+    cost_per_success never substitutes Decimal("0") for an unknown cost (negative_acceptance
+    "missing usage counted free" made structurally impossible). Not a Factory production
+    dependency -- build/implementation tooling only, matching FTF-R014/R015's own disclosure.
+    proving_symbol deliberately empty (not a served product route), matching FTF-R015/R017's
+    own precedent; product_truth_check.py stays 12/12.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/implementation/test_executor_budget_limits.py
 FTF-R017:
   certification_state: CERTIFIED
   criticality: MUST

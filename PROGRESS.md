@@ -1,5 +1,86 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
+Updated: 2026-09-22T09:00:00Z (scheduled relay shift) — no new task
+  implemented this shift; drove two already-implemented PROVISIONAL
+  submissions to a genuinely current, re-validated state instead of
+  leaving them stale behind `main`.
+
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`.
+
+  STEP 1: recomputed the dependency-ready frontier fresh (script joining
+  `docs/spec-matrix.yaml` `certification_state` against
+  `docs/TASK_INDEX.md` `Dependencies`) — exactly four items: FTF-0408,
+  FTF-0902 (both still blocked by their own previously-disclosed
+  DoD-clarity/resource-gate gaps, re-confirmed unchanged this shift, not
+  re-litigated), and FTF-1302/FTF-R016 (both already implemented,
+  PROVISIONAL, with real open PRs #170/#172 from prior shifts). Picking
+  either of the latter two again would duplicate real work, so this
+  shift's job was to confirm whether the CI-runner-provisioning outage
+  (open since 2026-09-21) was genuinely cleared and, if so, drive both
+  submissions honestly to green rather than leave them stale.
+
+  Confirmed directly (not by trusting PR #178's own claim alone) that the
+  outage is cleared: PR #170's real current head showed 23/23 GitHub
+  Actions checks `completed`/`success`, including a real ~5.5-minute
+  from-source OpenBao build in the newly added `secret-manager-
+  integration` job. PR #170 was merged (merge commit
+  `acce2b4d9a3d636b06065f11de3958239ba5b917`) via the pre-authorized
+  merge-on-green path while this shift was still investigating — no
+  further action needed there beyond confirming the merge landed clean on
+  `main`.
+
+  PR #172 (FTF-R016) was still stale: its last CI run predates the
+  cleared outage (18/18 `failure`, `runner_id: 0`, the same signature),
+  and its base was two merges behind `main`. Brought it current in a
+  dedicated `git worktree` (pushing directly to that PR's own branch,
+  `claude/wizardly-fermat-dtzhzo`, matching the established precedent for
+  driving another open PR to green rather than duplicating its work):
+  merged `origin/main` in two steps (main advanced again mid-resolution,
+  merging PR #170 itself). Every conflict was confined to the three
+  append-only narrative logs (`PROGRESS.md`/`QUEUE.md`/`docs/
+  certifications/queue.md`); every code file, the Alembic migration chain
+  (re-confirmed still a single linear `0001`..`0009` head), `ci.yml`, and
+  `spec-matrix.yaml` merged clean with no manual intervention. Resolved
+  each log conflict by keeping both sides' content, ordered per that
+  file's own chronological convention — nothing dropped.
+
+  Independently re-validated the merged result before pushing (not
+  trusting either producer session's own claims by themselves): `uv sync
+  --all-packages` + `pnpm install --frozen-lockfile` (the same
+  pre-existing, previously-documented sandbox gap every prior shift has
+  already recorded) + `git fetch --unshallow origin`; FTF-R016's own
+  `tests/implementation/test_executor_budget_limits.py` — 34/34 passed;
+  full `tests/tasks/test_ftf_*.py` + `tests/implementation/test_*.py` +
+  `tests/reference/test_ftf_*.py` sweep — all clean; `ruff check`/`ruff
+  format --check` clean; `mypy` (from `apps/api`) — 2 errors, both the
+  pre-existing, unrelated `authlib.jose` stub gap, confirmed identical on
+  `main`; `pnpm run lint`/`typecheck`/`format:check`/`test` (vitest
+  19/19) clean; `scripts/validate_spec.py --strict` clean;
+  `scripts/product_truth_check.py --fail-on-unwired` — `13/13`. Pushed the
+  merge commit (`62a946c`) to PR #172's own branch to trigger a fresh CI
+  run on the real current head, rather than merging on the strength of
+  this sandbox's own reproduction alone.
+
+  STEP 4 stop condition: this was a maintenance/drive-to-green shift, not
+  an implementation one — disclosed as such rather than manufacturing a
+  partial or duplicate submission under time pressure. No BLOCKER, no
+  owner ask: `docs/certifications/queue.md` "Owner actions — current"
+  stays empty as of this shift's own direct check.
+
+## Next shift
+Merge PR #172 once its fresh CI run (triggered by this shift, head
+`62a946c`) reaches a real `completed`/`success` conclusion, the same
+merge-on-green path PR #170 just used. After that, no dependency-ready,
+unclaimed item remains — recompute the frontier fresh rather than
+trusting this note alone. The five open "Control plane: certify
+FTF-XXXX" PRs (#179/#180/#181/#182/#183) still need Control-plane
+review/merge before `docs/spec-matrix.yaml` actually reads `CERTIFIED`
+for FTF-0202/FTF-1501/FTF-1001/FTF-1401/FTF-1702 — their code is already
+on `main`, but `certification_state` stays `PROVISIONAL` until those
+doc-only PRs land. This relay shift did not merge or certify any of them
+(Law 4).
+
+Previously, Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201 all
   CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the
   committed `CLAUDE.md.sha256` — no BLOCKER needed. STEP 1: read
@@ -405,6 +486,58 @@ action), re-run PR #172's CI for a genuine passing conclusion — no code
 change expected or needed.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-21T20:55:00Z (scheduled relay shift) — implemented FTF-R016
+  (Measure selected coding-model/executor pilot cost and enforce budget
+  tree, deps FTF-R015/FTF-H002/FTF-0403 all CERTIFIED). CLAUDE.md hash
+  verified clean. Re-confirmed the CI-runner-provisioning owner-ask is
+  still genuinely open (PR #170's checks and the control plane's own
+  19:17Z re-confirmation both still `failure`/`runner_id: 0`; no workflow
+  run since) — not re-triggered a third time, left exactly as recorded.
+  Caught and fixed a real bug in this shift's own dependency-frontier
+  script before implementing anything (a `notes:` field that wraps onto a
+  second YAML line was silently mis-parsed as `deps=none`, falsely making
+  FTF-R006 look ready when its four real dependencies are all `NONE`).
+  FTF-R016 is the real, sole, newly dependency-ready, unclaimed item this
+  shift (FTF-0202/FTF-0408/FTF-0902 all carry previously disclosed
+  blockers; FTF-1001/1302/1401/1501/1702 each already have an open,
+  unreviewed PROVISIONAL PR from a prior shift).
+
+  Implemented `tools/implementation/usage_ledger.py`,
+  `scripts/report_executor_pilot.py`,
+  `tests/implementation/test_executor_budget_limits.py` (34/34 checks
+  passed). Two genuine first-run failures before any check was declared
+  passing (Law 1): a marker-filename mismatch that made the real
+  `TaskOrchestrator` integrated-CI step fail closed, and a fault-injection
+  probe that crashed instead of demonstrating the targeted vulnerability
+  — both fixed and re-confirmed. Own fault injection (Law 1): removed the
+  unknown-cost guard from `cost_per_success`, a fresh subprocess wrongly
+  folded an unknown cost into a real zero, caught by the named "missing
+  usage counted free" check; reverted byte-identical, re-confirmed clean.
+  Resource-gate disclosure: this sandbox has no live token-usage-reporting
+  API, so `token_cost_usd` is always `None` (UNKNOWN), never fabricated or
+  treated as free — the same disclosed-limitation pattern FTF-R015 already
+  used for true multi-host dispatch.
+
+  Full regression clean: unshallowed the sandbox's shallow clone, ran
+  `uv sync --all-packages`/`pnpm install --frozen-lockfile` (both
+  pre-existing environment gaps, closed not worked around — confirmed by
+  re-running the full `tests/tasks/test_ftf_*.py` sweep clean immediately
+  after with no other change). `ruff check`/`format --check`/`mypy .`
+  clean repo-wide (147 source files, 0 errors); `pnpm run
+  lint`/`typecheck`/`format:check` clean; `validate_spec.py --strict`
+  clean; `scripts/verify_task.py --task FTF-R016 --stage task` — PASS.
+  `product_truth_check.py --fail-on-unwired` stays `12/12` (build tooling,
+  `proving_symbol` deliberately empty, matching FTF-R014/R015/R017).
+  Wired into `.github/workflows/ci.yml`'s `gate` job and
+  `spec/verification-map.json` (two-commit hash-fixup pattern).
+
+  **Certified: 36/300 (unchanged). Product-true: 12/12 (unchanged).**
+  Queued for Control-plane L2 certification: FTF-R016 (this shift, PR
+  pending open). Not self-certified (Law 4). STEP 4 stop: (a)
+  L1-PROVEN/PROVISIONAL reached, reporting and stopping. Full submission
+  report: `docs/certifications/queue.md`.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #170) — independent CERTIFY
   review of FTF-1302 (Local compute costing): **NOT CERTIFIED**, but not
   for a code reason — the shipped code, tests, and fault-injection
