@@ -3467,10 +3467,10 @@ FTF-1701:
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1701.py
 FTF-1702:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool environment
-  evidence_hash: 2d36085547b597625ddcfc0feb394c0c4027f0be
+  evidence_hash: 099a0753710ac6f2bb4cba68c209e99d3845e5d9
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-36; scenarios=Q05, Q10, Q17, Q32; deps=FTF-0004, FTF-1701
@@ -3521,7 +3521,44 @@ FTF-1702:
     .github/workflows/ci.yml's gate job, right after the FTF-1701 step. PR opened as
     PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control plane L2
     certification. Full submission report: docs/certifications/queue.md.
-  proof_state: L1-PROVEN
+
+    INDEPENDENTLY CERTIFIED (PR #167, merge commit 099a0753710ac6f2bb4cba68c209e99d3845e5d9,
+    2026-09-22) by session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5 -- session-ID
+    compared against every commit on PR #167 (2d36085/cd90816/64f8c2f, all carrying
+    Claude-Session .../session_01CVWSRiMU43ZUy6H6C9FMez; none match this reviewing session, so
+    this is independent, not self-certification). PR #167 predated FTF-1501/#159, FTF-1001/#160
+    and FTF-1401/#161 merging to main, so this review merged current main into the PR branch
+    (the fourth of this backlog's merges) and resolved one real conflict in ci.yml (a simple
+    gate-step append, no job-body collision) plus the usual PROGRESS.md/QUEUE.md/
+    docs/certifications/queue.md conflicts, verified clean via a duplicate-key-detecting YAML
+    loader before pushing. Own reproduction, this sandbox: uv run python3
+    tests/reference/test_ftf_1702.py -- "all checks passed" (12/12); uv run python3
+    tests/reference/test_ftf_1701.py -- "all checks passed" (no regression). Own fault injection,
+    one vector, distinct from the producer's own two (unseeded-tenant/subject dispatch guard,
+    reset-in-place): made record_id_for swallow its own KeyError and return an empty string
+    instead of raising ToolEnvironmentError for a triple never seeded (`return
+    self._record_ids.get(key, "")`) -- the suite failed with exactly the named check
+    ("record_id_for raises ToolEnvironmentError for a triple never seeded"), confirming that
+    guard is genuinely load-bearing; reverted byte-identical (diff against the pre-injection copy
+    empty), suite re-confirmed clean immediately after. CI reconfirmed green on the real merged
+    head via get_check_runs -- 23/23 jobs success (run 35705643744). No regression: full
+    tests/tasks/test_ftf_*.py sweep (35 files) all "all checks passed"; ruff check/format --check
+    clean using the pinned project ruff (0.6.9, matching CI); mypy (apps/api) -- 2 errors, both
+    the pre-existing, unrelated authlib.jose stub gap; pnpm lint/typecheck/format:check clean.
+    validate_spec.py --strict clean. product_truth_check.py --fail-on-unwired stays real 13/13
+    (unchanged -- proving_symbol deliberately empty, matching the FTF-1701 precedent, this module
+    touches no database/network/GPU resource and has no new live route of its own). Task contract
+    re-pulled directly via python tools/r1_handoff.py packet FTF-1702 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md -- acceptance clause 1 ("Implement real disposable seeded
+    backend for search/get/create-note/request-approval/execute-approved-action") confirmed met
+    by ToolEnvironment.dispatch wrapping FTF-1701's real dispatch_tool_call for all five tools;
+    acceptance clause 2 (independent review, exact merged commit, real integration/negative-test
+    evidence) is this review itself; negative_acceptance ("Canned success tools and unguarded
+    financial writes cannot satisfy target-product test environment") confirmed by construction
+    -- dispatch never short-circuits to a canned result, confirmed by direct code read. Dependencies
+    FTF-0004/FTF-1701 confirmed genuinely CERTIFIED before relying on them. No blocking defect
+    found. Merged PR #167 (merge commit 099a0753710ac6f2bb4cba68c209e99d3845e5d9).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/reference/test_ftf_1702.py
 FTF-1703:

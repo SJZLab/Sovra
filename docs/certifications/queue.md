@@ -9188,3 +9188,88 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-1702 (PR#167) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+continuing the same certifier shift that just certified FTF-1501
+(PR #159), FTF-1001 (PR #160), and FTF-1401 (PR #161) — the fourth of
+the real open-PR backlog items worked through per the user's explicit
+request.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5`; all three commits on PR #167
+  (`2d36085`, `cd90816`, `64f8c2f`) carry `Claude-Session: .../
+  session_01CVWSRiMU43ZUy6H6C9FMez` — no match, independent per Law 4.
+- **Merge-conflict resolution required a fourth time:** PR #167 was
+  opened 2026-09-21T15:01Z, predating FTF-1501/#159, FTF-1001/#160 and
+  FTF-1401/#161 all merging to `main`. Merged current `main` into the
+  PR branch and resolved one real conflict in `ci.yml` — a simple
+  gate-step append this time, no job-body collision, since FTF-1702
+  adds no dedicated integration job (no DB/network/GPU touched) — plus
+  the usual `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+  conflicts, verified clean via a duplicate-key-detecting YAML loader
+  before pushing.
+- **CI reconfirmed green on the real merged head:** `get_check_runs` on
+  PR #167 — all 23 jobs `completed`/`success`, real per-job runner IDs
+  and timestamps (run `35705643744`).
+- **Diff read directly:** `evals/reference/tool_environment.py` (the
+  full `ToolEnvironment` class: `_reseed`, `server`, `record_id_for`,
+  `dispatch`, `reset`), `tests/reference/test_ftf_1702.py`. Confirmed
+  `dispatch` refuses an unseeded tenant/subject before ever reaching
+  FTF-1701's real dispatcher, and `reset()` discards the current
+  `ReferenceBusinessServer` outright and rebuilds a fresh one from the
+  same seed spec (never mutated in place), so one qualification case's
+  mutations can never leak into the next.
+- **Own reproduction, this sandbox:** `uv run python3
+  tests/reference/test_ftf_1702.py` — "all checks passed" (12/12).
+  `uv run python3 tests/reference/test_ftf_1701.py` — "all checks
+  passed" (no regression to the dependency this task wraps).
+- **Own fault injection, one vector, distinct from the producer's own
+  two (unseeded-tenant/subject dispatch guard, reset-in-place),
+  reverted byte-identical and the suite re-confirmed clean immediately
+  after:** made `record_id_for` swallow its own `KeyError` and return
+  an empty string instead of raising `ToolEnvironmentError` for a
+  triple never seeded (`return self._record_ids.get(key, "")`) — the
+  suite failed with exactly the named check ("record_id_for raises
+  ToolEnvironmentError for a triple never seeded"), confirming that
+  guard is genuinely load-bearing, not decorative.
+- **Static checks re-run clean, this session:** `uv run ruff check .` /
+  `uv run ruff format --check .` clean repo-wide using the pinned
+  project ruff (0.6.9, matching CI). `uv run mypy .` (from `apps/api`) —
+  2 errors, both the pre-existing, unrelated `authlib.jose` missing-stub
+  gap. `pnpm run lint`/`typecheck`/`format:check` clean. `python3
+  scripts/validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` stays real `13/13` (unchanged — `proving_symbol`
+  deliberately empty, matching the FTF-1701 precedent — this module
+  touches no database/network/GPU resource and has no new live route of
+  its own, not inflation).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1702 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-1702.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1
+  ("Implement real disposable seeded backend for search/get/create-note/
+  request-approval/execute-approved-action") confirmed met by
+  `ToolEnvironment.dispatch` wrapping FTF-1701's real
+  `dispatch_tool_call` for all five tools. Acceptance clause 2
+  (independent review, exact merged commit, real integration/
+  negative-test evidence) is this review itself. `negative_acceptance`
+  ("Canned success tools and unguarded financial writes cannot satisfy
+  target-product test environment") confirmed by construction —
+  `dispatch` never short-circuits to a canned result, confirmed by
+  direct code read.
+- Dependencies FTF-0004/FTF-1701 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `099a0753710ac6f2bb4cba68c209e99d3845e5d9`. Appended a signed entry to
+  `docs/certifications/ledger.md`. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-1702']` written
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json`. QUEUE.md/
+  PROGRESS.md updated (FTF-1702 moved to Done, Certified count bumped).
+  This was the fourth of six real backlog items; FTF-1302 (PR #170) and
+  FTF-R016 (PR #172) remain, both previously reviewed sound but blocked
+  only by a reportedly-cleared CI outage — next in this sweep.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5,
+  2026-09-22.
