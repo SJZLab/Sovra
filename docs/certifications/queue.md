@@ -9716,3 +9716,65 @@ No blocking defect found. `docs/spec-matrix.yaml` set to
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-1702']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1702 moved to Done,
 Certified count bumped to 42/300 (product-true stays 13/13).
+
+## 2026-09-22 — Control plane: FTF-R016 (PR#172) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. This task was previously
+reviewed sound but NOT CERTIFIED (2026-09-21) solely because CI could not
+show a genuine passing run — a runner-provisioning outage, not a code
+defect. Session-ID compared against PR #172's commits
+(`session_019xvKNprddWsv6qXhodDCkZ`/`session_01SwwQG6gYUUQiifu9yj3QYM`) —
+no overlap, independent per Law 4. A separate stale, unmerged candidate
+certification (PR #185, opened by a fourth session
+`session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded and closed by this
+entry rather than trusted at face value.
+
+Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`:
+- Re-confirmed the runner-provisioning outage is genuinely cleared:
+  `get_check_runs` on PR #172's real merge-head run — 23/23 jobs
+  `success`, real distinct non-zero `runner_id`s, genuine multi-minute
+  per-job durations.
+- `tests/implementation/test_executor_budget_limits.py` reproduced clean
+  from scratch (34/34).
+- Own fault injection, a vector distinct from the producer's own, the
+  first reviewer's, and PR #185's own: disabled the mid-execution
+  termination guard in `run_within_budget`. Reproduced for real with a
+  bounded 2-second budget against a real 5-second `sleep` subprocess —
+  with the guard intact the process is genuinely killed at ~2.0s; with
+  it disabled the same process runs the full ~5.0s undetected. The
+  dedicated suite caught this: 3 named checks failed for exactly the
+  right reason. Reverted byte-identical; suite re-confirmed clean.
+- `product_truth_check.py --fail-on-unwired` — `13/13`; `proving_symbol`
+  confirmed legitimately `''` (build/implementation tooling, not a
+  served route).
+- `tools/r1_handoff.py packet FTF-R016` — both acceptance clauses and
+  the full negative_acceptance (no hardcoded guarantee, unknown cost
+  never free, acceptance never self-reported, budget tree never resets
+  per subagent, private-mode route policy enforced) confirmed genuinely
+  met.
+- Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed genuinely
+  `CERTIFIED`.
+- `scripts/validate_spec.py --strict` clean.
+- **Note:** fixed a genuine YAML-parsing hazard found while writing this
+  entry — FTF-R016's own `notes:` field used a plain unquoted multi-line
+  scalar, which broke `yaml.safe_load` once this entry's own text added
+  a `: ` sequence; converted to the file's own established `notes: >-`
+  block-scalar convention (matching FTF-0202's own precedent), no
+  content lost, verified by re-parsing.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`ce1d2f062a830cbb69bfd00353e329585f8efff5`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-R016 — Measure selected
+coding-model/executor pilot cost and enforce budget tree"). Ran
+`scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-R016']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-R016 moved to
+Done, Certified count bumped to 43/300 (product-true stays 13/13).
+
+This is the seventh and last of the seven PROVISIONAL items found at
+the start of this shift (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/
+FTF-1702/FTF-R016) — all now independently CERTIFIED, and all six
+stale duplicate "Control plane: certify" candidate PRs (#179-185)
+closed as superseded.

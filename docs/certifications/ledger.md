@@ -4934,3 +4934,96 @@ reasons given above.
   `['FTF-1702']` updated. Certified: 42/300, Product-true: 13/13.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-R016 — Measure selected coding-model/executor pilot cost and enforce budget tree
+- Criterion ID: FTF-R016
+- PR: https://github.com/SJZLab/Sovra/pull/172 (`claude/wizardly-fermat-dtzhzo` → `main`)
+- Merge commit: ce1d2f062a830cbb69bfd00353e329585f8efff5
+- Implementation commit: c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Prior history:** reviewed sound but NOT CERTIFIED on 2026-09-21
+  solely because GitHub Actions could not show a genuine passing CI run
+  — a runner-provisioning outage, not a code defect.
+- **Session-ID check:** PR #172's commits carry `Claude-Session:
+  .../session_019xvKNprddWsv6qXhodDCkZ` and
+  `.../session_01SwwQG6gYUUQiifu9yj3QYM`; this reviewing session's own
+  ID is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match, independent per
+  Law 4. A separate stale, unmerged candidate certification (PR #185,
+  opened by a fourth session `session_01DzyLpJHy35M2BeGRfHfwL5`) is
+  superseded/closed by this entry rather than trusted at face value.
+- **CI outage genuinely re-confirmed cleared:** `get_check_runs` on PR
+  #172's real merge-head run — 23/23 jobs `success`, real distinct
+  non-zero `runner_id`s and genuine multi-minute per-job durations
+  (`secret-manager-integration` ~6m35s) — structurally the opposite of
+  the prior ghost-job signature.
+- **Diff read directly:** `tools/implementation/usage_ledger.py` — real
+  per-task CPU/wall measurement via `resource.getrusage`, real retry
+  counting, an independent accepted-task denominator sourced only from
+  `TaskOrchestrator.WaveResult.approved_for_downstream` (never a task's
+  own self-report), a delegated-tree `BudgetNode` reservation that always
+  walks the live parent chain, `run_within_budget`'s genuine mid-execution
+  process termination, `compare_to_baseline`, and
+  `enforce_model_route_policy` for Section 81.3's private/air-gapped
+  route policy. `token_cost_usd` is always `None` (disclosed resource-gate
+  limitation — no live token-usage-reporting API in this sandbox).
+- **Own reproduction, this sandbox** (fresh git worktree at the real
+  merged head): `tests/implementation/test_executor_budget_limits.py` —
+  "All 34 checks passed."
+- **Own fault injection, this session, a vector distinct from the
+  producer's own (`cost_per_success` zero-successes guard), the first
+  reviewer's (`BudgetNode.available_usd()`/`enforce_model_route_policy`),
+  and PR #185's own (`BudgetNode._chain()`):** disabled the
+  mid-execution termination guard in `run_within_budget` (`if elapsed >=
+  budget_seconds:` → `if False and ...`). Reproduced for real with a
+  bounded 2-second budget (`BudgetNode(limit_usd=Decimal("0.02"))` at
+  `rate_usd_per_second=Decimal("0.01")`) against a real 5-second `sleep`
+  subprocess: with the guard intact, the process is genuinely terminated
+  (`BoundedTermination` raised) after ~2.0s; with the guard disabled, the
+  same process runs the full ~5.0s to completion, completely undetected —
+  a genuine budget overrun goes unflagged. The dedicated test suite
+  caught this for real: 3 named checks failed ("a real long-running
+  process is genuinely terminated once the tree budget is reached", "the
+  process was cut off well before its natural 5s completion", "the
+  marker file ... is genuinely absent"). Reverted; `diff` against the
+  pre-injection copy confirmed byte-identical; suite re-confirmed clean
+  (34/34) immediately after.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `13/13`; FTF-R016's own `proving_symbol`
+  confirmed legitimately `''` (build/implementation tooling, not a
+  served product route). `ruff check` on the touched file clean.
+- Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-R016
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and
+  the full negative_acceptance ("Reject $100/$300 guarantee, missing
+  usage counted free, task self-declared accepted, budget reset per
+  subagent and external route in private source-code policy") confirmed
+  genuinely met — no hardcoded `$100`/`$300` anywhere (grepped directly),
+  unknown cost never substituted with `Decimal("0")`, the acceptance flag
+  is structurally sourced from a real orchestrator result never a
+  self-report, `BudgetNode` walks the live parent chain (now
+  independently fault-proven three times: the first reviewer, PR #185,
+  and this review's own vector against a different code path),
+  `enforce_model_route_policy` denies non-approved routes under
+  `private_mode=True`.
+- **Note:** a genuine YAML-parsing hazard was found and fixed while
+  writing this entry — FTF-R016's own `notes:` field used a plain
+  (unquoted) multi-line scalar, which broke `yaml.safe_load` once this
+  entry's own added text introduced a `: ` sequence inside a code
+  reference; converted to this file's own established `notes: >-`
+  block-scalar convention (matching FTF-0202's own precedent), with no
+  content lost — verified by re-parsing and diffing the recovered text
+  against what was written.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`ce1d2f062a830cbb69bfd00353e329585f8efff5`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-R016']` updated. Certified: 43/300, Product-true: 13/13.
+
+**Conclusion:** Certified L2-CERTIFIED.
