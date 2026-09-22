@@ -168,6 +168,8 @@ jobs:
         run: uv run python3 tests/reference/test_ftf_1701.py
       - name: FTF-1301 negative-test proof (CostProfile catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1301.py
+      - name: FTF-0202 negative-test proof (Secret-manager integration catches real defects, no network required)
+        run: uv run python3 tests/tasks/test_ftf_0202.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -835,3 +837,35 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real CostProfile evidence against the live database
         run: uv run python3 tests/integration/test_ftf_1301_cost_profile.py
+
+  secret-manager-integration:
+    # FTF-0202: real OpenBao KV v2 store/resolve/rotate evidence (Section
+    # 2-3/38/65/77/81) -- tests/integration/test_ftf_0202_secret_manager.py.
+    # No prebuilt OpenBao release binary or container image was reachable
+    # from this repo's interactive dev sandbox (the same documented class
+    # of gap FTF-0004/FTF-0102/FTF-R017 already established for
+    # Postgres/Docker/SeaweedFS); this evidence was instead produced
+    # locally against a real OpenBao server built directly from source --
+    # this job does the identical build fresh on the hosted runner's own
+    # real network, then starts that binary as a real local -dev server
+    # the test itself spawns and tears down (no `services:` container
+    # needed -- OpenBao's dev mode is a single self-contained process).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
+        run: |
+          git clone --filter=blob:none https://github.com/openbao/openbao.git /tmp/openbao-src
+          cd /tmp/openbao-src
+          git checkout e98dc184344fe84ee4e69965ac3f4217d5b6a45d
+          go build -o /usr/local/bin/bao .
+          bao version
+      - name: Prove the real OpenBao store/resolve/rotate/expire evidence against the live server
+        run: uv run python3 tests/integration/test_ftf_0202_secret_manager.py
