@@ -8197,3 +8197,102 @@ Full entry: docs/certifications/ledger.md.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_01U9fapCAPqWfq9QZeRdwpkM,
   2026-09-21.
+
+### Control plane review — 2026-09-21 — FTF-R016 (PR #172) — NOT CERTIFIED (CI cannot show a genuine pass; same GitHub Actions runner-provisioning failure as PR #170, not a code defect)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #172 (https://github.com/SJZLab/Sovra/pull/172,
+  `claude/wizardly-fermat-dtzhzo` → `main`).
+- **Session-ID check:** all three commits on PR #172 (`c4f5535`, `867b5ce`,
+  `6336535`) carry `Claude-Session: .../session_019xvKNprddWsv6qXhodDCkZ`;
+  this reviewing session's own ID is
+  `https://claude.ai/code/session_01AWerxtiNNPmTwcW3rPzZRy` — no match,
+  independent per Law 4.
+- **Diff read directly:** `git diff origin/main...pr-172 --stat` — exactly
+  the task packet's own `files` list (`tools/implementation/usage_ledger.py`,
+  `scripts/report_executor_pilot.py`,
+  `tests/implementation/test_executor_budget_limits.py`) plus the expected
+  tracking-doc set (`docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+  `docs/certifications/queue.md`, `docs/implementation/task-packets/
+  FTF-R016.md`, `spec/verification-map.json`) and one new `gate` step in
+  `.github/workflows/ci.yml` — no scope creep.
+- **Own reproduction, fresh:** checked out the three new files from `pr-172`
+  onto a clean `origin/main` base (this session's designated branch had to
+  be reset first — it was pre-populated with the producer's own PR172
+  commits rather than main, corrected before any review commit was made).
+  `python3 tests/implementation/test_executor_budget_limits.py` — "All 34
+  checks passed." Own fault injection, two vectors distinct from the
+  producer's own two (marker-filename mismatch was a first-run bug, not a
+  fault-injection claim; the producer's one real fault-injection vector was
+  the unknown-cost guard in `cost_per_success`) — I edited the shipped
+  module directly: (1) `BudgetNode.available_usd()` changed to return only
+  `self.limit_usd - self._reserved_usd`, ignoring the parent chain — 2
+  checks failed for real (`a child's own large declared limit cannot escape
+  the real parent remaining balance`, `a denied reservation leaves the
+  tree's balance unchanged`), confirming the "budget reset per subagent"
+  negative_acceptance guard is genuinely load-bearing; (2) short-circuited
+  `enforce_model_route_policy`'s guard with `if False and private_mode and
+  ...` — 1 named check failed for real (`an external route is denied under
+  private_mode`), confirming the Section 81.3 negative_acceptance guard is
+  genuinely load-bearing. Both reverted byte-identical (`diff` against the
+  pre-injection copy empty) and the suite re-confirmed clean immediately
+  after each. No regression: `tests/implementation/test_r1_execution_binding.py`
+  (24/24) and `tests/implementation/test_safe_parallel_executor.py` (36/36)
+  both still pass. `ruff check` on the three new files — clean.
+  `scripts/product_truth_check.py --fail-on-unwired` — real `12/12`
+  (unchanged — `proving_symbol` genuinely empty, matching the
+  FTF-R014/R015/R017 precedent for build tooling, not inflation). `.github/
+  workflows/ci.yml` confirmed wired with the new gate step.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-R016 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-R016.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1 ("Measure one
+  backend/UI/integration task plus parallel run with real tokens/CPU/CI/
+  retries and independent accepted-task denominator") confirmed met by
+  `test_real_pilot_report_end_to_end` — a real parallel wave with a
+  genuinely failing task (`R016-B`) correctly excluded from
+  `independent_accepted_task_ids`, and `cost_per_success_usd` honestly
+  reported `"UNKNOWN"` rather than fabricated or `$0`. Acceptance clause 2
+  ("Compare chosen executor/model to approved baseline... enforce
+  delegated-tree reservations and bounded termination") confirmed met by
+  `compare_to_baseline` (returns `INSUFFICIENT_EVIDENCE` on a missing
+  figure, never manufactures a winner) and by this review's own fault
+  injection above plus the producer's own real-SIGTERM/marker-file proof.
+  `negative_acceptance` ("reject $100/$300 guarantee, missing usage counted
+  free, task self-declared accepted, budget reset per subagent, external
+  route in private source-code policy") — all five legs independently
+  confirmed: the first four already covered above, `accepted_from_wave`
+  reading only `approved_for_downstream` (never a task's own flag) closes
+  the "self-declared accepted" leg by construction (source-read, not just
+  test-asserted). Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` on `main` before relying
+  on them. `evidence_hash` in the PR's own `docs/spec-matrix.yaml` diff
+  (`c4f5535`) matches the real implementation commit.
+- **The shipped code and its evidence are sound — this review's finding is
+  not a code defect.** What blocks certification is the same,
+  already-disclosed GitHub Actions runner-provisioning outage first found
+  on PR #170 (see the entry immediately above and QUEUE.md "Owner actions —
+  current"), now independently reconfirmed a further time on a completely
+  different PR/branch/task, which rules out anything PR #170-specific as
+  the cause: `list_workflow_jobs` on this PR's own run (`35655618099`)
+  showed jobs transitioning `queued` → `completed`/`failure` in ~3 seconds
+  each (`storage-semantics-integration`, `trainable-artifact-schema-api-
+  integration`), `get_workflow_job` on the first confirmed `runner_id: 0`,
+  `runner_name: ""`, and `get_job_logs` returned HTTP 404 (no runner was
+  ever assigned, so no log exists) — the identical signature already
+  recorded for PR #170. The remaining jobs, including `gate`, were still
+  `queued` (not yet even attempted) at the time of this review. No genuine
+  passing CI conclusion exists on the real head to confirm.
+- **Not merged, not certified, per Law 1/Law 4.** `docs/spec-matrix.yaml`
+  for FTF-R016 stays `PROVISIONAL`/`L1-PROVEN` exactly as the producer
+  submitted it — not altered by this review, since the shipped code is
+  sound; what's missing is a genuine passing CI run, which needs the
+  GitHub Actions runner-provisioning issue resolved first (owner-level,
+  outside any session's access). PR #172 stays open, unmerged. **Action
+  needed before re-requesting certification:** once GitHub Actions is
+  confirmed provisioning runners again, re-run PR #172's CI to get a
+  genuine passing conclusion on the real head, then a fresh Control-plane
+  review can certify on that basis alone — no code change is expected or
+  needed.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01AWerxtiNNPmTwcW3rPzZRy,
+  2026-09-21.
