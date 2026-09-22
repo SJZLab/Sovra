@@ -9496,3 +9496,50 @@ integration"). Ran `scripts.task_claim.sync_certified_status()` —
 `['FTF-0202']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0202 moved to Done,
 Certified count bumped to 37/300 (product-true stays at whatever
 `main`'s current tip independently shows, 13/13 as of this review).
+
+## 2026-09-22 — Control plane: FTF-1001 (PR#160) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. Session-ID compared against
+PR #160's commits (`session_017j5b6PyPwyvoYyubyzrAcr`) — no overlap,
+independent per Law 4. A separate stale, unmerged candidate certification
+(PR #181, opened by a third session `session_01DzyLpJHy35M2BeGRfHfwL5`)
+is superseded and closed by this entry rather than trusted at face value.
+
+Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`:
+- Confirmed PR #160's merge commit (`8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`)
+  is a real ancestor of `main`'s current tip.
+- `get_check_runs` on PR #160's real head — 22/22 jobs `success`, real
+  non-instant per-job durations (12s–390s), no runner-provisioning ghost
+  pattern.
+- `tests/tasks/test_ftf_1001.py` and the real-Postgres integration suite
+  both reproduced clean from scratch against a freshly isolated database.
+- Own fault injection, a vector distinct from the producer's three and PR
+  #181's one: disabled the cross-project-within-same-org scoping guard in
+  `_fetch_or_raise` — the named cross-project-404 check failed for exactly
+  the right reason; reverted byte-identical; suite re-confirmed clean.
+- `product_truth_check.py --fail-on-unwired` — `13/13`; confirmed
+  `build_model_version_router` is a genuine live caller in
+  `apps/api/app/main.py`, not a 0/0 or existence-only claim.
+- `tools/r1_handoff.py packet FTF-1001` — both acceptance clauses and the
+  full negative_acceptance (three denial paths) confirmed genuinely met.
+- Dependencies FTF-0301/FTF-0401/FTF-0103 confirmed genuinely `CERTIFIED`.
+- `scripts/validate_spec.py --strict` clean.
+- **Evidence-count correction:** PR #160/#181 both record "24 no-DB test
+  functions" / "26 real live-Postgres checks." Actual counts on the real
+  merged code: 21 `def test_*` functions (43 `check()` calls once a loop
+  over `ALLOWED_IMPORT_KINDS` is accounted for) in the no-DB suite, and 19
+  `check()` calls at runtime in the integration suite. Both suites
+  genuinely pass and genuinely cover the required surface — a
+  documentation inaccuracy in the recorded counts, not a fabricated pass —
+  corrected in `docs/spec-matrix.yaml`'s FTF-1001 notes rather than
+  propagated further.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-1001 — ModelVersion schema/API").
+Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-1001']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1001 moved to Done,
+Certified count bumped to 38/300 (product-true stays 13/13).

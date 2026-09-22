@@ -2587,10 +2587,10 @@ FTF-0909:
   proving_symbol: ''
   proving_test: ''
 FTF-1001:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: ModelVersion schema/API
-  evidence_hash: ''
+  evidence_hash: 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0301, FTF-0401, FTF-0103
@@ -2640,7 +2640,37 @@ FTF-1001:
     a freshly recreated database/role (both tables gained a purely additive
     `UNIQUE(organization_id, id)` constraint this task's migration adds). `ruff`/`ruff format`/
     `mypy` clean on every file this task touched.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-22 by an independent Control-plane session
+    (session_01GngkvFCtGtTnDnW9d2HC1j; session-ID checked clean against PR #160's
+    session_017j5b6PyPwyvoYyubyzrAcr -- no overlap, independent per Law 4; a separate stale,
+    unmerged candidate certification, PR #181 by session_01DzyLpJHy35M2BeGRfHfwL5, is a third
+    distinct session and is superseded/closed here rather than trusted at face value). Re-verified
+    in a fresh git worktree at the real merged head (`8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`):
+    `tests/tasks/test_ftf_1001.py` reproduced clean; the real live-Postgres integration suite
+    reproduced clean against a fresh, isolated local database; an independent fault injection
+    distinct from all three producer vectors and PR #181's own vector (disabled the
+    cross-project-within-same-org scoping guard in `model_version_crud.py`'s `_fetch_or_raise`)
+    caught for real -- the named cross-project-404 check failed for exactly the right reason --
+    then reverted byte-identical; `get_check_runs` on PR #160's real head re-checked directly --
+    22/22 jobs `success` with genuine, non-instant per-job durations (12s-390s), no
+    runner-provisioning ghost-job pattern; `product_truth_check.py --fail-on-unwired` confirmed
+    `proving_symbol: build_model_version_router` is a genuine, non-test live caller
+    (`apps/api/app/main.py` calls it unconditionally inside `create_app()`); task contract
+    re-pulled via `tools/r1_handoff.py packet FTF-1001` and both acceptance clauses plus the full
+    negative_acceptance confirmed genuinely met; dependencies FTF-0301/FTF-0401/FTF-0103
+    confirmed genuinely CERTIFIED. `validate_spec.py --strict` clean.
+
+    Evidence-count correction (Law 1 -- evidence must be bound accurately, not merely
+    "tests pass"): this entry's own text above and PR #160/PR #181's bodies state "24 no-DB test
+    functions" and "26 real live-Postgres checks." Independently counted on the real merged code:
+    `tests/tasks/test_ftf_1001.py` has 21 `def test_*` functions (43 individual `check()` calls
+    once a loop over `ALLOWED_IMPORT_KINDS` is accounted for), and
+    `tests/integration/test_ftf_1001_model_version_schema_api.py` executes 19 `check()` calls at
+    runtime, not 26. Both suites genuinely pass and genuinely cover the acceptance/
+    negative_acceptance surface -- this is a documentation inaccuracy in the recorded counts, not
+    a fabricated pass -- corrected here rather than propagated further.
+  proof_state: L2-CERTIFIED
   proving_symbol: build_model_version_router
   proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
