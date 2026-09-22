@@ -5275,3 +5275,108 @@ reasons given above.
   (unchanged -- this task adds no live caller by design).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0203 — Connection validation
+- Criterion ID: FTF-0203
+- PR: https://github.com/SJZLab/Sovra/pull/200 (`claude/wizardly-fermat-0knkdx` → `main`)
+- Merge commit: c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4
+- Implementation commit: 712ebbf9467e5c8154d24391e1c9b0abad52fd59
+  (task-packet commit: c3cac3a7e986edf2913628f3f50dc7c00ba4bfe6;
+  tracking-doc commit: ba5f27ae975ee217cc2f491e324b4fb1017576ff;
+  CI-fix commit: 9f94a3cac74e354d51dd9986ec402f4350522152)
+- Validated-by: session https://claude.ai/code/session_013qTQ2DdZRMRjiGC8DDeVnS
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #200 itself)
+- Date: 2026-09-22
+- **Session-ID check:** all four commits on PR #200 carry `Claude-Session:
+  .../session_01AE9mEUKyK7BVB93dTEohRn`; this reviewing session's own ID
+  is `session_013qTQ2DdZRMRjiGC8DDeVnS` — no match, independent per Law 4.
+- **CI re-checked, genuinely completed, not taken on faith:** PR #200's
+  original head (`ba5f27a`, run 35785636597) showed a real, reproducible
+  failure — `connection-validation-integration` failed for real with
+  `PermissionError: [Errno 13] Permission denied:
+  '/usr/local/share/ca-certificates/ftf-0203-integration-test-ca.crt'`
+  (confirmed by reading the actual job log, not a summary) — the test
+  suite wrote the ephemeral test CA directly to the system trust store
+  without `sudo`, which works on a root-run sandbox but not on GitHub
+  Actions' `ubuntu-latest` runner (confirmed independently: this
+  reviewing session is itself root in its own sandbox, `touch
+  /usr/local/share/ca-certificates/...` succeeded trivially there,
+  reproducing exactly why the bug was masked pre-push). The producer's
+  own session diagnosed and fixed this identically while this review was
+  in progress (commit `9f94a3c`, switching to `sudo cp`/`sudo
+  update-ca-certificates`) — this review independently confirmed the
+  fix by watching the real re-run to completion: `get_check_runs` on the
+  real final head (`9f94a3c`, run 35785873270) polled to **25/25 real
+  jobs `success`**, including `connection-validation-integration` (40s)
+  and `gate` (2m03s) — not a stale or self-reported claim.
+- **Diff read directly:** `packages/litellm_client/connection_validation.py`
+  (`validate_connection` — resolves `secret_ref` via FTF-0202's
+  `resolve_secret_ref`, dials the gateway's `GET /v1/models` via
+  FTF-H006's `guarded_fetch`, reports `InferenceCheckState`/
+  `ManagementCheckState` as two fully separate dimensions, never raises
+  for an ordinary connectivity/auth/secret failure) and
+  `apps/api/app/litellm/connection_routes.py` (the new `POST
+  .../connections/litellm/{connection_id}/validate` route —
+  `organization_admin`-only, reads `base_url`/`secret_ref` inside the
+  same tenant-scoped session as every other route before releasing it,
+  denies a foreign-tenant connection ID identically to missing (404),
+  refuses a revoked connection (409)). Diff scope matches the task
+  packet's own `files` list exactly (`packages/litellm_client/
+  connection_validation.py`, `tests/tasks/test_ftf_0203.py`, plus the
+  route/CI wiring this task's own acceptance clause requires) — no
+  scope creep.
+- **Own reproduction, a separate git worktree at the real merged head
+  (`9f94a3c`):** `uv sync --all-packages`; `uv run python3
+  tests/tasks/test_ftf_0203.py` — "all checks passed" (48/48). A real
+  local PostgreSQL 16 role/db (`sovra_migrate`/`sovra_ftf0203`) created
+  fresh in this sandbox; `uv run python3
+  tests/integration/test_ftf_0203_connection_validation.py` — "all
+  checks passed" (16/16). `tests/integration/
+  test_ftf_0201_litellm_connection_crud.py` and `tests/tasks/
+  test_ftf_0201.py` re-run clean against a fresh database — no
+  regression to the shared `connection_routes.py` file.
+- **Own fault injection, a vector distinct from the producer's own two**
+  (which targeted `SecretAccessDeniedError` fabrication and DNS/timeout/
+  refused-connection classification): disabled the `response.status in
+  (401, 403)` invalid-token check in `validate_connection`
+  (`if False and response.status in (401, 403):`) and re-ran the no-DB
+  suite — exactly 1 check failed for real: "a real gateway 401 on a
+  resolved credential reports invalid_token, not connected" — this is
+  precisely the negative_acceptance risk this task exists to prevent (a
+  rejected credential silently reported as a connected badge). Reverted
+  from a pre-edit backup; `diff` confirmed byte-identical; the suite
+  re-ran clean immediately after.
+- `ruff check .` / `ruff format --check .` clean (180 files); `mypy .`
+  clean (180 files, "Success: no issues found"). `scripts/validate_spec.py
+  --strict` clean after `git fetch --unshallow origin` (this worktree's
+  own pre-existing shallow-clone artifact, not caused by this task).
+  `CLAUDE.md.sha256` verified against `sha256sum CLAUDE.md` on the real
+  merged head.
+- `scripts/product_truth_check.py --fail-on-unwired` — own run, `14/14`
+  before this certification; `proving_symbol: validate_connection`
+  confirmed a real, non-test, live-caller match in `apps/api/app/litellm/
+  connection_routes.py` (grepped directly, not assumed) — this
+  repository's second live-wired product-runtime path after FTF-0201's
+  own CRUD routes to actually call this symbol.
+- `python3 tools/r1_handoff.py packet FTF-0203 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance clauses ("Validate
+  real gateway TLS/auth/reachability and safe management/inference
+  capabilities separately"; "Independent review, exact merged commit,
+  real relevant integration and negative-test evidence recorded") and
+  the full negative_acceptance clause ("Timeout, certificate error,
+  invalid token and management-403 produce distinct sanitized states,
+  not connected badge") confirmed genuinely met by the diff and this
+  session's own fault injection above, not merely "tests pass";
+  `contract_owner: FTF-0201` confirmed real.
+- Dependencies FTF-0201/FTF-0202/FTF-H006 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `proving_symbol: validate_connection`, `evidence_hash` set to the
+  merge commit (`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` --
+  `['FTF-0203']` updated. Certified: 46/300, Product-true: 15/15.
+
+**Conclusion:** Certified L2-CERTIFIED.

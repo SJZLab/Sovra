@@ -1,4 +1,30 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22 (scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #200) — independently certified FTF-0203 (Connection
+  validation), the sole PROVISIONAL item in `docs/certifications/queue.md`
+  at shift start. Session-ID compared against all four of PR #200's
+  commits (`session_01AE9mEUKyK7BVB93dTEohRn`) — no overlap with this
+  session (`session_013qTQ2DdZRMRjiGC8DDeVnS`), independent per Law 4.
+  PR #200's original head failed `connection-validation-integration` for
+  real (a `PermissionError` installing the test CA without `sudo` on the
+  GitHub Actions runner) — the producer's own follow-up commit fixed it;
+  this review watched the real re-run to completion (25/25 green) before
+  merging. Own reproduction (no-DB + live-Postgres integration suites,
+  FTF-0201 regression) and an own fault injection distinct from the
+  producer's own two (disabled the invalid-token check — the exact
+  negative_acceptance case failed for real) both confirmed the shipped
+  code sound. Merged PR #200 (`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `proving_symbol: validate_connection`.
+  Ledger entry appended (`docs/certifications/ledger.md`). Ran
+  `scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` updated for `['FTF-0203']`.
+  `scripts/status.py`: `45/300` certified / `14` product-true before,
+  `46/300` certified / `15` product-true after. Full record: "## Done"
+  below and `docs/certifications/ledger.md`/`docs/certifications/
+  queue.md`.
+
+## Previous shift
 Updated: 2026-09-22 (scheduled relay shift) — implemented FTF-0203
   (Connection validation, deps FTF-0201/FTF-0202/FTF-H006 all CERTIFIED).
   STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
@@ -2826,6 +2852,24 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 None currently.
 
+FTF-0203 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-22 via PR #200 (merge commit
+`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`). PR #200's own first CI run
+genuinely failed `connection-validation-integration` (a real
+`PermissionError` writing the test CA to `/usr/local/share/
+ca-certificates/` without `sudo` on the GitHub Actions runner, which
+does not run as root) — the producer's own follow-up commit fixed it
+(`sudo cp`/`sudo update-ca-certificates`), and this review watched the
+real re-run to completion (25/25 jobs green) before certifying, rather
+than trusting a stale signal. Own reproduction (no-DB suite 48/48,
+live-Postgres integration suite 16/16, FTF-0201 regression clean) and
+an own fault injection distinct from the producer's own two (disabled
+the `response.status in (401, 403)` invalid-token check — the exact
+negative_acceptance check failed for real, reverted byte-identical) —
+see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
 FTF-H006 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-22 via PR #197 (merge commit
 `99e3d3d0be60d7f5491e99965809a29c62efb4ce`, after resolving a real
@@ -4291,6 +4335,51 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `evidence_hash` set to the merge commit. Ran `sync_certified_status()`.
   `scripts/status.py`: `44/300` certified before, `45/300` after;
   "Product-true" stays `14/14`. Full entry: docs/certifications/ledger.md.
+- FTF-0203 — Connection validation. CERTIFIED 2026-09-22, PR #200 (merge
+  commit `c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`). Scheduled
+  Control-plane certifier shift, `pull_request.opened` webhook for PR
+  #200 itself (`session_013qTQ2DdZRMRjiGC8DDeVnS`, no overlap with PR
+  #200's own four commits' `session_01AE9mEUKyK7BVB93dTEohRn`,
+  independent per Law 4). PR #200's original head genuinely failed
+  `connection-validation-integration` for real — a `PermissionError`
+  writing the ephemeral test CA to `/usr/local/share/ca-certificates/`
+  without `sudo` (works on a root-run sandbox, not on the GitHub Actions
+  runner) — confirmed by reading the actual job log. The producer's own
+  session fixed it identically while this review was in progress (`sudo
+  cp`/`sudo update-ca-certificates`); this review watched the real
+  re-run to completion — 25/25 jobs green, not a stale signal. Diff read
+  directly: `packages/litellm_client/connection_validation.py`
+  (`validate_connection` — resolves `secret_ref` via FTF-0202's
+  `resolve_secret_ref`, dials the gateway via FTF-H006's
+  `guarded_fetch`, reports the inference/management dimensions
+  separately) and `apps/api/app/litellm/connection_routes.py` (the new
+  `POST .../connections/litellm/{connection_id}/validate` route,
+  `organization_admin`-only, 404 on a foreign-tenant connection ID, 409
+  on a revoked one). Own reproduction in a separate git worktree at the
+  real merged head: `tests/tasks/test_ftf_0203.py` — "all checks passed"
+  (48/48); a real local Postgres 16 role/db,
+  `tests/integration/test_ftf_0203_connection_validation.py` — "all
+  checks passed" (16/16); `tests/tasks/test_ftf_0201.py`/
+  `tests/integration/test_ftf_0201_litellm_connection_crud.py` re-run
+  clean — no regression to the shared route file. Own fault injection
+  distinct from the producer's own two: disabled the `response.status in
+  (401, 403)` invalid-token check in `validate_connection` — exactly the
+  named "invalid_token, not connected" check failed for real, reverted
+  byte-identical, re-confirmed clean. `ruff check`/`ruff format --check`/
+  `mypy` clean (180 files each). `product_truth_check.py
+  --fail-on-unwired` — `14/14` before, `proving_symbol: validate_connection`
+  confirmed a real live-caller match in `connection_routes.py`. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0203` — both
+  acceptance clauses and the full negative_acceptance clause confirmed
+  genuinely met. Dependencies FTF-0201/FTF-0202/FTF-H006 confirmed
+  genuinely `CERTIFIED`. No blocking defect found.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `proving_symbol: validate_connection`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`.
+  `scripts/status.py`: `45/300` certified before, `46/300` after;
+  "Product-true" `14/14` before, `15/15` after (this task's own first
+  live caller of `validate_connection`). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

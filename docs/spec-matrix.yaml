@@ -268,10 +268,10 @@ FTF-0202:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0202.py
 FTF-0203:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Connection validation
-  evidence_hash: 712ebbf9467e5c8154d24391e1c9b0abad52fd59
+  evidence_hash: c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201, FTF-0202,
@@ -344,14 +344,52 @@ FTF-0203:
     FTF-0202's own backend behavior is already independently proven there; this task's own
     acceptance clause is about the gateway TLS/auth/reachability dimension, disclosed as a
     deliberately right-sized choice, not a silent scope narrowing.
-    scripts/product_truth_check.py --fail-on-unwired stays 14/14 until this submission is
-    independently certified (Law 2); once certified, proving_symbol=validate_connection (a real,
-    non-test source-root match in apps/api/app/litellm/connection_routes.py's own live
-    /validate route) would newly raise it -- left to the certifying session, not set here.
-    Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2
-    review.
-  proof_state: L1-PROVEN
-  proving_symbol: ''
+    INDEPENDENTLY CERTIFIED (PR #200, merge commit
+    c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4, 2026-09-22) by session
+    https://claude.ai/code/session_013qTQ2DdZRMRjiGC8DDeVnS -- session-ID compared against all
+    four commits on PR #200 (c3cac3a/712ebbf/ba5f27a/9f94a3c all carry Claude-Session
+    .../session_01AE9mEUKyK7BVB93dTEohRn; none match this reviewing session, so this is
+    independent, not self-certification). CI on PR #200's first head (ba5f27a) genuinely failed
+    connection-validation-integration for real: PermissionError writing to
+    /usr/local/share/ca-certificates/ on the GitHub Actions runner, which does not run as root
+    (unlike the producer's own sandbox, where the un-prefixed write happened to succeed and
+    masked the bug pre-push) -- confirmed by reading the real job log directly, not taken on
+    faith. The producer's own follow-up commit (9f94a3c) switched the CA install to sudo cp/sudo
+    update-ca-certificates and re-ran; this review confirmed all 25/25 real jobs green on that
+    real final head (run 35785873270), including connection-validation-integration (40s,
+    success) and gate (2m03s, success) -- watched the run to completion rather than trusting a
+    stale/self-reported claim. Own reproduction in a separate git worktree at the real merged
+    head: uv sync --all-packages; uv run python3 tests/tasks/test_ftf_0203.py -- "all checks
+    passed" (48/48); a real local Postgres 16 role/db (sovra_migrate/sovra_ftf0203) set up
+    fresh, uv run python3 tests/integration/test_ftf_0203_connection_validation.py -- "all
+    checks passed" (16/16); tests/integration/test_ftf_0201_litellm_connection_crud.py and
+    tests/tasks/test_ftf_0201.py re-run clean against a fresh database, confirming no
+    regression to the shared connection_routes.py file. Own fault injection, a vector distinct
+    from the producer's own two (which targeted SecretAccessDeniedError fabrication): disabled
+    the `response.status in (401, 403)` invalid-token check in validate_connection
+    (`if False and response.status in (401, 403):`) -- re-ran the no-DB suite, exactly 1 check
+    failed for real ("a real gateway 401 on a resolved credential reports invalid_token, not
+    connected"), reproducing exactly this task's own negative_acceptance risk (a rejected
+    credential silently reported as a connected badge); reverted from a pre-edit backup, diff
+    confirmed byte-identical, suite re-confirmed clean. ruff check/ruff format --check clean
+    (180 files); mypy clean (180 files, "no issues found"). validate_spec.py --strict clean
+    after git fetch --unshallow (this worktree's own pre-existing shallow-clone artifact, not
+    caused by this task). CLAUDE.md.sha256 verified against sha256sum CLAUDE.md on the real
+    merged head. scripts/product_truth_check.py --fail-on-unwired -- own run, 14/14 before this
+    certification; proving_symbol=validate_connection confirmed a real, non-test, live-caller
+    match in apps/api/app/litellm/connection_routes.py (grepped directly, not assumed),
+    matching the task's own claimed 14/14 -> 15/15 delta once this entry's proving_symbol is
+    set below. python3 tools/r1_handoff.py packet FTF-0203 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md -- both acceptance clauses ("Validate real gateway
+    TLS/auth/reachability and safe management/inference capabilities separately";
+    "Independent review, exact merged commit, real relevant integration and negative-test
+    evidence recorded") and the full negative_acceptance clause ("Timeout, certificate error,
+    invalid token and management-403 produce distinct sanitized states, not connected badge")
+    confirmed genuinely met by the diff and this session's own fault injection above --
+    contract_owner: FTF-0201 confirmed real. Dependencies FTF-0201/FTF-0202/FTF-H006 confirmed
+    genuinely CERTIFIED in this file before relying on them. No blocking defect found.
+  proof_state: L2-CERTIFIED
+  proving_symbol: validate_connection
   proving_test: tests/tasks/test_ftf_0203.py
 FTF-0204:
   certification_state: NONE
