@@ -3300,10 +3300,10 @@ FTF-1408:
   proving_symbol: ''
   proving_test: ''
 FTF-1501:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tenant isolation suite
-  evidence_hash: 778f6f2
+  evidence_hash: 8b8a9c12e04277a62149ab28de2c9c2db3a9ff16
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0106, FTF-H003
@@ -3351,7 +3351,37 @@ FTF-1501:
     production primitives, so product_truth_check.py's proving_symbol stays empty (no live-wiring
     claim), matching the FTF-0106/FTF-H003 precedent. Certified stays 33/300; product-true stays
     10/10.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-22 by an independent Control-plane session
+    (session_01GngkvFCtGtTnDnW9d2HC1j; session-ID checked clean against PR #159's own four
+    original commits' session_01X4QYt5B4DQroufdM796nBD -- no overlap, independent per Law 4; a
+    separate stale, unmerged candidate certification, PR #180 by session_01DzyLpJHy35M2BeGRfHfwL5,
+    is a third distinct session and is superseded/closed here rather than trusted at face value).
+    Confirmed the merge commit is a real ancestor of main; get_check_runs on the real green rerun
+    showed 21/21 jobs success with distinct non-zero runner_ids and real per-step timestamps, no
+    ghost-job pattern (an earlier "0 jobs parsed" run on an intermediate commit was a real,
+    disclosed transient failure, not the final state). Re-verified in a fresh git worktree,
+    stood up a fully isolated local PostgreSQL cluster from scratch, and reproduced both suites
+    clean (tests/tasks/test_ftf_1501.py and tests/security/tenant_isolation_suite.py -- 25/25).
+    Independently confirmed the genuine defense-in-depth this task's own evidence describes: a
+    real Postgres RLS policy and a real application-level authorize_resource_ownership check each
+    independently block a cross-tenant DB read, so disabling either alone does not leak -- only
+    disabling the application-level check (RLS left untouched) reproduces exactly the producer's
+    own claimed fault injection: 25/25 -> 21/25, with precisely the 4 named
+    cross_tenant_db_read_denied checks failing (connection/artifact/project/tool), each 200
+    instead of denied. Reverted byte-identical; suite re-confirmed clean. Noted, not blocking: PR
+    #180's own certifying session pushed 2 commits directly onto PR #159's branch (a merge-to-main
+    conflict resolution and a YAML bug fix) before merging -- infrastructure-only, fully disclosed,
+    does not compromise the independence of the actual security-test code (all four original
+    commits still carry only the producer's own session ID). product_truth_check.py
+    --fail-on-unwired confirmed 13/13 with proving_symbol legitimately empty (a consolidated
+    evidence suite over already-certified primitives, no new live-wiring claim). Task contract
+    re-pulled via tools/r1_handoff.py packet FTF-1501 confirmed acceptance clause 1 is honestly
+    narrowed to real API+DB paths only (workers/storage/cache/model paths are still scaffold-only
+    or have zero live callers, so declaring them would be fabricated evidence under Law 11) and
+    the negative_acceptance (no mocked auth, no superuser-only DB tests) holds by construction.
+    Dependencies FTF-0106/FTF-H003 confirmed genuinely CERTIFIED. validate_spec.py --strict clean.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1501.py
 FTF-1502:

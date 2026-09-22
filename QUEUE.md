@@ -1,5 +1,22 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T12:05:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:20:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1501 (Tenant isolation suite), PR #159,
+  superseding the stale unmerged candidate PR #180. Full independent
+  re-verification recorded in `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` and the new "## Done" entry below,
+  including reproducing the producer's own real fault injection against
+  a freshly isolated local Postgres database (disabling the
+  application-level `authorize_resource_ownership` check alone, with RLS
+  left untouched, reproduces exactly 21/25 with the 4 named
+  cross-tenant-read checks failing — genuine defense-in-depth confirmed,
+  not a single point of failure). Noted, non-blocking: PR #180's own
+  certifier pushed 2 infrastructure-only commits onto PR #159's branch
+  before merging (disclosed). `scripts/status.py`: 40/300 → 41/300
+  certified. Two further PROVISIONAL items (FTF-1702/FTF-R016) remain,
+  both already confirmed HOLDS UP by independent background
+  verification — continuing to process them one at a time.
+
+Previously, Updated: 2026-09-22T12:05:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1401 (API load test), PR #161, superseding
   the stale unmerged candidate PR #182. Full independent re-verification
   (session-ID check, CI re-check, own fault injection on the read P95
@@ -3712,6 +3729,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
   to write the real status into `spec/tasks.json`/`docs/implementation/
   TRACKER.json`. `scripts/status.py`: `39/300` certified before, `40/300`
+  after; "Product-true" stays `13/13`. This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
+- FTF-1501 — Tenant isolation suite. CERTIFIED 2026-09-22, PR #159 (merge
+  commit `8b8a9c12e04277a62149ab28de2c9c2db3a9ff16`). Independently
+  re-verified: session-ID clean (PR #159's four original commits carry
+  `session_01X4QYt5B4DQroufdM796nBD`, a different session than this
+  reviewer's own `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale,
+  unmerged candidate certification PR, #180, opened by yet a third
+  session, was superseded rather than trusted). `get_check_runs` on
+  PR #159's real final head — 21/21 jobs `success`, real non-instant
+  per-job durations. Own reproduction: stood up a fully isolated local
+  PostgreSQL database from scratch, `tests/tasks/test_ftf_1501.py` and
+  `tests/security/tenant_isolation_suite.py` both "all checks passed"
+  (25/25 live). Own fault injection, reproducing the producer's own
+  documented vector for real: disabled the application-level
+  `authorize_resource_ownership` check (RLS left untouched) — exactly
+  21/25 with the 4 named cross-tenant-read checks failing, confirming
+  genuine defense-in-depth; reverted byte-identical; suite re-confirmed
+  clean. Task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-1501` — acceptance clause 1's honest narrowing to API+DB paths
+  confirmed genuinely warranted; negative_acceptance holds by
+  construction. Dependencies FTF-0106/FTF-H003 confirmed genuinely
+  `CERTIFIED`. `validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired` — own run, `13/13`;
+  `proving_symbol` confirmed legitimately `''`. Noted, non-blocking: PR
+  #180's own certifier pushed 2 infrastructure-only commits onto PR
+  #159's branch before merging (disclosed, does not touch the
+  security-test code). No blocking defect found. `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `40/300` certified before, `41/300`
   after; "Product-true" stays `13/13`. This certification's own doc
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
