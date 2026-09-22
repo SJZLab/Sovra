@@ -1,4 +1,23 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-22 (scheduled Control-plane certifier, `pull_request.opened`
+  webhook for PR #201) — **resolved the gap PR #201 flagged**: FTF-0203
+  independently reviewed and CERTIFIED for real against the actual `main`
+  tip by session `session_01DNVgTKjv1wrCvyMajWZvFe` (session-ID compared
+  against every commit on PR #200/#201 — none match, independent per Law
+  4). Own reproduction (48/48 no-DB + 16/16 real-Postgres/real-gateway
+  integration checks), own fault injection distinct from the producer's
+  own two (removed the `invalid_token` branch — genuinely caught, reverted
+  byte-identical), full regression clean, task contract re-pulled and its
+  acceptance/negative_acceptance clauses confirmed genuinely met.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED`/
+  `proof_state: L2-CERTIFIED`/`proving_symbol: validate_connection`,
+  `evidence_hash` = the merge commit. `product_truth_check.py
+  --fail-on-unwired` moved 14/14 → 15/15. Certified count bumped to
+  46/300. Ledger entry appended (`docs/certifications/ledger.md`,
+  "FTF-0203 — Connection validation"). Full evidence:
+  `docs/certifications/queue.md` ("2026-09-22 — FTF-0203 (PR #200)
+  independently reviewed, CERTIFIED").
+
 Updated: 2026-09-22 (same-shift follow-up) — **flagged, not silently
   normalized: PR #200 (FTF-0203) was merged to `main` directly by the
   repo owner (`samerzakaria`, GitHub `merged_by`) at
@@ -2854,6 +2873,15 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 None currently.
 
+FTF-0203 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #200 (merge commit
+`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`), resolving the "merged
+without independent review" gap the producer session itself flagged
+(see the dated note at the top of this file and
+`docs/certifications/queue.md`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/
+queue.md` for the full history and evidence.
+
 FTF-H006 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-22 via PR #197 (merge commit
 `99e3d3d0be60d7f5491e99965809a29c62efb4ce`, after resolving a real
@@ -2993,6 +3021,32 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 `docs/certifications/queue.md` for the complete review history.
 
 ## Done
+- FTF-0203 — Connection validation. CERTIFIED 2026-09-22, PR #200 (merge
+  commit `c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`). PR #200 was merged
+  directly by the repo owner without a review round — flagged, not
+  silently normalized, by the producer session itself (see "Provisional"
+  note above and `docs/certifications/queue.md`); this entry is the real
+  independent Control-plane L2 review that flag said was still owed,
+  performed fresh against the actual `main` tip by session
+  `session_01DNVgTKjv1wrCvyMajWZvFe` (session-ID compared against all
+  four commits on PR #200/#201 — all carry
+  `session_01AE9mEUKyK7BVB93dTEohRn`, no match, independent). Own
+  reproduction in a fresh local Postgres 16 role/db
+  (`tests/tasks/test_ftf_0203.py` 48/48, `tests/integration/
+  test_ftf_0203_connection_validation.py` 16/16 against a real uvicorn
+  server and real local HTTPS gateway); own fault injection distinct
+  from the producer's own two (removed the 401/403 → `invalid_token`
+  branch in `validate_connection` — genuinely caught by the suite,
+  reverted byte-identical); no regression on FTF-0201's own suites
+  against a fresh database; `ruff`/`mypy`/`pnpm lint`/`typecheck`/
+  `validate_spec.py --strict` all clean; task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0203` and its acceptance/
+  negative_acceptance clauses confirmed genuinely met.
+  `product_truth_check.py --fail-on-unwired` moved 14/14 → 15/15 on
+  setting `proving_symbol: validate_connection` (a real, non-test
+  caller in `apps/api/app/litellm/connection_routes.py`'s live
+  `/validate` route). Certified: 46/300, Product-true: 15/15. Full
+  entry: `docs/certifications/ledger.md`.
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
 - FTF-0002 — Add formatting/lint/type checks. CERTIFIED (docs/certifications/ledger.md).
 - FTF-0003 — Add test harnesses. CERTIFIED (docs/certifications/ledger.md).

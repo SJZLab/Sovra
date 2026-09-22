@@ -1,4 +1,83 @@
 # PROGRESS — Sovra
+Updated: 2026-09-22 (scheduled Control-plane certifier, `pull_request.opened`
+  webhook for PR #201) — CERTIFY mode. `docs/certifications/queue.md`'s
+  trailing entry ("FTF-0203 — flagged, not certified: PR #200 merged
+  without independent Control-plane review") was the one pending item:
+  PR #200 (FTF-0203, Connection validation) had been merged directly to
+  `main` by the repo owner ~13 minutes after opening, CI green (25/25)
+  but zero reviews and no ledger entry — flagged, not silently
+  normalized, by the producer session itself, which correctly did not
+  self-certify its own submission (Law 4).
+
+  This session ran the real independent L2 review that flag said was
+  still owed. Session-ID check first: this session's own ID
+  (`session_01DNVgTKjv1wrCvyMajWZvFe`) compared against every commit
+  genuinely on PR #200/#201 (`c3cac3a`/`712ebbf`/`ba5f27a`/`9f94a3c`/
+  `f785093`, all carrying `Claude-Session: .../
+  session_01AE9mEUKyK7BVB93dTEohRn`) — no match, independent per Law 4.
+
+  Verified `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256`
+  — clean. Confirmed CI genuinely ran and passed on PR #200's real head
+  via `get_check_runs` (25/25 real jobs, including `gate` and
+  `connection-validation-integration`, run `35785873270`) — not the
+  producer's own word for it. Read `packages/litellm_client/
+  connection_validation.py` and `apps/api/app/litellm/
+  connection_routes.py` directly. Pulled the task's real contract via
+  `tools/r1_handoff.py packet FTF-0203 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed the acceptance
+  ("Validate real gateway TLS/auth/reachability and safe management/
+  inference capabilities separately") and negative_acceptance ("Timeout,
+  certificate error, invalid token and management-403 produce distinct
+  sanitized states, not connected badge") genuinely met by the diff, not
+  just "tests pass".
+
+  Own reproduction: started a local Postgres 16 cluster, created
+  `sovra_migrate`/`sovra_ftf0203` (the migration then creates its own
+  `sovra_app` role) — hit the same cluster-global-role collision
+  `QUEUE.md` already disclosed when re-running a second task's migration
+  in the same local cluster; resolved with `DROP OWNED BY sovra_app
+  CASCADE; DROP ROLE sovra_app;` between runs, not a workaround of the
+  actual code under test. `uv run python3 tests/tasks/test_ftf_0203.py`
+  — 48/48 pass. `tests/integration/test_ftf_0203_connection_validation.py`
+  — 16/16 pass against a real uvicorn server and a real local HTTPS
+  gateway. Re-ran `tests/tasks/test_ftf_0201.py` and `tests/integration/
+  test_ftf_0201_litellm_connection_crud.py` against a fresh database — no
+  regression on the shared `connection_routes.py` file.
+
+  Own fault injection, distinct from the producer's own two (theirs
+  mutated `SecretAccessDeniedError` handling): removed the 401/403 →
+  `InferenceCheckState.INVALID_TOKEN` branch in `validate_connection`.
+  Re-ran the no-DB suite — it genuinely failed for real ("a real gateway
+  401 on a resolved credential reports invalid_token, not connected").
+  Reverted from a saved copy; `diff` confirmed byte-identical; suite
+  re-ran clean.
+
+  `ruff check .`/`ruff format --check .` clean (180 files). `mypy .`
+  clean (180 files). `pnpm run lint`/`typecheck` clean. `scripts/
+  validate_spec.py --strict` clean after `git fetch --unshallow`. Full
+  `tests/tasks/test_ftf_*.py` sweep (39 files) run directly by exit
+  code, not string-matching stdout (several suites print expected
+  negative-path tracebacks as part of their own passing assertions) — all
+  39 exit 0. Dependencies FTF-0201/FTF-0202/FTF-H006 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+  No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED` /
+  `proving_symbol: validate_connection`, `evidence_hash` set to the
+  merge commit (`c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4`).
+  `scripts/product_truth_check.py --fail-on-unwired` re-run after the
+  edit: `15/15` (up from `14/14` — `validate_connection` has a real,
+  non-test caller in `apps/api/app/litellm/connection_routes.py`'s live
+  `/validate` route). Ran `scripts.task_claim.sync_certified_status()` —
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+  `['FTF-0203']`. Ledger entry appended (`docs/certifications/
+  ledger.md`, "FTF-0203 — Connection validation"). `QUEUE.md` updated:
+  FTF-0203 moved to Done, Certified count bumped to 46/300. Pushed this
+  certification commit onto PR #201 (`claude/wizardly-fermat-0knkdx`,
+  the branch the producer session's own flag commit already opened for
+  exactly this gap) and merged it — the code itself was already on
+  `main` via PR #200; this PR carries only the tracker/evidence update.
+
 Updated: 2026-09-22T19:05:00Z (scheduled relay shift) — implemented FTF-H006
   (Shared outbound URL and credential guard), submitted PROVISIONAL, not
   self-certified (Law 4).

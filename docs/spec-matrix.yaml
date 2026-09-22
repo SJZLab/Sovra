@@ -268,10 +268,10 @@ FTF-0202:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0202.py
 FTF-0203:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Connection validation
-  evidence_hash: 712ebbf9467e5c8154d24391e1c9b0abad52fd59
+  evidence_hash: c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201, FTF-0202,
@@ -350,8 +350,57 @@ FTF-0203:
     /validate route) would newly raise it -- left to the certifying session, not set here.
     Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2
     review.
-  proof_state: L1-PROVEN
-  proving_symbol: ''
+
+    INDEPENDENTLY CERTIFIED (PR #200, merge commit
+    c6e51a2fb267a6ef26791eb9fccc79cbfd0fc4b4, 2026-09-22) by session
+    https://claude.ai/code/session_01DNVgTKjv1wrCvyMajWZvFe -- session-ID
+    compared against all four commits genuinely on PR #200
+    (c3cac3a/712ebbf/ba5f27a/9f94a3c, and the follow-up flag commit
+    f785093 on PR #201) -- all carry Claude-Session
+    .../session_01AE9mEUKyK7BVB93dTEohRn; none match this reviewing
+    session, so this is independent, not self-certification. PR #200 was
+    merged directly by the repo owner (samerzakaria) ~13 minutes after
+    opening with CI green (25/25) but zero reviews and no ledger entry --
+    flagged for real by the producer session itself (docs/certifications/
+    queue.md, "2026-09-22 -- FTF-0203 -- flagged, not certified", PR
+    #201) rather than silently normalized either direction (Law 2/9).
+    This entry is the independent L2 review PR #201 itself said was still
+    owed, performed fresh against the real main tip, not against the
+    producer's own narrative. Steps: read packages/litellm_client/
+    connection_validation.py and apps/api/app/litellm/
+    connection_routes.py directly; confirmed CI genuinely ran and passed
+    (get_check_runs on PR #200, 25/25 real jobs including gate and
+    connection-validation-integration, run 35785873270 -- not the
+    producer's own word for it); pulled the task's real contract via
+    tools/r1_handoff.py packet FTF-0203 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md and confirmed the acceptance
+    ("Validate real gateway TLS/auth/reachability and safe management/
+    inference capabilities separately") and negative_acceptance
+    ("Timeout, certificate error, invalid token and management-403
+    produce distinct sanitized states, not connected badge") are
+    genuinely met by the diff, not just "tests pass"; own reproduction in
+    a fresh local Postgres 16 sovra_migrate/sovra_app/sovra_ftf0203
+    role/db (uv run python3 tests/tasks/test_ftf_0203.py -- 48/48, and
+    tests/integration/test_ftf_0203_connection_validation.py -- 16/16
+    against a real uvicorn server and a real local HTTPS gateway); own
+    fault injection distinct from the producer's own (theirs mutated
+    SecretAccessDeniedError handling) -- removed the 401/403 ->
+    INVALID_TOKEN branch in validate_connection, which genuinely caused
+    tests/tasks/test_ftf_0203.py to fail for real ("a real gateway 401 on
+    a resolved credential reports invalid_token, not connected"),
+    reverted from a saved copy, byte-identical (git diff clean), suite
+    re-ran clean; re-ran tests/tasks/test_ftf_0201.py and tests/
+    integration/test_ftf_0201_litellm_connection_crud.py against a fresh
+    database -- no regression on the shared connection_routes.py file;
+    ruff check/format --check, mypy, pnpm lint/typecheck all clean;
+    scripts/validate_spec.py --strict clean after git fetch --unshallow;
+    scripts/product_truth_check.py --fail-on-unwired independently
+    re-run at 14/14 before this edit (proving_symbol was genuinely blank,
+    confirming the producer's own 0/0-avoidance claim); dependencies
+    FTF-0201/FTF-0202/FTF-H006 confirmed genuinely CERTIFIED in this file
+    before relying on them. No blocking defect found.
+  proof_state: L2-CERTIFIED
+  proving_symbol: validate_connection
   proving_test: tests/tasks/test_ftf_0203.py
 FTF-0204:
   certification_state: NONE
