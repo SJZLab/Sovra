@@ -362,6 +362,124 @@ first, not improvised under time pressure; FTF-0202 remains the single
 highest-leverage owner ask still open, blocking a large fraction of the
 remaining graph transitively.
 
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1702 (Tool
+  environment, deps FTF-0004/FTF-1701 both CERTIFIED). CLAUDE.md
+  integrity self-check ran first (`sha256sum CLAUDE.md` matched the
+  committed `CLAUDE.md.sha256` byte-for-byte) before any other step, per
+  this shift's own standing instruction.
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live `certification_state` cross-referenced
+  with `docs/TASK_INDEX.md`'s real `Dependencies` column (spec-matrix.yaml
+  itself carries no populated `deps` field on any non-certified task — a
+  fresh script-driven join against TASK_INDEX.md was required, not merely
+  trusting the prior shift's own "Next shift" note by itself): FTF-0902,
+  FTF-0202 (owner ask, unresolved -- see below), FTF-1001, FTF-1401,
+  FTF-1301 (newly dependency-ready now that FTF-0403 reached CERTIFIED --
+  not present in the prior shift's own frontier list, which predates
+  FTF-0403's certification), FTF-0408, FTF-1702, FTF-1501, and FTF-R016
+  were the dependency-ready items found. FTF-1001/FTF-1401/FTF-1501
+  already have real, open, unmerged PROVISIONAL PRs from prior shifts (PR
+  #160/#161/#159 -- see the flagged note below, carried forward
+  unresolved); implementing any of them again would duplicate that work.
+  FTF-0202 stays an owner ask, unresolved (see "Owner actions -- current"
+  below). FTF-0408's own disclosed DoD-clarity gap (Section 22 Screen D /
+  `AgentManifest.mandate_json` fields with no real storage anywhere in
+  this repository yet) is unchanged from the prior shift's own finding --
+  re-checked, not re-litigated, and still not picked. FTF-0902's own
+  `resource_gate` (a real enforcing Kubernetes/CNI cluster) is still
+  unavailable in this sandbox. FTF-1301 (CostProfile schema/UI) and
+  FTF-R016 (coding-executor cost/budget enforcement) are both genuinely
+  unclaimed with no open PR, but FTF-1702 has the lowest task-ID among
+  items with no disclosed DoD gap, no missing external resource, and no
+  duplicated in-flight PR -- and was the item the prior shift's own "Next
+  shift" note explicitly predicted FTF-1701 reaching CERTIFIED would
+  unblock.
+  `evals/reference/tool_environment.py`'s `ToolEnvironment` wraps
+  FTF-1701's own real `ReferenceBusinessServer`/`dispatch_tool_call` with
+  a deterministic `ToolEnvironmentSeed` and a real `reset()` lifecycle
+  implementing Section 66.3's own named "reset" operation ("destroy/
+  reseed disposable namespace between independent cases"): `reset()`
+  discards the current server outright and rebuilds a fresh one from the
+  same seed spec (never an in-place clear), so one qualification case's
+  mutations can never leak into the next, and every reseeded record gets
+  a freshly generated ID so a caller cannot address stale state either.
+  `dispatch()` adds exactly one new guard of its own -- refusing a
+  tenant/subject this environment's own seed never declared, before
+  FTF-1701's real dispatcher, authorization, or idempotency logic is ever
+  reached -- while still passing through, unmodified, to FTF-1701's own
+  real handler and schema validation, satisfying this task's own
+  negative_acceptance ("Canned success tools and unguarded financial
+  writes cannot satisfy target-product test environment") by
+  construction, not assertion.
+  Narrowed, disclosed explicitly in the module's own docstring: this task
+  implements only its own acceptance clause ("Implement real disposable
+  seeded backend for search/get/create-note/request-approval/
+  execute-approved-action"), not the other six Section 66.3 canonical
+  adapter operations (`describe`/`preflight`/`invoke`/`cancel`/
+  `collect_outcome`/`attest`) -- those belong to whichever later task
+  actually wires this environment behind a real runtime adapter, not this
+  one. `database_changes` honored ("No independent schema change");
+  `resource_gate` is moot -- no database/network/GPU resource of any kind
+  is touched, matching the FTF-1701 precedent exactly. `shared_lock_
+  required` is empty; contracts:17 stays FTF-1701's own lock, extended by
+  nothing here.
+  `tests/reference/test_ftf_1702.py`: 12 no-DB test functions (seeded-
+  record resolution via fixture triple, a full five-tool happy path
+  through the real dispatcher including idempotency and a real approval-
+  decide-execute cycle, cross-tenant IDOR still enforced unmodified, the
+  new unseeded-tenant/subject guard, reset-as-genuine-disposal proven
+  directly by mutating state then confirming it is gone afterward,
+  `reset_count` accounting, two independent environments never sharing
+  state, and a custom seed spec honored rather than silently replaced).
+  Own fault injection (Law 1, two distinct vectors, both reverted
+  byte-identical and the suite re-run clean afterward): (1) disabled the
+  unseeded-tenant/subject guard in `dispatch()` -- caught for real by the
+  three named guard checks; (2) made `reset()` clear state in place
+  instead of discarding the server -- caught for real by the three named
+  disposal checks. No regression: FTF-1701's own suite re-run "all checks
+  passed" unchanged.
+  `product_truth_check.py --fail-on-unwired` stays `11/11` (`proving_
+  symbol` deliberately empty -- this task adds no live caller into any
+  `SOURCE_ROOTS` path, matching FTF-1701/FTF-1401/FTF-1601's own
+  precedent for a specification/measurement tool, not inflation).
+  `ruff check`/`ruff format --check`/`mypy` clean repo-wide (139 source
+  files; the 2 remaining mypy errors are the pre-existing, unrelated
+  `authlib.jose` stub gap, confirmed identical on `main`).
+  `pnpm install --frozen-lockfile` had not yet been run in this sandbox
+  this shift (the same pre-existing, previously-documented environment
+  gap every prior shift has already noted -- confirmed by re-running
+  `test_ftf_0002.py`/`test_ftf_0003.py`/`test_ftf_h001.py` clean
+  immediately after installing). Full `tests/tasks/test_ftf_*.py` sweep
+  clean afterward. `git fetch --unshallow origin` first (this sandbox's
+  own clone is shallow by default); `validate_spec.py --strict` clean.
+  Wired into `.github/workflows/ci.yml`'s gate job, right after the
+  FTF-1701 step.
+  PR opened as PROVISIONAL; `docs/spec-matrix.yaml` FTF-1702 set to
+  `PROVISIONAL`/`L1-PROVEN`, `proving_test`
+  `tests/reference/test_ftf_1702.py`, `evidence_hash` set to the
+  implementation commit. Awaiting independent Control plane certification
+  -- not self-certified (Law 4). Certified stays 35/300;
+  `product_truth_check.py --fail-on-unwired` stays `11/11`;
+  `scripts/status.py` stays `35/300 certified · 11 product-true`. Full
+  submission report: `docs/certifications/queue.md`.
+
+**Still flagged, carried forward unresolved from the prior shift** (Law
+9, gate-weakening is watched -- re-checked directly via GitHub, not
+assumed unchanged): `list_pull_requests` reconfirms the same five open,
+unmerged PRs the prior shift found, still exactly as described there --
+this shift (a relay shift, not a certifier shift) took no certifier-only
+action on any of them (no merge, no close):
+- **PR #158** ("[relay] FTF-0403: Budget policy") still duplicates work
+  already independently re-implemented and merged via PR #163 -- still
+  stale, still unmerged.
+- **PR #159** (FTF-1501), **PR #160** (FTF-1001), and **PR #161**
+  (FTF-1401) are still real, open, PROVISIONAL submissions awaiting
+  Control-plane review, unchanged since the prior shift.
+- **PR #162** ("Resolve FTF-0202 owner-ask... OpenBao secret backend
+  confirmed") still carries no corroborating live-conversation detail
+  this shift can verify -- still not merged, FTF-0202 still not treated
+  as resolved.
+
 Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1701
   (Reference agent specification, deps FTF-0407/FTF-0405 both CERTIFIED).
   Independently recomputed the dependency-ready frontier fresh against
@@ -519,18 +637,25 @@ did not reflect:
   other; this relay shift cannot.
 
 ## Next shift
-Five open PRs need Control-plane attention ahead of any further relay
-implementation, in this order: (1) close PR #158 without merging
-(superseded by the already-merged PR #163); (2) certify or reject PR #159/
-#160/#161 (FTF-1501/FTF-1001/FTF-1401, all already PROVISIONAL and
-unreviewed); (3) resolve PR #162's own FTF-0202 claim one way or the
-other (verify the live conversation genuinely occurred, or close it
-unmerged like PR #143 before it). If a relay session fires next instead:
-recompute the dependency-ready frontier fresh rather than trusting this
-note alone -- FTF-1701 reaching CERTIFIED will newly unblock FTF-1702
-("Tool environment") per `docs/TASK_INDEX.md`; FTF-0408/FTF-0902 are
-still real, unpicked items but need the DoD-clarity gaps disclosed above
-resolved first, not improvised.
+FTF-1702 (this shift's own submission, see the top of this file) is now
+PROVISIONAL, PR opened, awaiting independent Control-plane L2
+certification. Six open PRs now need Control-plane attention ahead of
+any further relay implementation, in this order: (1) close PR #158
+without merging (superseded by the already-merged PR #163); (2) certify
+or reject PR #159/#160/#161 (FTF-1501/FTF-1001/FTF-1401, all already
+PROVISIONAL and unreviewed) and this shift's own PR for FTF-1702; (3)
+resolve PR #162's own FTF-0202 claim one way or the other (verify the
+live conversation genuinely occurred, or close it unmerged like PR #143
+before it). If a relay session fires next instead: recompute the
+dependency-ready frontier fresh rather than trusting this note alone --
+this shift found FTF-0902, FTF-0202 (owner ask), FTF-1001, FTF-1401,
+FTF-1301 (CostProfile schema/UI -- newly dependency-ready now that
+FTF-0403 is CERTIFIED, no open PR yet, no disclosed DoD gap), FTF-0408,
+FTF-1702, FTF-1501, and FTF-R016 dependency-ready; FTF-1702 reaching
+CERTIFIED will newly unblock FTF-1703 ("Training dataset") per
+`docs/TASK_INDEX.md`, whose other dependencies (FTF-0506) are not yet
+CERTIFIED. FTF-0408/FTF-0902's own disclosed DoD-clarity/resource-gate
+gaps are unchanged and still not resolved.
 
 Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #163) — independent CERTIFY
@@ -1586,11 +1711,17 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
-`9a47458` — see docs/certifications/ledger.md) · Provisional: PR #159
-(FTF-1501)/#160 (FTF-1001)/#161 (FTF-1401)/#167 (FTF-1702) remain
-genuinely open and PROVISIONAL, unreviewed — see "## Provisional" below ·
-Blocked: 0
+Certified: 37/300 (main; FTF-1401 CERTIFIED 2026-09-22, PR #161 merged
+as `c2fda5b` — see docs/certifications/ledger.md) · Product-true:
+13/13. FTF-1501/FTF-1001/FTF-0202 are merged and already independently
+reviewed/certified by this same shift, awaiting only the owner's merge
+of the doc-only certification PRs (#179/#180/#181) that record it on
+`main`. PR #167 (FTF-1702) is being independently reviewed by Control
+plane now (this entry's own review). PR #170/#172 (FTF-1302/FTF-R016)
+remain open, previously reviewed sound but blocked only by a GitHub
+Actions runner-provisioning outage reported cleared 2026-09-22 (PR
+#178) — each needs the same merge-current-main treatment before a
+fresh CI run and review. Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1805,9 +1936,11 @@ respectively) — see "## Done" for the certification summaries and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 
-FTF-1401 (API load test) — PR #161
-(https://github.com/SJZLab/Sovra/pull/161) is being independently
-reviewed by Control plane now (this entry's own review).
+FTF-1401 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #161 (merge commit
+`c2fda5b6ad472aa6d38a977896b339a484a9a483`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
@@ -1834,8 +1967,9 @@ defect,** blocked only by the same now-reportedly-cleared CI outage (see
 `docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172)"
 entry). PR #172 stays open, unmerged, needing the same treatment.
 
-Also genuinely open and PROVISIONAL, unreviewed as of this entry: PR
-#167 ("[relay] FTF-1702: Tool environment").
+FTF-1702 (Tool environment, PR #167 https://github.com/SJZLab/Sovra/pull/167)
+is being independently reviewed by Control plane now (this entry's own
+review).
 
 FTF-1701 (Reference agent specification) is no longer in this section; it
 was independently reviewed and CERTIFIED 2026-09-21 via PR #165 (merge

@@ -8450,6 +8450,158 @@ triggered by the `pull_request.opened` webhook for PR #165.
 
 Full entry: docs/certifications/ledger.md.
 
+## 2026-09-21 — FTF-1702 — Tool environment
+- **PR:** opened from `claude/wizardly-fermat-hlz51t` → `main`, title
+  `[relay] FTF-1702: Tool environment`.
+- **Commit:** `2d36085547b597625ddcfc0feb394c0c4027f0be` (implementation);
+  `docs/spec-matrix.yaml`/`PROGRESS.md`/`QUEUE.md`/this entry pushed as a
+  second, tracking-doc-only commit on the same branch, matching the
+  established two-commit precedent.
+- **CLAUDE.md integrity self-check:** `sha256sum CLAUDE.md` matched the
+  committed `CLAUDE.md.sha256` byte-for-byte before any other step, per
+  this shift's own standing instruction.
+- **Ground truth checked before picking work:** `docs/spec-matrix.yaml`
+  itself carries no populated `deps` field on any non-`CERTIFIED` task, so
+  the dependency-ready frontier was recomputed by a fresh script-driven
+  join of every `docs/TASK_INDEX.md` row's real `Dependencies` column
+  against `docs/spec-matrix.yaml`'s live `certification_state` set, not
+  merely trusting the prior shift's own "Next shift" note. Found
+  dependency-ready: FTF-0902, FTF-0202 (owner ask), FTF-1001, FTF-1401,
+  FTF-1301 (CostProfile schema/UI — newly ready now that FTF-0403 reached
+  CERTIFIED, not present in the prior shift's own frontier), FTF-0408,
+  FTF-1702, FTF-1501, FTF-R016. Cross-checked live GitHub state via
+  `list_pull_requests` before picking: PR #158/#159/#160/#161/#162 are
+  still open exactly as the prior shift's own flagged note described (no
+  certifier-only action taken on any of them by this relay shift — full
+  reasoning in QUEUE.md's own carried-forward flagged note). FTF-1001/
+  FTF-1401/FTF-1501 were not re-implemented (would duplicate PRs
+  #160/#161/#159). FTF-0202 stays an owner ask. FTF-0408's own disclosed
+  DoD-clarity gap (`AgentManifest.mandate_json` fields with no real
+  storage anywhere in this repository yet) and FTF-0902's own disclosed
+  `resource_gate` prerequisite (a real enforcing Kubernetes/CNI cluster,
+  unavailable in this sandbox) are both unchanged from the prior shift's
+  own findings — re-checked, not re-litigated. FTF-1301 and FTF-R016 are
+  both genuinely unclaimed with no open PR, but FTF-1702 has the lowest
+  task-ID among items with no disclosed DoD gap, no missing external
+  resource, and no duplicated in-flight PR — and is exactly the item the
+  prior (FTF-1701) shift's own "Next shift" note predicted would become
+  dependency-ready once FTF-1701 reached CERTIFIED.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-1702 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Implement
+  real disposable seeded backend for search/get/create-note/
+  request-approval/execute-approved-action"), negative_acceptance
+  ("Canned success tools and unguarded financial writes cannot satisfy
+  target-product test environment"), `database_changes: "No independent
+  schema change. Consume frozen contract; any required change is a
+  separately claimed migration prerequisite."`, `api_contract: "Reference
+  target container/HTTP protocol and standard Factory APIs only."`,
+  `files: [evals/reference/tool_environment.py,
+  tests/reference/test_ftf_1702.py]`, `dependencies: [FTF-0004,
+  FTF-1701]` (both CERTIFIED), `shared_lock_required: []`,
+  `contract_owner: FTF-1701`.
+- **The real gap this task closes (disclosed, not assumed):** FTF-1701
+  built the five reference tools and a deterministic business-state
+  server, but every test built on top of them until now would have had to
+  construct and seed its own `ReferenceBusinessServer` by hand, with no
+  shared, tested way to guarantee one qualification case's mutations
+  cannot leak into the next. Section 66.3's own canonical runtime adapter
+  contract names the exact operation this gap corresponds to: `reset` —
+  "destroy/reseed disposable namespace between independent cases." This
+  task's own acceptance clause is narrower than the full six-operation
+  adapter contract (`describe`/`preflight`/`invoke`/`cancel`/
+  `collect_outcome`/`attest`) — it names only the disposable, seeded
+  backend itself, disclosed explicitly in the module's own docstring as
+  not covering the other six operations, which belong to whichever later
+  task wires this environment behind a real runtime adapter.
+- **Design (disclosed):** `evals/reference/tool_environment.py`'s
+  `ToolEnvironment` owns exactly one `ReferenceBusinessServer` at a time,
+  built from a declared `ToolEnvironmentSeed` (tenants, subjects-by-
+  tenant, and `(tenant_id, owner_subject_id, title)` record triples — the
+  same shape `ReferenceBusinessServer.seed_record` already accepts, no
+  competing representation). `reset()` calls the same private `_reseed`
+  path the constructor uses: it discards the current server object
+  outright and builds an entirely new one, rather than clearing
+  collections on the existing instance in place — proven directly by a
+  dedicated test that mutates state (creates a note), resets, and
+  confirms both that the old record ID no longer resolves and that the
+  reseeded record carries a freshly generated ID of its own.
+  `dispatch()` is a thin, real caller of FTF-1701's own
+  `dispatch_tool_call` — it adds exactly one guard of its own (refusing a
+  tenant/subject this environment's own seed spec never declared) before
+  delegating, never short-circuiting to a canned result and never
+  weakening FTF-1701's own real authorization/idempotency/schema-
+  validation behavior underneath it.
+- **Path refinement (disclosed):** none — the packet's own declared
+  `evals/reference/tool_environment.py`/`tests/reference/
+  test_ftf_1702.py` paths were used exactly as given.
+- **Contracts:** none touched — `shared_lock_required` is empty and
+  `contract_owner` is FTF-1701's own; this task extends no existing
+  frozen shape and freezes no new one.
+- **Tests:** `tests/reference/test_ftf_1702.py` — 12 no-DB test
+  functions: seeded-record resolution by fixture triple (plus a real
+  `ToolEnvironmentError` for an unseeded triple), a full five-tool happy
+  path through the real dispatcher (search → get → create a note with
+  idempotency replay → request an approval → decide it out-of-band
+  directly against `env.server` → execute it → confirm the record's real
+  post-execution state), cross-tenant IDOR still refused unmodified
+  through this environment (no regression from wrapping FTF-1701's own
+  dispatcher), the new unseeded-tenant/unseeded-subject guards, reset as
+  a genuine disposal (not an in-place clear, both directions tested),
+  `reset_count` accounting across two real resets, two independently
+  built environments never sharing state, a custom `ToolEnvironmentSeed`
+  genuinely honored (its own tenant reachable, `DEFAULT_SEED`'s own
+  tenant refused), and `ToolEnvironment()` constructed directly behaving
+  identically to the `build_tool_environment()` factory function.
+- **Own fault injection (Law 1, two distinct vectors, both reverted
+  byte-identical and the suite re-run clean afterward):**
+  1. Disabled the unseeded-tenant/subject guard in `dispatch()` (replaced
+     both `if` checks with `pass`) — failed with exactly the three named
+     checks: "dispatch refuses a tenant this environment's own seed never
+     declared", "dispatch refuses a subject never declared for an
+     otherwise real, seeded tenant", and "DEFAULT_SEED's own tenant is
+     refused when a different seed spec was declared".
+  2. Replaced `reset()`'s real discard-and-rebuild body with an in-place
+     mutation (reset each seeded record's own `status`/`note_ids` on the
+     same server object, same record IDs, `reset_count` still
+     incremented) — failed with exactly the three named disposal checks:
+     "reset() discards the old server rather than mutating it", "reset()
+     refuses to serve the pre-reset record ID", and "reset() assigns a
+     freshly generated ID to the reseeded record, never reusing the old
+     one".
+- **No regression, independently re-run:** `tests/reference/
+  test_ftf_1701.py` — "all checks passed" (24/24), unchanged. Full
+  `tests/tasks/test_ftf_*.py` sweep (30 files) all "all checks passed" or
+  equivalent after `pnpm install --frozen-lockfile` resolved the
+  pre-existing, previously-documented node_modules-missing sandbox gap
+  (confirmed by re-running `test_ftf_0002.py`/`test_ftf_0003.py`/
+  `test_ftf_h001.py` clean immediately afterward — a sandbox artifact,
+  not caused by this task). `ruff check .`/`ruff format --check .`/
+  `mypy .` clean repo-wide (139 source files; the 2 remaining mypy errors
+  are the pre-existing, unrelated `authlib.jose` stub gap, confirmed
+  identical on `main`). `scripts/validate_spec.py --strict` clean after
+  `git fetch --unshallow origin` (this sandbox's own clone is shallow by
+  default). `scripts/product_truth_check.py --fail-on-unwired` — `11/11`
+  (unchanged; `proving_symbol` deliberately empty, this task adds no live
+  caller into any `SOURCE_ROOTS` path, matching FTF-1701/FTF-1401/
+  FTF-1601's own precedent, not inflation). `python3 scripts/status.py` —
+  `35/300 certified · 11 product-true` (unchanged — PROVISIONAL, not yet
+  CERTIFIED).
+- **CI:** one new `gate` job step (`uv run python3
+  tests/reference/test_ftf_1702.py`) added to `.github/workflows/ci.yml`
+  right after the FTF-1701 step; no new integration job, since this task
+  touches no database/network/GPU resource.
+- Dependencies FTF-0004/FTF-1701 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Submitted PROVISIONAL, not self-certified (Law 4).**
+  `docs/spec-matrix.yaml` FTF-1702 set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+  implementation commit, `proving_test:
+  tests/reference/test_ftf_1702.py`. Certified stays 35/300; Product-true
+  stays 11/11. Awaiting independent Control-plane L2 review.
+
+## 2026-09-21 — FTF-1702 — record the opened PR link
+- **PR:** https://github.com/SJZLab/Sovra/pull/167
+  (`claude/wizardly-fermat-hlz51t` → `main`).
 ## 2026-09-21 — FTF-1301 — CostProfile schema/UI
 - **PR:** opened from `claude/wizardly-fermat-togs1a` → `main`, title
   `[relay] FTF-1301: CostProfile schema/UI`.
