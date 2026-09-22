@@ -1,4 +1,47 @@
 # PROGRESS — Sovra
+Control plane certifier — 2026-09-22 (continuing a certifier shift after
+  the user reviewed the open-PR backlog and asked for it to be worked
+  through end to end): closed 8 dead PRs first (#128/#129/#132/#152/#158
+  — stale duplicates whose real content already landed on `main` via a
+  different PR, confirmed via `git merge-base --is-ancestor`; #174/#175
+  — superseded relay status snapshots; #177 — moot once this session's
+  own FTF-0202 certification landed). Then independently reviewed and
+  CERTIFIED FTF-1501 (PR #159, merge commit
+  `8b8a9c12e04277a62149ab28de2c9c2db3a9ff16`): session-ID clean; PR #159
+  predated `main`'s current tip (FTF-0202/FTF-0403/FTF-1301/FTF-1701 had
+  all merged since), so this review merged current `main` into the PR
+  branch and resolved real, genuinely additive conflicts in `ci.yml`/
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`. The scripted
+  conflict resolution itself introduced a real bug — a doubled job-header
+  line for five `ci.yml` jobs, producing invalid YAML that GitHub Actions
+  parsed as **zero jobs** on the first push (run `35701657047`,
+  `conclusion: failure`, workflow display name fell back to the file
+  path — the signature of a workflow-parse failure, not a test failure).
+  Found the exact cause with a duplicate-key-detecting YAML loader, fixed
+  it, reconfirmed 21 distinct jobs parse clean, pushed the fix, and got a
+  genuine green CI run (21/21 jobs `success`, run `35701775852`) before
+  merging. Own reproduction against a real local PostgreSQL 16: both
+  suites clean (25/25 no-DB, 25/25 live). Own fault injection (disabled
+  the unauthenticated-request 401 guard in `require_role`) caught for
+  real — exactly the 5 named `unauthenticated_denied` checks failed with
+  500s instead of denials — reverted byte-identical. Full regression
+  sweep clean after `pnpm install --frozen-lockfile` resolved a
+  pre-existing sandbox gap. Task contract re-pulled and acceptance/
+  negative_acceptance clauses reconfirmed met. `docs/spec-matrix.yaml`
+  set to `CERTIFIED`/`L2-CERTIFIED`; `sync_certified_status()` run;
+  `scripts/status.py`: `36/300` → `37/300` certified, product-true
+  stays `12`. Full detail: `docs/certifications/ledger.md`.
+
+  Remaining backlog, not yet worked this entry: FTF-1001 (PR #160) and
+  FTF-1401 (PR #161) genuinely unreviewed; FTF-1702 (PR #167) genuinely
+  unreviewed; FTF-1302 (PR #170) and FTF-R016 (PR #172) previously
+  reviewed sound but blocked solely by a GitHub Actions runner-
+  provisioning outage a separate PR (#178) reports cleared — each needs
+  the same merge-current-main-first treatment FTF-1501 just required,
+  plus (for #170/#172) a fresh CI run to confirm the outage really has
+  cleared. Working these next, one at a time, per the user's explicit
+  request to continue.
+
 Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201 all
   CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the

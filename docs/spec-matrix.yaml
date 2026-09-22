@@ -3112,10 +3112,10 @@ FTF-1408:
   proving_symbol: ''
   proving_test: ''
 FTF-1501:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tenant isolation suite
-  evidence_hash: 778f6f2
+  evidence_hash: 8b8a9c12e04277a62149ab28de2c9c2db3a9ff16
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0106, FTF-H003
@@ -3163,7 +3163,57 @@ FTF-1501:
     production primitives, so product_truth_check.py's proving_symbol stays empty (no live-wiring
     claim), matching the FTF-0106/FTF-H003 precedent. Certified stays 33/300; product-true stays
     10/10.
-  proof_state: L1-PROVEN
+
+    INDEPENDENTLY CERTIFIED (PR #159, merge commit 8b8a9c12e04277a62149ab28de2c9c2db3a9ff16,
+    2026-09-22) by session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5 -- session-ID
+    compared against every commit on PR #159 (778f6f2/b028d42/40012ea/efec3c0, all carrying
+    Claude-Session .../session_01X4QYt5B4DQroufdM796nBD; none match this reviewing session, so
+    this is independent, not self-certification). PR #159 predated PR #176 (FTF-0202)/PR #163
+    (FTF-0403)/PR #168 (FTF-1301)/PR #165 (FTF-1701) merging to main, so this review first merged
+    current main into the PR branch and resolved the real conflicts that produced (ci.yml/
+    PROGRESS.md/QUEUE.md/docs/certifications/queue.md -- every conflict genuinely additive, both
+    sides combined, nothing discarded); caught and fixed a real bug the scripted resolution itself
+    introduced (a doubled job-header line for each of five ci.yml jobs -- critical-behavior-
+    requirements-integration/budget-policy-integration/cost-profile-integration/secret-manager-
+    integration/tenant-isolation-suite-integration -- produced invalid YAML that GitHub Actions
+    parsed as zero jobs on the first push, run 35701657047, conclusion failure; found via a
+    duplicate-key-detecting YAML loader, fixed, reconfirmed 21 distinct jobs parse clean). Own
+    reproduction after the merge, this sandbox: `uv run python3 tests/tasks/test_ftf_1501.py` --
+    "all checks passed" (25/25 no-DB); `tests/security/tenant_isolation_suite.py` against a real
+    local PostgreSQL 16 (own migration, sovra_migrate/sovra_ftf1501 role/db) -- "all checks
+    passed" (25/25 real live checks). Own fault injection, one vector, distinct from the
+    producer's own two (build_evidence's empty-results guard, authorize_resource_ownership's
+    ownership check): disabled the unauthenticated-request 401 guard in `require_role`'s own
+    `_dependency` (apps/api/app/auth/rbac_middleware.py, `if False and principal is None:`) --
+    the live suite failed with exactly the 5 named `unauthenticated_denied` checks (401/403
+    expected, got 500 -- principal.issuer accessed on None), confirming the guard is genuinely
+    load-bearing; reverted byte-identical (diff against the pre-injection copy empty), suite
+    re-confirmed clean immediately after. CI reconfirmed green on the real merged head via
+    `get_check_runs` -- 21/21 jobs `success` after the ci.yml fix (run 35701775852). No
+    regression: full `tests/tasks/test_ftf_*.py` sweep (33 files, after `pnpm install
+    --frozen-lockfile` resolved a pre-existing, previously-undocumented-this-shift sandbox gap
+    confirmed by FTF-0002/FTF-0003/FTF-H001 all failing identically before and passing clean
+    immediately after) -- all "all checks passed"; `uv run ruff check .`/`uv run ruff format
+    --check .` clean repo-wide (the pinned project ruff, 0.6.9 -- a stray system-wide ruff 0.15.8
+    briefly gave a false-positive reformat list, not used for this record); `uv run mypy .` (from
+    apps/api) -- 2 errors, both the pre-existing, unrelated authlib.jose missing-stub gap;
+    `pnpm run lint`/`typecheck`/`format:check` clean. `python3 scripts/validate_spec.py --strict`
+    clean. `product_truth_check.py --fail-on-unwired` -- real 12/12 (unchanged -- proving_symbol
+    genuinely empty, this task assembles evidence over already-certified primitives with no new
+    live-wiring claim of its own, matching the FTF-0106/FTF-H003 precedent, not inflation). Task
+    contract re-pulled directly via `python tools/r1_handoff.py packet FTF-1501 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md` -- acceptance clause 1 ("Exercise real two-tenant API/DB/
+    worker/storage/cache/model paths under restricted identities") confirmed honestly narrowed to
+    API+DB, the only live-wired paths (workers/{training,evaluation,data,deploy} confirmed
+    README/pyproject-only scaffolds by direct listing; packages/storage/tenant_policy.py confirmed
+    zero live callers); acceptance clause 2 (independent review, exact merged commit, real
+    integration/negative-test evidence) is this record itself; negative_acceptance ("No security
+    result from mocked auth or superuser-only DB tests") confirmed by construction -- the suite
+    uses a real uvicorn server (never mocked auth) and a real, restricted sovra_app-role DB
+    session (grepped directly, never the migration-owner/superuser role). Dependencies FTF-0106/
+    FTF-H003 confirmed genuinely CERTIFIED before relying on them. No blocking defect found.
+    Merged PR #159 (merge commit 8b8a9c12e04277a62149ab28de2c9c2db3a9ff16).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1501.py
 FTF-1502:

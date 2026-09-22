@@ -8634,3 +8634,126 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-1501 (PR#159) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+continuing a certifier shift after the user reviewed the open-PR backlog
+and asked for it to be worked through end to end, starting with closing
+8 dead PRs (see PROGRESS.md/QUEUE.md's own top entries for that detail)
+and then this item, the oldest genuinely unreviewed real submission in
+the backlog.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5`; all four commits on PR #159
+  (`778f6f2`, `b028d42`, `40012ea`, `efec3c0`) carry `Claude-Session:
+  .../session_01X4QYt5B4DQroufdM796nBD` — no match, independent per
+  Law 4.
+- **Merge-conflict resolution required first:** PR #159 was opened
+  2026-09-21T05:10Z against an older `main`; by review time `main` had
+  advanced through FTF-0403 (#163), FTF-1301 (#168), FTF-1701 (#165) and
+  FTF-0202 (#176) merging. Merged current `main` into the PR branch
+  directly (not a rebase — the branch is someone else's, per this repo's
+  own "never rewrite history on someone else's branch" rule) and
+  resolved real conflicts in `ci.yml`, `PROGRESS.md`, `QUEUE.md`, and
+  `docs/certifications/queue.md` — every conflict was genuinely additive
+  (both sides had inserted new, non-overlapping content at the same
+  point), resolved by combining both sides, nothing discarded.
+- **Caught and fixed a real bug the merge resolution itself introduced:**
+  the scripted combination of `ci.yml`'s conflicted region (this PR's own
+  new `critical-behavior-requirements-integration`/
+  `tenant-isolation-suite-integration` jobs plus `main`'s own newer
+  `budget-policy-integration`/`cost-profile-integration`/
+  `secret-manager-integration` jobs, all inserted at the same textual
+  position) doubled each of those five jobs' own header line, producing
+  YAML that parsed fine generically but was invalid as a GitHub Actions
+  workflow (duplicate mapping keys). Confirmed directly: the first push
+  (run `35701657047`) came back `status: completed`, `conclusion:
+  failure`, **zero jobs**, and the workflow's own display name fell back
+  to the raw file path instead of its declared `name: CI` — the exact
+  signature of GitHub Actions failing to parse the workflow file at all,
+  not a test failure. Root-caused with a duplicate-key-detecting PyYAML
+  loader (`grep`-based duplicate-key detection missed it because the
+  duplicated header immediately preceded, not followed, its own body).
+  Removed all five doubled header lines, reconfirmed the file parses
+  with exactly 21 distinct job keys and no duplicates, pushed the fix.
+- **CI reconfirmed green on the real, fixed head, not a stale or
+  self-reported claim:** `get_check_runs` on PR #159 after the fix — all
+  21 jobs `completed`/`success`, real per-job runner IDs
+  (`1000001987`–`1000002006`) and timestamps (run `35701775852`,
+  ~2–7 minutes total, `secret-manager-integration` alone taking ~7
+  minutes for its real OpenBao source build — consistent with genuine
+  execution, not a runner-provisioning ghost run).
+- **Diff read directly:** `tests/security/tenant_isolation_suite.py` (25
+  real two-organization, two-tenant checks across connections/artifacts/
+  projects/tools/requirements, both API-layer via a real uvicorn server
+  and DB-layer via a real, restricted `sovra_app`-role session — grepped
+  directly, confirmed never the migration-owner/superuser role);
+  `tests/tasks/test_ftf_1501.py` (25 no-DB checks for the suite's own
+  pure evidence-building/negative_acceptance logic); `packages/
+  contracts/{openapi,jsonschema}/15-*` (first claim of contract slot 15,
+  `paths: {}`, matching FTF-1601's own no-new-route precedent); the
+  disclosed, separately-fixed CI-wiring gap for FTF-0406/FTF-0407 (both
+  already CERTIFIED, but never actually run by CI before this PR).
+- **Own reproduction, this sandbox** (real local PostgreSQL 16,
+  `sovra_migrate`/`sovra_ftf1501` role/db, the suite's own migration):
+  `uv run python3 tests/tasks/test_ftf_1501.py` — "all checks passed"
+  (25/25). `tests/security/tenant_isolation_suite.py` — "all checks
+  passed" (25/25 real checks).
+- **Own fault injection, one vector, distinct from the producer's own two
+  (`build_evidence`'s empty-results guard, `authorize_resource_ownership`'s
+  ownership check), reverted byte-identical and the suite re-confirmed
+  clean immediately after:** disabled the unauthenticated-request 401
+  guard in `require_role`'s `_dependency`
+  (`apps/api/app/auth/rbac_middleware.py`, `if False and principal is
+  None:`) — the live suite failed with exactly the 5 named
+  `unauthenticated_denied` checks (each expected a 401/403 denial, got a
+  real HTTP 500 from `principal.issuer` accessed on `None` two lines
+  later), confirming the authentication guard is genuinely load-bearing,
+  not decorative. `diff` against the pre-injection copy — empty; `git
+  status --short` on the file — clean after revert.
+- **Static checks re-run clean, this session:** `uv run ruff check .` /
+  `uv run ruff format --check .` clean repo-wide, using the pinned
+  project ruff (0.6.9, matching what CI actually runs) — a stray
+  system-installed ruff (0.15.8) briefly produced a false-positive
+  27-file reformat list before this was caught and corrected, not used
+  for this record. `uv run mypy .` (from `apps/api`) — 2 errors, both
+  the pre-existing, unrelated `authlib.jose` missing-stub gap. `pnpm run
+  lint`/`typecheck`/`format:check` clean, after `pnpm install
+  --frozen-lockfile` resolved a pre-existing, previously-undocumented-
+  this-shift sandbox gap (confirmed pre-existing, not a regression, by
+  FTF-0002/FTF-0003/FTF-H001 all failing identically before and passing
+  clean immediately after, with no other change). `python3 scripts/
+  validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` — real `12/12` (unchanged — `proving_symbol`
+  genuinely empty; this task assembles a consolidated evidence suite
+  over already-certified primitives with no new live-wiring claim of its
+  own, matching the FTF-0106/FTF-H003 precedent, not inflation).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1501 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-1501.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1 ("Exercise
+  real two-tenant API/DB/worker/storage/cache/model paths under
+  restricted identities") confirmed honestly narrowed to API+DB, the
+  only live-wired paths — `ls workers/*` confirmed every subdirectory is
+  still README/pyproject-only (`data`, `deploy`, `evaluation`,
+  `training`); grepped confirmed no `apps/api/app` module imports
+  `packages/storage/tenant_policy.py`. Acceptance clause 2 (independent
+  review, exact merged commit, real integration/negative-test evidence)
+  is this review itself. `negative_acceptance` ("No security result from
+  mocked auth or superuser-only DB tests") confirmed by construction as
+  above.
+- Dependencies FTF-0106/FTF-H003 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `8b8a9c12e04277a62149ab28de2c9c2db3a9ff16`. Appended a signed entry to
+  `docs/certifications/ledger.md`. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-1501']` written
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py`: `36/300` certified before, `37/300` after; product-true
+  stays `12/12` (unchanged — no `proving_symbol` yet). QUEUE.md/
+  PROGRESS.md updated (FTF-1501 moved to Done, Certified count bumped).
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5,
+  2026-09-22.

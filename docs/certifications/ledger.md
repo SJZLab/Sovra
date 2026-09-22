@@ -4452,3 +4452,95 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1501 — Tenant isolation suite
+- Criterion ID: FTF-1501
+- PR: https://github.com/SJZLab/Sovra/pull/159 (`claude/wizardly-fermat-bhjs9m` → `main`)
+- Merge commit: 8b8a9c12e04277a62149ab28de2c9c2db3a9ff16
+- Implementation commit: 778f6f29c5f994495ceee7446203d688624eb216
+- Validated-by: session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5
+  (scheduled Control-plane certifier shift, continuing work explicitly
+  requested by the user after reviewing the open-PR backlog)
+- Date: 2026-09-22
+- **Session-ID check:** every commit on PR #159 (`778f6f2`, `b028d42`,
+  `40012ea`, `efec3c0`) carries `Claude-Session: .../
+  session_01X4QYt5B4DQroufdM796nBD`; this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5` — no match, independent per Law 4.
+- **Merge-conflict resolution required first:** PR #159 predated several
+  PRs that had since merged to `main` (FTF-0202/#176, FTF-0403/#163,
+  FTF-1301/#168, FTF-1701/#165), so this review merged current `main`
+  into the PR branch and resolved real conflicts in `ci.yml`/
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` — every
+  conflict genuinely additive (both sides had inserted new content at
+  the same point), combined without discarding either side.
+- **Caught and fixed a real bug introduced by the merge resolution
+  itself:** the scripted combination of `ci.yml`'s own conflicted region
+  doubled each new job's header line for five jobs
+  (`critical-behavior-requirements-integration`,
+  `budget-policy-integration`, `cost-profile-integration`,
+  `secret-manager-integration`, `tenant-isolation-suite-integration`),
+  producing invalid YAML — confirmed directly: a first push (run
+  `35701657047`) came back `conclusion: failure` with **zero jobs**
+  parsed by GitHub Actions (workflow name fell back to the file path,
+  the signature of a workflow-file parse failure). Found the exact cause
+  with a duplicate-key-detecting YAML loader, removed each doubled
+  header line, reconfirmed 21 distinct jobs parse with no duplicate
+  keys, pushed the fix.
+- **CI reconfirmed green on the real, fixed head:** `get_check_runs` on
+  PR #159 after the fix — all 21 jobs `completed`/`success`, real
+  per-job runner IDs and timestamps (run `35701775852`).
+- **Own reproduction, this sandbox** (after merging current `main`, a
+  real local PostgreSQL 16 role/db `sovra_migrate`/`sovra_ftf1501`, the
+  suite's own migration): `uv run python3 tests/tasks/test_ftf_1501.py`
+  — "all checks passed" (25/25 no-DB). `tests/security/
+  tenant_isolation_suite.py` — "all checks passed" (25/25 real checks
+  against the live database + real uvicorn server).
+- **Own fault injection, one vector, distinct from the producer's own
+  two (`build_evidence`'s empty-results guard,
+  `authorize_resource_ownership`'s ownership check), reverted
+  byte-identical and the suite re-confirmed clean immediately after:**
+  disabled the unauthenticated-request 401 guard in `require_role`'s
+  `_dependency` (`apps/api/app/auth/rbac_middleware.py`, `if False and
+  principal is None:`) — the live suite failed with exactly the 5 named
+  `unauthenticated_denied` checks (expected a 401/403 denial, got a 500
+  from `principal.issuer` accessed on `None`), confirming the
+  authentication guard is genuinely load-bearing, not decorative.
+- **No regression:** full `tests/tasks/test_ftf_*.py` sweep (33 files,
+  after `pnpm install --frozen-lockfile` resolved a pre-existing,
+  previously-undocumented-this-shift sandbox gap — confirmed pre-existing
+  by FTF-0002/FTF-0003/FTF-H001 all failing identically before and
+  passing clean immediately after, with no other change) — all "all
+  checks passed". `uv run ruff check .`/`uv run ruff format --check .`
+  clean repo-wide using the pinned project ruff (0.6.9, matching CI); a
+  stray system-wide ruff (0.15.8) briefly produced a false-positive
+  reformat list for unrelated files, not used for this record. `uv run
+  mypy .` (from `apps/api`) — 2 errors, both the pre-existing, unrelated
+  `authlib.jose` missing-stub gap. `pnpm run lint`/`typecheck`/
+  `format:check` clean. `python3 scripts/validate_spec.py --strict`
+  clean. `product_truth_check.py --fail-on-unwired` — real `12/12`
+  (unchanged — `proving_symbol` genuinely empty; this task assembles
+  evidence over already-certified primitives with no new live-wiring
+  claim of its own, matching the FTF-0106/FTF-H003 precedent, not
+  inflation).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1501 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance
+  clause 1 ("Exercise real two-tenant API/DB/worker/storage/cache/model
+  paths under restricted identities") confirmed honestly narrowed to
+  API+DB, the only live-wired paths — `workers/{training,evaluation,
+  data,deploy}` confirmed README/pyproject-only scaffolds by direct
+  listing; `packages/storage/tenant_policy.py` confirmed zero live
+  callers. Acceptance clause 2 (independent review, exact merged commit,
+  real integration/negative-test evidence) is this entry itself.
+  `negative_acceptance` ("No security result from mocked auth or
+  superuser-only DB tests") confirmed by construction — the suite uses a
+  real uvicorn server (never mocked auth) and a real, restricted
+  `sovra_app`-role DB session (grepped directly, never the
+  migration-owner/superuser role).
+- Dependencies FTF-0106/FTF-H003 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `8b8a9c12e04277a62149ab28de2c9c2db3a9ff16`.
+
+**Conclusion:** Certified L2-CERTIFIED.
