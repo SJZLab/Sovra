@@ -8296,3 +8296,103 @@ Full entry: docs/certifications/ledger.md.
 - **Validated-by:** this session (independent — see session-ID check
   above), https://claude.ai/code/session_01AWerxtiNNPmTwcW3rPzZRy,
   2026-09-21.
+
+### Control plane review — 2026-09-22 — FTF-0202 (PR #176) — NOT CERTIFIED (CI cannot show a genuine pass; same GitHub Actions runner-provisioning outage, now reconfirmed a third time and into a second calendar day)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #176 (https://github.com/SJZLab/Sovra/pull/176,
+  `claude/wizardly-fermat-3c0uoh` → `main`).
+- **Environment note:** this session's own designated branch
+  (`claude/sleepy-pasteur-0dkf14`) was pre-populated with PR #176's own two
+  commits rather than `main` — the same sandbox artifact the FTF-R016
+  review already documented on PR #172. Reset to `origin/main`
+  (`git reset --hard`) before making any review commit; PR #176's commits
+  are unaffected, they remain on `origin/claude/wizardly-fermat-3c0uoh`.
+- **Session-ID check:** both commits on PR #176 (`c0c8409`, `87e1ee9`)
+  carry `Claude-Session: .../session_01CKZy4kupyKhLZEjNUTzcpC`; this
+  reviewing session's own ID is
+  `https://claude.ai/code/session_012DnConv6u9czCdyHP2DHeB` — no match,
+  independent per Law 4.
+- **Diff read directly:** `git diff origin/main...pr-176 --stat` — exactly
+  the task packet's own `files` list (`packages/litellm_client/
+  secret_manager_integration.py`, `tests/tasks/test_ftf_0202.py`) plus
+  `packages/litellm_client/__init__.py`,
+  `tests/integration/test_ftf_0202_secret_manager.py`, the expected
+  tracking-doc set (`docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+  `docs/certifications/queue.md`), and one new `gate` step plus one new
+  `secret-manager-integration` job in `.github/workflows/ci.yml` — no
+  other job's steps touched, no scope creep.
+- **Own reproduction, this sandbox** (`git worktree add` onto PR #176's own
+  head, `uv sync --all-packages`): `uv run python3
+  tests/tasks/test_ftf_0202.py` — "all checks passed" (22/22). Own fault
+  injection, both vectors, distinct execution from the producer's own
+  account (edited the shipped module directly rather than trusting it):
+  (1) disabled the expiry check in `resolve_secret_ref`
+  (`if False and isinstance(expires_raw, str) and expires_raw:`) — 1 named
+  check failed for real (`resolve_secret_ref raises SecretExpiredError...`);
+  (2) disabled the 404-to-`SecretNotFoundError` mapping in `_request`
+  (`if False and status == 404:`) — 2 named checks failed for real
+  (unknown/deleted-path rejection, rotate-of-nothing refusal). Both
+  reverted byte-identical (`diff` against the pre-injection copy empty)
+  and the suite re-confirmed clean immediately after each. `uv run ruff
+  check .` / `uv run ruff format --check .` / `uv run mypy .` clean
+  repo-wide (148 source files, only the pre-existing unrelated alembic
+  stub note). `scripts/product_truth_check.py --fail-on-unwired` — real
+  `12/12` (unchanged — `proving_symbol` genuinely empty, matching the
+  FTF-1401/FTF-1601/FTF-1701/FTF-0102/FTF-0104/FTF-0105/FTF-H003
+  precedent for a task with no live product-runtime caller yet — FTF-0203
+  is the later task that wires a real caller).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py packet
+  FTF-0202 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-0202.md`. Acceptance clause 1
+  ("Store/resolve/rotate short-lived secret refs through the actual
+  selected secret backend") confirmed met by `store_secret_ref`/
+  `resolve_secret_ref`/`rotate_secret_ref` against the real OpenBao
+  backend the owner selected (QUEUE.md, `e9e63b4`, merged via PR #173).
+  `negative_acceptance` ("Unknown/expired/ref-denied secrets block call
+  and are never returned to browser or plaintext DB") independently
+  confirmed by the fault injections above plus the source-level no-DB/
+  no-web-framework-import proof (this module has no `sqlalchemy`/
+  `fastapi` import, so it is structurally incapable of writing this
+  repository's own Postgres or serving a browser route). `database_changes`
+  ("No independent schema change") holds — no migration in this diff.
+  Path refinement (`packages/litellm-client/...` → `packages/
+  litellm_client/...`, a hyphenated segment is not a valid Python package
+  name) matches `packages/storage/tenant_policy.py`'s (FTF-H003) own
+  precedent — not a hidden scope change. Dependencies FTF-0005/FTF-0103/
+  FTF-0201 confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml` on
+  `main` before relying on them.
+- **The shipped code and its evidence are sound — this review's finding is
+  not a code defect.** What blocks certification is the same,
+  already-disclosed GitHub Actions runner-provisioning outage first found
+  on PR #170 and reconfirmed on PR #172 (see QUEUE.md "Owner actions —
+  current" and the two entries immediately above), now independently
+  reconfirmed a third time on a completely different PR/branch/task and
+  a full day later: `pull_request_read get_check_runs` on PR #176's real
+  head (`87e1ee9`) showed **19/19** jobs `completed`/`failure`, each
+  completing in 2–7 seconds; `get_workflow_job` on the `gate` job
+  confirmed `runner_id: 0`, `runner_name: ""` — the identical signature
+  already recorded on PR #170/#172, this time affecting every single job
+  in the matrix including `gate` itself (not just the newer integration
+  jobs). Cross-checked `list_workflow_runs`: the last genuine passing run
+  is still #255 (2026-09-21T17:35Z); every run since — spanning multiple
+  PRs, branches and now into 2026-09-22 — fails identically. This rules
+  out anything specific to PR #170/#172/#176 as the cause; it is a
+  standing account/repo-level capacity issue, not a code defect in any of
+  these PRs. No genuine passing CI conclusion exists on the real head.
+- **Not merged, not certified, per Law 1/Law 4.** `docs/spec-matrix.yaml`
+  for FTF-0202 stays `PROVISIONAL`/`L1-PROVEN` exactly as the producer
+  submitted it — not altered by this review, since the shipped code is
+  sound; what's missing is a genuine passing CI run. PR #176 stays open,
+  unmerged. **Action needed before re-requesting certification:** once
+  GitHub Actions is confirmed provisioning runners again, re-run PR
+  #176's CI to get a genuine passing conclusion on the real head, then a
+  fresh Control-plane review can certify on that basis alone — no code
+  change is expected or needed.
+- **Out of scope, flagged not silently dropped:** PR #158/#159/#160/#161/
+  #167/#170/#172 remain open with no action from this shift (this
+  shift's trigger and scope was PR #176 only, per the `pull_request.opened`
+  webhook) — left flagged in QUEUE.md for a future Control-plane pass once
+  the CI outage clears.
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_012DnConv6u9czCdyHP2DHeB,
+  2026-09-22.

@@ -1428,6 +1428,19 @@ issue, not tied to one branch. Still nothing any session's own access can
 fix. Remove this item the moment the owner resolves it (or a session
 confirms CI is provisioning runners again on a fresh PR event).
 
+**Reconfirmed again 2026-09-22, a third PR/branch/task, into a second
+calendar day** (Control-plane review of PR #176, FTF-0202 — see
+`docs/certifications/queue.md`'s "2026-09-22 — FTF-0202 (PR #176) — NOT
+CERTIFIED" entry): identical signature (`runner_id: 0`, no runner ever
+assigned, 2–7s "completion") reproduced again, this time across **all
+19/19** jobs in the matrix including `gate` itself (not just the newer
+integration jobs as on PR #170/#172). The last genuine passing run
+remains #255 (2026-09-21T17:35Z) — over a full day with zero real CI runs
+anywhere in this repository. This is now blocking every open PR's path to
+certification, not a handful. Still nothing any session's own access can
+fix. Remove this item the moment the owner resolves it (or a session
+confirms CI is provisioning runners again on a fresh PR event).
+
 FTF-0202 ("Secret-manager integration") — **RESOLVED 2026-09-22, directly
 witnessed.** Backend: **OpenBao** (self-hosted, Vault's open-source fork).
 

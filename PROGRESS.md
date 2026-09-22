@@ -10792,13 +10792,43 @@ against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
 
 **Conclusion:** Certified L2-CERTIFIED. Full entry: `docs/certifications/ledger.md`.
 
+## 2026-09-22 — Control-plane review — FTF-0202 (PR #176) — NOT CERTIFIED (CI outage, third reconfirmation)
+Triggered by the `pull_request.opened` webhook for PR #176. Session-ID
+clean against PR #176's two commits (independent per Law 4; this
+session's designated branch had been pre-populated with PR #176's own
+commits rather than `main` — the same sandbox artifact already seen on
+PR #172 — reset to `origin/main` before this review's own commit). Own
+reproduction confirms the shipped code is correct: diff scoped exactly
+to the task packet's files plus expected tracking docs, 22/22
+`tests/tasks/test_ftf_0202.py` checks passed, two independent fault
+injections (disabling the expiry guard; disabling the 404→
+`SecretNotFoundError` mapping) each caught for real and reverted
+byte-identical, `ruff`/`mypy` clean, `product_truth_check.py` 12/12
+(unchanged, disclosed 0-caller scope), task contract's
+acceptance/negative_acceptance both confirmed met, dependencies
+(FTF-0005/FTF-0103/FTF-0201) confirmed CERTIFIED.
+
+Not certified for a different reason: the same GitHub Actions
+runner-provisioning outage first found on PR #170 and reconfirmed on
+PR #172 is still ongoing a full day later — reconfirmed a third time on
+this PR, now across all 19/19 jobs including `gate` itself
+(`runner_id: 0`, no runner ever assigned). No genuine passing CI
+conclusion exists on the real head. Full detail:
+`docs/certifications/queue.md`'s "2026-09-22 — FTF-0202 (PR #176)" entry.
+QUEUE.md's "Owner actions — current" runner-provisioning item
+reconfirmed with this third data point. PR #176 stays open, unmerged;
+`docs/spec-matrix.yaml` for FTF-0202 stays PROVISIONAL/L1-PROVEN exactly
+as submitted.
+
 ## Next shift
-FTF-1301 reaching CERTIFIED newly unblocks FTF-1302 ("Local compute
-costing")/FTF-1303 ("Provider token costing") per `docs/TASK_INDEX.md`.
-Five open PRs still need Control-plane attention: (1) close PR #158
-without merging (superseded by the already-merged PR #163); (2) certify
-or reject PR #159/#160/#161/#167 (FTF-1501/FTF-1001/FTF-1401/FTF-1702,
-all real, open, and unreviewed — out of scope for this shift, whose job
-was `docs/certifications/queue.md` review only); (3) resolve PR #162's
-own FTF-0202 claim one way or the other. FTF-0202 remains the single
-highest-leverage owner ask still open.
+The GitHub Actions runner-provisioning outage (open since 2026-09-21,
+now reconfirmed a third time on 2026-09-22 across PR #170/#172/#176) is
+the single highest-leverage blocker: nothing can reach CERTIFIED until
+it clears, whatever else this repository does. Six open PRs remain
+unreviewed pending that clearance: #158 (stale FTF-0403 duplicate,
+superseded by the already-merged PR #163 — close without merging),
+#159/#160/#161/#167/#170/#172 (FTF-1501/FTF-1001/FTF-1401/FTF-1702/
+FTF-1302/FTF-R016, all real and otherwise sound per the reviews already
+on record for #170/#172). FTF-0202's own owner-ask (backend selection)
+is resolved (OpenBao) — PR #176 just needs the outage to clear and a
+fresh CI run.
