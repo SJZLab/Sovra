@@ -432,15 +432,78 @@ FTF-0303:
   proving_symbol: ''
   proving_test: ''
 FTF-0304:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Local artifact resolver
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301
-  proof_state: UNPROVEN
+  evidence_hash: 7d38e0ac08ca1180f7c3e67df2e1857131e2a502
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301 (both
+    CERTIFIED). apps/api/app/artifacts/local_artifact_resolver.py -- refined from the packet's own
+    unimportable/hyphenated `packages/model-catalog/local_artifact_resolver.py` suggestion to a
+    real apps/api/app/artifacts/* module, the same refinement precedent FTF-0301/FTF-0305 already
+    established for this directory. Pure, DB-free: `resolve_local_artifact(approved_root,
+    source_uri)` walks the real bytes beneath an operator-approved local root directory for a
+    `local_filesystem` `TrainableArtifact.source_uri` (already shape-validated to be relative,
+    non-traversing and scheme-free by FTF-0301's own `validate_source_uri`, re-invoked here as the
+    first step, not re-implemented) and returns a `LocalArtifactManifest` -- a sorted tuple of
+    `LocalArtifactFileEntry(relative_path, size_bytes, sha256)` plus a deterministic
+    `manifest_sha256` computed only from those sorted (relative_path, sha256, size_bytes) triples,
+    never from filesystem metadata (mtime/inode/owner) that carries no content meaning; same
+    unchanged directory resolves to the same manifest_sha256 across repeated calls, and a single
+    changed byte anywhere changes it. This task's own negative_acceptance ("Symlink/path escape,
+    changing file during read and unsafe executable artifact are rejected") is enforced as three
+    independent, individually fault-injection-tested checks, each raising
+    `LocalArtifactResolutionError`: (1) symlink/path escape -- every path component between the
+    approved root and the resolved artifact, and every file/subdirectory inside a directory
+    artifact, is rejected outright if it is a symlink (a symlinked subdirectory is rejected, not
+    silently skipped via `os.walk`'s own `followlinks=False`, which would otherwise list-but-not-
+    descend it); proven to be load-bearing and not merely redundant with the escape check via a
+    dedicated test whose symlink target stays inside the approved root (so only the explicit
+    symlink check, not the real-path-escape check, can catch it); a defense-in-depth real-path
+    comparison (`Path.resolve()` of both the approved root and the resolved artifact) also
+    independently confirms no escape, beyond FTF-0301's own shape-level `..`-segment rejection. (2)
+    changing file during read -- `_hash_file_integrity_checked` captures each file's real
+    `(size, mtime_ns)` immediately before and immediately after it is read/hashed via the real
+    chunked `open()`/`read()` path (`_iter_chunks`, a module-level function, not inlined, so a test
+    can substitute a chunk source that mutates the real file mid-iteration and prove the check
+    fires against an actual race, not just a hand-built stat-tuple comparison); a mismatch raises
+    rather than silently returning a manifest entry for bytes that were never actually read as one
+    consistent version. (3) unsafe executable artifact -- any file carrying an owner/group/other
+    executable permission bit (`stat.S_IXUSR|S_IXGRP|S_IXOTH`) is rejected; an otherwise-identical
+    non-executable file is accepted (proven by a dedicated sanity test), confirming content alone
+    never triggers rejection, only the executable permission. Also rejects: a shape-valid but
+    missing path (no silent empty manifest), an artifact directory containing no regular files, and
+    a non-regular/non-directory path entry. tests/tasks/test_ftf_0304.py: 12 no-DB test functions
+    (via `check()`) against a real temporary directory tree on disk -- no database, no network
+    egress, no GPU; every symlink test creates a real symlink via `Path.symlink_to` and skips
+    (flagging, not silently passing) only if this sandbox itself cannot create one. Three own fault
+    injections (Law 1, one per negative_acceptance check, via `python3 -c` source-string
+    substitution against the real module file, re-run, then restored byte-identical and confirmed
+    via `diff`): (1) the ancestor `is_symlink()` rejection replaced with a no-op `pass` -- caught
+    for real by exactly the in-root-symlink-target test (1 FAIL), the other symlink tests still
+    passed because the independent real-path-escape check caught them, which is itself the reason
+    that dedicated in-root-target test exists rather than relying on the escape-check tests alone;
+    (2) the executable-bit `if` raise removed -- caught for real by exactly the executable-file test
+    (1 FAIL); (3) the `before != after` stat-mismatch raise removed -- caught for real by exactly
+    the changing-file-during-read test (1 FAIL), which performs a genuine mid-iteration file
+    mutation through the module's own real `_iter_chunks` call path. `ruff check .`/
+    `ruff format --check .`/`uv run mypy .` clean across the full repo; `uv run python3
+    scripts/validate_spec.py --strict` clean (`git fetch --unshallow origin` first -- this
+    sandbox's own pre-existing shallow-clone `stale_commit` artifact, the same one every prior
+    relay shift has already documented). No live FastAPI route or Temporal worker imports this
+    module yet -- disclosed, matching the same scope-narrowing precedent already independently
+    CERTIFIED for FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0301/FTF-0402/FTF-0404/FTF-0405; wiring
+    `manifest_sha256` into `TrainableArtifact.weights_digest` is FTF-0306 ("Base model
+    revision/digest resolver")'s own, later, separately dependency-gated job -- this task does not
+    write that column, matching FTF-0301's own explicit disclosed-gap language for exactly this
+    boundary. `product_truth_check.py --fail-on-unwired` stays `13/13`, unchanged by this task
+    (no new proving_symbol claimed, since there is no real live caller to point one at yet). PR
+    opened as PROVISIONAL; not self-certified (Law 4) -- awaiting independent Control-plane
+    certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0304.py
 FTF-0305:
   certification_state: CERTIFIED
   criticality: MUST

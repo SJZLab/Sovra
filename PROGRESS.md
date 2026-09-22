@@ -11977,3 +11977,157 @@ all real, open, and unreviewed — out of scope for this shift, whose job
 was `docs/certifications/queue.md` review only); (3) resolve PR #162's
 own FTF-0202 claim one way or the other. FTF-0202 remains the single
 highest-leverage owner ask still open.
+
+## 2026-09-22T14:57:18Z — scheduled relay shift — FTF-0304 (Local artifact resolver) implemented, PROVISIONAL
+
+**Step 0.** CLAUDE.md self-check: `sha256sum CLAUDE.md` matched the
+committed `CLAUDE.md.sha256` exactly — no mismatch, no BLOCKER.md needed
+for that. Read PROGRESS.md/QUEUE.md/`docs/certifications/queue.md` fresh
+(never assumed state from prior context); confirmed via `BLOCKER.md`
+itself that no open blocker exists (both entries in it are resolved
+history, dated 2026-09-15/09-16).
+
+**Frontier recomputed fresh** (never trusted a prior shift's own note):
+loaded `spec/tasks.json`'s own `topological_order` and
+`docs/implementation/TRACKER.json`'s own live per-task `status`, and
+found every `NOT_STARTED` task whose full `dependencies` list is already
+`CERTIFIED`. Seven came back: FTF-0304, FTF-0500, FTF-H006, FTF-0902,
+FTF-1503, FTF-1506, FTF-0408. Of these, FTF-0408/FTF-0902 are already
+disclosed-blocked on their own real DoD-clarity/resource_gate gaps
+(unchanged, re-confirmed via `grep` against this file's own prior
+history, not re-litigated here). Of the remaining five, FTF-0304 has the
+lowest CAP number (CAP-06, matching FTF-0301/FTF-0305's own cluster) with
+no external-service ask of its own — `dependencies: [FTF-0202,
+FTF-0301]`, both genuinely `CERTIFIED` per `TRACKER.json`
+(`evidence: ["6dfd97d2..."]`/`["86397f1239..."]`).
+
+**Task contract pulled fresh:** `python tools/r1_handoff.py packet
+FTF-0304 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (re-generated
+`docs/implementation/task-packets/FTF-0304.md`, matching the committed
+copy byte-for-byte). Acceptance: "Resolve artifact beneath approved local
+root and calculate deterministic file manifest." negative_acceptance:
+"Symlink/path escape, changing file during read and unsafe executable
+artifact are rejected." `files`: `packages/model-catalog/
+local_artifact_resolver.py` (refined — see below), `tests/tasks/
+test_ftf_0304.py`. `database_changes`: "No independent schema change."
+`resource_gate`: real external/GPU prerequisites required only where
+relevant — this task's own real prerequisite is a real local filesystem,
+already present in any sandbox; no GPU/network dependency at all.
+
+**Implementation.** Read FTF-0301's own `artifact_schema.py`/
+`artifact_crud.py` first — confirmed `local_filesystem` is one of
+Section 6.7's four `source_type` values, already shape-validated
+(relative, no `..` segment, no scheme, non-empty) by
+`_validate_local_filesystem_uri`. Refined the packet's own suggested
+`packages/model-catalog/local_artifact_resolver.py` path to
+`apps/api/app/artifacts/local_artifact_resolver.py` — `packages/
+model-catalog` is not a `uv` workspace member and is hyphenated, the same
+unimportable-path finding FTF-0301/FTF-0305 already disclosed and
+resolved identically for this same directory.
+
+`resolve_local_artifact(approved_root, source_uri)`: pure, DB-free.
+Re-invokes FTF-0301's own `validate_source_uri` first (never
+re-implements that shape check). Walks the real bytes beneath
+`approved_root` and returns a `LocalArtifactManifest` — a sorted tuple of
+`(relative_path, size_bytes, sha256)` plus a `manifest_sha256` computed
+only from those triples (never filesystem metadata like mtime/inode, which
+carries no content meaning) — same unchanged directory always resolves to
+the same `manifest_sha256`; one changed byte anywhere changes it.
+
+Three independent checks for the three negative_acceptance cases, each
+raising `LocalArtifactResolutionError`:
+1. **Symlink/path escape** — every path component between the approved
+   root and the artifact, and every entry inside a directory artifact, is
+   rejected outright if it is a symlink (a symlinked subdirectory is
+   rejected, not silently skipped the way `os.walk(followlinks=False)`
+   alone would list-but-not-descend it); a defense-in-depth real-path
+   comparison independently reconfirms no escape beyond FTF-0301's own
+   shape check.
+2. **Changing file during read** — each file's real `(size, mtime_ns)` is
+   captured immediately before and after it is read/hashed via the real
+   chunked `open()`/`read()` path (`_iter_chunks`, a module-level function
+   so a test can substitute a chunk source that mutates the real file
+   mid-iteration); a mismatch raises.
+3. **Unsafe executable artifact** — any file carrying an owner/group/other
+   executable permission bit is rejected; an otherwise-identical
+   non-executable file is accepted.
+
+**Tests.** `tests/tasks/test_ftf_0304.py` — 12 no-DB test functions
+against a real temporary directory tree on disk (`tempfile
+.TemporaryDirectory`, real `Path.symlink_to`, real `chmod`); no database,
+no network egress, no GPU. Includes a dedicated case whose symlink target
+stays *inside* the approved root, proving the explicit symlink-ancestor
+check is load-bearing and not merely redundant with the real-path-escape
+check.
+
+**Own fault injection (Law 1), one per negative_acceptance check, via
+`python3 -c` source-string substitution against the real module file,
+each re-run then restored byte-identical (`diff` confirmed empty):**
+1. Removed the ancestor `is_symlink()` rejection (replaced with `pass`) —
+   caught for real by exactly the in-root-symlink-target test (1 FAIL);
+   every other symlink test still passed, because the independent
+   real-path-escape check alone still caught those — confirming why the
+   dedicated in-root-target test exists rather than relying on the
+   escape-check tests alone to prove this specific check.
+2. Removed the executable-bit rejection — caught for real by exactly the
+   executable-file test (1 FAIL).
+3. Removed the `before != after` stat-mismatch rejection — caught for
+   real by exactly the changing-file-during-read test (1 FAIL), which
+   performs a genuine mid-iteration file mutation through the module's
+   own real `_iter_chunks` call path, not a hand-built stat comparison.
+
+**Full regression, this sandbox:** `git fetch --unshallow origin` first
+(this sandbox's own pre-existing shallow-clone artifact, the same one
+every prior relay shift has already documented — 20 `stale_commit`
+defects before, 0 after). `uv sync --all-packages`. `uv run ruff check
+.`/`uv run ruff format --check .` — clean, repo-wide (168 files). `uv run
+mypy .` — "Success: no issues found in 168 source files" (only a
+pre-existing, unrelated `test_ftf_h034.py` `annotation-unchecked` note,
+confirmed identical on `main`). `uv run python3 scripts/validate_spec.py
+--strict` — clean. `uv run python3 scripts/product_truth_check.py
+--fail-on-unwired` — `13/13`, unchanged (this task claims no
+`proving_symbol`, since no live FastAPI route or worker imports this
+module yet — disclosed, matching the same scope-narrowing precedent
+already independently CERTIFIED for FTF-0103/FTF-0104/FTF-0105/FTF-H003/
+FTF-0301/FTF-0402/FTF-0404/FTF-0405; not a hidden gap). `uv run python3
+scripts/verify_task.py --task FTF-0304 --stage task` — `BLOCKED`, "no
+merged verification evidence yet" — expected pre-merge, same two-commit
+pattern every prior producer shift has documented (the real
+`verification-map.json` entry is added by Control plane at certification
+time, referencing the exact merged commit, never by the producer).
+
+**No production mock/placeholder/fake path introduced** (Law 11): no
+provider client, no simulated progress, no dummy artifact — a real
+filesystem walk over real bytes, real `hashlib.sha256`, real
+`os.walk`/`Path.symlink_to`/`os.stat`.
+
+**Submission.** Implementation commit `7d38e0ac08ca1180f7c3e67df2e1857131e2a502`
+on branch `claude/wizardly-fermat-vwn43o`. `docs/spec-matrix.yaml` FTF-0304
+set to `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to that commit, `proving_symbol` left empty (no live
+caller yet, as above). `docs/implementation/TRACKER.json` FTF-0304 set to
+`status: PROVISIONAL`, `commits`/`evidence` recording that same commit.
+Not self-certified (Law 4) — PR opened as PROVISIONAL, appended to
+`docs/certifications/queue.md` for independent Control-plane review.
+Certified count unchanged (37/300); Product-true unchanged (13/13).
+
+**Conclusion:** PROVISIONAL, awaiting independent Control-plane
+certification and L4 gate.
+
+## Next shift
+FTF-0304 reaching CERTIFIED will newly unblock FTF-0306 ("Base model
+revision/digest resolver", also needs FTF-0302/FTF-0303 — still `NONE`)
+and FTF-1812 per `spec/tasks.json`'s own `dependencies` lists (recompute
+fresh rather than trusting this note — do not assume either is otherwise
+dependency-ready). FTF-0500/FTF-H006/
+FTF-1503/FTF-1506 remain real, unpicked, dependency-ready items from this
+same shift's own frontier computation (FTF-0408/FTF-0902 still carry
+their own previously disclosed DoD-clarity/resource_gate gaps, unchanged
+— re-check, don't re-litigate). Five open PRs from before this shift
+still need Control-plane attention per the immediately preceding "Next
+shift" note above (superseded only insofar as FTF-0304 is now also
+open): PR #158 (close, superseded), PR #159/#160/#161/#167
+(FTF-1501/FTF-1001/FTF-1401/FTF-1702 — recheck actual current state
+fresh, QUEUE.md's own "## Done"/"## Provisional" sections suggest some
+of these already reached CERTIFIED since that note was written), PR #162
+(FTF-0202 claim — also likely already superseded, recheck).

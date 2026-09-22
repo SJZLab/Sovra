@@ -9778,3 +9778,115 @@ the start of this shift (FTF-0202/FTF-1001/FTF-1302/FTF-1401/FTF-1501/
 FTF-1702/FTF-R016) — all now independently CERTIFIED, and all six
 stale duplicate "Control plane: certify" candidate PRs (#179-185)
 closed as superseded.
+
+## 2026-09-22 — FTF-0304 (Local artifact resolver) — Relay: real symlink/TOCTOU/executable-safe local resolver submitted, PROVISIONAL (awaiting independent Control plane review)
+- **Task:** FTF-0304, Local artifact resolver. Dependencies FTF-0202
+  (Secret-manager integration) and FTF-0301 (TrainableArtifact
+  schema/API) are both CERTIFIED; DoD pulled fresh via `python
+  tools/r1_handoff.py packet FTF-0304 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`, not improvised from the task title
+  alone. PR: https://github.com/SJZLab/Sovra/pull/195, implementation
+  commit `7d38e0ac08ca1180f7c3e67df2e1857131e2a502`.
+- **Frontier recomputed fresh:** every `NOT_STARTED` task in
+  `spec/tasks.json`'s own `topological_order` whose full `dependencies`
+  are already `CERTIFIED` per `docs/implementation/TRACKER.json`:
+  FTF-0304, FTF-0500, FTF-H006, FTF-0902, FTF-1503, FTF-1506, FTF-0408.
+  FTF-0408/FTF-0902 stay disclosed-blocked on their own real, previously
+  recorded DoD-clarity/resource_gate gaps (re-checked, not
+  re-litigated). FTF-0304 has the lowest CAP number (CAP-06, matching
+  FTF-0301/FTF-0305's own cluster) with no external-service ask of its
+  own.
+- **Real constraint checked before writing any code:** `database_changes`
+  reads "No independent schema change. Consume frozen contract" and
+  `shared_lock_required` is empty. FTF-0301 already shape-validates a
+  `local_filesystem` `source_uri` (relative, no `..` segment, no scheme,
+  non-empty) at construction/edit time but deliberately does not resolve
+  it against real bytes on disk (its own module docstring names this
+  exact task as the one that does). This task's own job is exactly that
+  missing real filesystem resolution, not a new schema or a
+  re-implementation of FTF-0301's own shape check.
+- **`apps/api/app/artifacts/local_artifact_resolver.py`:** refined from
+  the packet's own suggested `packages/model-catalog/
+  local_artifact_resolver.py` (not a `uv` workspace member, hyphenated
+  and unimportable) to this directory — the same refinement precedent
+  FTF-0301/FTF-0305 already established for it.
+  `resolve_local_artifact(approved_root, source_uri)` — pure, DB-free —
+  re-invokes FTF-0301's own `validate_source_uri` first, then walks the
+  real bytes beneath `approved_root` into a `LocalArtifactManifest`: a
+  sorted tuple of `LocalArtifactFileEntry(relative_path, size_bytes,
+  sha256)` plus a `manifest_sha256` computed only from those sorted
+  triples (never filesystem metadata like mtime/inode, which carries no
+  content meaning) — proven deterministic (same unchanged directory,
+  same `manifest_sha256`, across repeated calls) and content-sensitive
+  (one changed byte anywhere changes it).
+- **negative_acceptance ("Symlink/path escape, changing file during read
+  and unsafe executable artifact are rejected") as three independent
+  checks, each raising `LocalArtifactResolutionError`:**
+  1. Symlink/path escape — every path component between the approved
+     root and the artifact, and every file/subdirectory inside a
+     directory artifact, is rejected outright if it is a symlink (a
+     symlinked subdirectory is rejected, not silently skipped the way
+     `os.walk(followlinks=False)` alone would list-but-not-descend it);
+     a defense-in-depth real-path comparison (`Path.resolve()`)
+     independently reconfirms no escape beyond FTF-0301's own shape
+     check.
+  2. Changing file during read — `_hash_file_integrity_checked` captures
+     each file's real `(size, mtime_ns)` immediately before and after it
+     is read/hashed via the real chunked `open()`/`read()` path
+     (`_iter_chunks`, a module-level function, not inlined, specifically
+     so a test can substitute a chunk source that mutates the real file
+     mid-iteration); a mismatch raises.
+  3. Unsafe executable artifact — any file carrying an owner/group/other
+     executable permission bit (`stat.S_IXUSR|S_IXGRP|S_IXOTH`) is
+     rejected; an otherwise-identical non-executable file is accepted.
+- **`tests/tasks/test_ftf_0304.py`:** 12 no-DB test functions (via
+  `check()`) against a real temporary directory tree on disk
+  (`tempfile.TemporaryDirectory`, real `Path.symlink_to`, real
+  `chmod`) — no database, no network egress, no GPU. Includes a
+  dedicated case whose symlink target stays *inside* the approved root,
+  proving the explicit ancestor symlink check is load-bearing and not
+  merely redundant with the real-path-escape check; every symlink test
+  flags (does not silently pass) if this sandbox itself cannot create a
+  symlink.
+- **Own fault injection (Law 1), one per negative_acceptance check, via
+  `python3 -c` source-string substitution against the real module file
+  on disk, each re-run then restored byte-identical (`diff` confirmed
+  empty):**
+  1. Ancestor `is_symlink()` rejection replaced with a no-op `pass` —
+     caught for real by exactly the in-root-symlink-target test (1
+     FAIL); every other symlink test still passed, since the
+     independent real-path-escape check alone still caught those —
+     confirming why the dedicated in-root-target test exists rather
+     than relying on the escape-check tests alone.
+  2. Executable-bit rejection removed — caught for real by exactly the
+     executable-file test (1 FAIL).
+  3. `before != after` stat-mismatch rejection removed — caught for
+     real by exactly the changing-file-during-read test (1 FAIL), which
+     performs a genuine mid-iteration file mutation through the
+     module's own real `_iter_chunks` call path, not a hand-built stat
+     comparison.
+- **Full regression, this sandbox:** `git fetch --unshallow origin`
+  first (this sandbox's own pre-existing shallow-clone `stale_commit`
+  artifact, the same one every prior relay shift has already documented
+  — 20 defects before, 0 after). `uv run ruff check .`/`uv run ruff
+  format --check .` clean, repo-wide (168 files). `uv run mypy .` —
+  "Success: no issues found in 168 source files" (only a pre-existing,
+  unrelated `test_ftf_h034.py` `annotation-unchecked` note, confirmed
+  identical on `main`). `uv run python3 scripts/validate_spec.py
+  --strict` clean. `uv run python3 scripts/product_truth_check.py
+  --fail-on-unwired` — `13/13`, unchanged (no `proving_symbol` claimed —
+  no live FastAPI route or Temporal worker imports this module yet,
+  disclosed, matching the same scope-narrowing precedent already
+  independently CERTIFIED for FTF-0103/FTF-0104/FTF-0105/FTF-H003/
+  FTF-0301/FTF-0402/FTF-0404/FTF-0405). `uv run python3
+  scripts/verify_task.py --task FTF-0304 --stage task` — `BLOCKED`, "no
+  merged verification evidence yet" — expected pre-merge, same
+  two-commit pattern every prior producer shift has documented.
+- **State:** `docs/spec-matrix.yaml` FTF-0304 set to
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+  `evidence_hash` set to the implementation commit above,
+  `proving_symbol` left empty (no live caller yet, as above).
+  `docs/implementation/TRACKER.json` FTF-0304 set to `status:
+  PROVISIONAL`. Not self-certified (Law 4) — PR opened as PROVISIONAL,
+  awaiting independent Control-plane review. Certified count unchanged
+  (37/300); Product-true unchanged (13/13).

@@ -2328,7 +2328,11 @@ re-reviewed by Control plane now (this entry's own review) after its
 prior NOT-CERTIFIED verdict, which was blocked only by a GitHub Actions
 runner-provisioning outage reported cleared 2026-09-22 (PR #178).
 FTF-R016 (PR #172) remains open with the same prior verdict and needs
-the same treatment next. Blocked: 0
+the same treatment next. FTF-0304 (Local artifact resolver, PR #195) is
+open PROVISIONAL as of this same date (2026-09-22, scheduled relay
+shift) — not yet counted in Certified (Law 2: statuses move only with
+evidence at their named assurance level; this is L1-PROVEN, not
+L2-CERTIFIED). Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -2525,6 +2529,29 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-0304 (Local artifact resolver, PR #195
+https://github.com/SJZLab/Sovra/pull/195, implementation commit
+`7d38e0ac08ca1180f7c3e67df2e1857131e2a502`) was implemented this shift
+(scheduled relay shift, 2026-09-22) — real dependency-ready frontier
+recomputed fresh (`FTF-0304, FTF-0500, FTF-H006, FTF-0902, FTF-1503,
+FTF-1506, FTF-0408`; FTF-0408/FTF-0902 stay disclosed-blocked on their
+own prior DoD-clarity/resource_gate gaps, unchanged), lowest CAP number
+(CAP-06) with no external-service ask of its own. `resolve_local_artifact`
+(`apps/api/app/artifacts/local_artifact_resolver.py`) walks a
+`TrainableArtifact`'s `local_filesystem` `source_uri` beneath an
+approved local root into a deterministic file manifest; three
+independent, individually fault-injection-tested checks cover this
+task's own negative_acceptance (symlink/path escape, changing file
+during read, unsafe executable artifact) — full detail in this shift's
+own `PROGRESS.md` entry and `docs/certifications/queue.md` submission.
+`docs/spec-matrix.yaml` set to `certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN`, `proving_symbol` left empty (no live caller
+yet, disclosed, matching the FTF-0103/FTF-0104/FTF-0105/FTF-H003/
+FTF-0301/FTF-0402/FTF-0404/FTF-0405 precedent).
+`product_truth_check.py --fail-on-unwired` stays `13/13`, unchanged.
+Not self-certified (Law 4) — awaiting independent Control-plane
+certification.
+
 FTF-0202, FTF-1501, FTF-1001, and FTF-1401 are no longer in this
 section; all four were independently reviewed and CERTIFIED 2026-09-22
 (PR #176 merge `6dfd97d`, PR #159 merge `8b8a9c1`, PR #160 merge
