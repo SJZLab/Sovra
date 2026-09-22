@@ -9036,3 +9036,90 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-1401 (PR#161) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+continuing the same certifier shift that just certified FTF-1501
+(PR #159) and FTF-1001 (PR #160), working through the real open-PR
+backlog one item at a time per the user's explicit request.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5`; all three commits on PR #161
+  (`4000f0d`, `1c352f9`, `209f2da`) carry `Claude-Session: .../
+  session_01CDP3isFaUkJtHPU91hNz2j` — no match, independent per Law 4.
+- **Merge-conflict resolution required a third time:** PR #161 was
+  opened 2026-09-21T09:06Z, predating both FTF-1501/#159 and
+  FTF-1001/#160 merging to `main`. Merged current `main` into the PR
+  branch and resolved real, additive conflicts in `ci.yml`,
+  `PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` — verified
+  clean via a duplicate-key-detecting YAML loader before pushing, with
+  no repeat of the duplicate-job-key bug caught on the first of these
+  three backlog reviews.
+- **CI reconfirmed green on the real merged head:** `get_check_runs` on
+  PR #161 — all 23 jobs `completed`/`success`, real per-job runner IDs
+  and timestamps (run `35704415542`).
+- **Diff read directly:** `tests/performance/api_load_test.py` (the
+  full measurement/aggregation module: `compute_percentile`,
+  `summarize_latencies`, `build_workload_plan`, `evaluate_acceptance`,
+  `execute_request`), `tests/tasks/test_ftf_1401.py`,
+  `packages/contracts/{openapi,jsonschema}/14-*` (`paths: {}`,
+  confirmed a measurement tool, not a new served route). Confirmed the
+  disclosed partial-profile framing (1 API process/1 local Postgres/3
+  orgs/9 projects vs. Section 49's full 2-replica/10-org/100-project/
+  50RPS/30-minute target) and the real DB-count-vs-response-count "no
+  lost writes" substitution for Section 70's not-yet-built
+  idempotency-key contract.
+- **Own reproduction, this sandbox** (real local PostgreSQL 16, exact
+  CI profile via `SOVRA_LOAD_TEST_DURATION_SECONDS=15`/
+  `SOVRA_LOAD_TEST_WORKERS=10`): `uv run python3
+  tests/tasks/test_ftf_1401.py` — "all checks passed" (17/17 no-DB).
+  `tests/performance/api_load_test.py` — 4,519 real requests, 300.6
+  achieved RPS, read P95 40.3ms / write P95 39.6ms (both within the
+  500ms/1000ms Section 49 thresholds), 0 unexpected 5xx, 0 failed/
+  timed-out requests, `acceptance_passed: true`, successful-write-
+  response count exactly matched the real DB row count.
+- **Own fault injection, one vector, distinct from the producer's own
+  two (`execute_request`'s OSError guard, `evaluate_acceptance`'s
+  5xx-rate branch), reverted byte-identical and the suite re-confirmed
+  clean immediately after:** disabled the write/submit P95 threshold
+  branch in `evaluate_acceptance` (`if write_stats is not None and
+  False and write_stats.p95_ms > thresholds.write_p95_ms:`) — the no-DB
+  suite failed with exactly the named check ("submit/write P95 above
+  threshold fails, and the reason names the submit clause"), confirming
+  the threshold guard is genuinely load-bearing, not decorative.
+- **Static checks re-run clean, this session:** `uv run ruff check .` /
+  `uv run ruff format --check .` clean repo-wide using the pinned
+  project ruff (0.6.9, matching CI). `uv run mypy .` (from `apps/api`) —
+  2 errors, both the pre-existing, unrelated `authlib.jose` missing-stub
+  gap. `pnpm run lint`/`typecheck`/`format:check` clean. `python3
+  scripts/validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` stays real `13/13` (unchanged — `proving_symbol`
+  deliberately empty, a measurement tool, matching the FTF-1601
+  precedent, not inflation).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1401 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-1401.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1 ("Run
+  declared API request mix/load/resource profile and report p50/p95/
+  p99/errors/backpressure") confirmed met by the real run above.
+  Acceptance clause 2 (independent review, exact merged commit, real
+  integration/negative-test evidence) is this review itself.
+  `negative_acceptance` ("Exclude provider latency only where specified;
+  no reduced hidden load or dropped timed-out requests") confirmed by
+  construction — `execute_request` always returns exactly one
+  `RequestSample` per request, including a failed connection, never
+  raising or dropping one from accounting, reconfirmed present unchanged
+  in the diff and by the producer's own OSError-guard fault injection.
+- Dependencies FTF-0006/FTF-0401/FTF-0106 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `c2fda5b6ad472aa6d38a977896b339a484a9a483`. Appended a signed entry to
+  `docs/certifications/ledger.md`. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-1401']` written
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json`. QUEUE.md/
+  PROGRESS.md updated (FTF-1401 moved to Done, Certified count bumped).
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5,
+  2026-09-22.

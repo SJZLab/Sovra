@@ -4452,3 +4452,67 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1401 — API load test
+- Criterion ID: FTF-1401
+- PR: https://github.com/SJZLab/Sovra/pull/161 (`claude/wizardly-fermat-uec7js` → `main`)
+- Merge commit: c2fda5b6ad472aa6d38a977896b339a484a9a483
+- Implementation commit: 4000f0d5c94a789cc4f3971cd4321716e0dde1e0
+- Validated-by: session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5
+  (continuing the same certifier shift, user-requested backlog sweep)
+- Date: 2026-09-22
+- **Session-ID check:** all three commits on PR #161 (`4000f0d`,
+  `1c352f9`, `209f2da`) carry `Claude-Session: .../
+  session_01CDP3isFaUkJtHPU91hNz2j`; this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5` — no match, independent per Law 4.
+- **Merge-conflict resolution required a third time:** PR #161 predated
+  both FTF-1501/#159 and FTF-1001/#160 merging to `main`. Merged current
+  `main` into the PR branch and resolved real, additive conflicts in
+  `ci.yml`/`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`,
+  verified clean via a duplicate-key-detecting YAML loader before
+  pushing (no repeat of the bug caught on the first of these three
+  backlog reviews).
+- **CI reconfirmed green on the real merged head:** `get_check_runs` —
+  23/23 jobs `completed`/`success` (run `35704415542`).
+- **Own reproduction, this sandbox** (real local PostgreSQL 16,
+  exact CI profile via `SOVRA_LOAD_TEST_DURATION_SECONDS=15`/
+  `SOVRA_LOAD_TEST_WORKERS=10`): `uv run python3
+  tests/tasks/test_ftf_1401.py` — "all checks passed" (17/17 no-DB).
+  `tests/performance/api_load_test.py` — 4,519 real requests, 300.6
+  achieved RPS, read P95 40.3ms / write P95 39.6ms (both within
+  thresholds), 0 unexpected 5xx, 0 failed/timed-out requests,
+  `acceptance_passed: true`, successful-write-response count exactly
+  matched the real DB row count.
+- **Own fault injection, one vector, distinct from the producer's own
+  two (`execute_request`'s OSError guard, `evaluate_acceptance`'s
+  5xx-rate branch), reverted byte-identical and the suite re-confirmed
+  clean immediately after:** disabled the write/submit P95 threshold
+  branch in `evaluate_acceptance` — the no-DB suite failed with exactly
+  the named check ("submit/write P95 above threshold fails, and the
+  reason names the submit clause"), confirming the threshold guard is
+  genuinely load-bearing.
+- **No regression:** full `tests/tasks/test_ftf_*.py` sweep (35 files)
+  all "all checks passed". `ruff check`/`ruff format --check` clean
+  using the pinned project ruff (0.6.9, matching CI). `mypy` (apps/api)
+  — 2 errors, both the pre-existing, unrelated `authlib.jose` stub gap.
+  `pnpm run lint`/`typecheck`/`format:check` clean. `validate_spec.py
+  --strict` clean. `product_truth_check.py --fail-on-unwired` stays real
+  `13/13` (unchanged — `proving_symbol` deliberately empty, a
+  measurement tool, matching the FTF-1601 precedent).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1401 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Both
+  acceptance clauses confirmed met (real load profile run and reported;
+  this review is the independent-review clause itself).
+  `negative_acceptance` ("no reduced hidden load or dropped timed-out
+  requests") confirmed by construction — `execute_request` always
+  returns exactly one `RequestSample` per request, reconfirmed present
+  unchanged in the diff and by the producer's own OSError-guard fault
+  injection.
+- Dependencies FTF-0006/FTF-0401/FTF-0106 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `c2fda5b6ad472aa6d38a977896b339a484a9a483`.
+
+**Conclusion:** Certified L2-CERTIFIED.

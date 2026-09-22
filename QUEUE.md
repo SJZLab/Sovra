@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Control plane certifier — 2026-09-22 (continuing a certifier shift, user
+  requested the open-PR backlog be worked through: close stale/duplicate
+  PRs, then merge+certify the real backlog one at a time): closed 8 dead
+  PRs (#128/#129/#132/#152/#158/#174/#175/#177). Independently reviewed
+  and CERTIFIED FTF-1501 (PR #159, merge `8b8a9c1`), FTF-1001 (PR #160,
+  merge `8b51c85`), and FTF-1401 (PR #161, merge `c2fda5b`, this entry's
+  own certification) — all three predated `main`'s current tip and
+  needed a real merge-conflict resolution first; the first attempt
+  introduced a real duplicate-job-key bug into `ci.yml` (caught, fixed,
+  confirmed via a duplicate-key-detecting YAML loader on every
+  subsequent merge). `scripts/status.py`: `36/300` → `37/300` certified
+  on `main`'s own real tip; product-true `12` → `13`. Remaining backlog:
+  FTF-1702 (PR #167) genuinely unreviewed; FTF-1302 (PR #170) and
+  FTF-R016 (PR #172) blocked only by a since-reportedly-cleared CI
+  outage — working these next.
+
 Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201
   all CERTIFIED). STEP 0 clean (`sha256sum CLAUDE.md` matches
@@ -1586,10 +1602,16 @@ Earlier the same date (scheduled Control-plane certifier shift, triggered by
 Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (autonomous)
 
 ## Status
-Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
-`9a47458` — see docs/certifications/ledger.md) · Provisional: PR #159
-(FTF-1501)/#160 (FTF-1001)/#161 (FTF-1401)/#167 (FTF-1702) remain
-genuinely open and PROVISIONAL, unreviewed — see "## Provisional" below ·
+Certified: 37/300 (main; FTF-1401 CERTIFIED 2026-09-22, PR #161 merged
+as `c2fda5b` — see docs/certifications/ledger.md) · Product-true:
+13/13. FTF-1501/FTF-1001/FTF-0202 are merged and already independently
+reviewed/certified by this same shift, awaiting only the owner's merge
+of the doc-only certification PRs (#179/#180/#181) that record it on
+`main`. PR #167 (FTF-1702) remains genuinely open and unreviewed. PR
+#170/#172 (FTF-1302/FTF-R016) remain open, previously reviewed sound
+but blocked only by a GitHub Actions runner-provisioning outage
+reported cleared 2026-09-22 (PR #178) — each needs the same
+merge-current-main treatment before a fresh CI run and review.
 Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
@@ -1805,9 +1827,11 @@ respectively) — see "## Done" for the certification summaries and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 
-FTF-1401 (API load test) — PR #161
-(https://github.com/SJZLab/Sovra/pull/161) is being independently
-reviewed by Control plane now (this entry's own review).
+FTF-1401 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-22 via PR #161 (merge commit
+`c2fda5b6ad472aa6d38a977896b339a484a9a483`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
@@ -2917,6 +2941,38 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certification's own doc updates were pushed on a branch and opened as a
   PR against `main` rather than pushed directly, per `BRANCH_PROTECTION`.
   Full entry: docs/certifications/ledger.md.
+- FTF-1401 — API load test. CERTIFIED 2026-09-22, PR #161 (merge commit
+  `c2fda5b6ad472aa6d38a977896b339a484a9a483`). PR #161 predated both
+  FTF-1501/#159 and FTF-1001/#160 merging to `main`; this review merged
+  current `main` into the PR branch a third time, verified clean via a
+  duplicate-key-detecting YAML loader before pushing (no repeat of the
+  duplicate-job-key bug caught on the first of these three backlog
+  reviews). Independently re-verified: session-ID clean (all three PR
+  commits carry `session_01CDP3isFaUkJtHPU91hNz2j`, different from this
+  reviewer's own `session_01DzyLpJHy35M2BeGRfHfwL5`); CI reconfirmed
+  green on the real merged head — 23/23 jobs `success` (run
+  `35704415542`). Own reproduction against a real local PostgreSQL 16 at
+  the exact CI profile: `tests/tasks/test_ftf_1401.py` — 17/17 no-DB;
+  `tests/performance/api_load_test.py` — 4,519 real requests, 300.6 RPS,
+  read/write P95 within thresholds, 0 unexpected 5xx, `acceptance_passed:
+  true`, no lost writes. Own fault injection, one vector distinct from
+  the producer's own two: disabled the write/submit P95 threshold branch
+  in `evaluate_acceptance` — the no-DB suite failed with exactly the
+  named check, reverted byte-identical. No regression: full
+  `tests/tasks/test_ftf_*.py` sweep (35 files) clean;
+  `ruff`/`mypy`/`pnpm lint+typecheck+format` clean (only pre-existing,
+  unrelated `authlib.jose` gaps). `validate_spec.py --strict` clean.
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-1401` —
+  both acceptance clauses and the negative_acceptance clause reconfirmed
+  met. Dependencies FTF-0006/FTF-0401/FTF-0106 confirmed genuinely
+  `CERTIFIED`. No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`. `product_truth_check.py
+  --fail-on-unwired` stays real `13/13` (unchanged — `proving_symbol`
+  deliberately empty, matching the FTF-1601 precedent). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
