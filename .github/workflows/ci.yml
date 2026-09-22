@@ -153,9 +153,23 @@ jobs:
       - name: FTF-0405 negative-test proof (JSON Schema tool validation catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0405.py
       - name: FTF-0406 negative-test proof (Side-effect classification catches real defects, no DB required)
+        # Gate-wiring gap closed opportunistically: FTF-0406 was CERTIFIED
+        # (PR #153) without this step ever being added here, so CI never
+        # actually re-ran its own suite on later PRs -- noticed while this
+        # task (FTF-0403) was already touching this same file for its own
+        # new integration job, fixed alongside it rather than left silently.
         run: uv run python3 tests/tasks/test_ftf_0406.py
-      - name: FTF-0407 negative-test proof (Critical behavior requirements catch real defects, no DB required)
+      - name: FTF-0407 negative-test proof (Critical behavior requirements catches real defects, no DB required)
+        # Same disclosed gate-wiring gap as FTF-0406 immediately above (PR #156).
         run: uv run python3 tests/tasks/test_ftf_0407.py
+      - name: FTF-0403 negative-test proof (Budget policy catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0403.py
+      - name: FTF-1701 negative-test proof (Reference agent specification catches real defects, no DB required)
+        run: uv run python3 tests/reference/test_ftf_1701.py
+      - name: FTF-1301 negative-test proof (CostProfile catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1301.py
+      - name: FTF-0202 negative-test proof (Secret-manager integration catches real defects, no network required)
+        run: uv run python3 tests/tasks/test_ftf_0202.py
       - name: FTF-1501 negative-test proof (Tenant isolation suite's own evidence/guard logic catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1501.py
       - name: Product-truth check
@@ -728,6 +742,7 @@ jobs:
         run: uv run python3 tests/integration/test_ftf_0404_tool_schema_crud.py
 
   critical-behavior-requirements-integration:
+  critical-behavior-requirements-integration:
     # FTF-0407: real Postgres critical-behavior-requirement evidence -- one
     # real organization/project, a real uvicorn server serving both
     # build_tool_definition_router (FTF-0404) and this task's own new,
@@ -777,6 +792,144 @@ jobs:
       - name: Prove the real critical-behavior-requirement evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0407_critical_behavior_requirements.py
 
+
+  budget-policy-integration:
+  budget-policy-integration:
+    # FTF-0403: real Postgres Budget policy evidence. Two real
+    # organizations, four real projects, a real uvicorn server proving:
+    # create (persists decimal total_amount/currency/scopes, wires the
+    # real projects.budget_policy_id FK for real) -> duplicate create on
+    # the same project refused (409, backed by a real UNIQUE(project_id)
+    # constraint) -> cross-project/cross-organization IDOR (404) ->
+    # negative/unknown rate refusal (400) -> reserve within budget ->
+    # unauthorized-scope refusal (400) -> over-headroom refusal (409,
+    # reserved_amount left genuinely unchanged) -> revise refuses
+    # shrinking below reserved and a stale row_version (409), applies a
+    # real change otherwise -> release within/over reserved -> real
+    # approval/allocation history in order -> two real, concurrently
+    # issued HTTP reservations that together exceed the policy's own
+    # total never both succeed (exactly one 200/one 409, against the real
+    # database) -> missing tenant context refused -> sovra_app cannot
+    # DELETE a row directly. Same real `services: postgres` container
+    # pattern as tool-schema-crud-integration (this repo's interactive
+    # dev sandbox has no container-registry egress; that evidence was
+    # instead produced locally against a directly-installed PostgreSQL 16
+    # -- see this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0403
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0403"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0403
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real Budget policy evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0403_budget_policy.py
+
+
+  cost-profile-integration:
+  cost-profile-integration:
+    # FTF-1301: real Postgres CostProfile evidence. Two real organizations,
+    # a real uvicorn server proving: role gating (organization_admin-only,
+    # including reads, per Section 45) -> real create (persists decimal
+    # rate_amount/currency/source, unverified by default) -> cross-org IDOR
+    # (404) -> negative rate refused (400) -> search returns every
+    # disqualified rate with an honest reason, never silently filtered ->
+    # verify genuinely advances verified_at -> a verified, unexpired,
+    # non-zero provider rate certifies cheapest for real -> a verified,
+    # unexpired provider rate of exactly zero still never certifies
+    # ("token price zero is not local compute free") -> a verified,
+    # unexpired local_hardware zero rate DOES certify (the zero-rate rule
+    # is provider-specific) -> expired takes priority even once verified
+    # -> current_cheapest_certified picks the real minimum among certified
+    # candidates -> missing tenant context refused -> real FORCE ROW LEVEL
+    # SECURITY backstop (a raw SELECT by ID under org1's own tenant context
+    # returns zero rows for org2's own row) -> sovra_app cannot DELETE a
+    # row directly -> the real CHECK(rate_amount >= 0) constraint refuses a
+    # negative rate even at the raw SQL level. Same real
+    # `services: postgres` container pattern as budget-policy-integration
+    # (this repo's interactive dev sandbox has no container-registry
+    # egress; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1301
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1301"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1301
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real CostProfile evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_1301_cost_profile.py
+
+
+  secret-manager-integration:
+  secret-manager-integration:
+    # FTF-0202: real OpenBao KV v2 store/resolve/rotate evidence (Section
+    # 2-3/38/65/77/81) -- tests/integration/test_ftf_0202_secret_manager.py.
+    # No prebuilt OpenBao release binary or container image was reachable
+    # from this repo's interactive dev sandbox (the same documented class
+    # of gap FTF-0004/FTF-0102/FTF-R017 already established for
+    # Postgres/Docker/SeaweedFS); this evidence was instead produced
+    # locally against a real OpenBao server built directly from source --
+    # this job does the identical build fresh on the hosted runner's own
+    # real network, then starts that binary as a real local -dev server
+    # the test itself spawns and tears down (no `services:` container
+    # needed -- OpenBao's dev mode is a single self-contained process).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
+        run: |
+          git clone --filter=blob:none https://github.com/openbao/openbao.git /tmp/openbao-src
+          cd /tmp/openbao-src
+          git checkout e98dc184344fe84ee4e69965ac3f4217d5b6a45d
+          go build -o /usr/local/bin/bao .
+          bao version
+      - name: Prove the real OpenBao store/resolve/rotate/expire evidence against the live server
+        run: uv run python3 tests/integration/test_ftf_0202_secret_manager.py
+
+  tenant-isolation-suite-integration:
   tenant-isolation-suite-integration:
     # FTF-1501: real Postgres, real two-organization, two-tenant isolation
     # evidence across every currently live-wired API surface (connections,
