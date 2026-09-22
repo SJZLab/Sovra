@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-14/domain.schema.json",
+  "title": "Sovra Phase 14 Domain Schemas (FTF-1401 — API load test)",
+  "description": "Frozen shared domain schemas for the load-test workload spec and raw measurement report (Section 49/50/71). Field shapes are copied verbatim from the single real enforcing source, tests/performance/api_load_test.py's WorkloadSpec/LoadTestReport dataclasses, and tested against it directly in tests/tasks/test_ftf_1401.py so this file cannot silently drift from the code that actually produces these records.",
+  "$defs": {
+    "LatencyStats": {
+      "type": "object",
+      "properties": {
+        "count": { "type": "integer", "minimum": 1 },
+        "p50_ms": { "type": "number", "minimum": 0 },
+        "p95_ms": { "type": "number", "minimum": 0 },
+        "p99_ms": { "type": "number", "minimum": 0 },
+        "max_ms": { "type": "number", "minimum": 0 }
+      },
+      "required": ["count", "p50_ms", "p95_ms", "p99_ms", "max_ms"],
+      "additionalProperties": false
+    },
+    "WorkloadSpec": {
+      "type": "object",
+      "description": "The declared workload actually driven against the real API in one run -- disclosed as partial whenever smaller than Section 49's full Control API profile.",
+      "properties": {
+        "profile_name": { "type": "string", "minLength": 1 },
+        "planned_duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "worker_count": { "type": "integer", "minimum": 1 },
+        "read_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "organizations_count": { "type": "integer", "minimum": 1 },
+        "projects_count": { "type": "integer", "minimum": 1 },
+        "declared_api_replicas": { "type": "integer", "minimum": 1 },
+        "is_partial_profile": { "type": "boolean" },
+        "disclosed_gaps": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "profile_name",
+        "planned_duration_seconds",
+        "worker_count",
+        "read_fraction",
+        "organizations_count",
+        "projects_count",
+        "declared_api_replicas",
+        "is_partial_profile",
+        "disclosed_gaps"
+      ],
+      "additionalProperties": false
+    },
+    "LoadTestReport": {
+      "type": "object",
+      "description": "The raw measurement output of one real run -- every issued request is accounted for exactly once, whether it completed, failed, or timed out (never silently dropped).",
+      "properties": {
+        "workload": { "$ref": "#/$defs/WorkloadSpec" },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "actual_duration_seconds": { "type": "number", "minimum": 0 },
+        "total_requests": { "type": "integer", "minimum": 0 },
+        "achieved_rps": { "type": "number", "minimum": 0 },
+        "read_stats": {
+          "anyOf": [{ "$ref": "#/$defs/LatencyStats" }, { "type": "null" }]
+        },
+        "write_stats": {
+          "anyOf": [{ "$ref": "#/$defs/LatencyStats" }, { "type": "null" }]
+        },
+        "unexpected_5xx_count": { "type": "integer", "minimum": 0 },
+        "unexpected_5xx_rate": { "type": "number", "minimum": 0 },
+        "backpressure_signal_count": { "type": "integer", "minimum": 0 },
+        "failed_or_timed_out_count": { "type": "integer", "minimum": 0 },
+        "acceptance_passed": { "type": "boolean" },
+        "acceptance_failure_reasons": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "workload",
+        "started_at",
+        "finished_at",
+        "actual_duration_seconds",
+        "total_requests",
+        "achieved_rps",
+        "read_stats",
+        "write_stats",
+        "unexpected_5xx_count",
+        "unexpected_5xx_rate",
+        "backpressure_signal_count",
+        "failed_or_timed_out_count",
+        "acceptance_passed",
+        "acceptance_failure_reasons"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

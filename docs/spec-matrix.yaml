@@ -3077,15 +3077,15 @@ FTF-1310:
   proving_symbol: ''
   proving_test: ''
 FTF-1401:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: API load test
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-21; scenarios=Q28; deps=FTF-0006, FTF-0401, FTF-0106
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-21; scenarios=Q28; deps=FTF-0006, FTF-0401, FTF-0106 (all CERTIFIED). tests/performance/api_load_test.py drives the real, already-live project/tool routers (apps/api/app/main.py) over a real uvicorn HTTP round trip and a real local PostgreSQL database, running a mixed read/write request load for a bounded duration and reporting p50/p95/p99/errors/backpressure per this task''s own acceptance clause. Disclosed partial profile against Section 49''s full "Control API" target (2 API replicas, 4 vCPU/16GiB DB, 10 organizations/100 projects/1,000 models, 50 RPS for 30 minutes) -- this run uses 1 API process, 1 local Postgres instance, 3 organizations/9 projects, and a much shorter duration; WorkloadSpec.is_partial_profile is always true and disclosed_gaps names every reduction, per Section 49''s own "if the environment is smaller, report a partial profile, not full-scale PASS" rule. "No lost/duplicate admitted jobs" (Section 70, not built anywhere in this repository yet) is substituted with a real, independently re-queried DB-count-vs-response-count check on tool creation -- not a fabricated duplicate-admission proof; genuine idempotency-key dedup stays a disclosed gap for whichever later task builds Section 70. negative_acceptance ("no ... dropped timed-out requests") is enforced by construction: execute_request always returns exactly one RequestSample per request, including a failed connection, never raising or dropping one from accounting -- proven directly against a real closed local TCP port. Own fault injection (Law 1, two distinct vectors, both reverted byte-identical): (1) removed the except OSError guard in execute_request -- the dedicated never-raises test failed for real; (2) removed the unexpected-5xx-rate branch in evaluate_acceptance -- the dedicated 5xx-threshold negative test failed for real. packages/contracts/{openapi,jsonschema}/14-*.{yaml,json} freeze WorkloadSpec/LoadTestReport/LatencyStats (paths: {} -- this task''s own deliverable is a measurement tool, not a new served route, same disclosed-scope precedent as 16-interface.yaml/FTF-1601), tested directly against tests/performance/api_load_test.py''s own dataclasses in tests/tasks/test_ftf_1401.py (17 no-DB test functions, including the two fault-injected ones and a hand-rolled stdlib-only schema validator). Real run evidence (15s/10-worker CI profile, reproduced identically in the producing sandbox): 3,831 real requests, 254.8 achieved RPS, read P95 48.9ms / write P95 48.8ms (both within Section 49''s 500ms/1000ms Control-API thresholds), 0 unexpected 5xx, 0 failed/timed-out requests, successful-write-response count exactly matches the real DB row count. Wired into .github/workflows/ci.yml: a new no-DB gate step (test_ftf_1401.py) and a new api-load-test-integration job (real services:postgres container, same pattern as tool-schema-crud-integration). Disclosed, not fixed by this task (out of this task''s own scope -- flagged for the next shift/control plane): FTF-0406/FTF-0407''s own no-DB and live-Postgres test suites were found NOT wired into .github/workflows/ci.yml at all (no gate step or integration job references test_ftf_0406.py/test_ftf_0407.py or their tests/integration counterparts) -- their CERTIFIED evidence was genuinely reproduced by their own certifier reviews, but that evidence is not continuously re-enforced by CI going forward as every other CERTIFIED task''s is.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1401.py
 FTF-1402:
   certification_state: NONE
   criticality: MUST

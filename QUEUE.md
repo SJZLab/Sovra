@@ -707,6 +707,53 @@ Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1501
   `scripts/status.py`'s own stricter "product-true" count stays 10.
   Full submission report: `docs/certifications/queue.md`.
 
+
+Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1401 (API
+  load test, deps FTF-0006/FTF-0401/FTF-0106 all CERTIFIED). Checked
+  GitHub directly for open PRs before picking work: PR #158 (FTF-0403),
+  #159 (FTF-1501), #160 (FTF-1001) were already open from more recent
+  relay shifts than this file's own prior update — treated as already
+  claimed, not re-done. Independently recomputed the dependency-ready
+  frontier: FTF-0202 (owner ask, still open/unverified), FTF-0403,
+  FTF-0902, FTF-1001, FTF-1401, FTF-1501, FTF-1701 (newly unblocked by
+  FTF-0407's own certification). FTF-0902 requires a real enforcing
+  Kubernetes cluster for its own acceptance (CNI/firewall/DNS/IPv6
+  restrictions) that this sandbox cannot reach — set aside rather than
+  faked. Picked FTF-1401 over FTF-1701 as achievable with only this
+  sandbox's real local Postgres + uvicorn.
+  `tests/performance/api_load_test.py` drives the real, already-live
+  project/tool routers over a real uvicorn/Postgres round trip, reporting
+  p50/p95/p99/errors/backpressure — a disclosed partial profile against
+  Section 49's full-scale Control API target (is_partial_profile=true,
+  disclosed_gaps names every reduction), per that section's own "smaller
+  environment -> partial profile" rule. Real run: 3,831 requests over
+  15.0s, read P95 48.9ms / write P95 48.8ms (within the 500ms/1000ms
+  thresholds), 0 unexpected 5xx, acceptance_passed=true; independently
+  re-queried the DB to confirm no successful write was lost. Own fault
+  injection (Law 1, two vectors — `execute_request`'s OSError guard and
+  `evaluate_acceptance`'s 5xx-rate branch — both caught for real and
+  reverted byte-identical). 17 no-DB test functions, all pass. No
+  regression to FTF-0401/FTF-0404/FTF-0405/FTF-0406/FTF-0407's own
+  suites. `ruff`/`mypy` clean repo-wide. `validate_spec.py --strict`
+  clean. `product_truth_check.py` unchanged at 10/10 (proving_symbol is
+  deliberately empty — a measurement tool, not a new served route,
+  matching FTF-1601's own precedent). Wired into
+  `.github/workflows/ci.yml` (new gate step + new
+  `api-load-test-integration` job). PR opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1401 set to `PROVISIONAL`/`L1-PROVEN`.
+  Awaiting independent Control plane certification — not self-certified
+  (Law 4). Certified stays 33/300; product-true stays 10.
+  **Flagged for Control plane/next shift (not fixed by this task, out of
+  its own scope):** FTF-0406's and FTF-0407's own no-DB and live-Postgres
+  test suites are not wired into `.github/workflows/ci.yml` at all — no
+  step anywhere references `test_ftf_0406.py`/`test_ftf_0407.py` or their
+  `tests/integration/` counterparts (confirmed by direct search over the
+  whole file). Their CERTIFIED evidence was genuinely reproduced by their
+  own independent certifier reviews, so this is not a false-certification
+  finding, but that evidence is not continuously re-enforced by CI on
+  every future PR the way every other CERTIFIED task's is. Full
+  submission report: `docs/certifications/queue.md`.
+
 Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #156) — independent CERTIFY
   review of FTF-0407 (Critical behavior requirements): **CERTIFIED**.
@@ -1063,14 +1110,13 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-Both prior notes here (one from PR #160's own producer shift, one from
-PR #159's own producer shift) are now stale and superseded by actual
-events: FTF-0403 (PR #158/#163) and FTF-1501 (PR #159) are both already
-CERTIFIED (see "## Done"); PR #152/#158 are both already closed without
-merging; FTF-0202's own backend ask is resolved and FTF-0202 itself is
-CERTIFIED. Current real state as of this entry: FTF-1001 (this PR) is
-being independently reviewed by Control plane now. FTF-1401 (PR #161)
-and FTF-1702 (PR #167) remain genuinely open and unreviewed; FTF-1302
+Both prior notes here are now stale and superseded by actual events:
+FTF-0403 (PR #158/#163), FTF-1501 (PR #159), and FTF-1001 (PR #160) are
+all already CERTIFIED (see "## Done"); PR #143/#152/#158 are all already
+closed without merging; FTF-0202's own backend ask is resolved and
+FTF-0202 itself is CERTIFIED. Current real state as of this entry:
+FTF-1401 (this PR) is being independently reviewed by Control plane now.
+FTF-1702 (PR #167) remains genuinely open and unreviewed; FTF-1302
 (PR #170) and FTF-R016 (PR #172) remain open, previously found sound but
 blocked only by a GitHub Actions runner-provisioning outage reported
 cleared 2026-09-22 (PR #178) -- each needs the same merge-current-main
@@ -1752,12 +1798,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0202 (Secret-manager integration) -- this shift's own PR (see the
-2026-09-22T05:15:00Z entry above for the full submission detail): real
-OpenBao store/resolve/rotate, 22 no-DB + 12 real-OpenBao-integration
-checks, two fault injections caught for real. PROVISIONAL/L1-PROVEN;
-`proving_symbol` deliberately empty (no live route wires it in yet).
-Awaiting independent Control-plane L2 review -- not self-certified.
+FTF-0202, FTF-1501, and FTF-1001 are no longer in this section; all
+three were independently reviewed and CERTIFIED 2026-09-22 (PR #176
+merge `6dfd97d`, PR #159 merge `8b8a9c1`, PR #160 merge `8b51c85`
+respectively) — see "## Done" for the certification summaries and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
+FTF-1401 (API load test) — PR #161
+(https://github.com/SJZLab/Sovra/pull/161) is being independently
+reviewed by Control plane now (this entry's own review).
 
 FTF-1301 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-21 via PR #168 (merge commit
@@ -1769,46 +1819,29 @@ FTF-1302 (Local compute costing, PR #170
 https://github.com/SJZLab/Sovra/pull/170) was independently reviewed
 2026-09-21 and **NOT CERTIFIED — not a code defect.** The shipped code,
 its tests, and its fault-injection evidence were independently
-reproduced and confirmed sound; certification is blocked only because
-GitHub Actions cannot show a genuine passing CI run on the real head
-(see "## Owner actions — current" above and
-`docs/certifications/queue.md`'s "2026-09-21 — FTF-1302 (PR #170)" entry
-for full detail). PR #170 stays open, unmerged. No further relay action
-needed on FTF-1302 itself until the CI owner-ask clears — re-running its
-CI at that point should be sufficient for a fresh Control-plane review to
-certify.
+reproduced and confirmed sound; certification was blocked only because
+GitHub Actions could not show a genuine passing CI run on the real head
+at the time (see `docs/certifications/queue.md`'s "2026-09-21 — FTF-1302
+(PR #170)" entry for full detail) — that outage is reported cleared as
+of PR #178 (2026-09-22); PR #170 stays open, unmerged, needing the same
+merge-current-main treatment this PR just required before a fresh CI run
+and review.
 
 FTF-R016 (Measure selected coding-model/executor pilot cost and enforce
 budget tree, PR #172 https://github.com/SJZLab/Sovra/pull/172) was
 independently reviewed 2026-09-21 and **NOT CERTIFIED — not a code
-defect.** The shipped code, its tests, and two fault-injection vectors
-independent of the producer's own were independently reproduced and
-confirmed sound; certification is blocked only because the same GitHub
-Actions runner-provisioning outage that blocked PR #170 is still ongoing
-(see "## Owner actions — current" above and `docs/certifications/
-queue.md`'s "2026-09-21 — FTF-R016 (PR #172)" entry for full detail). PR
-#172 stays open, unmerged. No further relay action needed on FTF-R016
-itself until the CI owner-ask clears — re-running its CI at that point
-should be sufficient for a fresh Control-plane review to certify.
+defect,** blocked only by the same now-reportedly-cleared CI outage (see
+`docs/certifications/queue.md`'s "2026-09-21 — FTF-R016 (PR #172)"
+entry). PR #172 stays open, unmerged, needing the same treatment.
 
-Also genuinely open and PROVISIONAL, unreviewed as of this shift: PR #167
-("[relay] FTF-1702: Tool environment"), opened by a prior shift shortly
-before this one fired. Not acted on by this shift (Control-plane's job,
-not this relay's).
+Also genuinely open and PROVISIONAL, unreviewed as of this entry: PR
+#167 ("[relay] FTF-1702: Tool environment").
 
 FTF-1701 (Reference agent specification) is no longer in this section; it
 was independently reviewed and CERTIFIED 2026-09-21 via PR #165 (merge
 commit `bbdf0c8278d39d1f3fa7ed87c11e240a109075a3`) — see "## Done" for the
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
-
-Also genuinely open and PROVISIONAL as of this shift, found via direct
-GitHub inspection rather than trusted from this file's own prior (stale)
-"None currently" claim — see the flagged note above for the full
-reasoning: FTF-1501 (Tenant isolation suite, PR #159), FTF-1001
-(ModelVersion schema/API, PR #160), FTF-1401 (API load test, PR #161).
-None of these three were reviewed, merged, or otherwise acted on by this
-shift.
 
 FTF-0403 (Budget policy) is no longer in this section; it was
 independently reviewed and CERTIFIED 2026-09-21 via PR #163 (merge commit
