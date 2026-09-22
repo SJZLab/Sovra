@@ -1,5 +1,57 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T12:30:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:45:00Z (scheduled Control-plane certifier shift,
+  complete) — certified FTF-R016 (Measure selected coding-model/executor
+  pilot cost and enforce budget tree), PR #172, superseding the stale
+  unmerged candidate PR #185; this was the CI-runner-provisioning-outage
+  item from 2026-09-21, re-confirmed genuinely cleared before certifying.
+  Full independent re-verification (session-ID check, CI re-check, own
+  fault injection on the mid-execution termination guard in
+  `run_within_budget` — a bounded 2s budget against a real 5s subprocess,
+  proving an undetected overrun with the guard disabled, `product_truth_
+  check.py`, task contract re-pulled via `tools/r1_handoff.py`) recorded
+  in `docs/certifications/ledger.md`/`docs/certifications/queue.md` and
+  the new "## Done" entry below. A genuine YAML-parsing hazard in this
+  task's own `notes:` field was found and fixed while writing the
+  certification entry (converted plain scalar to the file's own `>-`
+  block-scalar convention), with no content lost. `scripts/status.py`:
+  42/300 → 43/300 certified.
+
+  **Shift complete.** This scheduled Control-plane certifier shift's
+  entire job was: find every item in `docs/spec-matrix.yaml` marked
+  `PROVISIONAL` and either independently certify it or leave it
+  PROVISIONAL with findings recorded. It began with seven such items
+  (FTF-0202, FTF-1001, FTF-1302, FTF-1401, FTF-1501, FTF-1702, FTF-R016)
+  and six already-open "Control plane: certify" candidate PRs (#179-185)
+  from prior sessions, all unmerged and increasingly stale against
+  `main`'s own advancing tip. Rather than trust those PRs' own prose at
+  face value — this repo's own documented history includes multiple
+  prior sessions overclaiming certification (the flagged PR #143/#162
+  pattern) — every one of the seven items was independently re-verified
+  from a fresh git worktree: session-ID independence checked, CI
+  re-confirmed on the real head via `get_check_runs` (not trusted from
+  any prior claim), the relevant test suite(s) reproduced from scratch,
+  an own fault-injection vector run for real (never merely re-described)
+  and reverted byte-identical, `product_truth_check.py` and
+  `validate_spec.py --strict` re-run clean, and each task's real
+  acceptance/negative_acceptance contract re-pulled via
+  `tools/r1_handoff.py` and checked against the diff. Two
+  documentation-accuracy gaps (FTF-1001's wrong recorded test counts;
+  FTF-1302's PR #184 miscounting a product-true rise it didn't cause)
+  and one genuine YAML-parsing hazard (FTF-R016's own `notes:` field)
+  were found and corrected along the way, disclosed here rather than
+  silently fixed. All seven candidate PRs the prior sessions left open
+  (#179, #180, #181, #182, #183, #184, #185) were superseded by fresh,
+  independently-reproduced certify PRs (#187-#192 for the first six,
+  this shift's own final PR for FTF-R016) and closed as duplicates with
+  an explanatory comment on each. `scripts/status.py` moved from
+  `36/300 certified · 12 product-true` at the start of this shift to
+  `43/300 certified · 13 product-true` at the end — every increment
+  backed by the evidence trail in `docs/certifications/ledger.md`. No
+  item was left PROVISIONAL that this shift could act on; nothing
+  remains pending for a future certifier shift from this specific
+  backlog.
+
+Previously, Updated: 2026-09-22T12:30:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1702 (Tool environment), PR #167,
   superseding the stale unmerged candidate PR #183. Full independent
   re-verification (session-ID check, CI re-check, own fault injection on
@@ -3809,6 +3861,50 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
+- FTF-R016 — Measure selected coding-model/executor pilot cost and
+  enforce budget tree. CERTIFIED 2026-09-22, PR #172 (merge commit
+  `ce1d2f062a830cbb69bfd00353e329585f8efff5`). Previously reviewed
+  sound but NOT CERTIFIED (2026-09-21) solely because CI could not show
+  a genuine pass (a runner-provisioning outage). Independently
+  re-verified: session-ID clean (PR #172's commits carry
+  `session_019xvKNprddWsv6qXhodDCkZ`/`session_01SwwQG6gYUUQiifu9yj3QYM`,
+  different sessions than this reviewer's own
+  `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale, unmerged
+  candidate certification PR, #185, opened by a fourth session, was
+  superseded rather than trusted). Re-confirmed the outage is genuinely
+  cleared: `get_check_runs` on PR #172's real merge-head run — 23/23
+  jobs `success`, real distinct non-zero `runner_id`s, genuine
+  multi-minute per-job durations. Own reproduction in a fresh git
+  worktree at the real merged head:
+  `tests/implementation/test_executor_budget_limits.py` — 34/34 clean.
+  Own fault injection, a vector distinct from the producer's own, the
+  first reviewer's, and PR #185's own: disabled the mid-execution
+  termination guard in `run_within_budget` — reproduced for real with a
+  bounded 2-second budget against a real 5-second `sleep` subprocess
+  (guard intact: killed at ~2.0s; guard disabled: runs the full ~5.0s
+  undetected), the dedicated suite caught this with 3 named check
+  failures; reverted byte-identical; suite re-confirmed clean. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-R016` — both
+  acceptance clauses and the full negative_acceptance confirmed
+  genuinely met. Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed
+  genuinely `CERTIFIED`. `validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired` — own run, `13/13`;
+  `proving_symbol` confirmed legitimately `''` (build/implementation
+  tooling, no served route). Fixed a genuine YAML-parsing hazard found
+  while writing this entry (FTF-R016's own plain-scalar `notes:` field
+  broke on a `: ` sequence this entry's own text added; converted to
+  the file's own `notes: >-` block-scalar convention, no content lost).
+  No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `42/300` certified before, `43/300`
+  after; "Product-true" stays `13/13`. This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md. **This was the seventh and last of the
+  seven PROVISIONAL items found at the start of this certifier shift —
+  see the shift-complete summary at the top of this file.**
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

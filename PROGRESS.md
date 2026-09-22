@@ -1,5 +1,31 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T12:30:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:45:00Z (scheduled Control-plane certifier shift,
+  complete) — certified FTF-R016 (Measure selected coding-model/executor
+  pilot cost and enforce budget tree), PR #172, L2-CERTIFIED by session
+  `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding stale unmerged
+  candidate PR #185. This was the last CI-runner-provisioning-outage
+  item, re-confirmed genuinely cleared before certifying. `scripts/
+  status.py`: 42/300 → 43/300 certified.
+
+  **Shift complete.** All seven `PROVISIONAL` items found at the start
+  of this shift (FTF-0202, FTF-1001, FTF-1302, FTF-1401, FTF-1501,
+  FTF-1702, FTF-R016) are now independently `CERTIFIED`. Every one was
+  re-verified from a fresh git worktree — session-ID independence,
+  real CI re-confirmed via `get_check_runs`, test suites reproduced
+  from scratch, an own fault-injection vector run for real and reverted
+  byte-identical, `product_truth_check.py`/`validate_spec.py --strict`
+  clean, and each real acceptance/negative_acceptance contract re-pulled
+  via `tools/r1_handoff.py` — never taken on the word of the six stale
+  "Control plane: certify" candidate PRs (#179-185) left open by prior
+  sessions, all of which were superseded and closed as duplicates. Two
+  documentation-accuracy gaps and one YAML-parsing hazard were found and
+  corrected along the way. `scripts/status.py` moved from `36/300
+  certified · 12 product-true` to `43/300 certified · 13 product-true`
+  over the course of this shift. Full evidence trail in
+  `docs/certifications/ledger.md`; nothing remains pending from this
+  specific backlog.
+
+Previously, Updated: 2026-09-22T12:30:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1702 (Tool environment), PR #167,
   L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
   stale unmerged candidate PR #183. `scripts/status.py`: 41/300 → 42/300

@@ -4617,12 +4617,13 @@ FTF-R015:
   proving_symbol: ''
   proving_test: tests/implementation/test_safe_parallel_executor.py
 FTF-R016:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Measure selected coding-model/executor pilot cost and enforce budget tree
-  evidence_hash: c4f55353f6ffe712f3149cc5853445dfa3ccc2e0
+  evidence_hash: ce1d2f062a830cbb69bfd00353e329585f8efff5
   implementation_state: IMPLEMENTED
-  notes: kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q15, Q41, Q42; deps=FTF-R015,
+  notes: >-
+    kind=reuse_architecture; requirements=CAP-17, CAP-21; scenarios=Q15, Q41, Q42; deps=FTF-R015,
     FTF-H002, FTF-0403 (all CERTIFIED). tools/implementation/usage_ledger.py -- real per-task
     CPU/wall measurement, real retry counting, an independent accepted-task denominator sourced
     only from TaskOrchestrator.WaveResult.approved_for_downstream (never a task's own self-report),
@@ -4637,7 +4638,39 @@ FTF-R016:
     dependency -- build/implementation tooling only, matching FTF-R014/R015's own disclosure.
     proving_symbol deliberately empty (not a served product route), matching FTF-R015/R017's
     own precedent; product_truth_check.py stays 12/12.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-22 by an independent Control-plane session
+    (session_01GngkvFCtGtTnDnW9d2HC1j; session-ID checked clean against PR #172's
+    session_019xvKNprddWsv6qXhodDCkZ/session_01SwwQG6gYUUQiifu9yj3QYM -- no overlap, independent
+    per Law 4; this task was previously reviewed sound but NOT CERTIFIED on 2026-09-21 solely
+    because CI could not show a genuine pass -- a GitHub Actions runner-provisioning outage, not
+    a code defect; a separate stale, unmerged candidate certification, PR #185 by
+    session_01DzyLpJHy35M2BeGRfHfwL5, is a fourth distinct session and is superseded/closed here
+    rather than trusted at face value). Re-confirmed the outage is genuinely cleared, not
+    trusted from prior prose: get_check_runs on PR #172's real merge-head run showed 23/23 jobs
+    success with real per-job durations (secret-manager-integration ~6m35s), no ghost-job
+    pattern. Re-verified in a fresh git worktree: tests/implementation/test_executor_budget_limits.py
+    reproduced clean (34/34). Own fault injection, this session, a vector distinct from the
+    producer's own (cost_per_success zero-successes guard), the first reviewer's
+    (BudgetNode.available_usd()/enforce_model_route_policy), and PR #185's own
+    (BudgetNode._chain()): disabled the mid-execution termination guard in run_within_budget
+    (`if elapsed >= budget_seconds:` -> `if False and ...`). Reproduced for real with a bounded
+    2-second budget against a real 5-second sleep subprocess: with the guard intact, the process
+    is genuinely terminated (BoundedTermination raised) after ~2.0s; with the guard disabled, the
+    same process runs the full ~5.0s to completion, completely undetected -- a genuine budget
+    overrun goes unflagged. The dedicated test suite caught this for real: 3 named checks failed
+    ("genuinely terminated", "cut off well before its natural 5s completion", "marker file
+    genuinely absent"). Reverted byte-identical; suite re-confirmed clean (34/34) immediately
+    after. product_truth_check.py --fail-on-unwired confirmed 13/13 with proving_symbol
+    legitimately empty (build/implementation tooling, not a served product route). Task contract
+    re-pulled via tools/r1_handoff.py packet FTF-R016 confirmed both acceptance clauses and the
+    full negative_acceptance genuinely met: no hardcoded $100/$300 guarantee anywhere (grepped
+    directly), unknown cost never substituted with Decimal("0"), acceptance flag structurally
+    cannot come from self-report, BudgetNode walks the live parent chain (independently
+    fault-proven twice now, by the first reviewer and by PR #185), enforce_model_route_policy
+    denies non-approved routes. Dependencies FTF-R015/FTF-H002/FTF-0403 confirmed genuinely
+    CERTIFIED. validate_spec.py --strict clean.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/implementation/test_executor_budget_limits.py
 FTF-R017:
