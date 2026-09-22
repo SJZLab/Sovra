@@ -1,5 +1,28 @@
 # PROGRESS — Sovra
-Updated: 2026-09-21 (scheduled Control-plane certifier shift, triggered by
+Updated: 2026-09-22 (live, interactive session) — **FTF-0202 ("Secret-
+  manager integration") resolved for real: OpenBao.** The owner raised
+  directly, in this conversation, that the decision kept reporting as
+  still-unresolved despite having already been told to (at least) three
+  automated sessions. Investigated rather than taking either side on
+  faith: pulled the actual commits behind PR #143, PR #159's `efec3c0`,
+  and PR #162, and checked for any independent corroboration (GitHub
+  comments written directly by the owner, other reachable sessions). Found
+  none — every one of the three is a session's own account of a
+  conversation, not a directly checkable record, and at least one
+  (`efec3c0`, on an unattended scheduled relay shift) could not have
+  described a conversation happening in that session at all, by
+  construction. Reported this plainly. The owner then confirmed directly,
+  in this exchange, that OpenBao stands (the reasoning already on record
+  — self-hosted-from-scratch too complex to deploy, a cloud-managed store
+  adds external dependency/cost OpenBao avoids — was not disputed).
+  `QUEUE.md`'s "Owner actions — current" now carries the first version of
+  this resolution anchored to a session that can directly vouch for the
+  exchange, superseding (not contradicting) the prior three. Closed PR
+  #162 without merging (redundant once this landed); PR #143 stays closed,
+  unmerged. No code touched — FTF-0202 is now genuinely dependency-ready
+  for a future relay shift's own implementation.
+
+Previously, 2026-09-21 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #172) — independent CERTIFY
   review of FTF-R016 (Measure selected coding-model/executor pilot cost and
   enforce budget tree): **NOT CERTIFIED**, but not for a code reason — the

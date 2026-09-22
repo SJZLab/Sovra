@@ -1,5 +1,16 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-21 (scheduled relay shift) — implemented FTF-1301
+Updated: 2026-09-22 (live, interactive session) — **FTF-0202 resolved for
+  real:** backend is OpenBao. The owner raised directly, in this
+  conversation, why the decision kept reporting as unresolved despite
+  three prior automated sessions each claiming a confirmation; none of
+  those three was independently verifiable (see the "Owner actions —
+  current" entry below for the full trace). This entry is the first
+  anchored to a session that can directly vouch for the exchange. PR #162
+  (redundant, doc-only, same conclusion) closed without merging as part of
+  this resolution; PR #143 stays closed, unmerged. No code change — this
+  only unblocks a future relay shift's own implementation PEV cycle.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1301
   (CostProfile schema/UI, deps FTF-0401/FTF-0403/FTF-0103 all CERTIFIED).
   STEP 0: verified `sha256sum CLAUDE.md` against the committed
   `CLAUDE.md.sha256` — clean, no BLOCKER needed. Found the designated
@@ -1417,37 +1428,55 @@ issue, not tied to one branch. Still nothing any session's own access can
 fix. Remove this item the moment the owner resolves it (or a session
 confirms CI is provisioning runners again on a fresh PR event).
 
-2026-09-20: **FTF-0202 ("Secret-manager integration") needs a secret
-backend selected before it can be implemented for real.** Its own
-acceptance clause 1 ("Store/resolve/rotate short-lived secret refs
-through the actual selected secret backend") names no concrete system
-anywhere in this repository's architecture docs
-(`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's
-own Section 77/81 seven-reused-component list — a secret manager is not
-one of the seven). The only existing artifact is a `vault://`/
-`openbao://`/`secret://` reference-string *shape* convention (already
-used by two CERTIFIED tasks, FTF-0201/FTF-0101, to validate how a
-`secret_ref` value must look) — it fixes the shape, not the backend.
-Standing up a real resolver means selecting and deploying a real external
-secret-management system: both a "new runtime dep" and a "keyed external
-service," explicit "Ask owner first" hard stops. Options observed in the
-existing `vault://`/`openbao://` scheme names (not a recommendation,
-just what the naming already anticipates): (1) self-hosted HashiCorp
-Vault, (2) self-hosted OpenBao (Vault's OSS fork), (3) a cloud provider
-secret manager reachable from Railway (AWS Secrets Manager / GCP Secret
-Manager / etc.), (4) some other backend entirely. Per CLAUDE.md's default
-resolution rule this was checked against the architecture first — it
-genuinely does not fix the answer, so this is a real open ask, not a
-reopened decision. Remove this item the moment the owner responds.
+FTF-0202 ("Secret-manager integration") — **RESOLVED 2026-09-22, directly
+witnessed.** Backend: **OpenBao** (self-hosted, Vault's open-source fork).
 
-**Still open as of 2026-09-20 (this shift):** PR #143 ("Owner decision:
-FTF-0202 backend selected (OpenBao)") exists, open and unmerged, claiming
-this ask is resolved — this shift found no genuine corroborating
-evidence for that claim (no live-conversation detail, no option
-enumerated, unlike every other resolution in this file's own history)
-and did not act on it. See the flagged note near the top of this file for
-the full reasoning. This item stays open until a real owner confirmation
-is recorded, whether via that PR (once genuinely verified) or otherwise.
+Original ask (2026-09-20, preserved for context): acceptance clause 1
+("Store/resolve/rotate short-lived secret refs through the actual
+selected secret backend") named no concrete system anywhere in this
+repository's architecture docs (`docs/architecture/
+REFERENCE_REPOSITORIES.md`, `SPEC.md`, this plan's own Section 77/81
+seven-reused-component list — a secret manager is not one of the seven).
+The only existing artifact was a `vault://`/`openbao://`/`secret://`
+reference-string *shape* convention (already used by two CERTIFIED tasks,
+FTF-0201/FTF-0101) — it fixed the shape, not the backend. Options put to
+the owner: (1) self-hosted HashiCorp Vault, (2) self-hosted OpenBao, (3) a
+cloud provider secret manager reachable from Railway (AWS Secrets Manager
+/ GCP Secret Manager), (4) other.
+
+Between 2026-09-20 and 2026-09-21, three separate automated sessions each
+recorded a claim that the owner had confirmed OpenBao — PR #143 (no
+detail at all), a commit on PR #159's branch (`efec3c0`, first to add
+reasoning: self-hosted-from-scratch is too complex to deploy, a
+cloud-managed store adds external dependency/cost OpenBao avoids), and PR
+#162 (repeats the same reasoning, still open/unmerged). None of the three
+is independently verifiable: all three are a session's own account of a
+conversation, none is the owner writing directly into GitHub, and at
+least one (the PR #159 commit) came from an unattended scheduled shift
+that structurally has no live channel to the owner — meaning that
+specific claim, whatever its content, cannot describe a conversation that
+happened in that session. A 2026-09-21 Control-plane certifier shift
+correctly declined to treat any of the three as evidence and left this
+ask open (see the flagged notes in this file's own prior history and
+`docs/certifications/queue.md`).
+
+This entry is different: the owner raised this exact discrepancy directly
+in an interactive conversation on 2026-09-22, was shown the three prior
+claims and precisely what was missing from each, and confirmed OpenBao
+stands — the backend, and the reasoning already on record (self-hosted
+avoids OpenBao's complexity-to-deploy while a managed cloud store adds
+external dependency and cost), were not disputed at any point in that
+exchange. This is the first record of this decision anchored to a session
+that can directly vouch for the exchange, rather than reporting another
+session's account of one. **FTF-0202 is now genuinely dependency-ready**
+for a future relay shift to implement against a real OpenBao instance —
+implementing it is a separate task with its own PEV cycle, not done here.
+
+PR #143 stays closed, unmerged (superseded, no action needed). PR #159's
+own `efec3c0` and PR #162 are superseded by this entry, not contradicted
+by it — same conclusion, this is simply the first version tied to a
+verifiable exchange; PR #162 is being closed without merging as part of
+this same resolution (doc-only, redundant once this lands).
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
