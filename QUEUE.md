@@ -62,6 +62,21 @@ frontier fresh rather than trusting this note alone — FTF-0408/FTF-0902
 are still real, unpicked items but need their own disclosed DoD-clarity/
 resource-gate gaps resolved first, not improvised under time pressure.
 
+Updated: 2026-09-22 — resolved a real merge conflict on PR #160 (FTF-1001)
+  against the current `main` (FTF-0403/FTF-1301/FTF-1701 certified since
+  this PR opened; FTF-0202 resolved for real; FTF-1302/FTF-R016 blocked on
+  a GitHub Actions runner-provisioning outage — see below). Also caught and
+  fixed a real semantic conflict `git`'s own file-level merge could not
+  see: this task's migration and FTF-0403's own independently claimed the
+  same `0007_*`/`down_revision: 0006_tool_definitions`, leaving two genuine
+  Alembic heads — renumbered this task's own migration to
+  `0009_model_versions` (after FTF-1301's own `0008_cost_profiles`, the
+  real current head). Full migration chain, this task's own live-Postgres
+  suite, and FTF-0403's/FTF-1301's own live-Postgres suites all re-verified
+  clean together on a fresh database; no regression to FTF-0301/FTF-0404's
+  own live-Postgres suites or the full `tests/tasks/test_ftf_*.py`/`pnpm`
+  sweep. See `PROGRESS.md` for the full resolution narrative.
+
 Previously, 2026-09-22 (live, interactive session) — **FTF-0202 resolved for
   real:** backend is OpenBao. The owner raised directly, in this
   conversation, why the decision kept reporting as unresolved despite
@@ -72,6 +87,119 @@ Previously, 2026-09-22 (live, interactive session) — **FTF-0202 resolved for
   (redundant, doc-only, same conclusion) closed without merging as part of
   this resolution; PR #143 stays closed, unmerged. No code change — this
   only unblocks a future relay shift's own implementation PEV cycle.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1001
+  (ModelVersion schema/API, deps FTF-0301/FTF-0401/FTF-0103 all
+  CERTIFIED). PR #160 opened as PROVISIONAL, awaiting independent Control
+  plane L2 certification. Certified stays 33/300; product-true (CERTIFIED-
+  only) stays 10; `product_truth_check.py --fail-on-unwired` rose 10/10 →
+  11/11 (this task's own real new live caller, `build_model_version_router`,
+  wired into `apps/api/app/main.py`). See "Previously" below for the full
+  submission summary and `docs/certifications/queue.md` for the complete
+  narrative.
+
+Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1001
+  (ModelVersion schema/API, deps FTF-0301/FTF-0401/FTF-0103 all CERTIFIED).
+  Independently recomputed the dependency-ready frontier fresh against
+  `docs/spec-matrix.yaml`'s live certification state (never trusted the
+  prior shift's own "Next shift" note by itself): FTF-0202 (owner ask,
+  still open), FTF-0403 (already has an open, unmerged `[relay]` PR #158
+  from another concurrent shift), FTF-0902, FTF-1001, FTF-1401 and FTF-1501
+  (already has an open, unmerged `[relay]` PR #159 from another concurrent
+  shift) are the dependency-ready items. Neither FTF-0403 nor FTF-1501 was
+  duplicated. FTF-0902's own real acceptance/negative_acceptance ("Install
+  and test actual CNI/firewall/DNS/IPv6/metadata restrictions"; "NetworkPolicy
+  YAML on a nonenforcing cluster is not a pass") requires a real,
+  policy-enforcing Kubernetes cluster this sandbox does not have -- a
+  genuine `BLOCKED_EXTERNAL` risk -- so it was set aside rather than picked
+  into a shift it would likely block. FTF-1001 matches the
+  schema/crud/routes-triplet-plus-migration pattern FTF-0201/FTF-0301/
+  FTF-0401/FTF-0404 already established repeatedly, with no external-service
+  ask of its own.
+  `apps/api/app/model_versions/{model_version_schema,model_version_crud,
+  model_version_routes}.py` (refined from the packet's own single
+  abbreviated `services/serving-controller/vllm/modelversion_schema_api.py`
+  suggestion into the same triplet, matching the FTF-0404/FTF-0406/FTF-0407
+  precedent for a packet whose abbreviated `files` listing is this repo's
+  own standard shorthand). Real, live-wired
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/model-versions`
+  routes (the seventh live-wired product-runtime path in this repository).
+  Real forward Alembic migration
+  (`apps/api/alembic/versions/0009_model_versions.py`), FORCE-RLS scoped to
+  the same tenant context every prior migration established, plus two
+  composite foreign keys -- `(organization_id, project_id)` -> `projects`
+  and `(organization_id, trainable_artifact_id)` -> `trainable_artifacts`
+  via a purely additive `UNIQUE(organization_id, id)` constraint on the
+  already-CERTIFIED `trainable_artifacts` table (the same Section 65.1
+  precedent FTF-0401/FTF-0404 already applied to `workspaces`/`projects`).
+  Every model version is immutable by construction (Section 35): no
+  edit/delete route exists at all, and the migration's own database grant
+  is SELECT/INSERT only -- never UPDATE/DELETE, a stronger real guarantee
+  than every prior versioned resource's own grant. This task's own
+  negative_acceptance ("Required nonexistent weights/hash for endpoint
+  import, mutable production artifact or cross-tenant parent denied")
+  resolves to three disclosed denial paths (full reasoning in
+  `model_version_schema.py`'s own module docstring): (1) an `endpoint`
+  import structurally forbids local-weight fields, enforced both in
+  `ModelVersion.__init__` and by a real `ck_model_versions_kind_consistency`
+  database CHECK constraint (defense in depth); (2) a `full_weight`/
+  `adapter` import's parent `TrainableArtifact` must be `ready` (immutable,
+  resolved), never `registered` (mutable) or `archived`, checked against a
+  real database fetch in `create_model_version`; (3) the parent artifact
+  must belong to the same organization, reusing FTF-0301's own
+  already-certified `get_artifact`/`authorize_resource_ownership` directly
+  -- no new authorization primitive introduced. `weights_digest`/
+  `base_model_revision` are always copied server-side from the real,
+  resolved parent artifact, never accepted as a client-supplied claim (the
+  route accepts no such input fields at all). Deliberately out of scope,
+  disclosed not hidden: promotion/tag assignment and "one production
+  version per deployment slot" (FTF-1101's own later job, which lists this
+  task as ITS OWN dependency) and real vLLM serving/deployment/health
+  endpoints (FTF-1003/FTF-1005/FTF-1008's own later, separately
+  dependency-gated surface -- each lists FTF-1001 as its own dependency,
+  confirmed directly against `docs/TASK_INDEX.md` before narrowing scope).
+  24 no-DB test functions (`tests/tasks/test_ftf_1001.py`) + 26 real
+  live-Postgres checks
+  (`tests/integration/test_ftf_1001_model_version_schema_api.py`, two real
+  organizations, three real `TrainableArtifact` fixtures covering
+  `ready`/`registered`/cross-org states). Own fault injection (Law 1, three
+  distinct vectors, all reverted byte-identical and reconfirmed clean): (1)
+  disabled the mutable-artifact guard in `create_model_version` -- caught
+  for real by the live-Postgres suite's own negative_acceptance check (409
+  became 201); (2) disabled the structural endpoint-vs-artifact consistency
+  check in `ModelVersion.__init__` -- caught for real by 7 named checks in
+  the no-DB suite; (3) dropped the real `ck_model_versions_kind_consistency`
+  CHECK constraint directly against the live database and confirmed the
+  exact bypass it exists to prevent is genuinely admitted without it, then
+  rebuilt the database from a fresh migration. Independently reconfirmed no
+  regression to `test_ftf_0301`/`test_ftf_0401`/`test_ftf_0404`/
+  `test_ftf_0406`/`test_ftf_0407` (no-DB, all "all checks passed") and to
+  FTF-0301's/FTF-0404's own live-Postgres suites (re-run "all checks
+  passed" against this task's own already-migrated database, which added a
+  purely additive constraint to `trainable_artifacts`). `ruff check`/`ruff
+  format --check`/`mypy` clean on every file this task touched.
+  `validate_spec.py --strict` clean (`git fetch --unshallow origin` first).
+  `product_truth_check.py --fail-on-unwired` -- `10/10` before this shift,
+  `11/11` after (this task's own `proving_symbol`, `build_model_version_router`,
+  has a real caller in `apps/api/app/main.py` -- not a TRACKER). Wired into
+  CI: a new `gate` job step plus a dedicated
+  `model-version-schema-api-integration` job mirroring
+  `tool-schema-crud-integration`'s own real `services: postgres` container
+  pattern. **Discovered but not acted on, flagged for Control plane:**
+  `test_ftf_0406.py`/`test_ftf_0407.py` are not wired into
+  `.github/workflows/ci.yml` at all (confirmed by direct `grep` -- neither
+  task ID appears anywhere in that file before this task's own commit) --
+  both tasks' own submission entries claimed CI ran green, which is
+  consistent with the *existing* checks passing, but the new tests those
+  two tasks each added were apparently never actually exercised by CI. Not
+  fixed here (a different, already-CERTIFIED task's own concern, not this
+  shift's to improvise on) -- left as a flagged, dependency-ready item for
+  a future shift or Control plane review. PR #160 opened as PROVISIONAL;
+  `docs/spec-matrix.yaml` FTF-1001 set to `PROVISIONAL`/`L1-PROVEN`,
+  `proving_symbol` `build_model_version_router`. Awaiting independent
+  Control plane certification -- not self-certified (Law 4). Certified
+  stays 33/300; `scripts/status.py`'s own stricter "product-true" count
+  stays 10. Full submission report: `docs/certifications/queue.md`.
 
 Previously, 2026-09-21 (scheduled relay shift) — implemented FTF-1301
   (CostProfile schema/UI, deps FTF-0401/FTF-0403/FTF-0103 all CERTIFIED).
@@ -935,41 +1063,20 @@ merge PR #143 with that confirmation recorded, matching this file's own
 evidence bar) or close PR #143 without merging.
 
 ## Next shift
-Two items are now PROVISIONAL and awaiting independent Control-plane L2
-certification: FTF-0403 (PR #158, CI green 17/17, from an earlier same-day
-relay shift) and FTF-1501 (PR #159, this shift's own submission). A
-certifier session picking either is the natural next action, matching
-the established relay/certifier alternation — FTF-0403 was opened first
-and has no external-service ask, so certify it first if only one certifier
-shift fires.
-
-**FTF-0202's own backend-selection ask is now RESOLVED** (2026-09-21,
-live owner conversation — see "## Owner actions — current" for the full
-record): OpenBao selected. PR #143 (the prior, insufficiently-evidenced
-claim of the same decision) was closed without merging, superseded by the
-properly-evidenced record in this file. FTF-0202 is now genuinely
-dependency-ready — a future relay shift should recompute the frontier
-fresh (never assume the list below is still current) and may now
-legitimately pick it: FTF-0202, FTF-0902, FTF-1001, FTF-1401, FTF-1701
-were the dependency-ready items as of this shift (FTF-1701 newly
-unblocked now that FTF-0407 is CERTIFIED — it names only FTF-0407 and the
-already-CERTIFIED FTF-0405 as its own deps). FTF-0202 itself is a real
-implementation task (standing up an OpenBao resolver against
-`vault://`/`openbao://` refs) requiring its own PEV cycle, not something
-this owner-ask resolution did. None of FTF-0202/FTF-0902/FTF-1001/
-FTF-1401/FTF-1701 carries an actual `CAP-xx` requirements tag (all are
-`AF-xx`), so the next relay shift should read each one's own task packet
-before picking, rather than assuming CAP-number order applies.
-
-Also fixed this shift, disclosed above: `.github/workflows/ci.yml` had no
-gate step for FTF-0406/FTF-0407 and no integration job for FTF-0407 —
-both already CERTIFIED before this gap was found. A future Control-plane
-session should treat those two certifications' own "CI reconfirmed
-green" claims as needing re-verification now that the jobs actually
-exist and can run for real. Separately, PR #152 (a doc-only "Next shift"
-catch-up, opened by an earlier shift, already superseded) is still
-open/unmerged — a future certifier session should close it without
-merging.
+Both prior notes here (one from PR #160's own producer shift, one from
+PR #159's own producer shift) are now stale and superseded by actual
+events: FTF-0403 (PR #158/#163) and FTF-1501 (PR #159) are both already
+CERTIFIED (see "## Done"); PR #152/#158 are both already closed without
+merging; FTF-0202's own backend ask is resolved and FTF-0202 itself is
+CERTIFIED. Current real state as of this entry: FTF-1001 (this PR) is
+being independently reviewed by Control plane now. FTF-1401 (PR #161)
+and FTF-1702 (PR #167) remain genuinely open and unreviewed; FTF-1302
+(PR #170) and FTF-R016 (PR #172) remain open, previously found sound but
+blocked only by a GitHub Actions runner-provisioning outage reported
+cleared 2026-09-22 (PR #178) -- each needs the same merge-current-main
+treatment this PR just required before a fresh CI run and review. If a
+relay session fires next instead: recompute the dependency-ready
+frontier fresh rather than trusting this note.
 
 Earlier the same date (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #144) — independent CERTIFY
@@ -1434,9 +1541,10 @@ Relay: 2h · Report: 08:30 & 19:30 Asia/Riyadh · Certifier: Control plane (auto
 
 ## Status
 Certified: 36/300 (main; FTF-1301 CERTIFIED 2026-09-21, PR #168 merged as
-`9a47458` — see docs/certifications/ledger.md) · Provisional: 0 (this
-shift's own item; PR #167/#159/#160/#161 remain genuinely open and
-PROVISIONAL, unreviewed — see "## Provisional" below) · Blocked: 0
+`9a47458` — see docs/certifications/ledger.md) · Provisional: PR #159
+(FTF-1501)/#160 (FTF-1001)/#161 (FTF-1401)/#167 (FTF-1702) remain
+genuinely open and PROVISIONAL, unreviewed — see "## Provisional" below ·
+Blocked: 0
 (NOTE, 2026-09-21: the paragraphs directly below this line — the detailed
 proving_symbol/product-true enumeration — were last fully rewritten
 around the FTF-0405 certification and have not been kept current by each
@@ -1454,9 +1562,12 @@ one open ask below, FTF-0202's secret-backend choice, is tracked in
 work continued on FTF-0404/FTF-0405/FTF-0406 instead of stopping. PR
 #143's own bare claim to have resolved that ask remains unverified and
 was not acted on — see the flagged note near the top of this file.)
-Product-true (Law 16): 9 as of this shift (`scripts/status.py`'s own
-live output — see the note above; the detailed enumeration below is the
-stale, pre-FTF-0406/FTF-0407 version) (`scripts/status.py`'s own authoritative count,
+Product-true (Law 16): 10 as of this shift (`scripts/status.py`'s own
+live output, re-confirmed this shift — see the note above; the detailed
+enumeration below is the stale, pre-FTF-0406/FTF-0407 version; FTF-1001's
+own new `product_truth_check.py --fail-on-unwired` wiring, 11/11, does not
+raise this stricter CERTIFIED-only count until independently certified,
+Law 2) (`scripts/status.py`'s own authoritative count,
 which requires `certification_state in (CERTIFIED, PROMOTED)` AND
 `proof_state == L2-CERTIFIED` AND a non-empty `proving_symbol` —
 FTF-0101's `build_oidc_login_router`, FTF-0201's
