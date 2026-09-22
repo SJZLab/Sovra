@@ -742,7 +742,6 @@ jobs:
         run: uv run python3 tests/integration/test_ftf_0404_tool_schema_crud.py
 
   critical-behavior-requirements-integration:
-  critical-behavior-requirements-integration:
     # FTF-0407: real Postgres critical-behavior-requirement evidence -- one
     # real organization/project, a real uvicorn server serving both
     # build_tool_definition_router (FTF-0404) and this task's own new,
@@ -794,7 +793,6 @@ jobs:
 
 
   budget-policy-integration:
-  budget-policy-integration:
     # FTF-0403: real Postgres Budget policy evidence. Two real
     # organizations, four real projects, a real uvicorn server proving:
     # create (persists decimal total_amount/currency/scopes, wires the
@@ -843,7 +841,6 @@ jobs:
         run: uv run python3 tests/integration/test_ftf_0403_budget_policy.py
 
 
-  cost-profile-integration:
   cost-profile-integration:
     # FTF-1301: real Postgres CostProfile evidence. Two real organizations,
     # a real uvicorn server proving: role gating (organization_admin-only,
@@ -897,7 +894,6 @@ jobs:
 
 
   secret-manager-integration:
-  secret-manager-integration:
     # FTF-0202: real OpenBao KV v2 store/resolve/rotate evidence (Section
     # 2-3/38/65/77/81) -- tests/integration/test_ftf_0202_secret_manager.py.
     # No prebuilt OpenBao release binary or container image was reachable
@@ -929,7 +925,6 @@ jobs:
       - name: Prove the real OpenBao store/resolve/rotate/expire evidence against the live server
         run: uv run python3 tests/integration/test_ftf_0202_secret_manager.py
 
-  tenant-isolation-suite-integration:
   tenant-isolation-suite-integration:
     # FTF-1501: real Postgres, real two-organization, two-tenant isolation
     # evidence across every currently live-wired API surface (connections,
