@@ -1,5 +1,16 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T11:45:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T11:55:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1302 (Local compute costing), PR #170,
+  L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
+  stale unmerged candidate PR #184. This task was previously NOT
+  CERTIFIED (2026-09-21) solely due to a CI runner-provisioning outage —
+  independently re-confirmed genuinely cleared this shift before
+  certifying. A documentation-accuracy gap (PR #184's product-true
+  count-rise attribution) was found and corrected, not propagated.
+  `scripts/status.py`: 38/300 → 39/300 certified. Continuing to process
+  the remaining four PROVISIONAL items this same shift.
+
+Previously, Updated: 2026-09-22T11:45:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1001 (ModelVersion schema/API), PR #160,
   L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
   stale unmerged candidate PR #181. Full re-verification recorded in

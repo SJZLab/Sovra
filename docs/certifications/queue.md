@@ -9543,3 +9543,50 @@ Ran `scripts.task_claim.sync_certified_status()` —
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-1001']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1001 moved to Done,
 Certified count bumped to 38/300 (product-true stays 13/13).
+
+## 2026-09-22 — Control plane: FTF-1302 (PR#170) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. This task was previously
+reviewed sound but NOT CERTIFIED (2026-09-21) solely because CI could not
+show a genuine passing run — a runner-provisioning outage (ghost jobs),
+not a code defect. Session-ID compared against PR #170's commits
+(`session_01Fy9YNo5oaA2HZLWRud1Xma`) — no overlap, independent per Law 4.
+A separate stale, unmerged candidate certification (PR #184, opened by a
+third session `session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded and
+closed by this entry rather than trusted at face value.
+
+Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`:
+- Re-confirmed the runner-provisioning outage is genuinely cleared, not
+  merely trusted from prior prose: `get_check_runs` on PR #170's real
+  merge-head run — 23/23 jobs `success`, real distinct non-zero
+  `runner_id`s and genuine multi-second/minute per-job durations
+  (`secret-manager-integration` ~5m43s) — structurally the opposite of
+  the prior ghost-job signature (`runner_id: 0`, ~3s completions).
+- `tests/tasks/test_ftf_1302.py` reproduced clean from scratch.
+- Own fault injection: disabled the retry-dedup in
+  `unique_successful_task_ids` — two named checks failed for exactly the
+  right reason; reverted byte-identical; suite re-confirmed clean.
+- `product_truth_check.py --fail-on-unwired` — `13/13`; FTF-1302's own
+  `proving_symbol` confirmed legitimately `''` (pure computation, no live
+  route).
+- `tools/r1_handoff.py packet FTF-1302` — both acceptance clauses and the
+  negative_acceptance (no double-counting by construction) confirmed
+  genuinely met.
+- Dependencies FTF-0006/FTF-1301 confirmed genuinely `CERTIFIED`.
+- `scripts/validate_spec.py --strict` clean.
+- **Documentation-accuracy correction:** PR #184's own body attributed
+  `main`'s product-true count rising 12→13 to FTF-1302's own
+  certification — independently confirmed this is inaccurate (the 13/13
+  figure was already reached by unrelated work before FTF-1302's
+  certification; FTF-1302 contributes `proving_symbol: ''` either way).
+  Not repeated here.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`acce2b4d9a3d636b06065f11de3958239ba5b917`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-1302 — Local compute costing").
+Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-1302']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1302 moved to Done,
+Certified count bumped to 39/300 (product-true stays 13/13).
