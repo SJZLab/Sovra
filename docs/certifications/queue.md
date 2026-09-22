@@ -10534,3 +10534,98 @@ validation"). Ran `scripts.task_claim.sync_certified_status()` —
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-0203']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0203 moved to
 Done, Certified count bumped to 46/300, Product-true 14/14 → 15/15.
+
+## 2026-09-22 — FTF-0204 — `/v1/models` discovery
+- **PR:** (relay branch `claude/wizardly-fermat-pkklwn` → main; opened as
+  `[relay] FTF-0204: /v1/models discovery`)
+- **Commit:** c1ac87cdeb6fef3b412c248ab2b01472614e6e02
+- **Real DoD source:** task packet resolved via `python3
+  tools/r1_handoff.py packet FTF-0204 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`docs/implementation/task-packets/
+  FTF-0204.md`). Dependencies FTF-0201/FTF-0203 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Delivered:** `packages/litellm_client/v1_models_discovery.py`
+  (`discover_models`) resolves the connection's own `secret_ref` through
+  FTF-0202's already-CERTIFIED `resolve_secret_ref`, calls the real
+  gateway's `GET /v1/models` (Section 3.1) through FTF-H006's
+  already-CERTIFIED `guarded_fetch`, and enriches each authorized model
+  ID with `GET /model/info` on a strict left-join basis (Section 3.2's
+  "no authorization union" — a name known only through enrichment is
+  never added to the returned list, only ever sets a
+  `metadata_status=enriched` flag on an already-authorized entry). Every
+  call is stateless and fresh (Section 3.3) — nothing here merges with a
+  previous result. A real sha256 `content_hash` over the sorted
+  authorized ID set is recorded alongside a real `checked_at` timestamp
+  and `model_count`, matching this task's own acceptance clause ("record
+  timestamp/count/hash"). `apps/api/app/litellm/connection_routes.py`
+  adds the real `GET .../connections/litellm/{connection_id}/models`
+  route (this repository's first live caller of `discover_models`),
+  `organization_admin`-only, same tenant-scoped IDOR-denial and
+  revoked-connection-409 pattern FTF-0203's own `/validate` route
+  already established, reusing the same injected
+  `secret_manager_config_factory`/`validation_policy_factory` rather
+  than adding a redundant pair. No independent schema change (this
+  task's own `database_changes` clause): the result is computed fresh
+  per call, never persisted onto `LiteLLMConnection`.
+- **Test:** `tests/tasks/test_ftf_0204.py` (no DB, no external egress —
+  real local HTTP/HTTPS servers, a real ephemeral CA this suite
+  generates and installs into the sandbox's own system trust store for
+  the run) — 12 test functions covering the
+  discovered/invalid_token/certificate_error/timeout/connection_refused/
+  malformed_response/secret-backend/destination_denied states, the
+  content-hash determinism/order-independence, and this task's own two
+  negative_acceptance cases through real, live round trips:
+  1. `test_metadata_only_model_is_never_callable` — a real `/model/info`
+     response advertising a name (`unlisted-model`) the real
+     `/v1/models` response never returns; the result never contains it
+     (Section 3.2's "no authorization union").
+  2. `test_removed_model_is_not_retained_across_calls` — two real, live
+     `discover_models` calls against the same mutable gateway; the
+     second call's real response no longer contains a model the first
+     call saw (`gpt-old`), and the result genuinely does not retain it
+     (Section 3.3's "removed names immediately become unselectable").
+  3. `test_auth_failure_fails_closed_not_retained` — a real successful
+     discovery is followed by a real, live credential revocation (the
+     gateway starts rejecting the same token); the next call reports
+     `invalid_token` with an empty model list, `model_count=None`, and
+     `content_hash=None` — never the previously observed inventory.
+  `tests/integration/test_ftf_0204_v1_models_discovery.py` (real
+  Postgres + real gateway, mirroring
+  `test_ftf_0203_connection_validation.py`) drives the actual FastAPI
+  route end-to-end: two real organizations, a real uvicorn server, real
+  create/discover/revoke through the live route (never a direct call to
+  `discover_models` bypassing the HTTP layer), a real metadata-only name
+  never leaking through the live route, the cross-organization IDOR case
+  denied identically to missing (404), and a revoked connection refused
+  discovery (409).
+- **Evidence — shown able to fail (Law 1):** a fault injection mutates
+  the real, on-disk `v1_models_discovery.py` so the returned model list
+  is built from `model_ids` unioned with `enrichment_ids` instead of
+  `model_ids` alone — reintroducing exactly the Section 3.2
+  "authorization union" bug this task's own negative_acceptance
+  forbids. Run in a fresh subprocess against a real gateway configured
+  with a metadata-only unauthorized name, the mutated module genuinely
+  lets that name leak into the result (`"unlisted-model" in
+  result.stdout`) — proving the left-join construction is load-bearing,
+  not decorative — then the file is restored byte-identical (confirmed
+  by a direct bytes comparison).
+- `ruff check .`/`ruff format --check .` clean (183 files); `mypy .`
+  clean (183 files, "Success: no issues found"). `scripts/
+  validate_spec.py --strict` clean after `git fetch --unshallow origin`
+  (this worktree's own pre-existing shallow-clone artifact, not caused
+  by this task — same documented precedent as prior shifts).
+  `CLAUDE.md.sha256` verified against `sha256sum CLAUDE.md`.
+- `scripts/product_truth_check.py --fail-on-unwired` stays `15/15`
+  (unchanged — Law 2, certification is a separate Control-plane act;
+  `proving_symbol` deliberately left blank in `docs/spec-matrix.yaml`
+  rather than the producer claiming its own product-true count).
+  `scripts/status.py` stays `46/300 certified · 15 product-true`.
+- Real live-Postgres integration evidence produced locally
+  (`sovra_migrate` role + `sovra_ftf0204` database, same
+  directly-installed PostgreSQL 16 precedent FTF-0201/FTF-0203 already
+  established). `FTF-0201`'s and `FTF-0203`'s own integration suites
+  re-confirmed passing afterward against the same fresh database — no
+  regression to the shared `connection_routes.py` file.
+
+**State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+self-certified — awaiting Control plane L2 review per Law 4.
