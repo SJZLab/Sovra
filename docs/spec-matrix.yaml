@@ -3112,15 +3112,60 @@ FTF-1408:
   proving_symbol: ''
   proving_test: ''
 FTF-1501:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tenant isolation suite
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0106, FTF-H003
-  proof_state: UNPROVEN
+  evidence_hash: 778f6f2
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0106, FTF-H003
+    (both CERTIFIED). Reuses FTF-0106's own apps/api/app/auth/rbac_idor_security_tests.py
+    TwoTenantRoleMatrixFixture and FTF-H003's own authorize_resource_ownership/
+    tenant_scoped_session_for rather than re-deriving either -- FTF-0106's own module docstring
+    names this task directly as an intended dependent. Scope honestly narrowed (Law 5/7): this
+    task's own acceptance clause names "real two-tenant API/DB/worker/storage/cache/model paths",
+    but only API and DB paths have any real, live-wired existence in this repository today --
+    apps/api/app/main.py's own module docstring enumerates exactly six live-wired routes, and
+    workers/{training,evaluation,data,deploy} are still README/pyproject-only scaffolds (confirmed
+    by direct inspection); packages/storage/tenant_policy.py (FTF-H003) has no live caller either.
+    Declaring worker/storage/cache/model checks against non-existent infrastructure would be
+    fabricated evidence under Law 11. tests/security/tenant_isolation_suite.py: real two-organization
+    fixture, seeds one connection/artifact/project/tool in org1, then for each of connection/
+    artifact/project/tool proves owner_read_reachable (200), cross_tenant_api_read_denied (403, path
+    org mismatch), cross_tenant_api_write_denied (403), unauthenticated_denied (401) and
+    cross_tenant_db_read_denied (a real restricted-role session scoped to org2, probing org1's real
+    row via authorize_resource_ownership -- the exact same production guard every CRUD module
+    already calls, never a hand-rolled query) -- plus a cross-layer check (org1_admin, legitimately
+    authorized for org1, denied 404 against a tool nested under org2's own real project) and the
+    read-only /requirements view (owner reachable, cross-tenant denied, cross-layer foreign-project
+    returns an empty list rather than leaking org2's data -- the correct behavior for a list
+    endpoint, not a 404, matching tool_definition_routes.py's own list_all convention). 25 real
+    checks against a live PostgreSQL 16 cluster. negative_acceptance ("No security result from
+    mocked auth or superuser-only DB tests") made real by construction: assert_not_superuser_role
+    refuses to proceed if the connection's own current role is a real Postgres superuser (checked
+    via pg_roles.rolsuper before any tenant-scoped session is opened), and every HTTP call in this
+    suite goes through a real socket to a real running uvicorn server, never a mocked auth stub.
+    tests/tasks/test_ftf_1501.py (no-DB): build_evidence computes real counts/covered-kinds from
+    real ScenarioResult inputs and refuses to build evidence from zero results (Law 1); ScenarioResult/
+    TenantIsolationEvidence proven content-free by construction (dataclass field introspection);
+    assert_not_superuser_role proven against a plain stub (refuses for rolsuper=True and for an
+    unresolved current_user, does not raise for rolsuper=False); contract conformance against the new
+    packages/contracts/{openapi,jsonschema}/15-* files. As part of this shift, also fixed a real
+    CI-wiring gap: FTF-0406/FTF-0407 (both already CERTIFIED/merged) had no gate step, and FTF-0407
+    had no live-Postgres integration job -- ci.yml never ran their own test files at all, the same
+    class of gap FTF-0405 previously fixed for FTF-0404 (commit 2bc435b). Both reconfirmed genuinely
+    green locally before wiring them into ci.yml. Two independent fault injections, both reverted
+    byte-identical: (1) build_evidence's own empty-results guard, caught by the no-DB test; (2) the
+    real production authorize_resource_ownership ownership check, caught for real by all 4 DB-layer
+    checks in the live suite (21/25, the exact 4 expected failures, no false negatives elsewhere).
+    No new apps/api production module and no new database schema (database_changes: "No independent
+    schema change") -- this task assembles a consolidated evidence suite over already-certified
+    production primitives, so product_truth_check.py's proving_symbol stays empty (no live-wiring
+    claim), matching the FTF-0106/FTF-H003 precedent. Certified stays 33/300; product-true stays
+    10/10.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1501.py
 FTF-1502:
   certification_state: NONE
   criticality: MUST
