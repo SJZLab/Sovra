@@ -8869,3 +8869,102 @@ steps touched.
 `evidence_hash: c0c8409d80c1e2e0222f8fed6912dc0355a046d2`, `proving_test:
 tests/tasks/test_ftf_0202.py`, `proving_symbol: ''`. Awaiting independent
 Control-plane L2 certification.
+
+## 2026-09-22 — Control plane: FTF-1001 (PR#160) independently reviewed, CERTIFIED
+Ran the CERTIFY procedure end to end (docs/CONTROL_PLANE_MODES.md),
+continuing the same certifier shift that just certified FTF-1501
+(PR #159), working through the real open-PR backlog one item at a time
+per the user's explicit request.
+
+- **Session-independence check:** this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5`; all four commits on PR #160
+  (`bd53802`, `f20fd2c`, `58f60b7`, `71599509`) carry `Claude-Session:
+  .../session_017j5b6PyPwyvoYyubyzrAcr` — no match, independent per
+  Law 4.
+- **Merge-conflict resolution required a second time:** PR #160 was
+  opened 2026-09-21T07:07Z against an older `main`, and had already
+  needed one merge-conflict resolution by its own producer against an
+  even older base. By this review's own start, `main` had further
+  advanced through FTF-1501 (#159). Merged current `main` into the PR
+  branch and resolved real, additive conflicts in `ci.yml`,
+  `PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` — this time
+  applying the fix for the duplicate-job-header bug found on the
+  immediately prior FTF-1501 review correctly on the first attempt,
+  confirmed via a duplicate-key-detecting YAML loader before pushing.
+- **Migration chain reconfirmed single-headed:** `apps/api/alembic/
+  versions/0009_model_versions.py` (`down_revision: 0008_cost_profiles`)
+  is the sole current head — no dual-head collision.
+- **CI reconfirmed green on the real, fixed head:** `get_check_runs` on
+  PR #160 — all 22 jobs `completed`/`success`, real per-job runner IDs
+  and timestamps (run `35703139831`).
+- **Diff read directly:** `apps/api/app/model_versions/
+  {model_version_schema,model_version_crud,model_version_routes}.py`,
+  `apps/api/alembic/versions/0009_model_versions.py`,
+  `apps/api/app/main.py` (confirmed `build_model_version_router` wired
+  unconditionally). Confirmed the `ck_model_versions_kind_consistency`
+  CHECK constraint, the SELECT/INSERT-only database grant (no edit/
+  delete route exists at all — immutability by construction), and that
+  `weights_digest`/`base_model_revision` are always copied server-side
+  from the resolved parent `TrainableArtifact`, never client-supplied.
+- **Own reproduction, this sandbox** (real local PostgreSQL 16,
+  `sovra_migrate`/`sovra_ftf1001` role/db, the task's own migration):
+  `uv run python3 tests/tasks/test_ftf_1001.py` — "all checks passed"
+  (24/24 no-DB). `tests/integration/
+  test_ftf_1001_model_version_schema_api.py` — "all checks passed"
+  (26/26 real checks, two real organizations, three real
+  `TrainableArtifact` fixtures covering `ready`/`registered`/cross-org
+  states).
+- **Own fault injection, one vector, distinct from the producer's own
+  three (mutable-artifact guard, structural kind-consistency check,
+  CHECK constraint drop), reverted byte-identical and the suite
+  re-confirmed clean immediately after:** disabled
+  `_authorize_project_or_raise`'s own `authorize_resource_ownership`
+  call in `model_version_crud.py` (wrapped the `try`/`except` in
+  `if False:`) — the live suite failed with exactly the named check
+  ("creating a model version against a project_id belonging to a
+  different organization is refused (404), identical to a missing
+  project_id"); the request instead reached a real composite
+  foreign-key violation at the database layer (`fk_model_versions_
+  organization_id_project_id`), confirming a genuine defense-in-depth
+  backstop exists, but the application-layer IDOR guard is what the
+  negative_acceptance clause actually requires, and it is genuinely
+  load-bearing.
+- **Static checks re-run clean, this session:** `uv run ruff check .` /
+  `uv run ruff format --check .` clean repo-wide using the pinned
+  project ruff (0.6.9, matching CI). `uv run mypy .` (from `apps/api`) —
+  2 errors, both the pre-existing, unrelated `authlib.jose` missing-stub
+  gap. `pnpm run lint`/`typecheck`/`format:check` clean. `python3
+  scripts/validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` — real `13/13` (up from `12/12`;
+  `build_model_version_router` confirmed a genuine, non-test live
+  caller, grepped `apps/api/app/main.py` directly, not assumed).
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1001 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, then read
+  `docs/implementation/task-packets/FTF-1001.md` for the resolved
+  acceptance/negative_acceptance clauses. Acceptance clause 1
+  ("ModelVersion supports endpoint-only/full-weight/adapter imports and
+  Factory training lineage") confirmed met by the code read above.
+  Acceptance clause 2 (independent review, exact merged commit, real
+  integration/negative-test evidence) is this review itself.
+  `negative_acceptance` ("Required nonexistent weights/hash for
+  endpoint import, mutable production artifact or cross-tenant parent
+  denied") — all three legs confirmed: nonexistent weights/hash and
+  mutable-artifact by the producer's own two fault-injection vectors
+  (reconfirmed present in the diff); cross-tenant parent by this
+  review's own fourth fault injection above plus the producer's own
+  cross-org artifact live-suite check.
+- Dependencies FTF-0301/FTF-0401/FTF-0103 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **No blocking defect found.** `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`. Appended a signed entry to
+  `docs/certifications/ledger.md`. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-1001']` written
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json`. `scripts/
+  status.py`: `36/300` certified before (on `main`'s real tip), `37/300`
+  after; product-true `12/12` → `13/13`. QUEUE.md/PROGRESS.md updated
+  (FTF-1001 moved to Done, Certified count bumped).
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5,
+  2026-09-22.

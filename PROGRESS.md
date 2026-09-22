@@ -1,4 +1,32 @@
 # PROGRESS — Sovra
+Control plane certifier — 2026-09-22 (continuing a certifier shift, user
+  requested the open-PR backlog be worked through end to end): closed 8
+  dead PRs (#128/#129/#132/#152/#158/#174/#175/#177 — full detail in
+  this session's own PR #180). Independently reviewed and CERTIFIED
+  FTF-1501 (PR #159, merge `8b8a9c1`) and FTF-1001 (PR #160, merge
+  `8b51c85`) — both had to be merged against current `main` first since
+  they predated several PRs that had already landed. The scripted
+  conflict resolution on the FTF-1501 review introduced a real bug
+  (doubled `ci.yml` job-header lines, GitHub Actions parsed zero jobs on
+  the first push) — found via a duplicate-key-detecting YAML loader,
+  fixed, and the same fix applied correctly on the first try for
+  FTF-1001. Both got genuine green CI runs (21/21 and 22/22) before
+  merging. Own fault injection distinct from each producer's own
+  vectors, both caught for real and reverted byte-identical: FTF-1501's
+  unauthenticated-401 guard in `require_role`; FTF-1001's cross-org
+  project IDOR guard in `_authorize_project_or_raise`. `scripts/
+  status.py`: `36/300` → `37/300` certified on `main`'s real tip
+  (FTF-1501's own certification record is in this session's still-open
+  PR #180); product-true `12` → `13` (`build_model_version_router` is a
+  genuine new live caller).
+
+  Remaining backlog: FTF-1401 (PR #161) and FTF-1702 (PR #167) genuinely
+  unreviewed; FTF-1302 (PR #170) and FTF-R016 (PR #172) previously
+  reviewed sound but blocked only by a GitHub Actions runner-
+  provisioning outage a separate PR (#178) reports cleared. Working
+  these next, one at a time, per the user's explicit request to
+  continue.
+
 Updated: 2026-09-22T05:15:00Z (scheduled relay shift) — implemented
   FTF-0202 (Secret-manager integration, deps FTF-0005/FTF-0103/FTF-0201 all
   CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the

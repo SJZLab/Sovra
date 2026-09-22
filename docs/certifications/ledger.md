@@ -4452,3 +4452,76 @@ reasons given above.
   `['FTF-1301']` updated. Certified: 36/300, Product-true: 12/12.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1001 — ModelVersion schema/API
+- Criterion ID: FTF-1001
+- PR: https://github.com/SJZLab/Sovra/pull/160 (`claude/wizardly-fermat-4ez7fq` → `main`)
+- Merge commit: 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd
+- Implementation commit: bd5380256d8bfc0700d3bdb95a02a68cf10e4403
+- Validated-by: session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5
+  (continuing the same certifier shift, user-requested backlog sweep)
+- Date: 2026-09-22
+- **Session-ID check:** every commit on PR #160 (`bd53802`, `f20fd2c`,
+  `58f60b7`, `71599509`) carries `Claude-Session: .../
+  session_017j5b6PyPwyvoYyubyzrAcr`; this reviewing session's own ID is
+  `session_01DzyLpJHy35M2BeGRfHfwL5` — no match, independent per Law 4.
+- **Merge-conflict resolution required a second time:** PR #160 predated
+  FTF-1501/#159 merging to `main`; merged current `main` into the PR
+  branch and resolved real, additive conflicts in `ci.yml`/
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` — combined
+  without discarding, and this time correctly the first push (having
+  caught the doubled-job-header bug on the immediately prior FTF-1501
+  review): confirmed via a duplicate-key-detecting YAML loader before
+  pushing.
+- **Migration chain re-verified single-headed:** `apps/api/alembic/
+  versions/0009_model_versions.py` confirmed the sole current head,
+  chained cleanly after `0008_cost_profiles` — no dual-head collision.
+- **CI reconfirmed green on the real merged head:** `get_check_runs` —
+  22/22 jobs `completed`/`success` (run `35703139831`).
+- **Own reproduction, this sandbox** (real local PostgreSQL 16,
+  `sovra_migrate`/`sovra_ftf1001` role/db, the task's own migration):
+  `uv run python3 tests/tasks/test_ftf_1001.py` — "all checks passed"
+  (24/24 no-DB). `tests/integration/
+  test_ftf_1001_model_version_schema_api.py` — "all checks passed"
+  (26/26 real live checks).
+- **Own fault injection, one vector, distinct from the producer's own
+  three (mutable-artifact guard, structural kind-consistency check,
+  CHECK constraint drop), reverted byte-identical and the suite
+  re-confirmed clean immediately after:** disabled
+  `_authorize_project_or_raise`'s own `authorize_resource_ownership`
+  call in `model_version_crud.py` — the live suite failed with exactly
+  the named check ("creating a model version against a project_id
+  belonging to a different organization is refused (404), identical to
+  a missing project_id"), the request instead reaching a real composite
+  foreign-key violation at the database layer — confirming a genuine
+  defense-in-depth backstop exists, but the application-layer IDOR
+  guard is what the negative_acceptance clause actually requires.
+- **`product_truth_check.py --fail-on-unwired` — real `13/13`** (up from
+  `12/12`; `build_model_version_router` confirmed a genuine, non-test
+  live caller — grepped `apps/api/app/main.py` directly, confirmed
+  `app.include_router(build_model_version_router(session_factory))`
+  unconditional).
+- **No regression:** full `tests/tasks/test_ftf_*.py` sweep (34 files)
+  all "all checks passed". `ruff check`/`ruff format --check` clean
+  using the pinned project ruff (0.6.9, matching CI — a stray
+  system-installed 0.15.8 was ruled out as the source of truth on the
+  prior FTF-1501 review). `mypy` (apps/api) — 2 errors, both the
+  pre-existing, unrelated `authlib.jose` stub gap. `pnpm run
+  lint`/`typecheck`/`format:check` clean. `validate_spec.py --strict`
+  clean.
+- **Task contract re-pulled directly:** `python tools/r1_handoff.py
+  packet FTF-1001 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Both
+  acceptance clauses confirmed met (real live-wired ModelVersion
+  routes; this review is the independent-review clause itself). All
+  three `negative_acceptance` legs (nonexistent weights/hash for
+  endpoint import; mutable production artifact; cross-tenant parent)
+  confirmed met by the producer's own three fault-injection vectors
+  plus this review's own fourth.
+- Dependencies FTF-0301/FTF-0401/FTF-0103 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  `8b51c85edd35652ba3263dd6a6fcbf590f2f81bd`.
+
+**Conclusion:** Certified L2-CERTIFIED.

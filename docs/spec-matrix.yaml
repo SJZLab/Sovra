@@ -2566,10 +2566,10 @@ FTF-0909:
   proving_symbol: ''
   proving_test: ''
 FTF-1001:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: ModelVersion schema/API
-  evidence_hash: ''
+  evidence_hash: 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0301, FTF-0401, FTF-0103
@@ -2619,7 +2619,44 @@ FTF-1001:
     a freshly recreated database/role (both tables gained a purely additive
     `UNIQUE(organization_id, id)` constraint this task's migration adds). `ruff`/`ruff format`/
     `mypy` clean on every file this task touched.
-  proof_state: L1-PROVEN
+
+    INDEPENDENTLY CERTIFIED (PR #160, merge commit 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd,
+    2026-09-22) by session https://claude.ai/code/session_01DzyLpJHy35M2BeGRfHfwL5 -- session-ID
+    compared against every commit on PR #160 (bd53802/f20fd2c/58f60b7/71599509, all carrying
+    Claude-Session .../session_017j5b6PyPwyvoYyubyzrAcr; none match this reviewing session, so
+    this is independent, not self-certification). PR #160 predated FTF-1501/#159 merging to main,
+    so this review merged current main into the PR branch a second time and resolved real
+    conflicts in ci.yml/PROGRESS.md/QUEUE.md/docs/certifications/queue.md (every conflict
+    genuinely additive, combined without discarding either side; this time correctly, having
+    caught and fixed the doubled-job-header bug on the immediately prior FTF-1501 review). Own
+    reproduction, this sandbox (real local PostgreSQL 16, sovra_migrate/sovra_ftf1001 role/db,
+    the task's own migration 0009_model_versions confirmed a single clean Alembic head):
+    `uv run python3 tests/tasks/test_ftf_1001.py` -- "all checks passed" (24/24 no-DB);
+    `tests/integration/test_ftf_1001_model_version_schema_api.py` -- "all checks passed" (26/26
+    real live checks). Own fault injection, one vector, distinct from the producer's own three
+    (mutable-artifact guard, structural kind-consistency check, CHECK constraint drop): disabled
+    `_authorize_project_or_raise`'s own `authorize_resource_ownership` call in
+    `model_version_crud.py` (`if False:` around the try/except) -- the live suite failed with
+    exactly the named check ("creating a model version against a project_id belonging to a
+    different organization is refused (404), identical to a missing project_id"), the request
+    instead reaching a real composite foreign-key violation at the database layer (confirming a
+    genuine defense-in-depth backstop exists, but the application-layer IDOR guard is what the
+    negative_acceptance clause actually requires); reverted byte-identical (diff against the
+    pre-injection copy empty), suite re-confirmed clean immediately after. CI reconfirmed green
+    on the real merged head via get_check_runs -- 22/22 jobs success (run 35703139831).
+    `product_truth_check.py --fail-on-unwired` -- real 13/13 (up from 12/12; build_model_version_router
+    confirmed a genuine, non-test caller wired into apps/api/app/main.py, grepped directly, not
+    assumed). No regression: full tests/tasks/test_ftf_*.py sweep (34 files) all "all checks
+    passed"; ruff check/format --check clean using the pinned project ruff (0.6.9, matching CI);
+    mypy (apps/api) -- 2 errors, both the pre-existing, unrelated authlib.jose stub gap; pnpm
+    lint/typecheck/format:check clean. validate_spec.py --strict clean. Task contract re-pulled
+    directly via `python tools/r1_handoff.py packet FTF-1001 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+    -- both acceptance clauses and all three negative_acceptance legs (nonexistent weights/hash
+    for endpoint import; mutable production artifact; cross-tenant parent) confirmed met by the
+    code and the producer's own three fault-injection vectors plus this review's own fourth.
+    Dependencies FTF-0301/FTF-0401/FTF-0103 confirmed genuinely CERTIFIED before relying on them.
+    No blocking defect found. Merged PR #160 (merge commit 8b51c85edd35652ba3263dd6a6fcbf590f2f81bd).
+  proof_state: L2-CERTIFIED
   proving_symbol: build_model_version_router
   proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
