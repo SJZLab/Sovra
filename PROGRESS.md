@@ -1,5 +1,12 @@
 # PROGRESS — Sovra
-Updated: 2026-09-22T12:20:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:30:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1702 (Tool environment), PR #167,
+  L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
+  stale unmerged candidate PR #183. `scripts/status.py`: 41/300 → 42/300
+  certified. One item (FTF-R016) remains — the last of this shift's
+  seven-item backlog.
+
+Previously, Updated: 2026-09-22T12:20:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1501 (Tenant isolation suite), PR #159,
   L2-CERTIFIED by session `session_01GngkvFCtGtTnDnW9d2HC1j`, superseding
   stale unmerged candidate PR #180. Reproduced the producer's own cross-
