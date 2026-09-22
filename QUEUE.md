@@ -1,5 +1,18 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-22T12:20:00Z (scheduled Control-plane certifier shift,
+Updated: 2026-09-22T12:30:00Z (scheduled Control-plane certifier shift,
+  continued) — certified FTF-1702 (Tool environment), PR #167,
+  superseding the stale unmerged candidate PR #183. Full independent
+  re-verification (session-ID check, CI re-check, own fault injection on
+  the unseeded-subject guard in `ToolEnvironment.dispatch`,
+  `product_truth_check.py`, task contract re-pulled via
+  `tools/r1_handoff.py`) recorded in `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` and the new "## Done" entry below.
+  `scripts/status.py`: 41/300 → 42/300 certified. One further
+  PROVISIONAL item (FTF-R016) remains, already confirmed HOLDS UP by
+  independent background verification — processing it next, the last of
+  this shift's seven-item backlog.
+
+Previously, Updated: 2026-09-22T12:20:00Z (scheduled Control-plane certifier shift,
   continued) — certified FTF-1501 (Tenant isolation suite), PR #159,
   superseding the stale unmerged candidate PR #180. Full independent
   re-verification recorded in `docs/certifications/ledger.md`/
@@ -3763,6 +3776,35 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
   to write the real status into `spec/tasks.json`/`docs/implementation/
   TRACKER.json`. `scripts/status.py`: `40/300` certified before, `41/300`
+  after; "Product-true" stays `13/13`. This certification's own doc
+  updates were pushed on a branch and opened as a PR against `main`
+  rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
+  docs/certifications/ledger.md.
+- FTF-1702 — Tool environment. CERTIFIED 2026-09-22, PR #167 (merge
+  commit `099a0753710ac6f2bb4cba68c209e99d3845e5d9`). Independently
+  re-verified: session-ID clean (PR #167's commits carry
+  `session_01CVWSRiMU43ZUy6H6C9FMez`, a different session than this
+  reviewer's own `session_01GngkvFCtGtTnDnW9d2HC1j`; a separate stale,
+  unmerged candidate certification PR, #183, opened by yet a third
+  session, was superseded rather than trusted). `get_check_runs` on
+  PR #167's real head — 23/23 jobs `success`, real non-instant per-job
+  durations. Own reproduction in a fresh git worktree at the real merged
+  head: `tests/reference/test_ftf_1702.py` — "all checks passed". Own
+  fault injection, a vector distinct from the producer's own and PR
+  #183's own: disabled the unseeded-subject guard in
+  `ToolEnvironment.dispatch` — the named check failed for exactly the
+  right reason; reverted byte-identical; suite re-confirmed clean. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-1702` — both
+  acceptance clauses and the negative_acceptance confirmed genuinely met.
+  Dependencies FTF-0004/FTF-1701 confirmed genuinely `CERTIFIED`.
+  `validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired` — own run, `13/13`; `proving_symbol` confirmed
+  legitimately `''` (test-infrastructure module, no live product route).
+  No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`
+  to write the real status into `spec/tasks.json`/`docs/implementation/
+  TRACKER.json`. `scripts/status.py`: `41/300` certified before, `42/300`
   after; "Product-true" stays `13/13`. This certification's own doc
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:

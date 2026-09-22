@@ -4873,3 +4873,64 @@ reasons given above.
   `['FTF-1501']` updated. Certified: 41/300, Product-true: 13/13.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1702 — Tool environment
+- Criterion ID: FTF-1702
+- PR: https://github.com/SJZLab/Sovra/pull/167 (`claude/wizardly-fermat-hlz51t` → `main`)
+- Merge commit: 099a0753710ac6f2bb4cba68c209e99d3845e5d9
+- Implementation commit: 2d36085547b597625ddcfc0feb394c0c4027f0be
+- Validated-by: session https://claude.ai/code/session_01GngkvFCtGtTnDnW9d2HC1j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #186)
+- Date: 2026-09-22
+- **Session-ID check:** PR #167's commits carry `Claude-Session:
+  .../session_01CVWSRiMU43ZUy6H6C9FMez`; this reviewing session's own ID
+  is `session_01GngkvFCtGtTnDnW9d2HC1j` — no match, independent per Law 4.
+  A separate stale, unmerged candidate certification (PR #183, opened by
+  a third session `session_01DzyLpJHy35M2BeGRfHfwL5`) is superseded/
+  closed by this entry rather than trusted at face value.
+- **CI checked on the real head:** `get_check_runs` on PR #167's real
+  head (run `35705643744`) — 23/23 jobs `completed`/`success`, real,
+  non-instant per-job durations (`secret-manager-integration` ~6.7
+  minutes), no runner-provisioning ghost-job pattern.
+- **Diff read directly:** `evals/reference/tool_environment.py` wraps
+  FTF-1701's already-certified real dispatcher (`dispatch_tool_call`) for
+  later qualification tasks to use. `dispatch()` refuses a tenant or
+  subject this environment's own seed never declared before ever
+  reaching the real dispatcher, its real authorization checks or its
+  real idempotency cache.
+- **Own reproduction, this sandbox** (fresh git worktree at the real
+  merged head): `tests/reference/test_ftf_1702.py` — "all checks
+  passed".
+- **Own fault injection, this session, a vector distinct from the
+  producer's own and PR #183's own (a `record_id_for` vector):**
+  disabled the unseeded-subject guard in `ToolEnvironment.dispatch`
+  (`if subject_id not in self._seed_spec.subjects_by_tenant.get(
+  tenant_id, ()):` → `if False and ...`) — the named "dispatch refuses a
+  subject never declared for an otherwise real, seeded tenant" check
+  failed for exactly the right reason. Reverted; `diff` against the
+  pre-injection copy confirmed byte-identical; suite re-confirmed clean.
+- **Static checks re-run clean, this session:** `scripts/
+  validate_spec.py --strict` clean. `scripts/product_truth_check.py
+  --fail-on-unwired` — own run, `13/13`; FTF-1702's own `proving_symbol`
+  confirmed legitimately `''` (pure test-infrastructure module with no
+  live product route, wrapping FTF-1701's dispatcher for later
+  qualification tasks — not gate-weakening). `ruff check` on the touched
+  file clean.
+- Dependencies FTF-0004/FTF-1701 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-1702
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and
+  the negative_acceptance ("canned success tools / unguarded financial
+  writes cannot satisfy the environment") confirmed genuinely met — no
+  canned results anywhere in the module, real authorization/idempotency
+  preserved underneath by construction.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`099a0753710ac6f2bb4cba68c209e99d3845e5d9`). Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` —
+  `['FTF-1702']` updated. Certified: 42/300, Product-true: 13/13.
+
+**Conclusion:** Certified L2-CERTIFIED.

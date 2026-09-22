@@ -9682,3 +9682,37 @@ Ran `scripts.task_claim.sync_certified_status()` —
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-1501']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1501 moved to Done,
 Certified count bumped to 41/300 (product-true stays 13/13).
+
+## 2026-09-22 — Control plane: FTF-1702 (PR#167) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #186): `session_01GngkvFCtGtTnDnW9d2HC1j`. Session-ID compared against
+PR #167's commits (`session_01CVWSRiMU43ZUy6H6C9FMez`) — no overlap,
+independent per Law 4. A separate stale, unmerged candidate certification
+(PR #183, opened by a third session `session_01DzyLpJHy35M2BeGRfHfwL5`)
+is superseded and closed by this entry rather than trusted at face value.
+
+Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`:
+- `get_check_runs` on PR #167's real head — 23/23 jobs `success`, real
+  non-instant per-job durations, no runner-provisioning ghost pattern.
+- `tests/reference/test_ftf_1702.py` reproduced clean from scratch.
+- Own fault injection, a vector distinct from the producer's own and PR
+  #183's own: disabled the unseeded-subject guard in
+  `ToolEnvironment.dispatch` — the named check failed for exactly the
+  right reason; reverted byte-identical; suite re-confirmed clean.
+- `product_truth_check.py --fail-on-unwired` — `13/13`; `proving_symbol`
+  confirmed legitimately `''` (test-infrastructure module wrapping
+  FTF-1701's dispatcher, no live product route).
+- `tools/r1_handoff.py packet FTF-1702` — both acceptance clauses and the
+  negative_acceptance confirmed genuinely met.
+- Dependencies FTF-0004/FTF-1701 confirmed genuinely `CERTIFIED`.
+- `scripts/validate_spec.py --strict` clean.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`099a0753710ac6f2bb4cba68c209e99d3845e5d9`). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-1702 — Tool environment"). Ran
+`scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-1702']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-1702 moved to Done,
+Certified count bumped to 42/300 (product-true stays 13/13).
