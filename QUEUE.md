@@ -1,5 +1,46 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #222) — independently reviewed
+  FTF-0209 (Catalog anomaly detector). Session-ID check: PR #222's commits
+  all carry `session_01WHznaRLHjmkr46cKdoX26J`, no match to this session's
+  own ID (Law 4). Diff read directly against the real, current head
+  (`4a5b020`, fetched fresh — the webhook's advertised head `a7a0904` was
+  already one commit stale, a non-functional PR-link record from the same
+  session) — no scope creep. CI re-checked on the real head, not taken on
+  faith: waited out the actual run — 27/27 jobs green (run `35906197462`;
+  the `gate` job, which runs this task's own `tests/tasks/test_ftf_0209.py`
+  inline, completed `success`; three OpenBao-from-source build jobs took
+  5-8 minutes each, same documented shape as FTF-0208's own review, not a
+  failure). Own independent verification directly in this working tree:
+  fresh run of the test suite (all 20 checks pass), two own fault
+  injections reproducing the producer's own claimed vectors independently
+  rather than taking them on faith — (1) removed the "already
+  acknowledged" guard from `acknowledge()`, the double-acknowledge check
+  genuinely failed; (2) made `acknowledge()` unconditionally restore every
+  wrapped-catalog entry to `callable` (the exact negative_acceptance risk),
+  10 checks genuinely failed for real — both reverted byte-identical,
+  `ruff`/`mypy`/`validate_spec.py --strict` clean, `test_ftf_0208.py`
+  regression clean (`test_ftf_0201.py` could not run locally — `uvicorn`
+  missing in this sandbox, an environment gap unrelated to this diff; no
+  `pyproject.toml`/`uv.lock` change in the PR, and CI's own `gate` job
+  already proves it via `uv sync`), `product_truth_check.py` 17/17
+  confirmed legitimately unchanged; task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0209` — both acceptance and
+  negative_acceptance clauses confirmed genuinely met; dependencies
+  FTF-0201/FTF-0208 confirmed genuinely CERTIFIED. One observation noted
+  for the record (not a defect): `acknowledge()`'s current signature has
+  no parameter that could reach the wrapped catalog, so nothing exercises
+  a caller-supplied catalog reference yet — flagged for FTF-0215 (the real
+  wiring/route task) to preserve that guarantee. No blocking defect
+  found — merged PR #222 (merge commit
+  `78ab4537298e1b484f42fffc0d2ae5d27d85137f`), set `docs/spec-matrix.yaml`
+  to `certification_state: CERTIFIED`/`proof_state: L2-CERTIFIED`,
+  appended `docs/certifications/ledger.md`. Certified: 53/300 → 54/300.
+  Product-true: unchanged at 17/17. See "## Done" below and
+  `docs/certifications/ledger.md` for the full record.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #220) — independently reviewed
   FTF-0208 (Last-known-good catalog). Session-ID check: PR #220's three
   commits all carry `session_012onwtuejKNuCp5dC6NnuAE`, no match to this
@@ -3577,11 +3618,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0209 (Catalog anomaly detector) — submitted PROVISIONAL 2026-09-23,
-  implementation commit `50aa1c155a779c592dcaf1d300e347852d1626f2` on
-  `claude/wizardly-fermat-1734s6`, not self-certified (Law 4). Deps
-  FTF-0201/FTF-0208, both `CERTIFIED`. Full entry: `docs/certifications/
-  queue.md`/`PROGRESS.md`.
+(none currently)
+
+FTF-0209 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-23 via PR #222 (merge commit
+`78ab4537298e1b484f42fffc0d2ae5d27d85137f`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0208 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #220 (merge commit
@@ -5406,6 +5449,35 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   assertions — 21/41 total); every check still genuinely passes. Ran
   `sync_certified_status()`. `scripts/status.py`: `52/300` certified
   before, `53/300` after. Product-true unchanged at 17. Full entry:
+  docs/certifications/ledger.md.
+
+- FTF-0209 — Catalog anomaly detector. Independently reviewed and
+  **CERTIFIED 2026-09-23**, merge commit
+  `78ab4537298e1b484f42fffc0d2ae5d27d85137f` (PR #222). Independently
+  re-verified directly in this working tree at the PR's real, current
+  head (`4a5b020`): `tests/tasks/test_ftf_0209.py` clean (all 20 checks);
+  CI re-checked on that same real head (27/27 jobs green, `gate`'s own
+  FTF-0209 step confirmed present and genuinely passing inline — three
+  OpenBao-from-source build jobs took 5-8 minutes each, same documented
+  shape as FTF-0208's own review, not a failure); two own fault
+  injections reproducing the producer's own claimed vectors independently
+  (removed the "already acknowledged" guard from `acknowledge()`; made
+  `acknowledge()` unconditionally restore every wrapped-catalog entry to
+  `callable`, the exact negative_acceptance risk — 10 checks genuinely
+  failed for real) — both caught for real, reverted byte-identical;
+  `ruff`/`ruff format`/`mypy` clean; `product_truth_check.py` 17/17
+  confirmed legitimately unchanged (`proving_symbol` confirmed blank,
+  same disclosed "no live caller" precedent as FTF-0202/FTF-0205/
+  FTF-0207/FTF-0208). Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-0209` — acceptance and negative_acceptance clauses both
+  confirmed genuinely met. Dependencies FTF-0201/FTF-0208 confirmed
+  genuinely `CERTIFIED`. One observation noted for the record (not a
+  defect): `acknowledge()`'s current signature has no parameter that
+  could reach the wrapped catalog, so nothing exercises a
+  caller-supplied catalog reference yet — flagged for FTF-0215 (the real
+  wiring/route task) to preserve that guarantee. Ran
+  `sync_certified_status()`. `scripts/status.py`: `53/300` certified
+  before, `54/300` after. Product-true unchanged at 17. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

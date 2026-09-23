@@ -6017,3 +6017,103 @@ reasons given above.
   at 17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0209 — Catalog anomaly detector
+- Criterion ID: FTF-0209
+- PR: https://github.com/SJZLab/Sovra/pull/222 (`claude/wizardly-fermat-1734s6`
+  → `main`) — implementation and PROVISIONAL submission. Merged by this
+  review as merge commit `78ab4537298e1b484f42fffc0d2ae5d27d85137f`.
+- Merge commit (evidence): 78ab4537298e1b484f42fffc0d2ae5d27d85137f
+- Implementation commit: 50aa1c155a779c592dcaf1d300e347852d1626f2
+- Validated-by: session https://claude.ai/code/session_017u7Tfwvfkiu4M9yR7jJAye
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #222; checked `docs/certifications/queue.md` per this shift's own
+  mandate and found FTF-0209/PR #222 the sole pending PROVISIONAL item)
+- Date: 2026-09-23
+- **Session-ID check:** PR #222's commits (implementation, PROVISIONAL
+  submission, PR-link record) all carry `session_01WHznaRLHjmkr46cKdoX26J`.
+  This session's own ID is `session_017u7Tfwvfkiu4M9yR7jJAye` — no match,
+  independent per Law 4.
+- **Diff read directly** against PR #222's real, current head (`4a5b020`,
+  fetched fresh — the trigger's advertised head `a7a0904` was already one
+  commit stale by the time this review ran; the intervening commit was
+  only a `docs/certifications/queue.md` PR-link record, same session ID,
+  no functional change): exactly the task packet's own new module
+  (`packages/litellm_client/catalog_anomaly_detector.py`) and test
+  (`tests/tasks/test_ftf_0209.py`), plus one new `gate`-job CI step, the
+  new task-packet doc, and expected tracking-doc updates. No scope creep.
+- **CI re-checked on the real head, not taken on faith:** waited out the
+  actual run rather than trusting the webhook's snapshot — 27/27 jobs
+  green (run `35906197462`, all `conclusion: success` on head SHA
+  `4a5b0201a1d8d217bc1432d955a4d7cc3f69cf2e`; three jobs —
+  `secret-manager-integration`/`dataset-source-connection-integration`/
+  `target-application-connection-integration` — took 5-8 minutes each
+  because they build OpenBao from source on the runner, not because of a
+  failure, same documented shape as FTF-0208's own review). The `gate` job
+  (which runs this task's own `tests/tasks/test_ftf_0209.py` inline)
+  completed `success`.
+- **Own independent verification, directly against the real merged
+  content in this working tree:**
+  - Ran `python3 tests/tasks/test_ftf_0209.py` directly — "FTF-0209
+    catalog anomaly detector: all checks passed" (all 20 checks).
+  - Own fault injection #1 (reproducing the producer's own claimed
+    vector independently rather than taking it on faith): removed the
+    "already acknowledged" guard from `acknowledge()`. The
+    double-acknowledge negative check genuinely failed for real; reverted
+    from a pre-edit backup, `diff` confirmed byte-identical, suite re-ran
+    clean immediately after.
+  - Own fault injection #2, the exact negative_acceptance risk
+    ("...or restored unauthorized execution"): made `acknowledge()`
+    unconditionally restore every wrapped-catalog entry to `callable`.
+    10 checks genuinely failed for real (every removed id came back
+    authorized after acknowledgement; the byte-identical-catalog-state
+    check broke); reverted, `diff` confirmed byte-identical, suite re-ran
+    clean immediately after.
+  - `uv run ruff check .` / `ruff format --check .` / `uv run mypy
+    packages/litellm_client/catalog_anomaly_detector.py
+    tests/tasks/test_ftf_0209.py` — clean, pinned toolchain (`ruff
+    0.6.9`, matching CI).
+  - `python3 tests/tasks/test_ftf_0208.py` (this task's own CERTIFIED
+    dependency) re-run clean — no regression. `tests/tasks/
+    test_ftf_0201.py` could not be re-run in this sandbox (`uvicorn` not
+    installed locally, an environment gap unrelated to this diff — the
+    PR's own file list has no `pyproject.toml`/`uv.lock` change, and CI's
+    own `gate` job already independently proves it via `uv sync`).
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` — own run,
+    **17/17**, legitimately unchanged (`proving_symbol` confirmed blank —
+    no live caller yet, same disclosed "no live caller" precedent already
+    accepted for FTF-0202/FTF-0205/FTF-0207/FTF-0208).
+- `python3 tools/r1_handoff.py packet FTF-0209 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("A >50%
+  reduction triggers recorded anomaly/retry/admin acknowledgement while
+  immediate authorization remains enforced") confirmed met by `record()`'s
+  own ordering (the wrapped catalog is always updated *before* any
+  anomaly evaluation, so nothing in this detector's own state can gate
+  real authorization) plus `AnomalyStatus`'s forward-only state machine
+  (`open` → `retry_pending` → `escalated` → `acknowledged`, never
+  silently reverting). negative_acceptance ("Repeated empty list cannot
+  cause silent destructive deletion or restored unauthorized execution")
+  confirmed met structurally: no delete/purge operation anywhere in this
+  module's public surface, an open incident is updated in place rather
+  than discarded/duplicated, and `acknowledge()`/`retry()` never read or
+  write the wrapped catalog's entries at all — confirmed both by direct
+  code reading and this review's own fault injection #2 above.
+- Dependencies FTF-0201/FTF-0208 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **One observation, not a defect:** `acknowledge()`'s current signature
+  takes no parameter that could reach the wrapped catalog, so nothing in
+  the existing test suite exercises (or needs to exercise) a
+  caller-supplied catalog reference. Not a gap against this task's own
+  scope (no live caller exists yet, disclosed) — flagged here so FTF-0215
+  (the real wiring/route task) keeps that same guarantee true of whatever
+  API surface ultimately exposes `acknowledge()`.
+- No blocking defect found. Merged PR #222 (merge commit
+  `78ab4537298e1b484f42fffc0d2ae5d27d85137f`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit. `proving_symbol` stays blank
+  (no live caller yet, disclosed — FTF-0215 is the later wiring step).
+  Ran `scripts.task_claim.sync_certified_status()` — `['FTF-0209']`
+  updated. Certified count moves 53/300 → 54/300. Product-true: unchanged
+  at 17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.
