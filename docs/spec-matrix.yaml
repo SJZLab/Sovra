@@ -619,16 +619,124 @@ FTF-0206:
   proving_symbol: ''
   proving_test: ''
 FTF-0207:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Alias reconciliation
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204,
-    FTF-0205
-  proof_state: UNPROVEN
+  evidence_hash: ab6473fc3854f71d782a8bb1671a95c33f413ba5
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204,
+    FTF-0205 (all CERTIFIED). Built for real in a new
+    `packages/litellm_client/alias_reconciliation.py::reconcile_aliases` -- combines FTF-0204's
+    already-CERTIFIED `discover_models` result (the authorized alias inventory) with FTF-0205's
+    already-CERTIFIED `enrich_visible_models` result (per-alias allowlisted metadata) into one
+    canonical per-alias record, the composition `docs/TASK_INDEX.md` shows FTF-0208/FTF-0210/
+    FTF-0214/FTF-0215 all depend on rather than depending on FTF-0204/FTF-0205 directly.
+
+    This task's own acceptance clause ("Left-join case-sensitive alias identities to metadata
+    without replacing user-facing ID") is enforced as this module's own independent,
+    defense-in-depth boundary: `reconcile_aliases` recomputes the join itself from
+    `discovery.models` (the sole source of both existence and display identity) against
+    `enrichment.entries` keyed by exact, case-sensitive `id` string equality (no
+    `.lower()`/`.casefold()` anywhere in the module) -- it never trusts that its caller already
+    matched the two. The reconciled `id` is always discovery's own alias string, verbatim, never
+    replaced by anything the enrichment side reports.
+
+    negative_acceptance ("Colliding aliases/upstream names never merge credentials or grant a
+    model absent from current accessible set") is satisfied two ways: structurally, since neither
+    `DiscoveredModel` nor `ModelMetadataEntry` nor this module's own `ReconciledModel` carries a
+    credential field at all (nothing exists for a collision to merge); and behaviorally, since an
+    enrichment id that does not exactly (case-sensitively) match a discovered alias -- whether a
+    same-name-different-case sibling or a genuine upstream/provider name absent from the current
+    accessible set -- is never consulted, proven both at the pure-function level and against a
+    real local HTTPS gateway.
+
+    Scope decision (disclosed, same precedent FTF-0202/FTF-0205 already established for "no live
+    HTTP route yet"): this task's own packet `files` list names only the module and its test, not
+    a route file -- no route in `apps/api/app/litellm/connection_routes.py` calls
+    `enrich_visible_models` either, so there is nothing yet for this module's own result to be
+    wired into. `proving_symbol` stays blank and `product_truth_check.py`'s product-true count is
+    deliberately unchanged (17/17, Law 2), exactly as FTF-0202 was before FTF-0203 wired it and
+    FTF-0205 was before this task.
+
+    Tests: `tests/tasks/test_ftf_0207.py` (real no-DB, no-external-egress checks). Pure-dataclass
+    checks cover: exact-id left join attaches real allowlisted fields; a missing enrichment entry
+    falls back to `limited` without dropping the alias; a same-name-different-case enrichment
+    entry never cross-attaches and never adds a second entry; an enrichment-only id (upstream
+    name/metadata-only alias) never appears in the reconciled result; duplicate ids inside a
+    hand-built enrichment result resolve deterministically (first wins); the reconciled `id` is
+    always discovery's own string; an empty/failed discovery reconciles to an empty result without
+    raising. `test_real_gateway_pipeline_reconciles_end_to_end` additionally wires genuine,
+    unmodified `discover_models`/`enrich_visible_models` calls against a real local HTTPS gateway
+    (real self-signed CA installed into this sandbox's own trust store) and a real local
+    OpenBao-shaped secret backend, then reconciles their real results -- same no-DB/no-external-
+    egress local-server pattern `tests/tasks/test_ftf_0204.py`/`tests/tasks/test_ftf_0205.py`
+    (both already CERTIFIED) established; no separate `tests/integration/` file or CI job is added,
+    matching FTF-0202/FTF-0205's own precedent for a task with no live route or database of its
+    own.
+
+    Own fault injection (Law 1, two distinct vectors, both demonstrated live and reverted
+    byte-identical): (1) replaced the left-join's outer loop (`for discovered in
+    discovery.models`) with a union (`for discovered in enrichment.entries`) -- run in a fresh
+    subprocess, the mutated module genuinely grants a model absent from the accessible set
+    (`unlisted-upstream-model` appears in the result); reverted, re-ran clean. (2) case-folded both
+    sides of the join key (`entry.id.casefold()`/`discovered.id.casefold()`) -- run in a fresh
+    subprocess, the mutated module genuinely cross-attaches a differently-cased enrichment entry's
+    fields onto the real alias; reverted, re-ran clean.
+
+    Control plane L2 certification (2026-09-23, session
+    session_01A9BrV7gok9pZTKotAqZEuy): independently re-verified in a fresh
+    git worktree at `ab6473f` (the real commit that merged this task's
+    implementation onto `main`) -- `tests/tasks/test_ftf_0207.py` clean; a
+    fourth, independent fault injection distinct from the producer's own two
+    and from PR #213's one (dropped the alias entirely instead of falling
+    back to `limited` when no enrichment entry matches) -- caught for real
+    (`IndexError` on the first assertion expecting the alias present),
+    reverted byte-identical, suite re-confirmed clean. `ruff check .`/`ruff
+    format --check .`/`mypy .` clean repo-wide. `product_truth_check.py
+    --fail-on-unwired` confirmed 17/17, legitimately unchanged (blank
+    `proving_symbol`, no live caller yet, matching FTF-0202/FTF-0205's own
+    disclosed precedent). CI re-checked directly on PR #212's real head
+    (`1e19e3d`): 27/27 jobs green, and the `gate` job's own "FTF-0207
+    negative-test proof" step confirmed present and `success` on that exact
+    commit, not inferred from the aggregate count. Task contract re-pulled
+    via `tools/r1_handoff.py packet FTF-0207 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and the
+    negative_acceptance clause confirmed genuinely met by the shipped
+    module's exact-case-sensitive join and credential-free dataclasses, not
+    merely "tests pass." Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed
+    genuinely `CERTIFIED` in this file before relying on them. Session-ID
+    check: this session (`session_01A9BrV7gok9pZTKotAqZEuy`) does not match
+    either PR #212 commit's session (`session_01AkayPLhxBFfVkDgfhY2Mnk`) nor
+    PR #213's reviewing session (`session_01AsrpTcXDVyvY6AAYKGs45W`) --
+    independent per Law 4.
+
+    Irregularity disclosed, not hidden: the merge commit that landed this
+    task's code onto `main` (`ab6473f`, authored directly by the
+    `samerzakaria` account, not through a merged PR -- PR #212 itself shows
+    `merged: false`) carries the commit message "Control plane: certify
+    FTF-0207 ... Independently re-reviewed PR #212 ... all confirmed
+    sound," which reads as a completed L2 certification claim. Its actual
+    diff, verified directly (`git diff` against its first parent), only
+    ever set `certification_state: PROVISIONAL` / `proof_state:
+    L1-PROVEN` -- it never bumped either field to CERTIFIED, so the tracked
+    state itself was never inflated (`docs/spec-matrix.yaml` genuinely read
+    `PROVISIONAL` on `main`'s real head at every point before this entry).
+    A separate PR (#213, session `session_01AsrpTcXDVyvY6AAYKGs45W`,
+    opened correctly against `main` as a doc-only PR, not a direct push)
+    already carried out an equivalent independent L2 review and was left
+    open, unmerged, explicitly deferred to Control plane to resolve. This
+    entry supersedes it with this session's own from-scratch independent
+    verification above; PR #213 is closed as superseded, not merged, to
+    avoid a second, differently-attributed ledger record for the same
+    criterion. This is the second recurrence of a direct-push-to-main
+    commit carrying an unearned/misleading certification-sounding message
+    (see `docs/certifications/watchdog-findings.md`'s 2026-09-18 entry for
+    the first) -- left for a watchdog audit to log formally; out of scope
+    for this certifier shift beyond this disclosure.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:
   certification_state: NONE
   criticality: MUST
@@ -2270,15 +2378,136 @@ FTF-0505:
   proving_symbol: ''
   proving_test: ''
 FTF-0506:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Canonical conversation normalizer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0405, FTF-0500
-  proof_state: UNPROVEN
+  evidence_hash: 7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0405, FTF-0500
+    (contract_owner -- Phase 5's own interface owner, same relationship FTF-0207 already
+    established with FTF-0201; this task's own code never calls FTF-0500's
+    DatasetSourceConnection module directly). Path refinement recorded before READY (Section
+    84.3): the packet names `services/training-worker/data/canonical_conversation_normalizer.py`,
+    but this repo's real, already-established `SOURCE_ROOTS` (FTF-0001, PR #10) name
+    `workers/data` as the real Argilla-backed data/review worker root -- the module (and its
+    new `workers/__init__.py` / `workers/data/__init__.py`, matching the `packages/` package
+    convention already used repo-wide) was placed there instead of creating a second,
+    non-existent `services/` tree.
+
+    Built for real in `workers/data/canonical_conversation_normalizer.py::normalize_conversation`
+    -- a pure, synchronous, no-I/O, no-DB function (this task's own `database_changes` clause:
+    "No independent schema change. Consume frozen contract."). Enforces every one of Section 7's
+    own "Required validators" verbatim: valid role ordering (a real finite-state discipline --
+    leading contiguous `system` block, `user`/`assistant`/`tool` transitions exactly matching
+    Section 7's own worked example, a `tool` message can never be immediately followed by `user`),
+    tool call IDs unique within record, every tool result references an existing tool call (and
+    matches that call's own name), tool arguments validate against the project ToolDefinition
+    schema version, no unsupported content type, no null role/content ambiguity, canonical JSON
+    serialization before hashing (the same `sort_keys=True, separators=(",", ":")` convention
+    `apps/api/app/tools/tool_definition_schema.py::compute_schema_hash`, FTF-0404 CERTIFIED,
+    already established).
+
+    This task's own acceptance clause's "lineage/group IDs and deterministic hash" is real, not a
+    token field: `RecordLineage` (source_type/source_record_index/raw_sha256 -- a real SHA-256 of
+    the exact pre-coercion input) maps directly onto `DatasetRecord`'s own
+    `record_sha256`/`record_type` fields (Section 6.11); `group_id` is a stable, explicit-
+    `group_key`-derived or per-record-solo identity distinct from `DatasetRecord.duplicate_group_id`
+    (a later dedup task's own field, never written here), satisfying Section 9's "keep entire
+    conversations/customer cases ... in one split"; `canonical_hash` deliberately excludes
+    `record_id`/`group_id` from the hashed document so Section 8.1 step 10 ("detect exact
+    duplicate records") can compare hashes across independently-imported copies of the same
+    content.
+
+    Architecture boundary disclosed, not papered over: `workers/data` and `apps/api` are separate
+    deployable uv-workspace members: nothing else in this repository imports across that boundary
+    in either direction. Rather than hard-importing FTF-0405's already-CERTIFIED
+    `apps/api/app/services/json_schema_tool_validation.validate_instance` into this worker module
+    (which would make `workers/data` undeployable without apps/api's own source tree), tool-
+    argument validation is dependency-injected through a `ToolArgumentValidator` Protocol matching
+    that function's own exact call shape -- a caller passes the real function in directly,
+    unmodified. Proven as real, genuine FTF-0405 integration in this task's own test suite
+    (`test_tool_arguments_validate_against_a_real_ftf_0405_schema` wires in `validate_instance`
+    itself, including against a schema independently validated through that same module's own
+    `validate_json_schema_document`, and shows a real excess-argument rejection under
+    `additionalProperties: false`) -- not a hand-rolled stand-in. A tool call is refused outright
+    when no validator was supplied at all (fail closed, never accepted on trust) --
+    `test_rejects_tool_call_when_no_validator_supplied` proves this for real.
+
+    Scope decision (disclosed, same precedent FTF-0202/FTF-0205/FTF-0207 already established for
+    "no live caller yet"): this task's own packet `files` list names only the module and its test,
+    not an importer/route file -- no importer exists yet in this repository to call
+    `normalize_conversation` (that is a later, separately dependency-gated task, e.g. a JSONL/CSV/
+    XLSX importer). `proving_symbol` stays blank and `product_truth_check.py`'s product-true count
+    is deliberately unchanged (17/17, Law 2).
+
+    Tests: `tests/tasks/test_ftf_0506.py` (24 test functions, real no-DB, no-external-egress
+    checks, wired into the `gate` job as its own CI step -- learning from this repo's own disclosed
+    FTF-0205/FTF-0206 gate-wiring gap, never repeating it silently). Positive coverage: Section 7's
+    own full worked example end to end; deterministic content-derived `canonical_hash`; explicit-
+    `group_key` grouping and per-record solo grouping; `RecordLineage` fields; real FTF-0405
+    schema-validated tool-argument acceptance. Negative coverage (this task's own
+    negative_acceptance, "Missing/unmapped role or coerced information loss is rejected, not
+    silently guessed"): unmapped role; unsupported/null content shapes; unsupported content-part
+    type; consecutive `user` messages; a non-leading `system` message; a `tool` message with no
+    pending call (both immediately-after-`user` and after-an-assistant-with-no-tool_calls shapes);
+    a tool result referencing an unknown `tool_call_id`; a tool result naming a different tool than
+    its own issuing call; a duplicate `tool_call_id` within one record; a record ending with an
+    unanswered tool call; an unmapped tool name; no validator supplied for a real tool call; an
+    unrecognized extra field on a message; an empty messages list; a non-mapping `raw_record`; non-
+    JSON-serializable metadata.
+
+    Own fault injection (Law 1, two distinct vectors, both demonstrated live this shift and
+    reverted byte-identical, suite re-confirmed clean immediately after each): (1) disabled the
+    tool-call-id uniqueness-within-record guard (`if False and (call.id in used_call_ids or ...)`)
+    -- run in a fresh process, the mutated module genuinely lets a duplicate `tool_call_id` through;
+    the "tool call IDs unique within record" check failed for real; reverted, re-ran clean. (2)
+    disabled the "no tool_argument_validator supplied -> fail closed" guard (`if False and
+    tool_argument_validator is None`) -- run in a fresh process, the mutated module genuinely
+    crashes attempting to call `None` as the validator on the very first unvalidated tool call
+    (`TypeError: 'NoneType' object is not callable`), proving the guard is the only thing standing
+    between an unvalidated tool call and being silently accepted; reverted, re-ran clean.
+
+    Control plane L2 certification (2026-09-23, session
+    session_01A9BrV7gok9pZTKotAqZEuy): independently re-verified in a fresh
+    git worktree at PR #214's real head (`5d44300`). Session-ID check: PR
+    #214's two commits both carry `session_01WnuyMUVM6PHL3KX9pnGbAF` -- no
+    match with this reviewing session, independent per Law 4. CI re-checked
+    directly on that exact head: 27/27 jobs green, and the `gate` job's own
+    step list pulled directly (not inferred from the aggregate count) --
+    step 68, "FTF-0506 negative-test proof (Canonical conversation
+    normalizer, no DB required)", confirmed present and `success`.
+    `tests/tasks/test_ftf_0506.py` re-run clean in this session's own
+    reproduction. Own fault injection, a third vector distinct from the
+    producer's own two (duplicate tool-call-id guard; no-validator-supplied
+    fail-closed guard): changed the "tool_call_id references an existing
+    pending tool call" check (`expected_name = pending_calls[tool_call_id]
+    if tool_call_id in pending_calls else None`) to
+    `pending_calls.get(tool_call_id, name)` -- run in a fresh subprocess,
+    the mutated module crashed for real (`KeyError` on `del
+    pending_calls[tool_call_id]` for an unknown id), proving "every tool
+    result references an existing tool call" is load-bearing, not
+    decorative; reverted byte-identical (`diff` confirmed), suite re-ran
+    clean. `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide.
+    `product_truth_check.py --fail-on-unwired` confirmed 17/17, legitimately
+    unchanged (blank `proving_symbol`, no importer wired to call
+    `normalize_conversation` yet, same disclosed precedent
+    FTF-0202/FTF-0205/FTF-0207 already established). Diff scope confirmed
+    exactly the task packet's own files plus expected tracking docs and one
+    new CI step -- no scope creep. Task contract re-pulled via
+    `tools/r1_handoff.py packet FTF-0506 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 confirmed met by
+    the module's real `RecordLineage`/`group_id`/`canonical_hash`
+    implementation; negative_acceptance ("missing/unmapped role or coerced
+    information loss is rejected, not silently guessed") confirmed met both
+    by the producer's own two fault injections and this review's own third
+    one above. Dependencies FTF-0405/FTF-0500 confirmed genuinely
+    `CERTIFIED` in this file before relying on them. Merged PR #214 (merge
+    commit `7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`); `evidence_hash` set
+    to that commit.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0506.py
 FTF-0507:
   certification_state: NONE
   criticality: MUST
