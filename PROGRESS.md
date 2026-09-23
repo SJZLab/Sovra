@@ -1,4 +1,67 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23 (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #209) — independently certified
+  FTF-04A01 (TargetApplicationConnection schema/API/RBAC), the sole
+  PROVISIONAL item in `docs/certifications/queue.md` at shift start.
+
+  Session-ID compared against both of PR #209's commits
+  (`session_01EXsCz9KARjFVNap1uvhxVb`) — no overlap with this session
+  (`session_01EXCvSU1tz7PcbkneMnW558`), independent per Law 4.
+
+  CI re-checked, not taken on faith: the `pull_request.opened` webhook
+  fired while CI was still `in_progress`. Polled PR #209's real head
+  (`2ae27f7a`) check runs until every job reported `completed` — 27/27
+  real jobs `success`. Went further than a bare job-count check, learning
+  directly from this control plane's own FTF-0206/PR#207 finding two
+  shifts earlier (a job can be green without ever running a specific
+  task's own test): pulled `gate`'s own real step list and confirmed its
+  new "FTF-04A01 negative-test proof" step is present and `success`, and
+  pulled the dedicated new `target-application-connection-integration`
+  job's own step list and confirmed "Prove the real
+  TargetApplicationConnection evidence against the live database and
+  live OpenBao" is present and `success` — the real Postgres 16 + real
+  OpenBao integration proof genuinely ran on this exact commit.
+
+  Own independent verification: ran `tests/tasks/test_ftf_04a01.py` on
+  the real PR head (clean); own fault injection distinct from the
+  producer's own two (disabled `validate_connector_type`'s closed-set
+  check — 4 checks failed for real, including the "unsupported
+  connector... fail server-side" negative_acceptance check — reverted
+  byte-identical, clean again); ran the full Alembic migration chain
+  (`0001`-`0011_target_app_connections`) against a real, locally-
+  installed PostgreSQL 16 cluster (this sandbox's own real sudo/service
+  access), then directly inspected the live database
+  (`\d target_application_connections`,
+  `information_schema.role_table_grants`) — table shape, composite FK,
+  check constraints, the real `FORCE ROW LEVEL SECURITY` policy, and
+  `sovra_app`'s real `SELECT`/`INSERT`/`UPDATE`-only grant (no `DELETE`)
+  all match the PR's claims exactly. `product_truth_check.py
+  --fail-on-unwired` — own run, `17/17` (up from `16/16`). `ruff
+  check`/`ruff format --check`/`mypy` clean on every touched file.
+
+  Task contract re-pulled via `python3 tools/r1_handoff.py packet
+  FTF-04A01 --plan FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause
+  1 and all three negative_acceptance clauses confirmed genuinely met
+  (two via this review's own fault injection/live-DB inspection, two via
+  the real CI integration run, not merely "tests pass"). Dependencies
+  FTF-0401/FTF-0103/FTF-0202/FTF-H006 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them. No blocking defect
+  found.
+
+  Merged PR #209 (`46bcc0ad30e8090d2a921f1c287496bf916c38c5`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+  (`proving_symbol` stays `build_target_application_connection_router`).
+  Ledger entry appended (`docs/certifications/ledger.md`). Ran
+  `scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` updated for `['FTF-04A01']`.
+  `scripts/status.py`: `48/300` certified / `16` product-true before,
+  `49/300` certified / `17` product-true after (this task's own real new
+  live caller, `build_target_application_connection_router`, wired into
+  `apps/api/app/main.py`). Full record: `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md` and `QUEUE.md`'s own "## Done" entry.
+
+## Previous shift
 Updated: 2026-09-23T05:20:00Z (scheduled autonomous relay shift) —
   implemented FTF-04A01 (TargetApplicationConnection schema/API/RBAC),
   submitted PROVISIONAL, not self-certified (Law 4).
