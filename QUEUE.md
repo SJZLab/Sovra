@@ -1,4 +1,26 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #218 — the relay's own tracking
+  PR recording that it had closed PR #207's CI gate-coverage gap) —
+  independently re-reviewed FTF-0206 (`/model_group/info` optional
+  enrichment) now that its CI gate-coverage blocker is closed. Own fresh
+  fault injection (a third vector, distinct from the producer's own two:
+  disabled the 401/403 → `invalid_token` guard) caught for real, reverted
+  byte-identical; CI re-checked directly on PR #207's real head
+  (`643941e`, 27/27 jobs green, `gate`'s own FTF-0206 step confirmed
+  genuinely executing and passing); `product_truth_check.py` 17/17
+  confirmed legitimately unchanged (`proving_symbol` blank); task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0206` — both
+  acceptance and negative_acceptance clauses confirmed genuinely met;
+  dependencies FTF-0201/FTF-0203/FTF-0204 confirmed genuinely CERTIFIED.
+  No blocking defect found — merged PR #207 (merge commit
+  `7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53`), set `docs/spec-matrix.yaml`
+  to `certification_state: CERTIFIED`/`proof_state: L2-CERTIFIED`,
+  appended `docs/certifications/ledger.md`. Certified: 51/300 → 52/300.
+  Product-true: unchanged at 17/17. See "## Done" below and
+  `docs/certifications/ledger.md` for the full record.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
   `claude/wizardly-fermat-axdgxh`) — closed the FTF-0206 half of the CI
   gate-coverage gap that blocked PR #207's own prior "NOT CERTIFIED"
@@ -3540,28 +3562,15 @@ and CERTIFIED 2026-09-23 via PR #210 (merge commit
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full history and evidence.
 
-FTF-0206 (`/model_group/info` optional enrichment) — PR #207
-(`claude/wizardly-fermat-bj3os5` → `main`, commit
-`49d29681764d225afede1336c09a8a3fe2fb6079`), submitted PROVISIONAL, not
-self-certified (Law 4). **Reviewed 2026-09-23 and NOT CERTIFIED — PR
-left open, unmerged, `certification_state` stays PROVISIONAL.** The
-implementation and test content are sound (independently reproduced by
-the reviewing session, including one of the two fault injections); the
-blocker is that `.github/workflows/ci.yml`'s `gate` job never runs
-`tests/tasks/test_ftf_0206.py` at all — no step for it exists on this PR
-or any prior one. Next actionable step (relay, no owner action needed):
-add explicit `gate`-job steps for `tests/tasks/test_ftf_0205.py` (see
-corollary finding below) and `tests/tasks/test_ftf_0206.py`, get one
-fresh real green CI run on the PR's actual head with both new steps
-present, then resubmit for L2 review. Full record:
-`docs/certifications/queue.md`'s "FTF-0206 (PR #207) — NOT CERTIFIED"
-entry and `docs/certifications/watchdog-findings.md`'s 2026-09-23 CI
-gate-coverage finding. **Update, this shift:** merged `origin/main`
-into PR #207's own branch (bringing back the `test_ftf_0205.py`/
-`test_ftf_04a01.py`/`test_ftf_0207.py`/`test_ftf_0506.py` gate steps
-the branch had lost since its own cut) and added the missing
-`test_ftf_0206.py` gate step alongside them — see this file's own top
-`Updated:` entry and `PROGRESS.md` for the full record.
+FTF-0206 is no longer in this section; it was reviewed once (NOT
+CERTIFIED — the `gate` job never ran `tests/tasks/test_ftf_0206.py` at
+all), that CI gate-coverage gap was closed by a later relay shift (see
+PROGRESS.md's 2026-09-23 "closed the FTF-0206 half of the CI
+gate-coverage gap" entry), and it was then independently re-reviewed and
+**CERTIFIED 2026-09-23** via PR #207 (merge commit
+`7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0205 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-23 via PR #205 (merge commit
@@ -5298,6 +5307,29 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   landed first — see that entry above). `scripts/status.py`: `50/300`
   certified before, `51/300` after. Product-true unchanged at 17. Full
   entry: docs/certifications/ledger.md.
+- FTF-0206 — `/model_group/info` optional enrichment. First reviewed and
+  found NOT CERTIFIED (CI's `gate` job never ran `tests/tasks/
+  test_ftf_0206.py`); a later relay shift closed that CI gate-coverage
+  gap on PR #207 itself (merged `origin/main` in, added the missing gate
+  step, watched a fresh green CI run to completion). Re-reviewed and
+  **CERTIFIED 2026-09-23**, merge commit
+  `7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53` (PR #207). Independently
+  re-verified in a fresh git worktree at PR #207's real head (`643941e`):
+  `tests/tasks/test_ftf_0206.py` clean; CI re-checked on that same real
+  head (27/27 jobs green, `gate`'s own FTF-0206 step confirmed present
+  and genuinely passing inline, immediately followed by real "Product-
+  truth: 17/17"/"Status: 51/300" output in the log); a fault injection
+  distinct from the producer's own two (disabled the 401/403 →
+  `invalid_token` guard) — caught for real, reverted byte-identical;
+  `ruff`/`ruff format`/`mypy` clean repo-wide; `product_truth_check.py`
+  17/17 confirmed legitimately unchanged (`proving_symbol` confirmed
+  blank, same disclosed "no live caller" precedent as FTF-0202/FTF-0205/
+  FTF-0207/FTF-0506). Task contract re-pulled via `tools/r1_handoff.py
+  packet FTF-0206` — acceptance and negative_acceptance clauses both
+  confirmed genuinely met. Dependencies FTF-0201/FTF-0203/FTF-0204
+  confirmed genuinely `CERTIFIED`. Ran `sync_certified_status()`.
+  `scripts/status.py`: `51/300` certified before, `52/300` after.
+  Product-true unchanged at 17. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

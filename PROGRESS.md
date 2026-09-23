@@ -1,4 +1,82 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #218 — the relay's own tracking
+  PR recording that it had closed PR #207's CI gate-coverage gap) —
+  independent CERTIFY review of FTF-0206 (`/model_group/info` optional
+  enrichment), CERTIFIED.
+
+  Checked `docs/certifications/queue.md` and `docs/spec-matrix.yaml` per
+  this shift's own mandate: found FTF-0206/PR #207 the sole pending item
+  (`certification_state: PROVISIONAL`), now that the CI gate-coverage gap
+  the immediately preceding relay shift closed (see this file's own
+  entry directly below) no longer blocks it.
+
+  Session-ID check: PR #207's three commits carry
+  `session_015xEcu3kUMRfWMZwkav4cVc` (implementation + PROVISIONAL
+  submission) and `session_014KbgfXyWDwnaSHrYwYChEC` (the `origin/main`
+  merge that closed the CI gate-coverage gap). This session's own ID is
+  `session_01Yaa1kbLLTETtfbnYGModqm` — no match against either,
+  independent per Law 4.
+
+  Diff read directly against PR #207's real head (`643941e`): exactly
+  the task packet's own module (`packages/litellm_client/
+  model_group_info_optional_enrichment.py`) and test
+  (`tests/tasks/test_ftf_0206.py`), plus expected tracking docs and one
+  new `gate`-job CI step. No scope creep.
+
+  CI re-checked directly on that real head, not taken on faith: 27/27
+  jobs `success` (run `35877632291`). Pulled the `gate` job's own raw log
+  and confirmed `tests/tasks/test_ftf_0206.py` genuinely executes and
+  passes inline ("FTF-0206 /model_group/info optional enrichment: all
+  checks passed"), immediately followed by real "Product-truth: 17/17
+  product-true" / "Status: 51/300 certified · 17 product-true" output in
+  that same run — the exact evidence standard the prior "NOT CERTIFIED"
+  review demanded, now genuinely met.
+
+  Own reproduction in a fresh `git worktree` at `643941e`:
+  `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`; `uv sync
+  --all-packages`; `uv run python3 tests/tasks/test_ftf_0206.py` clean.
+  Own fault injection, a third distinct vector from the producer's own
+  two (widened allowlist leak; disabled capability gate): commented out
+  the `response.status in (401, 403)` → `invalid_token` branch entirely —
+  the suite failed for real ("a permission-denied 403 is reported as
+  invalid_token, not fabricated as completed"); reverted from a pre-edit
+  backup, `git diff --stat` confirmed byte-identical, suite re-ran clean
+  immediately after. `uv run ruff check .` / `ruff format --check .` /
+  `mypy .` clean repo-wide (200 source files). `python3
+  scripts/product_truth_check.py --fail-on-unwired` — own run, 17/17,
+  confirmed legitimate: `proving_symbol` for FTF-0206 is blank in
+  `docs/spec-matrix.yaml`, so the unchanged count is not a disguised 0/0
+  pass on a claimed live path.
+
+  `python3 tools/r1_handoff.py packet FTF-0206 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("Optional enrichment runs only with explicit supported capability and
+  safe permission") confirmed met by the shipped module's required,
+  no-default `capability_supported` keyword-only parameter and its single
+  least-privilege inference credential (no escalation path on any
+  outcome); negative_acceptance ("403/not-supported leaves limited
+  metadata without failing basic discovery or gaining management rights")
+  confirmed met by direct code reading of the 403 (`invalid_token`) and
+  404 (`not_supported`) branches, both of which degrade every visible id
+  to `limited` without dropping any. Dependencies FTF-0201/FTF-0203/
+  FTF-0204 confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+  before relying on them.
+
+  No blocking defect found. Merged PR #207 (merge commit
+  `7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit; `proving_symbol` stays blank
+  (no live caller yet, disclosed — FTF-0207 is the later wiring task).
+  Ledger entry appended (`docs/certifications/ledger.md`). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0206']` updated.
+  Certified: 51/300 → 52/300. Product-true: unchanged at 17/17.
+
+  Never touched anything outside certification: no new task work, no
+  design decisions, no queue reprioritization beyond this item's own
+  move to Done.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
   `claude/wizardly-fermat-axdgxh`) — closed the FTF-0206 half of the CI
   gate-coverage gap that a Control-plane review left PR #207 "NOT
