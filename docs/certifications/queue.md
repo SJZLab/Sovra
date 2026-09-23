@@ -11300,3 +11300,171 @@ schema/API/RBAC"). Ran `scripts.task_claim.sync_certified_status()` —
 `['FTF-04A01']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-04A01 moved to
 Done, Certified count bumped to 49/300, Product-true 16 → 17 (this
 task's own real new live caller wired for real).
+
+## 2026-09-23 — FTF-0207 — Alias reconciliation
+- **Branch/commit:** `claude/wizardly-fermat-7rbq4h`, commit
+  `194829be0acf8f95276aee74a1dc6430484f7242` (implementation: module/
+  test/CI wiring). PR to be opened as PROVISIONAL against `main`, title
+  `[relay] FTF-0207: Alias reconciliation`.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh this
+  shift, not trusted from prior context. This session's own designated
+  branch (`claude/wizardly-fermat-7rbq4h`) matched `main`'s tip exactly
+  after `git fetch origin main` (0 commits ahead/behind) — the branch had
+  no unmerged work of its own to preserve. Cross-checked live GitHub
+  state: four open PRs — #211 (CI-wiring fix for FTF-0205's own gate-step
+  gap, not merged yet), #207 (`FTF-0206`, still blocked on its own
+  gate-wiring gap per this file's own prior entry, on a different
+  session's branch), #195/#194 (both `FTF-0304` from other sessions) —
+  none picked, to avoid duplicating real work already in flight or
+  pushing to a branch this session does not own. Recomputed the
+  dependency-ready frontier fresh with a real script (joining
+  `docs/spec-matrix.yaml`'s live `certification_state` against each
+  entry's own `deps=` note): sixteen items came back —
+  `FTF-0206`/`FTF-0207`/`FTF-0302`/`FTF-0303`/`FTF-0304`/`FTF-0408`/
+  `FTF-04A02`/`FTF-04A07`/`FTF-0500A`/`FTF-0500D`/`FTF-0506`/`FTF-0902`/
+  `FTF-1201`/`FTF-1503`/`FTF-1506`/`FTF-R002`. `FTF-0206`/`FTF-0304`
+  excluded (in flight elsewhere, on branches this session does not own).
+  Of the remaining fourteen, picked `FTF-0207` — a real transitive
+  reverse-dependency count against `docs/spec-matrix.yaml` shows it is a
+  dependency of 159 still-uncertified tasks, by far the highest leverage
+  of any dependency-ready candidate that shift (next highest: `FTF-0506`
+  at 143; `FTF-0302`/`FTF-0303`/`FTF-0304` at 149 each but `FTF-0304` was
+  already in flight on two other branches). Its own dependencies
+  (`FTF-0201`, `FTF-0204`, `FTF-0205`) were independently confirmed
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0207 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Left-join
+  case-sensitive alias identities to metadata without replacing
+  user-facing ID"), negative_acceptance ("Colliding aliases/upstream
+  names never merge credentials or grant a model absent from current
+  accessible set"), `database_changes: "No independent schema change.
+  Consume frozen contract."`, `files: [packages/litellm-client/
+  alias_reconciliation.py, tests/tasks/test_ftf_0207.py]`,
+  `dependencies: [FTF-0201, FTF-0204, FTF-0205]` (all CERTIFIED),
+  `contract_owner: FTF-0201`. Path refinement recorded before READY (per
+  Section 84.3's own "initial path suggestions may be refined to reuse
+  coherent existing modules"): the packet names
+  `packages/litellm-client/` (hyphen), but the real, already-CERTIFIED
+  sibling modules this task directly depends on live under
+  `packages/litellm_client/` (underscore, a real importable Python
+  package — confirmed by direct `find` before writing any code); the new
+  module was placed there instead of creating a second, non-importable,
+  hyphenated directory.
+- **Scope disclosed, not hidden:** the packet's own `files` list names
+  only the module and its test, not a route file. Confirmed by direct
+  `grep` that no route anywhere in `apps/api/` calls
+  `enrich_visible_models` (FTF-0205's own already-CERTIFIED function) —
+  it has never been wired into a live response either, per FTF-0205's
+  own `docs/spec-matrix.yaml` entry's disclosed "no live HTTP route yet"
+  scope decision. `docs/TASK_INDEX.md` shows FTF-0208 ("Last-known-good
+  catalog"), FTF-0210 ("Real chat probe"), FTF-0214 ("Model catalog UI")
+  and FTF-0215 ("Periodic sync workflow") all depend on this task rather
+  than on FTF-0204/FTF-0205 directly — this task is therefore not the
+  first place a live route wires reconciled aliases into a response
+  either; that remains open for whichever of those later tasks earns it.
+  Building a route here with no certified caller-side dependency ready
+  for it would be exactly the "placeholder route" Law 11 forbids, so
+  `proving_symbol` stays blank and `product_truth_check.py`'s
+  product-true count is deliberately unchanged (17/17, Law 2) — same
+  disclosed precedent FTF-0202 established before FTF-0203 wired it and
+  FTF-0205 established before this task.
+- **Design:** `reconcile_aliases(*, discovery: ModelDiscoveryResult,
+  enrichment: ModelInfoEnrichmentResult, now=None) ->
+  AliasReconciliationResult` is a pure, synchronous, no-I/O function. It
+  recomputes the left join itself from `discovery.models` (never trusting
+  that its caller already matched `enrichment` to the same visible-id
+  set) against `enrichment.entries` keyed by exact, case-sensitive `id`
+  string equality — no `.lower()`/`.casefold()`/`.upper()` call anywhere
+  in the module. The reconciled `id` is always `discovery`'s own alias
+  string, verbatim, satisfying "without replacing user-facing ID". A
+  discovered alias with no matching enrichment entry falls back to
+  `metadata_status=limited`/empty fields rather than being dropped
+  (Section 3.1's "403/404 on enrichment does not invalidate a successful
+  standard model list", reapplied at this layer). A duplicate id inside a
+  hand-built/adversarial `enrichment.entries` (never produced by the real
+  `enrich_visible_models`, which already dedups internally) resolves
+  deterministically — first occurrence wins, never a silent overwrite.
+  negative_acceptance ("never merge credentials") holds structurally:
+  neither `DiscoveredModel` nor `ModelMetadataEntry` nor this module's own
+  `ReconciledModel` carries a credential field at all, so there is no
+  credential value anywhere in this module's data for a collision to
+  merge.
+- **Tests:** `tests/tasks/test_ftf_0207.py` (real no-DB,
+  no-external-egress checks, wired into the `gate` job). Pure-dataclass
+  checks: exact-id left join attaches real allowlisted fields and a real
+  `metadata_status`; a discovered alias missing from enrichment falls
+  back to limited without being dropped, in discovery order; a
+  same-name-different-case enrichment entry (`org-agent-small` vs.
+  discovered `Org-Agent-Small`) never cross-attaches its fields and never
+  adds a second entry; an enrichment-only id (`unlisted-upstream-model`)
+  absent from discovery never appears in the reconciled result; duplicate
+  ids inside a hand-built enrichment result resolve to the first
+  occurrence deterministically; every reconciled `id` is always
+  discovery's own string; an empty/failed discovery (`DiscoveryState.
+  INVALID_TOKEN`) reconciles to an empty result without raising;
+  reconciling against an empty enrichment result never raises.
+  `test_real_gateway_pipeline_reconciles_end_to_end` additionally wires
+  genuine, unmodified `discover_models`/`enrich_visible_models` calls
+  against a real local HTTPS gateway (a real self-signed CA installed
+  into this sandbox's own trust store for the duration of the run,
+  removed again in `atexit`) and a real local OpenBao-shaped secret
+  backend fixture (same convention `tests/tasks/test_ftf_0204.py`/
+  `tests/tasks/test_ftf_0205.py`, both already CERTIFIED, established) —
+  the real gateway advertises three authorized aliases (`gpt-a`, `gpt-b`,
+  `Gpt-Case`) plus a same-name-different-case `/model/info` row
+  (`gpt-case`) and an upstream-only row (`unlisted-upstream-model`);
+  `reconcile_aliases` on the real results correctly enriches `gpt-a`,
+  falls `gpt-b` back to limited, never cross-attaches onto `Gpt-Case`,
+  and never surfaces `unlisted-upstream-model`. No separate
+  `tests/integration/` file or dedicated CI job is added — same
+  disclosed precedent FTF-0202/FTF-0205 established for a task with no
+  live route or database of its own; this sandbox directly confirmed
+  `sudo -n true`/`openssl`/`update-ca-certificates` are all available, so
+  the real-gateway check ran for real here, not merely in CI. Confirmed
+  clean: `uv run ruff check .`, `uv run ruff format --check .`, `uv run
+  mypy .` (whole repo, both zero-issue after `uv sync --all-packages`),
+  `uv run pytest tests/unit` (3/3), `python3 scripts/validate_spec.py
+  --strict` (clean after this sandbox's own pre-existing shallow-clone
+  `git fetch --unshallow`, same documented precedent as prior shifts),
+  `python3 scripts/product_truth_check.py --fail-on-unwired` (17/17,
+  unchanged), `python3 scripts/status.py` (49/300 certified, 17
+  product-true, unchanged pending certification). Regression suites
+  `tests/tasks/test_ftf_0201.py`/`test_ftf_0203.py`/`test_ftf_0204.py`/
+  `test_ftf_04a01.py` all re-run clean afterward under `uv run` — no
+  regression to any shared module.
+
+**Own fault injection (Law 1, two distinct vectors, both demonstrated
+live in this shift and reverted byte-identical, suite re-confirmed clean
+immediately after each):**
+1. Replaced the left join's outer loop (`for discovered in
+   discovery.models`) with a union (`for discovered in
+   enrichment.entries`) — run in a fresh subprocess against a hand-built
+   discovery/enrichment pair, the mutated module genuinely lets
+   `unlisted-upstream-model` (known only through enrichment) appear in
+   the reconciled result, proving the left-join discipline is
+   load-bearing, not decorative.
+2. Case-folded both sides of the join key (`entry.id.casefold()`/
+   `discovered.id.casefold()`) — run in a fresh subprocess, the mutated
+   module genuinely cross-attaches a differently-cased enrichment entry's
+   real fields (`max_tokens`) onto the correctly-cased discovered alias,
+   proving case-sensitive matching is load-bearing.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`194829be0acf8f95276aee74a1dc6430484f7242`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — PR opened, awaiting independent
+Control-plane L2 review.
+
+## Next shift
+This entry is the sole PROVISIONAL item added this shift — a certifier
+shift should pick it up next. FTF-0207 reaching CERTIFIED would newly
+unblock nothing directly by itself among currently dependency-ready
+tasks (FTF-0208/FTF-0210/FTF-0214/FTF-0215 each still need at least one
+other, separately-uncertified dependency first), but it clears the
+highest-leverage single blocker in the current frontier (159 uncertified
+transitive dependents). `FTF-0206` (PR #207) and the FTF-0205 gate-step
+fix (PR #211) both remain open and unmerged from before this shift,
+unrelated to this task's own branch — see this file's own prior entries.

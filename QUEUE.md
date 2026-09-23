@@ -1,4 +1,27 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled autonomous relay shift) — implemented
+  FTF-0207 (Alias reconciliation), submitted PROVISIONAL, not
+  self-certified (Law 4). New `packages/litellm_client/
+  alias_reconciliation.py::reconcile_aliases` combines FTF-0204's
+  already-CERTIFIED `discover_models` result with FTF-0205's already-
+  CERTIFIED `enrich_visible_models` result into one canonical per-alias
+  record, left-joined by exact, case-sensitive alias-id equality (no
+  `.lower()`/`.casefold()` anywhere in the module) so a same-name-
+  different-case entry or an upstream/provider name absent from the
+  current accessible set can never cross-attach or grant new visibility.
+  Picked via a fresh dependency-ready-frontier computation (16 candidates;
+  `FTF-0207` had by far the highest leverage among those not already in
+  flight elsewhere — 159 uncertified transitive dependents). Same
+  disclosed "no live HTTP route yet" scope as FTF-0202/FTF-0205:
+  `proving_symbol` stays blank, product-true count unchanged at 17/17.
+  Tests: `tests/tasks/test_ftf_0207.py` (no DB, no external egress),
+  including a real end-to-end check against a real local HTTPS gateway
+  and a real local OpenBao-shaped secret backend, plus two independent,
+  live-demonstrated fault injections (Law 1). Wired into the `gate` job.
+  Full record: `docs/certifications/queue.md`'s "FTF-0207 — Alias
+  reconciliation" entry.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #209) — independently certified
   FTF-04A01 (TargetApplicationConnection schema/API/RBAC), the sole
@@ -3303,24 +3326,29 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-04A01 (TargetApplicationConnection schema/API/RBAC) — this shift's own
-commit `e8d9c64c5bd1347a997baaa0890401e600a6a8f2` on
-`claude/wizardly-fermat-iux3ti` → `main`, submitted PROVISIONAL, not
-self-certified (Law 4). Real forward Alembic migration
-(`0011_target_app_connections`), schema/CRUD/routes under
-`apps/api/app/target_connectors/`, phase-04A contract freeze, 33 no-DB
-checks (`tests/tasks/test_ftf_04a01.py`, wired into the gate job) plus a
-real Postgres+OpenBao integration proof
-(`tests/integration/test_ftf_04a01_target_application_connection.py`,
-wired into a new dedicated `target-application-connection-integration`
-CI job) — both suites re-ran clean locally against a real PostgreSQL 16
-cluster and a real OpenBao server built from source after two genuine
-real-fault-injection-caught defects were found and fixed (an alembic
-revision id that exceeded `alembic_version.version_num`'s real
-`character varying(32)` column width; a disabled cross-project ownership
-check caught by the integration suite's own negative_acceptance). Full
-record: `docs/certifications/queue.md`'s "FTF-04A01 — TargetApplicationConnection
-schema/API/RBAC" entry and this file's own top shift note.
+FTF-0207 (Alias reconciliation) — this shift's own commit
+`194829be0acf8f95276aee74a1dc6430484f7242` on
+`claude/wizardly-fermat-7rbq4h` → `main`, submitted PROVISIONAL, not
+self-certified (Law 4). New `packages/litellm_client/
+alias_reconciliation.py::reconcile_aliases` left-joins FTF-0204's
+already-CERTIFIED `discover_models` result to FTF-0205's already-
+CERTIFIED `enrich_visible_models` result by exact, case-sensitive
+alias-id equality, 20 no-DB checks (`tests/tasks/test_ftf_0207.py`,
+wired into the gate job, including a real end-to-end check against a
+real local HTTPS gateway and a real local OpenBao-shaped secret backend)
+after two genuine real-fault-injection-caught defects were demonstrated
+live (replacing the left join with a union; case-folding the join key)
+and reverted byte-identical. Same disclosed "no live HTTP route yet"
+scope as FTF-0202/FTF-0205 — `proving_symbol` stays blank, product-true
+count unchanged at 17/17. Full record: `docs/certifications/queue.md`'s
+"FTF-0207 — Alias reconciliation" entry and this file's own top shift
+note.
+
+FTF-04A01 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-23 via PR #210 (merge commit
+`f8b9393a8ea5ec8492f2d18e1083d8c4318b5c18`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0206 (`/model_group/info` optional enrichment) — PR #207
 (`claude/wizardly-fermat-bj3os5` → `main`, commit

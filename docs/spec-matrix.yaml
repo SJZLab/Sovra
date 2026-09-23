@@ -619,16 +619,73 @@ FTF-0206:
   proving_symbol: ''
   proving_test: ''
 FTF-0207:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Alias reconciliation
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204,
-    FTF-0205
-  proof_state: UNPROVEN
+  evidence_hash: 194829be0acf8f95276aee74a1dc6430484f7242
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204,
+    FTF-0205 (all CERTIFIED). Built for real in a new
+    `packages/litellm_client/alias_reconciliation.py::reconcile_aliases` -- combines FTF-0204's
+    already-CERTIFIED `discover_models` result (the authorized alias inventory) with FTF-0205's
+    already-CERTIFIED `enrich_visible_models` result (per-alias allowlisted metadata) into one
+    canonical per-alias record, the composition `docs/TASK_INDEX.md` shows FTF-0208/FTF-0210/
+    FTF-0214/FTF-0215 all depend on rather than depending on FTF-0204/FTF-0205 directly.
+
+    This task's own acceptance clause ("Left-join case-sensitive alias identities to metadata
+    without replacing user-facing ID") is enforced as this module's own independent,
+    defense-in-depth boundary: `reconcile_aliases` recomputes the join itself from
+    `discovery.models` (the sole source of both existence and display identity) against
+    `enrichment.entries` keyed by exact, case-sensitive `id` string equality (no
+    `.lower()`/`.casefold()` anywhere in the module) -- it never trusts that its caller already
+    matched the two. The reconciled `id` is always discovery's own alias string, verbatim, never
+    replaced by anything the enrichment side reports.
+
+    negative_acceptance ("Colliding aliases/upstream names never merge credentials or grant a
+    model absent from current accessible set") is satisfied two ways: structurally, since neither
+    `DiscoveredModel` nor `ModelMetadataEntry` nor this module's own `ReconciledModel` carries a
+    credential field at all (nothing exists for a collision to merge); and behaviorally, since an
+    enrichment id that does not exactly (case-sensitively) match a discovered alias -- whether a
+    same-name-different-case sibling or a genuine upstream/provider name absent from the current
+    accessible set -- is never consulted, proven both at the pure-function level and against a
+    real local HTTPS gateway.
+
+    Scope decision (disclosed, same precedent FTF-0202/FTF-0205 already established for "no live
+    HTTP route yet"): this task's own packet `files` list names only the module and its test, not
+    a route file -- no route in `apps/api/app/litellm/connection_routes.py` calls
+    `enrich_visible_models` either, so there is nothing yet for this module's own result to be
+    wired into. `proving_symbol` stays blank and `product_truth_check.py`'s product-true count is
+    deliberately unchanged (17/17, Law 2), exactly as FTF-0202 was before FTF-0203 wired it and
+    FTF-0205 was before this task.
+
+    Tests: `tests/tasks/test_ftf_0207.py` (real no-DB, no-external-egress checks). Pure-dataclass
+    checks cover: exact-id left join attaches real allowlisted fields; a missing enrichment entry
+    falls back to `limited` without dropping the alias; a same-name-different-case enrichment
+    entry never cross-attaches and never adds a second entry; an enrichment-only id (upstream
+    name/metadata-only alias) never appears in the reconciled result; duplicate ids inside a
+    hand-built enrichment result resolve deterministically (first wins); the reconciled `id` is
+    always discovery's own string; an empty/failed discovery reconciles to an empty result without
+    raising. `test_real_gateway_pipeline_reconciles_end_to_end` additionally wires genuine,
+    unmodified `discover_models`/`enrich_visible_models` calls against a real local HTTPS gateway
+    (real self-signed CA installed into this sandbox's own trust store) and a real local
+    OpenBao-shaped secret backend, then reconciles their real results -- same no-DB/no-external-
+    egress local-server pattern `tests/tasks/test_ftf_0204.py`/`tests/tasks/test_ftf_0205.py`
+    (both already CERTIFIED) established; no separate `tests/integration/` file or CI job is added,
+    matching FTF-0202/FTF-0205's own precedent for a task with no live route or database of its
+    own.
+
+    Own fault injection (Law 1, two distinct vectors, both demonstrated live and reverted
+    byte-identical): (1) replaced the left-join's outer loop (`for discovered in
+    discovery.models`) with a union (`for discovered in enrichment.entries`) -- run in a fresh
+    subprocess, the mutated module genuinely grants a model absent from the accessible set
+    (`unlisted-upstream-model` appears in the result); reverted, re-ran clean. (2) case-folded both
+    sides of the join key (`entry.id.casefold()`/`discovered.id.casefold()`) -- run in a fresh
+    subprocess, the mutated module genuinely cross-attaches a differently-cased enrichment entry's
+    fields onto the real alias; reverted, re-ran clean.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:
   certification_state: NONE
   criticality: MUST
