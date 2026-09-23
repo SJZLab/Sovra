@@ -10820,3 +10820,83 @@ Done, Certified count bumped to 47/300, Product-true 15/15 → 16/16.
 
 **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
 self-certified — awaiting Control plane L2 review per Law 4.
+
+## 2026-09-23 — Control plane: FTF-0205 (PR#205) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #205): `session_01MUWNviq4gzsqxZ5NB7Yigz`. PR #205 was the sole
+PROVISIONAL item in this file at shift start.
+
+Session-ID compared against PR #205's two commits (`6545edb`, `d2c8e37`,
+both carry `session_01RmL7kyQS87ukMEHHgUQ7fN`) — no overlap, independent
+per Law 4.
+
+- The webhook fired the instant PR #205 opened, with CI still
+  `in_progress`. Polled `repos/SJZLab/Sovra/commits/d2c8e37.../check-runs`
+  directly via the GitHub REST API until every job reported `completed`
+  — **26/26 real jobs `success`**, including `gate`,
+  `secret-manager-integration` and `dataset-source-connection-integration`
+  on the real, unmodified PR head (`d2c8e37`). The latter two were still
+  building a real from-source OpenBao binary when first observed;
+  confirmed genuinely progressing (real non-zero `runner_id`s, real
+  per-step timestamps advancing between polls) rather than a repeat of
+  the earlier documented runner-provisioning outage.
+- Diff read directly: `packages/litellm_client/v1_model_info_enrichment.py`
+  (`enrich_visible_models` — attaches allowlisted `GET /model/info` fields
+  onto exactly the caller's own already-authorized `visible_model_ids` on
+  a strict left-join basis, Section 3.2's "no authorization union" applied
+  to enrichment; `_ALLOWLISTED_MODEL_INFO_FIELDS` is an allow list, not a
+  denylist — `litellm_params` is never read at all and only named fields
+  with plain scalar values ever pass through; a denied/failed/malformed
+  call never drops or replaces an already-visible id, downgrading it to
+  `metadata_status=limited` with empty fields instead). Diff scope
+  matches the task packet's own `files` list (module + test only) — no
+  route wired by this task, the same disclosed producer/later-wiring
+  scope decision FTF-0202/FTF-0203 already established (`FTF-0207` is the
+  later real caller).
+- Own reproduction, a separate git worktree at the real merged head
+  (`d2c8e37`, not the producer's own claimed run): `uv sync
+  --all-packages`; `uv run python3 tests/tasks/test_ftf_0205.py` — "all
+  checks passed". `tests/tasks/test_ftf_0201.py`/`test_ftf_0202.py`/
+  `test_ftf_0203.py`/`test_ftf_0204.py` all re-run clean afterward — no
+  regression to any shared module.
+- Own fault injection, a vector distinct from the producer's own two
+  (widening the allowlist and reintroducing an authorization union):
+  made a denied/invalid-token `/model/info` response return an empty
+  `entries` tuple outright instead of downgrading every visible id to
+  `limited` — re-ran the no-DB suite: exactly 1 check failed for real,
+  "every visible id is still present, downgraded to limited, never
+  dropped" — precisely the negative_acceptance risk this task exists to
+  prevent. Reverted from a pre-edit backup, `diff` confirmed
+  byte-identical, suite re-ran clean.
+- `ruff check .`/`ruff format --check .` clean (repo-wide in this
+  reproduction, 0 findings); `mypy .` clean (185 files, "Success: no
+  issues found"). `CLAUDE.md.sha256` verified against `sha256sum
+  CLAUDE.md` on the real merged head.
+- `scripts/product_truth_check.py --fail-on-unwired` — own run, `16/16`;
+  `proving_symbol` genuinely blank for this criterion (no live caller
+  yet, disclosed) — 0/0 confirmed a legitimate pass, not a gap, for a
+  criterion that claims no proving_symbol.
+- `python3 tools/r1_handoff.py packet FTF-0205 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance clauses ("Enrich
+  only visible aliases with allowlisted fields, retaining limited
+  metadata when denied/absent"; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence
+  recorded") and the full negative_acceptance clause ("Raw credentials,
+  admin-only provider routes and metadata-only aliases are neither
+  stored nor exposed") confirmed genuinely met by the diff and this
+  session's own fault injection above, not merely "tests pass" —
+  `contract_owner: FTF-0201` confirmed real.
+- Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`b421fb366870167dcb7ecaab7a658adf1c2c6510`); `proving_symbol` stays
+blank (no live caller yet, disclosed above). Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-0205 — `/v1/model/info`
+enrichment"). Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-0205']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0205 moved to
+Done, Certified count bumped to 48/300, Product-true stays 16/16
+(unchanged — this task discloses no live wiring).

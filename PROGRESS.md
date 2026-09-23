@@ -13140,3 +13140,113 @@ other sessions — leave those for their own producer sessions or a
 certifier, do not redo the work. `FTF-0206` (`/model_group/info`
 optional enrichment) is now dependency-ready and unclaimed — a natural
 next relay pick, no disclosed DoD-clarity gap found so far.
+
+## 2026-09-23 — Control plane: certify FTF-0205 (`/v1/model/info` enrichment)
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook
+for PR #205 (https://github.com/SJZLab/Sovra/pull/205,
+`claude/wizardly-fermat-h60rso` → `main`), the sole PROVISIONAL item in
+`docs/certifications/queue.md` at shift start.
+
+**Session-ID check:** both commits on PR #205 (`6545edb`, `d2c8e37`)
+carry `Claude-Session: .../session_01RmL7kyQS87ukMEHHgUQ7fN`; this
+reviewing session's own ID is `session_01MUWNviq4gzsqxZ5NB7Yigz` — no
+match, independent per Law 4.
+
+**CI genuinely checked, not taken on faith:** the webhook fired the
+instant PR #205 opened, with CI still `in_progress`. Polled
+`repos/SJZLab/Sovra/commits/d2c8e37.../check-runs` directly via the
+GitHub REST API until every job reported `completed` — **26/26 real
+jobs `success`**, including `gate`, `secret-manager-integration` and
+`dataset-source-connection-integration`. The latter two were still
+compiling a real from-source OpenBao binary when first observed;
+checked `actions/runs/.../jobs` directly and confirmed real non-zero
+`runner_id`s with real per-step completion timestamps advancing between
+polls — genuinely running, not a repeat of the earlier
+runner-provisioning outage this repo's history documents.
+
+**Diff read directly:** `packages/litellm_client/
+v1_model_info_enrichment.py` (`enrich_visible_models` — takes the
+caller's own already-authorized `visible_model_ids` and attaches
+allowlisted `GET /model/info` fields on a strict left-join basis
+(Section 3.2's "no authorization union" applied to enrichment): an id
+absent from `visible_model_ids` is never iterated into the result.
+`_ALLOWLISTED_MODEL_INFO_FIELDS` is an allow list, not a denylist — the
+real gateway response's own `litellm_params` sibling, which carries
+`api_key`/`api_base`, is never read by `_parse_model_info` at all, and
+only named fields with plain JSON scalar values ever pass
+`_allowlisted_fields`'s filter. A denied/failed/malformed `/model/info`
+call never drops or replaces an already-visible id — every entry in
+`visible_model_ids` still gets a real result, downgraded to
+`metadata_status=limited` with empty fields.) Diff scope matches the
+task packet's own `files` list (module + test only) — no route wired by
+this task, the same disclosed producer/later-wiring scope decision
+FTF-0202/FTF-0203 already established (`FTF-0207` is the later task that
+wires it in).
+
+**Own reproduction, a separate git worktree at the real merged head
+(`d2c8e37`):** `uv sync --all-packages`; `uv run python3
+tests/tasks/test_ftf_0205.py` — "all checks passed".
+`tests/tasks/test_ftf_0201.py`/`test_ftf_0202.py`/`test_ftf_0203.py`/
+`test_ftf_0204.py` all re-run clean afterward — no regression to any
+shared module.
+
+**Own fault injection, a vector distinct from the producer's own two**
+(which targeted widening the allowlist to return every raw field
+verbatim, and reintroducing an authorization union): made a
+denied/invalid-token `/model/info` response (`response.status in (401,
+403)`) return an empty `entries` tuple outright instead of downgrading
+every visible id to `limited` — re-ran the no-DB suite: exactly 1 check
+failed for real, "every visible id is still present, downgraded to
+limited, never dropped" — precisely the negative_acceptance risk this
+task exists to prevent (a denied enrichment call silently losing an
+already-authorized model from the caller's result). Reverted from a
+pre-edit backup; `diff` confirmed byte-identical; the suite re-ran clean
+immediately after.
+
+`ruff check .`/`ruff format --check .` clean repo-wide in this
+reproduction (0 findings — no `UP042` finding observed on
+`EnrichmentState` either, stricter than but not contradicting the
+producer's own disclosed pre-existing-convention note about `main`).
+`mypy .` clean (185 source files, "Success: no issues found").
+`CLAUDE.md.sha256` verified against `sha256sum CLAUDE.md` on the real
+merged head. `scripts/product_truth_check.py --fail-on-unwired` —
+`16/16`; `proving_symbol` is genuinely blank for this criterion (no live
+caller yet, disclosed above) — 0/0 confirmed a legitimate pass, not a
+gap, per the same disclosed-scope class FTF-0202 already established.
+
+`python3 tools/r1_handoff.py packet FTF-0205 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — both acceptance clauses ("Enrich
+only visible aliases with allowlisted fields, retaining limited metadata
+when denied/absent"; "Independent review, exact merged commit, real
+relevant integration and negative-test evidence recorded") and the
+negative_acceptance clause ("Raw credentials, admin-only provider routes
+and metadata-only aliases are neither stored nor exposed") confirmed
+genuinely met by the diff and this session's own fault injection above,
+not merely "tests pass"; `contract_owner: FTF-0201` confirmed real.
+Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed genuinely `CERTIFIED`
+in `docs/spec-matrix.yaml` before relying on them.
+
+**No blocking defect found.** Merged PR #205 (merge commit
+`b421fb366870167dcb7ecaab7a658adf1c2c6510`). `docs/spec-matrix.yaml` set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit (`proving_symbol` stays blank —
+no live caller yet, disclosed above). Ledger entry appended
+(`docs/certifications/ledger.md`). Ran
+`scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/
+`docs/implementation/TRACKER.json` updated for `['FTF-0205']`.
+`QUEUE.md`/`PROGRESS.md` updated: FTF-0205 moved to Done, Certified
+count bumped to 48/300, Product-true stays 16/16 (unchanged — this task
+discloses no live wiring).
+
+## Next shift
+`docs/certifications/queue.md` has no PROVISIONAL items after this
+certification. `FTF-0206` (`/model_group/info` optional enrichment) is
+dependency-ready and unclaimed — a natural next relay pick. `FTF-0207`
+("Alias reconciliation") is not yet dependency-ready: it depends on
+FTF-0201 (CERTIFIED)/FTF-0204 (CERTIFIED)/FTF-0205 (now CERTIFIED) —
+recompute the dependency-ready frontier fresh rather than trusting this
+note alone, since FTF-0206 may not be a hard dependency of FTF-0207 per
+`docs/spec-matrix.yaml`'s own `deps` field. `FTF-0304` still has two
+open, unmerged candidate PRs (#194/#195) from other sessions — leave
+those for their own producer sessions or a certifier, do not redo the
+work.

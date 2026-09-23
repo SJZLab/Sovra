@@ -481,10 +481,10 @@ FTF-0204:
   proving_symbol: discover_models
   proving_test: tests/tasks/test_ftf_0204.py
 FTF-0205:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: '`/v1/model/info` enrichment'
-  evidence_hash: 6545edb90975b768797e4a9e3d760c3185bfeb21
+  evidence_hash: b421fb366870167dcb7ecaab7a658adf1c2c6510
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203,
@@ -577,7 +577,35 @@ FTF-0205:
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- PR opened, awaiting independent
     Control-plane L2 review.
-  proof_state: L1-PROVEN
+
+    CERTIFIED 2026-09-23 by an independent Control-plane session (session_01MUWNviq4gzsqxZ5NB7Yigz;
+    no overlap with either of PR #205's commit authors, session_01RmL7kyQS87ukMEHHgUQ7fN --
+    independent per Law 4). Watched the real CI run on PR #205's real head
+    (d2c8e373b68ae1bddf431341bcb73efe52d6b9c2) to completion via the GitHub REST API -- 26/26 real
+    jobs `success`, including `gate`, `secret-manager-integration` and
+    `dataset-source-connection-integration` (the latter two still building a real from-source
+    OpenBao binary when first observed, confirmed genuinely progressing via real non-zero
+    `runner_id`s and real per-step timestamps, not a stalled/outage run). Own reproduction in a
+    separate git worktree at the real merged head: `uv sync --all-packages`; `tests/tasks/
+    test_ftf_0205.py` -- "all checks passed". Own fault injection, a vector distinct from the
+    producer's own two: made a denied/invalid-token `/model/info` response drop every entry
+    outright (`ModelInfoEnrichmentResult(EnrichmentState.INVALID_TOKEN, tuple(), ...)`) instead of
+    downgrading each visible id to `limited` -- caught for real ("every visible id is still
+    present, downgraded to limited, never dropped" failed), reverted byte-identical, suite
+    re-confirmed clean. `ruff check .`/`mypy .` clean repo-wide in this reproduction (0 findings --
+    stricter than, not contradicting, the producer's own disclosed pre-existing-convention note).
+    `product_truth_check.py --fail-on-unwired` confirmed `16/16` (0/0 for this criterion is
+    legitimate: `proving_symbol` is genuinely blank, this task discloses no live caller yet, same
+    accepted class as FTF-0202 before FTF-0203 wired it). Regression: `test_ftf_0201.py`/
+    `test_ftf_0202.py`/`test_ftf_0203.py`/`test_ftf_0204.py` all re-run clean. `CLAUDE.md.sha256`
+    verified against `sha256sum CLAUDE.md`. Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed
+    genuinely `CERTIFIED` in this file before relying on them. Task contract re-pulled via
+    `python3 tools/r1_handoff.py packet FTF-0205 --plan FINE_TUNING_FACTORY_RELEASE_1.md` -- both
+    acceptance clauses and the negative_acceptance clause confirmed genuinely met by the diff and
+    this session's own fault injection above, not merely "tests pass". No blocking defect found.
+    Merged PR #205 (merge commit `b421fb366870167dcb7ecaab7a658adf1c2c6510`); `evidence_hash` set
+    to that commit. Ledger entry appended (`docs/certifications/ledger.md`).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0205.py
 FTF-0206:
