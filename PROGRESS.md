@@ -95,11 +95,32 @@ Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
   merely present in the workflow file — this is the exact evidence
   standard the Control-plane review demanded before resubmission.
 
-  Not merged, not self-certified (Law 4) — PR #207 stays open,
-  `docs/spec-matrix.yaml`'s FTF-0206 entry stays PROVISIONAL/L1-PROVEN
-  exactly as submitted. This shift's own scope is the CI-wiring gap only;
-  resubmitting for L2 review is a Control-plane action, not a relay one
-  — the PR is now ready for that review to actually run.
+  Confirmed the full run to completion, not just the `gate` job: all
+  27/27 jobs on run `35877632291` finished `completed`/`success`,
+  including `secret-manager-integration` and
+  `target-application-connection-integration` (the two slower jobs that
+  build OpenBao/run against real Postgres). Pulled the `gate` job's own
+  raw log directly (`get_job_logs`, `return_content: true`) and confirmed
+  `tests/tasks/test_ftf_0206.py` genuinely executes and passes inline,
+  immediately after the FTF-0506 step: "FTF-0206 /model_group/info
+  optional enrichment: all checks passed", followed by "Product-truth:
+  17/17 product-true" and "Status: 51/300 certified · 17 product-true" —
+  identical to this session's own local reproduction, confirming CI ran
+  the real code, not a stale cache.
+
+  **Update:** while this session was preparing its own tracking-doc PR
+  for this exact evidence, another session merged PR #207 into `main`
+  directly (`merge_pull_request`, merge commit `7ee47f8`,
+  `merged_by: samerzakaria`) — consistent with CLAUDE.md's own "Do
+  without asking: merge on green + L1 doc (PROVISIONAL)" now that the CI
+  gap this shift closed made a real green run possible. Confirmed on
+  `main`: `.github/workflows/ci.yml` carries the FTF-0206 gate step this
+  shift added, and `docs/spec-matrix.yaml`'s FTF-0206 entry is still
+  exactly `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` — not self-certified, Law 4 intact. This shift's own scope
+  (the CI-wiring gap) is complete either way; a Control-plane session
+  should resubmit FTF-0206 for L2 review next, now against `main`
+  directly rather than against a PR.
 
   STEP 3: this entry, plus `QUEUE.md`'s and `docs/certifications/
   queue.md`'s matching updates, written before any compaction, then
