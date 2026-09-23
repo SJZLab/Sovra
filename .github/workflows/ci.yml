@@ -207,6 +207,8 @@ jobs:
         # half of that gap, now closeable since this task's test file
         # exists on this branch.
         run: uv run python3 tests/tasks/test_ftf_0206.py
+      - name: FTF-0208 negative-test proof (Last-known-good catalog, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0208.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

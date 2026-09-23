@@ -11955,3 +11955,147 @@ to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
 Ledger entry appended (`docs/certifications/ledger.md`). Ran
 `scripts.task_claim.sync_certified_status()` — `['FTF-0206']` updated.
 Certified: 51/300 → 52/300. Product-true: unchanged at 17/17.
+
+## 2026-09-23 — FTF-0208 — Last-known-good catalog
+Relay shift: STEP 0 (`sha256sum CLAUDE.md` verified clean against the
+committed `CLAUDE.md.sha256`). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh -- no Owner actions, no Active items,
+no Provisional items at shift start (FTF-0206 was the last, now CERTIFIED
+via PR #207/#218). `mcp__github__list_pull_requests` (open, this repo)
+showed only PRs #194/#195 (both FTF-0304, unrelated -- left alone per
+`PROGRESS.md`'s own prior note, other sessions' work).
+
+**STEP 1:** Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (parsing each task's own `notes` field `deps=...`
+list, not trusting any prior shift's cached claim) rather than assuming
+FTF-0207's own certification unlocked any specific next task by name.
+17 tasks were genuinely dependency-ready and uncertified; of those, only
+FTF-0304 had open PRs (#194/#195, other sessions -- left alone). Picked
+**FTF-0208** ("Last-known-good catalog", deps FTF-0201/FTF-0207, both
+confirmed `CERTIFIED`) -- the lowest-numbered ready item and a direct
+continuation of this same LiteLLM-client task family (FTF-0201/0203-0207)
+already established in `packages/litellm_client/`. "Working: FTF-0208."
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py packet
+FTF-0208 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read Section 3.3
+("Historical catalog is not current authority") closely -- the section
+this task's own contract cites -- plus `alias_reconciliation.py` (FTF-0207)
+and `v1_models_discovery.py` (FTF-0204) as the closest real precedents:
+`discover_models` deliberately never retains a previous result, so nothing
+existing yet lets a caller (a) keep a removed name visible for audit while
+(b) never treating its history as authorization to call. Formed the
+hypothesis: a new `packages/litellm_client/last_known_good_catalog.py`
+holds a stateful, in-memory `LastKnownGoodCatalog` a caller feeds
+successive `ModelDiscoveryResult`s into; every id ever seen keeps a row,
+always exactly one of `callable`/`stale`/`removed`; a successful discovery
+immediately marks any previously-active id absent from the fresh list
+`removed` (even on a suspicious >50% drop, which only raises a disclosed
+alert, never restores access); a 401/403 immediately revokes access and
+downgrades `callable` entries to `stale`, while an ordinary connectivity
+failure is merely `degraded`, touching neither entries nor the freshness
+clock; and `is_call_authorized` refuses unconditionally on revocation or
+once the default 5-minute TTL has elapsed, before ever consulting an
+entry's own status. No code written yet at this point.
+
+**STEP 2 (E):** Implemented `packages/litellm_client/
+last_known_good_catalog.py` (`LastKnownGoodCatalog`, `CatalogEntry`,
+`CatalogSnapshot`, `CatalogEntryStatus`, `AccessState`,
+`AuthorizationDecision`/`AuthorizationReason`, `DEFAULT_FRESHNESS_TTL`).
+Wrote `tests/tasks/test_ftf_0208.py` (24 test functions, no DB, no
+external egress -- same real local HTTP secret-backend server + real
+local HTTPS gateway + real ephemeral CA fixture pattern
+`tests/tasks/test_ftf_0204.py`/`test_ftf_0207.py` already established).
+
+**Shown able to fail first (Law 1):** moved the not-yet-restored module
+aside immediately after writing the test file and ran
+`python3 tests/tasks/test_ftf_0208.py` directly: produced a real
+`ModuleNotFoundError: No module named
+'packages.litellm_client.last_known_good_catalog'` -- a genuine failure
+bound to this task's own import. The module was then restored and the
+full suite re-run clean (all 24 checks, including the real-gateway
+end-to-end sequence: this sandbox has `openssl`/`update-ca-certificates`/
+passwordless `sudo`, so the live check genuinely ran, not merely skipped).
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays `17/17`
+(unchanged -- Law 2, this task deliberately has no live caller yet, same
+disclosed precedent FTF-0202/FTF-0205/FTF-0207 already established;
+`proving_symbol` left blank). `scripts/status.py` stays `52/300 certified
+· 17 product-true`. `uv run ruff check .`/`uv run ruff format --check .`
+clean repo-wide using the *pinned* toolchain (`uv run ruff --version` ->
+`0.6.9`, matching `pyproject.toml`'s `ruff>=0.6.9,<0.7` and CI's own `uv
+run ruff` invocation) -- disclosed rather than hidden: this sandbox's
+globally-installed `ruff` is `0.15.8`, a much newer version whose default
+`UP` rule set additionally flags `UP042` ("inherit from `enum.StrEnum`")
+against 13 *pre-existing*, already-CERTIFIED `class X(str, Enum)`
+declarations elsewhere in this same repo (`DiscoveryState`,
+`EnrichmentState`, `ModelMetadataStatus`, etc.) -- confirmed by running
+`ruff check .` against a clean `git stash -u` of this session's own
+changes, which still showed all 13 pre-existing errors under the global
+binary. This is a real version-drift trap in this sandbox, not a defect
+in `main`: CI genuinely runs `uv run ruff check .` (pinned `0.6.9`), which
+does not have `UP042`, so `main` is genuinely green today; using the
+wrong binary would have produced a false-positive "pre-existing lint
+debt" finding. Re-verified `uv run ruff check .` reports zero errors
+repo-wide after fixing this task's own 6 genuine `0.6.9`-flagged issues
+(one unsorted import block, five `E501` line-length violations, all in
+this task's own new test file). `uv run mypy
+packages/litellm_client/last_known_good_catalog.py
+tests/tasks/test_ftf_0208.py` clean ("Success: no issues found in 2
+source files"). `uv run python3 tests/tasks/test_ftf_0204.py`/
+`test_ftf_0207.py` both re-run clean afterward -- no regression to either
+already-CERTIFIED module this task's own module imports from.
+`scripts/validate_spec.py --strict` clean after `git fetch --unshallow`
+(this sandbox's own pre-existing shallow-clone artifact, same documented
+precedent prior shifts already established).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical and the suite re-confirmed clean immediately after each,**
+run in a fresh subprocess each time:
+1. Removed the `access_state == AccessState.REVOKED` early-return block
+   from `is_call_authorized` entirely. The unmodified test asserting "a
+   revoked connection denies a still-fresh, previously callable id
+   immediately" genuinely failed (the mutated module let a revoked
+   connection keep authorizing it) -- reverted, `diff` confirmed
+   byte-identical, suite re-ran clean.
+2. Replaced `_apply_successful`'s real `removed_ids = previous_active_ids
+   - new_ids` computation with a hard-coded empty set. Five checks
+   genuinely failed for real (a name absent from a fresh successful
+   discovery stayed `callable` and authorized instead of becoming
+   `removed`/unselectable, and a later revocation then incorrectly
+   resurrected it to `stale` instead of leaving an already-`removed`
+   entry alone) -- reverted, `diff` confirmed byte-identical, suite
+   re-ran clean.
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0208.py`) to
+`.github/workflows/ci.yml` in the *same* commit as the implementation,
+deliberately not deferred -- learning directly from the disclosed
+FTF-0205/FTF-0206 watchdog finding (`docs/certifications/
+watchdog-findings.md`) where a missing gate-wiring step let a merged PR's
+own test suite go completely unexecuted by CI until a later shift noticed
+and fixed it.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`8b695ab902a96891944c65bcbc42dcaebcee6f5d`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** -- pushed to `claude/wizardly-fermat-bbv5gh`,
+awaiting independent Control-plane L2 review.
+
+## Next shift
+`docs/spec-matrix.yaml` now has one PROVISIONAL entry (`FTF-0208`)
+awaiting independent Control-plane L2 review -- a certifier shift should
+pick it up next. Recomputing the dependency-ready frontier fresh (do not
+trust this note alone) at this shift's end showed 16 other genuinely
+ready, uncertified, unclaimed tasks besides FTF-0208 itself (e.g.
+FTF-0210, FTF-0302, FTF-0303, FTF-04A02, FTF-04A07, FTF-0500A, FTF-0500D,
+FTF-0507, FTF-0902, FTF-1201, FTF-1503, FTF-1506, FTF-1703, FTF-R002) --
+a future relay shift should re-derive this list itself from
+`docs/spec-matrix.yaml`'s own `notes`/`deps` rather than trusting this
+enumeration, since a task certified after this shift ends could unlock
+further items. `FTF-0304` still has two open, unmerged candidate PRs
+(#194/#195) from other sessions -- leave those for their own producer
+sessions or a certifier, do not redo the work.
+
+## 2026-09-23 — FTF-0208 — record the opened PR link
+PR: https://github.com/SJZLab/Sovra/pull/220 (`claude/wizardly-fermat-bbv5gh`
+-> `main`). No other action this entry.
