@@ -1,5 +1,102 @@
 # PROGRESS — Sovra
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #222) — independent CERTIFY
+  review of FTF-0209 (Catalog anomaly detector), CERTIFIED.
+
+  Checked `docs/certifications/queue.md` per this shift's own mandate:
+  found FTF-0209/PR #222 the sole pending PROVISIONAL item.
+
+  Session-ID check: PR #222's commits (implementation, PROVISIONAL
+  submission, PR-link record) all carry
+  `session_01WHznaRLHjmkr46cKdoX26J`. This session's own ID is
+  `session_017u7Tfwvfkiu4M9yR7jJAye` — no match, independent per Law 4.
+
+  Diff read directly against PR #222's real, current head (`4a5b020`,
+  fetched fresh — the webhook's advertised head `a7a0904` was already one
+  commit stale by the time this review ran; the intervening commit was
+  only a non-functional `docs/certifications/queue.md` PR-link record,
+  same session ID): exactly the task packet's own new module
+  (`packages/litellm_client/catalog_anomaly_detector.py`) and test
+  (`tests/tasks/test_ftf_0209.py`), plus one new `gate`-job CI step, the
+  new task-packet doc, and expected tracking-doc updates. No scope creep.
+
+  CI re-checked directly on that real head, not taken on faith: waited
+  out the actual run (it was still queued/in-progress when this shift
+  began) to completion — 27/27 jobs `success` (run `35906197462`). The
+  `gate` job, which runs `tests/tasks/test_ftf_0209.py` inline, completed
+  `success`. Three jobs (`secret-manager-integration`/
+  `dataset-source-connection-integration`/
+  `target-application-connection-integration`) took 5-8 minutes each
+  because they build OpenBao from source on the runner — the same
+  documented shape as FTF-0208's own review, not a failure or a stall.
+
+  Own reproduction directly in this working tree at the real merged
+  content: `python3 tests/tasks/test_ftf_0209.py` — "FTF-0209 catalog
+  anomaly detector: all checks passed" (all 20 checks). Two own fault
+  injections reproducing the producer's own claimed vectors
+  independently rather than taking them on faith: (1) removed the
+  "already acknowledged" guard from `acknowledge()` — the
+  double-acknowledge negative check genuinely failed; (2) made
+  `acknowledge()` unconditionally restore every wrapped-catalog entry to
+  `callable` (the exact negative_acceptance risk: "...or restored
+  unauthorized execution") — 10 checks genuinely failed for real (every
+  removed id came back authorized after acknowledgement, and the
+  byte-identical-catalog-state check broke). Both reverted from a
+  pre-edit backup, `diff` confirmed byte-identical, suite re-ran clean
+  immediately after each. `uv run ruff check .` / `ruff format --check .`
+  / `mypy packages/litellm_client/catalog_anomaly_detector.py
+  tests/tasks/test_ftf_0209.py` clean, pinned toolchain (`ruff 0.6.9`,
+  matching CI). `python3 tests/tasks/test_ftf_0208.py` (this task's own
+  CERTIFIED dependency) re-run clean — no regression. `tests/tasks/
+  test_ftf_0201.py` could not be re-run in this sandbox (`uvicorn` not
+  installed locally, an environment gap unrelated to this diff — the
+  PR's own file list has no `pyproject.toml`/`uv.lock` change, and CI's
+  own `gate` job already independently proves it via `uv sync`).
+  `python3 scripts/product_truth_check.py --fail-on-unwired` — own run,
+  17/17, confirmed legitimate: `proving_symbol` for FTF-0209 is blank in
+  `docs/spec-matrix.yaml` (no live caller yet, same disclosed precedent
+  as FTF-0202/FTF-0205/FTF-0207/FTF-0208), so the unchanged count is not
+  a disguised 0/0 pass on a claimed live path.
+
+  `python3 tools/r1_handoff.py packet FTF-0209 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("A >50% reduction triggers recorded anomaly/retry/admin
+  acknowledgement while immediate authorization remains enforced")
+  confirmed met by `record()`'s own ordering (the wrapped catalog is
+  always updated *before* any anomaly evaluation runs, so nothing in
+  this detector's own retry/acknowledgement state can ever gate real
+  authorization) plus `AnomalyStatus`'s forward-only state machine
+  (`open` -> `retry_pending` -> `escalated` -> `acknowledged`, never
+  silently reverting). negative_acceptance ("Repeated empty list cannot
+  cause silent destructive deletion or restored unauthorized execution")
+  confirmed met structurally: no delete/purge operation anywhere in this
+  module's public surface, an open incident is updated in place rather
+  than discarded or duplicated across further reduced/empty successful
+  responses, and `acknowledge()`/`retry()` never read or write the
+  wrapped catalog's entries at all — confirmed both by direct code
+  reading and this review's own fault injection #2 above. Dependencies
+  FTF-0201/FTF-0208 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml`.
+
+  One observation noted for the record, not a defect: `acknowledge()`'s
+  current signature has no parameter that could reach the wrapped
+  catalog, so nothing in the existing test suite exercises (or needs to
+  exercise) a caller-supplied catalog reference — not a gap against this
+  task's own scope (no live caller exists yet, disclosed), but flagged
+  for FTF-0215 (the real wiring/route task) to keep that same guarantee
+  true of whatever API surface ultimately exposes `acknowledge()`.
+
+  No blocking defect found. Merged PR #222 (merge commit
+  `78ab4537298e1b484f42fffc0d2ae5d27d85137f`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit (`proving_symbol` stays blank
+  — no live caller yet, disclosed). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0209']` updated.
+  `scripts/status.py`: `53/300` certified before, `54/300` after.
+  Product-true unchanged at 17. Full entry: `docs/certifications/
+  ledger.md`, `QUEUE.md`.
+
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #218 — the relay's own tracking
   PR recording that it had closed PR #207's CI gate-coverage gap) —
   independent CERTIFY review of FTF-0206 (`/model_group/info` optional

@@ -869,10 +869,10 @@ FTF-0208:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0208.py
 FTF-0209:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Catalog anomaly detector
-  evidence_hash: 50aa1c155a779c592dcaf1d300e347852d1626f2
+  evidence_hash: 78ab4537298e1b484f42fffc0d2ae5d27d85137f
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201,
     FTF-0208 (both CERTIFIED). Built for real in a new packages/litellm_client/catalog_anomaly_detector.py::CatalogAnomalyDetector
@@ -912,10 +912,22 @@ FTF-0209:
     17/17 (proving_symbol left blank -- no live caller yet, disclosed).
     ruff check/ruff format --check/mypy clean on pinned toolchain.
     tests/tasks/test_ftf_0201.py and test_ftf_0208.py (both CERTIFIED
-    dependencies) re-run clean -- no regression. Submitted PROVISIONAL,
-    not self-certified (Law 4) -- awaiting independent Control-plane L2
-    review.'
-  proof_state: L1-PROVEN
+    dependencies) re-run clean -- no regression. Independently CERTIFIED
+    2026-09-23 (control plane, PR #222 merge commit
+    78ab4537298e1b484f42fffc0d2ae5d27d85137f) -- real CI re-checked on the
+    actual head (27/27 jobs green, including this task''s own gate step),
+    own fault injection reproducing both the producer''s claimed failures
+    (double-acknowledge guard removal; acknowledge() restoring removed
+    catalog entries -- 10 checks genuinely failed for real), dependency
+    regression confirmed (test_ftf_0208.py re-run clean), and this task''s
+    real acceptance/negative_acceptance clauses confirmed met via
+    tools/r1_handoff.py. One observation, not a defect: acknowledge()''s
+    current signature has no parameter that could reach the wrapped
+    catalog, so nothing in the existing test suite exercises a
+    caller-supplied catalog reference; flagged for FTF-0215 (the real
+    wiring/route task) to keep that true of whatever API surface
+    ultimately exposes acknowledge().'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0209.py
 FTF-0210:
