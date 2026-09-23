@@ -14645,3 +14645,119 @@ enumeration — a relay shift should pick the next lowest-numbered ready,
 unclaimed item. `FTF-0304` still has two open, unmerged candidate PRs
 (#194/#195) from other sessions — leave those for their own producer
 sessions or a certifier, do not redo the work.
+
+Updated: 2026-09-23 (scheduled relay shift) — implemented FTF-0209
+(Catalog anomaly detector), submitted PROVISIONAL, not self-certified
+(Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh (never assumed state from prior context). Found: no
+Owner actions, no Active items, no Provisional items — FTF-0208's
+certification was the last entry. `mcp__github__list_pull_requests`
+(open, this repo) showed only PRs #194/#195 (both FTF-0304, other
+sessions' work) — left alone per this file's own prior "Next shift"
+note.
+
+**STEP 1:** Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (parsed each task's own `notes` field for its
+real `deps=...` list). 17 tasks were genuinely dependency-ready and
+uncertified; only FTF-0304 had open PRs (other sessions', left alone).
+Picked **FTF-0209** ("Catalog anomaly detector", deps FTF-0201/FTF-0208,
+both confirmed `CERTIFIED`) — the lowest-numbered ready item, unlocked
+by FTF-0208's own certification this same shift boundary, and a direct
+continuation of the same `packages/litellm_client/` task family this
+shift's own precedents already established. "Working: FTF-0209."
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+packet FTF-0209 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read Section
+3.3 closely plus `last_known_good_catalog.py` (FTF-0208, CERTIFIED) as
+the direct precedent: its own transient, content-free `alert` string on
+a >50% drop is overwritten on the very next cycle, with nothing listable,
+retryable, or explicitly closeable. Formed the hypothesis: a new
+`packages/litellm_client/catalog_anomaly_detector.py::CatalogAnomalyDetector`
+wraps `LastKnownGoodCatalog`; a >50% active-count reduction on a real
+successful discovery opens a persisted `AnomalyRecord` (forward-only
+status: open -> retry_pending -> escalated -> acknowledged); `retry()`
+is bounded by Section 3.3's own three-attempt ceiling, reused here;
+`acknowledge()` never reads or writes the wrapped catalog; and the real
+discovery result is always applied to the catalog before any anomaly
+bookkeeping runs, so authorization is never gated by this detector's own
+state. Path refinement, disclosed: placed at
+`packages/litellm_client/` (the real, already-CERTIFIED directory every
+sibling FTF-020x module uses), not the task packet's own literal
+hyphenated `packages/litellm-client/` suggestion. No code written yet at
+this point.
+
+**STEP 2 (E):** Implemented `packages/litellm_client/
+catalog_anomaly_detector.py` (`CatalogAnomalyDetector`, `AnomalyRecord`,
+`AnomalyKind`, `AnomalyStatus`, `AnomalyError`). Wrote `tests/tasks/
+test_ftf_0209.py` (20 pure no-DB/no-external-egress checks — no live
+HTTPS-gateway fixture needed since FTF-0208's own suite already
+independently proves that plumbing for real; this task's own scope is
+the anomaly bookkeeping layered on top).
+
+**Shown able to fail first (Law 1):** moved the not-yet-restored module
+aside right after writing the test file and ran `python3 tests/tasks/
+test_ftf_0209.py` directly: produced a real `ModuleNotFoundError: No
+module named 'packages.litellm_client.catalog_anomaly_detector'` — a
+genuine failure bound to this task's own import. The module was then
+restored and the full suite re-run clean (all 20 checks).
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays `17/17`
+(unchanged — Law 2, no live caller yet, same disclosed precedent
+FTF-0202/FTF-0205/FTF-0207/FTF-0208; `proving_symbol` left blank).
+`scripts/status.py` stays `53/300 certified · 17 product-true`. `uv run
+ruff check .`/`uv run ruff format --check .` clean repo-wide using the
+pinned toolchain (`ruff 0.6.9`, matching `pyproject.toml`/CI) after
+fixing this task's own new test file's line lengths. `uv run mypy` clean
+on both new files. `uv run python3 tests/tasks/test_ftf_0201.py`/
+`test_ftf_0208.py` (both this task's own `CERTIFIED` dependencies)
+re-run clean afterward — no regression. `scripts/validate_spec.py
+--strict` clean after `git fetch --unshallow` (this sandbox's own
+pre-existing shallow-clone artifact, same documented precedent prior
+shifts already established).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical and the suite re-confirmed clean immediately after each:**
+1. Removed the "already acknowledged" guard from `acknowledge()` — the
+   double-acknowledge negative check genuinely failed (the mutated
+   module let it through silently); reverted, `diff` confirmed
+   byte-identical, suite re-ran clean.
+2. Made `acknowledge()` reach into the wrapped catalog and restore every
+   `removed` entry back to `callable` — exactly this task's own
+   negative_acceptance risk ("...or restored unauthorized execution").
+   10 checks genuinely failed for real; reverted, `diff` confirmed
+   byte-identical, suite re-ran clean.
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0209.py`) to
+`.github/workflows/ci.yml` in the same commit as the implementation,
+deliberately not deferred — learning directly from the disclosed
+FTF-0205/FTF-0206 watchdog finding where a missing gate-wiring step let
+a merged PR's own test suite go unexecuted by CI until a later shift
+noticed.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`50aa1c155a779c592dcaf1d300e347852d1626f2`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — pushed to
+`claude/wizardly-fermat-1734s6`, awaiting independent Control-plane L2
+review. Full entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0209`) awaiting independent Control-plane L2 review — a certifier
+shift should pick it up next. Recomputing the dependency-ready frontier
+fresh at this shift's end (do not trust this note alone) showed 16 other
+genuinely ready, uncertified, unclaimed tasks besides FTF-0209 itself
+(e.g. FTF-0210, FTF-0302, FTF-0303, FTF-04A02, FTF-04A07, FTF-0500A,
+FTF-0500D, FTF-0507, FTF-0902, FTF-1201, FTF-1503, FTF-1506, FTF-1703,
+FTF-R002) — re-derive this list from `docs/spec-matrix.yaml` itself
+rather than trusting this enumeration, since a certification landing
+after this shift ends could unlock further items. `FTF-0304` still has
+two open, unmerged candidate PRs (#194/#195) from other sessions — leave
+those for their own producer sessions or a certifier, do not redo the
+work.
