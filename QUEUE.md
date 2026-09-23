@@ -1,5 +1,39 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled autonomous relay shift) — implemented
+  FTF-0506 (Canonical conversation normalizer), submitted PROVISIONAL,
+  not self-certified (Law 4). New
+  `workers/data/canonical_conversation_normalizer.py::normalize_conversation`
+  is a pure, no-DB, no-I/O function enforcing every one of Section 7's own
+  "Required validators" (role ordering as a real finite-state discipline,
+  tool-call-ID uniqueness, tool-result cross-referencing, content-type
+  allowlisting, canonical-JSON hashing before hashing), plus a real
+  `RecordLineage` (source_type/source_record_index/raw_sha256, mapping
+  directly onto `DatasetRecord`'s own fields) and split-isolation
+  `group_id` (distinct from `DatasetRecord.duplicate_group_id`). Path
+  refined from the plan's `services/training-worker/data/` to this repo's
+  real `workers/data` SOURCE_ROOT (FTF-0001, PR #10) — new
+  `workers/__init__.py`/`workers/data/__init__.py` added to match the
+  `packages/` package convention already used repo-wide. Tool-argument
+  schema validation against FTF-0405's already-CERTIFIED
+  `validate_instance` is dependency-injected (a `ToolArgumentValidator`
+  Protocol matching that function's exact call shape) rather than
+  hard-imported, since `workers/data` and `apps/api` are separate
+  deployable uv-workspace members and nothing else in this repository
+  crosses that boundary either way; proven as real integration in this
+  task's own tests by passing `validate_instance` itself, unmodified.
+  Picked via a fresh dependency-ready-frontier computation (15 candidates;
+  `FTF-0506` had the highest leverage — 143 uncertified transitive
+  dependents — among those not already in flight elsewhere on open PRs
+  #207/#194/#195). Same disclosed "no live caller yet" scope as
+  FTF-0202/FTF-0205/FTF-0207: `proving_symbol` stays blank, product-true
+  count unchanged at 17/17. Tests: `tests/tasks/test_ftf_0506.py` (24
+  test functions, no DB, no external egress), plus two independent,
+  live-demonstrated fault injections (Law 1). Wired into the `gate` job.
+  Full record: `docs/certifications/queue.md`'s "FTF-0506 — Canonical
+  conversation normalizer" entry.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled autonomous relay shift) — implemented
   FTF-0207 (Alias reconciliation), submitted PROVISIONAL, not
   self-certified (Law 4). New `packages/litellm_client/
   alias_reconciliation.py::reconcile_aliases` combines FTF-0204's
@@ -3343,6 +3377,26 @@ scope as FTF-0202/FTF-0205 — `proving_symbol` stays blank, product-true
 count unchanged at 17/17. Full record: `docs/certifications/queue.md`'s
 "FTF-0207 — Alias reconciliation" entry and this file's own top shift
 note.
+
+FTF-0506 (Canonical conversation normalizer) — this shift's own commit
+`025b936d7011f30ca607f2038f1c61f4766c4640` on
+`claude/wizardly-fermat-fqjkvu` → `main`, submitted PROVISIONAL, not
+self-certified (Law 4). New `workers/data/
+canonical_conversation_normalizer.py::normalize_conversation` (pure,
+no-DB, no-I/O) enforces every Section 7 "Required validator" and adds
+`RecordLineage`/split-isolation `group_id`/deterministic `canonical_hash`;
+tool-argument schema validation is dependency-injected (a
+`ToolArgumentValidator` Protocol matching FTF-0405's already-CERTIFIED
+`validate_instance` exactly) rather than hard-imported across the
+`workers/data` <-> `apps/api` deployable-unit boundary. 24 no-DB checks
+(`tests/tasks/test_ftf_0506.py`, wired into the `gate` job) after two
+genuine real-fault-injection-caught defects were demonstrated live
+(disabling the tool-call-ID uniqueness guard; disabling the
+no-validator-supplied fail-closed guard) and reverted byte-identical.
+Same disclosed "no live caller yet" scope as FTF-0202/FTF-0205/FTF-0207
+— `proving_symbol` stays blank, product-true count unchanged at 17/17.
+Full record: `docs/certifications/queue.md`'s "FTF-0506 — Canonical
+conversation normalizer" entry and this file's own top shift note.
 
 FTF-04A01 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-23 via PR #210 (merge commit
