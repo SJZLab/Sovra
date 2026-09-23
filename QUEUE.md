@@ -3541,6 +3541,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-0208 (Last-known-good catalog) — submitted PROVISIONAL 2026-09-23,
+implementation commit `8b695ab902a96891944c65bcbc42dcaebcee6f5d` on branch
+`claude/wizardly-fermat-bbv5gh`. Not self-certified (Law 4) — awaiting a
+Control-plane L2 review. Full PEV record: `docs/certifications/queue.md`'s
+2026-09-23 FTF-0208 entry.
+
 FTF-0207 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 (evidence: merge commit
 `ab6473fc3854f71d782a8bb1671a95c33f413ba5` — the commit that actually

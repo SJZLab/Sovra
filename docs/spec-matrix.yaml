@@ -790,15 +790,69 @@ FTF-0207:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Last-known-good catalog
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0207
-  proof_state: UNPROVEN
+  evidence_hash: 8b695ab902a96891944c65bcbc42dcaebcee6f5d
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201,
+    FTF-0207 (both CERTIFIED). Built for real in a new packages/litellm_client/last_known_good_catalog.py::LastKnownGoodCatalog
+    -- a stateful, in-memory, no-I/O object a caller feeds successive
+    ModelDiscoveryResult values into (typically discover_models, FTF-0204, CERTIFIED).
+    This task''s own acceptance clause ("Persist historical catalog and mark
+    stale/inaccessible separately from callable entries") is CatalogEntry.status,
+    always exactly one of callable/stale/removed, retained for every id ever
+    discovered (audit/display), never conflated. Section 3.3''s "On a successful
+    authoritative list response, removed names immediately become unselectable
+    even if deletion is suspicious" is enforced unconditionally in _apply_successful:
+    any previously active id absent from a fresh successful discovery is marked
+    removed in the same update; an unexpected >50% reduction only ever raises
+    a disclosed, content-free CatalogSnapshot.alert string -- it never restores
+    the dropped ids'' access. Section 3.3''s "On 401/403... disable new calls
+    and queued job admission immediately" plus "Never retry access denial as
+    a transient network issue" is _apply_revocation: a DiscoveryState.INVALID_TOKEN
+    result immediately sets access_state=revoked and downgrades callable entries
+    to stale; is_call_authorized then refuses every id unconditionally the instant
+    access_state is revoked, without waiting on the freshness TTL. An ordinary
+    connectivity/malformed-response/secret failure is deliberately treated as
+    merely degraded, not a confirmed revocation (Section 3.3: "Refresh/probe
+    failure cannot turn unknown access into success") -- existing entries and
+    last_successful_check_at are left untouched, so admission is governed purely
+    by the freshness TTL, matching "After TTL expires during an outage, do not
+    admit new paid work." This task''s own negative_acceptance ("A last-known-good
+    snapshot cannot authorize queued/new inference after revocation or freshness
+    expiration") is is_call_authorized''s own two unconditional early-return
+    checks (access_revoked, freshness_expired), both reached before any entry''s
+    own callable status is even consulted. Default freshness TTL is 5 minutes
+    (DEFAULT_FRESHNESS_TTL), overridable per call. Tests: tests/tasks/test_ftf_0208.py
+    (24 pure no-DB/no-egress checks: first-seen-at preservation, metadata refresh,
+    immediate unselection on removal with audit retention, >50%-reduction alert
+    without restoring access, revocation downgrading callable to stale idempotently,
+    unknown-failure never revoking or touching entries or the freshness clock,
+    authorization denial before any success/after TTL elapses/for an unknown
+    id, and a custom-TTL override) plus one real end-to-end check against a
+    real local HTTPS gateway (real self-signed CA installed into this sandbox''s
+    own trust store) whose responses genuinely change across three sequential
+    real discover_models calls (healthy three-model list -> healthy one-model
+    list -> revoked), feeding this task''s own catalog for real. Own fault injection
+    (Law 1, two distinct vectors, both demonstrated live in a fresh subprocess
+    and reverted byte-identical): (1) removed the ACCESS_REVOKED early-return
+    in is_call_authorized -- a revoked connection genuinely kept authorizing
+    a still-fresh, previously-callable id; (2) disabled the removed-id computation
+    in _apply_successful -- a name absent from a fresh successful discovery
+    genuinely stayed callable and authorized instead of becoming unselectable.
+    No independent schema change (this task''s own database_changes clause);
+    no route wired yet (disclosed, same no-live-caller-yet precedent FTF-0202/FTF-0205/FTF-0207
+    already established -- FTF-0215, the periodic sync workflow, is the disclosed
+    later wiring step). product_truth_check.py --fail-on-unwired stays 17/17
+    (no live caller yet, proving_symbol left blank). This task''s own CI gate
+    step (tests/tasks/test_ftf_0208.py) was added in the same commit as the
+    implementation, not deferred, learning from the FTF-0205/FTF-0206 watchdog
+    finding (docs/certifications/watchdog-findings.md) where a missing gate
+    step let a merged PR''s own test suite go unexecuted by CI.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0208.py
 FTF-0209:
   certification_state: NONE
   criticality: MUST
