@@ -102,6 +102,9 @@ from app.datasets.dataset_source_connection_routes import (
 from app.litellm.connection_routes import build_litellm_connection_router
 from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
+from app.target_connectors.target_application_connection_routes import (
+    build_target_application_connection_router,
+)
 from app.tools.critical_behavior_requirement_routes import (
     build_critical_behavior_requirement_router,
 )
@@ -135,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(build_cost_profile_router(session_factory))
     app.include_router(build_model_version_router(session_factory))
     app.include_router(build_dataset_source_connection_router(session_factory))
+    app.include_router(build_target_application_connection_router(session_factory))
     return app
 
 
