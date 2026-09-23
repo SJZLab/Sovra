@@ -13009,3 +13009,134 @@ blocking today's frontier — re-check the dependency-ready frontier
 fresh next shift. `FTF-0304` still has two open, unmerged candidate PRs
 (#194/#195) from other sessions — leave those for their own producer
 sessions or a certifier, do not redo the work.
+
+Updated: 2026-09-23 (scheduled relay shift) — implemented FTF-0205
+(`/v1/model/info` enrichment), submitted PROVISIONAL, not self-certified
+(Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**STEP 0.1 note (disclosed, not a repository-integrity incident):** this
+session's initial `git fetch origin main claude/wizardly-fermat-h60rso`
+silently aborted the whole fetch — including `main` itself — on the
+nonexistent-branch error (the designated branch had never been pushed to
+`origin`, since its work had already landed on `main` through other
+branch names via PRs #196-#204). The stale cached `origin/main` this
+left behind was still at `8f33de0` (the tip before PR #196), which
+briefly looked like ~8 hours of real, owner-merged, independently
+certified work (FTF-0500/FTF-H006/FTF-0203/FTF-0204) had vanished from
+`main`. Before escalating this as a repository-integrity incident, it
+was checked directly: a `git fetch origin main` run in isolation, and
+an independent `mcp__github__get_commit` call against the real GitHub
+`main` ref (bypassing this local clone's own git protocol state
+entirely), both returned `203481a` — identical to this session's own
+designated-branch tip and to every merge PR #196-#204 actually
+recorded. No work was lost; this was purely a local-fetch artifact (the
+same class of issue a prior shift's own QUEUE.md entry already
+documented: a combined `git fetch origin main <ref>` aborting the whole
+fetch on one missing ref). The designated branch was reset to the
+confirmed-real `origin/main` before any further work.
+
+STEP 1: recomputed the dependency-ready frontier fresh (joining
+`spec/tasks.json`'s real `dependencies` field against
+`docs/implementation/TRACKER.json`'s live `status`): 15 items —
+`FTF-0205`, `FTF-0206`, `FTF-0302`, `FTF-0303`, `FTF-0304`, `FTF-0408`,
+`FTF-04A01`, `FTF-0500A`, `FTF-0500D`, `FTF-0506`, `FTF-0902`,
+`FTF-1201`, `FTF-1503`, `FTF-1506`, `FTF-R002` (FTF-0204 reaching
+CERTIFIED newly unblocked `FTF-0205`/`FTF-0206`). `list_pull_requests`
+confirmed `FTF-0304` still has its two open, unmerged candidate PRs
+(#194/#195) — not picked. Picked `FTF-0205` (lowest task ID among the
+remaining unclaimed items, no external-service ask, no disclosed
+DoD-clarity gap).
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+packet FTF-0205 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read
+`v1_models_discovery.py` (FTF-0204, already CERTIFIED) end to end and
+confirmed its own `discover_models` only ever computes a boolean
+`metadata_status` (`enriched`/`limited`) for its already-authorized
+list — it never surfaces real `/model/info` field content, so this task
+is a genuinely separate, later step, not a widening of FTF-0204's own
+result shape. Checked `docs/spec-matrix.yaml`'s own dependents listing
+for tasks naming `FTF-0205` as a dependency: `FTF-0207` ("Alias
+reconciliation", deps FTF-0201/FTF-0204/FTF-0205) is the later task,
+not this one — confirming this task's own packet `files` list (module +
+test only, no route file) is a deliberate scope boundary, not an
+omission, matching the exact producer/later-wiring relationship
+FTF-0202/FTF-0203 already established. Formed the hypothesis: a new
+`packages/litellm_client/v1_model_info_enrichment.py` takes the
+caller's own already-authorized `visible_model_ids` and attaches
+allowlisted `/model/info` fields on a strict left-join basis; a denied/
+failed/malformed enrichment call degrades every visible id to `limited`
+without ever dropping it. No code written yet at this point.
+
+**STEP 2 (E):** Implemented `packages/litellm_client/
+v1_model_info_enrichment.py` (`enrich_visible_models`, `EnrichmentState`,
+`ModelInfoEnrichmentResult`, `ModelMetadataEntry`,
+`_ALLOWLISTED_MODEL_INFO_FIELDS`). Wrote `tests/tasks/test_ftf_0205.py`
+(15 test functions, no DB, no external egress — real local HTTP server
+standing in for the OpenBao secret backend, real local HTTPS gateway
+servers with a real ephemeral CA installed into this sandbox's own
+system trust store, mirroring `tests/tasks/test_ftf_0204.py`'s own
+established fixture pattern exactly).
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays `16/16`
+(unchanged — Law 2, this task deliberately has no live caller yet, same
+disclosed precedent FTF-0202 established; `proving_symbol` left blank).
+`scripts/status.py` stays `47/300 certified · 16 product-true`.
+`ruff check .`/`ruff format --check .` clean on both new files after
+`ruff format` auto-reformatted the test file and four manual
+line-length fixes — the one remaining `UP042` finding
+(`EnrichmentState(str, Enum)`) was checked against a clean `git stash`
+of `main` and confirmed to match 11 already-existing identical findings
+(including `v1_models_discovery.DiscoveryState`/`ModelMetadataStatus`
+themselves) — not a new defect, left as-is to match established
+convention. `mypy` clean on both new files after fixing one real
+`union-attr`/`operator` finding in the test's own
+`test_parse_model_info_never_reads_litellm_params` (an `assert by_alias
+is not None` narrows the type before use) — the one remaining
+repo-wide `packages/security/outbound_guard.py` finding was confirmed
+pre-existing and identical on a clean `git stash` of `main`, unrelated
+to this change. `uv sync --all-packages` resolved this fresh sandbox's
+own missing `uvicorn` dependency (the same documented class of gap
+prior shifts already established for `pnpm install`);
+`tests/tasks/test_ftf_0201.py`/`test_ftf_0202.py`/`test_ftf_0203.py`/
+`test_ftf_0204.py` all re-run clean afterward under `uv run` — no
+regression to any shared module. `scripts/validate_spec.py --strict`
+clean after `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact, same documented precedent as prior shifts).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical and the suite re-confirmed clean immediately after
+each:**
+1. Widened `_allowlisted_fields` to return every raw `model_info` field
+   verbatim instead of filtering through the allow list — run in a
+   fresh subprocess against a real gateway advertising a
+   credential-shaped `model_info.api_key` field, the mutated module
+   genuinely let the secret string leak into the result
+   (`"sk-fault-injection-leak" in result.stdout`), proving the allow
+   list is load-bearing, not decorative.
+2. Reintroduced an authorization union (iterating
+   `set(ids) | set(by_alias.keys())` instead of `ids` alone) directly
+   against the live in-process suite before this submission — caught
+   for real (2 checks failed with the exact "never added to the
+   reported entries" assertion).
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`6545edb90975b768797e4a9e3d760c3185bfeb21`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — PR opened, awaiting independent
+Control-plane L2 review. Full entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0205`) awaiting independent Control-plane L2 review — a certifier
+shift should pick it up next. FTF-0205 reaching CERTIFIED would newly
+unblock `FTF-0207` ("Alias reconciliation") once FTF-0206 also reaches
+CERTIFIED (FTF-0207 depends on all three of FTF-0201/FTF-0204/FTF-0205).
+`FTF-0304` still has two open, unmerged candidate PRs (#194/#195) from
+other sessions — leave those for their own producer sessions or a
+certifier, do not redo the work. `FTF-0206` (`/model_group/info`
+optional enrichment) is now dependency-ready and unclaimed — a natural
+next relay pick, no disclosed DoD-clarity gap found so far.
