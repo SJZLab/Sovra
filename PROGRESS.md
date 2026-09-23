@@ -1,4 +1,95 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23 (scheduled autonomous relay shift) — remediated half
+  of the `docs/certifications/watchdog-findings.md` 2026-09-23 finding
+  ("CI `gate` job never actually runs FTF-0205's/FTF-0206's own tests").
+
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+  (re-checked twice — once on the stale cached worktree state, again
+  after discovering this session's designated branch,
+  `claude/wizardly-fermat-9yemdy`, was the branch PR #210/FTF-04A01 had
+  already merged from; reset the branch to fresh `origin/main`
+  (`f8b9393`) per the merged-branch instruction before doing anything
+  else, then re-verified the hash on the real tip).
+
+  STEP 0.1: read `PROGRESS.md`/`QUEUE.md` fresh rather than trusting
+  prior context — both files are newest-entry-first at the top (the
+  `## Status`/`## Owner actions`/`## Active`/`## Provisional`/`## Done`
+  block partway through `QUEUE.md` is stale, pre-dates several
+  certifications, and is explicitly flagged in-file as no longer kept
+  current — the top `Updated:` block is authoritative). Current state at
+  shift start: 49/300 certified, 17 product-true, no open owner ask, no
+  `## Active`/`## Provisional` items genuinely outstanding. The most
+  recent finding, `docs/certifications/watchdog-findings.md`'s
+  2026-09-23 entry, names a concrete, actionable next step: add explicit
+  `gate`-job steps for `tests/tasks/test_ftf_0205.py` (CERTIFIED, merged,
+  no step) and `tests/tasks/test_ftf_0206.py` (still on PR #207's
+  unmerged branch).
+
+  STEP 1: picked this remediation over the dependency-ready frontier —
+  it closes a high-severity, already-diagnosed evidence-substitution gap
+  affecting an already-CERTIFIED task, has a fully specified fix from the
+  finding itself, and needs no new DoD interpretation, unlike most
+  unclaimed `docs/TASK_INDEX.md` items.
+
+  STEP 2 (P): read `.github/workflows/ci.yml`'s `gate` job step list and
+  confirmed the gap still exists on `main` (`grep` for `0205`/`0206` in
+  the file: no match). Confirmed `tests/tasks/test_ftf_0205.py` exists on
+  `main` (FTF-0205 merged) but `tests/tasks/test_ftf_0206.py` does not
+  (FTF-0206 `implementation_state: ABSENT` in `docs/spec-matrix.yaml` on
+  `main` — PR #207 is still unmerged) — only the FTF-0205 half of the
+  finding's recommended fix is actionable from `main` right now.
+
+  STEP 2 (E): added one `gate`-job step, "FTF-0205 negative-test proof
+  (`/v1/model/info` enrichment, no DB required)" running `uv run python3
+  tests/tasks/test_ftf_0205.py`, inserted directly after the existing
+  FTF-0204 step (`.github/workflows/ci.yml`). No test file changed —
+  this is a CI-wiring-only fix, not new task work.
+
+  STEP 2 (V), own fault injection (Law 1) proving the new step is
+  load-bearing, a vector distinct from both fault-injection vectors
+  already on record for FTF-0205: widened `_allowlisted_fields` in the
+  real on-disk `packages/litellm_client/v1_model_info_enrichment.py` to
+  drop the `key in _ALLOWLISTED_MODEL_INFO_FIELDS` clause, keeping only
+  the scalar-type check — `uv run python3 tests/tasks/test_ftf_0205.py`
+  against the mutated module genuinely failed 8 checks, including "no
+  returned field value ever contains the real secret string". Reverted
+  from a pre-edit backup; `diff` confirmed byte-identical; the suite
+  re-ran clean immediately after ("all checks passed").
+
+  Regression: `tests/tasks/test_ftf_0201.py`/`test_ftf_0202.py`/
+  `test_ftf_0203.py`/`test_ftf_0204.py`/`test_ftf_04a01.py` all re-run
+  clean. `product_truth_check.py --fail-on-unwired` — `17/17`
+  (unchanged). `scripts/status.py` — `49/300 certified · 17
+  product-true` (unchanged — no `certification_state` touched, this is
+  wiring only). `scripts/validate_spec.py --strict` clean after `git
+  fetch --unshallow` (this sandbox's own pre-existing shallow-clone
+  artifact, same documented precedent as prior shifts). YAML syntax of
+  the edited file confirmed valid (`yaml.safe_load`). `git status`
+  confirms only `.github/workflows/ci.yml` changed (9 lines added) plus
+  this shift's own tracker-doc edits.
+
+  Updated `docs/certifications/watchdog-findings.md`'s own 2026-09-23
+  finding with this partial remediation (FTF-0205 half closed and
+  proven; FTF-0206 half stays open, tracked against FTF-0206's own
+  eventual merge, since its test file does not exist on `main` yet).
+  No `docs/spec-matrix.yaml` `certification_state` was touched — this
+  shift certifies nothing (Law 4); whether FTF-0205's own certification
+  needs any further action given its step is now real is left to
+  Control plane, as the finding itself already specified.
+
+  Queued: PR opened against `main` (title `[relay] CI-wiring:
+  add gate step for FTF-0205 test (watchdog finding remediation)`) for
+  review/merge — not self-merged, since it touches the shared `gate` job
+  every future PR depends on, even though it carries no certification
+  criterion.
+
+  STEP 4 stop condition: (a)-equivalent — this shift's own picked item
+  (the FTF-0205 half of the finding) is complete and its evidence is
+  bound; the FTF-0206 half is not yet actionable and is left open,
+  disclosed above and in the finding itself, rather than improvised.
+  Reporting and stopping here.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #209) — independently certified
   FTF-04A01 (TargetApplicationConnection schema/API/RBAC), the sole

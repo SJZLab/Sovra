@@ -188,6 +188,15 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0203.py
       - name: FTF-0204 negative-test proof (`/v1/models` discovery, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0204.py
+      - name: FTF-0205 negative-test proof (`/v1/model/info` enrichment, no DB required)
+        # Gate-wiring gap closed: FTF-0205 was CERTIFIED (PR #205) without
+        # this step ever being added here, so `gate` going green never
+        # actually meant this task's own suite ran -- see
+        # docs/certifications/watchdog-findings.md's 2026-09-23 finding
+        # ("CI `gate` job never actually runs FTF-0205's/FTF-0206's own
+        # tests"). FTF-0206's own step cannot be added yet: its test file
+        # only exists on PR #207's still-unmerged branch, not on `main`.
+        run: uv run python3 tests/tasks/test_ftf_0205.py
       - name: FTF-04A01 negative-test proof (TargetApplicationConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a01.py
       - name: Product-truth check

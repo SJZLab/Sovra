@@ -1,4 +1,29 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled autonomous relay shift) — remediated the
+  FTF-0205 half of `docs/certifications/watchdog-findings.md`'s
+  2026-09-23 finding ("CI `gate` job never actually runs FTF-0205's/
+  FTF-0206's own tests"). Designated branch `claude/wizardly-fermat-
+  9yemdy` had already been merged (PR #210, FTF-04A01) — reset to fresh
+  `origin/main` per the merged-branch instruction before picking new
+  work. Added an explicit `gate`-job step running `tests/tasks/
+  test_ftf_0205.py` (`.github/workflows/ci.yml`, after the existing
+  FTF-0204 step); proved it load-bearing with a fault-injection vector
+  distinct from FTF-0205's own two already on record (widened
+  `_allowlisted_fields` to drop its allowlist-membership check — 8
+  checks failed for real; reverted byte-identical, suite re-ran clean).
+  The FTF-0206 half of the finding is not yet actionable from `main`:
+  `tests/tasks/test_ftf_0206.py` only exists on PR #207's unmerged
+  branch. No `certification_state` touched (Law 4 — this is a CI-wiring
+  fix, not a certification); `product_truth_check.py --fail-on-unwired`
+  stays `17/17`, `scripts/status.py` stays `49/300 certified · 17
+  product-true`. Regression clean across `test_ftf_0201.py`-
+  `test_ftf_0204.py`/`test_ftf_04a01.py`. PR opened against `main`
+  (`[relay] CI-wiring: add gate step for FTF-0205 test (watchdog finding
+  remediation)`), not self-merged (touches the shared `gate` job). Full
+  record: `PROGRESS.md` and `docs/certifications/watchdog-findings.md`'s
+  own updated 2026-09-23 entry.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #209) — independently certified
   FTF-04A01 (TargetApplicationConnection schema/API/RBAC), the sole
