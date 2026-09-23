@@ -176,19 +176,53 @@ Watchdog appends adversarial audit findings here; Control plane reviews.
   producer's own, clean regression across FTF-0201-0204, correct
   `product_truth_check`/`status.py` figures) was genuine and is not in
   question — only the CI-execution claim specifically.
-- **Disposition:** not remediated by this shift (FTF-0206 was left
-  `PROVISIONAL`, not merged; see `docs/certifications/queue.md`'s
-  "FTF-0206 (PR #207) — NOT CERTIFIED" entry for the required next step —
-  a relay shift adds explicit `gate`-job steps for both
-  `tests/tasks/test_ftf_0205.py` and `tests/tasks/test_ftf_0206.py`,
-  confirmed real on `ubuntu-latest` runners: `sudo`/`openssl`/
-  `update-ca-certificates` are all present and passwordless-sudo-capable
-  there, so the fault-injection TLS-trust-store path is not the
-  disclosed print-and-skip fallback). Whether FTF-0205's own
-  `certification_state` should be reverted to `PROVISIONAL` pending a
-  real CI run of its own test, versus accepted as-is once this
-  reviewing session's own independent local reproduction (see the prior
-  shift's QUEUE.md entry — fresh worktree, clean regression, an
-  independent fault injection distinct from the producer's own, all
-  genuinely reproduced) is judged sufficient after the fact, is left to
-  Control plane.
+- **Disposition:** partially remediated 2026-09-23 by a scheduled relay
+  shift (`session_01NFx5ViQcN7z57TTcVAgHgt`). Added an explicit
+  `gate`-job step, "FTF-0205 negative-test proof (`/v1/model/info`
+  enrichment, no DB required)", running `tests/tasks/test_ftf_0205.py`
+  (`.github/workflows/ci.yml`, inserted directly after the existing
+  FTF-0204 step). The FTF-0206 half of this finding's own recommended
+  fix is **not yet actionable from `main`**: `tests/tasks/
+  test_ftf_0206.py` exists only on PR #207's still-unmerged branch, not
+  on `main`, and a `gate` step cannot run a test file this branch does
+  not have — that half stays open until FTF-0206 itself lands (its own
+  producer PR is the natural place to add that step, the same way
+  FTF-04A01's own producer commit added its own step at `ci.yml:191-192`
+  rather than a later shift doing it separately).
+
+  This shift's own proof the new step is load-bearing, not decorative
+  (Law 1, distinct from both fault-injection vectors already on record
+  for FTF-0205 in `docs/spec-matrix.yaml`/`docs/certifications/
+  ledger.md`): widened `_allowlisted_fields` in the real on-disk
+  `packages/litellm_client/v1_model_info_enrichment.py` to drop the
+  `key in _ALLOWLISTED_MODEL_INFO_FIELDS` clause (keeping only the
+  scalar-type check) — `uv run python3 tests/tasks/test_ftf_0205.py`
+  against the mutated module genuinely failed 8 of its own checks,
+  including "no returned field value ever contains the real secret
+  string" and "a real credential-shaped field is never present in the
+  returned fields". Reverted from a pre-edit backup; `diff` confirmed
+  byte-identical; the suite re-ran clean immediately after
+  ("all checks passed"). This is the first time this specific defect
+  class was shown to be *caught by the step that will actually run in
+  CI*, rather than only by a producer's or reviewer's own local run —
+  closing exactly the evidence-substitution gap this finding describes,
+  for FTF-0205's own step.
+
+  Regression (unaffected by this change): `tests/tasks/test_ftf_0201.py`/
+  `test_ftf_0202.py`/`test_ftf_0203.py`/`test_ftf_0204.py`/
+  `test_ftf_04a01.py` all re-run clean. `product_truth_check.py
+  --fail-on-unwired` — `17/17` (unchanged). `scripts/status.py` —
+  `49/300 certified · 17 product-true` (unchanged — this is a CI-wiring
+  fix, not a new certification; no `certification_state` in
+  `docs/spec-matrix.yaml` was touched). YAML syntax of the edited
+  workflow file confirmed valid (`yaml.safe_load`).
+
+  Whether FTF-0205's own `certification_state` needs any further action
+  now that its step is real and independently proven load-bearing (as
+  opposed to reverting it to `PROVISIONAL` pending a live CI run, per
+  this finding's own prior open question) is still a Control-plane
+  judgment call — this relay shift closed the wiring gap and proved it
+  catches the same defect class in the step that will actually execute
+  in CI, but does not itself certify anything (Law 4). The FTF-0206 half
+  of this finding stays open, tracked against FTF-0206's own eventual
+  merge rather than duplicated here.
