@@ -3622,8 +3622,12 @@ full history and evidence.
   2026-09-23 (relay shift, implementation commit
   `19a247c1cf5334e416c8a14b6c41d1d78e3ae9ea`). PR:
   https://github.com/SJZLab/Sovra/pull/224
-  (`claude/wizardly-fermat-fxdnkd` -> `main`). Not self-certified (Law
-  4) — awaiting independent Control-plane L2 review. Full entry:
+  (`claude/wizardly-fermat-fxdnkd` -> `main`), merged 2026-09-23 (merge
+  commit `d38930b`) on green CI (27/27) by the repo owner directly — this
+  is a real, live merge action, not a self-certification: `certification_
+  state` stays `PROVISIONAL` in `docs/spec-matrix.yaml` (Law 2, Law 4 —
+  "Merge = PROVISIONAL only"). Still awaiting independent Control-plane
+  L2 review before this can move to `CERTIFIED`. Full entry:
   `docs/spec-matrix.yaml`'s FTF-0210 record and
   `docs/certifications/queue.md`.
 
