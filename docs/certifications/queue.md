@@ -12552,3 +12552,126 @@ next without re-deriving it, since a certification landing after this
 shift ends could unlock further items. `FTF-0304` still has two open,
 unmerged candidate PRs (#194/#195) from other sessions -- leave those for
 their own producer sessions or a certifier, do not redo the work.
+
+## 2026-09-23 -- FTF-0211 (Real streaming probe) -- submitted PROVISIONAL
+PR: https://github.com/SJZLab/Sovra/pull/226
+(`claude/wizardly-fermat-pvnd0o` -> `main`). Implementation commit
+`1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54`; PROVISIONAL-submission commit
+`0c9167d` (spec-matrix update only).
+
+Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (joined each task's own `notes` `deps=...` list
+against every dependency's real `certification_state`, not trusted from
+any prior shift's enumeration). 22 tasks were genuinely dependency-ready
+and uncertified; `FTF-0304` was the only one with open PRs (#194/#195,
+both other sessions' work, left alone per this file's own prior note).
+Picked **FTF-0211** ("Real streaming probe", deps FTF-0201/FTF-0210,
+both confirmed `CERTIFIED`) -- the lowest-numbered genuinely
+dependency-ready, unclaimed item.
+
+Built `packages/litellm_client/real_streaming_probe.py::probe_stream_chat`:
+issues one real, bounded, synthetic streamed `POST /v1/chat/completions`
+call and reconstructs the actual SSE response (text/tool-call deltas,
+usage, termination reason) into a `StreamProbeResult`. Reuses FTF-0210's
+own authorization contract (`ChatProbeNotAuthorizedError`) and
+`ChatUsage`/`RouteIdentityState` types directly (public reuse); the probe
+prompt/token ceiling are this module's own duplicated private constants
+(same values as FTF-0210's), matching this codebase's established
+convention that sibling FTF-020x modules never cross-import each other's
+private names even for identical values.
+
+`packages/security/outbound_guard.py` (FTF-H006, already CERTIFIED)
+gained one small, purely additive export this task needed --
+`guarded_stream_fetch`/`GuardedStreamResponse` -- since `guarded_fetch`
+reads its whole body up front, which a real SSE stream must never do.
+`guarded_fetch`'s own connection-pinning logic was extracted (not
+duplicated) into `_prepare_pinned_connection` with no behavior change to
+`guarded_fetch` itself; its full existing suite (`tests/tasks/
+test_ftf_h006.py`) was re-run and stays green after the extraction. Added
+this new surface's own real coverage (incremental reads, idempotent
+close/real socket release, destination-denial, connection-failure
+wrapping) to that same suite. While doing this, found and closed a real,
+pre-existing gate-wiring gap of the same class the FTF-0205/FTF-0206
+watchdog finding already documents: `tests/tasks/test_ftf_h006.py` (an
+already-CERTIFIED task's own suite) was never wired into
+`.github/workflows/ci.yml`'s `gate` job at all -- added it in the same
+commit as this task's own new FTF-0211 CI step.
+
+**Real defect caught and fixed during implementation (Law 1):**
+`GuardedStreamResponse.read_chunk` initially used `HTTPResponse.read()`,
+which is `io.BufferedReader`'s ordinary "read exactly `size` bytes,
+issuing as many underlying socket reads as it takes, or block until EOF"
+behavior -- for any real stream smaller than the requested chunk size,
+this silently defeated streaming entirely by blocking until the
+connection closed and returning the whole body in one call. A real test
+(a bounded chunk-read-budget check against a real delayed multi-write
+local server) caught this for real: the probe reported `PROBED` with all
+51 events reconstructed from what was effectively a single buffered
+read, instead of hitting the deliberately tiny test-only budget --
+proving the reads were not actually incremental. Fixed by switching to
+`HTTPResponse.read1(size)` (`io.BufferedIOBase`'s "at most one underlying
+system call" method); re-verified against the same real test.
+
+`tests/tasks/test_ftf_0211.py` (real local-HTTPS-gateway integration
+suite, same no-DB/no-external-egress convention as every sibling
+FTF-020x module) covers this task's own acceptance clause ("Consume
+actual SSE stream, reconstruct text/tool deltas and account
+usage/termination") via `test_probe_reconstructs_text_deltas_usage_and_termination`
+and `test_probe_reconstructs_tool_call_deltas`, and its own
+negative_acceptance ("Malformed/truncated streams, client cancellation
+and gateway retry do not leak connection resources or double-bill
+silently") via `test_truncated_stream_is_never_fabricated_into_a_success`,
+`test_malformed_stream_event_is_never_fabricated_into_a_success`,
+`test_stream_budget_ceiling_stops_an_unterminated_stream`,
+`test_probe_closes_the_real_connection_on_every_return_path` (every
+return path closes the real connection exactly once, verified by
+wrapping `GuardedStreamResponse.close` and counting real calls) and
+`test_gateway_retry_never_happens_silently_inside_the_probe` (this
+module contains no retry loop anywhere, proven by a real rejected first
+attempt being reported as its own failure with exactly one real request
+made).
+
+**Shown able to fail first (Law 1):** moved the not-yet-restored module
+aside and ran `tests/tasks/test_ftf_0211.py` directly: produced a real
+`ModuleNotFoundError` bound to this task's own import; the module was
+then restored and the full suite re-run clean.
+
+**Own fault-injection evidence (Law 1), three distinct vectors, each
+reverted byte-identical (diff confirmed) and the suite re-confirmed
+clean immediately after each:** (1) removed the `approved_model_ids`
+authorization gate from `probe_stream_chat` entirely -- the
+authorization-gate negative check genuinely failed for real; (2)
+neutralized the `if not saw_done: return TRUNCATED_STREAM` check (via
+`if False:`) -- the truncated-stream negative check genuinely failed for
+real, proving a truncated stream would otherwise be fabricated into
+`PROBED`; (3) against FTF-H006's own suite, neutralized
+`GuardedStreamResponse.close`'s actual socket-close call -- the new
+close-idempotency/real-release check genuinely failed for real.
+
+`product_truth_check.py --fail-on-unwired` stays `17/17` (unchanged --
+Law 2, this task deliberately has no live caller yet, same disclosed
+precedent FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209/FTF-0210;
+`proving_symbol` left blank). `uv run ruff check .`/`uv run ruff format
+--check .` clean repo-wide. `uv run mypy .` clean repo-wide (208 source
+files). `uv run python3 tests/tasks/test_ftf_0201.py`/`test_ftf_0204.py`/
+`test_ftf_0210.py`/`test_ftf_h006.py` (this task's own CERTIFIED
+dependencies plus the shared module it extended) re-run clean afterward
+-- no regression. `scripts/validate_spec.py --strict` clean (`git fetch
+--unshallow origin` first, this sandbox's own documented shallow-clone
+artifact).
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** -- pushed to
+`claude/wizardly-fermat-pvnd0o`, awaiting independent Control-plane L2
+review. Full entry: `QUEUE.md`, `PROGRESS.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0211`) awaiting independent Control-plane L2 review -- a certifier
+shift should pick it up next. Recomputing the dependency-ready frontier
+fresh at this shift's end (do not trust this note alone) showed further
+genuinely ready, uncertified, unclaimed tasks besides FTF-0211 itself --
+re-derive this list from `docs/spec-matrix.yaml` itself rather than
+trusting this enumeration, since a certification landing after this
+shift ends could unlock further items. `FTF-0304` still has two open,
+unmerged candidate PRs (#194/#195) from other sessions -- leave those for
+their own producer sessions or a certifier, do not redo the work.

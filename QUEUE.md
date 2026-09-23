@@ -3657,7 +3657,10 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-0211 ("Real streaming probe") — submitted 2026-09-23, PR #226
+(`claude/wizardly-fermat-pvnd0o` -> `main`). Not self-certified (Law 4).
+Full entry: `docs/certifications/queue.md`'s "2026-09-23 — FTF-0211 (Real
+streaming probe) — submitted PROVISIONAL" and `PROGRESS.md`.
 
 FTF-0210 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #224 (merge commit
