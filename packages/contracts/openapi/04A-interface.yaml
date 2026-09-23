@@ -1,0 +1,309 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 04A Interface (TargetApplicationConnection)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and real live routes for the
+    project-scoped TargetApplicationConnection resource (Section 6.8A/
+    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01). `paths` declares exactly the
+    surface this task actually implements and wires into
+    `apps/api/app/main.py` -- create/get/list/edit/revoke of the
+    connection record itself -- and nothing else. It deliberately does not
+    declare a `/snapshots`, `/candidates`, `/manifests`, `/evidence` or
+    `/target-drift` route (the task packet's own abbreviated
+    `api_contract` line): no `TargetSourceSnapshot`/
+    `DiscoveredAgentCandidate`/`AgentManifest`/`ManifestEvidence` entity
+    exists anywhere in this repository yet, and the real GitHub/local-
+    repository connector implementations (Section 7A.1's own
+    `TargetApplicationConnector` Protocol) are FTF-04A02/FTF-04A06,
+    separate dependency-gated later tasks. Whichever later task adds its
+    own real route extends this same file under this same contract-owner
+    lock (shared_lock_required: contracts:04A).
+paths:
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the project's target application connections.
+      operationId: listTargetApplicationConnections
+      responses:
+        '200':
+          description: The project's target application connections.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TargetApplicationConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+    post:
+      summary: >-
+        Create a new target application connection. This task's own real
+        "validate credentials without fetching unapproved data" acceptance
+        clause: a connector-type-conditional structural check runs before
+        any row is written and before any secret is stored -- github
+        requires repository_url_redacted and a credential; local_repository
+        accepts neither. A supplied credential is written for real to the
+        real OpenBao-backed secret store before the row exists; only the
+        resulting has_credential flag is ever returned.
+      operationId: createTargetApplicationConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetApplicationConnectionCreateRequest'
+      responses:
+        '201':
+          description: The created target application connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetApplicationConnection'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: project_id missing or belongs to a different organization -- identical.
+        '503':
+          description: >-
+            A credential value was supplied but no secret-manager backend
+            is configured -- refused, never stored in plaintext.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one target application connection.
+      operationId: getTargetApplicationConnection
+      responses:
+        '200':
+          description: The target application connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetApplicationConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case (this task's own "cross-project target IDs...
+            fail server-side" negative_acceptance).
+    patch:
+      summary: >-
+        Edit a non-revoked connection's display_name/selected_branch (any
+        non-empty subset). connector_type/repository_url_redacted/
+        credential are fixed at creation -- changing either is a different
+        connection.
+      operationId: updateTargetApplicationConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetApplicationConnectionUpdateRequest'
+      responses:
+        '200':
+          description: The updated target application connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetApplicationConnection'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing, wrong organization, or wrong project -- identical.
+        '409':
+          description: The connection is revoked and cannot be edited.
+    delete:
+      summary: Revoke (soft-delete) a target application connection. Idempotent.
+      operationId: revokeTargetApplicationConnection
+      responses:
+        '200':
+          description: >-
+            The connection in its revoked state -- returned unchanged,
+            with no new audit event, if it was already revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetApplicationConnection'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: Missing, wrong organization, or wrong project -- identical.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: "organization_admin:
+        connections, security profiles, cost profiles" is the only
+        sentence naming a role for this class of resource -- every
+        operation, including reads, is gated to {organization_admin}
+        alone).
+    ValidationFailed:
+      description: The request body failed schema/policy validation.
+  schemas:
+    TargetConnectorType:
+      type: string
+      enum: [github, local_repository]
+    TargetAccessMode:
+      type: string
+      enum: [read_only]
+    TargetApplicationConnectionStatus:
+      type: string
+      enum: [active, revoked]
+    TargetApplicationConnectionCreateRequest:
+      type: object
+      properties:
+        connector_type:
+          $ref: '#/components/schemas/TargetConnectorType'
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        repository_identity:
+          type: string
+          minLength: 1
+          maxLength: 500
+        repository_url_redacted:
+          type: [string, 'null']
+          description: Required for github, refused for local_repository.
+        default_branch:
+          type: [string, 'null']
+        selected_branch:
+          type: [string, 'null']
+        credential:
+          type: [string, 'null']
+          description: >-
+            A raw credential value, written for real to the secret
+            backend and never persisted or echoed back as-is. Required for
+            github, refused for local_repository.
+        access_mode:
+          $ref: '#/components/schemas/TargetAccessMode'
+          description: >-
+            Optional, defaults to read_only. A request for any value
+            outside the closed enum is refused server-side (400) -- this
+            task's own real "excessive permission fail server-side"
+            negative_acceptance.
+      required: [connector_type, display_name, repository_identity]
+      additionalProperties: false
+    TargetApplicationConnectionUpdateRequest:
+      type: object
+      description: Any non-empty subset of the mutable fields. Refused (409) once revoked.
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        selected_branch:
+          type: [string, 'null']
+      additionalProperties: false
+    TargetApplicationConnection:
+      type: object
+      description: >-
+        Section 6.8A -- the read-facing representation. Never includes
+        credential_secret_ref (Section 46: "Secret values never returned
+        to browser after creation") -- has_credential discloses only
+        whether one is set.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        connector_type:
+          $ref: '#/components/schemas/TargetConnectorType'
+        display_name:
+          type: string
+        repository_identity:
+          type: string
+        repository_url_redacted:
+          type: [string, 'null']
+        default_branch:
+          type: [string, 'null']
+        selected_branch:
+          type: [string, 'null']
+        has_credential:
+          type: boolean
+        access_mode:
+          $ref: '#/components/schemas/TargetAccessMode'
+        connection_status:
+          $ref: '#/components/schemas/TargetApplicationConnectionStatus'
+        last_validated_at:
+          type: [string, 'null']
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - project_id
+        - connector_type
+        - display_name
+        - repository_identity
+        - has_credential
+        - access_mode
+        - connection_status
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-04A/domain.schema.json",
+  "title": "Sovra Phase 04A Domain Schemas (FTF-04A01 — TargetApplicationConnection schema/API/RBAC)",
+  "description": "Frozen shared domain schemas for the project-scoped TargetApplicationConnection resource (Section 6.8A/7A.1-7A.3/9/45/65-67/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source — apps/api/app/target_connectors/target_application_connection_schema.py (tested in tests/tasks/test_ftf_04a01.py) — so this file cannot silently drift from the code that actually validates these shapes.",
+  "$defs": {
+    "TargetConnectorType": {
+      "type": "string",
+      "enum": ["github", "local_repository"]
+    },
+    "TargetAccessMode": {
+      "type": "string",
+      "enum": ["read_only"]
+    },
+    "TargetApplicationConnectionStatus": {
+      "type": "string",
+      "enum": ["active", "revoked"]
+    },
+    "DisplayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "TargetApplicationConnectionCreateRequest": {
+      "type": "object",
+      "properties": {
+        "connector_type": { "$ref": "#/$defs/TargetConnectorType" },
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "repository_identity": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "repository_url_redacted": { "type": ["string", "null"] },
+        "default_branch": { "type": ["string", "null"] },
+        "selected_branch": { "type": ["string", "null"] },
+        "credential": { "type": ["string", "null"] },
+        "access_mode": { "$ref": "#/$defs/TargetAccessMode" }
+      },
+      "required": ["connector_type", "display_name", "repository_identity"],
+      "additionalProperties": false
+    },
+    "TargetApplicationConnectionUpdateRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of the mutable fields. Refused once the connection is revoked.",
+      "properties": {
+        "display_name": { "$ref": "#/$defs/DisplayName" },
+        "selected_branch": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "TargetApplicationConnection": {
+      "type": "object",
+      "description": "Section 6.8A — the read-facing representation. Never includes credential_secret_ref.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "project_id": { "type": "string", "format": "uuid" },
+        "connector_type": { "$ref": "#/$defs/TargetConnectorType" },
+        "display_name": { "type": "string" },
+        "repository_identity": { "type": "string" },
+        "repository_url_redacted": { "type": ["string", "null"] },
+        "default_branch": { "type": ["string", "null"] },
+        "selected_branch": { "type": ["string", "null"] },
+        "has_credential": { "type": "boolean" },
+        "access_mode": { "$ref": "#/$defs/TargetAccessMode" },
+        "connection_status": { "$ref": "#/$defs/TargetApplicationConnectionStatus" },
+        "last_validated_at": { "type": ["string", "null"], "format": "date-time" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "revoked_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "organization_id",
+        "project_id",
+        "connector_type",
+        "display_name",
+        "repository_identity",
+        "has_credential",
+        "access_mode",
+        "connection_status",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
