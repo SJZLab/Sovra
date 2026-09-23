@@ -1,4 +1,223 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23T12:30:00Z (scheduled autonomous relay shift) —
+  implemented FTF-0506 (Canonical conversation normalizer), submitted
+  PROVISIONAL, not self-certified (Law 4).
+
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`.
+
+  STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+  fresh this shift (via `tail`, both files exceed the 256KB single-read
+  limit), not trusted from prior context.
+
+  STEP 0.2: `cognee-cli` not present in this sandbox (`command not
+  found`) -- text-search fallback active, same as every prior shift.
+
+  STEP 1: this session's designated branch
+  (`claude/wizardly-fermat-fqjkvu`) already matched `origin/main`'s tip
+  exactly (`ab6473f`, "Control plane: certify FTF-0207") after
+  `git fetch origin main`, so there was no prior unmerged work on it to
+  preserve. Cross-checked live GitHub state via `list_pull_requests`
+  before picking: five open PRs -- #213 (a doc-only "certify FTF-0207"
+  PR whose own body discloses it records review of PR #212, already
+  merged as `ab6473f` -- a genuine, disclosed anomaly: `ab6473f`'s own
+  commit *message* says "Control plane: certify FTF-0207" but its actual
+  diff only merged the PROVISIONAL submission, never bumped
+  `certification_state`; `docs/spec-matrix.yaml`/`scripts/status.py`
+  confirmed consistently un-inflated at `PROVISIONAL`/`49/300` on the
+  real merged head, so this is a confusing merge-commit title, not a
+  tracker-inflation incident -- left for Control plane to merge PR #213
+  or otherwise resolve, not touched by this relay shift), #211
+  (CI-wiring fix for FTF-0205's own gate step, unmerged, not this
+  session's branch), #207 (`FTF-0206`, still blocked on its own disclosed
+  gate-wiring gap), #195/#194 (both `FTF-0304` from other sessions) --
+  none picked, to avoid duplicating real work already in flight or acting
+  outside this shift's own RELAY ROLE (execution, not certification).
+  Recomputed the dependency-ready frontier fresh with a real script
+  (joining `docs/spec-matrix.yaml`'s live `certification_state` against
+  each entry's own `deps=` note): fifteen items came back -- `FTF-0206`,
+  `FTF-0302`, `FTF-0303`, `FTF-0304`, `FTF-0408`, `FTF-04A02`, `FTF-04A07`,
+  `FTF-0500A`, `FTF-0500D`, `FTF-0506`, `FTF-0902`, `FTF-1201`, `FTF-1503`,
+  `FTF-1506`, `FTF-R002`. `FTF-0206`/`FTF-0304` excluded (in flight on
+  open PRs from other sessions this shift does not own). Of the
+  remaining, a transitive reverse-dependency count against
+  `docs/spec-matrix.yaml` gave `FTF-0302`/`FTF-0303`/`FTF-0304` the
+  highest leverage (149 each) -- but `FTF-0302` (Hugging Face artifact
+  resolver) and `FTF-0303` (Private S3 artifact resolver) both require
+  real external/keyed-credential integration evidence per their own task
+  packets ("real relevant integration", `resource_gate`: "Real
+  external/GPU prerequisites must exist"), which this RELAY SANDBOX
+  cannot reach directly (open egress to huggingface.co/AWS S3 is outside
+  this sandbox's network policy, and a real HF/S3 integration job would
+  need CI Actions wiring plus, for S3, a genuinely new keyed external
+  service -- CLAUDE.md's own "Ask owner first" list) -- deferred rather
+  than started half-evidenced. Picked `FTF-0506` (Canonical conversation
+  normalizer) instead: the next-highest-leverage candidate (143
+  uncertified transitive dependents) with no external-service/keyed-
+  credential requirement at all (`database_changes: "No independent
+  schema change. Consume frozen contract."`, `files`: module + test
+  only) -- a pure, no-DB, no-egress task this sandbox can fully implement
+  and prove end to end.
+
+  **STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+  packet FTF-0506 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read Section
+  7 ("Canonical Training Data Schema" -- the exact JSON shape and its own
+  "Required validators" list), Section 8.1 (import pipeline steps 6-8:
+  normalize/validate schema/validate tool calls) and Section 9 ("Keep
+  entire conversations, customer cases ... in one split" -- the `group_id`
+  concept, distinct from `DatasetRecord.duplicate_group_id`, Section
+  6.11's own *duplicate*-detection field owned by a later dedup task).
+  Read `apps/api/app/tools/tool_definition_schema.py` (FTF-0404,
+  CERTIFIED, for `compute_schema_hash`'s canonical-JSON convention) and
+  `apps/api/app/services/json_schema_tool_validation.py` (FTF-0405,
+  CERTIFIED, for `validate_instance`'s exact call shape) directly rather
+  than re-deriving either from scratch. Confirmed via `find`/`grep` that
+  `workers/data` (not the packet's own placeholder
+  `services/training-worker/data/`) is this repo's real, already-
+  established SOURCE_ROOT (FTF-0001, PR #10) for data-pipeline work, and
+  that nothing in this repository imports across the `apps/api` <->
+  `workers/*` boundary in either direction today -- confirming a direct
+  import of FTF-0405's module from a new `workers/data` module would be a
+  first-of-its-kind cross-deployable-unit dependency, not an established
+  pattern. No code written yet at this point.
+
+  **STEP 2 (E):** Implemented `workers/data/
+  canonical_conversation_normalizer.py` (`normalize_conversation`,
+  `CanonicalConversationRecord`, `CanonicalMessage`, `ContentPart`,
+  `ToolCallPart`, `RecordLineage`, `ToolArgumentValidator` Protocol,
+  `ConversationNormalizationError`) plus `workers/__init__.py`/
+  `workers/data/__init__.py` (matching the `packages/` package
+  convention already used repo-wide). Wrote `tests/tasks/
+  test_ftf_0506.py` (24 test functions, no DB, no external egress).
+
+  A genuine mid-implementation course correction, disclosed rather than
+  silently reworked: the first draft imported FTF-0405's
+  `validate_instance` directly (`from apps.api.app.services.
+  json_schema_tool_validation import ...`). `uv run mypy .` caught a real
+  defect this introduced -- "Source file found twice under different
+  module names: app.services.json_schema_tool_validation and
+  apps.api.app.services.json_schema_tool_validation" -- because `apps/`
+  and `apps/api/` have no `__init__.py` (implicit namespace packages),
+  so mypy's directory-walk discovery of that file (rooted at `apps/api`,
+  giving `app.services...`) conflicted with resolving my own import
+  statement (rooted at the repo root, giving `apps.api.app.services...`).
+  Investigated two fixes before choosing: (1) adding `apps/__init__.py` +
+  `apps/api/__init__.py` to make the whole chain a regular package from
+  repo root -- rejected after tracing the actual consequence: every
+  existing file under `apps/api` (100+ files) already imports its own
+  siblings as `from app.xxx import yyy`, relying on `apps/api` itself
+  being mypy's root; forcing the root to `.` would break every one of
+  those existing imports, a repo-wide regression far outside this task's
+  own scope. (2) dependency-injecting the validator instead of importing
+  it -- chosen: `workers/data` and `apps/api` are separate deployable
+  uv-workspace members (confirmed via their own separate `pyproject.toml`
+  files), and a worker module hard-importing an API-app module would
+  also make `workers/data` genuinely undeployable in a real split-service
+  topology without shipping `apps/api`'s own source tree alongside it --
+  not merely a lint/type nitpick but a real architectural boundary this
+  session was about to be the first to violate. Added a
+  `ToolArgumentValidator` Protocol matching `validate_instance`'s own
+  exact call shape (`(schema: dict[str, object], instance: object, *,
+  field_name: str = ...) -> None`) so a caller passes that real function
+  in directly, unmodified -- proven in this task's own test suite
+  (`test_tool_arguments_validate_against_a_real_ftf_0405_schema`), which
+  itself follows the same `sys.path.insert(API_ROOT)` +
+  `from app.services.json_schema_tool_validation import ...` convention
+  `tests/tasks/test_ftf_0405.py` already established, rather than the
+  cross-namespace form. A tool call is refused outright when no validator
+  was supplied at all (fail closed) -- covered by its own dedicated test,
+  `test_rejects_tool_call_when_no_validator_supplied`.
+
+  **STEP 2 (V):** `uv sync --all-packages` resolved this fresh sandbox's
+  own missing `uvicorn`/`sqlalchemy`/etc. dependencies (same documented
+  precedent prior shifts established). `python3 tests/tasks/
+  test_ftf_0506.py` -- initial run genuinely failed for real (bound to
+  criterion FTF-0506, not staged): the first version of
+  `test_tool_arguments_validate_against_a_real_ftf_0405_schema` issued an
+  assistant tool call with no matching `tool` response, and
+  `normalize_conversation` correctly raised "record ends with unanswered
+  tool call(s): call_9" -- the test's own scenario was incomplete, not
+  the implementation; fixed by adding the matching tool-result message,
+  re-ran clean. A second genuine failure followed immediately after,
+  also bound to its own criterion: `test_rejects_tool_message_with_no_
+  pending_call`'s original scenario put a `tool` message directly after a
+  `user` message, which correctly raises "'tool' must directly follow
+  the assistant message that issued its tool call" (a different, more
+  specific ordering violation than the "no pending tool call to answer"
+  message the test asserted on) -- fixed by adding a proper "assistant
+  with no tool_calls, then tool" scenario for the intended check, and a
+  second assertion for the user-then-tool ordering violation actually
+  produced. All 24 checks pass after both fixes.
+  `uv run ruff check .`/`uv run ruff format --check .` clean repo-wide
+  (198 files). `uv run mypy .` clean on every file this task touches;
+  the whole-repo run shows 12 pre-existing `alembic`-stub errors,
+  confirmed identical via `git stash` against the clean `main` tip before
+  this shift's own changes -- not a regression this task introduced.
+  `python3 scripts/product_truth_check.py --fail-on-unwired` stays
+  `17/17` (unchanged -- Law 2, this task deliberately has no live caller
+  yet, disclosed scope matching FTF-0202/FTF-0205/FTF-0207's own
+  precedent; `proving_symbol` left blank). `scripts/status.py` stays
+  `49/300 certified · 17 product-true`. `git fetch --unshallow` resolved
+  this sandbox's own pre-existing shallow-clone artifact (documented
+  precedent); `python3 scripts/validate_spec.py --strict` clean
+  afterward. `tests/tasks/test_ftf_0405.py`/`test_ftf_0404.py`/
+  `test_ftf_0500.py`/`test_ftf_0207.py` all re-run clean under `uv run`
+  -- no regression to any shared module.
+
+  **Own fault injection (Law 1), two distinct vectors, both demonstrated
+  live this shift and reverted byte-identical, suite re-confirmed clean
+  immediately after each:**
+  1. Disabled the tool-call-ID uniqueness-within-record guard
+     (`if False and (call.id in used_call_ids or call.id in
+     pending_calls):`) -- run in a fresh process against a record with a
+     genuinely duplicated `tool_calls[].id`, the mutated module let it
+     through; the "tool call IDs unique within record" check failed for
+     real (Section 7's own named required validator). Reverted from a
+     verified backup; `diff` confirmed byte-identical; the suite re-ran
+     clean immediately after.
+  2. Disabled the "no `tool_argument_validator` supplied -> fail closed"
+     guard (`if False and tool_argument_validator is None:`) -- run in a
+     fresh process, the mutated module genuinely crashed on the very
+     first unvalidated tool call (`TypeError: 'NoneType' object is not
+     callable`), proving this guard is the only thing standing between an
+     unvalidated tool call and being silently accepted on trust -- exactly
+     the negative_acceptance risk this task exists to prevent. Reverted
+     from the same verified backup; `diff` confirmed byte-identical; the
+     suite re-ran clean immediately after.
+
+  Added `tests/tasks/test_ftf_0506.py` as its own dedicated `gate` job
+  step in `.github/workflows/ci.yml` at implementation time (not left for
+  a later shift to discover missing, the exact disclosed FTF-0205/
+  FTF-0206 gate-wiring gap this control plane already found twice).
+
+  **No blocking defect found in this task's own scope.**
+  `docs/spec-matrix.yaml` set to `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN`, `evidence_hash` set to the implementation
+  commit (`025b936d7011f30ca607f2038f1c61f4766c4640`). **Submitted
+  PROVISIONAL, not self-certified (Law 4)** -- PR to be opened, awaiting
+  independent Control-plane L2 review. Full entry:
+  `docs/certifications/queue.md`.
+
+## Next shift
+This entry is the sole new PROVISIONAL item added this shift -- a
+certifier shift should pick it up next, alongside PR #213 (the still-
+unmerged, disclosed-above real certification of FTF-0207, left untouched
+by this relay shift per RELAY ROLE). `FTF-0506` reaching CERTIFIED does
+not by itself newly unblock any currently dependency-ready task (nothing
+in the current frontier names it as a hard dependency yet), but it clears
+the second-highest-leverage single blocker in the frontier this shift
+computed (143 uncertified transitive dependents) after `FTF-0304`'s
+family. `FTF-0302`/`FTF-0303` (Hugging Face / private S3 artifact
+resolvers) are dependency-ready and unclaimed, but both need real
+external/keyed-credential integration evidence this RELAY SANDBOX cannot
+reach directly -- a future shift with CI Actions wiring (and, for
+FTF-0303, an owner-approved new keyed AWS credential) is better placed to
+pick them up than a further sandbox workaround. `FTF-0206`
+(`/model_group/info`, PR #207) and `FTF-0304` (Local artifact resolver,
+PRs #194/#195) remain open/unmerged from before this shift, on branches
+this session does not own -- left untouched.
+
+## Previous shift
 Updated: 2026-09-23T00:00:00Z (scheduled autonomous relay shift) —
   implemented FTF-0207 (Alias reconciliation), submitted PROVISIONAL, not
   self-certified (Law 4).

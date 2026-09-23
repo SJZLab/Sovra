@@ -2327,15 +2327,98 @@ FTF-0505:
   proving_symbol: ''
   proving_test: ''
 FTF-0506:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Canonical conversation normalizer
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0405, FTF-0500
-  proof_state: UNPROVEN
+  evidence_hash: 025b936d7011f30ca607f2038f1c61f4766c4640
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0405, FTF-0500
+    (contract_owner -- Phase 5's own interface owner, same relationship FTF-0207 already
+    established with FTF-0201; this task's own code never calls FTF-0500's
+    DatasetSourceConnection module directly). Path refinement recorded before READY (Section
+    84.3): the packet names `services/training-worker/data/canonical_conversation_normalizer.py`,
+    but this repo's real, already-established `SOURCE_ROOTS` (FTF-0001, PR #10) name
+    `workers/data` as the real Argilla-backed data/review worker root -- the module (and its
+    new `workers/__init__.py` / `workers/data/__init__.py`, matching the `packages/` package
+    convention already used repo-wide) was placed there instead of creating a second,
+    non-existent `services/` tree.
+
+    Built for real in `workers/data/canonical_conversation_normalizer.py::normalize_conversation`
+    -- a pure, synchronous, no-I/O, no-DB function (this task's own `database_changes` clause:
+    "No independent schema change. Consume frozen contract."). Enforces every one of Section 7's
+    own "Required validators" verbatim: valid role ordering (a real finite-state discipline --
+    leading contiguous `system` block, `user`/`assistant`/`tool` transitions exactly matching
+    Section 7's own worked example, a `tool` message can never be immediately followed by `user`),
+    tool call IDs unique within record, every tool result references an existing tool call (and
+    matches that call's own name), tool arguments validate against the project ToolDefinition
+    schema version, no unsupported content type, no null role/content ambiguity, canonical JSON
+    serialization before hashing (the same `sort_keys=True, separators=(",", ":")` convention
+    `apps/api/app/tools/tool_definition_schema.py::compute_schema_hash`, FTF-0404 CERTIFIED,
+    already established).
+
+    This task's own acceptance clause's "lineage/group IDs and deterministic hash" is real, not a
+    token field: `RecordLineage` (source_type/source_record_index/raw_sha256 -- a real SHA-256 of
+    the exact pre-coercion input) maps directly onto `DatasetRecord`'s own
+    `record_sha256`/`record_type` fields (Section 6.11); `group_id` is a stable, explicit-
+    `group_key`-derived or per-record-solo identity distinct from `DatasetRecord.duplicate_group_id`
+    (a later dedup task's own field, never written here), satisfying Section 9's "keep entire
+    conversations/customer cases ... in one split"; `canonical_hash` deliberately excludes
+    `record_id`/`group_id` from the hashed document so Section 8.1 step 10 ("detect exact
+    duplicate records") can compare hashes across independently-imported copies of the same
+    content.
+
+    Architecture boundary disclosed, not papered over: `workers/data` and `apps/api` are separate
+    deployable uv-workspace members: nothing else in this repository imports across that boundary
+    in either direction. Rather than hard-importing FTF-0405's already-CERTIFIED
+    `apps/api/app/services/json_schema_tool_validation.validate_instance` into this worker module
+    (which would make `workers/data` undeployable without apps/api's own source tree), tool-
+    argument validation is dependency-injected through a `ToolArgumentValidator` Protocol matching
+    that function's own exact call shape -- a caller passes the real function in directly,
+    unmodified. Proven as real, genuine FTF-0405 integration in this task's own test suite
+    (`test_tool_arguments_validate_against_a_real_ftf_0405_schema` wires in `validate_instance`
+    itself, including against a schema independently validated through that same module's own
+    `validate_json_schema_document`, and shows a real excess-argument rejection under
+    `additionalProperties: false`) -- not a hand-rolled stand-in. A tool call is refused outright
+    when no validator was supplied at all (fail closed, never accepted on trust) --
+    `test_rejects_tool_call_when_no_validator_supplied` proves this for real.
+
+    Scope decision (disclosed, same precedent FTF-0202/FTF-0205/FTF-0207 already established for
+    "no live caller yet"): this task's own packet `files` list names only the module and its test,
+    not an importer/route file -- no importer exists yet in this repository to call
+    `normalize_conversation` (that is a later, separately dependency-gated task, e.g. a JSONL/CSV/
+    XLSX importer). `proving_symbol` stays blank and `product_truth_check.py`'s product-true count
+    is deliberately unchanged (17/17, Law 2).
+
+    Tests: `tests/tasks/test_ftf_0506.py` (24 test functions, real no-DB, no-external-egress
+    checks, wired into the `gate` job as its own CI step -- learning from this repo's own disclosed
+    FTF-0205/FTF-0206 gate-wiring gap, never repeating it silently). Positive coverage: Section 7's
+    own full worked example end to end; deterministic content-derived `canonical_hash`; explicit-
+    `group_key` grouping and per-record solo grouping; `RecordLineage` fields; real FTF-0405
+    schema-validated tool-argument acceptance. Negative coverage (this task's own
+    negative_acceptance, "Missing/unmapped role or coerced information loss is rejected, not
+    silently guessed"): unmapped role; unsupported/null content shapes; unsupported content-part
+    type; consecutive `user` messages; a non-leading `system` message; a `tool` message with no
+    pending call (both immediately-after-`user` and after-an-assistant-with-no-tool_calls shapes);
+    a tool result referencing an unknown `tool_call_id`; a tool result naming a different tool than
+    its own issuing call; a duplicate `tool_call_id` within one record; a record ending with an
+    unanswered tool call; an unmapped tool name; no validator supplied for a real tool call; an
+    unrecognized extra field on a message; an empty messages list; a non-mapping `raw_record`; non-
+    JSON-serializable metadata.
+
+    Own fault injection (Law 1, two distinct vectors, both demonstrated live this shift and
+    reverted byte-identical, suite re-confirmed clean immediately after each): (1) disabled the
+    tool-call-id uniqueness-within-record guard (`if False and (call.id in used_call_ids or ...)`)
+    -- run in a fresh process, the mutated module genuinely lets a duplicate `tool_call_id` through;
+    the "tool call IDs unique within record" check failed for real; reverted, re-ran clean. (2)
+    disabled the "no tool_argument_validator supplied -> fail closed" guard (`if False and
+    tool_argument_validator is None`) -- run in a fresh process, the mutated module genuinely
+    crashes attempting to call `None` as the validator on the very first unvalidated tool call
+    (`TypeError: 'NoneType' object is not callable`), proving the guard is the only thing standing
+    between an unvalidated tool call and being silently accepted; reverted, re-ran clean.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0506.py
 FTF-0507:
   certification_state: NONE
   criticality: MUST

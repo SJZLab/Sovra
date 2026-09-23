@@ -11468,3 +11468,214 @@ highest-leverage single blocker in the current frontier (159 uncertified
 transitive dependents). `FTF-0206` (PR #207) and the FTF-0205 gate-step
 fix (PR #211) both remain open and unmerged from before this shift,
 unrelated to this task's own branch — see this file's own prior entries.
+
+## 2026-09-23 — FTF-0506 — Canonical conversation normalizer
+- **Branch/commit:** `claude/wizardly-fermat-fqjkvu`, commit
+  `025b936d7011f30ca607f2038f1c61f4766c4640` (implementation: module/
+  test/CI wiring). PR to be opened as PROVISIONAL against `main`, title
+  `[relay] FTF-0506: Canonical conversation normalizer`.
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh this
+  shift (via `tail`, both `PROGRESS.md`/`QUEUE.md` exceed the single-read
+  size limit), not trusted from prior context. This session's own
+  designated branch (`claude/wizardly-fermat-fqjkvu`) already matched
+  `origin/main`'s tip exactly (`ab6473f`) after `git fetch origin main` —
+  no unmerged work of its own to preserve. Cross-checked live GitHub
+  state: five open PRs — #213 (a doc-only PR whose own body discloses it
+  is the real, still-unmerged L2 certification of FTF-0207; `ab6473f`'s
+  own commit message says "Control plane: certify FTF-0207" but its
+  actual diff only merged the PROVISIONAL submission and never bumped
+  `certification_state` — confirmed genuinely un-inflated by reading
+  `docs/spec-matrix.yaml` directly on the real merged head, still
+  `PROVISIONAL`/`L1-PROVEN`; left for Control plane to resolve, not this
+  relay shift's role), #211 (CI-wiring fix for FTF-0205's own gate-step
+  gap, unmerged), #207 (`FTF-0206`, still blocked on its own disclosed
+  gate-wiring gap), #195/#194 (both `FTF-0304` from other sessions) —
+  none picked, to avoid duplicating work in flight or acting outside this
+  shift's own RELAY ROLE. Recomputed the dependency-ready frontier fresh
+  with a real script (joining `docs/spec-matrix.yaml`'s live
+  `certification_state` against each entry's own `deps=` note): fifteen
+  items came back — `FTF-0206`/`FTF-0302`/`FTF-0303`/`FTF-0304`/
+  `FTF-0408`/`FTF-04A02`/`FTF-04A07`/`FTF-0500A`/`FTF-0500D`/`FTF-0506`/
+  `FTF-0902`/`FTF-1201`/`FTF-1503`/`FTF-1506`/`FTF-R002`. `FTF-0206`/
+  `FTF-0304` excluded (in flight elsewhere). A transitive reverse-
+  dependency count gave `FTF-0302`/`FTF-0303`/`FTF-0304` the highest
+  leverage (149 each), but `FTF-0302` (Hugging Face resolver) and
+  `FTF-0303` (private S3 resolver) both require real external/keyed-
+  credential integration evidence per their own task packets
+  (`resource_gate: "Real external/GPU prerequisites must exist for
+  relevant integration; unavailable required evidence is
+  BLOCKED_EXTERNAL, never skipped"`) that this RELAY SANDBOX cannot reach
+  directly (no open egress to huggingface.co/AWS S3; S3 additionally
+  needs a genuinely new keyed external credential, CLAUDE.md's own "Ask
+  owner first" list) — deferred rather than half-evidenced. Picked
+  `FTF-0506` (Canonical conversation normalizer): next-highest leverage
+  (143 uncertified transitive dependents) with no external-service
+  requirement at all (`database_changes: "No independent schema change.
+  Consume frozen contract."`). Its own dependencies (`FTF-0405`,
+  `FTF-0500`) were independently confirmed `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Task contract:** `python tools/r1_handoff.py packet FTF-0506 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Normalize roles/
+  content/tool calls into canonical schema with lineage/group IDs and
+  deterministic hash"), negative_acceptance ("Missing/unmapped role or
+  coerced information loss is rejected, not silently guessed"),
+  `database_changes: "No independent schema change. Consume frozen
+  contract."`, `files: [services/training-worker/data/
+  canonical_conversation_normalizer.py, tests/tasks/test_ftf_0506.py]`,
+  `dependencies: [FTF-0405, FTF-0500]`, `contract_owner: FTF-0500`. Path
+  refinement recorded before READY (Section 84.3): the packet names
+  `services/training-worker/data/` (a directory that does not exist in
+  this repository at all), but this repo's real, already-established
+  `SOURCE_ROOTS` (FTF-0001, PR #10;
+  `scripts/product_truth_check.py`'s own list) name `workers/data` as
+  the real Argilla-backed data/review worker root — the module was
+  placed there instead, with new `workers/__init__.py`/
+  `workers/data/__init__.py` added to match the `packages/` package
+  convention (`packages/__init__.py`, `packages/litellm_client/
+  __init__.py`) already established repo-wide, resolving a real
+  `mypy` "Source file found twice" conflict this otherwise caused.
+- **Scope disclosed, not hidden:** the packet's own `files` list names
+  only the module and its test, not an importer/route file — no importer
+  exists anywhere in this repository yet to call `normalize_conversation`
+  (a later, separately dependency-gated task: a JSONL/CSV/XLSX/API-
+  upload importer, Section 8's own list). `proving_symbol` stays blank
+  and `product_truth_check.py`'s product-true count is deliberately
+  unchanged (17/17, Law 2) — same disclosed precedent FTF-0202/FTF-0205/
+  FTF-0207 already established.
+- **Architecture boundary, disclosed as a real design decision, not a
+  workaround:** `workers/data` and `apps/api` are separate deployable
+  uv-workspace members (separate `pyproject.toml` files; confirmed
+  `apps/api`'s own `package = false` — it is not installed as an
+  importable dependency of the workspace root). Directly confirmed via
+  `grep -rln "from apps.api"` across the whole repository that nothing
+  else imports across that boundary in either direction today. This
+  task's own tool-argument validation need ("tool arguments validate
+  against the project ToolDefinition schema version", Section 7's own
+  required validator) is satisfied through a `ToolArgumentValidator`
+  Protocol matching FTF-0405's already-CERTIFIED
+  `apps/api/app/services/json_schema_tool_validation.validate_instance`'s
+  own exact call shape (`(schema: dict[str, object], instance: object,
+  *, field_name: str = ...) -> None`) — a caller passes that real
+  function in directly, dependency-injected rather than hard-imported, so
+  `workers/data` stays deployable without shipping `apps/api`'s own
+  source tree. A first draft did import it directly; `uv run mypy .`
+  caught a real, genuine defect this introduced (a "Source file found
+  twice under different module names" conflict, since neither `apps/`
+  nor `apps/api/` has `__init__.py`) before this design was chosen — not
+  discovered after the fact.
+- **Design:** `normalize_conversation(*, source_type, source_record_index,
+  raw_record, tool_schemas=(), tool_argument_validator=None, group_key=None,
+  record_id=None) -> CanonicalConversationRecord` is a pure, synchronous,
+  no-I/O function. It enforces every one of Section 7's own "Required
+  validators" verbatim: a real finite-state role-ordering discipline
+  (leading contiguous `system` block; `user`/`assistant`/`tool`
+  transitions exactly matching Section 7's own worked example; a `tool`
+  message can never be immediately followed by `user` — the issuing
+  assistant turn must produce its own concluding message first); tool
+  call IDs unique within record; every tool result references an
+  existing tool call and matches that call's own name; tool arguments
+  validated via the injected validator (refused outright if none
+  supplied, fail closed); no unsupported content type (only a plain
+  string, losslessly wrapped as text, or an already-canonical
+  `{"type": "text"|"json", ...}` part list — never a bare JSON object or
+  any other shape, refusing to guess a lossy coercion); no null role/
+  content ambiguity; canonical JSON serialization before hashing (the
+  same `sort_keys=True, separators=(",", ":")` convention
+  `apps/api/app/tools/tool_definition_schema.py::compute_schema_hash`,
+  FTF-0404 CERTIFIED, already established, applied to exactly
+  `{schema_version, messages, metadata}` — `record_id`/`group_id`
+  deliberately excluded so Section 8.1 step 10's exact-duplicate
+  detection can compare hashes across independently-imported copies of
+  the same content). `RecordLineage` (`source_type`,
+  `source_record_index`, `raw_sha256` — a real SHA-256 of the exact
+  pre-coercion input) maps directly onto `DatasetRecord`'s own
+  `record_sha256`/`record_type` fields (Section 6.11). `group_id` is
+  either a stable hash of an explicit caller-supplied `group_key` (so
+  every record sharing a case/thread identity lands in the same group,
+  Section 9's own "keep entire conversations/customer cases ... in one
+  split") or a deterministic per-`record_id` solo group — distinct from
+  `DatasetRecord.duplicate_group_id` (Section 6.11's own *duplicate*-
+  detection field, owned by a later dedup task, never written here).
+- **Tests:** `tests/tasks/test_ftf_0506.py` (24 test functions, real
+  no-DB, no-external-egress checks, wired into the `gate` job as its own
+  CI step at implementation time). Positive coverage: Section 7's own
+  full worked example end to end (role order, content coercion, tool-
+  call/tool-result linkage, metadata passthrough); deterministic content-
+  derived `canonical_hash` (identical content hashes identically across
+  different `record_id`s; different content hashes differently); explicit
+  `group_key` grouping (two records sharing a key get the same `group_id`
+  despite different content; a different key produces a different one)
+  and per-record solo grouping (deterministic per `record_id`, distinct
+  namespace from explicit keys); `RecordLineage` fields; a real
+  FTF-0405-validated schema (`validate_json_schema_document` then
+  `validate_instance`, both real, unmodified) accepting conforming
+  arguments and genuinely rejecting an excess property under
+  `additionalProperties: false`. Negative coverage (this task's own
+  negative_acceptance): unmapped role; unsupported/null content shapes
+  (a bare number, a bare JSON object for a non-tool role); unsupported
+  content-part type; consecutive `user` messages; a non-leading `system`
+  message; a `tool` message with no pending call (both the "assistant
+  issued no tool_calls" and "tool directly after user" shapes, asserting
+  on each one's own distinct error message); a tool result referencing an
+  unknown `tool_call_id`; a tool result naming a different tool than its
+  own issuing call; a duplicate `tool_call_id` within one record; a
+  record ending with an unanswered tool call; an unmapped tool name; a
+  real tool call with no `tool_argument_validator` supplied at all
+  (fail-closed); an unrecognized extra field on a message; an empty
+  messages list; a non-mapping `raw_record`; non-JSON-serializable
+  metadata. Confirmed clean: `uv run ruff check .`, `uv run ruff format
+  --check .`, `uv run mypy .` (whole repo, both zero new issues after
+  `uv sync --all-packages` — 12 pre-existing `alembic`-stub errors
+  confirmed identical via `git stash` against the clean `main` tip before
+  this shift, not a regression this task introduced), `uv run pytest
+  tests/unit` (3/3), `python3 scripts/validate_spec.py --strict` (clean
+  after this sandbox's own pre-existing shallow-clone `git fetch
+  --unshallow`, same documented precedent as prior shifts), `python3
+  scripts/product_truth_check.py --fail-on-unwired` (17/17, unchanged),
+  `python3 scripts/status.py` (49/300 certified, 17 product-true,
+  unchanged pending certification). Regression suites `tests/tasks/
+  test_ftf_0405.py`/`test_ftf_0404.py`/`test_ftf_0500.py`/
+  `test_ftf_0207.py` all re-run clean afterward under `uv run` — no
+  regression to any shared module.
+
+**Own fault injection (Law 1, two distinct vectors, both demonstrated
+live in this shift and reverted byte-identical, suite re-confirmed clean
+immediately after each):**
+1. Disabled the tool-call-ID uniqueness-within-record guard (`if False
+   and (call.id in used_call_ids or call.id in pending_calls):`) — run in
+   a fresh process against a record with a genuinely duplicated
+   `tool_calls[].id`, the mutated module let it through; the "tool call
+   IDs unique within record" check (Section 7's own named required
+   validator) failed for real.
+2. Disabled the "no `tool_argument_validator` supplied -> fail closed"
+   guard (`if False and tool_argument_validator is None:`) — run in a
+   fresh process, the mutated module genuinely crashed attempting to call
+   `None` as the validator on the very first unvalidated tool call
+   (`TypeError: 'NoneType' object is not callable`), proving this guard
+   is the only thing standing between an unvalidated tool call and being
+   silently accepted on trust.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`025b936d7011f30ca607f2038f1c61f4766c4640`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — PR opened, awaiting independent
+Control-plane L2 review.
+
+## Next shift
+This entry is the sole new PROVISIONAL item added this shift — a
+certifier shift should pick it up next, alongside PR #213 (the real,
+still-unmerged L2 certification of FTF-0207, disclosed above — left for
+Control plane, not this relay's role). `FTF-0506` reaching CERTIFIED does
+not by itself newly unblock any currently dependency-ready task, but it
+clears the second-highest-leverage single blocker in the current
+frontier (143 uncertified transitive dependents) after `FTF-0304`'s
+family. `FTF-0302`/`FTF-0303` (Hugging Face / private S3 artifact
+resolvers) are dependency-ready and unclaimed but need real external/
+keyed-credential integration evidence this sandbox cannot reach directly
+— better suited to a shift with CI Actions wiring (and, for FTF-0303, an
+owner-approved new keyed AWS credential). `FTF-0206` (PR #207) and
+`FTF-0304` (PRs #194/#195) remain open/unmerged from before this shift,
+on branches this session does not own — left untouched.
