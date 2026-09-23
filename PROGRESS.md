@@ -14858,3 +14858,136 @@ after this shift ends could unlock further items. `FTF-0304` still has
 two open, unmerged candidate PRs (#194/#195) from other sessions — leave
 those for their own producer sessions or a certifier, do not redo the
 work.
+
+Updated: 2026-09-23T21:05:12Z (scheduled relay shift) — implemented
+FTF-0210 (Real chat probe), submitted PROVISIONAL, not self-certified
+(Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh (never assumed state from prior context). Found: no
+Owner actions, no Active items, no Provisional items — FTF-0209's
+certification (PR #222, merge commit `78ab453...`) was the last entry,
+independently confirmed via `docs/spec-matrix.yaml`
+(`certification_state: CERTIFIED`) and `docs/certifications/ledger.md`.
+`mcp__github__list_pull_requests` (open, this repo) showed only PRs
+#194/#195 (both FTF-0304, other sessions' work) — left alone per this
+file's own prior "Next shift" note.
+
+**STEP 1:** Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (parsed each task's own `notes` field for its
+real `deps=...` list, cross-checked each dependency's own
+`certification_state`, not trusted from any prior enumeration). 18 tasks
+were genuinely dependency-ready and uncertified; only FTF-0304 had open
+PRs (other sessions', left alone per prior note). Picked **FTF-0210**
+("Real chat probe", deps FTF-0201/FTF-0204/FTF-0207, all confirmed
+`CERTIFIED`) — the lowest-numbered ready item. "Working: FTF-0210."
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+packet FTF-0210 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read Section
+3.4 ("Capability probes")/3.5 ("Pin actual model routes") closely, plus
+the already-CERTIFIED sibling modules `connection_validation.py`
+(FTF-0203) and `v1_models_discovery.py` (FTF-0204) as the direct
+precedent for the `guarded_fetch`/OpenBao-secret-resolution composition
+and per-module failure-state enum convention. Formed the hypothesis: a
+new `packages/litellm_client/real_chat_probe.py::probe_chat` issues one
+real `POST /v1/chat/completions` call; Section 3.4's "explicitly approved
+auto-probe models" and "synthetic non-sensitive content and an approved
+probe budget" are enforced by construction (an unapproved `model_id`
+raises before any network call; the probe prompt/token ceiling are fixed
+module constants, never caller-supplied); the real response's
+`model`/`usage` fields are recorded when present, else
+`IDENTITY_UNVERIFIED`/`None` (Sections 3.5/3.4); and a `400` rejection is
+classified via the OpenAI-compatible `error.code`/`type`/`param` shape
+into `CONTENT_FILTERED` or `UNSUPPORTED_PARAMETER`, never guessed when
+unrecognized. Path refinement, disclosed: placed at
+`packages/litellm_client/` (the real, already-CERTIFIED directory every
+sibling FTF-020x module uses), not the task packet's own literal
+hyphenated `packages/litellm-client/` suggestion. Scope narrowing,
+disclosed (same class as FTF-0301's own): this task owns only the plain,
+non-streaming chat capability — streaming (FTF-0211)/tool calls
+(FTF-0212)/structured output (FTF-0213) are each their own later task,
+and the per-model "advertised vs probed" capability registry is
+FTF-0214's ("Model catalog UI") job. No code written yet at this point.
+
+**STEP 2 (E):** Implemented `packages/litellm_client/real_chat_probe.py`
+(`probe_chat`, `ChatProbeResult`, `ChatProbeState`, `ChatUsage`,
+`RouteIdentityState`, `ChatProbeError`, `ChatProbeNotAuthorizedError`).
+Wrote `tests/tasks/test_ftf_0210.py` — the same real local-HTTPS-gateway
+(a real self-signed CA trusted into this sandbox's own system trust
+store for the run's duration) plus real local OpenBao-KV-v2-shape
+secret-backend fixture every sibling FTF-020x suite already uses, plus
+pure no-network unit checks for the classifier/parser helpers.
+
+**Shown able to fail first (Law 1):** moved the not-yet-restored module
+aside right after writing the test file and ran `python3 tests/tasks/
+test_ftf_0210.py` directly: produced a real `ModuleNotFoundError: No
+module named 'packages.litellm_client.real_chat_probe'` — a genuine
+failure bound to this task's own import. The module was then restored
+and the full suite re-run clean.
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays `17/17`
+(unchanged — Law 2, this task deliberately has no live caller yet, same
+disclosed precedent FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209;
+`proving_symbol` left blank). `scripts/status.py` stays `54/300 certified
+— 17 product-true`. `uv run ruff check .`/`uv run ruff format --check .`
+clean on both new files using the pinned toolchain (`ruff 0.6.9`,
+matching `pyproject.toml`/CI) after wrapping this task's own new files'
+long lines. `uv run mypy packages/litellm_client/real_chat_probe.py
+tests/tasks/test_ftf_0210.py` clean ("Success: no issues found in 2
+source files"). `uv sync --all-packages` (the documented CI convention
+for this workspace, `.github/workflows/ci.yml` line 59) then `uv run
+python3 tests/tasks/test_ftf_0201.py`/`test_ftf_0204.py`/
+`test_ftf_0207.py` (this task's own `CERTIFIED` dependencies) re-run
+clean afterward — no regression to any shared module.
+`scripts/validate_spec.py --strict` clean (`git fetch origin main` first
+to pick up PRs #222/#223's merge; confirmed this branch was already a
+descendant of the latest `main` at the point this task's implementation
+commit was made — no rebase needed).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical and the suite re-confirmed clean immediately after each,**
+run directly each time:
+1. Removed the `if model_id not in approved_model_ids: raise
+   ChatProbeNotAuthorizedError(...)` gate from `probe_chat` entirely —
+   the unmodified authorization-gate negative check genuinely failed for
+   real (the mutated module attempted a probe instead of raising);
+   reverted, `diff` confirmed byte-identical, suite re-ran clean.
+2. Made `_classify_rejection` unconditionally `return
+   ChatProbeState.CONTENT_FILTERED, "..."` before any real classification
+   logic ran — 5 checks genuinely failed for real (both pure
+   `_classify_rejection` unit checks, the two live `400`-rejection round
+   trips depending on the content-filter/unsupported-parameter
+   distinction, and the unrecognized-rejection malformed-response check);
+   reverted, `diff` confirmed byte-identical, suite re-ran clean.
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0210.py`) to
+`.github/workflows/ci.yml` in the same commit as the implementation,
+deliberately not deferred — learning directly from the disclosed
+FTF-0205/FTF-0206 watchdog finding where a missing gate-wiring step let a
+merged PR's own test suite go unexecuted by CI until a later shift
+noticed.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`19a247c1cf5334e416c8a14b6c41d1d78e3ae9ea`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — pushed to
+`claude/wizardly-fermat-fxdnkd`, awaiting independent Control-plane L2
+review. Full entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0210`) awaiting independent Control-plane L2 review — a certifier
+shift should pick it up next. Recomputing the dependency-ready frontier
+fresh at this shift's end (do not trust this note alone) showed further
+genuinely ready, uncertified, unclaimed tasks besides FTF-0210 itself
+(FTF-0215 becomes dependency-ready only once FTF-0210 itself is
+CERTIFIED, not before) — re-derive this list from
+`docs/spec-matrix.yaml` itself rather than trusting this enumeration,
+since a certification landing after this shift ends could unlock further
+items. `FTF-0304` still has two open, unmerged candidate PRs (#194/#195)
+from other sessions — leave those for their own producer sessions or a
+certifier, do not redo the work.

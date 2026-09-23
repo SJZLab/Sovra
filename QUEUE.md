@@ -3618,7 +3618,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-(none currently)
+- FTF-0210 — Real chat probe. Implemented and submitted PROVISIONAL
+  2026-09-23 (relay shift, implementation commit
+  `19a247c1cf5334e416c8a14b6c41d1d78e3ae9ea`). PR:
+  https://github.com/SJZLab/Sovra/pull/224
+  (`claude/wizardly-fermat-fxdnkd` -> `main`). Not self-certified (Law
+  4) — awaiting independent Control-plane L2 review. Full entry:
+  `docs/spec-matrix.yaml`'s FTF-0210 record and
+  `docs/certifications/queue.md`.
 
 FTF-0209 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #222 (merge commit

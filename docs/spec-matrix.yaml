@@ -931,15 +931,97 @@ FTF-0209:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0209.py
 FTF-0210:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Real chat probe
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204, FTF-0207
-  proof_state: UNPROVEN
+  evidence_hash: 19a247c1cf5334e416c8a14b6c41d1d78e3ae9ea
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201,
+    FTF-0204, FTF-0207 (all CERTIFIED). Built for real in a new
+    packages/litellm_client/real_chat_probe.py::probe_chat -- issues one real,
+    bounded, synthetic POST /v1/chat/completions call through the same
+    guarded_fetch/OpenBao secret-resolution composition
+    connection_validation.py (FTF-0203)/v1_models_discovery.py (FTF-0204)
+    already established, returning a ChatProbeResult (state/
+    route_identity_state/resolved_model/usage/latency_ms/detail/probed_at).
+    Section 3.4''s "Probe only selected or explicitly approved auto-probe
+    models" and "using synthetic non-sensitive content and an approved probe
+    budget" are both enforced by construction, not left to a caller --
+    probe_chat raises ChatProbeNotAuthorizedError before any network call
+    when model_id is not in the caller-supplied approved_model_ids set, and
+    the probe prompt/max_tokens ceiling are fixed module constants, never
+    caller-supplied (a probe accepting arbitrary prompt content or an
+    unbounded max_tokens would be an unbounded inference call wearing a
+    "probe" label). This task''s own acceptance clause ("Explicitly
+    authorized synthetic probe calls real model and records actual provider
+    route, usage and latency") is proven by a real local-HTTPS-gateway round
+    trip whose response''s own `model` field (deliberately different from the
+    requested alias in the test fixture) is recorded as resolved_model with
+    route_identity_state=VERIFIED (Section 3.5), and whose usage/latency are
+    the real observed values; Section 3.4''s "Missing usage becomes
+    unpriced/unknown, not zero cost" is proven by a dedicated real round trip
+    whose response omits the usage object entirely, asserting usage=None
+    rather than a zero-filled ChatUsage. This task''s own negative_acceptance
+    ("Sensitive content, unsupported parameters and permission/timeout
+    errors are normalized without fabricated responses") is proven by four
+    dedicated real round trips against the same local gateway: a 400 with an
+    OpenAI-compatible content_filter code/type -> CONTENT_FILTERED; a 400
+    naming an unsupported/unknown parameter -> UNSUPPORTED_PARAMETER, kept
+    distinct from content filtering; a real gateway 401 on a resolved-but-
+    stale credential (a second, real, live-resolvable OpenBao secret the
+    gateway itself never accepts) -> INVALID_TOKEN, distinct from a
+    secret-backend-level failure (SECRET_NOT_FOUND/SECRET_ACCESS_DENIED,
+    which never even reach the gateway); and a real server-side delay past a
+    bounded client timeout -> TIMEOUT, confirmed to return near the bounded
+    timeout rather than after the server''s full delay. Scope decision
+    (disclosed, same class as FTF-0301''s own narrowing) -- this task owns
+    exactly the plain, non-streaming POST /v1/chat/completions capability;
+    streaming (FTF-0211), tool calls (FTF-0212) and structured output
+    (FTF-0213) are each their own, later, separately dependency-gated probe
+    task built on this one, and aggregating multiple probe kinds into a
+    per-model "advertised vs probed" capability registry (Section 3.4) is
+    FTF-0214''s ("Model catalog UI") job, not this module''s. No independent
+    schema change (this task''s own database_changes clause) -- a probe
+    result is computed fresh on every call and returned directly, never
+    persisted, same convention every sibling FTF-020x module already
+    established. Files path refined from the task packet''s own hyphenated
+    packages/litellm-client/real_chat_probe.py suggestion to this
+    repository''s real, already-CERTIFIED packages/litellm_client/ directory
+    every sibling FTF-020x module uses. tests/tasks/test_ftf_0210.py (real
+    local-HTTPS-gateway integration suite, same no-DB/no-external-egress
+    convention as FTF-0203/0204/0205/0206/0207/0208/0209 -- a real
+    self-signed CA trusted into this sandbox''s system trust store for the
+    run''s duration -- plus pure no-network unit checks for
+    _classify_guard_failure/_classify_rejection/_parse_usage/
+    _parse_success_body). Shown able to fail first (Law 1): moved the
+    not-yet-restored module aside and ran the suite directly, producing a
+    real ModuleNotFoundError bound to this task''s own import; the module
+    was then restored and the full suite re-run clean. Own fault-injection
+    evidence (Law 1), two distinct vectors, both reverted byte-identical
+    (diff confirmed) and the suite re-confirmed clean immediately after
+    each: (1) removed the approved_model_ids authorization gate from
+    probe_chat entirely -- the authorization-gate negative check genuinely
+    failed for real (the mutated module attempted a probe instead of
+    raising); (2) made _classify_rejection unconditionally return
+    CONTENT_FILTERED before any real classification logic ran -- 5 checks
+    genuinely failed for real (both pure classifier checks plus the two live
+    400-rejection round trips depending on the content-filter/
+    unsupported-parameter distinction, plus the malformed-400 classifier
+    check). product_truth_check.py --fail-on-unwired stays 17/17 (unchanged
+    -- Law 2, this task deliberately has no live caller yet, same disclosed
+    precedent FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209; proving_symbol
+    left blank). uv run ruff check/ruff format --check/mypy clean on both
+    new files using the pinned toolchain. uv run python3
+    tests/tasks/test_ftf_0201.py/test_ftf_0204.py/test_ftf_0207.py (this
+    task''s own CERTIFIED dependencies) re-run clean afterward -- no
+    regression. Added this task''s own CI gate step
+    (tests/tasks/test_ftf_0210.py) to .github/workflows/ci.yml in this same
+    commit, per the disclosed FTF-0205/FTF-0206 watchdog finding on a
+    missing gate-wiring step. Submitted PROVISIONAL, not self-certified (Law
+    4) -- awaiting independent Control-plane L2 review.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0210.py
 FTF-0211:
   certification_state: NONE
   criticality: MUST
