@@ -12099,3 +12099,112 @@ sessions or a certifier, do not redo the work.
 ## 2026-09-23 — FTF-0208 — record the opened PR link
 PR: https://github.com/SJZLab/Sovra/pull/220 (`claude/wizardly-fermat-bbv5gh`
 -> `main`). No other action this entry.
+
+## 2026-09-23 — FTF-0208 — Control plane: independent CERTIFY review, CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #220. Per this
+session's own mandate, checked this file and `docs/spec-matrix.yaml`
+first and found FTF-0208/PR #220 the sole pending PROVISIONAL item.
+
+- **Session-ID check:** PR #220's three commits carry
+  `session_012onwtuejKNuCp5dC6NnuAE` (implementation, PROVISIONAL
+  submission, and PR-link record). This session's own ID is
+  `session_01UC3z5JnAWfAPiBLUkogRTj` -- no match against either,
+  independent per Law 4.
+- **Diff read directly** against PR #220's real head (`370334d`): exactly
+  the task packet's own module (`packages/litellm_client/
+  last_known_good_catalog.py`) and test (`tests/tasks/test_ftf_0208.py`),
+  plus one new `gate`-job CI step and expected tracking docs. No scope
+  creep.
+- **CI re-checked on the real head, not taken on faith:** waited out the
+  full run -- all 27 jobs eventually reached `success` on head SHA
+  `370334de7986c22b70554c52228f7668b84b87db` (run `35892825208`). Three
+  jobs (`secret-manager-integration`, `dataset-source-connection-
+  integration`, `target-application-connection-integration`) each took
+  5-7 minutes because they build OpenBao from source on the runner
+  (`git clone` + `go build`), not because of a failure -- confirmed by
+  cross-checking a superseded prior workflow run for an earlier commit on
+  this same PR branch (run `35892801008`), which showed the identical
+  pattern (the same three job types slow, everything else green in under
+  2 minutes), ruling out anything specific to this PR's final commit.
+  Pulled the `gate` job's own raw log directly and confirmed
+  `tests/tasks/test_ftf_0208.py` genuinely executes and passes inline
+  ("FTF-0208 last-known-good catalog: all checks passed"), immediately
+  followed by real "Product-truth: 17/17 product-true" / "Status: 52/300
+  certified · 17 product-true" output in that same run.
+- **Own independent verification**, in a fresh `git worktree` at the real
+  PR head (`370334d`), fetched via `git fetch origin pull/220/head`:
+  - `uv run python3 tests/tasks/test_ftf_0208.py` -- all checks pass,
+    including the real end-to-end check against a real local HTTPS
+    gateway (confirmed `_UPDATE_CA_AVAILABLE`/`_TRUSTED_LEAF` were
+    genuinely set in this sandbox too -- `openssl`/
+    `update-ca-certificates`/passwordless `sudo` all present -- so that
+    check actually ran, not merely skipped).
+  - **Own fault injection**, a third vector distinct from the producer's
+    own two: removed the entire removed-id marking loop from
+    `_apply_successful` (`removed_ids = previous_active_ids - new_ids`
+    plus the loop that applies `CatalogEntryStatus.REMOVED`), rather than
+    the producer's own narrower "hard-code `removed_ids` to an empty
+    set." Five checks genuinely failed for real (removal detection, the
+    alert-without-restoring-access guarantee, and the real end-to-end
+    gateway sequence's own removal/revocation assertions all broke);
+    reverted from a pre-edit backup, `diff` confirmed byte-identical,
+    suite re-ran clean immediately after.
+  - `uv run ruff check .` / `uv run ruff format --check .` / `uv run
+    mypy packages/litellm_client/last_known_good_catalog.py
+    tests/tasks/test_ftf_0208.py` -- clean, pinned toolchain (`ruff
+    0.6.9`, matching `pyproject.toml`/CI).
+  - `uv run python3 tests/tasks/test_ftf_0204.py` / `test_ftf_0207.py`
+    re-run clean -- no regression to either already-CERTIFIED dependency
+    this task's own module imports from.
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` -- own
+    run, **17/17**, legitimately unchanged (`proving_symbol` confirmed
+    blank in `docs/spec-matrix.yaml` -- no live caller yet, same
+    disclosed "no live caller" precedent already accepted for
+    FTF-0202/FTF-0205/FTF-0207).
+  - `python3 scripts/validate_spec.py --strict` -- clean (after
+    `git fetch --unshallow`, this sandbox's own pre-existing
+    shallow-clone artifact, same documented precedent prior shifts
+    already established).
+- `python3 tools/r1_handoff.py packet FTF-0208 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` -- acceptance clause 1 ("Persist
+  historical catalog and mark stale/inaccessible separately from
+  callable entries") confirmed met by `CatalogEntry.status`, always
+  exactly one of `callable`/`stale`/`removed`, retained for every id ever
+  discovered; negative_acceptance ("A last-known-good snapshot cannot
+  authorize queued/new inference after revocation or freshness
+  expiration") confirmed met by `is_call_authorized`'s own two
+  unconditional early-return checks (`access_revoked`,
+  `freshness_expired`), both reached before any entry's own callable
+  status is even consulted -- confirmed both by the producer's own two
+  fault-injection demonstrations and this review's own third one above,
+  plus direct code reading. Dependencies FTF-0201/FTF-0207 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on
+  them.
+- **One evidence-accuracy correction, not a functional defect:** the
+  submission's own claim of "24 pure no-DB/no-egress checks" (repeated in
+  the PR body, commit message, and `docs/spec-matrix.yaml` notes) does
+  not match the actual file: `tests/tasks/test_ftf_0208.py` has 20 pure
+  test functions (33 `check()` assertions) plus 1 real end-to-end test
+  function (8 further assertions) -- 21 functions / 41 assertions total,
+  not 24 by either count. Every one of those checks was independently
+  re-run and genuinely passes; this is a documentation-accuracy note for
+  the record, not a certification blocker.
+
+**No blocking defect found.** Merged PR #220 (merge commit
+`30d91376505447d33dfd9ac8d9e5ee92ba162ed9`). `docs/spec-matrix.yaml` set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to that merge commit; `proving_symbol` stays blank
+(no live caller yet, disclosed -- FTF-0215, the periodic sync workflow,
+is the disclosed later wiring step). Ledger entry appended
+(`docs/certifications/ledger.md`). Ran
+`scripts.task_claim.sync_certified_status()` -- `['FTF-0208']` updated.
+Certified: 52/300 → 53/300. Product-true: unchanged at 17/17.
+
+## Next shift
+No Owner actions, no Active items, no Provisional items as of this
+shift's end. A relay shift should recompute the dependency-ready
+frontier fresh from `docs/spec-matrix.yaml`'s own `notes`/`deps` rather
+than trusting any prior enumeration, since this certification could
+unlock further items. `FTF-0304` still has two open, unmerged candidate
+PRs (#194/#195) from other sessions -- leave those for their own
+producer sessions or a certifier, do not redo the work.
