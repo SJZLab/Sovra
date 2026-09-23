@@ -1,5 +1,51 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
+  `claude/wizardly-fermat-axdgxh`) — closed the FTF-0206 half of the CI
+  gate-coverage gap that blocked PR #207's own prior "NOT CERTIFIED"
+  review (see "## Provisional" below). PR #207's branch had been cut
+  before `main` gained FTF-0207's/FTF-0506's/FTF-04A01's own gate steps
+  (via later PRs) and before this shift's immediately preceding one added
+  FTF-0205's — merging `origin/main` into the PR branch restored all
+  four; this shift then added the one step still genuinely missing,
+  `test_ftf_0206.py`, right after them. Pushed and watched a fresh real
+  CI run on the merged head to completion before resubmitting for L2
+  review — see this file's own "## Provisional" section and
+  `PROGRESS.md` for the full evidence chain (job IDs, log excerpts,
+  product-truth/status counts).
+
+## Previous shift
+Updated: 2026-09-23 (scheduled relay shift) — implemented FTF-0206
+  (`/model_group/info` optional enrichment, deps FTF-0201/FTF-0203/FTF-0204
+  all CERTIFIED, independently re-verified before claiming). New module
+  `packages/litellm_client/model_group_info_optional_enrichment.py`
+  (`enrich_visible_model_groups`) reuses FTF-0205's left-join/never-drop
+  design against the real, separate `/model_group/info` route (flat
+  per-entry fields keyed by `model_group`, plus real group-level
+  `tpm`/`rpm`), and additionally never opens a connection unless the
+  caller passes `capability_supported=True` (this task's own acceptance
+  clause: "runs only with explicit supported capability and safe
+  permission") — a 403/404/undeclared capability all degrade every
+  visible id to `limited` without ever escalating to a management
+  credential (negative_acceptance). `tests/tasks/test_ftf_0206.py` (23
+  checks) shown able to fail first (a real `ModuleNotFoundError` before
+  the module existed), then two own fault injections (widened allowlist
+  leaking a credential-shaped field; disabled capability gate letting an
+  undeclared call reach the gateway) both caught for real and reverted
+  byte-identical. `ruff`/`mypy` clean; `test_ftf_0201/0203/0204/0205.py`
+  regression clean; `product_truth_check.py --fail-on-unwired` stays
+  `16/16` (no live caller yet, disclosed — FTF-0207 is the later wiring
+  task). `docs/spec-matrix.yaml` set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+  implementation commit (`49d29681764d225afede1336c09a8a3fe2fb6079`).
+  Submitted PROVISIONAL, not self-certified (Law 4) — PR opened,
+  appended to `docs/certifications/queue.md` for Control plane.
+  `scripts/status.py`: `48/300` certified / `16` product-true, unchanged
+  (this task discloses no live wiring; certification is pending
+  independent L2 review). Full record: "## Provisional" below and
+  `docs/certifications/queue.md`/`PROGRESS.md`.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
   `claude/wizardly-fermat-vd88a7`) — merged PR #211 (FTF-0205 gate-step
   CI-wiring fix). PR #211 had gone `mergeable_state: dirty` since its own
   branch cut (main had since gained FTF-0207's/FTF-0506's own gate
@@ -3510,7 +3556,12 @@ fresh real green CI run on the PR's actual head with both new steps
 present, then resubmit for L2 review. Full record:
 `docs/certifications/queue.md`'s "FTF-0206 (PR #207) — NOT CERTIFIED"
 entry and `docs/certifications/watchdog-findings.md`'s 2026-09-23 CI
-gate-coverage finding.
+gate-coverage finding. **Update, this shift:** merged `origin/main`
+into PR #207's own branch (bringing back the `test_ftf_0205.py`/
+`test_ftf_04a01.py`/`test_ftf_0207.py`/`test_ftf_0506.py` gate steps
+the branch had lost since its own cut) and added the missing
+`test_ftf_0206.py` gate step alongside them — see this file's own top
+`Updated:` entry and `PROGRESS.md` for the full record.
 
 FTF-0205 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-23 via PR #205 (merge commit

@@ -1,5 +1,120 @@
 # PROGRESS — Sovra
 Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
+  `claude/wizardly-fermat-axdgxh`) — closed the FTF-0206 half of the CI
+  gate-coverage gap that a Control-plane review left PR #207 "NOT
+  CERTIFIED" over (the same watchdog finding whose FTF-0205 half the
+  immediately preceding relay shift already closed on `main`).
+
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`.
+
+  STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/
+  `BLOCKER.md` fresh. No open blocker (`BLOCKER.md` holds only resolved
+  history); no open owner ask (`QUEUE.md` "Owner actions — current" is
+  empty). Cross-checked against live GitHub state (`list_pull_requests`)
+  rather than trusting the file alone: three open PRs — #207 (FTF-0206),
+  #195/#194 (FTF-0304, two duplicate producer attempts from other
+  sessions). #194/#195 are other sessions' in-flight work on the same
+  task, left untouched — nothing in this shift's own scope names FTF-0304
+  as its pick, and touching a duplicate producer's own open PR is outside
+  a relay's single-item scope. #207 (`docs/certifications/queue.md`'s own
+  "FTF-0206 (PR #207) — NOT CERTIFIED" review) names a fully specified,
+  relay-actionable next step in its own words: "add explicit `gate`-job
+  steps for `tests/tasks/test_ftf_0205.py` and `tests/tasks/
+  test_ftf_0206.py`, get one fresh real green CI run on PR #207's actual
+  head with both new steps present, then resubmit FTF-0206 for L2
+  review." The FTF-0205 half was already closed on `main` by the
+  immediately preceding relay shift (PR #211); the FTF-0206 half remained
+  open.
+
+  STEP 1: picked PR #207 — a Control-plane-reviewed, precisely diagnosed
+  CI-wiring gap with no DoD ambiguity (the reviewing session's own words
+  are the DoD), not a fresh implementation decision.
+
+  STEP 2 (P): `pull_request_read get` on PR #207 showed
+  `mergeable_state: unknown` and `get_status` returned zero commit
+  statuses — confirmed via `git merge-base` that the branch (cut at
+  `e42d0364`) is now four merges behind `origin/main` (`4e82b6e`, via
+  PRs #211/#215/#216/#217). Pulled the real `gate` job log for PR #207's
+  own last CI run directly (`get_job_logs`, `return_content: true`) and
+  confirmed the finding firsthand: no `tests/tasks/test_ftf_0206.py`
+  step appears anywhere in the log, alongside every other real gate step
+  (FTF-0403/FTF-0500/FTF-0203/FTF-0204/etc. all present and passing).
+  Diffed `origin/main`'s `.github/workflows/ci.yml` against the PR
+  branch's own copy: the PR branch is missing the FTF-0205/FTF-04A01/
+  FTF-0207/FTF-0506 gate steps `main` has since gained (lost to the stale
+  branch cut, not deliberately removed) and never had a FTF-0206 step at
+  all, exactly matching the reviewing session's own diagnosis.
+
+  STEP 2 (E): checked out PR #207's head branch, merged `origin/main` in.
+  Two real conflicts, both doc-only (`QUEUE.md`, `docs/certifications/
+  queue.md` — both sides had appended their own new top/"Provisional"
+  entries); `.github/workflows/ci.yml`, `docs/spec-matrix.yaml`,
+  `PROGRESS.md` all auto-merged cleanly. Resolved both conflicts by
+  keeping both sides' content (this PR's own FTF-0206 implementation
+  record preserved under a "## Previous shift" heading in `QUEUE.md`;
+  both the implementation record and the Control-plane "NOT CERTIFIED"
+  review preserved in `docs/certifications/queue.md`, in their original
+  chronological order) rather than discarding either — no evidence
+  deleted. Added one new `gate`-job step, "FTF-0206 negative-test proof
+  (`/model_group/info` enrichment, no DB required)" running `uv run
+  python3 tests/tasks/test_ftf_0206.py`, placed directly after the
+  FTF-0506 step (`.github/workflows/ci.yml`) — the one step the finding
+  named as still genuinely missing, now that the test file exists on
+  this merged branch. Also trimmed the FTF-0205 step's own comment,
+  which had said "FTF-0206's own step cannot be added yet" — no longer
+  true after this change.
+
+  STEP 2 (V): `python3 -c "import yaml; yaml.safe_load(...)"` confirmed
+  valid YAML; `grep` confirmed zero leftover conflict markers repo-wide.
+  `uv sync --all-packages`, then own reproduction of all nine relevant
+  suites: `uv run python3 tests/tasks/{test_ftf_0201,test_ftf_0202,
+  test_ftf_0203,test_ftf_0204,test_ftf_0205,test_ftf_0206,test_ftf_04a01,
+  test_ftf_0207,test_ftf_0506}.py` — all nine "all checks passed" (the
+  interspersed `TenantContextError` tracebacks in `test_ftf_0201.py`/
+  `test_ftf_04a01.py`'s own output are each test's own deliberate
+  negative-path exercise, not a failure, per this repo's established
+  precedent). `python3 scripts/product_truth_check.py --fail-on-unwired`
+  — `17/17`, unchanged. `python3 scripts/status.py` — `51/300 certified ·
+  17 product-true`, unchanged (Law 2 — this is CI-wiring only, no
+  `certification_state` touched). `ruff check .` / `ruff format --check
+  .` clean (200 files already formatted). `uv run mypy .` — "Success: no
+  issues found in 200 source files." `docs/spec-matrix.yaml`'s FTF-0206
+  entry confirmed untouched (`certification_state: PROVISIONAL`,
+  unchanged) — this shift does not self-certify (Law 4); the point is
+  only to make the PR's own CI actually prove what it already claims.
+
+  Pushed the merge commit to PR #207's own branch
+  (`claude/wizardly-fermat-bj3os5`), matching the precedent the
+  immediately preceding relay shift set for PR #211 (branch/commit/push
+  work branches is in CLAUDE.md's own "Do without asking" list; this
+  session's own designated branch, `claude/wizardly-fermat-axdgxh`, is
+  reserved for this shift's own tracking-doc commit below, not for
+  someone else's PR branch). Watched a fresh real CI run on the pushed
+  head to completion, including the new `gate` job's own FTF-0206 step
+  genuinely executing and passing inline with the other eight, not
+  merely present in the workflow file — this is the exact evidence
+  standard the Control-plane review demanded before resubmission.
+
+  Not merged, not self-certified (Law 4) — PR #207 stays open,
+  `docs/spec-matrix.yaml`'s FTF-0206 entry stays PROVISIONAL/L1-PROVEN
+  exactly as submitted. This shift's own scope is the CI-wiring gap only;
+  resubmitting for L2 review is a Control-plane action, not a relay one
+  — the PR is now ready for that review to actually run.
+
+  STEP 3: this entry, plus `QUEUE.md`'s and `docs/certifications/
+  queue.md`'s matching updates, written before any compaction, then
+  committed to this session's own designated branch
+  (`claude/wizardly-fermat-axdgxh`) and pushed.
+
+  STEP 4 stop condition: (a)-equivalent — this shift's own picked item
+  (close the FTF-0206 gate-wiring gap on PR #207) is complete, evidence
+  bound, PR left open for Control plane per Law 4. FTF-0304 (PRs #194/
+  #195, two other sessions' in-flight duplicate attempts) remains
+  untouched, outside this shift's own single-item scope. Reporting and
+  stopping here.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
   `claude/wizardly-fermat-vd88a7`) — merged PR #211 (the FTF-0205 gate-step
   CI-wiring fix, left open/unmerged by its own producer session pending
   review since it touches the shared `gate` job).
@@ -14077,3 +14192,135 @@ note alone, since FTF-0206 may not be a hard dependency of FTF-0207 per
 open, unmerged candidate PRs (#194/#195) from other sessions — leave
 those for their own producer sessions or a certifier, do not redo the
 work.
+
+Updated: 2026-09-23 (scheduled relay shift) — implemented FTF-0206
+(`/model_group/info` optional enrichment), submitted PROVISIONAL, not
+self-certified (Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh (never assumed state from prior context). Found: no
+Owner actions, no Active items, no Provisional items — `docs/
+certifications/queue.md` had zero open PROVISIONAL entries at shift
+start (FTF-0205 was the last, now CERTIFIED via PR #205). `git fetch
+origin main` confirmed local `HEAD` on `claude/wizardly-fermat-bj3os5`
+already matched `origin/main` exactly (`e42d036`) — this session's own
+designated branch name had never been pushed to `origin` yet (a fresh
+branch name for this shift), the same disclosed local-fetch quirk a
+prior shift's own note already documented for the combined-fetch
+failure mode; fetching `main` alone avoided it.
+
+**STEP 1:** Picked `FTF-0206` (`/model_group/info` optional
+enrichment) — the prior relay shift's own "Next shift" note in
+`PROGRESS.md`/`QUEUE.md` already identified it as dependency-ready and
+unclaimed; independently re-verified rather than trusted: `docs/
+spec-matrix.yaml` shows its three real deps (FTF-0201/FTF-0203/
+FTF-0204) all `certification_state: CERTIFIED`, and `mcp__github__
+list_pull_requests` (open, this repo) showed only PRs #194/#195 (both
+FTF-0304, unrelated) — no existing claim on FTF-0206 to collide with.
+"Working: FTF-0206."
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+packet FTF-0206 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read
+`v1_model_info_enrichment.py` (FTF-0205, already CERTIFIED) end to end
+as the closest real precedent — same dependency set, same left-join/
+allowlist design intent per Section 3.1/3.2. Checked the real upstream
+LiteLLM `/model_group/info` response shape against `/model/info`'s:
+fields sit flat on each entry keyed by `model_group` (never nested
+under a `model_info` sub-object keyed by `model_name`), and genuine
+group-level `tpm`/`rpm` throughput fields exist that `/model/info`
+does not carry — confirming this is a separate module with its own
+parser/allowlist, not a copy of FTF-0205's own. Read this task's own
+acceptance clause closely: "Optional enrichment runs only with
+explicit supported capability and safe permission" is textually
+stronger than FTF-0205's own acceptance ("Enrich only visible aliases
+with allowlisted fields, retaining limited metadata when
+denied/absent") — FTF-0205 always attempts the call and degrades on
+failure, whereas this task's own wording requires the call to run only
+when the capability is explicitly known supported. Formed the
+hypothesis: a new `packages/litellm_client/
+model_group_info_optional_enrichment.py` takes the caller's own
+already-authorized `visible_model_ids` plus a required, no-default
+`capability_supported: bool`, and only ever opens a connection when
+that flag is `True`; "...and safe permission" is satisfied by using
+exactly the same least-privilege inference credential on every call,
+with no escalation path on 401/403/404. No code written yet at this
+point.
+
+**STEP 2 (E):** Implemented `packages/litellm_client/
+model_group_info_optional_enrichment.py` (`enrich_visible_model_groups`,
+`GroupInfoState`, `ModelGroupEnrichmentResult`, `ModelGroupMetadataEntry`,
+`_ALLOWLISTED_MODEL_GROUP_FIELDS`). Wrote `tests/tasks/
+test_ftf_0206.py` (23 test functions, no DB, no external egress — same
+real local HTTP secret-backend server + real local HTTPS gateway +
+real ephemeral CA fixture pattern `tests/tasks/test_ftf_0205.py`
+already established).
+
+**Shown able to fail first (Law 1), coarsest level:** before writing
+any of the module's logic, moved the not-yet-written module path aside
+(there was nothing to move yet — instead, immediately after writing
+the test file but before restoring the module from its draft, the
+module file was moved to a temp path and the suite was run directly):
+`python3 tests/tasks/test_ftf_0206.py` produced a real
+`ModuleNotFoundError: No module named 'packages.litellm_client.
+model_group_info_optional_enrichment'` — a genuine failure bound to
+this task's own import, not a fabricated one. The module was then
+restored and the full suite re-run clean.
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays
+`16/16` (unchanged — Law 2, this task deliberately has no live caller
+yet, same disclosed precedent FTF-0202/FTF-0205 established;
+`proving_symbol` left blank). `scripts/status.py` stays `48/300
+certified · 16 product-true`. `ruff check .`/`ruff format --check .`
+clean on both new files after `ruff format` auto-wrapped one
+line-too-long inside a fault-injection test body (content unchanged,
+whitespace only). `mypy` clean on both new files ("Success: no issues
+found in 2 source files"). `uv sync --all-packages` resolved this
+fresh sandbox's own missing dependency set (same documented precedent
+prior shifts already established for `uv sync`); `tests/tasks/
+test_ftf_0201.py`/`test_ftf_0203.py`/`test_ftf_0204.py`/
+`test_ftf_0205.py` all re-run clean afterward under `uv run` — no
+regression to any shared module. `scripts/validate_spec.py --strict`
+clean after `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact, same documented precedent as prior shifts).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical and the suite re-confirmed clean immediately after
+each:**
+1. Widened `_allowlisted_fields` to return every raw entry field
+   verbatim instead of filtering through
+   `_ALLOWLISTED_MODEL_GROUP_FIELDS` — run in a fresh subprocess
+   against a real gateway advertising a credential-shaped `api_key`
+   field directly on the group entry, the mutated module genuinely let
+   the secret string leak into the result
+   (`"sk-fault-injection-leak" in result.stdout`), proving the allow
+   list is load-bearing, not decorative.
+2. Disabled the `capability_supported` gate (replaced the early-return
+   block with a no-op) — run in a fresh subprocess with
+   `capability_supported=False` against a real gateway, the mutated
+   module genuinely reached it and returned `state=completed` instead
+   of `capability_not_declared`, proving this task's own "runs only
+   with explicit supported capability" clause is actually enforced by
+   the unmutated code, not merely documented.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`49d29681764d225afede1336c09a8a3fe2fb6079`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — PR opened, awaiting independent
+Control-plane L2 review. Full entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0206`) awaiting independent Control-plane L2 review — a
+certifier shift should pick it up next. `FTF-0207` ("Alias
+reconciliation") is not yet dependency-ready by name alone until this
+independently reaches CERTIFIED (its real deps per `docs/
+spec-matrix.yaml` are FTF-0201/FTF-0204/FTF-0205, already all
+CERTIFIED — recompute the dependency-ready frontier fresh next shift
+rather than trusting this note, since FTF-0206 may not actually be a
+hard `deps` entry of FTF-0207). `FTF-0304` still has two open,
+unmerged candidate PRs (#194/#195) from other sessions — leave those
+for their own producer sessions or a certifier, do not redo the work.
