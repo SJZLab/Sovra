@@ -2378,10 +2378,10 @@ FTF-0505:
   proving_symbol: ''
   proving_test: ''
 FTF-0506:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Canonical conversation normalizer
-  evidence_hash: 025b936d7011f30ca607f2038f1c61f4766c4640
+  evidence_hash: 7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0405, FTF-0500
@@ -2467,7 +2467,45 @@ FTF-0506:
     crashes attempting to call `None` as the validator on the very first unvalidated tool call
     (`TypeError: 'NoneType' object is not callable`), proving the guard is the only thing standing
     between an unvalidated tool call and being silently accepted; reverted, re-ran clean.
-  proof_state: L1-PROVEN
+
+    Control plane L2 certification (2026-09-23, session
+    session_01A9BrV7gok9pZTKotAqZEuy): independently re-verified in a fresh
+    git worktree at PR #214's real head (`5d44300`). Session-ID check: PR
+    #214's two commits both carry `session_01WnuyMUVM6PHL3KX9pnGbAF` -- no
+    match with this reviewing session, independent per Law 4. CI re-checked
+    directly on that exact head: 27/27 jobs green, and the `gate` job's own
+    step list pulled directly (not inferred from the aggregate count) --
+    step 68, "FTF-0506 negative-test proof (Canonical conversation
+    normalizer, no DB required)", confirmed present and `success`.
+    `tests/tasks/test_ftf_0506.py` re-run clean in this session's own
+    reproduction. Own fault injection, a third vector distinct from the
+    producer's own two (duplicate tool-call-id guard; no-validator-supplied
+    fail-closed guard): changed the "tool_call_id references an existing
+    pending tool call" check (`expected_name = pending_calls[tool_call_id]
+    if tool_call_id in pending_calls else None`) to
+    `pending_calls.get(tool_call_id, name)` -- run in a fresh subprocess,
+    the mutated module crashed for real (`KeyError` on `del
+    pending_calls[tool_call_id]` for an unknown id), proving "every tool
+    result references an existing tool call" is load-bearing, not
+    decorative; reverted byte-identical (`diff` confirmed), suite re-ran
+    clean. `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide.
+    `product_truth_check.py --fail-on-unwired` confirmed 17/17, legitimately
+    unchanged (blank `proving_symbol`, no importer wired to call
+    `normalize_conversation` yet, same disclosed precedent
+    FTF-0202/FTF-0205/FTF-0207 already established). Diff scope confirmed
+    exactly the task packet's own files plus expected tracking docs and one
+    new CI step -- no scope creep. Task contract re-pulled via
+    `tools/r1_handoff.py packet FTF-0506 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 confirmed met by
+    the module's real `RecordLineage`/`group_id`/`canonical_hash`
+    implementation; negative_acceptance ("missing/unmapped role or coerced
+    information loss is rejected, not silently guessed") confirmed met both
+    by the producer's own two fault injections and this review's own third
+    one above. Dependencies FTF-0405/FTF-0500 confirmed genuinely
+    `CERTIFIED` in this file before relying on them. Merged PR #214 (merge
+    commit `7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`); `evidence_hash` set
+    to that commit.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0506.py
 FTF-0507:

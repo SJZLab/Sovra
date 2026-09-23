@@ -1,6 +1,29 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #214) — independently certified
+  FTF-0506 (Canonical conversation normalizer), the second of two
+  PROVISIONAL items found in `docs/certifications/queue.md` this shift
+  (the other, FTF-0207, is certified separately via PR #215). Session-ID
+  compared against both of PR #214's commits
+  (`session_01WnuyMUVM6PHL3KX9pnGbAF`) — no overlap with this session
+  (`session_01A9BrV7gok9pZTKotAqZEuy`), independent per Law 4. Watched
+  the real CI run on PR #214's real head (`5d44300`) — 27/27 jobs green,
+  `gate`'s own FTF-0506 step confirmed present and passing on this exact
+  commit, not inferred from the aggregate count. Own reproduction in a
+  fresh git worktree: `tests/tasks/test_ftf_0506.py` clean, a fault
+  injection distinct from the producer's own two (changed the "tool
+  result's `tool_call_id` references an existing pending tool call"
+  check to a silent fallback instead of raising) caught for real
+  (`KeyError`), reverted byte-identical, `ruff`/`mypy` clean,
+  `product_truth_check.py` 17/17 legitimately unchanged. Task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-0506` — both clauses
+  confirmed genuinely met. Dependencies FTF-0405/FTF-0500 confirmed
+  genuinely `CERTIFIED`. Merged PR #214 (merge commit
+  `7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`). Full record:
+  `docs/certifications/queue.md`'s "FTF-0506 — Control plane: independent
+  CERTIFY review, CERTIFIED" entry and `docs/certifications/ledger.md`.
+
+## Previous shift
   FTF-0207 (Alias reconciliation), one of two PROVISIONAL items in
   `docs/certifications/queue.md` at shift start (the other, FTF-0506, is
   reviewed separately — see this file's own next update or
@@ -3404,25 +3427,11 @@ certification record). See "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
 full history and evidence.
 
-FTF-0506 (Canonical conversation normalizer) — this shift's own commit
-`025b936d7011f30ca607f2038f1c61f4766c4640` on
-`claude/wizardly-fermat-fqjkvu` → `main`, submitted PROVISIONAL, not
-self-certified (Law 4). New `workers/data/
-canonical_conversation_normalizer.py::normalize_conversation` (pure,
-no-DB, no-I/O) enforces every Section 7 "Required validator" and adds
-`RecordLineage`/split-isolation `group_id`/deterministic `canonical_hash`;
-tool-argument schema validation is dependency-injected (a
-`ToolArgumentValidator` Protocol matching FTF-0405's already-CERTIFIED
-`validate_instance` exactly) rather than hard-imported across the
-`workers/data` <-> `apps/api` deployable-unit boundary. 24 no-DB checks
-(`tests/tasks/test_ftf_0506.py`, wired into the `gate` job) after two
-genuine real-fault-injection-caught defects were demonstrated live
-(disabling the tool-call-ID uniqueness guard; disabling the
-no-validator-supplied fail-closed guard) and reverted byte-identical.
-Same disclosed "no live caller yet" scope as FTF-0202/FTF-0205/FTF-0207
-— `proving_symbol` stays blank, product-true count unchanged at 17/17.
-Full record: `docs/certifications/queue.md`'s "FTF-0506 — Canonical
-conversation normalizer" entry and this file's own top shift note.
+FTF-0506 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-23 via PR #214 (merge commit
+`7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-04A01 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-23 via PR #210 (merge commit
@@ -5163,6 +5172,26 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `CERTIFIED`. Ran `sync_certified_status()`. `scripts/status.py`:
   `49/300` certified before, `50/300` after; Product-true unchanged at
   `17`. Full entry: docs/certifications/ledger.md.
+- FTF-0506 — Canonical conversation normalizer. CERTIFIED 2026-09-23,
+  merge commit `7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d` (PR #214).
+  Independently re-verified in a fresh git worktree at PR #214's real
+  head (`5d44300`): `tests/tasks/test_ftf_0506.py` clean; a fault
+  injection distinct from the producer's own two (changed the "tool
+  result's `tool_call_id` references an existing pending tool call"
+  check to a silent fallback instead of raising) — caught for real
+  (`KeyError`), reverted byte-identical; `ruff`/`mypy` clean repo-wide;
+  CI re-checked on the real head (27/27 jobs green, `gate`'s own
+  FTF-0506 step confirmed present and passing); `product_truth_check.py`
+  17/17 confirmed legitimately unchanged (no `proving_symbol` yet, same
+  disclosed "no live caller" precedent as FTF-0202/FTF-0205/FTF-0207).
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-0506` —
+  acceptance and negative_acceptance clauses both confirmed genuinely
+  met. Dependencies FTF-0405/FTF-0500 confirmed genuinely `CERTIFIED`.
+  Ran `sync_certified_status()`. This is the second of two independent
+  certifications from this same shift (the other, FTF-0207, PR #215,
+  landed first — see that entry above). `scripts/status.py`: `50/300`
+  certified before, `51/300` after. Product-true unchanged at 17. Full
+  entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
