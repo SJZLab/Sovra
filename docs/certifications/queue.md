@@ -11776,3 +11776,24 @@ This is the second of two independent certifications from this same
 shift (the other, FTF-0207, is PR #215) — Certified count moves
 49/300 → 50/300 → 51/300 as both land on `main` in sequence.
 Product-true: unchanged at 17/17.
+
+## 2026-09-23 — Control plane: CERTIFY shift check, nothing pending
+Triggered by the `pull_request.opened` webhook for PR #217
+(`claude/wizardly-fermat-vd88a7`, head `bc97fa5`). Checked this file and
+`docs/spec-matrix.yaml` (the live tracker) per mandate before doing
+anything else.
+- PR #217's own diff is `PROGRESS.md`/`QUEUE.md` only (a relay shift's
+  narrative log of merging PR #211, already landed on `main` as
+  `78662cc` before this PR was opened) — no code, no test, no
+  certification submission; nothing for this shift to certify from it.
+- `docs/spec-matrix.yaml` cross-checked directly: 51 `CERTIFIED`, 249
+  `NONE`, **0 `PROVISIONAL`** entries. The two most recent submissions in
+  this file (FTF-0207, FTF-0506) were already independently certified by
+  a prior CERTIFY shift this same date (see the two entries immediately
+  above) and confirmed still `CERTIFIED` in `docs/spec-matrix.yaml` with
+  matching `evidence_hash`es.
+- No new PROVISIONAL item found anywhere after those two entries.
+
+**Nothing to certify.** No tracker change, no ledger entry, no PR action.
+Per mandate: reporting "nothing to certify" and stopping — not starting,
+advising, or reprioritizing any task.
