@@ -1,5 +1,44 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #224) — independently reviewed
+  FTF-0210 (Real chat probe). Session-ID check: PR #224's three commits
+  all carry `session_014J57y6ueTRgmrVX7nzh9rK`, no match to this session's
+  own ID (`session_016NpBXKWyLWwgJBqBw4egi6`, Law 4). Diff read directly
+  against the real head (`0756334`) — no scope creep. CI re-checked to
+  full completion, not taken on faith: 27/27 jobs green (run
+  `35920520821`; the `gate` job, which runs this task's own
+  `tests/tasks/test_ftf_0210.py` inline, completed `success`; three
+  OpenBao-from-source build jobs took several minutes each, cross-checked
+  mid-run via `get_workflow_job` to confirm genuine progress rather than a
+  stall — same documented shape as FTF-0208's/FTF-0209's own reviews, not
+  a failure). Own independent verification directly in this working tree:
+  unshallowed the clone (the initial shallow checkout produced 29 spurious
+  `validate_spec.py --strict` `stale_commit` findings on unrelated,
+  already-CERTIFIED tasks — clean once unshallowed, none concerned
+  FTF-0210), fresh run of the test suite (all checks pass, real
+  local-HTTPS-gateway round trips genuinely exercised — this sandbox had
+  real sudo/openssl/update-ca-certificates access), one own fault
+  injection reproducing the producer's own claimed vector independently
+  rather than taking it on faith (removed the `approved_model_ids`
+  authorization gate from `probe_chat` entirely — the authorization
+  negative check genuinely failed for real, reverted byte-identical),
+  `ruff`/`mypy`/`validate_spec.py --strict` clean, `test_ftf_0201.py`/
+  `test_ftf_0204.py`/`test_ftf_0207.py` regression clean,
+  `product_truth_check.py` 17/17 confirmed legitimately unchanged; task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0210` — both
+  acceptance and negative_acceptance clauses confirmed genuinely met by
+  direct reading of the shipped module and test suite (real over-the-wire
+  assertions, not mocked); dependencies FTF-0201/FTF-0204/FTF-0207
+  confirmed genuinely CERTIFIED. No blocking defect found — merged PR
+  #224 (merge commit `d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a`), set
+  `docs/spec-matrix.yaml` to `certification_state: CERTIFIED`/
+  `proof_state: L2-CERTIFIED`, appended `docs/certifications/ledger.md`.
+  Certified: 54/300 → 55/300. Product-true: unchanged at 17/17. See
+  "## Done" below and `docs/certifications/ledger.md` for the full
+  record.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #222) — independently reviewed
   FTF-0209 (Catalog anomaly detector). Session-ID check: PR #222's commits
   all carry `session_01WHznaRLHjmkr46cKdoX26J`, no match to this session's
@@ -3618,14 +3657,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-0210 — Real chat probe. Implemented and submitted PROVISIONAL
-  2026-09-23 (relay shift, implementation commit
-  `19a247c1cf5334e416c8a14b6c41d1d78e3ae9ea`). PR:
-  https://github.com/SJZLab/Sovra/pull/224
-  (`claude/wizardly-fermat-fxdnkd` -> `main`). Not self-certified (Law
-  4) — awaiting independent Control-plane L2 review. Full entry:
-  `docs/spec-matrix.yaml`'s FTF-0210 record and
-  `docs/certifications/queue.md`.
+None currently.
+
+FTF-0210 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-23 via PR #224 (merge commit
+`d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0209 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #222 (merge commit
@@ -5485,6 +5523,32 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   wiring/route task) to preserve that guarantee. Ran
   `sync_certified_status()`. `scripts/status.py`: `53/300` certified
   before, `54/300` after. Product-true unchanged at 17. Full entry:
+  docs/certifications/ledger.md.
+
+- FTF-0210 — Real chat probe. Independently reviewed and
+  **CERTIFIED 2026-09-23**, merge commit
+  `d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a` (PR #224). Independently
+  re-verified directly in this working tree at the PR's real head
+  (`0756334`): `tests/tasks/test_ftf_0210.py` clean (all checks, real
+  local-HTTPS-gateway round trips genuinely exercised); CI re-checked to
+  full completion on that same real head (27/27 jobs green, `gate`'s own
+  FTF-0210 step confirmed present and genuinely passing inline — three
+  OpenBao-from-source build jobs took several minutes each, cross-checked
+  mid-run to confirm genuine progress, same documented shape as
+  FTF-0208's/FTF-0209's own reviews, not a failure); own fault injection
+  reproducing the producer's own claimed authorization-gate vector
+  independently (removed the `approved_model_ids` gate from `probe_chat`
+  entirely — the authorization negative check genuinely failed for real)
+  — reverted byte-identical; `ruff`/`ruff format`/`mypy` clean;
+  `product_truth_check.py` 17/17 confirmed legitimately unchanged
+  (`proving_symbol` confirmed blank, same disclosed "no live caller"
+  precedent as FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209). Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0210` —
+  acceptance and negative_acceptance clauses both confirmed genuinely met
+  by direct reading of the real over-the-wire test assertions. Dependencies
+  FTF-0201/FTF-0204/FTF-0207 confirmed genuinely `CERTIFIED`. Ran
+  `sync_certified_status()`. `scripts/status.py`: `54/300` certified
+  before, `55/300` after. Product-true unchanged at 17. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
