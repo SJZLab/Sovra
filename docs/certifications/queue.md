@@ -11179,3 +11179,124 @@ Done, Certified count bumped to 48/300, Product-true stays 16/16
   `proof_state: L1-PROVEN`), not self-certified (Law 4). Awaiting
   independent Control-plane L2 review and, later, the L4 gate before
   PROMOTE.
+
+## 2026-09-23 — Control plane: FTF-04A01 (PR#209) independently reviewed, CERTIFIED
+Reviewing session (scheduled certifier, `pull_request.opened` webhook for
+PR #209): `session_01EXCvSU1tz7PcbkneMnW558`. PR #209 was the sole
+PROVISIONAL item in this file at shift start.
+
+Session-ID compared against PR #209's two commits (`e8d9c64`, `2ae27f7`,
+both carry `session_01EXsCz9KARjFVNap1uvhxVb`) — no overlap, independent
+per Law 4.
+
+- The webhook fired the instant PR #209 opened, with CI still
+  `in_progress`. Polled the real PR head (`2ae27f7a`)'s check runs via
+  the GitHub REST API until every job reported `completed` — **27/27
+  real jobs `success`**. Went one step further than a bare job-count
+  check, learning directly from this control plane's own FTF-0206/PR#207
+  finding two shifts earlier (a job can be green while never actually
+  executing a specific task's own test): pulled `gate`'s own real step
+  list and confirmed its new "FTF-04A01 negative-test proof
+  (TargetApplicationConnection schema/API/RBAC, no DB required)" step is
+  present and `success`, and separately pulled the dedicated new
+  `target-application-connection-integration` job's own step list and
+  confirmed "Prove the real TargetApplicationConnection evidence against
+  the live database and live OpenBao" is present and `success` — the
+  real Postgres 16 + real OpenBao integration proof genuinely ran on
+  this exact commit, not merely claimed by the PR body. (Both this new
+  job and the pre-existing `secret-manager-integration`/
+  `dataset-source-connection-integration` jobs were still mid-build of
+  the real from-source OpenBao binary when first polled; watched their
+  real per-step timestamps advance across repeated polls — all three
+  completed `success` within the same ~7-minute window this class of job
+  has taken on every recent PR, confirmed genuinely progressing rather
+  than a repeat of the earlier documented runner-provisioning outage.)
+- Diff read directly: `target_application_connection_schema.py` (the
+  `TargetApplicationConnection` ORM model plus closed-set validators for
+  `connector_type`/`access_mode`, and `validate_repository_url_or_none`
+  built on FTF-H006's own real `validate_url_shape`),
+  `target_application_connection_crud.py` (create/get/list/update/revoke
+  through the same `TenantContext`/`authorize_resource_ownership`/
+  `execute_tenant_scoped` composition FTF-0201/FTF-0301/FTF-0401/
+  FTF-0404/FTF-0500 already proved, plus `_validate_connector_shape` and
+  the real `store_secret_ref` write for `connector_type='github'`),
+  `target_application_connection_routes.py` (the live router gated to
+  `{organization_admin}` alone per Section 45), the real forward Alembic
+  migration (`0011_target_app_connections`), and the phase-04A contract
+  freeze (`packages/contracts/openapi/04A-interface.yaml`/`packages/
+  contracts/jsonschema/04A-domain.schema.json`). Diff scope matches the
+  task packet's own `files` list plus expected tracking docs exactly —
+  no scope creep. Contract files read directly: no placeholder routes,
+  every declared path matches a real implemented route, field
+  constraints copied verbatim from the one real enforcing source.
+- Own reproduction, this sandbox (checked out PR #209's real head,
+  `uv sync --all-packages`): `uv run python3 tests/tasks/test_ftf_04a01.py`
+  — "all checks passed". `uv run ruff check .` clean; `uv run mypy
+  apps/api/app/target_connectors` — "Success: no issues found in 4 source
+  files".
+- Own fault injection, a vector distinct from the producer's own two
+  (an alembic revision-id-length overflow and a disabled cross-project
+  ownership check, both already caught and fixed before submission):
+  edited the shipped `validate_connector_type` to skip its closed-set
+  check entirely (`return value` unconditionally) — re-ran the no-DB
+  suite: **4 checks failed for real**, including "an unrecognized
+  connector_type is refused, not silently accepted -- this task's own
+  'unsupported connector... fail server-side' negative_acceptance" and
+  "a mock/placeholder connector type is refused (Section 7A.1: 'No mock
+  connector may satisfy release qualification')". Reverted from a
+  pre-edit backup (`cp`), `diff` confirmed byte-identical, suite re-ran
+  clean immediately after.
+- Own migration reproduction against a real live database (this
+  sandbox's own real sudo/`service postgresql start` access, not a
+  mock): created a fresh superuser role/database mirroring CI's own
+  naming, ran the full Alembic chain (`0001` through
+  `0011_target_app_connections`) end to end — clean. Directly inspected
+  the live result: `\d target_application_connections` shows the exact
+  claimed column set, the composite FK `(organization_id, project_id) ->
+  projects(organization_id, id)`, and all three check constraints
+  (`connector_type`/`access_mode`/`connection_status`), plus a real
+  `FORCE ROW LEVEL SECURITY`-enabled `tenant_isolation` policy scoped to
+  `app.current_organization_id`. A direct
+  `information_schema.role_table_grants` query confirmed `sovra_app`
+  holds exactly `SELECT`/`INSERT`/`UPDATE` on the new table — no
+  `DELETE` — matching the claimed "revoke is a soft transition, not row
+  deletion" discipline against the real database, not merely the
+  migration's own source text. Cleaned up the scratch role/database
+  afterward.
+- `scripts/product_truth_check.py --fail-on-unwired` — own run,
+  **17/17** (up from 16/16) — `build_target_application_connection_router`
+  (this task's own `proving_symbol`) is a real, genuine live caller from
+  `apps/api/app/main.py`, confirmed by direct `git diff` inspection of
+  `apps/api/app/main.py` (the import and `app.include_router(...)` call
+  are both real, not merely claimed).
+- `python3 tools/r1_handoff.py packet FTF-04A01 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Create
+  tenant-scoped read-only target connection and validate credentials
+  without fetching unapproved data") confirmed met by
+  `_validate_connector_shape`'s real structural check plus the real
+  OpenBao `store_secret_ref` write before the row exists; all three
+  negative_acceptance clauses ("Cross-project target IDs, unsupported
+  connector and excessive permission fail server-side") confirmed
+  genuinely met — "unsupported connector" via this review's own fault
+  injection above, "cross-project target IDs" and "excessive permission"
+  via the real live-database integration test confirmed passing in the
+  real CI job above (`tests/integration/
+  test_ftf_04a01_target_application_connection.py`, read directly:
+  seeds org1 with two real projects and shows the same real connection
+  404s through the wrong project's URL while 200ing through its own, and
+  a real `access_mode='write'` request refused server-side through the
+  live route).
+- Dependencies FTF-0401/FTF-0103/FTF-0202/FTF-H006 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+No blocking defect found. `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit
+(`46bcc0ad30e8090d2a921f1c287496bf916c38c5`); `proving_symbol` stays
+`build_target_application_connection_router`. Ledger entry appended
+(`docs/certifications/ledger.md`, "FTF-04A01 — TargetApplicationConnection
+schema/API/RBAC"). Ran `scripts.task_claim.sync_certified_status()` —
+`spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
+`['FTF-04A01']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-04A01 moved to
+Done, Certified count bumped to 49/300, Product-true 16 → 17 (this
+task's own real new live caller wired for real).

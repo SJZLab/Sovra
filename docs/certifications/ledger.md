@@ -5561,3 +5561,96 @@ reasons given above.
   (unchanged).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A01 — TargetApplicationConnection schema/API/RBAC
+- Criterion ID: FTF-04A01
+- PR: https://github.com/SJZLab/Sovra/pull/209 (`claude/wizardly-fermat-iux3ti` → `main`)
+- Merge commit: 46bcc0ad30e8090d2a921f1c287496bf916c38c5
+- Implementation commit: e8d9c64c5bd1347a997baaa0890401e600a6a8f2
+  (tracking-doc commit: 2ae27f7a4741e11e9f2c6125a3e0e513554bc3a3)
+- Validated-by: session https://claude.ai/code/session_01EXCvSU1tz7PcbkneMnW558
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #209 itself)
+- Date: 2026-09-23
+- **Session-ID check:** both commits on PR #209 carry `Claude-Session:
+  .../session_01EXsCz9KARjFVNap1uvhxVb`; this reviewing session's own ID
+  is `session_01EXCvSU1tz7PcbkneMnW558` — no match, independent per Law 4.
+- **Diff read directly:** exactly the task packet's own files
+  (`target_application_connection_schema.py`/`_crud.py`/`_routes.py`, the
+  `0011_target_app_connections` migration, `packages/contracts/openapi/
+  04A-interface.yaml`/`packages/contracts/jsonschema/04A-domain.schema.json`,
+  both test files) plus expected tracking docs (`docs/spec-matrix.yaml`,
+  `QUEUE.md`, `PROGRESS.md`, the task packet, `docs/certifications/
+  queue.md`) and two new CI steps (`gate`'s own FTF-04A01 step, a new
+  `target-application-connection-integration` job). No scope creep.
+- **CI re-checked, genuinely completed, not taken on faith:** the
+  `pull_request.opened` webhook fired while CI was still `in_progress`.
+  Polled PR #209's real head (`2ae27f7a...`) check runs directly until
+  every job reported `completed` — **27/27 real jobs `success`**. Went
+  one step further than a bare job-count check, learning directly from
+  this control plane's own prior finding on FTF-0206/PR#207 (a job can
+  pass 26/26 while never actually executing the task's own test): pulled
+  `gate`'s own real step list and confirmed its new "FTF-04A01
+  negative-test proof (TargetApplicationConnection schema/API/RBAC, no DB
+  required)" step is present and `success`, and separately pulled the
+  dedicated `target-application-connection-integration` job's own step
+  list and confirmed "Prove the real TargetApplicationConnection evidence
+  against the live database and live OpenBao" is present and `success` —
+  the real Postgres 16 + real OpenBao integration proof genuinely ran on
+  this exact commit, not merely claimed by the PR body.
+- **Own independent verification, not the producer's local claims:**
+  - Ran `tests/tasks/test_ftf_04a01.py` directly on the real PR head —
+    all checks pass.
+  - Own fault injection, distinct execution from the producer's own two
+    disclosed ones: edited `validate_connector_type` in the shipped
+    `target_application_connection_schema.py` to skip its closed-set
+    check entirely. Re-ran the no-DB suite — **4 checks failed for
+    real**, including this task's own "unsupported connector... fail
+    server-side" negative_acceptance check and the Section 7A.1 "no mock
+    connector" check. Reverted from a pre-edit backup; `diff` confirmed
+    byte-identical; the suite re-ran clean immediately after.
+  - Ran the full Alembic migration chain (`0001` through
+    `0011_target_app_connections`) against a real, locally-installed
+    PostgreSQL 16 cluster (this sandbox's own real sudo/service access,
+    not a mock). Directly inspected the live database afterward
+    (`\d target_application_connections`,
+    `information_schema.role_table_grants`): the table shape, the
+    composite foreign key `(organization_id, project_id) ->
+    projects(organization_id, id)`, all three check constraints, and the
+    real `FORCE ROW LEVEL SECURITY` `tenant_isolation` policy all match
+    the PR's claims exactly; `sovra_app` genuinely holds only
+    `SELECT`/`INSERT`/`UPDATE` on the new table, never `DELETE` —
+    confirming the claimed "revoke is a soft transition, not row
+    deletion" discipline against a real database, not merely the
+    migration's own source text.
+  - `scripts/product_truth_check.py --fail-on-unwired` — own run,
+    **17/17** (up from 16/16) — `build_target_application_connection_router`
+    (this task's own `proving_symbol`) is a real, genuine live caller from
+    `apps/api/app/main.py`.
+  - `uv run ruff check .` / `ruff format --check .` / `mypy
+    apps/api/app/target_connectors` clean on every file this task
+    touched.
+- `python3 tools/r1_handoff.py packet FTF-04A01 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Create
+  tenant-scoped read-only target connection and validate credentials
+  without fetching unapproved data") confirmed met by
+  `_validate_connector_shape`'s real structural check plus the real
+  OpenBao `store_secret_ref` write; all three negative_acceptance clauses
+  ("Cross-project target IDs, unsupported connector and excessive
+  permission fail server-side") confirmed genuinely met — "unsupported
+  connector" by this review's own fault injection above, "cross-project
+  target IDs" and "excessive permission" via the real live-database
+  integration test confirmed passing in the real CI job above.
+- Dependencies FTF-0401/FTF-0103/FTF-0202/FTF-H006 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`46bcc0ad30e8090d2a921f1c287496bf916c38c5`); `proving_symbol` stays
+  `build_target_application_connection_router`. Ran
+  `scripts.task_claim.sync_certified_status()` to write the real status
+  into `spec/tasks.json`/`docs/implementation/TRACKER.json` --
+  `['FTF-04A01']` updated. Certified: 48/300 → 49/300, Product-true:
+  16 → 17.
+
+**Conclusion:** Certified L2-CERTIFIED.

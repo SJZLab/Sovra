@@ -1662,10 +1662,10 @@ FTF-0408:
   proving_symbol: ''
   proving_test: ''
 FTF-04A01:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: TargetApplicationConnection schema/API/RBAC
-  evidence_hash: e8d9c64c5bd1347a997baaa0890401e600a6a8f2
+  evidence_hash: 46bcc0ad30e8090d2a921f1c287496bf916c38c5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0401,
@@ -1707,9 +1707,32 @@ FTF-04A01:
     OpenBao built from source, this sandbox's own no-container-registry-egress limitation, same
     documented class of gap as FTF-0004/FTF-0102/FTF-0202/FTF-0500 -- both run clean locally against
     a real Postgres 16 cluster and a real OpenBao server, and are wired into CI's gate job and a new
-    dedicated target-application-connection-integration job respectively). PROVISIONAL per Law 4 --
-    not self-certified; awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    dedicated target-application-connection-integration job respectively).
+
+    Control-plane L2 review (2026-09-23, PR #209): session-ID checked, independent (Law 4). Diff
+    scoped exactly to the task packet's own files plus expected tracking docs -- no scope creep.
+    CI polled to completion on the real PR head: 27/27 jobs green, including gate's own new
+    "FTF-04A01 negative-test proof" step and the dedicated target-application-connection-integration
+    job's own real-Postgres/real-OpenBao step, both confirmed present and passing (not merely a
+    green job total), learning directly from the FTF-0206/PR#207 CI-wiring gap this control plane
+    found two shifts earlier. Own independent verification, not the producer's claims alone: ran
+    tests/tasks/test_ftf_04a01.py directly (clean); own fault injection distinct from the producer's
+    own two (disabled validate_connector_type's closed set -- 4 checks failed for real, including
+    the "unsupported connector... fail server-side" negative_acceptance check -- reverted
+    byte-identical, clean again); ran the full Alembic chain (0001-0011) against a real local
+    PostgreSQL 16 cluster and directly inspected the live database -- table shape, the composite FK,
+    check constraints and the real FORCE ROW LEVEL SECURITY tenant_isolation policy all match; a
+    direct information_schema.role_table_grants query confirmed sovra_app has only
+    SELECT/INSERT/UPDATE, never DELETE; product_truth_check.py --fail-on-unwired reproduced at 17/17;
+    ruff/mypy clean on every touched file. Task contract re-pulled via
+    `python3 tools/r1_handoff.py packet FTF-04A01 --plan FINE_TUNING_FACTORY_RELEASE_1.md` --
+    acceptance clause 1 and all three negative_acceptance clauses confirmed genuinely met (two by
+    this review's own fault injection/live-DB inspection, the cross-project and excessive-permission
+    clauses via the real CI integration run). Dependencies FTF-0401/FTF-0103/FTF-0202/FTF-H006
+    reconfirmed CERTIFIED before relying on them. No blocking defect found. Merged PR #209 (merge
+    commit `46bcc0ad30e8090d2a921f1c287496bf916c38c5`); `evidence_hash` set to that commit. Ledger
+    entry appended (`docs/certifications/ledger.md`).
+  proof_state: L2-CERTIFIED
   proving_symbol: build_target_application_connection_router
   proving_test: tests/tasks/test_ftf_04a01.py
 FTF-04A02:
