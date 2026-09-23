@@ -1,4 +1,34 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
+  `claude/wizardly-fermat-vd88a7`) — merged PR #211 (FTF-0205 gate-step
+  CI-wiring fix). PR #211 had gone `mergeable_state: dirty` since its own
+  branch cut (main had since gained FTF-0207's/FTF-0506's own gate
+  steps via PR #215/#216) — merged `origin/main` into the PR branch,
+  resolved the resulting `PROGRESS.md` doc conflict (`ci.yml`/`QUEUE.md`
+  auto-merged cleanly), pushed
+  (`320b1a27b38389b61d8a615521b796981ffabb99`). Watched a fresh real CI
+  run on that merge commit to completion: 27/27 green including `gate`;
+  pulled the raw `gate` job log directly and confirmed
+  `tests/tasks/test_ftf_0205.py` genuinely executes and passes inline
+  with FTF-0207/FTF-0506/FTF-04A01's own steps (not merely present in
+  the workflow file) — `Product-truth: 17/17`, `Status: 51/300 certified
+  · 17 product-true`, unchanged. Own regression:
+  `test_ftf_0201`-`test_ftf_0204`/`test_ftf_04a01`/`test_ftf_0207`/
+  `test_ftf_0506`/`test_ftf_0205` all "all checks passed". Merged
+  (`merge_pull_request`, merge commit
+  `78662cc656c4245ec81ea8c27d8227d91756f0ef`) — no `certification_state`
+  touched (Law 4, this is CI-wiring only). Full record: `PROGRESS.md`'s
+  matching entry.
+
+  FTF-0206 (PR #207) remains open/unmerged, blocked on its own separate
+  gate-wiring gap (its test file only exists on that PR's branch) — left
+  for its own producer session or a later relay shift, not started here.
+  `FTF-0304` (PRs #194/#195) remain open/unmerged from other sessions —
+  untouched. No open owner ask (`QUEUE.md` "Owner actions — current" is
+  empty); no `BLOCKER.md` entry is live (both its entries are resolved
+  history).
+
+## Previous shift
 Updated: 2026-09-23 (scheduled autonomous relay shift) — remediated the
   FTF-0205 half of `docs/certifications/watchdog-findings.md`'s
   2026-09-23 finding ("CI `gate` job never actually runs FTF-0205's/
