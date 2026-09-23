@@ -1,4 +1,34 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #205) — independently certified FTF-0205 (`/v1/model/info`
+  enrichment), the sole PROVISIONAL item in `docs/certifications/queue.md`
+  at shift start. Session-ID compared against both of PR #205's commits
+  (`session_01RmL7kyQS87ukMEHHgUQ7fN`) — no overlap with this session
+  (`session_01MUWNviq4gzsqxZ5NB7Yigz`), independent per Law 4. The webhook
+  fired while CI was still `in_progress`; watched the real CI run on PR
+  #205's real head (`d2c8e37`) to completion via the GitHub REST API —
+  26/26 jobs green, including `gate`, `secret-manager-integration` and
+  `dataset-source-connection-integration` — before merging. Own
+  reproduction (fresh worktree, `tests/tasks/test_ftf_0205.py` clean,
+  `test_ftf_0201.py`/`test_ftf_0202.py`/`test_ftf_0203.py`/
+  `test_ftf_0204.py` regression clean) and an own fault injection
+  distinct from the producer's own two (made a denied/invalid-token
+  `/model/info` response drop every visible id outright instead of
+  downgrading each to `limited` — the exact negative_acceptance risk
+  failed for real, reverted byte-identical) both confirmed the shipped
+  code sound. Merged PR #205 (`b421fb366870167dcb7ecaab7a658adf1c2c6510`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED` (`proving_symbol` stays blank — no live
+  caller yet, disclosed scope). Ledger entry appended
+  (`docs/certifications/ledger.md`). Ran
+  `scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` updated for `['FTF-0205']`.
+  `scripts/status.py`: `47/300` certified / `16` product-true before,
+  `48/300` certified / `16` product-true after (unchanged product-true —
+  this task discloses no live wiring). Full record: "## Done" below and
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md`.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled relay shift) — implemented FTF-0205
   (`/v1/model/info` enrichment, deps FTF-0201/FTF-0203/FTF-0204 all
   CERTIFIED). STEP 0: `sha256sum CLAUDE.md` verified clean against the
@@ -3032,6 +3062,21 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 None currently.
 
+FTF-0205 is no longer in this section; it was independently reviewed
+and CERTIFIED 2026-09-23 via PR #205 (merge commit
+`b421fb366870167dcb7ecaab7a658adf1c2c6510`). This review watched the
+real CI run on PR #205's real head to completion (26/26 jobs green,
+including `gate`, `secret-manager-integration` and
+`dataset-source-connection-integration`) before certifying. Own
+reproduction (no-DB suite, FTF-0201/FTF-0202/FTF-0203/FTF-0204
+regression suites, all clean) and an own fault injection distinct from
+the producer's own two (made a denied/invalid-token `/model/info`
+response drop every visible id outright instead of downgrading each to
+`limited` — the exact negative_acceptance risk failed for real, reverted
+byte-identical) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
 FTF-0204 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-22 via PR #203 (merge commit
 `9a3dd7e52040cca60ec7ae72b38676d253a32824`). This review watched the
@@ -4617,6 +4662,53 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   "Product-true" `15/15` before, `16/16` after (this task's own first
   live caller of `discover_models`). Full entry:
   docs/certifications/ledger.md.
+- FTF-0205 — `/v1/model/info` enrichment. CERTIFIED 2026-09-23, PR #205
+  (merge commit `b421fb366870167dcb7ecaab7a658adf1c2c6510`). Scheduled
+  Control-plane certifier shift, `pull_request.opened` webhook for PR
+  #205 itself (`session_01MUWNviq4gzsqxZ5NB7Yigz`, no overlap with PR
+  #205's own two commits' `session_01RmL7kyQS87ukMEHHgUQ7fN`, independent
+  per Law 4). Watched the real CI run on PR #205's real head (`d2c8e37`)
+  to completion via the GitHub REST API — 26/26 jobs green, including
+  `gate`, `secret-manager-integration` and
+  `dataset-source-connection-integration` (the latter two still building
+  a real from-source OpenBao binary when first observed, confirmed
+  genuinely progressing via real non-zero `runner_id`s and advancing
+  per-step timestamps, not a stalled outage run). Diff read directly:
+  `packages/litellm_client/v1_model_info_enrichment.py`
+  (`enrich_visible_models` — attaches allowlisted `GET /model/info`
+  fields onto exactly the caller's own already-authorized
+  `visible_model_ids` on a strict left-join basis; `litellm_params`
+  never read; only named allowlisted fields with plain scalar values
+  ever pass through; a denied/failed/malformed call downgrades every
+  visible id to `limited` rather than dropping it). Diff scope matches
+  the task packet's own `files` list (module + test only, disclosed
+  scope decision — no route wired by this task, matching the
+  FTF-0202/FTF-0203 precedent). Own reproduction in a separate git
+  worktree at the real merged head: `tests/tasks/test_ftf_0205.py` —
+  "all checks passed"; `test_ftf_0201.py`/`test_ftf_0202.py`/
+  `test_ftf_0203.py`/`test_ftf_0204.py` re-run clean — no regression to
+  any shared module. Own fault injection distinct from the producer's
+  own two (which targeted widening the allowlist and reintroducing an
+  authorization union): made a denied/invalid-token `/model/info`
+  response drop every visible id outright instead of downgrading each to
+  `limited` — exactly the "every visible id is still present, downgraded
+  to limited, never dropped" check failed for real, reverted
+  byte-identical, re-confirmed clean. `ruff check`/`ruff format --check`/
+  `mypy` clean repo-wide in this reproduction (0 findings).
+  `product_truth_check.py --fail-on-unwired` — `16/16`; `proving_symbol`
+  genuinely blank (no live caller yet, disclosed — `FTF-0207` is the
+  later wiring task), 0/0 confirmed a legitimate pass for this
+  criterion, not a gap. Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0205` — both acceptance clauses and
+  the full negative_acceptance clause confirmed genuinely met.
+  Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed genuinely
+  `CERTIFIED`. No blocking defect found.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+  (`proving_symbol` stays blank). Ran `sync_certified_status()`.
+  `scripts/status.py`: `47/300` certified before, `48/300` after;
+  "Product-true" stays `16/16` (unchanged — this task discloses no live
+  wiring). Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
