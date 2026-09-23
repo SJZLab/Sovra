@@ -1,4 +1,175 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled autonomous relay shift) — implemented
+  FTF-04A01 (TargetApplicationConnection schema/API/RBAC), submitted
+  PROVISIONAL, not self-certified (Law 4).
+
+  STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+  `CLAUDE.md.sha256`.
+
+  STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+  fresh this shift, not trusted from any prior session's context.
+  `cognee-cli` not present in this sandbox (`command not found`) --
+  text-search fallback active, same as every prior shift (STEP 0.2).
+
+  STEP 1: this session's designated branch (`claude/wizardly-fermat-iux3ti`)
+  already matched `main`'s tip (33 commits ahead of `origin/main` at
+  `70b97fe`, nothing on `main` not already in this branch's history --
+  confirmed via `git merge-base --is-ancestor`, not assumed). Cross-checked
+  live GitHub state via `list_pull_requests` before picking: three open
+  PRs -- #207 (`[relay] FTF-0206`, NOT CERTIFIED per this file's own top
+  note, on a different branch not this relay's own), #195/#194 (both
+  `[relay] FTF-0304: Local artifact resolver` from other sessions) -- none
+  picked, to avoid duplicating real work already in flight. Recomputed the
+  dependency-ready frontier fresh with a real script (joining
+  `docs/spec-matrix.yaml`'s live `certification_state` against each
+  entry's own `deps=` note, not trusted from any prior shift's claim
+  alone): fifteen items came back --
+  `FTF-0206`/`FTF-0207`/`FTF-0302`/`FTF-0303`/`FTF-0304`/`FTF-0408`/
+  `FTF-04A01`/`FTF-0500A`/`FTF-0500D`/`FTF-0506`/`FTF-0902`/`FTF-1201`/
+  `FTF-1503`/`FTF-1506`/`FTF-R002`. `FTF-0206` (in flight on PR #207) and
+  `FTF-0304` (two in-flight candidates) excluded; `FTF-0408`/`FTF-0902`
+  re-confirmed still genuinely blocked for the same disclosed reasons
+  already on record in this file's own history. Of the remaining eleven,
+  picked `FTF-04A01` (TargetApplicationConnection schema/API/RBAC) --
+  not the lowest task ID, but the one with by far the highest leverage: a
+  real reverse-dependency count against `docs/spec-matrix.yaml` shows it
+  is a direct or transitive dependency of 35 other still-uncertified
+  tasks (the entire `FTF-04A02`-`FTF-04A35` chain plus `FTF-0601`/
+  `FTF-0614`/`FTF-1812`/`FTF-H007`/`FTF-H008`/`FTF-H009` and more), versus
+  single digits for every other candidate. Its own task packet
+  (`python tools/r1_handoff.py packet FTF-04A01`) carries a full,
+  concrete acceptance/negative_acceptance/files/verification contract,
+  not a vague one -- no `BLOCKER.md` needed.
+
+  STEP 2 (P): read the task packet fresh, plus Section 6.8A (the
+  `TargetApplicationConnection` domain model) and Section 7A.1-7A.3 (the
+  `TargetApplicationConnector` Protocol, the GitHub connector, the local
+  repository connector). Cross-checked the already-CERTIFIED sibling
+  precedent this task most resembles --
+  `apps/api/app/datasets/dataset_source_connection_*.py` (FTF-0500, same
+  "project-scoped connection resource with a closed-set schema, RLS
+  migration, and a disclosed scope boundary against later connector-
+  specific tasks") and `apps/api/app/litellm/connection_routes.py`
+  (FTF-0201, the `{organization_admin}`-only role-gating precedent for a
+  credential-bearing "connection" resource per Section 45's own literal
+  wording) -- and `packages/security/url_policy.py` (FTF-H006), whose own
+  module docstring literally names `FTF-04A01` as a declared future
+  caller. Formed the hypothesis, disclosed in the implementation's own
+  module docstrings rather than silently assumed: this task's real scope
+  is the `TargetApplicationConnection` record itself (schema/CRUD/RBAC),
+  not the `TargetApplicationConnector` Protocol, a real GitHub App/token
+  exchange (Section 7A.2 -- `FTF-04A02`, a separate, later, dependency-
+  gated task), or the local-repository root allowlist (Section 7A.3 --
+  `FTF-04A06`) -- building either without those tasks' own certified
+  dependencies would be exactly the "placeholder endpoint" Law 11
+  forbids. No code written yet at this point.
+
+  STEP 2 (E): implemented `apps/api/app/target_connectors/
+  target_application_connection_schema.py` (the `TargetApplicationConnection`
+  ORM model plus closed-set validators for `connector_type`/`access_mode`,
+  and `validate_repository_url_or_none` -- the real, imported FTF-H006
+  `validate_url_shape`, never a hand-rolled SSRF check),
+  `target_application_connection_crud.py` (create/get/list/update/revoke
+  through the same `TenantContext`/`authorize_resource_ownership`/
+  `execute_tenant_scoped` composition FTF-0201/FTF-0301/FTF-0401/
+  FTF-0404/FTF-0500 already proved, plus `_validate_connector_shape` --
+  this task's own real, connector-type-conditional structural check: for
+  `connector_type='github'`, `repository_url_redacted` and a credential
+  are both required, the credential written for real to OpenBao via
+  FTF-0202's `store_secret_ref` before the row exists; for
+  `connector_type='local_repository'`, both are refused entirely),
+  `target_application_connection_routes.py` (the live
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/
+  target-connections` router, gated to `{organization_admin}` alone per
+  Section 45's own literal "organization_admin: connections, security
+  profiles, cost profiles" sentence), a real forward Alembic migration
+  (`0011_target_app_connections`, FORCE RLS + composite tenant FK, same
+  discipline as every prior migration in this chain), and the phase-04A
+  contract freeze (`packages/contracts/openapi/04A-interface.yaml`/
+  `packages/contracts/jsonschema/04A-domain.schema.json`, this task's own
+  `contract_owner`). `access_mode` accepts an optional caller-supplied
+  value (default `'read_only'`) rather than being hardcoded with no live
+  input path, so this task's own "excessive permission fail server-side"
+  negative_acceptance is genuinely reachable through the live route, not
+  only the pure schema layer.
+
+  Real fault injection during this task's own development (Law 1,
+  disclosed rather than hidden) found and fixed two genuine defects
+  before submission, neither merely described: (1) the alembic revision
+  id first tried (`0011_target_application_connections`, 35 characters)
+  exceeded `alembic_version.version_num`'s real `character varying(32)`
+  column width -- invisible until a real `alembic upgrade head` against a
+  live local PostgreSQL 16 cluster actually attempted the version-stamp
+  update and raised `StringDataRightTruncation`; fixed by shortening the
+  revision id to `0011_target_app_connections` (27 characters) and
+  re-running clean. (2) Disabling `_fetch_or_raise`'s own cross-project
+  ownership check (`if row.project_id != project_id`) was caught for real
+  by the new integration suite's own "cross-project target IDs... fail
+  server-side" negative_acceptance check against a live database row (the
+  read succeeded instead of 404ing) -- reverted, byte-identical, re-ran
+  clean.
+
+  Wrote `tests/tasks/test_ftf_04a01.py` (33 checks, no DB, no external
+  egress) -- every field validator's own closed-set/shape rule, `_validate_
+  connector_shape`'s own real cross-field rule proven at the pure-function
+  level (github requires both a URL and a credential; local_repository
+  refuses both), `apply_edits`/`apply_revoke`'s pure DB-free cores, and a
+  real, locally-hosted `build_target_application_connection_router` (a
+  real uvicorn server over a real local socket) proving unauthenticated
+  (401) and wrong-role/viewer (403) denial never opens a session while
+  `organization_admin` reaches the session layer.
+
+  Wrote `tests/integration/test_ftf_04a01_target_application_connection.py`
+  (real Postgres 16 + real OpenBao, same established pattern as
+  `tests/integration/test_ftf_0500_dataset_source_connection.py`) -- two
+  real organizations (org1 with *two* real projects, specifically to
+  prove the cross-project case is genuinely distinct from the cross-
+  organization case, not merely inferred), a real uvicorn server proving
+  create/get/list/edit/revoke, RBAC role-boundary denial, all three of
+  this task's own negative_acceptance clauses against real live database
+  rows ("Cross-project target IDs... fail server-side" proven with a
+  same-organization-different-project read that 404s while the same
+  connection's own real project URL still 200s; "unsupported connector...
+  fail server-side"; "excessive permission fail server-side"), a real
+  credential written to and resolved back from a real live OpenBao server
+  at the exact path this task's own code writes to (never merely
+  asserted), the real database's own unique-display-name constraint, the
+  restricted `sovra_app` role's real inability to `DELETE` a row directly
+  (revoke is the only real transition), and the fail-closed 503 when a
+  credential is supplied with no secret-manager backend configured (with
+  a direct database check proving no row was created at all).
+
+  This sandbox has no container-registry egress (same documented finding
+  as FTF-0004/FTF-0102/FTF-0202/FTF-0500) -- this task's own real Postgres
+  16 + OpenBao evidence was produced locally against a directly-installed
+  PostgreSQL 16 cluster (`sovra_migrate`/`sovra_ftf04a01`, mirroring CI's
+  own role/database naming) and a real OpenBao binary built from source
+  at the same pinned commit (`e98dc184344fe84ee4e69965ac3f4217d5b6a45d`)
+  FTF-0202/FTF-0500's own CI jobs already use, and is wired into a new
+  dedicated `target-application-connection-integration` CI job (real
+  `services: postgres` + a freshly-built OpenBao binary on the hosted
+  runner's own real network) mirroring `dataset-source-connection-
+  integration`'s own established pattern exactly.
+
+  STEP 2 (V): `product_truth_check.py --fail-on-unwired` now `17/17`
+  (up from `16/16`) -- this task's own new `proving_symbol`
+  (`build_target_application_connection_router`, called for real by
+  `apps/api/app/main.py`) is genuinely wired. `scripts/status.py` stays
+  `48/300 certified · 16 product-true` (unchanged, correctly -- this
+  submission is PROVISIONAL/L1-PROVEN, not yet CERTIFIED, so it does not
+  raise the stricter CERTIFIED-only count until independently reviewed,
+  Law 2). `scripts/validate_spec.py --strict` clean, after
+  `git fetch --unshallow` -- this sandbox's own pre-existing,
+  already-documented shallow-clone artifact (confirmed via a before/after
+  check: 20 spurious `stale_commit` defects before unshallowing, zero
+  after, none of them caused by this task). Full repo-wide
+  `ruff check .`/`ruff format --check .`/`uv run mypy .` clean for every
+  file this task touched.
+
+  STEP 3: this entry. `docs/certifications/queue.md` appended for Control
+  plane. PR to be opened as PROVISIONAL against `main`.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, `pull_request.opened`
   webhook for PR #207) — reviewed FTF-0206 (`/model_group/info` optional
   enrichment), the sole PROVISIONAL item at shift start. Session-ID
@@ -3104,6 +3275,25 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-04A01 (TargetApplicationConnection schema/API/RBAC) — this shift's own
+commit `e8d9c64c5bd1347a997baaa0890401e600a6a8f2` on
+`claude/wizardly-fermat-iux3ti` → `main`, submitted PROVISIONAL, not
+self-certified (Law 4). Real forward Alembic migration
+(`0011_target_app_connections`), schema/CRUD/routes under
+`apps/api/app/target_connectors/`, phase-04A contract freeze, 33 no-DB
+checks (`tests/tasks/test_ftf_04a01.py`, wired into the gate job) plus a
+real Postgres+OpenBao integration proof
+(`tests/integration/test_ftf_04a01_target_application_connection.py`,
+wired into a new dedicated `target-application-connection-integration`
+CI job) — both suites re-ran clean locally against a real PostgreSQL 16
+cluster and a real OpenBao server built from source after two genuine
+real-fault-injection-caught defects were found and fixed (an alembic
+revision id that exceeded `alembic_version.version_num`'s real
+`character varying(32)` column width; a disabled cross-project ownership
+check caught by the integration suite's own negative_acceptance). Full
+record: `docs/certifications/queue.md`'s "FTF-04A01 — TargetApplicationConnection
+schema/API/RBAC" entry and this file's own top shift note.
+
 FTF-0206 (`/model_group/info` optional enrichment) — PR #207
 (`claude/wizardly-fermat-bj3os5` → `main`, commit
 `49d29681764d225afede1336c09a8a3fe2fb6079`), submitted PROVISIONAL, not

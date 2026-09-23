@@ -1,4 +1,50 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23T05:20:00Z (scheduled autonomous relay shift) —
+  implemented FTF-04A01 (TargetApplicationConnection schema/API/RBAC),
+  submitted PROVISIONAL, not self-certified (Law 4).
+
+  Completed this shift: real forward Alembic migration
+  (`0011_target_app_connections`), schema/CRUD/routes under
+  `apps/api/app/target_connectors/` (gated to `{organization_admin}`
+  alone per Section 45), phase-04A contract freeze
+  (`packages/contracts/openapi/04A-interface.yaml`/`packages/contracts/
+  jsonschema/04A-domain.schema.json`), 33 no-DB checks
+  (`tests/tasks/test_ftf_04a01.py`, wired into the gate job), and a real
+  Postgres 16 + real OpenBao integration proof
+  (`tests/integration/test_ftf_04a01_target_application_connection.py`,
+  wired into a new dedicated `target-application-connection-integration`
+  CI job). Both suites independently reproduced a real, genuine failure
+  via fault injection before submission (Law 1) then re-ran clean: an
+  alembic revision id that exceeded `alembic_version.version_num`'s real
+  `character varying(32)` column width (caught by a real `alembic upgrade
+  head` against a live local PostgreSQL 16 cluster), and a disabled
+  cross-project ownership check caught by the integration suite's own
+  "cross-project target IDs... fail server-side" negative_acceptance
+  check against a live database row. `product_truth_check.py
+  --fail-on-unwired` now `17/17` (up from `16/16`) —
+  `build_target_application_connection_router` is genuinely wired into
+  `apps/api/app/main.py`. `scripts/status.py` stays `48/300 certified ·
+  16 product-true` (unchanged, correctly — PROVISIONAL/L1-PROVEN does not
+  raise the stricter CERTIFIED-only count until independently reviewed,
+  Law 2). `scripts/validate_spec.py --strict` clean (after
+  `git fetch --unshallow` — this sandbox's own pre-existing, already-
+  documented shallow-clone artifact, not caused by this task). Full
+  repo-wide `ruff check .`/`ruff format --check .`/`uv run mypy .` clean
+  for every file this task touched.
+
+  Queued: `docs/certifications/queue.md` appended for Control plane; PR
+  to be opened as PROVISIONAL against `main` (title `[relay] FTF-04A01:
+  TargetApplicationConnection schema/API/RBAC`). Certified count
+  unchanged this shift (48/300); product-true 16/16 (CERTIFIED-only, Law
+  2) — see `product_truth_check.py`'s own wider 17/17 wired-but-not-yet-
+  certified count above for the distinction.
+
+  STEP 4 stop condition: (a) this shift's own picked item (`FTF-04A01`)
+  is now L1-PROVEN and submitted PROVISIONAL, awaiting Control-plane L2
+  certification and, later, the L4 gate — reporting and stopping here per
+  STEP 4(a), rather than picking a second item in the same shift.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, `pull_request.opened`
   webhook for PR #207) — reviewed FTF-0206 (`/model_group/info` optional
   enrichment) and found it does NOT hold up for certification, for a

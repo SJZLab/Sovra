@@ -1662,16 +1662,56 @@ FTF-0408:
   proving_symbol: ''
   proving_test: ''
 FTF-04A01:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: TargetApplicationConnection schema/API/RBAC
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0401, FTF-0103,
-    FTF-0202, FTF-H006
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: e8d9c64c5bd1347a997baaa0890401e600a6a8f2
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0401,
+    FTF-0103, FTF-0202, FTF-H006 (all CERTIFIED). Real forward Alembic migration
+    (0011_target_app_connections) adds the project-scoped TargetApplicationConnection table
+    (Section 6.8A) with the same FORCE-RLS/composite-tenant-FK discipline every prior migration in
+    this chain applies. Scope disclosed, not hidden: this task builds the connection record itself
+    (schema/CRUD/RBAC), not the TargetApplicationConnector Protocol (Section 7A.1), a real GitHub
+    App/token exchange (FTF-04A02), or the local-repository root allowlist (FTF-04A06) -- each a
+    separate, dependency-gated later task. This task's own acceptance clause 1 ("Create
+    tenant-scoped read-only target connection and validate credentials without fetching unapproved
+    data") is read narrowly and made real: _validate_connector_shape is a real,
+    connector-type-conditional structural check run synchronously at creation (github requires
+    repository_url_redacted + a credential, validated via FTF-H006's shared url_policy;
+    local_repository refuses both) -- never a live dial against GitHub itself, which is FTF-04A02's
+    own separate scope. access_mode is a real enforced closed set of exactly 'read_only' for
+    Release 1, accepted from the caller (never silently overridden) so a request for anything else
+    is genuinely refused server-side through the live route. All three negative_acceptance clauses
+    are enforced by construction and proven against real live database rows in the new integration
+    test, not only pure in-memory objects: "Cross-project target IDs... fail server-side"
+    (_fetch_or_raise's own project-match check, distinct from the organization-match check),
+    "unsupported connector... fail server-side" (validate_connector_type's closed set), and
+    "excessive permission fail server-side" (validate_access_mode's closed set). Role gating:
+    Section 45's own literal "organization_admin: connections, security profiles, cost profiles"
+    sentence -- TARGET_CONNECTION_ROLES is {organization_admin} alone, the same narrower,
+    credential-bearing-"connection" precedent FTF-0201's own LiteLLMConnection already established
+    (gating every operation including reads). First real caller of FTF-0202's store_secret_ref for
+    this resource: a credential supplied at creation (connector_type=github) is written for real to
+    a real OpenBao KV v2 path (target_application_connection_crud.py's own _store_credential)
+    before the row is ever inserted, and only the resulting has_credential boolean is ever returned
+    (Section 46). Real fault injection during development (Law 1, disclosed) found two genuine
+    defects before submission: the alembic revision id first tried (35 chars) exceeded
+    alembic_version.version_num's real character varying(32) column width, caught by a real
+    migration run against live Postgres; and disabling the cross-project ownership check was caught
+    by the real integration suite's own negative_acceptance check against a live database row
+    (reverted, byte-identical). Evidence commit e8d9c64c5bd1347a997baaa0890401e600a6a8f2:
+    tests/tasks/test_ftf_04a01.py (no-DB, 33 checks, clean) and
+    tests/integration/test_ftf_04a01_target_application_connection.py (real Postgres 16 + real
+    OpenBao built from source, this sandbox's own no-container-registry-egress limitation, same
+    documented class of gap as FTF-0004/FTF-0102/FTF-0202/FTF-0500 -- both run clean locally against
+    a real Postgres 16 cluster and a real OpenBao server, and are wired into CI's gate job and a new
+    dedicated target-application-connection-integration job respectively). PROVISIONAL per Law 4 --
+    not self-certified; awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
+  proving_symbol: build_target_application_connection_router
+  proving_test: tests/tasks/test_ftf_04a01.py
 FTF-04A02:
   certification_state: NONE
   criticality: MUST
