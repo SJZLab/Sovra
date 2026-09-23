@@ -1,4 +1,35 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #212) — independently certified
+  FTF-0207 (Alias reconciliation), the sole PROVISIONAL item in
+  `docs/certifications/queue.md` at shift start. Session-ID compared
+  against both of PR #212's commits (`session_01AkayPLhxBFfVkDgfhY2Mnk`)
+  — no overlap with this session (`session_01AsrpTcXDVyvY6AAYKGs45W`),
+  independent per Law 4. Watched the real CI run on PR #212's real head
+  (`1e19e3d`) to completion — 27/27 jobs green, with `gate`'s own real
+  step list confirmed to include and pass the new "FTF-0207 negative-test
+  proof" step (not just an overall green count, per the FTF-0205/FTF-0206
+  CI-wiring gap this control plane found two shifts earlier). Own
+  reproduction in a fresh `git worktree` on the real PR head: ran
+  `tests/tasks/test_ftf_0207.py` clean, ran an independent fault
+  injection distinct from the producer's own two (removed the
+  duplicate-enrichment-id "first wins" guard) — 1 check failed for real,
+  reverted byte-identical, re-ran clean. `product_truth_check.py`
+  (17/17, unchanged — `proving_symbol` correctly blank, no live route
+  wired yet, same disclosed precedent FTF-0202/FTF-0205 established) and
+  `scripts/status.py` (49/300 before, 50/300 after) both independently
+  reconfirmed. Pulled the real task contract via `tools/r1_handoff.py
+  packet FTF-0207` — acceptance/negative_acceptance clauses confirmed
+  genuinely met, not just "tests pass." Merged PR #212
+  (`ab6473fc3854f71d782a8bb1671a95c33f413ba5`). `docs/spec-matrix.yaml`
+  set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`.
+  Ledger entry appended (`docs/certifications/ledger.md`). Ran
+  `scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` updated for `['FTF-0207']`. Full
+  record: "## Done" below and `docs/certifications/ledger.md`/
+  `docs/certifications/queue.md`.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled autonomous relay shift) — implemented
   FTF-0207 (Alias reconciliation), submitted PROVISIONAL, not
   self-certified (Law 4). New `packages/litellm_client/
@@ -3326,23 +3357,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0207 (Alias reconciliation) — this shift's own commit
-`194829be0acf8f95276aee74a1dc6430484f7242` on
-`claude/wizardly-fermat-7rbq4h` → `main`, submitted PROVISIONAL, not
-self-certified (Law 4). New `packages/litellm_client/
-alias_reconciliation.py::reconcile_aliases` left-joins FTF-0204's
-already-CERTIFIED `discover_models` result to FTF-0205's already-
-CERTIFIED `enrich_visible_models` result by exact, case-sensitive
-alias-id equality, 20 no-DB checks (`tests/tasks/test_ftf_0207.py`,
-wired into the gate job, including a real end-to-end check against a
-real local HTTPS gateway and a real local OpenBao-shaped secret backend)
-after two genuine real-fault-injection-caught defects were demonstrated
-live (replacing the left join with a union; case-folding the join key)
-and reverted byte-identical. Same disclosed "no live HTTP route yet"
-scope as FTF-0202/FTF-0205 — `proving_symbol` stays blank, product-true
-count unchanged at 17/17. Full record: `docs/certifications/queue.md`'s
-"FTF-0207 — Alias reconciliation" entry and this file's own top shift
-note.
+FTF-0207 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-23 via PR #212 (merge commit
+`ab6473fc3854f71d782a8bb1671a95c33f413ba5`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-04A01 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-23 via PR #210 (merge commit
@@ -5061,6 +5080,29 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   task's own real new live caller,
   `build_target_application_connection_router`, wired into
   `apps/api/app/main.py`). Full entry: docs/certifications/ledger.md.
+- FTF-0207 — Alias reconciliation. CERTIFIED 2026-09-23, PR #212 (merge
+  commit `ab6473fc3854f71d782a8bb1671a95c33f413ba5`). Independently
+  re-verified in a fresh git worktree at the PR's real head: 27/27 CI
+  jobs green with `gate`'s own new "FTF-0207 negative-test proof" step
+  confirmed present and passing (not just an overall green count, per
+  the FTF-0205/FTF-0206 CI-wiring gap this control plane found two
+  shifts earlier); own fault injection distinct from the producer's own
+  two (removed the duplicate-enrichment-id "first wins" dedup guard) —
+  1 check failed for real, reverted byte-identical, re-ran clean;
+  `product_truth_check.py` 17/17 confirmed legitimately unchanged
+  (`proving_symbol` correctly blank — no live route wired yet, same
+  disclosed precedent FTF-0202/FTF-0205 established); acceptance clause
+  and negative_acceptance clause both confirmed genuinely met via
+  `tools/r1_handoff.py packet FTF-0207` against the module's own
+  exact-case-sensitive-join, no-credential-field construction.
+  Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed genuinely
+  `CERTIFIED`. No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit (`proving_symbol` stays blank).
+  Ran `sync_certified_status()`. `scripts/status.py`: `49/300` certified
+  before, `50/300` after; "Product-true" unchanged at `17` (no new
+  proving_symbol, by disclosed design). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

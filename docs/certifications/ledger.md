@@ -5654,3 +5654,107 @@ reasons given above.
   16 → 17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0207 — Alias reconciliation
+- Criterion ID: FTF-0207
+- PR: https://github.com/SJZLab/Sovra/pull/212 (`claude/wizardly-fermat-7rbq4h` → `main`)
+- Merge commit: ab6473fc3854f71d782a8bb1671a95c33f413ba5
+- Implementation commit: 194829be0acf8f95276aee74a1dc6430484f7242
+  (tracking-doc commit: 1e19e3d06b126a265a9630e449fb606b730df669)
+- Validated-by: session https://claude.ai/code/session_01AsrpTcXDVyvY6AAYKGs45W
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #212 itself)
+- Date: 2026-09-23
+- **Session-ID check:** both commits on PR #212 carry `Claude-Session:
+  .../session_01AkayPLhxBFfVkDgfhY2Mnk`; this reviewing session's own ID
+  is `session_01AsrpTcXDVyvY6AAYKGs45W` — no match, independent per Law 4.
+- **Diff read directly:** exactly the task packet's own files
+  (`packages/litellm_client/alias_reconciliation.py`,
+  `tests/tasks/test_ftf_0207.py`) plus expected tracking docs
+  (`docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+  `docs/implementation/task-packets/FTF-0207.md`, `docs/certifications/
+  queue.md`) and one new `gate`-job step ("FTF-0207 negative-test proof
+  (Alias reconciliation, no DB required)"). Confirmed via `git diff
+  f8b9393 1e19e3d -- .github/workflows/ci.yml` that the new step is
+  genuinely inside the `gate:` job block (the file's only job) — not a
+  phantom step in an unrelated job, directly learning from this control
+  plane's own prior FTF-0205/FTF-0206 finding
+  (`docs/certifications/watchdog-findings.md`, 2026-09-23) that a green
+  job count alone doesn't prove a task's own test ran. Also confirmed via
+  `git diff f8b9393 1e19e3d -- docs/spec-matrix.yaml` that only the
+  FTF-0207 entry changed — no scope creep into other criteria.
+- **CI re-checked, genuinely completed, not taken on faith:** the
+  `pull_request.opened` webhook fired while CI was still `in_progress`
+  (PR opened at 09:11:19Z). Polled PR #212's real head (`1e19e3d...`)
+  check runs directly (via the GitHub REST API with this sandbox's own
+  `GH_TOKEN`, not the producer's claim) until every one of the 27 real
+  jobs reported `completed` — **27/27 `success`**, `mergeable_state:
+  clean`. Pulled `gate`'s own real step list directly and confirmed the
+  new "FTF-0207 negative-test proof (Alias reconciliation, no DB
+  required)" step is present and `success` on this exact head, not
+  merely claimed by the PR body.
+- **Own independent verification, not the producer's local claims:** all
+  run in a fresh `git worktree` checked out to the real PR head
+  (`1e19e3d`), with a full `git fetch --unshallow` (the initial shallow
+  clone made `validate_spec.py --strict` report 25 unrelated
+  `stale_commit` warnings for other already-certified tasks' evidence
+  commits — confirmed to be a shallow-clone artifact, not a real defect,
+  by re-running clean after unshallowing).
+  - Ran `tests/tasks/test_ftf_0207.py` directly on the real PR head —
+    all checks pass.
+  - Own fault injection, distinct execution from the producer's own two
+    disclosed ones (union-join, case-folded join key): changed the
+    duplicate-enrichment-id dedup in the shipped
+    `alias_reconciliation.py` so a later entry silently overwrites an
+    earlier one (`enrichment_by_id[entry.id] = entry` unconditionally,
+    removing the "first one wins" `continue` guard). Re-ran the suite —
+    **1 check failed for real**
+    (`test_duplicate_enrichment_ids_first_one_wins_deterministically`).
+    Reverted from a pre-edit backup; `git diff` confirmed byte-identical;
+    the suite re-ran clean immediately after (all checks pass).
+  - `uv run ruff check .` / `ruff format --check .` / `mypy .` clean
+    across the whole repo; `uv run pytest tests/unit` 3/3.
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` — own run,
+    **17/17, unchanged** — `proving_symbol` is correctly blank for
+    FTF-0207 (no live route calls `reconcile_aliases` yet, same disclosed
+    "no live HTTP route yet" precedent FTF-0202/FTF-0205 established), so
+    "unchanged" here is the correct outcome for this criterion, not an
+    unproven claim being waved through.
+  - `python3 scripts/status.py` — own run, `49/300` certified / `17`
+    product-true, matching the PR's own claim exactly (pre-certification
+    figures, since this task adds no new proving_symbol).
+  - Regression suites `tests/tasks/test_ftf_0201.py`/`test_ftf_0203.py`/
+    `test_ftf_0204.py`/`test_ftf_04a01.py` all re-run clean on the real
+    PR head — no regression to any shared module this task composes.
+- `python3 tools/r1_handoff.py packet FTF-0207 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — own run against the real PR head:
+  acceptance ("Left-join case-sensitive alias identities to metadata
+  without replacing user-facing ID") confirmed met by
+  `reconcile_aliases`'s own exact-id, no-`.casefold()` join, verified
+  directly in the module source; negative_acceptance ("Colliding
+  aliases/upstream names never merge credentials or grant a model absent
+  from current accessible set") confirmed met both structurally (neither
+  `DiscoveredModel` nor `ModelMetadataEntry` nor `ReconciledModel` carries
+  a credential field) and behaviorally (this review's own fault injection
+  above, plus the producer's own two, all independently reproduced).
+  `database_changes: "No independent schema change. Consume frozen
+  contract."` confirmed — the module is pure/synchronous/no-I/O, verified
+  by reading it directly. The real packet's `files` list names
+  `packages/litellm-client/` (hyphen); confirmed the shipped
+  `packages/litellm_client/` (underscore) is the real, already-importable
+  package FTF-0204/FTF-0205 already live in (`packages/litellm-client/`
+  does not exist on disk) — the disclosed path refinement is genuine, not
+  a scope dodge.
+- Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit
+  (`ab6473fc3854f71d782a8bb1671a95c33f413ba5`); `proving_symbol` stays
+  blank (correct — no live caller yet, same as FTF-0202 before FTF-0203).
+  Ran `scripts.task_claim.sync_certified_status()` to write the real
+  status into `spec/tasks.json`/`docs/implementation/TRACKER.json` --
+  `['FTF-0207']` updated. Certified: 49/300 → 50/300, Product-true:
+  unchanged at 17 (no new proving_symbol, by disclosed design).
+
+**Conclusion:** Certified L2-CERTIFIED.

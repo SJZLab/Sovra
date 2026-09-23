@@ -619,10 +619,10 @@ FTF-0206:
   proving_symbol: ''
   proving_test: ''
 FTF-0207:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Alias reconciliation
-  evidence_hash: 194829be0acf8f95276aee74a1dc6430484f7242
+  evidence_hash: ab6473fc3854f71d782a8bb1671a95c33f413ba5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204,
@@ -683,7 +683,7 @@ FTF-0207:
     sides of the join key (`entry.id.casefold()`/`discovered.id.casefold()`) -- run in a fresh
     subprocess, the mutated module genuinely cross-attaches a differently-cased enrichment entry's
     fields onto the real alias; reverted, re-ran clean.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:
