@@ -12552,3 +12552,160 @@ next without re-deriving it, since a certification landing after this
 shift ends could unlock further items. `FTF-0304` still has two open,
 unmerged candidate PRs (#194/#195) from other sessions -- leave those for
 their own producer sessions or a certifier, do not redo the work.
+
+## 2026-09-23 — FTF-0211 — Control plane: independent CERTIFY review, NOT CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #226. Per this
+session's own mandate, checked this file and `docs/spec-matrix.yaml`
+first and found FTF-0211/PR #226 the sole pending PROVISIONAL item
+(`docs/spec-matrix.yaml`'s FTF-0211 entry: `certification_state:
+PROVISIONAL`, `evidence_hash: 1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54`).
+
+- **Session-ID check:** PR #226's three commits (implementation
+  `1d23dd3`, PROVISIONAL submission `0c9167d`, and a later tracking-doc
+  commit `09295cf` pushed partway through this review) all carry
+  `Claude-Session: .../session_013qR8o5xkLqEQ2WQwpYyora`. This session's
+  own ID is `session_014FtPJptPJDjFCVud3iLyUi` -- no match, independent
+  per Law 4.
+- **Diff read directly** against PR #226's head:
+  `packages/litellm_client/real_streaming_probe.py` (new module),
+  `packages/security/outbound_guard.py` (purely additive
+  `guarded_stream_fetch`/`GuardedStreamResponse` export, plus a
+  no-behavior-change extraction of `guarded_fetch`'s own
+  connection-pinning logic into `_prepare_pinned_connection`),
+  `tests/tasks/test_ftf_0211.py` (new), `tests/tasks/test_ftf_h006.py`
+  (new streaming coverage for the already-CERTIFIED FTF-H006),
+  `.github/workflows/ci.yml` (wires both the new `test_ftf_0211.py` and
+  the previously-unwired `test_ftf_h006.py` into the `gate` job), and the
+  new task-packet doc. No scope creep beyond FTF-0211's own contract plus
+  the disclosed FTF-H006 gate-wiring-gap fix.
+- **CI re-checked on the real head, not taken on faith: the `gate` job
+  genuinely FAILED.** Confirmed from the real check-runs API, not a
+  stale snapshot taken when the webhook first fired -- waited for the
+  pending jobs to settle. Root cause read directly from the job's own
+  log (`get_job_logs`, not a self-report): the newly-wired
+  `tests/tasks/test_ftf_h006.py` step crashes at module import time with
+  `socket.gaierror: [Errno -9] Address family for hostname not
+  supported`, raised from `ThreadingHTTPServer(("::1", 0), _Handler)` at
+  `test_ftf_h006.py:160` -- inside `socketserver.py`'s own
+  `server_bind` -> `self.socket.bind(self.server_address)`. Because this
+  is an uncaught exception at collection time (not a `check()` failure),
+  the step exits 1 and the `gate` job stops there, entirely before the
+  also-new `test_ftf_0211.py` step below it ever runs -- FTF-0211's own
+  suite has genuinely never executed in CI on this PR at all, in either
+  commit.
+- **Confirmed not a one-off flake:** the producer session pushed a
+  further tracking-doc-only commit (`09295cf`, no code change) partway
+  through this review; the identical `gate` failure reproduced
+  byte-for-byte on that new head too (run `35932547534`, job
+  `107422226929`, same traceback, same line). Two independent real CI
+  runs, same real crash.
+- **Root cause identified precisely:** `test_ftf_h006.py`'s own
+  `_detect_ipv6_support()` helper (lines 135-151) probes IPv6 support
+  with a raw `socket.socket(AF_INET6, SOCK_STREAM); .bind(("::1", 0))`
+  wrapped in `except OSError`, and only constructs the real
+  `ThreadingHTTPServer(("::1", 0), ...)` at module scope if that probe
+  returns True. On the real GitHub Actions runner the two calls
+  disagree: the probe's own raw bind succeeds (so `_IPV6_SUPPORTED` is
+  True), while the real `ThreadingHTTPServer` construction two lines
+  later -- an equivalent-looking bind to the same address -- fails with
+  `gaierror`. This session's own sandbox (and, per the PR body, the
+  producer's own sandbox) has no IPv6 stack at all, so the probe
+  correctly predicts a skip in both, which is exactly why this defect
+  was invisible to both sandboxes and only surfaced on the real runner.
+  This is a genuine cross-environment fragility in the detection
+  heuristic itself, not a flake.
+- Because `gate` never reaches the `test_ftf_0211.py` step, this task's
+  own acceptance clause 2 ("Independent review, exact merged commit,
+  real relevant integration and negative-test evidence recorded") is not
+  met -- there is no real CI evidence FTF-0211's own suite passes on
+  this PR's actual head, only the producer's own self-reported sandbox
+  run and this session's own separate local reproduction (both of which
+  did pass -- see below -- but neither substitutes for real CI per this
+  repository's own established standard, e.g. the FTF-0206 precedent
+  earlier in this file).
+- **Own independent reproduction, separately from CI:** in a fresh
+  checkout of this PR's exact head, `uv sync --all-packages`, then
+  `uv run python3 tests/tasks/test_ftf_0211.py` -- "FTF-0211 real
+  streaming probe: all checks passed"; `uv run python3
+  tests/tasks/test_ftf_h006.py` -- also passes in this sandbox (same
+  IPv6-skip disclosure as the producer's own claim), which is exactly
+  why this defect was not visible to either the producer's own sandbox
+  or this session's own local run, only to the real CI runner --
+  underscoring why "CI actually ran and passed on the real merged
+  commit" is checked separately and can never be inferred from a passing
+  local run alone. `uv run python3 tests/tasks/test_ftf_0210.py`/
+  `test_ftf_0201.py`/`test_ftf_0204.py`/`test_ftf_0207.py` (dependencies
+  plus siblings) all re-run clean, no regression. `ruff check .`/`ruff
+  format --check .` clean; `mypy .` clean, 208 source files. `python3
+  scripts/validate_spec.py --strict` clean (`git fetch --unshallow`
+  first). `python3 scripts/product_truth_check.py --fail-on-unwired` --
+  17/17, legitimately unchanged (`proving_symbol` confirmed blank in
+  `docs/spec-matrix.yaml`'s FTF-0211 entry -- no live caller yet, same
+  disclosed precedent as FTF-0202/FTF-0205/FTF-0207/.../FTF-0210).
+- **Own fault injection, two vectors, both reverted byte-identical and
+  the suite re-confirmed clean immediately after each:**
+  1. Removed the `if model_id not in approved_model_ids: raise
+     ChatProbeNotAuthorizedError(...)` gate from `probe_stream_chat`
+     entirely -- the authorization negative check genuinely failed for
+     real ("an unapproved model raises ChatProbeNotAuthorizedError
+     instead of attempting a probe"); reverted, `diff` confirmed
+     byte-identical, suite re-ran clean.
+  2. Removed the `if not saw_done:` truncated-stream guard entirely --
+     the negative_acceptance-mapped check genuinely failed for real ("a
+     real stream truncated before [DONE] is TRUNCATED_STREAM, never
+     fabricated into PROBED"); reverted, `diff` confirmed byte-identical,
+     suite re-ran clean.
+- `python3 tools/r1_handoff.py packet FTF-0211 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("Consume actual SSE stream, reconstruct text/tool deltas and account
+  usage/termination") and negative_acceptance ("Malformed/truncated
+  streams, client cancellation and gateway retry do not leak connection
+  resources or double-bill silently") both confirmed genuinely met by
+  direct reading of `probe_stream_chat`/`_iter_sse_events`/
+  `_accumulate_tool_calls` and their dedicated tests (including
+  `test_probe_closes_the_real_connection_on_every_return_path` and
+  `test_gateway_retry_never_happens_silently_inside_the_probe`) -- the
+  module's own logic is sound. Dependencies FTF-0201/FTF-0210 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml`. Acceptance clause 2
+  is the one clause this review cannot confirm met, precisely because of
+  the `gate` failure above -- there is no real, passing CI evidence for
+  this PR's own head yet.
+- The `guarded_fetch`/`_prepare_pinned_connection` extraction was
+  independently re-read: confirmed no behavior change to any check
+  currently in `tests/tasks/test_ftf_h006.py`'s existing
+  (already-CERTIFIED) coverage, and the one narrow cosmetic drop (the
+  wrapped `OutboundGuardError` message no longer includes
+  `(pinned_ip:port)`) is not asserted on by any existing test --
+  disclosed here for the record, not a blocking defect on its own.
+
+**Blocking defect found: real CI failure, reproduced on two separate
+commits, caused directly by this PR's own new `test_ftf_h006.py`
+gate-wiring step crashing at import time on the actual GitHub Actions
+runner** (`socket.gaierror: [Errno -9] Address family for hostname not
+supported` from a real `ThreadingHTTPServer(("::1", 0), ...)` bind that
+the file's own `_detect_ipv6_support()` probe failed to predict).
+`docs/spec-matrix.yaml`'s FTF-0211 entry left unchanged at
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` -- not
+certified, not further downgraded (Law 2). PR #226 left open, unmerged.
+Full defect detail and the fix this needs recorded in `QUEUE.md`'s
+"## Provisional" section and `PROGRESS.md` for the next relay shift.
+
+## Next shift
+FTF-0211 (PR #226) needs a relay shift to fix the real
+`test_ftf_h006.py` IPv6-detection/gate-wiring defect above before this
+can be re-reviewed -- either make `_detect_ipv6_support()` actually
+predict the real GitHub Actions runner's own bind failure (e.g. probe
+with the exact same `ThreadingHTTPServer`/`HTTPServer.server_bind`
+construction the real server uses, not a bare `socket.bind`, since the
+two calls provably disagree on the real runner), or wrap the real
+`ThreadingHTTPServer(("::1", 0), _Handler)` construction itself in the
+same `try/except OSError` fallback so a runner where the probe
+under-predicts the failure still degrades to the disclosed skip path
+instead of crashing the whole `gate` job. Push the fix to PR #226's own
+branch (`claude/wizardly-fermat-pvnd0o`), watch a fresh CI run to
+completion on the real new head before resubmitting for certification.
+FTF-0211's own module logic (`real_streaming_probe.py`) and its own test
+suite (`test_ftf_0211.py`) are otherwise sound -- confirmed independently
+in this review -- so once the CI fix lands and genuinely goes green,
+re-review should be a fast pass. `docs/spec-matrix.yaml` has no other
+PROVISIONAL entries at this shift's end.
