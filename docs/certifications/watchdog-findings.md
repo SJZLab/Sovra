@@ -120,3 +120,75 @@ Watchdog appends adversarial audit findings here; Control plane reviews.
   on `main` (still unconfirmed per `CLAUDE.md`'s `BRANCH_PROTECTION` flag)
   would close this permanently rather than relying on each session to
   self-police.
+
+## 2026-09-23 — CI `gate` job never actually runs FTF-0205's/FTF-0206's own tests (certification accepted "26/26 jobs green" as proof a specific test ran)
+- **found_by:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #207 (`session_01PXgrUD2iBjuYBoEk2rCg87`)
+- **first_seen:** the underlying gap has existed since FTF-0205 merged
+  (PR #205, merge commit `b421fb366870167dcb7ecaab7a658adf1c2c6510`,
+  2026-09-23); first *detected* while reviewing the next task, FTF-0206
+  (PR #207) — see this same date's "FTF-0206 (PR #207) — NOT CERTIFIED"
+  entry in `docs/certifications/queue.md` for the full technical detail
+  reproduced below in summary.
+- **severity:** high (evidence-substitution: the CERTIFY procedure's own
+  step 2/3 — "confirm CI actually ran ... and its conclusion" / "not a
+  stale or self-reported claim" — was satisfied by checking that CI's
+  `gate` job was green, without checking whether `gate`'s own steps
+  actually include the task's test. That check is what step 2/3 exists
+  for, and it was skipped on two consecutive tasks by two different
+  sessions.)
+- **affected criterion IDs:** FTF-0205 (currently `certification_state:
+  CERTIFIED`) and FTF-0206 (currently `certification_state: PROVISIONAL`,
+  correctly held there by this same shift's review)
+- **What changed / what's actually wrong:** `.github/workflows/ci.yml`
+  wires each task's `tests/tasks/test_ftf_*.py` into the `gate` job (or a
+  dedicated integration job) as an individually-named step — there is no
+  wildcard/glob step that picks up a new test file automatically
+  (confirmed: no `for ... in`, no `test_ftf_*` glob anywhere in the
+  file). `gate`'s explicit per-task steps stop at "FTF-0203 negative-test
+  proof" / "FTF-0204 negative-test proof" (`ci.yml:188,190`); no step for
+  `tests/tasks/test_ftf_0205.py` or `tests/tasks/test_ftf_0206.py` was
+  ever added, and none of the other 25 domain-named `*-integration` jobs
+  is scoped to either task (the closest by name,
+  `model-discovery-integration`, is FTF-0204's own job). Verified by
+  reading `gate`'s real 73 step names from a real completed run
+  (`actions_list(list_workflow_jobs)`, run `35812591578`, PR #207's real
+  head `635213b`) and separately grepping all 26 job definitions in
+  `ci.yml` for `0205`/`0206`/`model_group`/`model_info` — no match. Net
+  effect: **CI genuinely ran and genuinely passed on both PRs, but never
+  executed either task's own test file, at all** — the "26/26 jobs green"
+  fact that both this shift's own FTF-0206 review and the prior FTF-0205
+  certification review (QUEUE.md, "## Previous shift", 2026-09-23) relied
+  on is true and was itself independently re-checked (not a stale/
+  self-reported claim, per CERTIFY step 3) — it simply doesn't mean what
+  both reviews needed it to mean, because none of those 26 jobs contains
+  the step in question.
+- **Why FTF-0205 is not being reopened by this same finding:** this
+  shift's task is certifying the one item that was actually
+  `PROVISIONAL` and pending at shift start (FTF-0206, per this session's
+  own scheduled instructions — no new task work, no reprioritization
+  beyond what certifying/rejecting FTF-0206 naturally requires).
+  Downgrading an already-`CERTIFIED` entry is a Control-plane judgment
+  call this review is not making unilaterally; this finding exists so
+  that judgment can be made deliberately rather than the gap staying
+  invisible. Everything else the FTF-0205 certification review did
+  (independent session-ID check, real fault injection distinct from the
+  producer's own, clean regression across FTF-0201-0204, correct
+  `product_truth_check`/`status.py` figures) was genuine and is not in
+  question — only the CI-execution claim specifically.
+- **Disposition:** not remediated by this shift (FTF-0206 was left
+  `PROVISIONAL`, not merged; see `docs/certifications/queue.md`'s
+  "FTF-0206 (PR #207) — NOT CERTIFIED" entry for the required next step —
+  a relay shift adds explicit `gate`-job steps for both
+  `tests/tasks/test_ftf_0205.py` and `tests/tasks/test_ftf_0206.py`,
+  confirmed real on `ubuntu-latest` runners: `sudo`/`openssl`/
+  `update-ca-certificates` are all present and passwordless-sudo-capable
+  there, so the fault-injection TLS-trust-store path is not the
+  disclosed print-and-skip fallback). Whether FTF-0205's own
+  `certification_state` should be reverted to `PROVISIONAL` pending a
+  real CI run of its own test, versus accepted as-is once this
+  reviewing session's own independent local reproduction (see the prior
+  shift's QUEUE.md entry — fresh worktree, clean regression, an
+  independent fault injection distinct from the producer's own, all
+  genuinely reproduced) is judged sufficient after the fact, is left to
+  Control plane.

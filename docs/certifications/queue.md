@@ -10900,3 +10900,95 @@ enrichment"). Ran `scripts.task_claim.sync_certified_status()` —
 `['FTF-0205']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0205 moved to
 Done, Certified count bumped to 48/300, Product-true stays 16/16
 (unchanged — this task discloses no live wiring).
+
+### Control plane review — 2026-09-23 — FTF-0206 (PR #207) — NOT CERTIFIED (CI never runs this task's own test)
+- **Trigger:** scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #207 (https://github.com/SJZLab/Sovra/pull/207,
+  `claude/wizardly-fermat-bj3os5` → `main`, head `635213b2261d1e03a2559f110921a0e4d29c4f5c`,
+  base `e42d0364286dec312049313694cdab367826bd50` — the current `main` tip).
+- **Session-ID check:** both PR #207 commits (`49d2968`, `635213b`) carry
+  `Claude-Session: .../session_015xEcu3kUMRfWMZwkav4cVc`; this reviewing
+  session's own ID (`https://claude.ai/code/session_01PXgrUD2iBjuYBoEk2rCg87`)
+  does not match — independent, not self-certification.
+- **Diff read directly:** `git diff` against the real base — exactly the
+  task packet's own two files (`packages/litellm_client/
+  model_group_info_optional_enrichment.py`,
+  `tests/tasks/test_ftf_0206.py`) plus expected tracking docs
+  (`docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+  `docs/implementation/task-packets/FTF-0206.md`,
+  `docs/certifications/queue.md`). No scope creep.
+- **CI checked for real, not taken on the PR body's word:**
+  `pull_request_read get_check_runs` on PR #207's real head showed 26/26
+  jobs green, `gate` included — the same shape the prior FTF-0205
+  certification review accepted as "CI actually ran (a real job, not 0
+  jobs) and its conclusion." This review went one step further per this
+  task's own CERTIFY procedure step 2 and step 3's "not a stale or
+  self-reported claim": it read `gate`'s own 73 step names from
+  `actions_list(list_workflow_jobs)` on the real run (id `35812591578`),
+  and separately grepped every one of `.github/workflows/ci.yml`'s 26 job
+  definitions (`gate` plus 25 domain-named `*-integration` jobs) for
+  `0205`, `0206`, `model_group`, or `model_info`.
+- **What's actually wrong:** there is no match, anywhere. `gate`'s
+  explicit per-task steps stop at "FTF-0203 negative-test proof" /
+  "FTF-0204 negative-test proof" (`.github/workflows/ci.yml:188,190`) —
+  no step for FTF-0205 or FTF-0206 was ever added after those two tasks'
+  own PRs landed, and none of the 25 other integration jobs is scoped to
+  either task (the closest, `model-discovery-integration`, is FTF-0204's
+  own job, not FTF-0205's or FTF-0206's). `ci.yml` has no wildcard/glob
+  step that would pick up a new `tests/tasks/test_ftf_*.py` file
+  automatically (confirmed: no `for ... in`, no `test_ftf_*` glob
+  anywhere in the file) — every task's test is wired in individually, and
+  this task's own wiring step was simply never done. Concretely: **CI ran
+  and passed, but it never executed `tests/tasks/test_ftf_0206.py` on
+  this PR's head, at all** — not the 23 checks, not either of the two
+  fault injections. The PR body's "23 checks — all checks pass" and both
+  fault-injection results are the producer's own local run only, which
+  this task's own CERTIFY procedure explicitly names as insufficient:
+  "Never accept the producer's own local test run as the certifying
+  evidence; CI must have actually run it independently."
+- **Own independent verification (what this review could still confirm,
+  and what it could not):** this reviewing session has a real sudo/
+  openssl/update-ca-certificates sandbox, so it checked out PR #207's real
+  head and ran `tests/tasks/test_ftf_0206.py` directly — all checks pass —
+  and reproduced one of the PR's own two fault injections itself (mutated
+  `_allowlisted_fields` on the real on-disk module to return every raw
+  field verbatim; the suite failed 11/23 checks for real, including the
+  credential-leak check; reverted, `diff` confirmed byte-identical, suite
+  clean again). `product_truth_check.py --fail-on-unwired` reproduced at
+  `16/16` and `status.py` at `48/300 certified · 16 product-true`,
+  matching the PR's own claims, both unchanged (Law 2, no live wiring
+  yet, disclosed). This confirms the code and test **are** sound — but a
+  reviewing session's own local run is exactly as inadmissible as the
+  producer's own local run for the actual certifying requirement (CI
+  running it independently on the real merged commit); it cannot
+  substitute for the missing CI step.
+- **Conclusion:** not merging, not certifying. PR #207 stays open,
+  unmerged. `docs/spec-matrix.yaml` for FTF-0206 stays exactly as
+  submitted: `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` (not downgraded further — the implementation and test
+  content are sound by this review's own independent reproduction; the
+  sole defect is a CI-wiring gap, not a code or evidence defect).
+  `scripts/status.py` stays `48/300 certified · 16 product-true`
+  (unchanged — nothing newly certified this review).
+  Next actionable step (relay, no owner action needed — this is
+  `.github/workflows/ci.yml` editing, already in the relay's "do without
+  asking" scope): add an explicit `gate`-job step (matching the
+  FTF-0201/0203/0204 convention already in the file) that runs
+  `uv run python3 tests/tasks/test_ftf_0206.py` — and, since the same gap
+  applies to the already-**CERTIFIED** FTF-0205, a matching step for
+  `tests/tasks/test_ftf_0205.py` too — get a fresh, real, green CI run on
+  the PR's actual head with both new steps present and passing (the
+  sudo/openssl/update-ca-certificates fault-injection path is real on
+  `ubuntu-latest`, confirmed above, so this will not silently no-op), then
+  resubmit for L2 review.
+- **Corollary finding, not resolved by this review:** the identical
+  substitution (treating `gate` job success as proof a specific task's
+  test ran, without checking `gate`'s own step list) appears to underlie
+  FTF-0205's own prior CERTIFIED status (2026-09-23, same day) — logged
+  separately in `docs/certifications/watchdog-findings.md` for Control
+  plane, since reopening an already-CERTIFIED entry is outside this
+  review's scope (this shift's task is limited to the item that was
+  actually PROVISIONAL and pending, FTF-0206).
+- **Validated-by:** this session (independent — see session-ID check
+  above), https://claude.ai/code/session_01PXgrUD2iBjuYBoEk2rCg87,
+  2026-09-23.
