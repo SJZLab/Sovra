@@ -619,10 +619,10 @@ FTF-0206:
   proving_symbol: ''
   proving_test: ''
 FTF-0207:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Alias reconciliation
-  evidence_hash: 194829be0acf8f95276aee74a1dc6430484f7242
+  evidence_hash: ab6473fc3854f71d782a8bb1671a95c33f413ba5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0204,
@@ -683,7 +683,58 @@ FTF-0207:
     sides of the join key (`entry.id.casefold()`/`discovered.id.casefold()`) -- run in a fresh
     subprocess, the mutated module genuinely cross-attaches a differently-cased enrichment entry's
     fields onto the real alias; reverted, re-ran clean.
-  proof_state: L1-PROVEN
+
+    Control plane L2 certification (2026-09-23, session
+    session_01A9BrV7gok9pZTKotAqZEuy): independently re-verified in a fresh
+    git worktree at `ab6473f` (the real commit that merged this task's
+    implementation onto `main`) -- `tests/tasks/test_ftf_0207.py` clean; a
+    fourth, independent fault injection distinct from the producer's own two
+    and from PR #213's one (dropped the alias entirely instead of falling
+    back to `limited` when no enrichment entry matches) -- caught for real
+    (`IndexError` on the first assertion expecting the alias present),
+    reverted byte-identical, suite re-confirmed clean. `ruff check .`/`ruff
+    format --check .`/`mypy .` clean repo-wide. `product_truth_check.py
+    --fail-on-unwired` confirmed 17/17, legitimately unchanged (blank
+    `proving_symbol`, no live caller yet, matching FTF-0202/FTF-0205's own
+    disclosed precedent). CI re-checked directly on PR #212's real head
+    (`1e19e3d`): 27/27 jobs green, and the `gate` job's own "FTF-0207
+    negative-test proof" step confirmed present and `success` on that exact
+    commit, not inferred from the aggregate count. Task contract re-pulled
+    via `tools/r1_handoff.py packet FTF-0207 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and the
+    negative_acceptance clause confirmed genuinely met by the shipped
+    module's exact-case-sensitive join and credential-free dataclasses, not
+    merely "tests pass." Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed
+    genuinely `CERTIFIED` in this file before relying on them. Session-ID
+    check: this session (`session_01A9BrV7gok9pZTKotAqZEuy`) does not match
+    either PR #212 commit's session (`session_01AkayPLhxBFfVkDgfhY2Mnk`) nor
+    PR #213's reviewing session (`session_01AsrpTcXDVyvY6AAYKGs45W`) --
+    independent per Law 4.
+
+    Irregularity disclosed, not hidden: the merge commit that landed this
+    task's code onto `main` (`ab6473f`, authored directly by the
+    `samerzakaria` account, not through a merged PR -- PR #212 itself shows
+    `merged: false`) carries the commit message "Control plane: certify
+    FTF-0207 ... Independently re-reviewed PR #212 ... all confirmed
+    sound," which reads as a completed L2 certification claim. Its actual
+    diff, verified directly (`git diff` against its first parent), only
+    ever set `certification_state: PROVISIONAL` / `proof_state:
+    L1-PROVEN` -- it never bumped either field to CERTIFIED, so the tracked
+    state itself was never inflated (`docs/spec-matrix.yaml` genuinely read
+    `PROVISIONAL` on `main`'s real head at every point before this entry).
+    A separate PR (#213, session `session_01AsrpTcXDVyvY6AAYKGs45W`,
+    opened correctly against `main` as a doc-only PR, not a direct push)
+    already carried out an equivalent independent L2 review and was left
+    open, unmerged, explicitly deferred to Control plane to resolve. This
+    entry supersedes it with this session's own from-scratch independent
+    verification above; PR #213 is closed as superseded, not merged, to
+    avoid a second, differently-attributed ledger record for the same
+    criterion. This is the second recurrence of a direct-push-to-main
+    commit carrying an unearned/misleading certification-sounding message
+    (see `docs/certifications/watchdog-findings.md`'s 2026-09-18 entry for
+    the first) -- left for a watchdog audit to log formally; out of scope
+    for this certifier shift beyond this disclosure.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:

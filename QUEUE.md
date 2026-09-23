@@ -1,4 +1,39 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-23 (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #214) — independently certified
+  FTF-0207 (Alias reconciliation), one of two PROVISIONAL items in
+  `docs/certifications/queue.md` at shift start (the other, FTF-0506, is
+  reviewed separately — see this file's own next update or
+  `docs/certifications/queue.md`). Session-ID compared against PR #212's
+  two commits (`session_01AkayPLhxBFfVkDgfhY2Mnk`) and PR #213's
+  reviewing session (`session_01AsrpTcXDVyvY6AAYKGs45W`) — no overlap
+  with this session (`session_01A9BrV7gok9pZTKotAqZEuy`), independent per
+  Law 4. Watched the real CI run on PR #212's real head (`1e19e3d`) —
+  27/27 jobs green, `gate`'s own FTF-0207 step confirmed present and
+  passing on this exact commit. Own reproduction in a fresh git worktree
+  at `ab6473f`: `tests/tasks/test_ftf_0207.py` clean, a fourth fault
+  injection distinct from the producer's own two and PR #213's one
+  (dropping an unmatched alias instead of falling back to `limited`)
+  caught for real, reverted byte-identical, `ruff`/`mypy` clean,
+  `product_truth_check.py` 17/17 legitimately unchanged. Task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-0207` — both clauses
+  confirmed genuinely met. **Irregularity found and disclosed:** the
+  commit that landed FTF-0207 on `main` (`ab6473f`) was pushed directly
+  by the `samerzakaria` account, not merged through PR #212 (`merged:
+  false`) — a second recurrence of the direct-push-to-main pattern
+  `docs/certifications/watchdog-findings.md` already logged once
+  (2026-09-18). Its message reads as a completed certification but its
+  actual diff never touched `certification_state`/`proof_state` past
+  PROVISIONAL — the tracker itself was never inflated, only the message
+  misled. PR #213 (another session's own already-completed, equivalent
+  independent review, left open/unmerged, explicitly deferred to Control
+  plane to resolve) is superseded by this certification and closed, not
+  merged. Merged: 49/300 → 50/300 certified, product-true unchanged at
+  17. Full record: `docs/certifications/queue.md`'s "FTF-0207 — Control
+  plane: independent CERTIFY review, CERTIFIED" entry and
+  `docs/certifications/ledger.md`.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled autonomous relay shift) — implemented
   FTF-0506 (Canonical conversation normalizer), submitted PROVISIONAL,
   not self-certified (Law 4). New
@@ -3360,23 +3395,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0207 (Alias reconciliation) — this shift's own commit
-`194829be0acf8f95276aee74a1dc6430484f7242` on
-`claude/wizardly-fermat-7rbq4h` → `main`, submitted PROVISIONAL, not
-self-certified (Law 4). New `packages/litellm_client/
-alias_reconciliation.py::reconcile_aliases` left-joins FTF-0204's
-already-CERTIFIED `discover_models` result to FTF-0205's already-
-CERTIFIED `enrich_visible_models` result by exact, case-sensitive
-alias-id equality, 20 no-DB checks (`tests/tasks/test_ftf_0207.py`,
-wired into the gate job, including a real end-to-end check against a
-real local HTTPS gateway and a real local OpenBao-shaped secret backend)
-after two genuine real-fault-injection-caught defects were demonstrated
-live (replacing the left join with a union; case-folding the join key)
-and reverted byte-identical. Same disclosed "no live HTTP route yet"
-scope as FTF-0202/FTF-0205 — `proving_symbol` stays blank, product-true
-count unchanged at 17/17. Full record: `docs/certifications/queue.md`'s
-"FTF-0207 — Alias reconciliation" entry and this file's own top shift
-note.
+FTF-0207 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-23 (evidence: merge commit
+`ab6473fc3854f71d782a8bb1671a95c33f413ba5` — the commit that actually
+landed the implementation on `main`; see "Irregularity" note in the
+ledger entry for why that commit's own message is not itself the
+certification record). See "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
 
 FTF-0506 (Canonical conversation normalizer) — this shift's own commit
 `025b936d7011f30ca607f2038f1c61f4766c4640` on
@@ -5115,6 +5141,28 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   task's own real new live caller,
   `build_target_application_connection_router`, wired into
   `apps/api/app/main.py`). Full entry: docs/certifications/ledger.md.
+- FTF-0207 — Alias reconciliation. CERTIFIED 2026-09-23, evidence commit
+  `ab6473fc3854f71d782a8bb1671a95c33f413ba5` (the commit that landed the
+  implementation on `main` — see the ledger entry's "Irregularity"
+  disclosure: that commit's own message misleadingly reads as a
+  completed certification, but its actual diff only ever set
+  `certification_state: PROVISIONAL`; the tracker itself was never
+  inflated). Independently re-verified in a fresh git worktree at that
+  commit: `tests/tasks/test_ftf_0207.py` clean; a fault injection
+  distinct from both the producer's own two and a separate, superseded
+  PR #213's own one (dropped an unmatched alias instead of falling back
+  to `limited`) — caught for real (`IndexError`), reverted
+  byte-identical; `ruff`/`mypy` clean repo-wide; CI re-checked on the
+  real PR #212 head (27/27 jobs green, `gate`'s own FTF-0207 step
+  confirmed present and passing); `product_truth_check.py` 17/17
+  confirmed legitimately unchanged (no `proving_symbol` yet, same
+  disclosed "no live caller" precedent as FTF-0202/FTF-0205). Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0207` —
+  acceptance and negative_acceptance clauses both confirmed genuinely
+  met. Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed genuinely
+  `CERTIFIED`. Ran `sync_certified_status()`. `scripts/status.py`:
+  `49/300` certified before, `50/300` after; Product-true unchanged at
+  `17`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

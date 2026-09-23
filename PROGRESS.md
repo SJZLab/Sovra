@@ -1,4 +1,79 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23T12:00:00Z (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #214) — this session's entire
+  mandate is CERTIFY: check `docs/certifications/queue.md` for anything
+  PROVISIONAL. Found two items: FTF-0207 (Alias reconciliation) and
+  FTF-0506 (Canonical conversation normalizer). Independently certified
+  FTF-0207; FTF-0506 reviewed separately (see this file's next update or
+  `docs/certifications/queue.md` directly).
+
+  Session-ID check: PR #212's two commits carry
+  `session_01AkayPLhxBFfVkDgfhY2Mnk`; a separate, already-opened,
+  unmerged doc-only PR #213 carrying an equivalent independent review
+  carries `session_01AsrpTcXDVyvY6AAYKGs45W`. This session's own ID is
+  `session_01A9BrV7gok9pZTKotAqZEuy` — no match against either,
+  independent per Law 4.
+
+  CI re-checked directly on PR #212's real head (`1e19e3d`): 27/27 jobs
+  green, `gate`'s own "FTF-0207 negative-test proof" step confirmed
+  present and `success` on this exact commit, not inferred from the
+  aggregate count.
+
+  Own reproduction in a fresh `git worktree` at `ab6473f` (the real head
+  of `main`): `tests/tasks/test_ftf_0207.py` clean. Own fault injection —
+  a fourth distinct vector from the producer's own two (union instead of
+  left-join; case-folded join key) and PR #213's own one (removed the
+  duplicate-id dedup guard): changed the "no matching enrichment entry"
+  branch to `continue` (silently dropping the alias) instead of falling
+  back to `limited` — the suite crashed for real (`IndexError`),
+  reverted byte-identical (`diff` confirmed), suite re-ran clean
+  immediately after. `ruff check .`/`ruff format --check .`/`mypy .`
+  clean, whole repo. `product_truth_check.py --fail-on-unwired` — own
+  run, 17/17, legitimately unchanged (blank `proving_symbol`, no live
+  caller yet, same disclosed precedent FTF-0202/FTF-0205 already
+  established). Task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-0207` — acceptance clause 1 and the negative_acceptance clause both
+  confirmed genuinely met by the shipped module's exact-case-sensitive
+  join and credential-free dataclasses. Dependencies
+  FTF-0201/FTF-0204/FTF-0205 confirmed genuinely `CERTIFIED` before
+  relying on them.
+
+  **Irregularity found and disclosed, not silently worked around:** the
+  commit that actually landed FTF-0207's code onto `main`
+  (`ab6473fc3854f71d782a8bb1671a95c33f413ba5`) was pushed directly by the
+  `samerzakaria` account rather than merged through PR #212 (which itself
+  shows `merged: false` on GitHub) — a `BRANCH_PROTECTION` violation this
+  session did not commit, and the second recurrence of the exact class of
+  incident `docs/certifications/watchdog-findings.md`'s 2026-09-18
+  "Direct-push-to-main recurrence" entry already logged once. Its commit
+  message ("Control plane: certify FTF-0207 ... Independently re-reviewed
+  PR #212 ... all confirmed sound") reads as a completed L2 certification,
+  but its actual diff (verified directly against its first parent) only
+  ever set `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` — never CERTIFIED/L2-CERTIFIED, so the tracker itself was
+  never inflated (Law 2 held); only the commit message was misleading.
+  Filing a new formal watchdog-findings.md entry is Watchdog's own role,
+  out of scope for this certifier shift's mandate — disclosed here and in
+  the ledger entry for visibility instead. PR #213 (the other session's
+  own already-completed, equivalent independent L2 review of the same
+  criterion, left open/unmerged and explicitly deferred to Control plane
+  to resolve by the relay shift that found it) is superseded by this
+  entry and closed, not merged, to avoid two differently-attributed
+  ledger records for the same criterion.
+
+  No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to `ab6473fc3854f71d782a8bb1671a95c33f413ba5` (the
+  commit that actually merged the implementation onto `main`).
+  `proving_symbol` stays blank. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0207']` updated
+  in `spec/tasks.json`/`docs/implementation/TRACKER.json`.
+  `scripts/status.py`: `49/300` certified before, `50/300` after;
+  product-true unchanged at `17`. Full entry: `docs/certifications/
+  ledger.md`, `docs/certifications/queue.md`'s "FTF-0207 — Control plane:
+  independent CERTIFY review, CERTIFIED" entry.
+
+## Previous shift
 Updated: 2026-09-23T12:30:00Z (scheduled autonomous relay shift) —
   implemented FTF-0506 (Canonical conversation normalizer), submitted
   PROVISIONAL, not self-certified (Law 4).
