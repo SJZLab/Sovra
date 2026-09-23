@@ -3577,7 +3577,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-(none currently)
+- FTF-0209 (Catalog anomaly detector) — submitted PROVISIONAL 2026-09-23,
+  implementation commit `50aa1c155a779c592dcaf1d300e347852d1626f2` on
+  `claude/wizardly-fermat-1734s6`, not self-certified (Law 4). Deps
+  FTF-0201/FTF-0208, both `CERTIFIED`. Full entry: `docs/certifications/
+  queue.md`/`PROGRESS.md`.
 
 FTF-0208 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #220 (merge commit

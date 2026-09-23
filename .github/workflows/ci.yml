@@ -209,6 +209,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0206.py
       - name: FTF-0208 negative-test proof (Last-known-good catalog, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0208.py
+      - name: FTF-0209 negative-test proof (Catalog anomaly detector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0209.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

@@ -869,15 +869,55 @@ FTF-0208:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0208.py
 FTF-0209:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Catalog anomaly detector
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0208
-  proof_state: UNPROVEN
+  evidence_hash: 50aa1c155a779c592dcaf1d300e347852d1626f2
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201,
+    FTF-0208 (both CERTIFIED). Built for real in a new packages/litellm_client/catalog_anomaly_detector.py::CatalogAnomalyDetector
+    -- wraps FTF-0208''s LastKnownGoodCatalog; a >50% active (callable)
+    model-count reduction on a real successful discovery opens a persisted
+    AnomalyRecord requiring bounded retry (Section 3.3''s own three-attempt
+    ceiling, reused here) then explicit admin acknowledge(); the real
+    discovery result is always applied to the wrapped catalog unconditionally
+    before any anomaly bookkeeping runs. This task''s own acceptance clause
+    ("A >50% reduction triggers recorded anomaly/retry/admin acknowledgement
+    while immediate authorization remains enforced") is met by record()''s
+    ordering plus AnomalyStatus''s forward-only state machine (open ->
+    retry_pending -> escalated -> acknowledged, never silently reverting).
+    negative_acceptance ("Repeated empty list cannot cause silent destructive
+    deletion or restored unauthorized execution") is met structurally:
+    acknowledge()/retry() never read or write the wrapped catalog''s entries
+    at all, and an open incident is updated in place across further
+    reduced/empty successful responses rather than discarded or duplicated.
+    Path refinement, disclosed: implemented at packages/litellm_client/ (the
+    real, already-CERTIFIED directory every sibling FTF-020x module uses),
+    not the task packet''s own literal packages/litellm-client/ suggestion.
+    tests/tasks/test_ftf_0209.py: 20 pure no-DB/no-egress checks (no live
+    HTTPS-gateway fixture needed -- FTF-0208''s own suite already proves
+    that plumbing for real; this task''s scope is the anomaly layer on top,
+    same disclosed "no live caller yet" precedent FTF-0202/FTF-0205/
+    FTF-0207/FTF-0208 already established). Shown able to fail first: with
+    the module moved aside, the suite failed with a real ModuleNotFoundError
+    bound to this task''s own import; restored and re-run clean. Two own
+    fault injections, both reverted byte-identical and the suite re-run
+    clean immediately after each: (1) removed the "already acknowledged"
+    guard from acknowledge() -- double-acknowledge/retry-after-ack checks
+    genuinely failed; (2) made acknowledge() restore removed catalog
+    entries to callable (the exact negative_acceptance risk) -- 10 checks
+    genuinely failed for real. CI gate step added in the same commit as
+    the implementation (learning from the disclosed FTF-0205/FTF-0206
+    gate-wiring gap). product_truth_check.py --fail-on-unwired stays
+    17/17 (proving_symbol left blank -- no live caller yet, disclosed).
+    ruff check/ruff format --check/mypy clean on pinned toolchain.
+    tests/tasks/test_ftf_0201.py and test_ftf_0208.py (both CERTIFIED
+    dependencies) re-run clean -- no regression. Submitted PROVISIONAL,
+    not self-certified (Law 4) -- awaiting independent Control-plane L2
+    review.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0209.py
 FTF-0210:
   certification_state: NONE
   criticality: MUST
