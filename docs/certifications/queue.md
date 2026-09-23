@@ -10715,3 +10715,108 @@ discovery"). Ran `scripts.task_claim.sync_certified_status()` —
 `spec/tasks.json`/`docs/implementation/TRACKER.json` updated for
 `['FTF-0204']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0204 moved to
 Done, Certified count bumped to 47/300, Product-true 15/15 → 16/16.
+
+## 2026-09-23 — FTF-0205 — `/v1/model/info` enrichment
+- **PR:** relay branch `claude/wizardly-fermat-h60rso` → main; opened as
+  `[relay] FTF-0205: /v1/model/info enrichment`
+- **Commit:** 6545edb90975b768797e4a9e3d760c3185bfeb21
+- **Real DoD source:** task packet resolved via `python3
+  tools/r1_handoff.py packet FTF-0205 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`docs/implementation/task-packets/
+  FTF-0205.md`). Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on
+  them.
+- **Delivered:** `packages/litellm_client/v1_model_info_enrichment.py`
+  (`enrich_visible_models`) enriches exactly the caller's own
+  already-authorized `visible_model_ids` (from a real `GET /v1/models`
+  call, e.g. FTF-0204's own `discover_models`) with allowlisted `GET
+  /model/info` fields, on a strict left join (Section 3.2's "no
+  authorization union" applied to enrichment) — an id absent from
+  `visible_model_ids` is never iterated into the result, satisfying this
+  task's own negative_acceptance ("metadata-only aliases are neither
+  stored nor exposed"). `_ALLOWLISTED_MODEL_INFO_FIELDS` is an allow
+  list, not a denylist (Section 65.4) — the real gateway response's own
+  sibling `litellm_params` (which carries `api_key`/`api_base`) is never
+  read by `_parse_model_info` at all, and only named fields with plain
+  JSON scalar values (never a nested dict/list) ever pass the filter,
+  covering the negative_acceptance's "raw credentials... are neither
+  stored nor exposed" even against a hypothetical misconfigured gateway
+  that duplicates a credential-shaped field directly inside
+  `model_info`. A denied/failed/malformed `/model/info` call (403/404,
+  guard failure, secret failure, malformed body) never drops or replaces
+  an already-visible id — every entry in `visible_model_ids` still gets
+  a real result, downgraded to `metadata_status=limited` with empty
+  fields, matching "retaining limited metadata when denied/absent"
+  (Section 3.1's "403/404 on enrichment does not invalidate a
+  successful standard model list", applied here).
+- **Scope decision (disclosed, same precedent FTF-0202 already
+  established for "no live HTTP route yet"):** this task's own packet
+  `files` list names only the module and its test, not a route file.
+  `docs/spec-matrix.yaml`'s own dependents show `FTF-0207` ("Alias
+  reconciliation") is the later task depending on this one (plus
+  FTF-0201/FTF-0204) and is the natural real caller — the same
+  producer/later-wiring relationship FTF-0202/FTF-0203 already
+  established. This module is therefore deliberately not wired into
+  `apps/api/app/litellm/connection_routes.py` by this task;
+  `proving_symbol` is left blank and `product_truth_check.py`/
+  `scripts/status.py`'s product-true count is deliberately unchanged
+  (Law 2).
+- **Test:** `tests/tasks/test_ftf_0205.py` (no DB, no external egress —
+  real local HTTP secret-backend server, real local HTTPS gateway
+  servers with a real ephemeral CA installed into this sandbox's own
+  system trust store, mirroring `tests/tasks/test_ftf_0204.py`'s own
+  established fixture pattern exactly) — covers allowlisted fields
+  surviving with real values; two credential-leak vectors proven absent
+  in one test (`litellm_params.api_key` and a hypothetical
+  credential-shaped field duplicated directly inside `model_info`); a
+  metadata-only alias outside `visible_model_ids` proven absent from
+  `entries`; an authorized-but-absent alias retaining
+  `limited`/empty-fields; an admin-only-route 403 and a malformed
+  response both degrading every visible id to `limited` without
+  dropping any of them; duplicate visible ids collapsing to one entry;
+  every real secret-backend failure state distinct and real; a real
+  connection-policy destination-denial before any socket opens; an
+  empty `visible_model_ids` never resolving a secret or dialing a
+  gateway; the allowlist's own unit behavior (unknown keys dropped,
+  non-scalar values under an allowlisted key dropped, non-dict raw
+  input never raises).
+- **Evidence — shown able to fail (Law 1), two distinct vectors, both
+  reverted byte-identical and the suite re-confirmed clean immediately
+  after each:**
+  1. A fault injection mutates the real, on-disk
+     `v1_model_info_enrichment.py` so `_allowlisted_fields` returns
+     every raw field verbatim instead of filtering through
+     `_ALLOWLISTED_MODEL_INFO_FIELDS`. Run in a fresh subprocess against
+     a real gateway advertising a credential-shaped `model_info.api_key`
+     field, the mutated module genuinely lets the secret string leak
+     into the result (`"sk-fault-injection-leak" in result.stdout`) —
+     proving the allow list is load-bearing, not decorative.
+  2. A second, independent mutation (iterating
+     `set(ids) | set(by_alias.keys())` instead of `ids` alone,
+     reintroducing an authorization union) was run directly against the
+     live in-process suite before this submission: caught for real (2
+     checks failed with the exact "never added to the reported entries"
+     assertion), then reverted and the suite re-confirmed clean.
+- `ruff check .`/`ruff format --check .` clean on the two new files; the
+  one `UP042` finding on `EnrichmentState(str, Enum)` matches this
+  repository's own pre-existing convention (11 identical findings
+  already present on `main` before this task, including
+  `v1_models_discovery.DiscoveryState`/`ModelMetadataStatus`
+  themselves) — confirmed via `git stash`, not a new defect. `mypy`
+  clean on both new files (the one remaining repo-wide
+  `packages/security/outbound_guard.py` finding is pre-existing,
+  confirmed identical on `main` via `git stash`, unrelated to this
+  change). `uv sync --all-packages` resolved this fresh sandbox's own
+  missing `uvicorn` dependency; `tests/tasks/test_ftf_0201.py`,
+  `test_ftf_0202.py`, `test_ftf_0203.py`, `test_ftf_0204.py` all re-run
+  clean afterward (no regression to any shared module).
+  `scripts/validate_spec.py --strict` clean after `git fetch
+  --unshallow` (this sandbox's own pre-existing shallow-clone artifact,
+  same documented precedent as prior shifts). `CLAUDE.md.sha256`
+  verified against `sha256sum CLAUDE.md`.
+- `scripts/product_truth_check.py --fail-on-unwired` stays `16/16`
+  (unchanged — Law 2, no live caller yet, disclosed above).
+  `scripts/status.py` stays `47/300 certified · 16 product-true`.
+
+**State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+self-certified — awaiting Control plane L2 review per Law 4.

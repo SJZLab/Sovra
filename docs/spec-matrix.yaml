@@ -481,16 +481,105 @@ FTF-0204:
   proving_symbol: discover_models
   proving_test: tests/tasks/test_ftf_0204.py
 FTF-0205:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: '`/v1/model/info` enrichment'
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203,
-    FTF-0204
-  proof_state: UNPROVEN
+  evidence_hash: 6545edb90975b768797e4a9e3d760c3185bfeb21
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203,
+    FTF-0204 (all CERTIFIED). This task's own acceptance clause ("Enrich only visible aliases
+    with allowlisted fields, retaining limited metadata when denied/absent") and
+    negative_acceptance ("Raw credentials, admin-only provider routes and metadata-only aliases
+    are neither stored nor exposed") are built for real in a new
+    `packages/litellm_client/v1_model_info_enrichment.py::enrich_visible_models`, deliberately
+    separate from FTF-0204's own already-CERTIFIED `discover_models` (which only ever computes a
+    boolean `metadata_status` for its own already-authorized list, never surfacing `/model/info`
+    field content itself -- this task is the later, separately dependency-gated step that does).
+
+    Design: the caller supplies `visible_model_ids` (the already-authorized names a real
+    `GET /v1/models` call produced); this module's only job is to attach allowlisted
+    `GET /model/info` fields onto exactly that set (Section 3.2's "no authorization union" applied
+    to enrichment -- a strict left join, never a union: an id absent from `visible_model_ids` is
+    never iterated into the result, however prominently `/model/info` advertises it, satisfying
+    "metadata-only aliases are neither stored nor exposed"). `_ALLOWLISTED_MODEL_INFO_FIELDS` is an
+    allow list, not a denylist (Section 65.4's "Metadata is not sent to the browser until
+    secret-bearing/provider-private fields have been allowlist-filtered") -- the real gateway
+    response's own sibling `litellm_params` (which carries `api_key`/`api_base`) is never even
+    read by `_parse_model_info`, and a hypothetical misconfigured gateway that duplicates a
+    credential-shaped field directly inside `model_info` is still dropped, since only the named
+    allowlisted fields, restricted to plain JSON scalar values (never a nested dict/list under an
+    allowlisted key), ever pass through. A denied/failed/malformed `/model/info` call
+    (403/404/timeout/secret failure/parse failure) never drops or replaces an already-visible id
+    (Section 3.1's "403/404 on enrichment does not invalidate a successful standard model list",
+    applied here) -- every entry in `visible_model_ids` still gets a real result, downgraded to
+    `metadata_status=limited` with empty fields, matching "retaining limited metadata when
+    denied/absent".
+
+    Scope decision (disclosed, same precedent FTF-0202 already established for
+    "no live HTTP route yet"): this task's own packet `files` list names only the module and its
+    test (`packages/litellm-client/v1_model_info_enrichment.py`, `tests/tasks/test_ftf_0205.py`),
+    not a route file -- `docs/spec-matrix.yaml`'s own dependents show `FTF-0207` ("Alias
+    reconciliation") is the later task that depends on this one (plus FTF-0201/FTF-0204) and is
+    the natural place to wire real enriched metadata into a live response, the same way FTF-0203
+    was FTF-0202's own later real caller. This module is therefore deliberately not wired into
+    `apps/api/app/litellm/connection_routes.py` by this task -- `proving_symbol` is left blank and
+    `product_truth_check.py`/`scripts/status.py`'s product-true count is deliberately unchanged
+    (16/16, Law 2), exactly as FTF-0202 was before FTF-0203 wired it.
+
+    `EnrichmentState`/`_classify_guard_failure`/`_resolve_inference_key` mirror
+    `v1_models_discovery.DiscoveryState`'s own connectivity/secret taxonomy and private-classifier
+    shape rather than importing it -- this repository's own established convention (each of
+    `connection_validation.py`/`v1_models_discovery.py` already independently duplicates this same
+    ~30-line classifier for its own distinct result enum) is followed rather than introduced fresh.
+
+    Tests: `tests/tasks/test_ftf_0205.py` (real no-DB, no-external-egress checks -- a real local
+    HTTP server standing in for the OpenBao secret backend, real local HTTPS servers with a real
+    self-signed CA installed into this sandbox's own trust store for genuine TLS certificate
+    validation, mirroring `tests/tasks/test_ftf_0204.py`'s own established fixture pattern
+    exactly). Covers: allowlisted fields survive with real values; a real `litellm_params.api_key`
+    sibling and a hypothetical credential-shaped field duplicated directly inside `model_info` are
+    both proven absent from the result in one test; a metadata-only alias outside
+    `visible_model_ids` is proven absent from `entries`; an authorized alias absent from
+    `/model/info` retains `limited`/empty fields; an admin-only-route 403 and a malformed response
+    both degrade every visible id to `limited` without dropping any of them; duplicate visible ids
+    collapse to one entry; every real secret-backend failure state
+    (not_found/access_denied/backend_unsupported/backend_error) is distinct and real; a real
+    connection-policy destination-denial is proven before any socket opens; an empty
+    `visible_model_ids` never resolves a secret or dials a gateway.
+
+    Own fault injection (Law 1, demonstrated live in this shift, not merely described): mutated
+    the real on-disk `v1_model_info_enrichment.py` so `_allowlisted_fields` returns every raw
+    field verbatim instead of filtering through the allow list -- run in a fresh subprocess
+    against a real gateway advertising a credential-shaped `model_info.api_key` field, the mutated
+    module genuinely lets the secret string leak into the result; reverted byte-identical
+    (`diff`/re-read confirmed). A second, independent mutation (iterating `set(ids) |
+    set(by_alias.keys())` instead of `ids` alone, reintroducing an authorization union) was also
+    run against the live suite before this submission and caught for real (2 checks failed with
+    the exact "never added to the reported entries" assertion), then reverted and the suite
+    re-confirmed clean.
+
+    `ruff check .`/`ruff format --check .` on the two new files clean; the one `UP042` finding on
+    `EnrichmentState(str, Enum)` matches this repository's own existing, pre-existing convention
+    (11 identical findings already present on `main` before this task, including
+    `v1_models_discovery.DiscoveryState`/`ModelMetadataStatus` themselves) -- not a new defect.
+    `mypy` clean on both new files (the one remaining repo-wide `packages/security/
+    outbound_guard.py` finding is pre-existing and confirmed identical on `main` via `git stash`,
+    unrelated to this change). `uv sync --all-packages` resolved this fresh sandbox's own missing
+    `node_modules`-equivalent Python `uvicorn` dependency; `tests/tasks/test_ftf_0201.py`,
+    `test_ftf_0202.py`, `test_ftf_0203.py`, `test_ftf_0204.py` all re-run clean afterward (no
+    regression to any shared module). `scripts/validate_spec.py --strict` clean after
+    `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same
+    documented precedent as prior shifts). `scripts/product_truth_check.py --fail-on-unwired`
+    stays `16/16` (unchanged -- Law 2, no live caller yet, disclosed above).
+    `scripts/status.py` stays `47/300 certified · 16 product-true` (unchanged -- PROVISIONAL, not
+    yet CERTIFIED, Law 2).
+
+    Submitted PROVISIONAL, not self-certified (Law 4) -- PR opened, awaiting independent
+    Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0205.py
 FTF-0206:
   certification_state: NONE
   criticality: MUST
