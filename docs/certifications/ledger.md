@@ -5828,3 +5828,92 @@ reasons given above.
   unchanged at 17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0206 — `/model_group/info` optional enrichment
+- Criterion ID: FTF-0206
+- PR: https://github.com/SJZLab/Sovra/pull/207 (`claude/wizardly-fermat-bj3os5`
+  → `main`) — implementation, PROVISIONAL submission, and (in a later
+  commit by a different session) the CI gate-coverage fix a prior
+  Control-plane review had named as this PR's blocker. Merged by this
+  review as merge commit `7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53`.
+- Merge commit (evidence): 7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53
+- Implementation commit: 49d29681764d225afede1336c09a8a3fe2fb6079
+  (CI gate-wiring fix commit: 643941e0e7c961ba15736cc0dd706804b58ae3b1)
+- Validated-by: session https://claude.ai/code/session_01Yaa1kbLLTETtfbnYGModqm
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #218 — the relay's own tracking PR recording that it had closed
+  PR #207's CI gate-coverage gap; found FTF-0206/PR #207 pending while
+  checking `docs/certifications/queue.md`/`docs/spec-matrix.yaml` per
+  this shift's own mandate)
+- Date: 2026-09-23
+- **Session-ID check:** PR #207's three commits carry
+  `session_015xEcu3kUMRfWMZwkav4cVc` (implementation + PROVISIONAL
+  submission) and `session_014KbgfXyWDwnaSHrYwYChEC` (the `origin/main`
+  merge that added the missing `test_ftf_0206.py` gate step). This
+  reviewing session's own ID is `session_01Yaa1kbLLTETtfbnYGModqm` — no
+  match against either, independent per Law 4.
+- **Diff read directly** against PR #207's real head (`643941e`): exactly
+  the task packet's own files (`packages/litellm_client/
+  model_group_info_optional_enrichment.py`, `tests/tasks/
+  test_ftf_0206.py`) plus expected tracking docs (`docs/spec-matrix.yaml`,
+  `QUEUE.md`, `PROGRESS.md`, `docs/implementation/task-packets/
+  FTF-0206.md`, `docs/certifications/queue.md`) and one new CI step
+  (`gate`'s own FTF-0206 step, plus a comment trim on the neighboring
+  FTF-0205 step). No scope creep; no route file, matching the disclosed
+  "no live caller yet" precedent FTF-0202/FTF-0205/FTF-0207/FTF-0506
+  already established.
+- **CI re-checked directly on the real PR #207 head (`643941e`), not
+  taken on faith:** 27/27 jobs `success`, `mergeable_state: clean` (run
+  `35877632291`). Pulled the `gate` job's own raw log directly and
+  confirmed `tests/tasks/test_ftf_0206.py` genuinely executes and passes
+  inline, immediately after the FTF-0506 step: "FTF-0206 /model_group/
+  info optional enrichment: all checks passed", followed by "Product-
+  truth: 17/17 product-true" and "Status: 51/300 certified · 17
+  product-true" in that same real run — this is the exact evidence
+  standard the earlier "NOT CERTIFIED (CI never runs this task's own
+  test)" review demanded before resubmission, now genuinely met.
+- **Own independent verification, not the producer's local claims:**
+  - `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` before
+    starting.
+  - Ran `tests/tasks/test_ftf_0206.py` directly in a fresh `git worktree`
+    at `643941e` — all checks pass.
+  - Own fault injection, a third distinct vector from the producer's own
+    two (widened allowlist leaking a credential-shaped field; disabled
+    capability_supported gate): commented out the `response.status in
+    (401, 403)` → `invalid_token` branch entirely. Re-ran the suite —
+    **failed for real** ("a permission-denied 403 is reported as
+    invalid_token, not fabricated as completed"), proving that guard is
+    load-bearing, not decorative. Reverted from a pre-edit backup; `git
+    diff --stat` confirmed byte-identical; suite re-ran clean
+    immediately after.
+  - `uv run ruff check .` / `ruff format --check .` / `mypy .` — clean,
+    whole repo (200 source files).
+  - `scripts/product_truth_check.py --fail-on-unwired` — own run,
+    **17/17**, legitimately unchanged (`proving_symbol` confirmed blank
+    in `docs/spec-matrix.yaml` — no importer wired to call
+    `enrich_visible_model_groups` yet, same disclosed "no live caller"
+    precedent already accepted for FTF-0202/FTF-0205/FTF-0207/FTF-0506;
+    a present `proving_symbol` would have made this unchanged count
+    unacceptable, but none is claimed here).
+- `python3 tools/r1_handoff.py packet FTF-0206 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Optional
+  enrichment runs only with explicit supported capability and safe
+  permission") confirmed met by the shipped module's required, no-default
+  `capability_supported` keyword-only parameter and its single
+  least-privilege inference credential; negative_acceptance ("403/
+  not-supported leaves limited metadata without failing basic discovery
+  or gaining management rights") confirmed met both by the producer's own
+  two fault-injection demonstrations and this review's own third one
+  above, plus direct code reading of the 403/404 branches.
+- Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #207 (merge commit
+  `7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit. `proving_symbol` stays blank
+  (no live caller yet, disclosed). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0206']` updated.
+  Certified count moves 51/300 → 52/300. Product-true: unchanged at
+  17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.

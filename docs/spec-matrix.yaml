@@ -609,10 +609,10 @@ FTF-0205:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0205.py
 FTF-0206:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: '`/model_group/info` optional enrichment'
-  evidence_hash: 49d29681764d225afede1336c09a8a3fe2fb6079
+  evidence_hash: 7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203,
@@ -637,11 +637,37 @@ FTF-0206:
     genuinely reached the gateway and returned completed instead of capability_not_declared.
     No independent schema change (database_changes clause); no route wired yet (FTF-0207 is
     the disclosed later wiring step, same producer/later-wiring scope FTF-0202/FTF-0205 already
-    established). product_truth_check.py --fail-on-unwired stays 16/16 (no live caller yet,
+    established). product_truth_check.py --fail-on-unwired stays 17/17 (no live caller yet,
     proving_symbol left blank, same disclosed class FTF-0202/FTF-0205 already established).
-    Submitted PROVISIONAL, not self-certified (Law 4) -- PR opened, awaiting independent
-    Control-plane L2 review.
-  proof_state: L1-PROVEN
+
+    Control plane: independent CERTIFY review, 2026-09-23, triggered by the pull_request.opened
+    webhook for PR #218 (the relay's CI-gate-wiring tracking PR). Session-ID check: PR #207's
+    three commits carry session_015xEcu3kUMRfWMZwkav4cVc (implementation + PROVISIONAL submission)
+    and session_014KbgfXyWDwnaSHrYwYChEC (the main-merge that closed the CI gate-coverage gap);
+    this session's own ID (session_01Yaa1kbLLTETtfbnYGModqm) matches neither -- independent per
+    Law 4. Diff read directly against PR #207's real head (643941e): exactly the task packet's
+    own module + test, plus disclosed tracking docs and the ci.yml gate-step addition, no scope
+    creep. CI re-checked on that real head, not taken on faith: 27/27 jobs green (run 35877632291);
+    pulled the gate job's own raw log directly and confirmed tests/tasks/test_ftf_0206.py
+    genuinely executes and passes inline ("FTF-0206 /model_group/info optional enrichment: all
+    checks passed"), immediately followed by "Product-truth: 17/17 product-true" and "Status:
+    51/300 certified - 17 product-true" in that same real run, not inferred from the aggregate
+    count. Own fault injection, a third vector distinct from the producer's own two: disabled the
+    401/403 -> invalid_token guard entirely (commented out the branch) in a fresh worktree at
+    643941e -- ran the unmodified suite, it genuinely failed ("a permission-denied 403 is reported
+    as invalid_token, not fabricated as completed"); reverted byte-identical (git diff --stat
+    empty), suite re-ran clean immediately after. ruff check/ruff format --check/mypy all clean
+    repo-wide on this same worktree. product_truth_check.py --fail-on-unwired -- own run, 17/17,
+    legitimately unchanged (proving_symbol confirmed blank in this file, so the unchanged count is
+    not a disguised 0/0 pass on a claimed live path). tools/r1_handoff.py packet FTF-0206 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md pulled directly: both acceptance clauses and the
+    negative_acceptance clause confirmed genuinely met by the shipped module (capability gate is
+    a required no-default kwarg; 403/404 both degrade every visible id to limited without ever
+    resolving a second, higher-privilege credential). Dependencies FTF-0201/FTF-0203/FTF-0204
+    confirmed genuinely CERTIFIED in this file before relying on them. No blocking defect found.
+    Merged PR #207 (merge commit 7ee47f8c4fa2f7dbce7d6557a29bdb82b4369a53); evidence_hash set to
+    that commit. Ledger entry appended (docs/certifications/ledger.md).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0206.py
 FTF-0207:
