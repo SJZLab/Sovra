@@ -190,6 +190,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0204.py
       - name: FTF-04A01 negative-test proof (TargetApplicationConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a01.py
+      - name: FTF-0207 negative-test proof (Alias reconciliation, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0207.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
