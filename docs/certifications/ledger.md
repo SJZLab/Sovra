@@ -5750,5 +5750,81 @@ reasons given above.
   `scripts.task_claim.sync_certified_status()` — `['FTF-0207']` updated in
   `spec/tasks.json`/`docs/implementation/TRACKER.json`. Certified: 49/300
   → 50/300. Product-true: unchanged at 17/17.
+## FTF-0506 — Canonical conversation normalizer
+- Criterion ID: FTF-0506
+- PR: https://github.com/SJZLab/Sovra/pull/214 (`claude/wizardly-fermat-fqjkvu`
+  → `main`)
+- Merge commit: 7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d
+- Implementation commit: 025b936d7011f30ca607f2038f1c61f4766c4640
+  (tracking-doc commit: 5d4430044ae11ebac833339739507bc6ff9aa7ff)
+- Validated-by: session https://claude.ai/code/session_01A9BrV7gok9pZTKotAqZEuy
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #214 itself)
+- Date: 2026-09-23
+- **Session-ID check:** both commits on PR #214 carry `Claude-Session:
+  .../session_01WnuyMUVM6PHL3KX9pnGbAF`; this reviewing session's own ID
+  is `session_01A9BrV7gok9pZTKotAqZEuy` — no match, independent per Law 4.
+- **Diff read directly:** exactly the task packet's own files
+  (`workers/data/canonical_conversation_normalizer.py`,
+  `tests/tasks/test_ftf_0506.py`, new `workers/__init__.py`/
+  `workers/data/__init__.py`) plus expected tracking docs
+  (`docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+  `docs/implementation/task-packets/FTF-0506.md`,
+  `docs/certifications/queue.md`) and one new CI step (`gate`'s own
+  FTF-0506 step). No scope creep; no importer file, matching the
+  disclosed "no live caller yet" scope FTF-0202/FTF-0205/FTF-0207 already
+  established.
+- **CI re-checked directly on the real PR #214 head (`5d44300`), not
+  taken on faith:** 27/27 jobs `success`. Pulled the `gate` job's own
+  real step list directly — step 68, "FTF-0506 negative-test proof
+  (Canonical conversation normalizer, no DB required)", confirmed
+  present and `success` on this exact commit, not inferred from the
+  aggregate green count (the same class of gap this control plane
+  previously caught on FTF-0206/PR#207).
+- **Own independent verification, not the producer's local claims:**
+  - Ran `tests/tasks/test_ftf_0506.py` directly in a fresh `git worktree`
+    at PR #214's real head — all checks pass.
+  - Own fault injection, a third distinct vector from the producer's own
+    two (disabled duplicate tool-call-id guard; disabled
+    no-validator-supplied fail-closed guard): changed the "tool result's
+    `tool_call_id` references an existing pending tool call" check from
+    raising `ConversationNormalizationError` to a silent
+    `pending_calls.get(tool_call_id, name)` fallback. Re-ran the suite —
+    **failed for real** (`KeyError` deleting an unknown `tool_call_id`
+    from `pending_calls`), proving the "every tool result references an
+    existing tool call" negative_acceptance-adjacent check is
+    load-bearing, not decorative. Reverted from a pre-edit backup;
+    `diff` confirmed byte-identical; suite re-ran clean immediately
+    after.
+  - `uv run ruff check .` / `ruff format --check .` / `mypy .` — clean,
+    whole repo.
+  - `scripts/product_truth_check.py --fail-on-unwired` — own run,
+    **17/17**, legitimately unchanged (blank `proving_symbol` — no
+    importer wired to call `normalize_conversation` yet, same disclosed
+    "no live caller" precedent already accepted for FTF-0202/FTF-0205/
+    FTF-0207).
+- `python3 tools/r1_handoff.py packet FTF-0506 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Normalize
+  roles/content/tool calls into canonical schema with lineage/group IDs
+  and deterministic hash") confirmed met by the shipped module's real
+  `RecordLineage`/`group_id`/`canonical_hash` implementation;
+  negative_acceptance ("Missing/unmapped role or coerced information
+  loss is rejected, not silently guessed") confirmed met both by the
+  producer's own two fault-injection demonstrations and this review's
+  own third one above.
+- Dependencies FTF-0405/FTF-0500 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #214 (merge commit
+  `7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit. `proving_symbol` stays blank
+  (no live caller yet, disclosed). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0506']` updated
+  in `spec/tasks.json`/`docs/implementation/TRACKER.json`. This is the
+  second of two independent certifications from this same shift (the
+  other, FTF-0207, is PR #215) — Certified count moves 49/300 → 50/300 →
+  51/300 as both land on `main` in sequence (see QUEUE.md/PROGRESS.md for
+  the reconciled final count once both are merged). Product-true:
+  unchanged at 17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.

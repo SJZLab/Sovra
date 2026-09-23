@@ -1,4 +1,60 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23T12:45:00Z (scheduled Control-plane certifier shift,
+  `pull_request.opened` webhook for PR #214) — this session's entire
+  mandate is CERTIFY: found two PROVISIONAL items in
+  `docs/certifications/queue.md`, FTF-0207 (certified separately via PR
+  #215) and this one, FTF-0506 (Canonical conversation normalizer).
+
+  Session-ID check: both commits on PR #214 carry
+  `session_01WnuyMUVM6PHL3KX9pnGbAF`; this session's own ID is
+  `session_01A9BrV7gok9pZTKotAqZEuy` — no match, independent per Law 4.
+
+  CI re-checked directly on PR #214's real head (`5d44300`): 27/27 jobs
+  green. Pulled the `gate` job's own real step list directly (not
+  inferred from the aggregate count) — step 68, "FTF-0506 negative-test
+  proof (Canonical conversation normalizer, no DB required)", confirmed
+  present and `success` on this exact commit.
+
+  Own reproduction in a fresh `git worktree` at PR #214's real head:
+  `tests/tasks/test_ftf_0506.py` clean. Own fault injection, a third
+  vector distinct from the producer's own two (disabled duplicate
+  tool-call-id guard; disabled no-validator-supplied fail-closed guard):
+  changed the "tool result's `tool_call_id` references an existing
+  pending tool call" check from raising
+  `ConversationNormalizationError` to a silent
+  `pending_calls.get(tool_call_id, name)` fallback — the suite crashed
+  for real (`KeyError` deleting an unknown `tool_call_id` from
+  `pending_calls`), proving the "every tool result references an
+  existing tool call" check is load-bearing, not decorative. Reverted
+  from a pre-edit backup; `diff` confirmed byte-identical; suite re-ran
+  clean immediately after. `ruff check .`/`ruff format --check .`/
+  `mypy .` clean, whole repo. `product_truth_check.py --fail-on-unwired`
+  — own run, 17/17, legitimately unchanged (blank `proving_symbol`, no
+  importer wired to call `normalize_conversation` yet, same disclosed
+  precedent FTF-0202/FTF-0205/FTF-0207 already established). Diff scope
+  confirmed exactly the task packet's own files plus expected tracking
+  docs and one new CI step — no scope creep. Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0506` — acceptance clause 1 and the
+  negative_acceptance clause both confirmed genuinely met by the shipped
+  module's real `RecordLineage`/`group_id`/`canonical_hash`
+  implementation. Dependencies FTF-0405/FTF-0500 confirmed genuinely
+  `CERTIFIED` before relying on them.
+
+  No blocking defect found. Merged PR #214 (merge commit
+  `7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit. `proving_symbol` stays blank.
+  Ran `scripts.task_claim.sync_certified_status()` — `['FTF-0506']`
+  updated in `spec/tasks.json`/`docs/implementation/TRACKER.json`. This
+  is the second of two independent certifications from this same shift
+  (the other, FTF-0207, PR #215, landed first — see this file's own
+  "## Previous shift" entry below). `scripts/status.py`: `50/300`
+  certified before, `51/300` after; product-true unchanged at 17. Full
+  entry: `docs/certifications/ledger.md`, `docs/certifications/
+  queue.md`'s "FTF-0506 — Control plane: independent CERTIFY review,
+  CERTIFIED" entry.
+
+## Previous shift
 Updated: 2026-09-23T12:00:00Z (scheduled Control-plane certifier shift,
   `pull_request.opened` webhook for PR #214) — this session's entire
   mandate is CERTIFY: check `docs/certifications/queue.md` for anything

@@ -11735,3 +11735,44 @@ commit that actually merged the implementation onto `main`). Ledger entry
 appended (`docs/certifications/ledger.md`). Ran
 `scripts.task_claim.sync_certified_status()` — `['FTF-0207']` updated.
 Certified: 49/300 → 50/300. Product-true: unchanged at 17/17.
+
+## 2026-09-23 — FTF-0506 — Control plane: independent CERTIFY review, CERTIFIED
+This session's entire mandate is CERTIFY: checked this file for pending
+PROVISIONAL items and found two — FTF-0207 (reviewed separately, see this
+file's own prior entry and PR #215) and this one, FTF-0506.
+
+- **Session-ID check:** both commits on PR #214 carry
+  `session_01WnuyMUVM6PHL3KX9pnGbAF`. This session's own ID is
+  `session_01A9BrV7gok9pZTKotAqZEuy` — no match, independent per Law 4.
+- **Diff read directly** against PR #214's real head (`5d44300`): exactly
+  the task packet's own files, no scope creep.
+- **CI re-checked on the real head, not taken on faith:** 27/27 jobs
+  green; `gate`'s own real step list pulled directly — step 68, "FTF-0506
+  negative-test proof (Canonical conversation normalizer, no DB
+  required)", confirmed present and `success` on this exact commit.
+- **Own fault injection**, a third vector distinct from the producer's
+  own two (disabled duplicate tool-call-id guard; disabled
+  no-validator-supplied fail-closed guard): changed the "tool result's
+  `tool_call_id` references an existing pending tool call" check from
+  raising to a silent `pending_calls.get(tool_call_id, name)` fallback —
+  the suite crashed for real (`KeyError`); reverted byte-identical, `diff`
+  confirmed, suite re-ran clean. `ruff`/`mypy` clean repo-wide.
+- `product_truth_check.py --fail-on-unwired` — own run, 17/17,
+  legitimately unchanged (blank `proving_symbol`, disclosed no-live-
+  caller-yet scope).
+- `tools/r1_handoff.py packet FTF-0506` — acceptance and
+  negative_acceptance clauses confirmed genuinely met by the shipped
+  module, not merely "tests pass."
+- Dependencies FTF-0405/FTF-0500 confirmed genuinely `CERTIFIED` before
+  relying on them.
+
+**No blocking defect found.** Merged PR #214 (merge commit
+`7ffaebcb9879acf9db1adee2f70e6f6e539dbf3d`). `docs/spec-matrix.yaml` set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to that merge commit. Ledger entry appended
+(`docs/certifications/ledger.md`). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-0506']` updated.
+This is the second of two independent certifications from this same
+shift (the other, FTF-0207, is PR #215) — Certified count moves
+49/300 → 50/300 → 51/300 as both land on `main` in sequence.
+Product-true: unchanged at 17/17.
