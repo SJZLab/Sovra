@@ -194,8 +194,7 @@ jobs:
         # actually meant this task's own suite ran -- see
         # docs/certifications/watchdog-findings.md's 2026-09-23 finding
         # ("CI `gate` job never actually runs FTF-0205's/FTF-0206's own
-        # tests"). FTF-0206's own step cannot be added yet: its test file
-        # only exists on PR #207's still-unmerged branch, not on `main`.
+        # tests").
         run: uv run python3 tests/tasks/test_ftf_0205.py
       - name: FTF-04A01 negative-test proof (TargetApplicationConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a01.py
@@ -203,6 +202,11 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0207.py
       - name: FTF-0506 negative-test proof (Canonical conversation normalizer, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0506.py
+      - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
+        # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
+        # half of that gap, now closeable since this task's test file
+        # exists on this branch.
+        run: uv run python3 tests/tasks/test_ftf_0206.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

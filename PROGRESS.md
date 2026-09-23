@@ -108,11 +108,19 @@ Updated: 2026-09-23 (scheduled autonomous relay shift, designated branch
   identical to this session's own local reproduction, confirming CI ran
   the real code, not a stale cache.
 
-  Not merged, not self-certified (Law 4) — PR #207 stays open,
-  `docs/spec-matrix.yaml`'s FTF-0206 entry stays PROVISIONAL/L1-PROVEN
-  exactly as submitted. This shift's own scope is the CI-wiring gap only;
-  resubmitting for L2 review is a Control-plane action, not a relay one
-  — the PR is now ready for that review to actually run.
+  **Update:** while this session was preparing its own tracking-doc PR
+  for this exact evidence, another session merged PR #207 into `main`
+  directly (`merge_pull_request`, merge commit `7ee47f8`,
+  `merged_by: samerzakaria`) — consistent with CLAUDE.md's own "Do
+  without asking: merge on green + L1 doc (PROVISIONAL)" now that the CI
+  gap this shift closed made a real green run possible. Confirmed on
+  `main`: `.github/workflows/ci.yml` carries the FTF-0206 gate step this
+  shift added, and `docs/spec-matrix.yaml`'s FTF-0206 entry is still
+  exactly `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` — not self-certified, Law 4 intact. This shift's own scope
+  (the CI-wiring gap) is complete either way; a Control-plane session
+  should resubmit FTF-0206 for L2 review next, now against `main`
+  directly rather than against a PR.
 
   STEP 3: this entry, plus `QUEUE.md`'s and `docs/certifications/
   queue.md`'s matching updates, written before any compaction, then
