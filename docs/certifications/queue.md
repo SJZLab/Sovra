@@ -11679,3 +11679,59 @@ keyed-credential integration evidence this sandbox cannot reach directly
 owner-approved new keyed AWS credential). `FTF-0206` (PR #207) and
 `FTF-0304` (PRs #194/#195) remain open/unmerged from before this shift,
 on branches this session does not own — left untouched.
+## 2026-09-23 — FTF-0207 — Control plane: independent CERTIFY review, CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #214 (FTF-0506);
+per this session's own mandate, checked this file for any PROVISIONAL
+item first and found FTF-0207 already pending (submitted above) plus a
+second item, FTF-0506 (reviewed separately below/next).
+
+- **Session-ID check:** PR #212's two commits both carry
+  `session_01AkayPLhxBFfVkDgfhY2Mnk`; PR #213 (a separate, already-opened,
+  unmerged doc-only certification PR for this same criterion) carries
+  `session_01AsrpTcXDVyvY6AAYKGs45W`. This session's own ID is
+  `session_01A9BrV7gok9pZTKotAqZEuy` — no match against either, independent
+  per Law 4.
+- **Diff read directly** against PR #212's real head (`1e19e3d`): exactly
+  the task packet's own files, no scope creep.
+- **CI re-checked on the real head, not taken on faith:** 27/27 jobs
+  green; `gate`'s own "FTF-0207 negative-test proof" step confirmed
+  present and `success` on this exact commit.
+- **Own fault injection**, run in a fresh `git worktree` at `ab6473f`, a
+  fourth vector distinct from the producer's own two and PR #213's one:
+  changed the "alias missing from enrichment" branch to `continue`
+  (dropping the alias) instead of falling back to `limited` — the suite
+  crashed for real (`IndexError`); reverted byte-identical, `diff`
+  confirmed, suite re-ran clean. `ruff`/`mypy` clean repo-wide.
+- `product_truth_check.py --fail-on-unwired` — own run, 17/17, legitimately
+  unchanged (blank `proving_symbol`, disclosed no-live-caller-yet scope).
+- `tools/r1_handoff.py packet FTF-0207` — acceptance and negative_acceptance
+  clauses confirmed genuinely met by the shipped module, not merely "tests
+  pass."
+- Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed genuinely `CERTIFIED`
+  before relying on them.
+- **Irregularity found, disclosed, not silently worked around:** the
+  commit that actually landed this task on `main` (`ab6473f`) was pushed
+  directly by the `samerzakaria` account rather than via a merged PR (PR
+  #212 shows `merged: false`) — a `BRANCH_PROTECTION` violation this
+  session did not commit. Its commit message reads as a completed
+  certification ("Control plane: certify FTF-0207 ... all confirmed
+  sound"), but its actual diff only ever set `certification_state:
+  PROVISIONAL` — never CERTIFIED, so the tracker itself was never
+  inflated (Law 2 held), only the message was misleading. This is a
+  second recurrence of the class of incident logged in
+  `docs/certifications/watchdog-findings.md`'s 2026-09-18 entry; a formal
+  new watchdog entry is Watchdog's own role, out of scope for this
+  certifier shift — disclosed here and in the ledger for visibility. PR
+  #213 (the other session's already-completed equivalent independent
+  review, left open/unmerged and explicitly deferred to Control plane by
+  the relay shift that found it) is superseded by this entry and closed,
+  not merged, to avoid two differently-attributed ledger records for the
+  same criterion.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to `ab6473fc3854f71d782a8bb1671a95c33f413ba5` (the
+commit that actually merged the implementation onto `main`). Ledger entry
+appended (`docs/certifications/ledger.md`). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-0207']` updated.
+Certified: 49/300 → 50/300. Product-true: unchanged at 17/17.

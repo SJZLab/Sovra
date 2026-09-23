@@ -5654,3 +5654,101 @@ reasons given above.
   16 → 17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0207 — Alias reconciliation
+- Criterion ID: FTF-0207
+- PR: https://github.com/SJZLab/Sovra/pull/212 (`claude/wizardly-fermat-7rbq4h`
+  → `main`) — implementation and PROVISIONAL submission. Landed on `main`
+  directly as merge commit `ab6473fc3854f71d782a8bb1671a95c33f413ba5`
+  (PR #212 itself shows `merged: false` — see irregularity below).
+- Merge commit (evidence): ab6473fc3854f71d782a8bb1671a95c33f413ba5
+- Implementation commit: 194829be0acf8f95276aee74a1dc6430484f7242
+  (tracking-doc commit: 1e19e3d06b126a265a9630e449fb606b730df669)
+- Validated-by: session https://claude.ai/code/session_01A9BrV7gok9pZTKotAqZEuy
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #214 — found this item already PROVISIONAL and pending while
+  checking `docs/certifications/queue.md` per this shift's own mandate)
+- Date: 2026-09-23
+- **Session-ID check:** both commits on PR #212 carry `Claude-Session:
+  .../session_01AkayPLhxBFfVkDgfhY2Mnk`. A separate, already-opened PR
+  #213 (doc-only, unmerged) carries an equivalent independent review from
+  `session_01AsrpTcXDVyvY6AAYKGs45W`. This reviewing session's own ID is
+  `session_01A9BrV7gok9pZTKotAqZEuy` — no match against either, independent
+  per Law 4. (PR #213 is closed as superseded by this entry, not merged —
+  see irregularity below.)
+- **Diff read directly:** exactly the task packet's own files
+  (`packages/litellm_client/alias_reconciliation.py`,
+  `tests/tasks/test_ftf_0207.py`) plus expected tracking docs
+  (`docs/spec-matrix.yaml`, `QUEUE.md`, `PROGRESS.md`,
+  `docs/implementation/task-packets/FTF-0207.md`,
+  `docs/certifications/queue.md`) and one new CI step (`gate`'s own
+  FTF-0207 step). No scope creep; no route file, matching the disclosed
+  "no live caller yet" precedent FTF-0202/FTF-0205 already established.
+- **CI re-checked directly on the real PR #212 head (`1e19e3d`), not taken
+  on faith:** 27/27 jobs `success`, `mergeable_state: clean`. Pulled the
+  `gate` job's own step list and confirmed the "FTF-0207 negative-test
+  proof (Alias reconciliation, no DB required)" step is genuinely present
+  and `success` on this exact commit — not inferred from the aggregate
+  green count (the same class of gap this control plane previously caught
+  on FTF-0206/PR#207).
+- **Own independent verification, not the producer's or PR #213's local
+  claims:**
+  - Ran `tests/tasks/test_ftf_0207.py` directly in a fresh `git worktree`
+    at `ab6473f` (the real head of `main`) — all checks pass.
+  - Own fault injection, a fourth distinct vector from the producer's own
+    two (union instead of left-join; case-folded join key) and from PR
+    #213's one (removed the duplicate-id "first wins" dedup guard):
+    changed the "no matching enrichment entry" branch from falling back to
+    `metadata_status=LIMITED` to `continue` (silently dropping the
+    alias). Re-ran the suite — failed for real (`IndexError`, the first
+    assertion expecting the alias present crashed), proving "a discovered
+    alias missing from enrichment falls back to limited without being
+    dropped" is load-bearing, not decorative. Reverted from a pre-edit
+    backup; `diff` confirmed byte-identical; suite re-ran clean
+    immediately after.
+  - `uv run ruff check .` / `ruff format --check .` / `mypy .` — clean,
+    whole repo.
+  - `scripts/product_truth_check.py --fail-on-unwired` — own run, **17/17**,
+    legitimately unchanged (blank `proving_symbol` is the correct, disclosed
+    state — no live route wired to this module yet, same class already
+    accepted for FTF-0202 before FTF-0203 wired it and for FTF-0205 before
+    this task).
+- `python3 tools/r1_handoff.py packet FTF-0207 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Left-join
+  case-sensitive alias identities to metadata without replacing
+  user-facing ID") confirmed met by the shipped module's exact-case
+  dict-keyed join and its unconditional `id=discovered.id`;
+  negative_acceptance ("Colliding aliases/upstream names never merge
+  credentials or grant a model absent from current accessible set")
+  confirmed met both structurally (neither input/output dataclass carries
+  a credential field) and behaviorally (this review's own fault injection
+  above plus the producer's own union-fault demonstration).
+- Dependencies FTF-0201/FTF-0204/FTF-0205 confirmed genuinely `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- **Irregularity found and disclosed, not silently worked around:** the
+  commit that actually landed this task's code onto `main`
+  (`ab6473fc3854f71d782a8bb1671a95c33f413ba5`) was pushed directly by the
+  `samerzakaria` account rather than merged through PR #212 (which itself
+  shows `merged: false` on GitHub) — a `BRANCH_PROTECTION` violation this
+  session did not commit. Its commit message ("Control plane: certify
+  FTF-0207 ... Independently re-reviewed PR #212 ... all confirmed
+  sound") reads as a completed L2 certification, but its actual diff
+  (verified directly against its first parent) only ever set
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` — it
+  never touched CERTIFIED/L2-CERTIFIED. The tracker itself was therefore
+  never inflated (Law 2 held); only the commit message was misleading.
+  This is the same class of incident as `docs/certifications/
+  watchdog-findings.md`'s 2026-09-18 "Direct-push-to-main recurrence"
+  entry, now recurring a second time — logged here for visibility; a
+  formal watchdog finding entry is out of scope for this certifier shift
+  (Watchdog's own role, not Control plane's).
+- No blocking defect found. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to `ab6473fc3854f71d782a8bb1671a95c33f413ba5` (the
+  commit that actually merged the implementation onto `main`).
+  `proving_symbol` stays blank (no live caller yet, disclosed). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0207']` updated in
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`. Certified: 49/300
+  → 50/300. Product-true: unchanged at 17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.
