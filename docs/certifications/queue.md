@@ -10900,3 +10900,126 @@ enrichment"). Ran `scripts.task_claim.sync_certified_status()` —
 `['FTF-0205']`. `QUEUE.md`/`PROGRESS.md` updated: FTF-0205 moved to
 Done, Certified count bumped to 48/300, Product-true stays 16/16
 (unchanged — this task discloses no live wiring).
+
+## 2026-09-23 — FTF-0206 — `/model_group/info` optional enrichment
+- **PR:** relay branch `claude/wizardly-fermat-bj3os5` → main; opened as
+  `[relay] FTF-0206: /model_group/info optional enrichment`
+- **Commit:** 49d29681764d225afede1336c09a8a3fe2fb6079
+- **Real DoD source:** task packet resolved via `python3
+  tools/r1_handoff.py packet FTF-0206 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`docs/implementation/task-packets/
+  FTF-0206.md`). Dependencies FTF-0201/FTF-0203/FTF-0204 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on
+  them. No open PR already claimed this task (checked `list_pull_requests`
+  before starting — only #194/#195, both FTF-0304, unrelated).
+- **Delivered:** `packages/litellm_client/
+  model_group_info_optional_enrichment.py`
+  (`enrich_visible_model_groups`) reuses FTF-0205's own left-join/
+  never-drop design (Section 3.2's "no authorization union" applied to
+  enrichment — a group name absent from the caller's own
+  `visible_model_ids` is never iterated into the result), applied to the
+  separate real `GET /model_group/info` route Section 3.1 names
+  alongside `/model/info`. Two points genuinely differ from FTF-0205,
+  both reflected in the module rather than copied from it: (1) a real
+  `/model_group/info` response places every field flat on each entry,
+  keyed by `model_group` (never `model_name`, never nested under a
+  `model_info` sub-object) — `_parse_model_group_info` and
+  `_allowlisted_fields` are written against that real shape, and the
+  allowlist additionally covers genuine group-level `tpm`/`rpm`
+  throughput fields `/model/info` does not carry; (2) this task's own
+  acceptance clause ("Optional enrichment runs only with explicit
+  supported capability and safe permission") is stricter than FTF-0205's
+  "always attempt, degrade on failure" — `enrich_visible_model_groups`
+  takes a required, no-default, keyword-only `capability_supported: bool`
+  and never opens a connection at all when it is `False`, returning
+  `metadata_status=limited` for every visible id under a dedicated
+  `capability_not_declared` state. "...safe permission" is satisfied by
+  construction: every call (401/403/404 alike) uses exactly the same
+  least-privilege inference credential FTF-0201/FTF-0204/FTF-0205
+  already resolve — there is no code path here that escalates to a
+  management credential on any outcome, covering this task's own
+  negative_acceptance ("403/not-supported leaves limited metadata
+  without failing basic discovery or gaining management rights") on
+  both named failure modes: a real 403 reports `invalid_token`, a real
+  404 reports a distinct `not_supported`, and both leave every visible
+  id present and `limited`, never dropped.
+- **Scope decision (disclosed, same precedent FTF-0202/FTF-0205 already
+  established for "no live HTTP route yet"):** this task's own packet
+  `files` list names only the module and its test, not a route file.
+  `docs/spec-matrix.yaml`'s own dependents show `FTF-0207` ("Alias
+  reconciliation") is the later task depending on FTF-0201/FTF-0204/
+  FTF-0205 (now all CERTIFIED) and is the natural real caller for this
+  module too — the same producer/later-wiring relationship FTF-0202/
+  FTF-0205 already established. `proving_symbol` is left blank and
+  `product_truth_check.py`/`scripts/status.py`'s product-true count is
+  deliberately unchanged (Law 2).
+- **Test:** `tests/tasks/test_ftf_0206.py` (no DB, no external egress —
+  real local HTTP secret-backend server, real local HTTPS gateway
+  servers with a real ephemeral CA installed into this sandbox's own
+  system trust store, mirroring `tests/tasks/test_ftf_0205.py`'s own
+  established fixture pattern exactly) — covers allowlisted fields
+  surviving with real values including `tpm`/`rpm`; the non-scalar
+  `providers` field and `litellm_params.api_key` never exposed; an
+  undeclared capability never opening a socket; a metadata-only group
+  outside `visible_model_ids` proven absent from `entries`; an
+  authorized-but-absent group retaining `limited`/empty-fields; a 403
+  and a distinct 404 both degrading every visible id to `limited`
+  without dropping any of them; a malformed response doing the same;
+  duplicate visible ids collapsing to one entry; every real
+  secret-backend failure state distinct and real; a real connection-
+  policy destination-denial before any socket opens; an empty
+  `visible_model_ids` never resolving a secret or dialing a gateway; the
+  allowlist's own unit behavior (unknown keys dropped, the `model_group`
+  key itself dropped, non-scalar values under an allowlisted key
+  dropped, non-dict raw input never raises); the parser's own unit
+  behavior (a non-string `model_group` dropped, malformed/non-dict/
+  missing-`data` bodies all `None`).
+- **Evidence — shown able to fail (Law 1), two distinct vectors, both
+  reverted byte-identical and the suite re-confirmed clean immediately
+  after each:**
+  1. A fault injection mutates the real, on-disk
+     `model_group_info_optional_enrichment.py` so `_allowlisted_fields`
+     returns every raw field verbatim instead of filtering through
+     `_ALLOWLISTED_MODEL_GROUP_FIELDS`. Run in a fresh subprocess against
+     a real gateway advertising a credential-shaped `api_key` field
+     directly on the group entry, the mutated module genuinely lets the
+     secret string leak into the result
+     (`"sk-fault-injection-leak" in result.stdout`) — proving the allow
+     list is load-bearing, not decorative.
+  2. A second, independent fault injection mutates the same on-disk
+     module so the `capability_supported` gate is bypassed entirely (the
+     early-return block replaced with a no-op). Run in a fresh subprocess
+     with `capability_supported=False` against a real gateway, the
+     mutated module genuinely reaches it and returns `state=completed`
+     instead of `capability_not_declared` — proving the gate is
+     load-bearing, not decorative, and that this task's own "runs only
+     with explicit supported capability" clause is actually enforced by
+     the unmutated code, not merely asserted by a docstring.
+  Both fault injections were also proven to genuinely fail the suite
+  first (target-block presence checks) before being reverted; `diff`
+  confirmed the module byte-identical after each revert and after the
+  full suite run.
+  Before either fault injection, this task's own Law 1 "shown able to
+  fail" step was also satisfied at the coarsest level: the module was
+  moved aside and `tests/tasks/test_ftf_0206.py` was run directly,
+  producing a real `ModuleNotFoundError` bound to this task
+  (`packages.litellm_client.model_group_info_optional_enrichment`) before
+  the module was restored and the suite re-run clean.
+- `ruff format`/`ruff check` clean on both new files after one
+  auto-reformat (`ruff format` wrapped one line-too-long inside a fault
+  injection test body — content unchanged, whitespace only). `mypy`
+  clean on both new files ("Success: no issues found in 2 source
+  files"). `uv sync --all-packages` resolved this fresh sandbox's own
+  missing dependency set; `tests/tasks/test_ftf_0201.py`,
+  `test_ftf_0203.py`, `test_ftf_0204.py`, `test_ftf_0205.py` all re-run
+  clean afterward (no regression to any shared module).
+  `scripts/validate_spec.py --strict` clean after `git fetch
+  --unshallow` (this sandbox's own pre-existing shallow-clone artifact,
+  same documented precedent as prior shifts). `CLAUDE.md.sha256`
+  verified against `sha256sum CLAUDE.md` before starting.
+- `scripts/product_truth_check.py --fail-on-unwired` stays `16/16`
+  (unchanged — Law 2, no live caller yet, disclosed above).
+  `scripts/status.py` stays `48/300 certified · 16 product-true`.
+
+**State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+self-certified — awaiting Control plane L2 review per Law 4.

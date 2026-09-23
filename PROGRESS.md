@@ -13250,3 +13250,135 @@ note alone, since FTF-0206 may not be a hard dependency of FTF-0207 per
 open, unmerged candidate PRs (#194/#195) from other sessions — leave
 those for their own producer sessions or a certifier, do not redo the
 work.
+
+Updated: 2026-09-23 (scheduled relay shift) — implemented FTF-0206
+(`/model_group/info` optional enrichment), submitted PROVISIONAL, not
+self-certified (Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh (never assumed state from prior context). Found: no
+Owner actions, no Active items, no Provisional items — `docs/
+certifications/queue.md` had zero open PROVISIONAL entries at shift
+start (FTF-0205 was the last, now CERTIFIED via PR #205). `git fetch
+origin main` confirmed local `HEAD` on `claude/wizardly-fermat-bj3os5`
+already matched `origin/main` exactly (`e42d036`) — this session's own
+designated branch name had never been pushed to `origin` yet (a fresh
+branch name for this shift), the same disclosed local-fetch quirk a
+prior shift's own note already documented for the combined-fetch
+failure mode; fetching `main` alone avoided it.
+
+**STEP 1:** Picked `FTF-0206` (`/model_group/info` optional
+enrichment) — the prior relay shift's own "Next shift" note in
+`PROGRESS.md`/`QUEUE.md` already identified it as dependency-ready and
+unclaimed; independently re-verified rather than trusted: `docs/
+spec-matrix.yaml` shows its three real deps (FTF-0201/FTF-0203/
+FTF-0204) all `certification_state: CERTIFIED`, and `mcp__github__
+list_pull_requests` (open, this repo) showed only PRs #194/#195 (both
+FTF-0304, unrelated) — no existing claim on FTF-0206 to collide with.
+"Working: FTF-0206."
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+packet FTF-0206 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read
+`v1_model_info_enrichment.py` (FTF-0205, already CERTIFIED) end to end
+as the closest real precedent — same dependency set, same left-join/
+allowlist design intent per Section 3.1/3.2. Checked the real upstream
+LiteLLM `/model_group/info` response shape against `/model/info`'s:
+fields sit flat on each entry keyed by `model_group` (never nested
+under a `model_info` sub-object keyed by `model_name`), and genuine
+group-level `tpm`/`rpm` throughput fields exist that `/model/info`
+does not carry — confirming this is a separate module with its own
+parser/allowlist, not a copy of FTF-0205's own. Read this task's own
+acceptance clause closely: "Optional enrichment runs only with
+explicit supported capability and safe permission" is textually
+stronger than FTF-0205's own acceptance ("Enrich only visible aliases
+with allowlisted fields, retaining limited metadata when
+denied/absent") — FTF-0205 always attempts the call and degrades on
+failure, whereas this task's own wording requires the call to run only
+when the capability is explicitly known supported. Formed the
+hypothesis: a new `packages/litellm_client/
+model_group_info_optional_enrichment.py` takes the caller's own
+already-authorized `visible_model_ids` plus a required, no-default
+`capability_supported: bool`, and only ever opens a connection when
+that flag is `True`; "...and safe permission" is satisfied by using
+exactly the same least-privilege inference credential on every call,
+with no escalation path on 401/403/404. No code written yet at this
+point.
+
+**STEP 2 (E):** Implemented `packages/litellm_client/
+model_group_info_optional_enrichment.py` (`enrich_visible_model_groups`,
+`GroupInfoState`, `ModelGroupEnrichmentResult`, `ModelGroupMetadataEntry`,
+`_ALLOWLISTED_MODEL_GROUP_FIELDS`). Wrote `tests/tasks/
+test_ftf_0206.py` (23 test functions, no DB, no external egress — same
+real local HTTP secret-backend server + real local HTTPS gateway +
+real ephemeral CA fixture pattern `tests/tasks/test_ftf_0205.py`
+already established).
+
+**Shown able to fail first (Law 1), coarsest level:** before writing
+any of the module's logic, moved the not-yet-written module path aside
+(there was nothing to move yet — instead, immediately after writing
+the test file but before restoring the module from its draft, the
+module file was moved to a temp path and the suite was run directly):
+`python3 tests/tasks/test_ftf_0206.py` produced a real
+`ModuleNotFoundError: No module named 'packages.litellm_client.
+model_group_info_optional_enrichment'` — a genuine failure bound to
+this task's own import, not a fabricated one. The module was then
+restored and the full suite re-run clean.
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays
+`16/16` (unchanged — Law 2, this task deliberately has no live caller
+yet, same disclosed precedent FTF-0202/FTF-0205 established;
+`proving_symbol` left blank). `scripts/status.py` stays `48/300
+certified · 16 product-true`. `ruff check .`/`ruff format --check .`
+clean on both new files after `ruff format` auto-wrapped one
+line-too-long inside a fault-injection test body (content unchanged,
+whitespace only). `mypy` clean on both new files ("Success: no issues
+found in 2 source files"). `uv sync --all-packages` resolved this
+fresh sandbox's own missing dependency set (same documented precedent
+prior shifts already established for `uv sync`); `tests/tasks/
+test_ftf_0201.py`/`test_ftf_0203.py`/`test_ftf_0204.py`/
+`test_ftf_0205.py` all re-run clean afterward under `uv run` — no
+regression to any shared module. `scripts/validate_spec.py --strict`
+clean after `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact, same documented precedent as prior shifts).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical and the suite re-confirmed clean immediately after
+each:**
+1. Widened `_allowlisted_fields` to return every raw entry field
+   verbatim instead of filtering through
+   `_ALLOWLISTED_MODEL_GROUP_FIELDS` — run in a fresh subprocess
+   against a real gateway advertising a credential-shaped `api_key`
+   field directly on the group entry, the mutated module genuinely let
+   the secret string leak into the result
+   (`"sk-fault-injection-leak" in result.stdout`), proving the allow
+   list is load-bearing, not decorative.
+2. Disabled the `capability_supported` gate (replaced the early-return
+   block with a no-op) — run in a fresh subprocess with
+   `capability_supported=False` against a real gateway, the mutated
+   module genuinely reached it and returned `state=completed` instead
+   of `capability_not_declared`, proving this task's own "runs only
+   with explicit supported capability" clause is actually enforced by
+   the unmutated code, not merely documented.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`49d29681764d225afede1336c09a8a3fe2fb6079`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — PR opened, awaiting independent
+Control-plane L2 review. Full entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0206`) awaiting independent Control-plane L2 review — a
+certifier shift should pick it up next. `FTF-0207` ("Alias
+reconciliation") is not yet dependency-ready by name alone until this
+independently reaches CERTIFIED (its real deps per `docs/
+spec-matrix.yaml` are FTF-0201/FTF-0204/FTF-0205, already all
+CERTIFIED — recompute the dependency-ready frontier fresh next shift
+rather than trusting this note, since FTF-0206 may not actually be a
+hard `deps` entry of FTF-0207). `FTF-0304` still has two open,
+unmerged candidate PRs (#194/#195) from other sessions — leave those
+for their own producer sessions or a certifier, do not redo the work.

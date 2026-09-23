@@ -609,15 +609,41 @@ FTF-0205:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0205.py
 FTF-0206:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: '`/model_group/info` optional enrichment'
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203, FTF-0204
-  proof_state: UNPROVEN
+  evidence_hash: 49d29681764d225afede1336c09a8a3fe2fb6079
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0203,
+    FTF-0204 (all CERTIFIED). This task's own acceptance clause ("Optional enrichment runs only
+    with explicit supported capability and safe permission") is enforced by construction: the
+    real GET /model_group/info call is only ever attempted when the caller passes
+    capability_supported=True (no default); an undeclared capability returns metadata_status=
+    limited for every visible id without a single network round trip. "...safe permission" is
+    the same least-privilege inference credential FTF-0201/FTF-0204/FTF-0205 already use --
+    no code path here escalates to a management credential on any failure. negative_acceptance
+    ("403/not-supported leaves limited metadata without failing basic discovery or gaining
+    management rights") is covered by dedicated 403 (invalid_token) and 404 (not_supported)
+    checks, both never dropping a visible id. Reuses FTF-0205's left-join/never-drop/allowlist
+    design; the real /model_group/info response shape differs from /model/info (fields sit
+    flat on each entry, keyed by model_group, not nested under model_info, and include real
+    group-level tpm/rpm throughput fields /model/info does not carry) -- reflected in a
+    separate allowlist and parser, not a copy of FTF-0205's own. Own fault injection, two
+    distinct vectors, both proven to fail the suite for real in a fresh subprocess against a
+    real local TLS gateway, then reverted byte-identical: (1) widened the allowlist filter to
+    return every raw field verbatim -- a credential-shaped field genuinely leaked into the
+    result; (2) disabled the capability_supported gate -- an explicitly undeclared call
+    genuinely reached the gateway and returned completed instead of capability_not_declared.
+    No independent schema change (database_changes clause); no route wired yet (FTF-0207 is
+    the disclosed later wiring step, same producer/later-wiring scope FTF-0202/FTF-0205 already
+    established). product_truth_check.py --fail-on-unwired stays 16/16 (no live caller yet,
+    proving_symbol left blank, same disclosed class FTF-0202/FTF-0205 already established).
+    Submitted PROVISIONAL, not self-certified (Law 4) -- PR opened, awaiting independent
+    Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0206.py
 FTF-0207:
   certification_state: NONE
   criticality: MUST
