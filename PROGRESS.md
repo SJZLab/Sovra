@@ -1,5 +1,95 @@
 # PROGRESS — Sovra
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #224) — independent CERTIFY
+  review of FTF-0210 (Real chat probe), CERTIFIED.
+
+  Checked `docs/certifications/queue.md` per this shift's own mandate:
+  found FTF-0210/PR #224 the sole pending PROVISIONAL item.
+
+  Session-ID check: PR #224's three commits (implementation, PROVISIONAL
+  submission, PR-link record) all carry
+  `session_014J57y6ueTRgmrVX7nzh9rK`. This session's own ID is
+  `session_016NpBXKWyLWwgJBqBw4egi6` — no match, independent per Law 4.
+
+  Diff read directly against PR #224's real head
+  (`0756334aaba315480d70af334eb89d983381306a`): exactly the task packet's
+  own new module (`packages/litellm_client/real_chat_probe.py`) and test
+  (`tests/tasks/test_ftf_0210.py`), plus one new `gate`-job CI step, the
+  new task-packet doc, and expected tracking-doc updates. No scope creep.
+
+  CI re-checked directly on that real head, not taken on faith: waited
+  out the actual run (it was still queued/in-progress when this shift
+  began) to full completion — 27/27 jobs `success` (run `35920520821`).
+  The `gate` job, which runs `tests/tasks/test_ftf_0210.py` inline,
+  completed `success`. Three jobs (`secret-manager-integration`/
+  `dataset-source-connection-integration`/
+  `target-application-connection-integration`) took several minutes each
+  because they build OpenBao from source on the runner — cross-checked
+  mid-run via `get_workflow_job` (the same build step, still genuinely
+  progressing, not stalled) — same documented shape as FTF-0208's/
+  FTF-0209's own reviews, not a failure.
+
+  Own reproduction directly in this working tree: checked out PR #224's
+  exact head (`git checkout origin/claude/wizardly-fermat-fxdnkd -- .`,
+  confirmed byte-identical via `git diff` before testing), unshallowed
+  the local clone (the initial shallow checkout produced 29 spurious
+  `validate_spec.py --strict` `stale_commit` findings on unrelated,
+  already-CERTIFIED tasks — an artifact of missing history depth, not a
+  real defect; clean once unshallowed, none concerned FTF-0210), then ran
+  `python3 tests/tasks/test_ftf_0210.py` — "FTF-0210 real chat probe: all
+  checks passed". This sandbox had real `sudo`/`openssl`/
+  `update-ca-certificates` access, so the live local-HTTPS-gateway round
+  trips genuinely ran (not the disclosed skip path). Own fault injection
+  reproducing the producer's own claimed vector independently rather than
+  taking it on faith: removed the `if model_id not in approved_model_ids:
+  raise ChatProbeNotAuthorizedError(...)` gate from `probe_chat` entirely
+  — the authorization negative check genuinely failed for real (the
+  mutated module attempted a probe against `https://127.0.0.1:1` instead
+  of raising). Reverted from a pre-edit backup, `diff` confirmed
+  byte-identical, suite re-ran clean immediately after. `uv run ruff
+  check .` / `ruff format --check .` / `mypy
+  packages/litellm_client/real_chat_probe.py tests/tasks/test_ftf_0210.py`
+  clean, pinned toolchain. `uv run python3 tests/tasks/test_ftf_0201.py` /
+  `test_ftf_0204.py` / `test_ftf_0207.py` (this task's own CERTIFIED
+  dependencies) re-run clean — no regression. `python3
+  scripts/validate_spec.py --strict` clean (post-unshallow). `python3
+  scripts/product_truth_check.py --fail-on-unwired` — own run, 17/17,
+  confirmed legitimate: `proving_symbol` for FTF-0210 is blank in
+  `docs/spec-matrix.yaml` (no live caller yet, same disclosed precedent
+  as FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209), so the unchanged
+  count is not a disguised 0/0 pass on a claimed live path.
+
+  `python3 tools/r1_handoff.py packet FTF-0210 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause
+  ("Explicitly authorized synthetic probe calls real model and records
+  actual provider route, usage and latency") confirmed met by direct
+  reading of `test_probe_succeeds_and_records_route_usage_latency` (a
+  real round trip whose gateway response's own `model` field,
+  deliberately different from the requested alias, is recorded as
+  `resolved_model` with `route_identity_state=VERIFIED`, with real
+  usage/latency also asserted from the actual response) and
+  `test_probe_not_authorized_raises_before_any_network_call` (points at
+  an unlistened port so a missing authorization gate would surface as a
+  connection failure, not a raise — proving the gate runs first).
+  negative_acceptance ("Sensitive content, unsupported parameters and
+  permission/timeout errors are normalized without fabricated
+  responses") confirmed met by direct reading of the four dedicated real
+  round-trip tests plus the missing-usage/missing-model-field tests for
+  Section 3.4/3.5's "unpriced/unknown, not zero cost" and
+  `IDENTITY_UNVERIFIED` clauses. Dependencies FTF-0201/FTF-0204/FTF-0207
+  confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`.
+
+  No blocking defect found. Merged PR #224 (merge commit
+  `d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit (`proving_symbol` stays blank
+  — no live caller yet, disclosed). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0210']` updated.
+  `scripts/status.py`: `54/300` certified before, `55/300` after.
+  Product-true unchanged at 17. Full entry: `docs/certifications/
+  ledger.md`, `QUEUE.md`.
+
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #222) — independent CERTIFY
   review of FTF-0209 (Catalog anomaly detector), CERTIFIED.
 

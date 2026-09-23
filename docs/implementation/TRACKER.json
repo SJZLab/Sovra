@@ -194,9 +194,11 @@
       "blockers": []
     },
     "FTF-0210": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a"
+      ],
       "independent_review": null,
       "blockers": []
     },

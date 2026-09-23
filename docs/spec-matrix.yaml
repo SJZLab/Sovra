@@ -931,10 +931,10 @@ FTF-0209:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0209.py
 FTF-0210:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Real chat probe
-  evidence_hash: 19a247c1cf5334e416c8a14b6c41d1d78e3ae9ea
+  evidence_hash: d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0201,
     FTF-0204, FTF-0207 (all CERTIFIED). Built for real in a new
@@ -1017,9 +1017,50 @@ FTF-0210:
     regression. Added this task''s own CI gate step
     (tests/tasks/test_ftf_0210.py) to .github/workflows/ci.yml in this same
     commit, per the disclosed FTF-0205/FTF-0206 watchdog finding on a
-    missing gate-wiring step. Submitted PROVISIONAL, not self-certified (Law
-    4) -- awaiting independent Control-plane L2 review.'
-  proof_state: L1-PROVEN
+    missing gate-wiring step. Independently CERTIFIED 2026-09-23 (control
+    plane, PR #224 merge commit d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a) --
+    session ID checked against all three of PR #224''s commits
+    (session_014J57y6ueTRgmrVX7nzh9rK) against this reviewing session
+    (session_016NpBXKWyLWwgJBqBw4egi6) -- no match, independent per Law 4.
+    Real CI re-checked to completion on the actual head
+    (0756334aaba315480d70af334eb89d983381306a) -- 27/27 jobs green,
+    including the gate job and the three slower OpenBao-build integration
+    jobs, watched through to their own real completion rather than taken on
+    a partial snapshot. Diff read directly (packages/litellm_client/real_chat_probe.py,
+    tests/tasks/test_ftf_0210.py, ci.yml step) -- no scope creep beyond the
+    task packet. Own reproduction, not taken on faith: cloned the exact PR
+    head into this worktree (git diff confirmed byte-identical against
+    origin/claude/wizardly-fermat-fxdnkd before testing), unshallowed the
+    clone (the initial shallow checkout produced spurious validate_spec.py
+    stale_commit noise unrelated to this task -- confirmed clean once
+    unshallowed), and ran tests/tasks/test_ftf_0210.py directly -- all
+    checks passed, including the real local-HTTPS-gateway round trips (this
+    sandbox had real sudo/openssl/update-ca-certificates access, so the
+    live TLS-backed checks genuinely ran, not skipped). Own fault injection
+    reproducing the producer''s claimed vector: removed the
+    `if model_id not in approved_model_ids: raise
+    ChatProbeNotAuthorizedError(...)` gate from probe_chat entirely -- the
+    authorization negative check genuinely failed for real (mutated module
+    attempted a probe instead of raising); reverted, diff confirmed
+    byte-identical, suite re-ran clean. product_truth_check.py
+    --fail-on-unwired own run: 17/17, legitimately unchanged
+    (proving_symbol confirmed blank -- Law 5, no unearned 0/0 claimed since
+    none is claimed at all). uv run ruff check/ruff format --check/mypy
+    clean on both new files using the pinned toolchain. uv run python3
+    tests/tasks/test_ftf_0201.py/test_ftf_0204.py/test_ftf_0207.py (this
+    task''s own CERTIFIED dependencies) re-run clean -- no regression.
+    scripts/validate_spec.py --strict clean (post-unshallow). Pulled this
+    task''s real contract via tools/r1_handoff.py packet FTF-0210 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md -- acceptance ("Explicitly authorized
+    synthetic probe calls real model and records actual provider route,
+    usage and latency") and negative_acceptance ("Sensitive content,
+    unsupported parameters and permission/timeout errors are normalized
+    without fabricated responses") clauses confirmed genuinely met by
+    reading the shipped module and test suite directly (real over-the-wire
+    assertions on request/response bytes, not mocked). Dependencies
+    FTF-0201/FTF-0204/FTF-0207 confirmed genuinely CERTIFIED before relying
+    on them. No blocking defect found.'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0210.py
 FTF-0211:
