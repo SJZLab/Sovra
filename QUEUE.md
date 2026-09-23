@@ -1,5 +1,41 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #220) — independently reviewed
+  FTF-0208 (Last-known-good catalog). Session-ID check: PR #220's three
+  commits all carry `session_012onwtuejKNuCp5dC6NnuAE`, no match to this
+  session's own ID (Law 4). Diff read directly against the real head
+  (`370334d`) — no scope creep. CI re-checked on the real head, not taken
+  on faith: 27/27 jobs green (run `35892825208`; three OpenBao-from-source
+  build jobs took 5-7 minutes each — confirmed genuinely running, not
+  stalled, by cross-checking a superseded prior run on the same branch
+  showing the identical pattern). `gate` job's raw log confirmed
+  `tests/tasks/test_ftf_0208.py` genuinely executes and passes inline,
+  followed by real `Product-truth: 17/17` / `Status: 52/300 certified`
+  output. Own independent verification in a fresh `git worktree`: fresh
+  run of the test suite (including the real end-to-end HTTPS-gateway
+  check, confirmed genuinely executed not skipped), a fault-injection
+  vector distinct from the producer's own two (removed the entire
+  removed-id marking loop in `_apply_successful` rather than merely
+  hard-coding it empty) caught for real and reverted byte-identical,
+  `ruff`/`mypy`/`validate_spec.py --strict` clean, `test_ftf_0204.py`/
+  `test_ftf_0207.py` regression clean, `product_truth_check.py` 17/17
+  confirmed legitimately unchanged; task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0208` — both acceptance and
+  negative_acceptance clauses confirmed genuinely met; dependencies
+  FTF-0201/FTF-0207 confirmed genuinely CERTIFIED. One evidence-accuracy
+  correction noted for the record (not a functional defect): the
+  submission's own "24 pure checks" claim doesn't match the file (20 pure
+  test functions / 33 assertions, plus 1 real end-to-end test / 8 further
+  assertions — 21/41 total, not 24); every check still genuinely passes.
+  No blocking defect found — merged PR #220 (merge commit
+  `30d91376505447d33dfd9ac8d9e5ee92ba162ed9`), set `docs/spec-matrix.yaml`
+  to `certification_state: CERTIFIED`/`proof_state: L2-CERTIFIED`,
+  appended `docs/certifications/ledger.md`. Certified: 52/300 → 53/300.
+  Product-true: unchanged at 17/17. See "## Done" below and
+  `docs/certifications/ledger.md` for the full record.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #218 — the relay's own tracking
   PR recording that it had closed PR #207's CI gate-coverage gap) —
   independently re-reviewed FTF-0206 (`/model_group/info` optional
@@ -3541,11 +3577,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0208 (Last-known-good catalog) — submitted PROVISIONAL 2026-09-23,
-implementation commit `8b695ab902a96891944c65bcbc42dcaebcee6f5d` on branch
-`claude/wizardly-fermat-bbv5gh`. Not self-certified (Law 4) — awaiting a
-Control-plane L2 review. Full PEV record: `docs/certifications/queue.md`'s
-2026-09-23 FTF-0208 entry.
+(none currently)
+
+FTF-0208 is no longer in this section; it was independently reviewed and
+CERTIFIED 2026-09-23 via PR #220 (merge commit
+`30d91376505447d33dfd9ac8d9e5ee92ba162ed9`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full history and evidence.
 
 FTF-0207 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 (evidence: merge commit
@@ -5336,6 +5374,35 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   confirmed genuinely `CERTIFIED`. Ran `sync_certified_status()`.
   `scripts/status.py`: `51/300` certified before, `52/300` after.
   Product-true unchanged at 17. Full entry: docs/certifications/ledger.md.
+
+- FTF-0208 — Last-known-good catalog. Independently reviewed and
+  **CERTIFIED 2026-09-23**, merge commit
+  `30d91376505447d33dfd9ac8d9e5ee92ba162ed9` (PR #220). Independently
+  re-verified in a fresh git worktree at PR #220's real head (`370334d`):
+  `tests/tasks/test_ftf_0208.py` clean, including the real end-to-end
+  HTTPS-gateway check (confirmed genuinely executed, not skipped); CI
+  re-checked on that same real head (27/27 jobs green, `gate`'s own
+  FTF-0208 step confirmed present and genuinely passing inline,
+  immediately followed by real "Product-truth: 17/17"/"Status: 52/300"
+  output in the log — three OpenBao-from-source build jobs took 5-7
+  minutes each, confirmed genuinely running rather than stalled by
+  cross-checking an identical pattern on a superseded prior run for the
+  same branch); a fault injection distinct from the producer's own two
+  (removed the entire removed-id marking loop in `_apply_successful`) —
+  caught for real, reverted byte-identical; `ruff`/`ruff format`/`mypy`
+  clean repo-wide; `product_truth_check.py` 17/17 confirmed legitimately
+  unchanged (`proving_symbol` confirmed blank, same disclosed "no live
+  caller" precedent as FTF-0202/FTF-0205/FTF-0207). Task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-0208` — acceptance and
+  negative_acceptance clauses both confirmed genuinely met. Dependencies
+  FTF-0201/FTF-0207 confirmed genuinely `CERTIFIED`. One evidence-accuracy
+  correction noted for the record (not a functional defect): the
+  submission's own "24 pure checks" claim doesn't match the file (20 pure
+  test functions / 33 assertions, plus 1 real end-to-end test / 8 further
+  assertions — 21/41 total); every check still genuinely passes. Ran
+  `sync_certified_status()`. `scripts/status.py`: `52/300` certified
+  before, `53/300` after. Product-true unchanged at 17. Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

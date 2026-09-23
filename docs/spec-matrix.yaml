@@ -790,10 +790,10 @@ FTF-0207:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0207.py
 FTF-0208:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Last-known-good catalog
-  evidence_hash: 8b695ab902a96891944c65bcbc42dcaebcee6f5d
+  evidence_hash: 30d91376505447d33dfd9ac8d9e5ee92ba162ed9
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-03, AF-04; scenarios=Q02, Q21; deps=FTF-0201,
     FTF-0207 (both CERTIFIED). Built for real in a new packages/litellm_client/last_known_good_catalog.py::LastKnownGoodCatalog
@@ -849,8 +849,23 @@ FTF-0208:
     step (tests/tasks/test_ftf_0208.py) was added in the same commit as the
     implementation, not deferred, learning from the FTF-0205/FTF-0206 watchdog
     finding (docs/certifications/watchdog-findings.md) where a missing gate
-    step let a merged PR''s own test suite go unexecuted by CI.'
-  proof_state: L1-PROVEN
+    step let a merged PR''s own test suite go unexecuted by CI. Independently
+    CERTIFIED 2026-09-23 (control plane, PR #220 merge commit
+    30d91376505447d33dfd9ac8d9e5ee92ba162ed9) -- own fault injection (a third
+    vector distinct from the producer''s own two: disabled the whole
+    removed-id marking loop in _apply_successful rather than merely
+    hard-coding it empty), real CI re-checked on the actual head (27/27 jobs
+    green, including this task''s own gate step), dependency regression
+    confirmed (test_ftf_0204.py/test_ftf_0207.py re-run clean), and this
+    task''s real acceptance/negative_acceptance clauses confirmed met via
+    tools/r1_handoff.py. One evidence-accuracy correction, not a functional
+    defect: the submission''s own "24 pure no-DB/no-egress checks" claim is
+    inaccurate -- tests/tasks/test_ftf_0208.py actually has 20 pure test
+    functions (33 check() assertions) plus 1 real end-to-end test (8 further
+    assertions), 21 functions/41 assertions total, not 24; noted for the
+    record, not blocking since the underlying behavior is independently
+    verified correct.'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0208.py
 FTF-0209:

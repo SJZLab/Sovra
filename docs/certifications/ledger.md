@@ -5917,3 +5917,103 @@ reasons given above.
   17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0208 — Last-known-good catalog
+- Criterion ID: FTF-0208
+- PR: https://github.com/SJZLab/Sovra/pull/220 (`claude/wizardly-fermat-bbv5gh`
+  → `main`) — implementation and PROVISIONAL submission. Merged by this
+  review as merge commit `30d91376505447d33dfd9ac8d9e5ee92ba162ed9`.
+- Merge commit (evidence): 30d91376505447d33dfd9ac8d9e5ee92ba162ed9
+- Implementation commit: 8b695ab902a96891944c65bcbc42dcaebcee6f5d
+- Validated-by: session https://claude.ai/code/session_01UC3z5JnAWfAPiBLUkogRTj
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #220; checked `docs/certifications/queue.md`/`docs/spec-matrix.yaml`
+  per this shift's own mandate and found FTF-0208/PR #220 the sole pending
+  PROVISIONAL item)
+- Date: 2026-09-23
+- **Session-ID check:** PR #220's three commits (implementation,
+  PROVISIONAL submission, PR-link record) all carry
+  `session_012onwtuejKNuCp5dC6NnuAE`. This session's own ID is
+  `session_01UC3z5JnAWfAPiBLUkogRTj` — no match, independent per Law 4.
+- **Diff read directly** against PR #220's real head (`370334d`): exactly
+  the task packet's own new module
+  (`packages/litellm_client/last_known_good_catalog.py`) and test
+  (`tests/tasks/test_ftf_0208.py`), plus one new `gate`-job CI step and
+  expected tracking docs. No scope creep.
+- **CI re-checked on the real head, not taken on faith:** 27/27 jobs
+  green (run `35892825208`, all `conclusion: success` on head SHA
+  `370334de7986c22b70554c52228f7668b84b87db`; three jobs — 
+  `secret-manager-integration`/`dataset-source-connection-integration`/
+  `target-application-connection-integration` — took 5-7 minutes each
+  because they build OpenBao from source on the runner, not because of a
+  failure; confirmed the identical shape reproduced on the prior,
+  superseded run for this same PR/branch, ruling out anything specific to
+  this PR's final commit). Pulled the `gate` job's own raw log directly
+  and confirmed `tests/tasks/test_ftf_0208.py` genuinely executes and
+  passes inline ("FTF-0208 last-known-good catalog: all checks passed"),
+  immediately followed by real "Product-truth: 17/17 product-true" /
+  "Status: 52/300 certified · 17 product-true" output in that same run.
+- **Own independent verification, in a fresh `git worktree` at the real
+  PR head (`370334d`):**
+  - Ran `uv run python3 tests/tasks/test_ftf_0208.py` directly — all
+    checks pass, including the real end-to-end check against a real
+    local HTTPS gateway (confirmed `_UPDATE_CA_AVAILABLE`/`_TRUSTED_LEAF`
+    were genuinely set in this sandbox too, so that check actually ran,
+    not merely skipped).
+  - Own fault injection, a vector distinct from the producer's own two:
+    removed the entire removed-id marking loop from `_apply_successful`
+    (rather than the producer's own narrower "hard-code `removed_ids` to
+    an empty set"). Five checks genuinely failed for real (removal
+    detection, the alert-without-restoring-access guarantee, and the
+    real end-to-end gateway sequence all broke); reverted from a pre-edit
+    backup, `diff` confirmed byte-identical, suite re-ran clean
+    immediately after.
+  - `uv run ruff check .` / `ruff format --check .` / `mypy
+    packages/litellm_client/last_known_good_catalog.py
+    tests/tasks/test_ftf_0208.py` — clean, pinned toolchain (`ruff
+    0.6.9`, matching CI).
+  - `uv run python3 tests/tasks/test_ftf_0204.py` /
+    `test_ftf_0207.py` re-run clean — no regression to either
+    already-CERTIFIED dependency this task's own module imports from.
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` — own
+    run, **17/17**, legitimately unchanged (`proving_symbol` confirmed
+    blank — no live caller yet, same disclosed "no live caller"
+    precedent already accepted for FTF-0202/FTF-0205/FTF-0207).
+  - `python3 scripts/validate_spec.py --strict` — clean (after
+    `git fetch --unshallow`, this sandbox's own pre-existing
+    shallow-clone artifact, same documented precedent prior shifts
+    already established).
+- `python3 tools/r1_handoff.py packet FTF-0208 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance clause 1 ("Persist
+  historical catalog and mark stale/inaccessible separately from
+  callable entries") confirmed met by `CatalogEntry.status`, always
+  exactly one of `callable`/`stale`/`removed`, retained for every id ever
+  discovered; negative_acceptance ("A last-known-good snapshot cannot
+  authorize queued/new inference after revocation or freshness
+  expiration") confirmed met by `is_call_authorized`'s own two
+  unconditional early-return checks (`access_revoked`,
+  `freshness_expired`), both reached before any entry's own callable
+  status is consulted — confirmed both by the producer's own two
+  fault-injection demonstrations and this review's own third one above,
+  plus direct code reading.
+- Dependencies FTF-0201/FTF-0207 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **One evidence-accuracy correction, not a functional defect:** the
+  submission's own claim of "24 pure no-DB/no-egress checks" (repeated in
+  the PR body, commit message, and `docs/spec-matrix.yaml` notes) does
+  not match the actual file: `tests/tasks/test_ftf_0208.py` has 20 pure
+  test functions (33 `check()` assertions) plus 1 real end-to-end test
+  function (8 further assertions) — 21 functions / 41 assertions total,
+  not 24 by either count. Every one of those checks was independently
+  re-run and genuinely passes; this is a documentation-accuracy note for
+  the record, not a certification blocker.
+- No blocking defect found. Merged PR #220 (merge commit
+  `30d91376505447d33dfd9ac8d9e5ee92ba162ed9`). `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit. `proving_symbol` stays blank
+  (no live caller yet, disclosed — FTF-0215 is the later wiring step).
+  Ran `scripts.task_claim.sync_certified_status()` — `['FTF-0208']`
+  updated. Certified count moves 52/300 → 53/300. Product-true: unchanged
+  at 17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.
