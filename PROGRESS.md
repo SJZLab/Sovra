@@ -1,4 +1,28 @@
 # PROGRESS — Sovra
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #207) — reviewed FTF-0206 (`/model_group/info` optional
+  enrichment) and found it does NOT hold up for certification, for a
+  process reason rather than a content one: `.github/workflows/ci.yml`'s
+  `gate` job (verified via its real 73-step listing on the actual CI run,
+  plus a grep of all 26 job definitions in the file) never runs
+  `tests/tasks/test_ftf_0206.py` — no CI step for it exists anywhere in
+  the workflow, and the same gap applies to the already-CERTIFIED
+  FTF-0205. CI genuinely ran and passed (26/26 jobs) but never executed
+  either task's own test, so the PR's "23 checks pass" / fault-injection
+  claims are producer-local-only evidence, which this task's own CERTIFY
+  procedure explicitly disallows as certifying evidence. This reviewing
+  session independently reproduced the suite and one of its two fault
+  injections itself on PR #207's real head and confirms the code and
+  test content are sound — the sole defect is the missing CI wiring.
+  PR #207 left open, unmerged; `docs/spec-matrix.yaml` for FTF-0206
+  stays exactly as submitted (`certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN`). Logged the CI-wiring gap and its corollary
+  effect on FTF-0205 in `docs/certifications/watchdog-findings.md` for
+  Control plane, since reopening an already-CERTIFIED entry is outside
+  this shift's scope. Full record: `docs/certifications/queue.md`'s
+  "FTF-0206 (PR #207) — NOT CERTIFIED" entry and `QUEUE.md`.
+
+## Previous shift
 Updated: 2026-09-22T19:05:00Z (scheduled relay shift) — implemented FTF-H006
   (Shared outbound URL and credential guard), submitted PROVISIONAL, not
   self-certified (Law 4).

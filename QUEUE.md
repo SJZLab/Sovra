@@ -1,5 +1,49 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, `pull_request.opened`
+  webhook for PR #207) — reviewed FTF-0206 (`/model_group/info` optional
+  enrichment), the sole PROVISIONAL item at shift start. Session-ID
+  compared against both of PR #207's commits
+  (`session_015xEcu3kUMRfWMZwkav4cVc`) — no overlap with this session
+  (`session_01PXgrUD2iBjuYBoEk2rCg87`), independent per Law 4. **NOT
+  CERTIFIED — not merged, PR #207 stays open.** Real defect, not content:
+  `.github/workflows/ci.yml`'s `gate` job (73 steps on the real completed
+  run, verified via `actions_list`) never runs
+  `tests/tasks/test_ftf_0206.py` — no step for it exists, and none of the
+  other 25 domain-named integration jobs is scoped to it either
+  (confirmed by grepping every one of `ci.yml`'s 26 job definitions for
+  `0205`/`0206`/`model_group`/`model_info`: no match). CI genuinely ran
+  and passed (26/26 jobs), but never executed this task's own test — the
+  PR's "23 checks pass" and both fault injections are the producer's own
+  local run only, which this task's own CERTIFY procedure explicitly
+  disallows as certifying evidence. This reviewing session checked out
+  PR #207's real head and independently ran
+  `tests/tasks/test_ftf_0206.py` itself (clean) and reproduced one of the
+  two fault injections itself (widened the on-disk `_allowlisted_fields`
+  allowlist — 11/23 checks failed for real including the credential-leak
+  check — reverted, byte-identical) — the code and test content are
+  sound, but a reviewer's own local run cannot substitute for CI running
+  it independently either. `docs/spec-matrix.yaml` for FTF-0206 stays
+  exactly as submitted (`certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN`, not downgraded further).
+  `scripts/status.py` stays `48/300 certified · 16 product-true`
+  (unchanged — nothing newly certified this review). **Corollary
+  finding:** the identical gap — `gate` job green being treated as proof
+  a specific task's test ran, without checking `gate`'s own step list —
+  appears to also underlie the already-**CERTIFIED** FTF-0205's
+  certification review earlier the same day (see "## Previous shift"
+  immediately below); logged in
+  `docs/certifications/watchdog-findings.md` for Control plane (not
+  reopened by this review — outside this shift's scope, which is limited
+  to the item that was actually PROVISIONAL and pending, FTF-0206). Next
+  actionable step (relay, no owner action needed): add explicit
+  `gate`-job steps for `tests/tasks/test_ftf_0205.py` and
+  `tests/tasks/test_ftf_0206.py`, get one fresh real green CI run on
+  PR #207's actual head with both new steps present, then resubmit
+  FTF-0206 for L2 review. Full record: `docs/certifications/queue.md`'s
+  "FTF-0206 (PR #207) — NOT CERTIFIED" entry.
+
+## Previous shift
+Updated: 2026-09-23 (scheduled Control-plane certifier shift, `pull_request.opened`
   webhook for PR #205) — independently certified FTF-0205 (`/v1/model/info`
   enrichment), the sole PROVISIONAL item in `docs/certifications/queue.md`
   at shift start. Session-ID compared against both of PR #205's commits
@@ -3060,7 +3104,23 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-0206 (`/model_group/info` optional enrichment) — PR #207
+(`claude/wizardly-fermat-bj3os5` → `main`, commit
+`49d29681764d225afede1336c09a8a3fe2fb6079`), submitted PROVISIONAL, not
+self-certified (Law 4). **Reviewed 2026-09-23 and NOT CERTIFIED — PR
+left open, unmerged, `certification_state` stays PROVISIONAL.** The
+implementation and test content are sound (independently reproduced by
+the reviewing session, including one of the two fault injections); the
+blocker is that `.github/workflows/ci.yml`'s `gate` job never runs
+`tests/tasks/test_ftf_0206.py` at all — no step for it exists on this PR
+or any prior one. Next actionable step (relay, no owner action needed):
+add explicit `gate`-job steps for `tests/tasks/test_ftf_0205.py` (see
+corollary finding below) and `tests/tasks/test_ftf_0206.py`, get one
+fresh real green CI run on the PR's actual head with both new steps
+present, then resubmit for L2 review. Full record:
+`docs/certifications/queue.md`'s "FTF-0206 (PR #207) — NOT CERTIFIED"
+entry and `docs/certifications/watchdog-findings.md`'s 2026-09-23 CI
+gate-coverage finding.
 
 FTF-0205 is no longer in this section; it was independently reviewed
 and CERTIFIED 2026-09-23 via PR #205 (merge commit
