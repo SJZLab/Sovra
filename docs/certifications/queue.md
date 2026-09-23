@@ -12095,3 +12095,7 @@ enumeration, since a task certified after this shift ends could unlock
 further items. `FTF-0304` still has two open, unmerged candidate PRs
 (#194/#195) from other sessions -- leave those for their own producer
 sessions or a certifier, do not redo the work.
+
+## 2026-09-23 — FTF-0208 — record the opened PR link
+PR: https://github.com/SJZLab/Sovra/pull/220 (`claude/wizardly-fermat-bbv5gh`
+-> `main`). No other action this entry.
