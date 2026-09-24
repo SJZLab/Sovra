@@ -40,8 +40,10 @@ from packages.security.url_policy import (
 __all__ = [
     "OutboundGuardError",
     "GuardedResponse",
+    "GuardedStreamResponse",
     "resolve_and_validate",
     "guarded_fetch",
+    "guarded_stream_fetch",
 ]
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
@@ -135,22 +137,15 @@ def _build_connection(
     raise OutboundPolicyError(f"scheme {scheme!r} has no guarded transport")
 
 
-def guarded_fetch(
-    url: str,
-    policy: ConnectionPolicy,
-    *,
-    method: str = "GET",
-    headers: dict[str, str] | None = None,
-    body: bytes | None = None,
-    timeout: float = 10.0,
-    _redirect_count: int = 0,
-) -> GuardedResponse:
-    """Validates `url` against `policy`, resolves and validates its real
-    destination address, connects pinned to that exact address, and
-    issues `method`. A 3xx response is returned as-is unless
-    `policy.allow_redirects` -- in which case the redirect target is
-    revalidated and redialed from scratch (never trusted from the
-    original connection), bounded by `policy.max_redirects`.
+def _prepare_pinned_connection(
+    url: str, policy: ConnectionPolicy, timeout: float
+) -> tuple[HTTPConnection, str, str]:
+    """The validate-then-pin path shared by `guarded_fetch` and
+    `guarded_stream_fetch`: structural validation, DNS resolution (or IP
+    literal normalization) with every candidate address checked against
+    `policy`, then a connection dialed to the exact one address that was
+    actually validated (never a later, separate lookup). Returns the open,
+    not-yet-requested connection plus the request path and hostname.
     """
     parsed = validate_url_shape(url, policy)
     hostname = parsed.hostname
@@ -173,10 +168,127 @@ def guarded_fetch(
     if parsed.query:
         path = f"{path}?{parsed.query}"
 
+    conn = _build_connection(scheme, hostname, pinned_ip, port, timeout)
+    return conn, path, hostname
+
+
+@dataclass
+class GuardedStreamResponse:
+    """An open, guarded connection whose response body has *not* been read
+    yet -- for a real server-sent-events stream, which must never be
+    buffered whole into memory the way `GuardedResponse.body` is. Status
+    and headers are already available (the response line and header block
+    have been read); the body is read incrementally via `read_chunk`.
+
+    Always used as a context manager (or with an explicit `close()` in a
+    `finally`): `close()` is the only thing that actually releases the
+    real underlying socket, and it is idempotent so a caller cancelling
+    mid-stream can call it without first checking whether the stream
+    already ended on its own.
+    """
+
+    status: int
+    headers: dict[str, str]
+    final_url: str
+    _connection: HTTPConnection
+    _response: HTTPResponse
+    _closed: bool = False
+
+    def read_chunk(self, size: int = 4096) -> bytes:
+        """Reads up to `size` bytes of the real response body, returning
+        as soon as any data is available rather than waiting to fill
+        `size` -- genuinely incremental, for a real server-sent-events
+        stream where a caller must see each delta as it arrives, not once
+        enough bytes have accumulated. Uses `read1`, not `read`: the
+        latter is `io.BufferedReader`'s ordinary "read exactly `size`
+        bytes, issuing as many underlying socket reads as it takes, or
+        until EOF" behavior, which would silently defeat streaming for any
+        response smaller than `size` by blocking until the connection
+        closes. Returns `b""` at genuine stream end (or if already
+        closed) -- never blocks past the connection's own configured
+        timeout."""
+        if self._closed:
+            return b""
+        return self._response.read1(size)
+
+    def close(self) -> None:
+        """Closes the real underlying connection now, regardless of
+        whether the body was fully read -- this is what makes caller
+        cancellation release the socket immediately rather than leaking
+        it until the server eventually times out. Idempotent."""
+        if self._closed:
+            return
+        self._closed = True
+        self._connection.close()
+
+    def __enter__(self) -> GuardedStreamResponse:
+        return self
+
+    def __exit__(self, *_exc_info: object) -> None:
+        self.close()
+
+
+def guarded_stream_fetch(
+    url: str,
+    policy: ConnectionPolicy,
+    *,
+    method: str = "POST",
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    timeout: float = 10.0,
+) -> GuardedStreamResponse:
+    """As `guarded_fetch`, but returns the response open for incremental
+    reads instead of buffering the whole body -- for a real chunked
+    server-sent-events stream. Uses the identical validate-then-pin
+    connection path (`_prepare_pinned_connection`); the only difference is
+    that the body is left unread here.
+
+    Redirects are never followed here (unlike `guarded_fetch`): by the
+    time a 3xx could be distinguished from a 200 for a streamed body, a
+    caller may already be reading it, so silently reconnecting elsewhere
+    would discard real, possibly non-empty state. No caller of this
+    function targets a redirectable endpoint.
+    """
+    conn, path, hostname = _prepare_pinned_connection(url, policy, timeout)
+    request_headers = dict(headers or {})
+    request_headers.setdefault("Connection", "close")
+    try:
+        conn.request(method, path, body=body, headers=request_headers)
+        response: HTTPResponse = conn.getresponse()
+    except OSError as exc:
+        conn.close()
+        raise OutboundGuardError(f"connection to {hostname!r} failed: {exc}") from exc
+
+    return GuardedStreamResponse(
+        status=response.status,
+        headers=dict(response.getheaders()),
+        final_url=url,
+        _connection=conn,
+        _response=response,
+    )
+
+
+def guarded_fetch(
+    url: str,
+    policy: ConnectionPolicy,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    timeout: float = 10.0,
+    _redirect_count: int = 0,
+) -> GuardedResponse:
+    """Validates `url` against `policy`, resolves and validates its real
+    destination address, connects pinned to that exact address, and
+    issues `method`. A 3xx response is returned as-is unless
+    `policy.allow_redirects` -- in which case the redirect target is
+    revalidated and redialed from scratch (never trusted from the
+    original connection), bounded by `policy.max_redirects`.
+    """
+    conn, path, hostname = _prepare_pinned_connection(url, policy, timeout)
     request_headers = dict(headers or {})
     request_headers.setdefault("Connection", "close")
 
-    conn = _build_connection(scheme, hostname, pinned_ip, port, timeout)
     try:
         conn.request(method, path, body=body, headers=request_headers)
         response: HTTPResponse = conn.getresponse()
@@ -185,9 +297,7 @@ def guarded_fetch(
         location = response.getheader("Location")
         raw_body = response.read()
     except OSError as exc:
-        raise OutboundGuardError(
-            f"connection to {hostname!r} ({pinned_ip}:{port}) failed: {exc}"
-        ) from exc
+        raise OutboundGuardError(f"connection to {hostname!r} failed: {exc}") from exc
     finally:
         conn.close()
 
