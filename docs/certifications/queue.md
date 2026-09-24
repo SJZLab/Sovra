@@ -13302,3 +13302,210 @@ the dependency-ready frontier fresh from `docs/spec-matrix.yaml`/
 real CNI-enforcing Kubernetes cluster this sandbox does not have
 (disclosed above, not claimed); FTF-0212 (PR #231) and FTF-0304 (PRs
 #194/#195) remain other sessions' own open work -- leave those alone.
+
+## 2026-09-24 — Relay: FTF-04A06 (PR #238) submitted PROVISIONAL
+Scheduled relay shift. Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` rather than trusting a prior note: 39
+`implementation_state: ABSENT` tasks have every dependency `CERTIFIED`.
+Excluded FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195), both already
+other sessions' own open work per this file's own "leave those alone"
+precedent. Picked **FTF-04A06** ("Local repository connector with root
+allowlist/path protections") -- dependency-ready on FTF-04A01/FTF-04A07
+(both CERTIFIED), a full Section 85 contract exists
+(`docs/implementation/task-packets/FTF-04A06.md`), and it needs no
+external network egress or live service this relay sandbox lacks.
+
+**STEP 2 (P):** Read `apps/api/app/target_connectors/target_application_connection_schema.py`/
+`target_source_snapshot_schema.py`/`target_source_snapshot_crud.py`
+(FTF-04A01/FTF-04A07) directly to compose against their real shapes rather
+than guessing. Confirmed no real object-storage upload path exists yet in
+this repository beyond `apps/api/app/services/storage_semantics_client.py`
+(FTF-R017, itself still disclosed as having "no live caller yet") and the
+real SeaweedFS S3-compatible fixture (`infra/docker/docker-compose.yml`,
+FTF-0004) -- formed the hypothesis that this task's own real scope is a
+pure, DB-free capture connector returning every field
+`create_target_source_snapshot` needs, deliberately not itself wiring
+object-storage upload or DB persistence (the same disclosed-narrowing
+precedent FTF-04A07's own docstring already established for this exact
+task), since inventing either without a real backing wire-up would be the
+"placeholder endpoint" Law 11 forbids.
+
+**STEP 2 (E):** Wrote `tests/tasks/test_ftf_04a06.py` first, building real
+Git repositories with the real `git` binary in real temp directories (no
+mocked git command). Implemented
+`apps/api/app/target_connectors/local_repository_connector.py`:
+`resolve_allowed_root` real-path-resolves (following every symlink) both
+the requested root and every allowlist entry before comparing;
+`capture_local_repository` refuses anything that is not a real Git
+working-tree top level, then returns `capture_method='local_git_commit'`
+(real `HEAD` commit sha, real `HEAD^{tree}` object hash, real branch or
+`None` for detached HEAD) on a clean checkout, or
+`capture_method='local_dirty_snapshot'` (a real, deterministic sha256
+content manifest plus a real, deterministic tar archive of the actual
+on-disk bytes and its own sha256) on a dirty one -- matching
+`target_source_snapshot_schema.py`'s own closed `capture_method`/`CHECK`-
+constraint contract exactly. A real concurrent modification detected
+between this connector's own before/after git-identity check is refused
+(`ConcurrentModificationError`).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical (`diff` confirmed) and the suite re-confirmed clean
+immediately after each:**
+1. Disabled the symlink-escape raise in the content walk (`if False and
+   real_target != root ...`) -- the dedicated symlink-escape negative
+   check genuinely failed for real (1 `FAIL` line).
+2. Disabled the concurrent-drift raise on the dirty-tree path (`if False
+   and (dirty_after != dirty_before or head_after != commit_sha)`) -- the
+   dedicated concurrent-modification negative check genuinely failed for
+   real (1 `FAIL` line).
+
+**STEP 2 (V):** `uv run ruff check`/`ruff format --check` clean on both
+new files (six real `UP037`/`I001` findings genuinely fixed via `--fix`,
+one real `E501` manually wrapped -- none suppressed). `uv run mypy` clean
+on both new files; repo-wide `uv run mypy .` shows no new findings beyond
+the pre-existing, unrelated `alembic.op`/`alembic.context` attr-defined
+noise already present on every prior migration file in this chain (14
+errors, all in `apps/api/alembic/`, none touched by this diff). `git fetch
+--unshallow origin` (this sandbox's checkout was shallow -- the initial
+shallow clone produced 27 spurious `validate_spec.py --strict`
+`stale_commit` findings on unrelated, already-CERTIFIED tasks, clean once
+unshallowed) then `scripts/validate_spec.py --strict` clean.
+`scripts/product_truth_check.py --fail-on-unwired`: unchanged at `19/19`
+-- this task has no live product-route caller yet (disclosed above), the
+same accepted class as FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/
+FTF-0105/`storage_semantics_client.py` before each one's own first live
+caller existed. `scripts/status.py`: `59/300 certified · 19 product-true`,
+unchanged (correct -- this submission is PROVISIONAL, not yet certified).
+`scripts/verify_task.py --task FTF-04A06 --stage task` reports `BLOCKED`
+("no merged verification evidence yet") pre-merge -- expected, the same
+precedent every sibling FTF-020x/FTF-04A0x/FTF-R00x PROVISIONAL submission
+already established. Regression-checked directly: `test_ftf_04a01.py`/
+`test_ftf_04a07.py` both re-ran clean via `uv run` (blocked from running
+under the bare sandbox interpreter only by a pre-existing, disclosed
+`uvicorn` import gap unrelated to this diff -- no `pyproject.toml`/
+`uv.lock` change in this PR, and CI's own `gate` job proves it via
+`uv sync`).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_04a06.py`) to
+`.github/workflows/ci.yml`'s `gate` job in the same commit as the
+implementation -- no dedicated live-Postgres/live-S3 integration job is
+needed, since this task's own `verification_commands` name only
+`validate_spec.py`/`verify_task.py` and every check here runs against a
+real local git repository with no external service dependency at all.
+`docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit (`38ea4e450fcbf9e2f65032e78490bf632d30adac`),
+`proving_test: tests/tasks/test_ftf_04a06.py` (no `proving_symbol` set --
+this task has no live route/router symbol, same disclosed class as
+`storage_semantics_client.py`). `spec/tasks.json`/
+`docs/implementation/TRACKER.json` left untouched -- both are only ever
+written at certification time by Control plane, never by a producer at
+PROVISIONAL submission.
+
+**No blocking defect found.** **Submitted PROVISIONAL, not
+self-certified (Law 4)** -- pushed to this session's own branch
+`claude/wizardly-fermat-azo96v`, opened as PR #238 against `main` (title
+`[relay] FTF-04A06: Local repository connector with root allowlist/path
+protections`). Full entry: `QUEUE.md`, `PROGRESS.md`.
+
+## Next shift
+This PR needs a real CI run watched to completion and an independent
+Control-plane L2 review (this session cannot certify its own work -- Law
+4). Recompute the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` rather than trusting this note alone: FTF-0212 (PR
+#231) and FTF-0304 (PRs #194/#195) remain other sessions' own open work --
+leave those alone. FTF-0902 ("Network-policy templates") is genuinely
+dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
+sandbox does not have (disclosed by a prior shift, not claimed here).
+
+### Control plane review — 2026-09-24 — FTF-04A06 (PR #238) — NOT CERTIFIED (real Law 1 gap: the module's own "never a string-prefix comparison" guarantee is asserted but never shown able to fail)
+- **PR:** https://github.com/SJZLab/Sovra/pull/238 (`claude/wizardly-fermat-azo96v`
+  → `main`), head at review time `4badf5af9f1d0056248be670c0ffbe84d27034fe`
+  (three commits: `38ea4e4` implementation, `37e6b49` evidence-hash record,
+  `4badf5a` tracking-doc record).
+- **Session-ID check:** all three commits carry `Claude-Session:
+  .../session_0159tZvUhDCyk3rdhW7fMscf`; this reviewing session's own ID is
+  `session_01MM33SzxPJuU62Z4SY45XKg` -- no match, independent per Law 4.
+- **Contract pulled directly**, not assumed: `python3 tools/r1_handoff.py
+  packet FTF-04A06 --plan FINE_TUNING_FACTORY_RELEASE_1.md` ->
+  `docs/implementation/task-packets/FTF-04A06.md`. `negative_acceptance`
+  reads literally: "Path/symlink traversal and concurrent file drift fail;
+  never edit the target working tree." -- **"path traversal" is named
+  explicitly, distinct from "symlink traversal"**, and Section 7A.3's own
+  binding line (packet line 313) reads "local repository paths are
+  allowlisted explicitly and **canonicalized to prevent path traversal**."
+- **Diff read directly**, no scope creep: `local_repository_connector.py`
+  (431 lines) + `test_ftf_04a06.py` (434 lines) + the one-line CI gate step
+  + the `docs/spec-matrix.yaml` entry, matching the PR's own description
+  exactly.
+- **Own re-run, this session's own checkout of the PR's real head**
+  (`uv sync --all-packages` first): `uv run python3
+  tests/tasks/test_ftf_04a06.py` -- "all checks passed", matching the
+  producer's own claim. `uv run ruff check`/`ruff format --check`/`mypy`
+  clean on both new files, matching the PR's own claim.
+- **Own fault injection, independent of the producer's own two claimed
+  vectors, targeting the module's own explicit design claim rather than
+  its already-tested symlink/concurrency paths:** the module's own
+  docstring (`local_repository_connector.py:174`) states as a design
+  guarantee: *"Never a string-prefix comparison: `/approved-evil` is not
+  treated as a descendant of `/approved` just because the text matches."*
+  Patched `resolve_allowed_root`'s real comparison (line 190,
+  `if real_root == real_allowed or real_allowed in real_root.parents:`) to
+  a naive string-prefix check
+  (`if str(real_root).startswith(str(real_allowed)):`) -- a realistic,
+  common real-world path-allowlist bug, and exactly the class of bug the
+  module's own docstring calls out by name. **Re-ran the full delivered
+  suite (`tests/tasks/test_ftf_04a06.py`) against this broken version:
+  `FTF-04A06 local repository connector tests: all checks passed` -- the
+  suite did not detect the break at all**, because
+  `test_resolve_allowed_root_accepts_inside_and_refuses_outside`'s own
+  "refuses outside" case uses sibling directories `allowed`/`outside`
+  (name text does not overlap at all), never a prefix-colliding pair like
+  the docstring's own named example. Independently confirmed the concrete
+  exploit directly (not merely inferred from the suite staying green):
+  built `base/allowed` and `base/allowed-evil` as siblings, called
+  `resolve_allowed_root(base/"allowed-evil", [base/"allowed"])` against
+  the patched module -- **returned the evil root instead of raising
+  `PathAllowlistError`** (`BUG NOT CAUGHT: accepted evil root ->
+  /tmp/.../allowed-evil`). Reverted the patch byte-identical (`diff`
+  confirmed against the original) and re-ran the same exploit against the
+  real, unmodified shipped code: **correctly refused**
+  (`PathAllowlistError: root .../allowed-evil is not inside any
+  allowlisted root (...)`), confirming the shipped implementation itself
+  is not vulnerable to this specific bug -- `resolve_allowed_root` already
+  uses `real_allowed in real_root.parents`, a real structural check, not a
+  string comparison. **This is a Law 1 gap in the delivered evidence, not
+  a defect in the shipped code**: the module's own stated
+  anti-prefix-collision guarantee, and the packet's own literal "path
+  traversal" (not just "symlink traversal") negative_acceptance clause,
+  have zero test coverage in `tests/tasks/test_ftf_04a06.py` -- nothing in
+  the suite would have caught a regression to this exact bug class if one
+  were introduced later. No literal `../`-style traversal string case
+  exists in the suite either (every "refuses outside" case uses an
+  already-resolved, non-overlapping sibling path).
+- **Conclusion -- per CERTIFY step 3 ("confirm the test genuinely fails
+  when the feature is broken"):** the delivered test suite does not fail
+  when a realistic implementation regression is introduced into exactly
+  the property the module's own docstring and this task's own
+  negative_acceptance clause both name explicitly. Not merging. PR #238
+  left open, unmerged. `certification_state` stays `PROVISIONAL` on `main`
+  (Law 2 -- `docs/spec-matrix.yaml`'s FTF-04A06 entry does not yet exist
+  on `main` at all, since this PR has not merged; no downgrade needed).
+  **Fix needed:** add a dedicated case to
+  `test_resolve_allowed_root_accepts_inside_and_refuses_outside` (or a new
+  test function) using a sibling, prefix-colliding pair -- e.g.
+  `allowed = base / "allowed"`, `evil = base / "allowed-evil"`, both real
+  directories -- asserting `resolve_allowed_root(evil, [allowed])` raises
+  `PathAllowlistError`; this exact case should be shown able to fail first
+  against a naive `str(...).startswith(...)` implementation (matching this
+  review's own fault injection) before being confirmed passing against the
+  real one. No other part of this PR needs rework -- the symlink-escape
+  and concurrent-drift guards are both genuinely proven (own independent
+  re-run of the producer's two fault-injection vectors, same results).
+  Re-submit for certification once the missing case is added.
+- **CI status at review time:** run `35990930658` still `in_progress` on
+  the real final head (`4badf5a`) -- not a factor in this NOT CERTIFIED
+  verdict, which rests entirely on the Law 1 test-coverage gap above and
+  would apply regardless of CI's outcome.
+- **Validated-by:** session https://claude.ai/code/session_01MM33SzxPJuU62Z4SY45XKg
+  (independent -- see session-ID check above), 2026-09-24.
