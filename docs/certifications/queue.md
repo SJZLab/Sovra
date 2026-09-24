@@ -13190,3 +13190,115 @@ dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
 sandbox does not have (disclosed above, not claimed); FTF-0212 (PR #231)
 and FTF-0304 (PRs #194/#195) remain other sessions' own open work -- leave
 those alone.
+
+## 2026-09-24 -- FTF-R002 -- relay: implementation, submitted PROVISIONAL
+Picked FTF-R002 (Authenticated internal component bindings and reconciled
+adapter foundation) as the next real, tractable dependency-ready item
+after re-deriving the frontier fresh against `docs/spec-matrix.yaml`/
+`spec/tasks.json`. QUEUE.md's own "Read order for early work" names
+FTF-R001/R002 as unblocking most `reuse_architecture`/`audit_hardening`
+work transitively. FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are
+other sessions' own open work, left alone; FTF-0902 ("Network-policy
+templates"), also dependency-ready, needs a real CNI-enforcing Kubernetes
+cluster this sandbox does not have -- deferred, not claimed.
+
+**Built:** `apps/api/app/component_bindings/component_binding_schema.py`
+(`ComponentBinding`/`ComponentSyncOutbox` ORM models, field validators),
+`component_binding_crud.py` (`create_component_binding`/
+`get_component_binding`/`list_component_bindings`/
+`update_component_binding`/`compute_health`/`validate_component_binding`/
+`record_sync_outcome`/`get_component_status_projection`, composing
+FTF-H003's `authorize_resource_ownership`/FTF-0105's
+`execute_tenant_scoped`/FTF-H006's `guarded_fetch` directly -- no new
+primitive), `component_binding_routes.py` (`build_component_binding_router`,
+wired into `apps/api/app/main.py`), migration
+`apps/api/alembic/versions/0013_component_bindings.py`, and
+`packages/component_contracts/job_identity.py` (a real HMAC-signed worker
+job identity envelope, Section 65.2).
+
+**A real, disclosed mid-implementation correction:** FTF-R001 (already
+CERTIFIED) had already frozen the exact `ComponentBinding` field shape in
+`packages/component-contracts/architecture.schema.json` --
+`component_key`/`security_zone_scope`/`project_scope`/`deployment_mode`/
+`approved_endpoint`/`secret_reference`/`network_policy_identity`/
+`health_result`/`compatibility_lock_reference`, plus two structural
+invariants (Axolotl/Inspect AI must be `worker_package`; LiteLLM must be
+`existing_gateway`). This session's own first draft had independently
+invented a different, narrower shape before catching this via
+`docs/spec-matrix.yaml`'s own FTF-R001 entry. Per CLAUDE.md's own default
+resolution rule, reworked to match the frozen contract literally rather
+than asking or diverging -- see PROGRESS.md's own matching entry for the
+full disclosure and the exact field-by-field mapping.
+
+**Acceptance** ("Real service identity/version/health... existing LiteLLM
+is not overwritten" and "Idempotent sync outbox maps Factory jobs to
+external IDs and reports actual pending/failure states") and
+**negative_acceptance** ("Deny cross-tenant IDs, arbitrary URLs/redirects,
+browser vendor-admin credentials, direct vendor DB writes and fake health
+after dependency outage") are both met literally -- full field-by-field
+and guarantee-by-guarantee mapping in PROGRESS.md's own matching entry.
+
+**Shown able to fail first (Law 1), three real fault-injection vectors,
+each reverted byte-identical and the suite re-confirmed clean
+immediately after:** (1) `compute_health`'s non-2xx branch collapsed to
+always return `healthy` -- 3 dedicated no-DB checks genuinely failed; (2)
+both frozen-architecture structural invariant checks removed from
+`ComponentBinding.__init__` -- 3 dedicated no-DB checks genuinely failed;
+(3) `ck_component_bindings_worker_package_no_endpoint` removed from the
+migration -- the dedicated live-Postgres raw-INSERT-bypass check
+genuinely failed for real. A fourth, ad hoc live-Postgres check (a direct
+`litellm`/`internal_service` INSERT as the migration owner) also
+genuinely rejected by `ck_component_bindings_litellm_is_existing_gateway`.
+
+**Own verification, full run:** `uv sync --all-packages`; `uv run ruff
+check .`/`ruff format --check .`/`mypy .` clean repo-wide; `git fetch
+--unshallow origin` (this sandbox's checkout was shallow) then
+`scripts/validate_spec.py --strict` clean; `scripts/product_truth_check.py
+--fail-on-unwired`: `18/18` -> **`19/19`** -- this task's own real live
+caller (`build_component_binding_router`, wired into
+`apps/api/app/main.py`). `scripts/status.py` unchanged at `58/300
+certified · 18 product-true` (correct -- PROVISIONAL is not yet
+`CERTIFIED`). `scripts/verify_task.py --task FTF-R002 --stage task`
+reports `BLOCKED` pre-merge -- expected, same precedent every sibling
+PROVISIONAL submission already established. Full migration chain
+(`0001`-`0013`, `upgrade head` -> `downgrade -1` -> `upgrade head`)
+round-tripped clean against a real local Postgres 16 server.
+Regression-checked directly: `tests/tasks/test_ftf_r001.py`/
+`test_ftf_04a01.py`/`test_ftf_04a07.py`/`test_ftf_1001.py`/
+`test_ftf_0201.py` all re-ran clean -- no regression to FTF-R001's own
+certified frozen-contract evidence or any other certified table (this
+task touches no existing migration/table).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_r002.py`) plus
+a new dedicated `component-bindings-integration` job (real
+`services: postgres`, no OpenBao needed -- this resource carries no
+credential) to `.github/workflows/ci.yml` in the same commit as the
+implementation. `docs/spec-matrix.yaml`'s FTF-R002 entry set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`b1906932a57420b96b8bd4d039b876c55d74661d`), `proving_symbol:
+build_component_binding_router`, `proving_test:
+tests/tasks/test_ftf_r002.py`. `spec/tasks.json`/
+`docs/implementation/TRACKER.json` left untouched -- confirmed by git
+history both are only ever written at certification time by Control
+plane, never by a producer at PROVISIONAL submission.
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** -- pushed to this
+session's own branch `claude/wizardly-fermat-lqx141`, opened as PR #236
+against `main` (title `[relay] FTF-R002: Authenticated internal component
+bindings and reconciled adapter foundation`). Full entry: `QUEUE.md`,
+`PROGRESS.md`.
+
+## Next shift
+This PR needs a real CI run watched to completion on its actual pushed
+head, then an independent Control-plane L2 review (this session cannot
+certify its own work -- Law 4). A reviewer should specifically re-check
+this task's own field-shape reconciliation against FTF-R001's frozen
+`architecture.schema.json` line by line, since it was this session's own
+mid-implementation correction, not the original submitted shape. Recompute
+the dependency-ready frontier fresh from `docs/spec-matrix.yaml`/
+`spec/tasks.json` rather than trusting this note alone: FTF-0902
+("Network-policy templates") is genuinely dependency-ready but needs a
+real CNI-enforcing Kubernetes cluster this sandbox does not have
+(disclosed above, not claimed); FTF-0212 (PR #231) and FTF-0304 (PRs
+#194/#195) remain other sessions' own open work -- leave those alone.

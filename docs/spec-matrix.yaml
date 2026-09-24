@@ -5802,16 +5802,29 @@ FTF-R001:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_r001.py
 FTF-R002:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Implement authenticated internal component bindings and reconciled adapter foundation
-  evidence_hash: ''
-  implementation_state: ABSENT
+  evidence_hash: b1906932a57420b96b8bd4d039b876c55d74661d
+  implementation_state: IMPLEMENTED
   notes: kind=reuse_architecture; requirements=CAP-19, CAP-21; scenarios=Q35, Q38, Q39; deps=FTF-R001,
-    FTF-H003, FTF-H006
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+    FTF-H003, FTF-H006; ComponentBinding/ComponentSyncOutbox (apps/api/app/component_bindings/),
+    field names/enums matching FTF-R001's own frozen architecture.schema.json contract literally
+    (component_key/security_zone_scope/project_scope/deployment_mode/approved_endpoint/
+    secret_reference/network_policy_identity/health_result/compatibility_lock_reference), plus its
+    two structural invariants (Axolotl/Inspect AI worker_package-only, LiteLLM
+    existing_gateway-only) enforced both in the ORM and as real database CHECK constraints; real
+    health check (compute_health) via the existing FTF-H006 outbound guard, never fabricating
+    healthy after a dependency outage or for a non-HTTP (Temporal gRPC) endpoint; idempotent sync
+    outbox (record_sync_outcome, no HTTP route -- Temporal-workflow-triggered, disclosed) and the
+    component-status projection; packages/component_contracts/job_identity.py adds a real
+    HMAC-signed worker job identity envelope (Section 65.2) -- path refined from the packet's own
+    hyphenated packages/component-contracts/ (not a valid Python package name) to a sibling
+    underscored package. Wired into main.py as the eleventh live router
+    (build_component_binding_router); see docs/certifications/queue.md for the PR.
+  proof_state: L1-PROVEN
+  proving_symbol: build_component_binding_router
+  proving_test: tests/tasks/test_ftf_r002.py
 FTF-R003:
   certification_state: NONE
   criticality: MUST
