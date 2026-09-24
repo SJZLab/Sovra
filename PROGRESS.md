@@ -1,4 +1,81 @@
 # PROGRESS — Sovra
+## 2026-09-24 — FTF-0507 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #254 (an unrelated PR on the same
+`claude/wizardly-fermat-svcgeh` branch name, reused by a later relay shift after PR #253 was
+already merged and closed). Per this session's standing certifier duty — check
+`docs/certifications/queue.md` for anything PROVISIONAL and not yet certified, act only on that,
+never on the triggering PR itself — found FTF-0507 ("Tool-trace normalizer") pending, per the
+2026-09-24 "relay: flag, needs Control-plane certification against main" entry: PR #253 had gone
+CI-green (29/29) and was merged directly by the repo owner (merge commit `c7d33a3`), which per
+Law 4 never certifies on its own.
+
+Session-ID check: PR #253's two commits (`83c865e`, `69a5497`) both carry `Claude-Session`
+trailer `session_01NCb1NKVWuvGDb5GfFvXxMh` (producer) — no match against this session's own ID
+(`session_01TWCDKLRTJ3MxiNB1VGeR8F`), independent per Law 4.
+
+Read the full diff directly: `workers/data/tool_trace_normalizer.py` (267 lines) and
+`tests/tasks/test_ftf_0507.py` (559 lines, 18 test functions), plus the `.github/workflows/ci.yml`
+diff (one new `gate` step) — no scope creep beyond this task's own files and expected tracking-doc
+updates.
+
+CI independently re-verified directly against GitHub, not taken on faith from this repo's own
+docs: PR #253 confirmed merged (squash) as merge commit `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`
+from head `69a5497266187cf5fba252c8121cea08fbd058f7`. Workflow run `36045751066` on that exact head
+SHA: `status: completed`, `conclusion: success`, 29 check runs total, all `completed`/`success` —
+the `gate` job (`id 107788753568`) specifically confirmed present with `conclusion: success`.
+
+Own local reproduction: `python3 tests/tasks/test_ftf_0507.py` — all 18 checks passed. `ruff
+check`/`ruff format --check` clean; `mypy workers/data/tool_trace_normalizer.py` clean.
+
+Own fault injection (Law 1), a third vector distinct from the producer's own two (mixed-session
+`session_id` guard; "authorized must be an explicit bool" guard): disabled the
+duplicate-`sequence` "ambiguous ordering" guard (`if sequence in seen_sequences` → `if False and
+sequence in seen_sequences`) — run in a fresh process, the mutated module genuinely accepted two
+trace events sharing one `sequence` value instead of rejecting them as ambiguous ordering; 1
+genuine `FAIL [FTF-0507]` line. Reverted; `diff` against the pre-fault copy confirmed
+byte-identical; suite re-ran clean immediately after.
+
+`product_truth_check.py --fail-on-unwired` confirmed `19/19` unchanged, and confirmed this is a
+legitimate disclosed 0/0 rather than an evasion: `proving_symbol` is the empty string for this
+task — no trace-source importer exists anywhere in this repository yet to call
+`normalize_tool_trace` (Section 67.1's actual REST/trace connector is a separate, later,
+dependency-gated task), same accepted "no live caller yet" precedent already established for
+FTF-0506/FTF-0202/FTF-0205/FTF-0207. Confirmed by reading `scripts/product_truth_check.py`'s own
+skip-if-no-symbol logic directly.
+
+Pulled the real task contract via `tools/r1_handoff.py packet FTF-0507 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both `acceptance` ("Convert approved trace
+messages, tool IDs/results and outcomes preserving ordering and actual permissions" — proven by
+`test_end_to_end_trace_normalizes_out_of_order_events`,
+`test_trace_raw_sha256_is_sensitive_to_arrival_order` and
+`test_tool_call_authorizations_are_collected_and_preserved`) and `negative_acceptance`
+("Orphan/duplicate call IDs, malformed tool result and mixed-session traces cannot be accepted" —
+proven by `test_rejects_mixed_session_trace`, `test_rejects_duplicate_tool_call_id_across_trace`,
+`test_rejects_orphan_tool_call_id_via_ftf_0506`, `test_rejects_malformed_tool_result_via_ftf_0506`,
+plus this review's own third fault-injection vector above) genuinely met, not merely "tests
+pass". Dependencies FTF-0500/FTF-0506 confirmed already `CERTIFIED` in `docs/spec-matrix.yaml`
+before relying on them.
+
+`validate_spec.py --strict` clean on this diff (after `git fetch --unshallow origin`, this
+sandbox's own pre-existing shallow-clone artifact).
+
+No blocking defect found. Merge already done by the relay's own PR #253 (merge commit
+`c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`). `docs/spec-matrix.yaml`'s FTF-0507 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge
+commit; `proving_symbol` stays `''` (no live caller, confirmed legitimate above). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-0507']` updated. `scripts/status.py`:
+`62/300` → `63/300` certified; product-true unchanged at `19/19`. Appended a matching entry to
+`docs/certifications/ledger.md` and `docs/certifications/queue.md`; updated `QUEUE.md` (moved
+FTF-0507 to "## Done", removed from "## Provisional").
+
+No other item in `docs/certifications/queue.md`/`docs/spec-matrix.yaml` is `PROVISIONAL` and
+uncertified as of this shift. Per this session's certification-only mandate, no action was taken
+on PR #254 itself (a separate, unreviewed item outside this shift's scope) beyond noting that its
+webhook is what triggered this shift.
+
+- **Validated-by:** session https://claude.ai/code/session_01TWCDKLRTJ3MxiNB1VGeR8F
+  (independent — see session-ID check above), 2026-09-24.
+
 ## 2026-09-24 — FTF-1304 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #249 (FTF-1304,
 "Cost-per-success calculator"). Per this session's standing certifier

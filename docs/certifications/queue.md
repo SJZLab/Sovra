@@ -14321,3 +14321,74 @@ confirmation, own local reproduction, own fault injection, `product_truth_check.
 - **Submitted-by:** session https://claude.ai/code/session_01NCb1NKVWuvGDb5GfFvXxMh (same producer
   session as the original FTF-0507 submission -- this entry is a tracking-docs-only flag, not a
   certification; independent Control-plane L2 certification is still required, Law 4).
+
+## 2026-09-24 — FTF-0507 — Control plane: CERTIFIED
+Independent Control-plane certifier shift, triggered by the `pull_request.opened` webhook for the
+unrelated PR #254 (this shift's mandate is certification-only: check this file for anything
+PROVISIONAL and not yet certified, not act on PR #254 itself). Found FTF-0507 pending per the
+2026-09-24 "relay: flag, needs Control-plane certification against main" entry above.
+
+**Session-ID check:** PR #253's two commits (`83c865e`, `69a5497`) both carry `Claude-Session`
+trailer `session_01NCb1NKVWuvGDb5GfFvXxMh` (producer) -- no match against this reviewing session's
+own ID (`session_01TWCDKLRTJ3MxiNB1VGeR8F`), independent per Law 4.
+
+**Diff read directly:** `workers/data/tool_trace_normalizer.py` (267 lines) and
+`tests/tasks/test_ftf_0507.py` (559 lines, 18 test functions) read in full. `git diff f741e2f
+c7d33a3 -- .github/workflows/ci.yml` confirmed exactly one new `gate` step; overall diff scope
+matches this task's own files plus expected tracking-doc updates -- no scope creep.
+
+**CI independently re-verified directly against GitHub** (not taken from this repo's own
+narrative): a fresh GitHub API check confirmed PR #253 merged (squash) as merge commit
+`c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4` from head `69a5497266187cf5fba252c8121cea08fbd058f7`.
+Workflow run `36045751066` on that exact head SHA: `status: completed`, `conclusion: success`, 29
+check runs total, all `completed`/`success`, `gate` job (`id 107788753568`) specifically confirmed
+present with `conclusion: success`.
+
+**Own local reproduction:** `python3 tests/tasks/test_ftf_0507.py` -- all 18 checks passed. `ruff
+check`/`ruff format --check` clean; `mypy workers/data/tool_trace_normalizer.py` clean.
+
+**Own fault injection (Law 1), a third vector distinct from the producer's own two** (mixed-session
+`session_id` guard; "authorized must be an explicit bool" guard): disabled the duplicate-`sequence`
+"ambiguous ordering" guard (`if sequence in seen_sequences` -> `if False and sequence in
+seen_sequences`) -- run in a fresh process, the mutated module genuinely accepted two trace events
+sharing one `sequence` value instead of rejecting them; 1 genuine `FAIL [FTF-0507]` line ("a
+duplicate sequence number is refused as ambiguous ordering"). Reverted; `diff` against the
+pre-fault copy confirmed byte-identical; suite re-ran clean immediately after.
+
+**`product_truth_check.py --fail-on-unwired` confirmed `19/19` unchanged, and confirmed legitimate
+rather than an evasion:** this task's `proving_symbol` is the empty string -- no trace-source
+importer exists anywhere in this repository yet to call `normalize_tool_trace`, same accepted
+"no live caller yet" precedent already established for FTF-0506/FTF-0202/FTF-0205/FTF-0207. An
+entry with no `proving_symbol` is skipped entirely by `product_truth_check.py`'s own logic, never
+counted as a false 0/0 pass against a claimed symbol.
+
+**Task contract re-pulled** via `python3 tools/r1_handoff.py packet FTF-0507 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Convert approved trace messages, tool IDs/results
+and outcomes preserving ordering and actual permissions") confirmed met by
+`test_end_to_end_trace_normalizes_out_of_order_events`,
+`test_trace_raw_sha256_is_sensitive_to_arrival_order` and
+`test_tool_call_authorizations_are_collected_and_preserved`; `negative_acceptance` ("Orphan/
+duplicate call IDs, malformed tool result and mixed-session traces cannot be accepted") confirmed
+met by `test_rejects_mixed_session_trace`, `test_rejects_duplicate_tool_call_id_across_trace`,
+`test_rejects_orphan_tool_call_id_via_ftf_0506`, `test_rejects_malformed_tool_result_via_ftf_0506`,
+plus this review's own third fault-injection vector above. Dependencies FTF-0500/FTF-0506 confirmed
+already `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+`validate_spec.py --strict` clean on this diff (after `git fetch --unshallow origin`, this
+sandbox's own pre-existing shallow-clone artifact).
+
+**No blocking defect found.** Merge already done by the relay's own PR #253 (merge commit
+`c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`). `docs/spec-matrix.yaml`'s FTF-0507 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit; `proving_symbol` stays `''` (no live caller, confirmed legitimate above). Ran
+`scripts.task_claim.sync_certified_status()` -- `['FTF-0507']` updated. `scripts/status.py`:
+`62/300` -> `63/300` certified; product-true unchanged at `19/19` (no live caller added). Appended
+a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved FTF-0507 to "## Done"
+with the certification summary, removed it from "## Provisional") and `PROGRESS.md`.
+
+No other item in this file is `PROVISIONAL` and uncertified as of this shift -- confirmed via
+`grep -n certification_state docs/spec-matrix.yaml | grep -v CERTIFIED | grep -v NONE | grep -v
+ABSENT` returning no other entries.
+
+- **Validated-by:** session https://claude.ai/code/session_01TWCDKLRTJ3MxiNB1VGeR8F
+  (independent -- see session-ID check above), 2026-09-24.

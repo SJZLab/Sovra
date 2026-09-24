@@ -1,4 +1,18 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (Control-plane certifier shift) — **FTF-0507 (Tool-trace normalizer)
+  independently reviewed and CERTIFIED** via PR #253 (merge commit `c7d33a3`). Full CERTIFY
+  procedure run for real: session-ID check (producer session
+  `session_01NCb1NKVWuvGDb5GfFvXxMh`, no overlap with this reviewing session), diff read in full,
+  CI independently re-confirmed directly against GitHub (workflow run `36045751066` on head
+  `69a5497`, 29/29 checks green including `gate`), own local reproduction (18/18 checks passed), an
+  own fault injection (third distinct vector: disabled the duplicate-`sequence` "ambiguous
+  ordering" guard — 1 genuine `FAIL`, reverted byte-identical), `product_truth_check.py` `19/19`
+  confirmed a legitimate disclosed 0/0, and both `acceptance`/`negative_acceptance` clauses
+  cross-checked against the real task contract via `tools/r1_handoff.py packet FTF-0507`. See
+  "## Done" below and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full
+  evidence.
+
+## Previous shift
 Updated: 2026-09-24 (same shift, continued) — **PR #253 (FTF-0507) was merged into `main` directly
   by the repo owner** (merge commit `c7d33a3`, `merged_by: samerzakaria`) shortly after going
   CI-green (29/29), not via an independent Control-plane certifier session — same owner-direct-merge
@@ -4050,6 +4064,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-0507 is no longer in this section; it was independently reviewed and **CERTIFIED 2026-09-24**
+via PR #253 (merge commit `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full evidence, including the independent session-ID check, own local reproduction, an own fault
+injection (distinct third vector: disabling the duplicate-`sequence` "ambiguous ordering" guard),
+and the real CI check-run confirmation on the PR's actual merged head. History below, kept for the
+record, not a live next-step.
+
 FTF-0507 ("Tool-trace normalizer") — PR #253 went CI-green (29/29, `gate` included) on head
 `69a5497` and was merged into `main` directly by the repo owner (merge commit `c7d33a3`,
 `merged_by: samerzakaria`), not an independent Control-plane certifier session — same pattern
@@ -6343,6 +6365,39 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `scripts/status.py`: `61/300` certified before, `62/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
+- FTF-0507 — Tool-trace normalizer. Independently reviewed and
+  **CERTIFIED 2026-09-24**, merge commit
+  `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4` (PR #253, merged directly by
+  the repo owner before an independent certifier session reviewed it —
+  Law 4: a plain merge never certifies, this entry is the actual L2
+  certification performed after the fact). Session-ID check clean (PR
+  #253's two commits both carry the producer's own
+  `session_01NCb1NKVWuvGDb5GfFvXxMh`; no match against this reviewing
+  session). Diff read in full (`workers/data/tool_trace_normalizer.py`
+  267 lines, `tests/tasks/test_ftf_0507.py` 559 lines). CI independently
+  re-confirmed directly against GitHub (not taken from this repo's own
+  narrative): workflow run `36045751066` on head `69a5497` — 29/29
+  checks completed/success including `gate` (`id 107788753568`,
+  `conclusion: success`). Own local reproduction: 18/18 clean; `ruff`/
+  `mypy` clean. Own fault injection, a third vector distinct from the
+  producer's own two (mixed-session guard; authorized-flag guard):
+  disabled the duplicate-`sequence` "ambiguous ordering" guard — 1
+  genuine `FAIL` line ("a duplicate sequence number is refused as
+  ambiguous ordering"); reverted byte-identical, suite re-confirmed
+  clean. `product_truth_check.py --fail-on-unwired` confirmed
+  legitimately `19/19` unchanged — `proving_symbol` is the empty string
+  for this task (disclosed, no trace-source importer exists yet, same
+  accepted class as FTF-0506/FTF-0202/FTF-0205/FTF-0207). Both
+  acceptance and negative_acceptance clauses reconfirmed against the
+  real DoD via `tools/r1_handoff.py packet FTF-0507`; dependencies
+  FTF-0500/FTF-0506 confirmed already `CERTIFIED` before relying on
+  them. `validate_spec.py --strict` clean (after `git fetch
+  --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+  Merge already done by the relay's own PR #253. Ran
+  `sync_certified_status()` — `['FTF-0507']` updated. `scripts/status.py`:
+  `62/300` certified before, `63/300` after. Product-true unchanged at
+  `19/19` (no live caller added by this certification). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
