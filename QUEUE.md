@@ -1,4 +1,29 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled relay shift) — recomputed the
+  dependency-ready frontier fresh from `docs/spec-matrix.yaml` (39
+  `implementation_state: ABSENT` tasks with every dependency CERTIFIED,
+  excluding FTF-0212/FTF-0304 which remain other sessions' own open PR
+  work), picked **FTF-04A06** ("Local repository connector with root
+  allowlist/path protections") -- dependency-ready on FTF-04A01/FTF-04A07
+  (both CERTIFIED), needs no external network egress or live service this
+  relay sandbox lacks, and has a full Section 85 contract
+  (`docs/implementation/task-packets/FTF-04A06.md`). Implemented a real,
+  DB-free capture connector (`apps/api/app/target_connectors/
+  local_repository_connector.py`) with a disclosed scope boundary (does
+  not itself persist a `TargetSourceSnapshot` row or upload the
+  dirty-tree archive to real object storage -- a later, separately-scoped
+  caller's job, same precedent as FTF-04A07/`storage_semantics_client.py`).
+  `tests/tasks/test_ftf_04a06.py` builds real Git repositories with the
+  real `git` binary (no mocks); two own fault-injection vectors both
+  genuinely caught and reverted byte-identical. `ruff`/`mypy` clean;
+  `validate_spec.py --strict` clean; `product_truth_check.py` unchanged at
+  19/19 (no live caller yet, disclosed); `status.py` unchanged at 59/300
+  certified · 19 product-true. **No blocking defect found. Submitted
+  PROVISIONAL, not self-certified (Law 4)** -- opened as PR #238 against
+  `main`. Full record: `docs/certifications/queue.md`'s matching
+  2026-09-24 entry, `PROGRESS.md`. See "## Provisional" below.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #228) — independently
   re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe). PR #228
@@ -3739,7 +3764,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-04A06 ("Local repository connector with root allowlist/path
+protections") -- submitted 2026-09-24 via PR #238 against `main`. Real,
+DB-free capture connector composing with the already-CERTIFIED
+FTF-04A01/FTF-04A07; disclosed scope boundary (does not itself persist a
+`TargetSourceSnapshot` row or upload the dirty-tree archive to real object
+storage -- a later, separately-scoped caller's job). Full submission
+record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
+`PROGRESS.md`. Needs a real CI run watched to completion and an
+independent Control-plane L2 review (Law 4 -- this session cannot certify
+its own work).
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit

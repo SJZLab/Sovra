@@ -13302,3 +13302,118 @@ the dependency-ready frontier fresh from `docs/spec-matrix.yaml`/
 real CNI-enforcing Kubernetes cluster this sandbox does not have
 (disclosed above, not claimed); FTF-0212 (PR #231) and FTF-0304 (PRs
 #194/#195) remain other sessions' own open work -- leave those alone.
+
+## 2026-09-24 — Relay: FTF-04A06 (PR #238) submitted PROVISIONAL
+Scheduled relay shift. Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` rather than trusting a prior note: 39
+`implementation_state: ABSENT` tasks have every dependency `CERTIFIED`.
+Excluded FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195), both already
+other sessions' own open work per this file's own "leave those alone"
+precedent. Picked **FTF-04A06** ("Local repository connector with root
+allowlist/path protections") -- dependency-ready on FTF-04A01/FTF-04A07
+(both CERTIFIED), a full Section 85 contract exists
+(`docs/implementation/task-packets/FTF-04A06.md`), and it needs no
+external network egress or live service this relay sandbox lacks.
+
+**STEP 2 (P):** Read `apps/api/app/target_connectors/target_application_connection_schema.py`/
+`target_source_snapshot_schema.py`/`target_source_snapshot_crud.py`
+(FTF-04A01/FTF-04A07) directly to compose against their real shapes rather
+than guessing. Confirmed no real object-storage upload path exists yet in
+this repository beyond `apps/api/app/services/storage_semantics_client.py`
+(FTF-R017, itself still disclosed as having "no live caller yet") and the
+real SeaweedFS S3-compatible fixture (`infra/docker/docker-compose.yml`,
+FTF-0004) -- formed the hypothesis that this task's own real scope is a
+pure, DB-free capture connector returning every field
+`create_target_source_snapshot` needs, deliberately not itself wiring
+object-storage upload or DB persistence (the same disclosed-narrowing
+precedent FTF-04A07's own docstring already established for this exact
+task), since inventing either without a real backing wire-up would be the
+"placeholder endpoint" Law 11 forbids.
+
+**STEP 2 (E):** Wrote `tests/tasks/test_ftf_04a06.py` first, building real
+Git repositories with the real `git` binary in real temp directories (no
+mocked git command). Implemented
+`apps/api/app/target_connectors/local_repository_connector.py`:
+`resolve_allowed_root` real-path-resolves (following every symlink) both
+the requested root and every allowlist entry before comparing;
+`capture_local_repository` refuses anything that is not a real Git
+working-tree top level, then returns `capture_method='local_git_commit'`
+(real `HEAD` commit sha, real `HEAD^{tree}` object hash, real branch or
+`None` for detached HEAD) on a clean checkout, or
+`capture_method='local_dirty_snapshot'` (a real, deterministic sha256
+content manifest plus a real, deterministic tar archive of the actual
+on-disk bytes and its own sha256) on a dirty one -- matching
+`target_source_snapshot_schema.py`'s own closed `capture_method`/`CHECK`-
+constraint contract exactly. A real concurrent modification detected
+between this connector's own before/after git-identity check is refused
+(`ConcurrentModificationError`).
+
+**Own fault injection (Law 1), two distinct vectors, both reverted
+byte-identical (`diff` confirmed) and the suite re-confirmed clean
+immediately after each:**
+1. Disabled the symlink-escape raise in the content walk (`if False and
+   real_target != root ...`) -- the dedicated symlink-escape negative
+   check genuinely failed for real (1 `FAIL` line).
+2. Disabled the concurrent-drift raise on the dirty-tree path (`if False
+   and (dirty_after != dirty_before or head_after != commit_sha)`) -- the
+   dedicated concurrent-modification negative check genuinely failed for
+   real (1 `FAIL` line).
+
+**STEP 2 (V):** `uv run ruff check`/`ruff format --check` clean on both
+new files (six real `UP037`/`I001` findings genuinely fixed via `--fix`,
+one real `E501` manually wrapped -- none suppressed). `uv run mypy` clean
+on both new files; repo-wide `uv run mypy .` shows no new findings beyond
+the pre-existing, unrelated `alembic.op`/`alembic.context` attr-defined
+noise already present on every prior migration file in this chain (14
+errors, all in `apps/api/alembic/`, none touched by this diff). `git fetch
+--unshallow origin` (this sandbox's checkout was shallow -- the initial
+shallow clone produced 27 spurious `validate_spec.py --strict`
+`stale_commit` findings on unrelated, already-CERTIFIED tasks, clean once
+unshallowed) then `scripts/validate_spec.py --strict` clean.
+`scripts/product_truth_check.py --fail-on-unwired`: unchanged at `19/19`
+-- this task has no live product-route caller yet (disclosed above), the
+same accepted class as FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/
+FTF-0105/`storage_semantics_client.py` before each one's own first live
+caller existed. `scripts/status.py`: `59/300 certified · 19 product-true`,
+unchanged (correct -- this submission is PROVISIONAL, not yet certified).
+`scripts/verify_task.py --task FTF-04A06 --stage task` reports `BLOCKED`
+("no merged verification evidence yet") pre-merge -- expected, the same
+precedent every sibling FTF-020x/FTF-04A0x/FTF-R00x PROVISIONAL submission
+already established. Regression-checked directly: `test_ftf_04a01.py`/
+`test_ftf_04a07.py` both re-ran clean via `uv run` (blocked from running
+under the bare sandbox interpreter only by a pre-existing, disclosed
+`uvicorn` import gap unrelated to this diff -- no `pyproject.toml`/
+`uv.lock` change in this PR, and CI's own `gate` job proves it via
+`uv sync`).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_04a06.py`) to
+`.github/workflows/ci.yml`'s `gate` job in the same commit as the
+implementation -- no dedicated live-Postgres/live-S3 integration job is
+needed, since this task's own `verification_commands` name only
+`validate_spec.py`/`verify_task.py` and every check here runs against a
+real local git repository with no external service dependency at all.
+`docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit (`38ea4e450fcbf9e2f65032e78490bf632d30adac`),
+`proving_test: tests/tasks/test_ftf_04a06.py` (no `proving_symbol` set --
+this task has no live route/router symbol, same disclosed class as
+`storage_semantics_client.py`). `spec/tasks.json`/
+`docs/implementation/TRACKER.json` left untouched -- both are only ever
+written at certification time by Control plane, never by a producer at
+PROVISIONAL submission.
+
+**No blocking defect found.** **Submitted PROVISIONAL, not
+self-certified (Law 4)** -- pushed to this session's own branch
+`claude/wizardly-fermat-azo96v`, opened as PR #238 against `main` (title
+`[relay] FTF-04A06: Local repository connector with root allowlist/path
+protections`). Full entry: `QUEUE.md`, `PROGRESS.md`.
+
+## Next shift
+This PR needs a real CI run watched to completion and an independent
+Control-plane L2 review (this session cannot certify its own work -- Law
+4). Recompute the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` rather than trusting this note alone: FTF-0212 (PR
+#231) and FTF-0304 (PRs #194/#195) remain other sessions' own open work --
+leave those alone. FTF-0902 ("Network-policy templates") is genuinely
+dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
+sandbox does not have (disclosed by a prior shift, not claimed here).
