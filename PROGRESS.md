@@ -15886,3 +15886,79 @@ dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
 sandbox does not have (disclosed above, not claimed); FTF-0212 (PR #231)
 and FTF-0304 (PRs #194/#195) remain other sessions' own open work — leave
 those alone.
+
+## 2026-09-24 — Control plane: FTF-04A07 (PR #234) independently
+reviewed, CERTIFIED
+Scheduled Control-plane certifier shift, triggered by PR #234's own
+`pull_request.opened` webhook. Session-ID check: all three PR commits
+carry `session_01JCgZ323QmB1GH3gjt8tePc`, no match to this reviewing
+session (`session_01GcVXDuiPV5A82LTGNSh5Mu`) — independent per Law 4.
+
+CI was still mid-run when this shift started (`gate` and several
+integration jobs `in_progress`); subscribed to the PR's activity rather
+than certifying against a stale claim, and resumed on the real
+`check_suite.completed` webhook. Independently confirmed on the PR's
+actual final head (`019e538e`) via `pull_request_read`, not the webhook
+alone: **28/28 checks `completed`/`success`**, `gate` and the dedicated
+`target-source-snapshot-integration` job included, `mergeable_state:
+clean`, no open reviews/comments.
+
+Read the full diff (21 files). Ran the no-DB suite
+(`tests/tasks/test_ftf_04a07.py`, clean) and, against a freshly created
+local Postgres 16 database (started `service postgresql`, `createdb`),
+the live integration suite
+(`tests/integration/test_ftf_04a07_target_source_snapshot.py`, clean).
+Independently round-tripped the full migration chain in a second scratch
+database (`upgrade head` → `downgrade -1` → `upgrade head`, clean at
+every step). `ruff`/`ruff format --check`/`mypy` clean on all touched
+files.
+
+**Own fault injection, two vectors, independent of the producer's own,
+each reverted byte-identical and the suite re-confirmed clean
+immediately after:**
+1. Removed the CRUD-layer cross-connection reassignment guard in
+   `target_source_snapshot_crud.py::_fetch_or_raise` — the live
+   integration suite genuinely failed for real (3 distinct `FAIL` lines:
+   reassignment-refusal, per-connection scoping, cross-connection get).
+2. Reproduced the `ck_target_source_snapshots_dirty_requires_archive`
+   CHECK constraint failing at raw SQL, as the Postgres superuser,
+   bypassing the application layer entirely — genuinely rejected by
+   Postgres itself.
+
+Also independently confirmed, at the database privilege level (`\dp
+target_source_snapshots`), that `sovra_app` carries `ar` (SELECT+INSERT
+only) — the "cannot be mutated" claim is a real grant, not only an
+omitted route.
+
+`product_truth_check.py --fail-on-unwired` confirmed legitimately
+`18/18` — `build_target_source_snapshot_router` is a real, non-test
+caller directly confirmed in `apps/api/app/main.py` (imported and
+`app.include_router(...)`'d), not a 0/0 pass. Pulled the real contract
+via `tools/r1_handoff.py packet FTF-04A07 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance (provenance/source
+identity/status/superseded relationship, field-for-field) and
+negative_acceptance (cannot be mutated — database grant; cannot be
+reassigned — composite self-referencing FK for cross-tenant, CRUD-layer
+fetch-and-compare for cross-connection) both genuinely met, not merely
+"tests pass". Dependency FTF-04A01 confirmed genuinely `CERTIFIED`
+before relying on it. Regression: `test_ftf_04a01.py`/`test_ftf_1001.py`/
+`test_ftf_0201.py` all re-ran clean.
+
+**No blocking defect found.** Merged PR #234 (merge commit
+`e0e17920b9df2fae57fb635c1549a244183af106`) into `main`.
+`docs/spec-matrix.yaml`'s FTF-04A07 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+merge commit; `proving_symbol` stays `build_target_source_snapshot_router`
+(real live caller, confirmed above). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-04A07']` updated.
+`scripts/status.py`: `57/300` certified before, `58/300` after.
+Product-true: `17/17` → `18/18`. Full entry:
+`docs/certifications/ledger.md`, `QUEUE.md`.
+
+## Next shift
+`docs/spec-matrix.yaml` has no PROVISIONAL entries at this shift's end —
+nothing else is currently awaiting Control-plane certification.
+FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) remain other sessions'
+own open work — leave those alone. This was a certification-only shift
+(CERTIFY mode); no new task work, design decisions, or queue
+reprioritization beyond what certifying FTF-04A07 required.

@@ -6434,3 +6434,109 @@ reasons given above.
   17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A07 — TargetSourceSnapshot schema + immutable provenance
+- Criterion ID: FTF-04A07
+- PR: https://github.com/SJZLab/Sovra/pull/234 (`claude/wizardly-fermat-i9vw6i`
+  → `main`). Merged by this review as merge commit
+  `e0e17920b9df2fae57fb635c1549a244183af106`.
+- Merge commit (evidence): e0e17920b9df2fae57fb635c1549a244183af106
+- Implementation commit: 5b34723e2be2ba243927962c7b4c1a269b370c62
+- Validated-by: session https://claude.ai/code/session_01GcVXDuiPV5A82LTGNSh5Mu
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #234)
+- Date: 2026-09-24
+- **Session-ID check:** all three commits on PR #234 (`5b34723`/`09a6cf5`/
+  `019e538`) carry `Claude-Session: .../session_01JCgZ323QmB1GH3gjt8tePc` —
+  no match to this reviewing session's own ID
+  (`session_01GcVXDuiPV5A82LTGNSh5Mu`), independent per Law 4.
+- **Diff read directly**: 21 files changed (8817 insertions/19 deletions).
+  Confirmed the three new domain files
+  (`apps/api/app/target_connectors/target_source_snapshot_schema.py`/
+  `_crud.py`/`_routes.py`), the new migration
+  (`apps/api/alembic/versions/0012_target_source_snapshots.py`), the CI
+  wiring (`.github/workflows/ci.yml`: gate step + dedicated
+  `target-source-snapshot-integration` job), contract extensions
+  (`packages/contracts/openapi/04A-interface.yaml`,
+  `.../jsonschema/04A-domain.schema.json`), the two new test files, five
+  new task packets generated while deriving the frontier, and the
+  tracking-doc/spec-matrix updates — no unexplained scope creep. The
+  packet's own generic suggested path
+  (`packages/target-connectors/targetsourcesnapshot_schema_immutable_provenance.py`)
+  was correctly refined to match FTF-04A01's real
+  `apps/api/app/<domain>/*_schema.py` layout precedent, disclosed in the
+  module's own docstring.
+- **CI re-checked on the real final head, not taken on faith:** subscribed
+  to the PR's activity and waited for the real `check_suite.completed`
+  webhook, then polled `pull_request_read get_check_runs` directly on head
+  `019e538eb415d83bf227d8857723db86a009416d` — **28/28 checks
+  `completed`/`success`**, `gate` and the dedicated
+  `target-source-snapshot-integration` job included, `mergeable_state:
+  clean`. No open reviews or comments.
+- **Own independent verification, directly on this session's checkout of
+  the PR's actual head** (`uv sync --all-packages` first):
+  - `uv run python3 tests/tasks/test_ftf_04a07.py` — "all checks passed",
+    no-DB suite, exit code 0.
+  - `uv run python3 tests/integration/test_ftf_04a07_target_source_snapshot.py`
+    against a real, freshly created local PostgreSQL 16 database (not a
+    mock or SQLite stand-in) — "all checks passed".
+  - Full migration chain independently round-tripped in a second scratch
+    database: `alembic upgrade head` → `downgrade -1` → `upgrade head`,
+    clean at every step.
+  - `uv run ruff check` / `ruff format --check` / `uv run mypy` on all
+    three new domain files plus the migration — clean.
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` — `18/18`,
+    confirmed legitimate (not a 0/0 pass): `build_target_source_snapshot_router`
+    is a real non-test caller, confirmed directly in
+    `apps/api/app/main.py` (imported and `app.include_router(...)`'d).
+  - Regression: `test_ftf_04a01.py`, `test_ftf_1001.py`, `test_ftf_0201.py`
+    all re-ran clean — no regression to FTF-04A01's schema, `model_versions`,
+    or any other certified table.
+  - **Own fault injection, two vectors, independent of the producer's own
+    two claimed vectors, each reverted byte-identical and the suite
+    re-confirmed clean immediately after:**
+    1. Removed the CRUD-layer cross-connection reassignment guard (the
+       `row.target_application_connection_id != connection_id` check in
+       `target_source_snapshot_crud.py::_fetch_or_raise`) — the live
+       integration suite genuinely failed for real (exit code 1, 3
+       distinct `FAIL` lines covering the reassignment-refusal,
+       per-connection-scoping, and cross-connection-get checks). Reverted;
+       `git diff` confirmed byte-identical; suite re-ran clean.
+    2. Independently reproduced the `ck_target_source_snapshots_dirty_requires_archive`
+       CHECK constraint at raw SQL, as the Postgres superuser, bypassing
+       the application layer entirely (`INSERT ... capture_method =
+       'local_dirty_snapshot'` with both archive fields `NULL`) — genuinely
+       rejected by Postgres itself, proving this is a real database-level
+       guarantee, not only an application-level check a bypassing write
+       could evade.
+  - Independently confirmed the "cannot be mutated" claim at the database
+    privilege level: `\dp target_source_snapshots` shows
+    `sovra_app=ar/postgres` — SELECT + INSERT only, no UPDATE/DELETE grant
+    at all.
+- `python3 tools/r1_handoff.py packet FTF-04A07 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("Store immutable snapshot provenance, source identity, status and
+  superseded relationship") confirmed met field-for-field
+  (`commit_sha`/`tree_hash`/`capture_method` = provenance,
+  `target_application_connection_id` = source identity, `analysis_status`
+  = status, `supersedes_snapshot_id` = superseded relationship).
+  `negative_acceptance` ("Existing snapshot cannot be mutated or
+  reassigned to another repository/project") confirmed met by the two
+  real enforcement layers verified above (database grant for "mutated";
+  composite self-referencing FK + CRUD-layer fetch-and-compare for
+  "reassigned", cross-tenant and cross-connection respectively).
+  Acceptance clause 2 ("Independent review, exact merged commit, real
+  relevant integration and negative-test evidence recorded") is met by
+  this review itself. Dependency FTF-04A01 confirmed genuinely
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on it.
+- No blocking defect found. Merged PR #234 (merge commit
+  `e0e17920b9df2fae57fb635c1549a244183af106`) into `main`.
+  `docs/spec-matrix.yaml`'s FTF-04A07 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+  merge commit; `proving_symbol` stays
+  `build_target_source_snapshot_router` (real live caller, confirmed
+  above). Ran `scripts.task_claim.sync_certified_status()` —
+  `['FTF-04A07']` updated. Certified count moves 57/300 → 58/300.
+  Product-true: 17/17 → 18/18.
+
+**Conclusion:** Certified L2-CERTIFIED.
