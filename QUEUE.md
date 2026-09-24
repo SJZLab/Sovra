@@ -1,4 +1,44 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #228) — independently
+  re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe). PR #228
+  (superset of PR #226's diff plus a relay's IPv6 gate-wiring CI fix,
+  opened after the 2026-09-23 review below found PR #226's `gate` job
+  genuinely crashing on the real runner) was independently re-verified:
+  session-ID check clean (PR #226's commits carry
+  `session_013qR8o5xkLqEQ2WQwpYyora`; PR #228's own follow-up commits
+  carry no `Claude-Session` trailer at all — disclosed process gap,
+  flagged in `docs/certifications/ledger.md` — but its PR body identifies
+  `session_01YP8vr5mwHG2enbUQPMYXtf`; this session's own ID is
+  `session_01UhsKjWNrrPmXWNxNwK2rw2`, no match to either). Diff read
+  directly, no scope creep. The PR's head moved twice more mid-review
+  under a concurrent relay session (a424f91 → 027c3fc → e091879); each
+  intervening push was confirmed tracking-docs-only via `git diff
+  --stat`, and CI was independently re-verified fresh on each new head.
+  **CI re-checked to full completion on the real final head, not taken
+  on faith:** run `35941721974`, 27/27 jobs green, `gate` job success in
+  3m29s — pulled its real log and directly confirmed
+  `tests/tasks/test_ftf_h006.py`/`test_ftf_0211.py` both genuinely ran
+  and passed, the exact step that previously crashed. Own independent
+  local re-run of the full suite (ruff/mypy/validate_spec --strict/
+  product_truth_check, all clean, 17/17 unchanged) plus two of this
+  reviewer's own fault injections (reverted the IPv6 fix; disabled the
+  `approved_model_ids` authorization gate) — both genuinely caught by
+  their respective tests, reverted byte-identical. `tools/r1_handoff.py
+  packet FTF-0211` acceptance clause 2 ("Independent review, exact merged
+  commit, real relevant integration and negative-test evidence recorded")
+  is now met — the one clause the prior review could not confirm. No
+  blocking defect found. **Merged PR #228** (merge commit
+  `423eb560ac7a7a5c088c33f30eda916bbff2ec77`) into `main`; **closed PR
+  #226 as superseded**. `docs/spec-matrix.yaml`'s FTF-0211 set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to that merge commit. Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0211']` updated.
+  Full record: `docs/certifications/ledger.md`'s FTF-0211 entry.
+  Certified: 55/300 → 56/300. Product-true: unchanged at 17/17.
+  `docs/spec-matrix.yaml` has no PROVISIONAL entries at this shift's end.
+
+## Previous shift
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #226) — independently reviewed
   FTF-0211 (Real streaming probe). Session-ID check: PR #226's three
@@ -3699,64 +3739,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0211 — Real streaming probe. **PR #226 superseded by PR #228**
-(`claude/wizardly-fermat-lmo388` -> `main`) — see 2026-09-24 relay
-follow-up below. PR #226 (`claude/wizardly-fermat-pvnd0o` -> `main`) is
-left open, unmerged, untouched (a comment there points to #228; whether
-to close it is a Control-plane call, not a relay one).
-
-Independently reviewed 2026-09-23 and **NOT CERTIFIED — a real CI
-failure, not a code defect in the shipped module.**
-`tests/tasks/test_ftf_h006.py` (newly wired into the `gate` job by this
-same PR) crashed at import time on the real GitHub Actions runner with
-`socket.gaierror: [Errno -9] Address family for hostname not supported`
-from a real `ThreadingHTTPServer(("::1", 0), _Handler)` bind at
-`test_ftf_h006.py:160` — the file's own `_detect_ipv6_support()` probe
-wrongly predicted IPv6 was usable there, so the real server construction
-crashed uncaught and the `gate` job stopped before the also-new
-`tests/tasks/test_ftf_0211.py` step ever ran. Reproduced identically on
-both commits pushed to PR #226 (`0c9167d` and `09295cf`) — not a flake.
-`real_streaming_probe.py`'s own logic and its own test suite were
-independently confirmed sound (own local run, two own fault injections,
-task contract re-pulled) — this was solely a CI-wiring defect blocking
-real evidence, per this task's own acceptance clause 2 ("Independent
-review, exact merged commit, real relevant integration and
-negative-test evidence recorded"). Full record: `docs/certifications/
-queue.md`'s 2026-09-23 FTF-0211 review entry.
-
-**2026-09-24 relay follow-up:** this session's own designated git branch
-(`claude/wizardly-fermat-lmo388`) differs from PR #226's own branch
-(`claude/wizardly-fermat-pvnd0o`), and this session's own operating
-constraints say never to push to a different branch without explicit
-permission — so the fix could not land as a further push to PR #226
-itself. Merged PR #226's exact head (`09295cf`) into this session's own
-branch instead, resolved the resulting `QUEUE.md`/`docs/certifications/
-queue.md` append-log merge conflicts by keeping both entries in real
-chronological order, then fixed the root cause: added
-`_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
-`address_family = socket.AF_INET6`, used for `_SERVER_V6`, so the real
-server now binds with the exact address family
-`_detect_ipv6_support()`'s own probe already checks — the two can no
-longer disagree. Reproduced the exact CI symptom locally byte-for-byte
-first (a bare `ThreadingHTTPServer(("::1", 0), handler)` raises the same
-`socket.gaierror: [Errno -9]`, independent of this sandbox's own real
-IPv6 support), then added a pure, always-run regression check
-(`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`)
-shown able to fail first (Law 1) before being fixed. Full local re-run
-clean: `ruff`/`mypy`/`test_ftf_h006.py`/`test_ftf_0211.py`/`test_ftf_0210.py`/
-`test_ftf_0201.py`/`test_ftf_0204.py`/`validate_spec.py --strict`/
-`product_truth_check.py --fail-on-unwired` (17/17, unchanged, Law 2).
-Pushed as **PR #228** and watched to completion via a live
-`subscribe_pr_activity` subscription (not manual polling): **27/27
-checks completed `success`** on the PR's actual final head (`027c3fc`),
-`gate` included, `mergeable_state: clean`. PR #228 is now genuinely
-green and mergeable, ready for independent Control-plane L2 review.
-`docs/spec-matrix.yaml`'s FTF-0211 entry is left unchanged at
-`certification_state: PROVISIONAL` (a producer-role CI fix is not a
-certification, Law 4) — its own `notes` field now also carries this
-follow-up, disclosed rather than overwriting the prior accounts. Full
-record: `docs/certifications/queue.md`'s 2026-09-24 FTF-0211 entry,
-`PROGRESS.md`.
+FTF-0211 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #228 (merge commit
+`423eb560ac7a7a5c088c33f30eda916bbff2ec77`), superseding PR #226 (closed
+as superseded) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full two-review history (PR #226's 2026-09-23 NOT-CERTIFIED review for a
+real CI failure, the relay's IPv6 fix, and this 2026-09-24 CERTIFY
+review).
 
 FTF-0210 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #224 (merge commit
@@ -5648,6 +5638,27 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   FTF-0201/FTF-0204/FTF-0207 confirmed genuinely `CERTIFIED`. Ran
   `sync_certified_status()`. `scripts/status.py`: `54/300` certified
   before, `55/300` after. Product-true unchanged at 17. Full entry:
+  docs/certifications/ledger.md.
+- FTF-0211 — Real streaming probe. Independently reviewed and
+  **CERTIFIED 2026-09-24**, merge commit
+  `423eb560ac7a7a5c088c33f30eda916bbff2ec77` (PR #228, a CI-fix follow-up
+  superseding PR #226 — see "## Provisional" history above and
+  `docs/certifications/ledger.md` for the full two-review record). The
+  2026-09-23 review found PR #226's module logic sound but its `gate` job
+  genuinely crashing on the real runner (an IPv6 address-family mismatch
+  in `test_ftf_h006.py`); this 2026-09-24 review independently
+  re-verified the fix and the previously-missing real CI evidence: 27/27
+  jobs green on PR #228's real final head (run `35941721974`), `gate`
+  job's own log directly confirmed `test_ftf_h006.py`/`test_ftf_0211.py`
+  genuinely ran and passed, own local re-run of the full suite clean, two
+  of this reviewer's own fault injections (the IPv6 fix; the
+  `approved_model_ids` authorization gate) each genuinely caught and
+  reverted byte-identical. Session-ID check clean against both PRs'
+  commits (Law 4) — PR #228's own follow-up commits carry no
+  `Claude-Session` trailer, a disclosed process gap noted in the ledger.
+  Merged PR #228, closed PR #226 as superseded. Ran
+  `sync_certified_status()`. `scripts/status.py`: `55/300` certified
+  before, `56/300` after. Product-true unchanged at 17. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

@@ -1064,10 +1064,10 @@ FTF-0210:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0210.py
 FTF-0211:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Real streaming probe
-  evidence_hash: 1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54
+  evidence_hash: 423eb560ac7a7a5c088c33f30eda916bbff2ec77
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210 (both
@@ -1188,7 +1188,44 @@ FTF-0211:
     scripts/validate_spec.py --strict clean, scripts/product_truth_check.py --fail-on-unwired stays
     17/17 (unchanged, Law 2). certification_state left at PROVISIONAL, not self-certified (Law 4) --
     this is a producer-role CI fix, not a certification.
-  proof_state: L1-PROVEN
+
+    2026-09-24 Control-plane CERTIFY review: independently re-read the diff (PR #228, superset of
+    PR #226's diff plus the IPv6 fix above); session-ID check against every commit on both PR #226
+    and PR #228 found no match to this reviewing session's own ID (PR #226's three commits carry
+    session_013qR8o5xkLqEQ2WQwpYyora; PR #228's three follow-up commits carry no Claude-Session
+    trailer at all -- a disclosed process gap, flagged in docs/certifications/ledger.md -- but the
+    PR body identifies the producing session as session_01YP8vr5mwHG2enbUQPMYXtf; neither matches
+    this reviewer). Re-ran the full local verification independently: uv run ruff check/format
+    --check clean repo-wide; uv run mypy clean repo-wide (208 files, after a full `uv sync
+    --all-packages`); tests/tasks/test_ftf_h006.py and test_ftf_0211.py both re-run clean locally;
+    test_ftf_0210.py/test_ftf_0201.py re-run clean (the printed tracebacks in their output are
+    expected negative-path server-side noise, not failures -- both suites report all-checks-passed,
+    exit 0); scripts/validate_spec.py --strict clean; scripts/product_truth_check.py
+    --fail-on-unwired stays 17/17. Ran two of this reviewer's own fault injections (not merely
+    re-trusting the producer's): (1) reverted _ThreadingHTTPServerV6.address_family to AF_INET --
+    the new regression check genuinely failed; reverted byte-identical, suite re-ran clean; (2)
+    disabled probe_stream_chat's approved_model_ids authorization gate -- the negative-test
+    genuinely failed; reverted byte-identical, suite re-ran clean. Watched PR #228's real CI to
+    completion on its actual final head (it moved twice under a concurrent relay session mid-review,
+    from a424f91 to 027c3fc to e0918796e7060342f8e32e92e7731796861d13d9 -- each intervening push was
+    tracking-docs-only, confirmed via `git diff --stat`, and CI was re-verified fresh on each new
+    head rather than trusted from the prior one): run 35941721974, 27/27 jobs green, `gate` job
+    (id 107450854572) completed success in 3m29s with test_ftf_h006.py and test_ftf_0211.py both
+    directly confirmed via `get_job_logs` to have genuinely executed and passed on this exact head
+    -- the precise failure mode that blocked the 2026-09-23 review is gone. Pulled
+    `tools/r1_handoff.py packet FTF-0211`: acceptance clause 1 (SSE reconstruction) reconfirmed met
+    (module logic untouched by this fix); acceptance clause 2 ("Independent review, exact merged
+    commit, real relevant integration and negative-test evidence recorded") is now met -- real,
+    fresh, passing CI evidence exists on the actual merged commit. negative_acceptance (malformed/
+    truncated streams, cancellation, no leak/double-bill) reconfirmed via this reviewer's own fault
+    injection above plus direct reading of the dedicated tests. No blocking defect found. Merged
+    PR #228 (merge commit 423eb560ac7a7a5c088c33f30eda916bbff2ec77) into main; closed PR #226 as
+    superseded (comment left there pointing to #228 and this certification).
+    docs/spec-matrix.yaml set to certification_state: CERTIFIED / proof_state: L2-CERTIFIED,
+    evidence_hash set to that merge commit. proving_symbol stays blank (no live caller yet,
+    disclosed -- same precedent as every sibling FTF-020x task). Certified count moves 55/300 ->
+    56/300. Product-true: unchanged at 17/17.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0211.py
 FTF-0212:

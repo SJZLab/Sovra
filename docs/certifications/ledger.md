@@ -6215,3 +6215,129 @@ reasons given above.
   Product-true: unchanged at 17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0211 — Real streaming probe
+- Criterion ID: FTF-0211
+- PR: https://github.com/SJZLab/Sovra/pull/228 (`claude/wizardly-fermat-lmo388`
+  → `main`) — CI-fix follow-up, superseding PR #226
+  (`claude/wizardly-fermat-pvnd0o`, closed as superseded by this review).
+  Merged by this review as merge commit
+  `423eb560ac7a7a5c088c33f30eda916bbff2ec77`.
+- Merge commit (evidence): 423eb560ac7a7a5c088c33f30eda916bbff2ec77
+- Implementation commit: 1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54 (original
+  PR #226 module); IPv6 gate-wiring CI fix: 24d4941c35e8466f5589b066ba6d882b107e1f4d
+- Validated-by: session https://claude.ai/code/session_01UhsKjWNrrPmXWNxNwK2rw2
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #228)
+- Date: 2026-09-24
+- **Session-ID check:** PR #226's three commits (`1d23dd3`/`0c9167d`/
+  `09295cf`) all carry `session_013qR8o5xkLqEQ2WQwpYyora`. PR #228's four
+  own commits on top (`24d4941`/`9901e02`/`a424f91`/`027c3fc`/`e091879`)
+  carry **no `Claude-Session` trailer at all** — a disclosed process gap
+  in the producer's own commits, flagged here rather than silently
+  worked around — but PR #228's own description identifies the producing
+  session as `session_01YP8vr5mwHG2enbUQPMYXtf`. This reviewing session's
+  own ID is `session_01UhsKjWNrrPmXWNxNwK2rw2` — no match to either
+  producer session, independent per Law 4.
+- **Prior review on record:** the 2026-09-23 Control-plane review
+  immediately above this entry (session `session_014FtPJptPJDjFCVud3iLyUi`)
+  found PR #226's own module logic and test suite (`real_streaming_probe.py`,
+  `test_ftf_0211.py`) sound, but NOT CERTIFIED solely because the `gate`
+  job crashed on the real GitHub Actions runner (`test_ftf_h006.py`'s
+  `_detect_ipv6_support()` probe disagreeing with `_SERVER_V6`'s actual
+  bind address family). This review does not re-litigate that sound
+  module logic from scratch; it independently re-verifies it (see below)
+  and focuses new scrutiny on the CI fix and the real CI evidence that
+  was previously missing.
+- **Diff read directly**: PR #228 is PR #226's exact head (`09295cf`)
+  merged into a different session branch, plus the CI fix
+  (`_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
+  `address_family = socket.AF_INET6`, used for `_SERVER_V6`), a new pure
+  regression test (`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`),
+  and tracking-doc updates. `git diff --stat` against `main`'s pre-merge
+  tip confirmed exactly `.github/workflows/ci.yml`, `PROGRESS.md`,
+  `docs/certifications/queue.md`, `docs/implementation/task-packets/FTF-0211.md`,
+  `docs/spec-matrix.yaml`, `packages/litellm_client/real_streaming_probe.py`,
+  `packages/security/outbound_guard.py`, `tests/tasks/test_ftf_0211.py`,
+  `tests/tasks/test_ftf_h006.py` — no scope creep. The PR's head moved
+  twice more during this review (a424f91 → 027c3fc → e091879), each time
+  under a concurrent relay session; each intervening diff was confirmed
+  via `git diff --stat` to be tracking-docs-only (no code change), and a
+  fresh CI run was independently re-verified on each new head rather than
+  trusting the prior head's result.
+- **CI re-checked on the real final head, not taken on faith:** run
+  `35941721974` on head `e0918796e7060342f8e32e92e7731796861d13d9` —
+  **27/27 jobs `completed`/`success`**, `mergeable_state: clean`. The
+  `gate` job (id `107450854572`) completed `success` in 3m29s; pulled its
+  real log via `get_job_logs` and directly confirmed both
+  `tests/tasks/test_ftf_h006.py` ("FTF-H006 shared outbound URL and
+  credential guard: all checks passed") and `tests/tasks/test_ftf_0211.py`
+  ("FTF-0211 real streaming probe: all checks passed") genuinely executed
+  and passed on this exact head — the precise failure mode
+  (`socket.gaierror` crashing the gate job at import time before
+  `test_ftf_0211.py` ever ran) that blocked the 2026-09-23 review is
+  gone. `product_truth_check.py --fail-on-unwired` in the same job log:
+  `17/17`, unchanged.
+- **Own independent verification, directly in this working tree** (`uv
+  sync --all-packages` first — a partial sync had produced 12 spurious
+  `mypy` `alembic`-stub errors, unrelated to this task's own files and
+  resolved once fully synced):
+  - `uv run python3 tests/tasks/test_ftf_h006.py` / `test_ftf_0211.py` —
+    both "all checks passed" (the disclosed no-IPv6-stack skip message
+    prints for the former, same as every prior review in this sandbox).
+  - `uv run python3 tests/tasks/test_ftf_0210.py` / `test_ftf_0201.py`
+    (dependencies) — both "all checks passed"; the tracebacks printed to
+    stdout mid-run are expected server-side noise from deliberate
+    negative-path connection drops in those suites' own fixtures, not
+    failures.
+  - `uv run ruff check .` / `ruff format --check .` — clean, repo-wide.
+  - `uv run mypy .` — clean, repo-wide (208 source files).
+  - `python3 scripts/validate_spec.py --strict` — clean (`git fetch
+    --unshallow origin` first).
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` —
+    `17/17`, unchanged.
+  - **Own fault injection, two vectors, independent of the producer's own
+    claimed vectors, each reverted byte-identical and the suite
+    re-confirmed clean immediately after:**
+    1. Reverted `_ThreadingHTTPServerV6.address_family` from `AF_INET6`
+       back to the old bare-`ThreadingHTTPServer` default — the new
+       regression check
+       (`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`)
+       genuinely failed for real; reverted, `diff` confirmed
+       byte-identical, suite re-ran clean.
+    2. Disabled `probe_stream_chat`'s `approved_model_ids` authorization
+       gate (`if model_id not in approved_model_ids: raise
+       ChatProbeNotAuthorizedError(...)` → `if False: raise ...`) — the
+       negative test ("an unapproved model raises
+       ChatProbeNotAuthorizedError instead of attempting a probe")
+       genuinely failed; reverted, `diff` confirmed byte-identical, suite
+       re-ran clean.
+- `python3 tools/r1_handoff.py packet FTF-0211 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("Consume actual SSE stream, reconstruct text/tool deltas and account
+  usage/termination") reconfirmed met — this module's logic is unchanged
+  from the 2026-09-23 review's own independent confirmation. Acceptance
+  clause 2 ("Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded") is now met — real,
+  fresh, passing CI evidence exists on the actual merged commit (see
+  above), which is exactly the clause the prior review could not confirm.
+  `negative_acceptance` ("Malformed/truncated streams, client
+  cancellation and gateway retry do not leak connection resources or
+  double-bill silently") reconfirmed via this review's own fault
+  injection above plus direct reading of
+  `test_probe_closes_the_real_connection_on_every_return_path` and
+  `test_gateway_retry_never_happens_silently_inside_the_probe`.
+  Dependencies FTF-0201/FTF-0210 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml`.
+- No blocking defect found. Merged PR #228 (merge commit
+  `423eb560ac7a7a5c088c33f30eda916bbff2ec77`) into `main`. Closed PR #226
+  as superseded (comment posted there pointing to #228 and this
+  certification). `docs/spec-matrix.yaml` set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+  merge commit. `proving_symbol` stays blank (no live caller yet,
+  disclosed — same precedent as every sibling FTF-020x task). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0211']` updated.
+  Certified count moves 55/300 → 56/300. Product-true: unchanged at
+  17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.
