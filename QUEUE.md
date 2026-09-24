@@ -3986,25 +3986,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1304 ("Cost-per-success calculator") — submitted 2026-09-24 via
-**PR:** https://github.com/SJZLab/Sovra/pull/249
-(`claude/wizardly-fermat-fkyn9x` → `main`), commits `0e0390a`/`bbc9175`.
-Real, DB-free Section 32 `cost_per_success`/`amortized_cost_per_success`
-calculator composing FTF-1302's `window_total_cost` and FTF-1303's
-`provider_call_cost` (both CERTIFIED, same for FTF-1301) rather than
-re-deriving a price itself. `tests/tasks/test_ftf_1304.py` (20 checks):
-construction guards, a five-attempt golden example mixing settled/
-pending/fallback charges plus one non-`pass` outcome, `request_id` dedup
-for retries, the zero-successes negative_acceptance case, amortization
-(golden value plus "both arguments required together" refusal), and an
-own fault injection (dropped `pending_cost`/`fallback_cost` from
-`AttemptCost.total_cost()` — 3 genuine FAIL lines, reverted
-byte-identical). `ruff`/`mypy`/`validate_spec.py --strict` clean;
-`product_truth_check.py --fail-on-unwired` unchanged at 19/19 (no live
-caller yet, disclosed, same FTF-1302/FTF-1303 precedent); `status.py`
-unchanged at 61/300 certified. Awaiting CI + independent Control-plane L2
-review (Law 4). Full submission record: `docs/certifications/queue.md`'s
-matching 2026-09-24 entry, `PROGRESS.md`.
+None currently. FTF-1304 ("Cost-per-success calculator") was the only
+item here; it was independently reviewed and **CERTIFIED 2026-09-24** via
+PR #249 (merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`) — see
+"## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full evidence, including the independent session-ID check, own local
+reproduction, an own fault injection (distinct vector from the
+producer's own: silently zero-filling a declared, unmatched
+`fallback_cost` instead of raising), and the real CI step-level log
+confirmation on the PR's actual final head.
 
 FTF-1303 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #245 (supersedes PR #240, merge commit
@@ -6233,6 +6224,43 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   Merged PR #245; PR #240 was already closed as superseded by its own
   author session. Ran `sync_certified_status()` — `['FTF-1303']` updated.
   `scripts/status.py`: `60/300` certified before, `61/300` after.
+  Product-true unchanged at `19/19` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
+- FTF-1304 — Cost-per-success calculator. Independently reviewed and
+  **CERTIFIED 2026-09-24**, merge commit
+  `4b432a44d4d6ef511796bce5f30faec4d948b831` (PR #249). Session-ID check
+  clean (all three PR commits carry the producer's own
+  `session_017Uiok74naZssjNvuuhXncs`; no match against this reviewing
+  session — Law 4). Diff read in full
+  (`apps/api/app/services/cost_per_success_calculator.py` 271 lines,
+  `tests/tasks/test_ftf_1304.py` 382 lines). This PR's head moved once
+  mid-review (`bbc9175` → `f7dd5d3`, tracking-docs only — confirmed via
+  `git diff --stat` zero production/test changes); waited for and
+  confirmed a fresh real CI run on the actual final head `f7dd5d3` (run
+  `36030893786`): 29/29 checks completed/success including `gate`,
+  `mergeable_state: clean`, and the `gate` job's own step-level log text
+  (pulled directly) showed `tests/tasks/test_ftf_1304.py` actually
+  executing in CI and printing "FTF-1304 Cost-per-success calculator
+  tests: all checks passed". Own local reproduction: 20/20 clean; `ruff`/
+  `mypy` clean. Own fault injection, distinct from the producer's own
+  (dropping `pending_cost`/`fallback_cost` from `total_cost()`): patched
+  `AttemptCost.__post_init__` so `fallback_used=True` with no
+  `fallback_cost` silently defaults to `Decimal("0")` instead of raising
+  — 1 genuine `FAIL` line, plus direct reproduction confirmed the faulted
+  code prices a declared unobserved fallback at exactly $0 ($10.00
+  instead of a refusal); reverted byte-identical, suite re-confirmed
+  clean. `product_truth_check.py --fail-on-unwired` confirmed
+  legitimately `19/19` unchanged — `proving_symbol` is the empty string
+  for this task (disclosed, no live HTTP caller yet, same accepted class
+  as FTF-1302/FTF-1303/FTF-1401/FTF-1601/FTF-1701/FTF-1810), confirmed by
+  reading the script's own skip-if-no-symbol logic directly. Both
+  acceptance and negative_acceptance clauses reconfirmed against the real
+  DoD via `tools/r1_handoff.py packet FTF-1304`; dependencies
+  FTF-1301/FTF-1302/FTF-1303 confirmed already `CERTIFIED` before relying
+  on them. `validate_spec.py --strict` clean (after `git fetch
+  --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+  Merged PR #249. Ran `sync_certified_status()` — `['FTF-1304']` updated.
+  `scripts/status.py`: `61/300` certified before, `62/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
 

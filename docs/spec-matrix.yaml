@@ -4616,10 +4616,10 @@ FTF-1303:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1303.py
 FTF-1304:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Cost-per-success calculator
-  evidence_hash: 0e0390aa5c7a75be1bd04c805733dacd4f2350b6
+  evidence_hash: 4b432a44d4d6ef511796bce5f30faec4d948b831
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-1301, FTF-1302, FTF-1303
@@ -4630,9 +4630,13 @@ FTF-1304:
     formulas, reusing `local_compute_costing.TASK_OUTCOMES` rather than duplicating that vocabulary.
     No live HTTP route or caller exists yet (same disclosed scope-narrowing precedent as
     FTF-1302/FTF-1303/FTF-1401/FTF-1601/FTF-1701/FTF-1810); `proving_symbol` intentionally empty --
-    a genuine, disclosed 0/0, not inflation. Submitted PROVISIONAL, not self-certified (Law 4) --
-    independent Control-plane L2 review and a real CI run on the opened PR still required.
-  proof_state: L1-PROVEN
+    a genuine, disclosed 0/0, not inflation. Independently reviewed and CERTIFIED by Control plane
+    (PR #249, merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`) -- session-ID check, direct
+    diff read, real CI run watched to completion on the real final head, an independent fault
+    injection (distinct vector: silently zero-filling a declared, unmatched `fallback_cost` instead
+    of raising), `product_truth_check.py` 19/19 confirmed legitimate, and the task contract's
+    acceptance/negative_acceptance clauses re-confirmed via `tools/r1_handoff.py packet FTF-1304`.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1304.py
 FTF-1305:

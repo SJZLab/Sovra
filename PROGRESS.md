@@ -1,4 +1,94 @@
 # PROGRESS — Sovra
+## 2026-09-24 — FTF-1304 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #249 (FTF-1304,
+"Cost-per-success calculator"). Per this session's standing certifier
+duty, checked `docs/certifications/queue.md` for pending PROVISIONAL
+items — found only FTF-1304 (the relay's own producing session had
+initially omitted the required queue.md/QUEUE.md/PROGRESS.md append on
+its first push, then corrected this with a same-shift follow-up commit
+before this review began — confirmed via `git diff --stat` that the
+follow-up commit was tracking-doc-only, zero production/test changes).
+
+Session-ID check: all three commits on PR #249 carry `Claude-Session`
+trailer `session_017Uiok74naZssjNvuuhXncs` (producer) — no match against
+this session's own ID (`session_016j3oFawdjCmJveQAiaAyDy`), independent
+per Law 4.
+
+Read the full diff directly: `apps/api/app/services/cost_per_success_calculator.py`
+(271 lines) and `tests/tasks/test_ftf_1304.py` (382 lines). Pulled the
+real task contract via `tools/r1_handoff.py packet FTF-1304 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both `acceptance`
+("Total costs across all attempts divided by independently successful
+tasks, plus optional training amortization") and `negative_acceptance`
+("Zero successes, pending charges and unobserved fallback use cannot
+yield misleading cheap passing metric") clauses are genuinely met, not
+merely "tests pass" — proven by the five-attempt golden example ($9.50),
+the amortization golden example ($12.00), and the zero-successes/
+pending/fallback cases in the shipped suite plus this review's own fault
+injection below. Dependencies FTF-1301/FTF-1302/FTF-1303 confirmed
+already `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+Checked out the real PR head locally and re-ran
+`tests/tasks/test_ftf_1304.py` directly — 20/20 clean. `ruff check`/
+`ruff format --check` clean; `uv run mypy
+app/services/cost_per_success_calculator.py` clean. Ran an own fault
+injection distinct from the producer's own (which dropped
+`pending_cost`/`fallback_cost` from `AttemptCost.total_cost()`): patched
+`AttemptCost.__post_init__` so `fallback_used=True` with no matching
+`fallback_cost` silently defaults `fallback_cost` to `Decimal("0")`
+instead of raising — 1 genuine `FAIL [FTF-1304]` line
+(`test_rejects_fallback_used_without_fallback_cost`). Separately
+reproduced directly that the faulted code prices a declared, unobserved
+fallback usage at exactly $0 instead of refusing (`cost_per_success`
+returned `10.00` for an attempt with `settled_cost=10.00` and
+`fallback_used=True`/`fallback_cost=None`, instead of raising) — the
+concrete misleading-cheap-metric failure this task's own
+negative_acceptance forbids. Reverted byte-identical (`diff` against the
+pre-fault copy empty); re-ran the real suite immediately after — all
+20 checks passed again.
+
+`product_truth_check.py --fail-on-unwired` confirmed legitimately `19/19`
+unchanged (empty `proving_symbol`, disclosed no-live-caller scope, same
+FTF-1302/1303/1401/1601/1701/1810 precedent, verified by reading the
+script's own skip-if-no-symbol logic directly).
+
+This PR's head moved once while under review this shift (`bbc9175` →
+`f7dd5d3`) — confirmed via `git diff --stat` that the new commit was a
+tracking-doc-only addition (recording the missing `docs/certifications/
+queue.md`/`QUEUE.md`/`PROGRESS.md` entries), zero production/test code
+change. Waited for and independently confirmed a fresh, real GitHub
+Actions run on the actual final head
+`f7dd5d3bd1a0cad69bc0d6686b09d25dcd9f6d02` (run `36030893786`): all 29
+checks, `gate` included, `status: completed` / `conclusion: success`,
+`mergeable_state: clean`. Pulled the `gate` job's own step-level log
+text directly (`get_job_logs`, job id `107739065356`): confirmed `uv run
+python3 tests/tasks/test_ftf_1304.py` genuinely executed in CI and
+printed "FTF-1304 Cost-per-success calculator tests: all checks passed"
+— real execution, not a self-reported claim.
+
+Merged PR #249 (merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`).
+`docs/spec-matrix.yaml`'s FTF-1304 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit. `sync_certified_status()` updated `spec/tasks.json` and
+`docs/implementation/TRACKER.json` — `['FTF-1304']`. `status.py`:
+`61/300` → `62/300` certified, product-true unchanged at `19/19`.
+`validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact). Full ledger entry:
+`docs/certifications/ledger.md`.
+
+Also checked PR #246 (FTF-1303 tracking-doc-only follow-up) and PR #243
+(FTF-04A06 independent-review PR): both are stale/superseded — the
+underlying criteria they describe (FTF-1303, FTF-04A06) are already
+`CERTIFIED` on `main` via different, later-landed PRs (#245 and #242
+respectively), confirmed directly against the current `docs/spec-
+matrix.yaml`. No certifier action required on either; left untouched
+per this session's certification-only mandate.
+
+## Next shift
+FTF-1304 is CERTIFIED — no further action needed on it. Recompute the
+dependency-ready frontier fresh from `docs/spec-matrix.yaml` before
+picking new work rather than trusting this note alone.
+
 ## 2026-09-24 — FTF-1303 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #245 (FTF-1303,
 supersedes PR #240). Per this session's standing certifier duty, checked
