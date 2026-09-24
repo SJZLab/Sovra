@@ -13544,3 +13544,103 @@ Control-plane L2 review (Law 4 -- this session cannot certify its own
 work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
 record, now merged into `main`) is a separate PR this relay did not merge
 or edit.
+
+## 2026-09-24 — Control plane review — FTF-04A06 (PR #238) — CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.
+opened` webhook for PR #240 (FTF-1303). Per this session's standing
+duty, checked `docs/certifications/queue.md` for every item PROVISIONAL
+and not yet certified, not only the triggering PR. Two were pending:
+FTF-1303 (PR #240, this session's own trigger) and FTF-04A06 (PR #238,
+left ready-for-review by an earlier session's note in `QUEUE.md`'s
+"## Provisional" section).
+
+**FTF-1303 (PR #240):** a fresh `pull_request_read get_check_runs` call
+on the real head (`d3c5ed1`) showed all 29 checks, including `gate`,
+still `status: queued` -- CI had not run yet at the moment of this
+review. Left PROVISIONAL, not certified. This is not a defect to report
+back, just incomplete; noted in `QUEUE.md`'s "## Provisional" section for
+the next check-in to pick up once CI finishes.
+
+**FTF-04A06 (PR #238) — independently reviewed and CERTIFIED:**
+- **Session-ID check:** all 7 commits on PR #238 carry `Claude-Session:
+  https://claude.ai/code/session_0159tZvUhDCyk3rdhW7fMscf` (the merge
+  commit `c122d5d` carries none, expected for a plain `git merge`). No
+  overlap with this session's own `session_01TSZ3SyJvmLrNbuDqXVYRtE` --
+  genuinely independent per Law 4.
+- **Diff read directly:** all 8 changed files (+2535/-27), including the
+  431-line `local_repository_connector.py` and the 463-line
+  `test_ftf_04a06.py` in full.
+- **CI re-checked on the real final head, not taken on faith:** a fresh
+  `get_check_runs` call on head `693f61949d6c2a8a8fc3bd21e8c9caf3f7cfa5de`
+  confirmed all 29 checks `status: completed` / `conclusion: success`,
+  `gate` included. Pulled the `gate` job's own step-level log text
+  directly (`get_job_logs`, job id `107615677654`): the step "FTF-04A06
+  negative-test proof (Local repository connector, no DB required)" ran
+  `uv run python3 tests/tasks/test_ftf_04a06.py` and printed "FTF-04A06
+  local repository connector tests: all checks passed" -- genuine
+  execution in CI, not a self-reported claim from the branch's own
+  PROGRESS.md.
+- **Own local reproduction:** checked out the PR head into a local
+  review branch and ran `python3 tests/tasks/test_ftf_04a06.py` directly
+  -- all 13 checks passed.
+- **Own fault injection (Law 1), two vectors, both distinct from the
+  producer's own two (symlink-escape guard, concurrent-drift guard) and
+  from the prior reviewer's own (the missing prefix-collision test
+  itself):**
+  1. Replaced `resolve_allowed_root`'s real `Path.parents` structural
+     check with a naive `str(real_root).startswith(str(real_allowed))`
+     comparison -- `test_resolve_allowed_root_refuses_a_prefix_colliding_
+     sibling` genuinely failed (1 FAIL). Reverted; `diff` confirmed
+     byte-identical; suite re-ran clean.
+  2. Disabled the dirty-tree branch's own after-capture
+     `ConcurrentModificationError` raise in `capture_local_repository`
+     (`if dirty_after != dirty_before or head_after != commit_sha:`
+     replaced with `if False:`) --
+     `test_concurrent_drift_during_capture_is_refused` genuinely failed
+     (1 FAIL). Reverted; `diff` confirmed byte-identical; suite re-ran
+     clean immediately after ("all checks passed").
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19`
+  unchanged, and confirmed legitimate rather than an evasion:** this
+  task's `proving_symbol` in `docs/spec-matrix.yaml` is the empty string
+  -- a pure, DB-free capture module with no live HTTP caller yet,
+  disclosed in both the module's own docstring and the PR body, the same
+  accepted scope-narrowing precedent as
+  FTF-1302/FTF-0005/FTF-0006/FTF-0102-0105/`storage_semantics_client.py`
+  before each one's own first live caller existed. Read
+  `scripts/product_truth_check.py`'s own logic directly: an entry with no
+  `proving_symbol` is skipped entirely, never counted as a 0/0 pass
+  against a claimed symbol -- Law 5 is not being weakened here.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-04A06 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Read approved local root, handle detached/dirty worktree and create
+  immutable content manifest" -- proven by the clean-checkout/
+  detached-HEAD/dirty-tree test cases; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence recorded"
+  -- this review) and `negative_acceptance` ("Path/symlink traversal and
+  concurrent file drift fail; never edit the target working tree" --
+  proven by the prefix-collision, symlinked-allowlist, symlink-escape,
+  and concurrent-drift tests, plus the dedicated before/after `git
+  status` byte-identical assertion) both genuinely met, not merely "tests
+  pass". `dependencies` FTF-04A01/FTF-04A07 confirmed already `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- `validate_spec.py --strict` clean (after `git fetch --unshallow origin`
+  -- this sandbox's checkout started shallow; confirmed the resulting
+  `stale_commit` noise before unshallowing was this sandbox's own
+  artifact, not a real defect, same class of gap already on record for
+  prior shifts).
+
+**No blocking defect found. Merged PR #238** (merge commit
+`249ff0663df74fe25f33f35673a319ea6d728b90`) into `main`.
+`docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (no live caller, confirmed
+legitimate above). Ran `scripts.task_claim.sync_certified_status()` --
+`['FTF-04A06']` updated. `scripts/status.py`: `59/300` -> `60/300`
+certified; product-true unchanged at `19/19` (no live caller added).
+Appended a matching entry to `docs/certifications/ledger.md`; updated
+`QUEUE.md` (moved FTF-04A06 to "## Done", updated "## Provisional" to
+carry only FTF-1303 with its own current CI-pending state) and
+`PROGRESS.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_01TSZ3SyJvmLrNbuDqXVYRtE
+  (independent -- see session-ID check above), 2026-09-24.

@@ -2475,10 +2475,10 @@ FTF-04A05:
   proving_symbol: ''
   proving_test: ''
 FTF-04A06:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local repository connector with root allowlist/path protections
-  evidence_hash: 38ea4e450fcbf9e2f65032e78490bf632d30adac
+  evidence_hash: 249ff0663df74fe25f33f35673a319ea6d728b90
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -2562,7 +2562,42 @@ FTF-04A06:
     injection) confirmed the new test genuinely fails against that naive implementation and
     passes against the real, unmodified shipped code -- reverted byte-identical. ruff/mypy
     clean; validate_spec.py --strict clean; product_truth_check.py/status.py unchanged.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-24 by an independent Control-plane certifier session
+    (session_01TSZ3SyJvmLrNbuDqXVYRtE; every commit on PR #238 carries
+    Claude-Session session_0159tZvUhDCyk3rdhW7fMscf -- no overlap, genuinely
+    independent per Law 4). Re-read the diff directly; re-ran
+    tests/tasks/test_ftf_04a06.py locally (13/13 clean); ran two own fault
+    injections distinct from the producer's two (a naive str.startswith()
+    prefix-comparison in resolve_allowed_root, and disabling the dirty-tree
+    concurrent-drift raise) -- both genuinely caught by the real suite,
+    both reverted byte-identical, suite re-confirmed clean after each.
+    Independently confirmed via a fresh pull_request_read/get_check_runs
+    call that all 29 checks (including gate) were status=completed,
+    conclusion=success on the real PR head 693f6194, and independently
+    pulled the gate job's own step-level log text confirming
+    "uv run python3 tests/tasks/test_ftf_04a06.py" actually executed and
+    printed "all checks passed" in CI, not just a self-reported claim.
+    product_truth_check.py --fail-on-unwired confirmed 19/19 unchanged
+    (this task's proving_symbol is legitimately empty -- a pure, DB-free
+    module with no live HTTP caller yet, the same disclosed scope as
+    FTF-1302/FTF-0005/FTF-0006/FTF-0102-0105/storage_semantics_client.py
+    before their own first live caller existed -- confirmed by reading
+    product_truth_check.py's own logic: an entry with no proving_symbol
+    is skipped, not counted 0/0 against a claimed symbol). Pulled the real
+    task contract via tools/r1_handoff.py packet FTF-04A06 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md and confirmed both acceptance clauses
+    ("Read approved local root, handle detached/dirty worktree and create
+    immutable content manifest" -- proven by the clean/detached-HEAD/dirty-
+    tree test cases; "Independent review... recorded" -- this review) and
+    the negative_acceptance clause ("Path/symlink traversal and concurrent
+    file drift fail; never edit the target working tree" -- proven by the
+    symlink-escape, prefix-collision, and concurrent-drift tests, plus the
+    dedicated before/after git-status-identical assertion) are genuinely
+    met, not merely "tests pass". Merged PR #238, merge commit
+    249ff0663df74fe25f33f35673a319ea6d728b90. See
+    docs/certifications/ledger.md for the full ledger entry.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
 FTF-04A07:

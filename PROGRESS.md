@@ -1,7 +1,73 @@
 # PROGRESS — Sovra
-Updated: 2026-09-24 (scheduled Control-plane certifier shift) — reviewed
-FTF-04A06 (PR #238) and found NOT CERTIFIED (real Law 1 test-coverage gap;
-shipped code itself sound).
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+the `pull_request.opened` webhook for PR #240) — checked
+`docs/certifications/queue.md` for every pending PROVISIONAL item, not
+only the trigger. FTF-1303 (PR #240) was still `queued` on all 29 checks,
+left PROVISIONAL. FTF-04A06 (PR #238) had its earlier Law 1 gap already
+fixed and CI green — independently re-reviewed from scratch (fresh
+session-ID check, full diff read, own local reproduction, two own
+fault-injection vectors, real CI step-level log pull, task-contract
+cross-check) and **CERTIFIED**, merge commit
+`249ff0663df74fe25f33f35673a319ea6d728b90`. Certified count moves
+59/300 → 60/300.
+
+## 2026-09-24 — FTF-04A06 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #240 (a different
+task, FTF-1303); per this session's standing certifier duty, checked
+`docs/certifications/queue.md` for every PROVISIONAL item, not only the
+trigger. Found two: FTF-1303 (PR #240, still CI-`queued`, left
+PROVISIONAL — see `docs/certifications/queue.md`'s matching entry) and
+FTF-04A06 (PR #238), left ready-for-review by an earlier session's note
+in `QUEUE.md`'s "## Provisional" section (its earlier Law 1 gap already
+fixed in commit `911ae78`, CI re-run fully green).
+
+Session-ID check: all 7 commits on PR #238 carry `Claude-Session: .../
+session_0159tZvUhDCyk3rdhW7fMscf` — no match to this session's own ID
+(`session_01TSZ3SyJvmLrNbuDqXVYRtE`), independent per Law 4.
+
+Read the full PR diff directly (8 files, +2535/-27). Independently
+confirmed CI on the real final head (`693f6194`): a fresh
+`get_check_runs` call showed all 29 checks, `gate` included,
+`status: completed` / `conclusion: success`; pulled the `gate` job's own
+step-level log text directly and confirmed
+`uv run python3 tests/tasks/test_ftf_04a06.py` genuinely executed and
+printed "all checks passed" in CI, not a self-reported claim. Checked out
+the PR head locally into a dedicated review branch and re-ran the suite
+directly — 13/13 clean.
+
+Ran two own fault injections, distinct from both the producer's own two
+(symlink-escape guard, concurrent-drift guard) and the prior reviewer's
+own (the missing prefix-collision test itself): (1) replaced
+`resolve_allowed_root`'s real `Path.parents` structural check with a
+naive `str.startswith()` comparison — the prefix-colliding-sibling test
+genuinely failed; (2) disabled the dirty-tree branch's own after-capture
+`ConcurrentModificationError` raise — the dedicated concurrent-drift test
+genuinely failed. Both reverted byte-identical (`diff` confirmed), suite
+re-confirmed clean after each.
+
+`product_truth_check.py --fail-on-unwired` confirmed `19/19` unchanged —
+read the script's own logic directly to confirm this task's empty
+`proving_symbol` is legitimately skipped (no live HTTP caller yet,
+disclosed), not a hidden 0/0 evasion. Pulled the real task contract via
+`tools/r1_handoff.py packet FTF-04A06 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both `acceptance` and
+`negative_acceptance` clauses genuinely met by the test evidence above,
+not merely "tests pass". `validate_spec.py --strict` clean (after `git
+fetch --unshallow origin`, this sandbox's own pre-existing shallow-clone
+artifact, confirmed not a real defect).
+
+No blocking defect found. **Merged PR #238** (merge commit
+`249ff0663df74fe25f33f35673a319ea6d728b90`).
+`docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit. Ran `scripts.task_claim.sync_certified_status()` —
+`['FTF-04A06']` updated. `scripts/status.py`: `59/300` → `60/300`
+certified, product-true unchanged at `19/19`. Appended a matching entry
+to `docs/certifications/ledger.md`; updated `QUEUE.md` ("## Provisional"
+now carries only FTF-1303 with its own current CI-pending note; FTF-04A06
+moved to "## Done") and `docs/certifications/queue.md`.
+
+## 2026-09-24 — FTF-04A06 — Control plane: NOT CERTIFIED (prior review, superseded above)
 
 ## 2026-09-24 — FTF-04A06 — Control plane: NOT CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #238. Checked
