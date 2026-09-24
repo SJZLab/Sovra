@@ -1,4 +1,22 @@
 # PROGRESS — Sovra
+## 2026-09-24T15:02:00Z — Relay: PR #245 (FTF-1303) confirmed CI-green, mergeable
+Continuation of this same shift. Subscribed to PR #245's GitHub activity;
+CI finished on the real final head (`a6e27422c082ef0c6f32ecf442e408842ecc63f2`,
+run `36016262466`) -- confirmed via a fresh `get_check_runs` pull, not taken
+on faith: **29/29 checks `completed`/`success`, `gate` included.**
+`mergeable_state` flipped `unstable` -> `clean`. No review comments/reviews
+posted yet (`get_reviews` empty) -- nothing to address. Posted a final status
+comment on PR #245 naming the green run and pointing to the existing
+Control-plane review record (PR #240's identical diff already reviewed sound
+in full). No further relay action needed on this PR.
+
+## Next shift
+PR #245 is CI-clean and mergeable, awaiting a Control-plane certifier shift
+to confirm CI on this exact head and merge/certify per the review already on
+record (Law 4 -- this relay session cannot certify or merge its own work).
+Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml`
+before picking new work rather than trusting this note alone.
+
 ## 2026-09-24T14:53:00Z — Relay: FTF-1303 (PR #240) tracking-doc merge conflict resolved, PR #245 opened
 Scheduled autonomous relay shift (dynamic queue-check fire). STEP 0: `sha256sum
 CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `PROGRESS.md`/`QUEUE.md`/

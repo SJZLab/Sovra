@@ -1,4 +1,14 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24T15:02:00Z (same relay shift, continued) — PR #245
+  (FTF-1303)'s CI finished fully green on its real final head (`a6e2742`,
+  run `36016262466`): 29/29 checks, `gate` included, `mergeable_state:
+  clean`. No review activity yet. Posted a final status comment on PR #245.
+  **Awaiting a Control-plane certifier shift** (Law 4 — this relay session
+  cannot certify/merge its own work); the diff is byte-identical to PR
+  #240's, already independently reviewed sound in full (see
+  `docs/certifications/queue.md`). See "## Provisional" below.
+
+## Previous shift
 Updated: 2026-09-24T14:53:00Z (scheduled relay shift) — resolved PR #240
   (FTF-1303)'s tracking-doc merge conflict per this file's own "Next relay
   shift" instruction below (see "## Provisional"): built
@@ -3999,6 +4009,14 @@ identical code diff in full — **PR #245 needs only a fresh green CI
 confirmation, not a repeat code review**, before merge/certification (Law
 4 still requires a Control-plane session, not this relay, to do the
 merge).
+
+**Update, same shift (2026-09-24T15:02:00Z):** PR #245's CI finished —
+fresh `get_check_runs` pull confirmed **29/29 checks `completed`/`success`
+on the real final head (`a6e2742`), `gate` included**, run `36016262466`.
+`mergeable_state` flipped `unstable` → `clean`. No review comments posted
+yet. Posted a final status comment on PR #245. **PR #245 is CI-clean and
+mergeable, awaiting a Control-plane certifier shift** — Law 4 still applies,
+this relay session cannot certify or merge its own work.
 
 FTF-04A06 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #238 (merge commit
