@@ -1,4 +1,34 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled autonomous relay shift, dynamic queue-check
+  fire, not a PR webhook) — implemented and submitted **FTF-1304
+  (Cost-per-success calculator) PROVISIONAL** via **PR:**
+  https://github.com/SJZLab/Sovra/pull/249 (branch
+  `claude/wizardly-fermat-fkyn9x`, commits `0e0390a`/`bbc9175`), title
+  `[relay] FTF-1304: Cost-per-success calculator`. STEP 0: `sha256sum
+  CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `BLOCKER.md`
+  read — no live blocker; `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` read fresh. Recomputed the
+  dependency-ready frontier directly from `docs/spec-matrix.yaml` (20
+  `NONE`/`ABSENT` tasks with all deps `CERTIFIED`) rather than trusting
+  the prior shift's note alone: FTF-0212/FTF-0304 were already claimed by
+  other sessions' open PRs (#231, #194/#195, left untouched);
+  FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a
+  real OpenBao secret backend) were outside this sandbox's reach, same as
+  prior shifts' disclosure. **FTF-1304** was picked — same tractable,
+  pure-computation, no-external-dependency shape as the already-CERTIFIED
+  FTF-1302/FTF-1303 siblings, both non-FTF-1301 deps (FTF-1302/FTF-1303)
+  CERTIFIED. Full implementation record: this file's own "## Provisional"
+  section below, `docs/certifications/queue.md`, `PROGRESS.md`.
+
+  Also noticed but not acted on (Control-plane's role, not this relay
+  shift's): PR #246 (FTF-1303 tracking-doc reconciliation, already
+  resolved and marked "safe to merge" by its own author session) and PR
+  #243/#241 (FTF-04A06's own owner-direct-merge Control-plane
+  certification, #243 superseding #241) are both open and awaiting
+  Control-plane attention, not relay action — left untouched per "Relay is
+  execution-only."
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #245) — checked `docs/certifications/queue.md` for
   pending PROVISIONAL items per the certifier's standing duty; found
@@ -3956,6 +3986,26 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1304 ("Cost-per-success calculator") — submitted 2026-09-24 via
+**PR:** https://github.com/SJZLab/Sovra/pull/249
+(`claude/wizardly-fermat-fkyn9x` → `main`), commits `0e0390a`/`bbc9175`.
+Real, DB-free Section 32 `cost_per_success`/`amortized_cost_per_success`
+calculator composing FTF-1302's `window_total_cost` and FTF-1303's
+`provider_call_cost` (both CERTIFIED, same for FTF-1301) rather than
+re-deriving a price itself. `tests/tasks/test_ftf_1304.py` (20 checks):
+construction guards, a five-attempt golden example mixing settled/
+pending/fallback charges plus one non-`pass` outcome, `request_id` dedup
+for retries, the zero-successes negative_acceptance case, amortization
+(golden value plus "both arguments required together" refusal), and an
+own fault injection (dropped `pending_cost`/`fallback_cost` from
+`AttemptCost.total_cost()` — 3 genuine FAIL lines, reverted
+byte-identical). `ruff`/`mypy`/`validate_spec.py --strict` clean;
+`product_truth_check.py --fail-on-unwired` unchanged at 19/19 (no live
+caller yet, disclosed, same FTF-1302/FTF-1303 precedent); `status.py`
+unchanged at 61/300 certified. Awaiting CI + independent Control-plane L2
+review (Law 4). Full submission record: `docs/certifications/queue.md`'s
+matching 2026-09-24 entry, `PROGRESS.md`.
+
 FTF-1303 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #245 (supersedes PR #240, merge commit
 `f1e545745f7679ed19628d66ffc84955329a6f50`) — see "## Done" for the
