@@ -1,7 +1,61 @@
 # PROGRESS — Sovra
-Updated: 2026-09-24 (scheduled relay shift) — submitted FTF-R002
-(Authenticated internal component bindings and reconciled adapter
-foundation) PROVISIONAL.
+Updated: 2026-09-24 (scheduled Control-plane certifier shift) — reviewed
+FTF-04A06 (PR #238) and found NOT CERTIFIED (real Law 1 test-coverage gap;
+shipped code itself sound).
+
+## 2026-09-24 — FTF-04A06 — Control plane: NOT CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #238. Checked
+`docs/certifications/queue.md` per this session's own mandate and found
+FTF-04A06/PR #238 the sole pending PROVISIONAL item. Session-ID check: all
+three commits on PR #238 carry `Claude-Session: .../
+session_0159tZvUhDCyk3rdhW7fMscf` — no match to this session's own ID
+(`session_01MM33SzxPJuU62Z4SY45XKg`), independent per Law 4.
+
+Read the full PR diff directly — the implementation, its test file, one
+CI gate-wiring line, and the `docs/spec-matrix.yaml` entry, no scope
+creep. Own re-run in a dedicated git worktree on the PR's real head: `uv
+run python3 tests/tasks/test_ftf_04a06.py` — all checks passed, matching
+the producer's own claim; `ruff`/`mypy` clean, matching the PR's own
+claim.
+
+Pulled the real DoD via `tools/r1_handoff.py packet FTF-04A06 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `negative_acceptance` reads "Path/
+symlink traversal and concurrent file drift fail; never edit the target
+working tree" — "path traversal" is named explicitly, distinct from
+"symlink traversal", and the packet's own Section 7A.3 line (313) reads
+"canonicalized to prevent path traversal." The module's own docstring
+(`local_repository_connector.py:174`) makes this an explicit design claim:
+"Never a string-prefix comparison: `/approved-evil` is not treated as a
+descendant of `/approved` just because the text matches."
+
+Ran this review's own fault injection, independent of the producer's own
+two claimed vectors (symlink-escape, concurrent-drift — both
+independently re-confirmed genuine): patched `resolve_allowed_root`'s real
+`real_allowed in real_root.parents` structural check to a naive
+`str(real_root).startswith(str(real_allowed))` comparison — exactly the
+bug class the module's own docstring names by name. The delivered suite
+stayed fully green against this broken version (`all checks passed`),
+because no test uses a prefix-colliding sibling pair (every existing
+"refuses outside" case uses non-overlapping directory names). Confirmed
+the concrete exploit directly: `resolve_allowed_root(base/"allowed-evil",
+[base/"allowed"])` returned the evil root instead of raising
+`PathAllowlistError` against the patched module. Reverted byte-identical
+(`diff` confirmed) and re-ran the same exploit against the real, unmodified
+shipped code — correctly refused. The shipped implementation is sound;
+the delivered test evidence for this specific, explicitly-claimed
+guarantee does not exist — a real Law 1 gap ("nothing proven until test
+shown able to fail"), not a code defect.
+
+**NOT CERTIFIED.** `docs/spec-matrix.yaml` on `main` carries no FTF-04A06
+entry yet (PR #238 is unmerged), so no downgrade was needed. PR #238 left
+open, unmerged. **Fix needed, and disclosed to the next relay shift via
+QUEUE.md's "## Provisional" section:** add one test case with a
+prefix-colliding sibling pair (`allowed`/`allowed-evil`) asserting
+`resolve_allowed_root` refuses the latter against an allowlist containing
+only the former, shown able to fail first against a naive
+`.startswith(...)` implementation — no other part of this PR needs
+rework. Full record: `docs/certifications/queue.md`'s 2026-09-24 FTF-04A06
+entry, `QUEUE.md`'s matching shift note.
 
 ## 2026-09-24 — FTF-R002 — relay: implementation, submitted PROVISIONAL
 STEP 0.1/0.2 per this shift's own mandate: read PROGRESS.md/QUEUE.md/

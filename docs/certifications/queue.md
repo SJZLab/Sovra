@@ -13418,6 +13418,98 @@ leave those alone. FTF-0902 ("Network-policy templates") is genuinely
 dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
 sandbox does not have (disclosed by a prior shift, not claimed here).
 
+### Control plane review — 2026-09-24 — FTF-04A06 (PR #238) — NOT CERTIFIED (real Law 1 gap: the module's own "never a string-prefix comparison" guarantee is asserted but never shown able to fail)
+- **PR:** https://github.com/SJZLab/Sovra/pull/238 (`claude/wizardly-fermat-azo96v`
+  → `main`), head at review time `4badf5af9f1d0056248be670c0ffbe84d27034fe`
+  (three commits: `38ea4e4` implementation, `37e6b49` evidence-hash record,
+  `4badf5a` tracking-doc record).
+- **Session-ID check:** all three commits carry `Claude-Session:
+  .../session_0159tZvUhDCyk3rdhW7fMscf`; this reviewing session's own ID is
+  `session_01MM33SzxPJuU62Z4SY45XKg` -- no match, independent per Law 4.
+- **Contract pulled directly**, not assumed: `python3 tools/r1_handoff.py
+  packet FTF-04A06 --plan FINE_TUNING_FACTORY_RELEASE_1.md` ->
+  `docs/implementation/task-packets/FTF-04A06.md`. `negative_acceptance`
+  reads literally: "Path/symlink traversal and concurrent file drift fail;
+  never edit the target working tree." -- **"path traversal" is named
+  explicitly, distinct from "symlink traversal"**, and Section 7A.3's own
+  binding line (packet line 313) reads "local repository paths are
+  allowlisted explicitly and **canonicalized to prevent path traversal**."
+- **Diff read directly**, no scope creep: `local_repository_connector.py`
+  (431 lines) + `test_ftf_04a06.py` (434 lines) + the one-line CI gate step
+  + the `docs/spec-matrix.yaml` entry, matching the PR's own description
+  exactly.
+- **Own re-run, this session's own checkout of the PR's real head**
+  (`uv sync --all-packages` first): `uv run python3
+  tests/tasks/test_ftf_04a06.py` -- "all checks passed", matching the
+  producer's own claim. `uv run ruff check`/`ruff format --check`/`mypy`
+  clean on both new files, matching the PR's own claim.
+- **Own fault injection, independent of the producer's own two claimed
+  vectors, targeting the module's own explicit design claim rather than
+  its already-tested symlink/concurrency paths:** the module's own
+  docstring (`local_repository_connector.py:174`) states as a design
+  guarantee: *"Never a string-prefix comparison: `/approved-evil` is not
+  treated as a descendant of `/approved` just because the text matches."*
+  Patched `resolve_allowed_root`'s real comparison (line 190,
+  `if real_root == real_allowed or real_allowed in real_root.parents:`) to
+  a naive string-prefix check
+  (`if str(real_root).startswith(str(real_allowed)):`) -- a realistic,
+  common real-world path-allowlist bug, and exactly the class of bug the
+  module's own docstring calls out by name. **Re-ran the full delivered
+  suite (`tests/tasks/test_ftf_04a06.py`) against this broken version:
+  `FTF-04A06 local repository connector tests: all checks passed` -- the
+  suite did not detect the break at all**, because
+  `test_resolve_allowed_root_accepts_inside_and_refuses_outside`'s own
+  "refuses outside" case uses sibling directories `allowed`/`outside`
+  (name text does not overlap at all), never a prefix-colliding pair like
+  the docstring's own named example. Independently confirmed the concrete
+  exploit directly (not merely inferred from the suite staying green):
+  built `base/allowed` and `base/allowed-evil` as siblings, called
+  `resolve_allowed_root(base/"allowed-evil", [base/"allowed"])` against
+  the patched module -- **returned the evil root instead of raising
+  `PathAllowlistError`** (`BUG NOT CAUGHT: accepted evil root ->
+  /tmp/.../allowed-evil`). Reverted the patch byte-identical (`diff`
+  confirmed against the original) and re-ran the same exploit against the
+  real, unmodified shipped code: **correctly refused**
+  (`PathAllowlistError: root .../allowed-evil is not inside any
+  allowlisted root (...)`), confirming the shipped implementation itself
+  is not vulnerable to this specific bug -- `resolve_allowed_root` already
+  uses `real_allowed in real_root.parents`, a real structural check, not a
+  string comparison. **This is a Law 1 gap in the delivered evidence, not
+  a defect in the shipped code**: the module's own stated
+  anti-prefix-collision guarantee, and the packet's own literal "path
+  traversal" (not just "symlink traversal") negative_acceptance clause,
+  have zero test coverage in `tests/tasks/test_ftf_04a06.py` -- nothing in
+  the suite would have caught a regression to this exact bug class if one
+  were introduced later. No literal `../`-style traversal string case
+  exists in the suite either (every "refuses outside" case uses an
+  already-resolved, non-overlapping sibling path).
+- **Conclusion -- per CERTIFY step 3 ("confirm the test genuinely fails
+  when the feature is broken"):** the delivered test suite does not fail
+  when a realistic implementation regression is introduced into exactly
+  the property the module's own docstring and this task's own
+  negative_acceptance clause both name explicitly. Not merging. PR #238
+  left open, unmerged. `certification_state` stays `PROVISIONAL` on `main`
+  (Law 2 -- `docs/spec-matrix.yaml`'s FTF-04A06 entry does not yet exist
+  on `main` at all, since this PR has not merged; no downgrade needed).
+  **Fix needed:** add a dedicated case to
+  `test_resolve_allowed_root_accepts_inside_and_refuses_outside` (or a new
+  test function) using a sibling, prefix-colliding pair -- e.g.
+  `allowed = base / "allowed"`, `evil = base / "allowed-evil"`, both real
+  directories -- asserting `resolve_allowed_root(evil, [allowed])` raises
+  `PathAllowlistError`; this exact case should be shown able to fail first
+  against a naive `str(...).startswith(...)` implementation (matching this
+  review's own fault injection) before being confirmed passing against the
+  real one. No other part of this PR needs rework -- the symlink-escape
+  and concurrent-drift guards are both genuinely proven (own independent
+  re-run of the producer's two fault-injection vectors, same results).
+  Re-submit for certification once the missing case is added.
+- **CI status at review time:** run `35990930658` still `in_progress` on
+  the real final head (`4badf5a`) -- not a factor in this NOT CERTIFIED
+  verdict, which rests entirely on the Law 1 test-coverage gap above and
+  would apply regardless of CI's outcome.
+- **Validated-by:** session https://claude.ai/code/session_01MM33SzxPJuU62Z4SY45XKg
+  (independent -- see session-ID check above), 2026-09-24.
+
 ## 2026-09-24 — Relay: FTF-04A06 (PR #238) Law 1 fix pushed in response to review
 Independent Control-plane certification review (PR #239) found the
 shipped `resolve_allowed_root` sound (a real `Path.parents` structural
@@ -13443,7 +13535,12 @@ updated to disclose this fix. Replied on PR #238's review comment naming
 the fix commit.
 
 ## Next shift
-PR #238 needs a fresh CI run on its new head and a fresh independent
-Control-plane L2 review (Law 4). PR #239 (the certifier's own
-documentation-only NOT CERTIFIED record) is a separate PR on a different
-branch -- not this relay's to merge or edit.
+PR #238's fix (commit `911ae78`) was independently re-verified this same
+shift: CI re-ran green on the fixed head (`3fb3367`) after one re-run of a
+genuine, unrelated flake in FTF-R002's own already-certified
+`test_ftf_r002.py` (confirmed not caused by this PR's diff -- see this
+PR's own comment thread). PR #238 now needs a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
+record, now merged into `main`) is a separate PR this relay did not merge
+or edit.

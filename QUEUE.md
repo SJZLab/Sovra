@@ -42,6 +42,39 @@ Updated: 2026-09-24 (scheduled relay shift) — recomputed the
 
 ## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #238) — independently reviewed
+  FTF-04A06 (Local repository connector with root allowlist/path
+  protections). Session-ID check: all three of PR #238's commits carry
+  `session_0159tZvUhDCyk3rdhW7fMscf`, no match to this session's own ID
+  (`session_01MM33SzxPJuU62Z4SY45XKg`, Law 4). Contract pulled directly
+  via `tools/r1_handoff.py packet FTF-04A06` — its `negative_acceptance`
+  names "path traversal" explicitly, distinct from "symlink traversal".
+  Diff read directly — no scope creep. Own re-run of the delivered suite
+  on the PR's real head matched the producer's own claims (all checks
+  pass; ruff/mypy clean). **Own fault injection, independent of the
+  producer's own two claimed vectors:** patched `resolve_allowed_root`'s
+  real structural check to a naive string-prefix comparison — exactly the
+  bug class the module's own docstring names by name
+  (`/approved-evil` vs `/approved`) — and the delivered suite stayed
+  green throughout (`all checks passed`), because no test in
+  `tests/tasks/test_ftf_04a06.py` uses a prefix-colliding sibling pair.
+  Independently confirmed the concrete exploit directly: a real
+  `base/allowed-evil` root was wrongly accepted against an allowlist of
+  `[base/allowed]` under the patched module. Reverted byte-identical and
+  confirmed the real, unmodified shipped code correctly refuses the same
+  exploit (it already uses a real `.parents` structural check, not a
+  string comparison) — **the shipped code is sound; the delivered test
+  evidence for this specific, explicitly-claimed guarantee is not**, a
+  real Law 1 gap ("nothing proven until test shown able to fail"). **NOT
+  CERTIFIED solely because of this test-coverage gap** — `main` carries no
+  FTF-04A06 spec-matrix entry yet (PR #238 unmerged), so no downgrade is
+  needed. PR #238 left open, unmerged. Full record:
+  `docs/certifications/queue.md`'s matching 2026-09-24 FTF-04A06 entry.
+  Certified: unchanged at 59/300. Product-true: unchanged at 19/19. See
+  "## Provisional" below for what the next relay shift needs to fix.
+
+## Previous shift
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #228) — independently
   re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe). PR #228
   (superset of PR #226's diff plus a relay's IPv6 gate-wiring CI fix,
@@ -3788,13 +3821,18 @@ FTF-04A01/FTF-04A07; disclosed scope boundary (does not itself persist a
 `TargetSourceSnapshot` row or upload the dirty-tree archive to real object
 storage -- a later, separately-scoped caller's job). Full submission
 record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
-`PROGRESS.md`. First review (PR #239) was NOT CERTIFIED for a real Law 1
-evidence gap (no prefix-colliding-sibling allowlist test); fixed in commit
-`911ae78` on the same PR #238 (see this file's own top status note and
-`docs/certifications/queue.md`'s matching follow-up entry) -- no
-production code changed. Needs a fresh CI run on the new head and a fresh
-independent Control-plane L2 review (Law 4 -- this session cannot certify
-its own work).
+`PROGRESS.md`. First review (PR #239, merged into `main`) was NOT
+CERTIFIED for a real Law 1 evidence gap (no prefix-colliding-sibling
+allowlist test); fixed in commit `911ae78` on the same PR #238 (see this
+file's own top status note and `docs/certifications/queue.md`'s matching
+follow-up entry) -- no production code changed. CI re-ran green on the
+fixed head (`3fb3367`) after one re-run of a genuine, unrelated flake in
+FTF-R002's own already-certified `test_ftf_r002.py`
+(`test_job_identity_rejects_tampered_token`, a timestamp-dependent
+same-character coincidence in that test's own tamper construction --
+confirmed not caused by this PR's diff). Needs a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work).
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit
