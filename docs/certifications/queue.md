@@ -14281,3 +14281,43 @@ run on the opened PR are required before certification.
 
 - **Submitted-by:** session https://claude.ai/code/session_01NCb1NKVWuvGDb5GfFvXxMh (producer --
   independent Control-plane L2 certification still required, Law 4).
+
+## 2026-09-24 — FTF-0507 — relay: flag, needs Control-plane certification against main
+PR #253 (FTF-0507, "Tool-trace normalizer") went CI-green (29/29 checks, `gate` included) on head
+`69a5497266187cf5fba252c8121cea08fbd058f7` and was then merged into `main` directly by the repo
+owner (merge commit `c7d33a3`, `merged_by: samerzakaria`, plain squash-merge title -- not an
+independent Control-plane certifier session), same owner-direct-merge pattern already on record for
+PR #238/FTF-04A06, PR #245/FTF-1303, and PR #249/FTF-1304.
+
+Per Law 4 ("Producer never certifies own work. Merge = PROVISIONAL only"), a plain merge never
+certifies regardless of who performs it. Confirmed directly against `main`, not assumed: a fresh
+`origin/main` checkout shows `docs/spec-matrix.yaml`'s FTF-0507 entry still
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`, and `scripts/status.py` still reads
+`62/300 certified` (unchanged from before the merge).
+
+Since PR #253 is now closed, the usual `pull_request.opened` webhook that triggers a Control-plane
+certifier shift will not fire again for this item. This relay session cannot self-certify its own
+submission (Law 4 applies doubly here -- same producer session that implemented FTF-0507).
+
+**What the next Control-plane certifier shift needs, already assembled:**
+- Code lives on `main` at merge commit `c7d33a3` (`workers/data/tool_trace_normalizer.py`,
+  `tests/tasks/test_ftf_0507.py`).
+- A full green CI run already ran on the exact pre-merge head (`69a5497`, run `36045751066`,
+  29/29 checks including `gate`) -- available for the certifier's own fresh `get_check_runs`/
+  `get_job_logs` confirmation against that same commit's tree, now on `main`.
+- `tests/tasks/test_ftf_0507.py` (18 test functions) is ready for independent local reproduction.
+- This task's own two fault-injection vectors (disabling the mixed-session `session_id` guard;
+  disabling the "authorized must be an explicit bool" guard) are documented in this file's own
+  2026-09-24 "FTF-0507 -- relay: implemented, submitted PROVISIONAL" entry above, and in
+  `docs/spec-matrix.yaml`'s FTF-0507 `notes` field -- available for the certifier to reproduce as
+  its own independent verification, or to run a third, distinct vector.
+- Task contract: `python3 tools/r1_handoff.py packet FTF-0507 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+
+Only the real Control-plane CERTIFY procedure (session-ID check, diff read, fresh CI/log
+confirmation, own local reproduction, own fault injection, `product_truth_check.py`/
+`validate_spec.py` confirmation, task-contract cross-check) remains before this task can move to
+`certification_state: CERTIFIED`.
+
+- **Submitted-by:** session https://claude.ai/code/session_01NCb1NKVWuvGDb5GfFvXxMh (same producer
+  session as the original FTF-0507 submission -- this entry is a tracking-docs-only flag, not a
+  certification; independent Control-plane L2 certification is still required, Law 4).

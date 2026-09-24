@@ -1,4 +1,17 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (same shift, continued) — **PR #253 (FTF-0507) was merged into `main` directly
+  by the repo owner** (merge commit `c7d33a3`, `merged_by: samerzakaria`) shortly after going
+  CI-green (29/29), not via an independent Control-plane certifier session — same owner-direct-merge
+  pattern already on record for FTF-04A06/FTF-1303/FTF-1304. Per Law 4 a plain merge never
+  certifies: confirmed fresh against `origin/main` that FTF-0507 still reads
+  `certification_state: PROVISIONAL`, `status.py` unchanged at `62/300`. Since PR #253 is now
+  closed, the usual `pull_request.opened` webhook will not refire for this item, and this relay
+  session cannot self-certify its own submission (Law 4 applies doubly). Restarted this session's
+  own designated branch from the now-merged `origin/main` and opened a tracking-docs-only PR
+  flagging this for the next Control-plane certifier shift — see "## Provisional" below and
+  `docs/certifications/queue.md`.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
   submitted **FTF-0507 (Tool-trace normalizer) PROVISIONAL** via **PR:**
   https://github.com/SJZLab/Sovra/pull/253 (branch
@@ -4037,11 +4050,21 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0507 ("Tool-trace normalizer") — this shift's own submission, see the
-top-of-file 2026-09-24 relay entry for the full record. **PR:**
-https://github.com/SJZLab/Sovra/pull/253
-(`claude/wizardly-fermat-svcgeh` → `main`), commit `83c865e`. Awaiting
-CI + independent Control-plane L2 review (Law 4).
+FTF-0507 ("Tool-trace normalizer") — PR #253 went CI-green (29/29, `gate` included) on head
+`69a5497` and was merged into `main` directly by the repo owner (merge commit `c7d33a3`,
+`merged_by: samerzakaria`), not an independent Control-plane certifier session — same pattern
+already on record for FTF-04A06/FTF-1303/FTF-1304. Per Law 4 a plain merge never certifies:
+confirmed on a fresh `origin/main` checkout that `docs/spec-matrix.yaml`'s FTF-0507 entry still
+reads `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`, `status.py` still `62/300`.
+**Genuinely dependency-ready for the next Control-plane certifier shift:** code is on `main`,
+already exercised by a full green CI run (run `36045751066`) on its exact pre-merge head, and
+`tests/tasks/test_ftf_0507.py` (18 checks) plus this task's own two fault-injection vectors are
+ready for independent re-verification against merge commit `c7d33a3` — only the real CERTIFY
+procedure remains.
+
+FTF-1304 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via
+PR #249 (merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`) — see
 
 FTF-1304 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via

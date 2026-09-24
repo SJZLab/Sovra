@@ -17109,9 +17109,34 @@ Appended to `docs/certifications/queue.md` for Control plane. Commit `83c865e` o
 `claude/wizardly-fermat-svcgeh`. **PR:** https://github.com/SJZLab/Sovra/pull/253, title
 `[relay] FTF-0507: Tool-trace normalizer`.
 
+## 2026-09-24T[relay] (same shift, continued) — Flag: FTF-0507 needs Control-plane certification against main
+PR #253 (FTF-0507) went CI-green (29/29, `gate` included) on head `69a5497` and was then merged
+into `main` directly by the repo owner (merge commit `c7d33a3`, `merged_by: samerzakaria`, plain
+squash-merge title — not an independent Control-plane certifier session), same pattern already on
+record for PR #238/FTF-04A06, PR #245/FTF-1303, and PR #249/FTF-1304.
+
+Per Law 4 ("Producer never certifies own work. Merge = PROVISIONAL only"), a plain merge never
+certifies regardless of who performs it. Confirmed directly against `main`, not assumed: a fresh
+`origin/main` checkout shows `docs/spec-matrix.yaml`'s FTF-0507 entry still
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`, and `scripts/status.py` still reads
+`62/300 certified` (unchanged).
+
+Since PR #253 is now closed, the usual `pull_request.opened` webhook that triggers a Control-plane
+certifier shift will not fire again for this item. This relay session cannot self-certify its own
+submission (Law 4 applies doubly here — same producer session). Restarted this session's own
+designated branch (`claude/wizardly-fermat-svcgeh`) from the now-merged `origin/main` (per this
+session's own branch instructions: a merged PR cannot be reused, follow-up work restarts from the
+latest default branch) and opened a tracking-docs-only PR recording this in `QUEUE.md`'s
+"## Provisional" section and `docs/certifications/queue.md`, so the next Control-plane certifier
+shift finds it without re-discovering it from scratch: the code is on `main`, already exercised by
+a full green CI run on its exact pre-merge head (run `36045751066`), and
+`tests/tasks/test_ftf_0507.py` (18 checks) plus this task's own two fault-injection vectors are
+available for independent re-verification against the merge commit — only the real Control-plane
+CERTIFY procedure remains.
+
 ## Next shift
-PR #253 (FTF-0507) is open, awaiting CI plus an independent Control-plane L2 certifier shift (not
-this relay's role) — do not re-implement. PRs #246 (FTF-1303 tracking-doc reconciliation) and #243
+FTF-0507 is merged to `main` (PROVISIONAL, not yet CERTIFIED) — needs an independent Control-plane
+L2 certifier shift, not this relay's role. PRs #246 (FTF-1303 tracking-doc reconciliation) and #243
 (FTF-04A06 owner-direct-merge certification, supersedes #241) remain separately open from before,
 awaiting Control-plane attention. FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02
 (needs a real OpenBao secret backend) remain outside this relay sandbox's practical reach.
