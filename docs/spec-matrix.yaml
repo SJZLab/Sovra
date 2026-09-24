@@ -2478,7 +2478,7 @@ FTF-04A06:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Local repository connector with root allowlist/path protections
-  evidence_hash: ''
+  evidence_hash: 38ea4e450fcbf9e2f65032e78490bf632d30adac
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
