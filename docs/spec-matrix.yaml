@@ -1163,6 +1163,31 @@ FTF-0211:
     no regression. scripts/validate_spec.py --strict clean (git fetch --unshallow origin first, this
     sandbox's own documented shallow-clone artifact). Not self-certified (Law 4) -- submitted
     PROVISIONAL, awaiting independent Control-plane L2 review.
+
+    2026-09-24 relay follow-up: an independent Control-plane review (see docs/certifications/
+    queue.md's 2026-09-23 FTF-0211 entry) found PR #226's gate job genuinely failing on the real
+    GitHub Actions runner -- tests/tasks/test_ftf_h006.py's _detect_ipv6_support() probes with an
+    explicit AF_INET6 socket, but the real _SERVER_V6 was built via a bare
+    ThreadingHTTPServer(("::1", 0), _Handler), which inherits socketserver.TCPServer's AF_INET
+    default regardless of the address passed in -- the two disagreed on a real dual-stack runner
+    (socket.gaierror: Address family for hostname not supported), crashing the gate job before
+    test_ftf_0211.py ever ran. This session's own designated git branch differs from PR #226's own
+    branch (claude/wizardly-fermat-pvnd0o) and this session cannot push to a branch other than its
+    own, so the fix was merged onto this session's own branch instead of PR #226's -- see PROGRESS.md
+    and docs/certifications/queue.md for the full record and the new PR this produced. Fix: added
+    _ThreadingHTTPServerV6(ThreadingHTTPServer) with address_family = socket.AF_INET6 and used it for
+    _SERVER_V6, so the real server now binds with the same address family the probe already checks.
+    Reproduced the exact CI symptom locally byte-for-byte (bare ThreadingHTTPServer(("::1", 0), ...)
+    raises socket.gaierror: [Errno -9] Address family for hostname not supported in this sandbox too,
+    independent of real IPv6 routing support) before applying the fix. Added a pure, always-run
+    regression check (test_ipv6_server_class_uses_the_same_address_family_the_probe_checks) shown
+    able to fail first (Law 1: reverted address_family to the old default, exactly that check failed
+    for real; reverted byte-identical, suite re-ran clean). Full re-run after the fix: ruff
+    check/format --check clean, mypy clean (208 files), tests/tasks/test_ftf_0211.py/test_ftf_0210.py/
+    test_ftf_0201.py/test_ftf_0204.py/test_ftf_h006.py all re-run clean (no regression),
+    scripts/validate_spec.py --strict clean, scripts/product_truth_check.py --fail-on-unwired stays
+    17/17 (unchanged, Law 2). certification_state left at PROVISIONAL, not self-certified (Law 4) --
+    this is a producer-role CI fix, not a certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0211.py
