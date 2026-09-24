@@ -14105,3 +14105,95 @@ its owner-direct merge — are both open, awaiting Control-plane attention. Left
 
 - **Validated-by:** session https://claude.ai/code/session_017Uiok74naZssjNvuuhXncs (producer —
   independent Control-plane L2 certification still required, Law 4).
+
+## 2026-09-24 — FTF-1304 — Control plane: independent CERTIFY review, CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+PR #249 (FTF-1304, "Cost-per-success calculator"). Checked `docs/certifications/queue.md` for
+every item PROVISIONAL and not yet certified, per this session's standing duty. The producing
+relay session's own first push (commits `0e0390a`/`bbc9175`) had omitted the required
+`docs/certifications/queue.md`/`QUEUE.md`/`PROGRESS.md` append despite its own PR body claiming
+it; a same-shift follow-up commit (`f7dd5d3`) corrected this before this review began, confirmed
+tracking-doc-only via `git diff --stat` (zero changes under `apps/api/`/`tests/`). Cross-checked
+`docs/spec-matrix.yaml` directly (not just this log) and found exactly one genuinely PROVISIONAL
+entry, FTF-1304 (a naive `certification_state: PROVISIONAL` grep elsewhere in the file also
+matched FTF-0207, but that was prose *inside* FTF-0207's own already-CERTIFIED notes field
+quoting a past irregularity narrative, not a live state — confirmed by reading the anchored
+`^  certification_state: PROVISIONAL$` key line directly, which matches only FTF-1304).
+
+**Independently verified, not taken on the producer's word alone:**
+- **Session-ID check:** all three commits on PR #249 carry `Claude-Session` trailer
+  `session_017Uiok74naZssjNvuuhXncs` (producer) — no match against this session's own ID
+  (`session_016j3oFawdjCmJveQAiaAyDy`), independent per Law 4.
+- **Diff read directly:** `apps/api/app/services/cost_per_success_calculator.py` (271 lines) and
+  `tests/tasks/test_ftf_1304.py` (382 lines) read in full. `AttemptCost` is a frozen dataclass with
+  construction-time validation (non-negative `Decimal` for `settled_cost`/`pending_cost`, `bool`
+  rejected as an `int` subclass, `fallback_used`/`fallback_cost` required together in both
+  directions); `cost_per_success`/`amortized_cost_per_success` implement Section 32's own named
+  formulas, composing FTF-1302/FTF-1303's already-priced totals rather than re-deriving a price.
+- **This PR's head moved once while under review** (`bbc9175` → `f7dd5d3`): confirmed via `git
+  diff --stat` between the two heads that the new commit was tracking-doc-only (`PROGRESS.md`/
+  `QUEUE.md`/`docs/certifications/queue.md`, adding the previously-missing append), zero
+  production/test changes — the code already read stayed the code that shipped.
+- **CI independently watched to completion on the real final head, not taken on faith:** GitHub
+  Actions run `36030893786` on head `f7dd5d3bd1a0cad69bc0d6686b09d25dcd9f6d02` polled to
+  completion — all 29 checks, `gate` included, `status: completed` / `conclusion: success`,
+  `mergeable_state: clean`. Pulled the `gate` job's own step-level log text directly
+  (`get_job_logs`, job id `107739065356`): the step "Run uv run python3
+  tests/tasks/test_ftf_1304.py" genuinely executed and printed "FTF-1304 Cost-per-success
+  calculator tests: all checks passed" — real execution, not a self-reported claim.
+- **Own local reproduction:** ran `python3 tests/tasks/test_ftf_1304.py` directly against the
+  checked-out head — all 20 checks passed. `ruff check`/`ruff format --check` clean; `uv run mypy
+  app/services/cost_per_success_calculator.py` clean.
+- **Own fault injection (Law 1), distinct from the producer's own vector** (dropping
+  `pending_cost`/`fallback_cost` from `AttemptCost.total_cost()`): patched
+  `AttemptCost.__post_init__` so `fallback_used=True` with no matching `fallback_cost` silently
+  defaults `fallback_cost` to `Decimal("0")` instead of raising — the "invented or zero dollar
+  value" half of this task's own negative_acceptance clause, applied to the fallback/judge/tool
+  category specifically. Ran the real suite against the faulted code: 1 genuine `FAIL [FTF-1304]`
+  line (`test_rejects_fallback_used_without_fallback_cost`). Separately confirmed by direct
+  reproduction that the faulted code prices a declared, unobserved fallback usage at exactly $0
+  instead of refusing (`cost_per_success` returned `10.00` instead of raising, for an attempt with
+  `settled_cost=10.00` and `fallback_used=True`/`fallback_cost=None`). Reverted byte-identical
+  (`diff` against the pre-fault copy empty); re-ran the real suite immediately after — all 20
+  checks passed again.
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19` unchanged, and confirmed
+  legitimate rather than an evasion:** this task's `proving_symbol` is the empty string — a pure,
+  DB-free computation module with no live HTTP route or caller in this repository yet
+  (`api_contract`/`shared_lock_required` both point at FTF-1301's own already-frozen contract
+  slot), the same accepted scope-narrowing precedent as FTF-1302/FTF-1303/FTF-1401/FTF-1601/
+  FTF-1701/FTF-1810 before each one's own first live caller existed. Read
+  `scripts/product_truth_check.py`'s own logic directly: an entry with no `proving_symbol` is
+  skipped entirely, never counted as a false 0/0 pass against a claimed symbol.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-1304 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Total costs across all attempts divided by
+  independently successful tasks, plus optional training amortization" — proven by the
+  five-attempt golden example, $9.50, plus the amortization golden example, $12.00; "Independent
+  review, exact merged commit, real relevant integration and negative-test evidence recorded" —
+  this review) and `negative_acceptance` ("Zero successes, pending charges and unobserved fallback
+  use cannot yield misleading cheap passing metric" — proven by the shipped suite's own
+  zero-successes/pending/fallback cases plus this review's own fault injection above) both
+  genuinely met, not merely "tests pass". `dependencies` FTF-1301/FTF-1302/FTF-1303 confirmed
+  already `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- `validate_spec.py --strict` clean on this diff (after `git fetch --unshallow origin`, this
+  sandbox's own pre-existing shallow-clone artifact — the earlier mass of `stale_commit` findings
+  it otherwise reports were confirmed pre-existing sandbox artifacts, not defects in this diff).
+
+**Also checked, not acted on (outside this session's certification-only mandate):** PR #246
+(FTF-1303 tracking-doc-only follow-up recording an owner-direct merge that never bumped
+`certification_state`) and PR #243 (an independent FTF-04A06 review PR) are both still open on
+GitHub, but both criteria they describe are already `CERTIFIED` on `main` via different, later PRs
+(#245 and #242 respectively) — confirmed directly against the current `docs/spec-matrix.yaml`.
+Both source PRs are stale/superseded; no certification-worthy content remains in either, so no
+certifier action was taken on them.
+
+**No blocking defect found. Merged PR #249** (merge commit
+`4b432a44d4d6ef511796bce5f30faec4d948b831`) into `main`. `docs/spec-matrix.yaml`'s FTF-1304 entry
+set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (no live caller, confirmed legitimate above). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-1304']` updated. `scripts/status.py`:
+`61/300` -> `62/300` certified; product-true unchanged at `19/19` (no live caller added). Appended
+a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved FTF-1304 to
+"## Done", updated "## Provisional" to note it is no longer pending) and `PROGRESS.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_016j3oFawdjCmJveQAiaAyDy
+  (independent -- see session-ID check above), 2026-09-24.
