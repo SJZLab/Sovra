@@ -1,4 +1,49 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and submitted **FTF-0508
+  (Record schema validator) PROVISIONAL** via **PR:** https://github.com/SJZLab/Sovra/pull/257
+  (branch `claude/ftf-0508-record-schema-validator`, commit `4abc8b4`), title `[relay] FTF-0508:
+  Record schema validator`. STEP 0: `sha256sum CLAUDE.md` verified clean against
+  `CLAUDE.md.sha256`; `BLOCKER.md` read — no live blocker (both entries resolved history);
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (huge append-only logs, read
+  via `tail`/targeted `offset`/`grep`). Confirmed FTF-0507 (this file's own previous top item) was
+  already independently CERTIFIED via PR #253 (merge commit `c7d33a3a...`) before this shift
+  started — this session's own `HEAD` was already at parity with `origin/main`'s tip. cognee-cli
+  not installed in this sandbox — text-search fallback declared, same as prior shifts.
+
+  Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (parsed with
+  PyYAML, deps read from each entry's own `notes` field) rather than trusting the prior shift's
+  note alone: 19 `ABSENT`/`NONE` tasks had every dependency `CERTIFIED`. FTF-0212/FTF-0304 remain
+  other sessions' own open PRs (#231, #195/#194); FTF-0214/FTF-0215/FTF-0500A/FTF-0500D are
+  UI/Temporal-workflow shaped, outside this sandbox's practical reach; FTF-0302/FTF-0303 need real
+  outbound network egress; FTF-04A02 needs a real reachable OpenBao instance; FTF-04A17/FTF-04A19
+  share the `contracts:04A` lock and need a live Postgres migration; FTF-0902/FTF-1503/FTF-1506 not
+  evaluated in depth once FTF-0508 was picked; FTF-1201/FTF-H004 need a real reachable LiteLLM
+  gateway/credential; FTF-1703 needs ≥1000 real curated/reviewed traces. Checked GitHub directly
+  (8 open PRs) — none mentioned FTF-0508/record_schema in title or branch — before claiming it.
+  **FTF-0508** was picked: same tractable, pure-computation, no-DB, no-external-dependency shape as
+  the already-CERTIFIED FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304 siblings, and its own
+  dependency-unlock (FTF-0507 just CERTIFIED this same day) is exactly the kind of freshly-unblocked
+  work the prior shift's own note anticipated. All three deps (FTF-0500, FTF-0506, FTF-0507)
+  confirmed `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+
+  Read FTF-0506's/FTF-0507's own real modules in full before writing any code (PEV "P" phase).
+  Implemented `workers/data/record_schema_validator.py::validate_record_batch` — a pure batch
+  validator for already-normalized Section 6.11 `DatasetRecord` candidates, checking canonical
+  `schema_version` (reused directly from FTF-0506's own `SCHEMA_VERSION`), `source_type`/dialect
+  (Section 6.8F's own frozen `DatasetSourceConnection.source_type` enum), content size (Section
+  67.3's 2MiB canonical single-record max), required provenance fields (`record_sha256`/
+  `normalized_sha256`) and required quality fields (`quality_status`/`pii_status`/
+  `tool_schema_status`, each against a disclosed enum grounded in Section 8.1/67.4). Returns a
+  `RecordSchemaValidationReport` with row-level blocking issues (`batch_position`/`record_index`
+  evidence) rather than raising on the first violation — this task's own negative_acceptance
+  ("...produces blocking issues with row evidence") differs in shape from FTF-0506's/FTF-0507's
+  own raise-on-first-violation style, since this task validates a *batch*, not one record. Path
+  refinement recorded before READY (Section 84.3), same precedent as FTF-0506/FTF-0507: placed at
+  `workers/data/record_schema_validator.py`, not the packet's suggested non-existent
+  `services/training-worker/...` tree. Full implementation record: this file's own "## Provisional"
+  section below, `docs/certifications/queue.md`, `PROGRESS.md`.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #253) — checked `docs/certifications/queue.md` for
   pending PROVISIONAL items per the certifier's standing duty; cross-checked
@@ -4063,7 +4108,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+- FTF-0508 — Record schema validator. Submitted PROVISIONAL 2026-09-24 via
+  PR https://github.com/SJZLab/Sovra/pull/257 (commit `4abc8b4`). 20/20
+  tests pass; two independent fault injections (duplicate-`record_index`
+  guard, `quality_status` enum guard) each shown to genuinely fail the
+  suite, both reverted byte-identical. `ruff`/`mypy`/`validate_spec.py
+  --strict` clean; `product_truth_check.py` unchanged at 19/19 (no live
+  caller yet, disclosed); `status.py` unchanged at 63/300. Full record:
+  `docs/certifications/queue.md`, `PROGRESS.md`.
 
 FTF-0507 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #253 (merge commit

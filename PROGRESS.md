@@ -17207,3 +17207,131 @@ FTF-04A17/04A19 (share the `contracts:04A` lock, need a live Postgres migration)
 FTF-1201/FTF-H004 (need a real reachable LiteLLM gateway/credential), FTF-1503, FTF-1506 (dependency
 scanning — likely needs a CVE/advisory feed reachable only via network egress, verify before
 claiming), and FTF-1703 (needs >=1000 real curated/reviewed traces, a data-curation task).
+
+## 2026-09-24T[relay] — Relay: FTF-0508 (Record schema validator), submitted PROVISIONAL
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`; `BLOCKER.md` read in full — no live blocker, both entries resolved history;
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (all three large append-only
+logs exceeding the file-read size limit — read via `tail`/targeted `offset`/`grep`). cognee-cli not
+installed in this sandbox (`command not found`) — text-search fallback declared, same as prior
+shifts.
+
+Confirmed live state before picking work: FTF-0507 (this file's own last-picked item) was already
+independently CERTIFIED and merged (PR #253, merge commit `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`)
+before this shift started — this session's own `HEAD` was already at parity with `origin/main`'s
+tip, confirmed via `git log HEAD..origin/main`/`git log origin/main..HEAD` both empty.
+
+Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml` (parsed directly with
+PyYAML; dependencies are recorded in each entry's own `notes` field as `deps=...`, not a top-level
+YAML key — read the raw structure of a real entry first rather than assuming a schema). 19 tasks
+had `implementation_state` `ABSENT`/`NONE` with every declared dependency already `CERTIFIED`.
+Checked GitHub directly via `list_pull_requests` (8 open PRs, none new) before claiming: FTF-0212
+(PR #231) and FTF-0304 (PRs #195/#194) remain other sessions' own open work, left untouched.
+FTF-0214/FTF-0215/FTF-0500A/FTF-0500D are UI/Temporal-workflow shaped, outside this sandbox's
+practical reach. FTF-0302/FTF-0303 need real outbound network egress. FTF-04A02 needs a real
+reachable OpenBao instance. FTF-04A17/FTF-04A19 share the `contracts:04A` lock and need a live
+Postgres migration. FTF-1201/FTF-H004 need a real reachable LiteLLM gateway/credential. FTF-1703
+needs >=1000 real curated/reviewed traces (a data-curation task, not pure computation).
+
+**FTF-0508 (Record schema validator)** was picked — same tractable, pure-computation, no-DB,
+no-external-dependency shape as the already-CERTIFIED FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304
+siblings, and exactly the dependent the prior shift's own "Next shift" note anticipated becoming
+ready once FTF-0507 certified (it did, same day). All three dependencies (FTF-0500, FTF-0506,
+FTF-0507) confirmed `CERTIFIED` in `docs/spec-matrix.yaml` directly before relying on them.
+
+Read FTF-0506's real module (`workers/data/canonical_conversation_normalizer.py`) and FTF-0507's
+(`workers/data/tool_trace_normalizer.py`), plus their test suites, in full before writing any code
+(PEV "P" phase). Read Section 6.11 (`DatasetRecord`), 6.8F (`DatasetSourceConnection`), 8.1
+(import pipeline), 8.2 (blocking dataset errors) and 67.3 (file/parser safety limits) directly from
+`FINE_TUNING_FACTORY_RELEASE_1.md` before designing this task's own field/enum choices, since the
+task packet's own acceptance clause ("Validate schema/dialect/content size and required
+provenance/quality fields per canonical version") names Section 6.11 field categories the master
+spec does not itself give literal enum values for.
+
+Implemented `workers/data/record_schema_validator.py::validate_record_batch`. Design decisions,
+each grounded and disclosed in the module's own docstring rather than silently invented (Section
+84.3 "task titles alone are not an implementation recipe"): `CANONICAL_SCHEMA_VERSIONS` reused
+directly from FTF-0506's own `SCHEMA_VERSION` constant (reuse-first, Section 77.1) rather than a
+second independently-declared version string; the "dialect" check reuses Section 6.8F's own frozen
+`DatasetSourceConnection.source_type` enum verbatim (`upload`/`s3`/`minio`/`database`/
+`agent_traces`/`production_conversations`/`api`) rather than inventing a new vocabulary;
+`MAX_CANONICAL_RECORD_BYTES` is Section 67.3's own literal "canonical single-record max 2MiB",
+measured via the same canonical-JSON convention FTF-0506/FTF-0507 already use for hashing;
+`QUALITY_STATUS_VALUES`/`PII_STATUS_VALUES`/`TOOL_SCHEMA_STATUS_VALUES` are this task's own
+disclosed enums, grounded directly in Section 8.1's pipeline-stage language (steps 8/14/15/17/18)
+and Section 67.4's "quarantined for reviewer resolution" language, since the master spec names
+these Section 6.11 fields but not their literal value sets.
+
+This task's own negative_acceptance ("Unknown content or schema version and invalid sequence
+produces blocking issues with row evidence") drove a real, deliberate shape difference from
+FTF-0506/FTF-0507: `validate_record_batch` never raises on a per-row violation, unlike FTF-0506's/
+FTF-0507's own raise-on-first-violation style, because this task validates a *batch* of records
+(Section 8.1 step 17: "UI requires user resolution of blocking issues", plural) and each row's
+issue must carry usable evidence (`batch_position` always, plus `record_index` once it is itself
+confirmed valid) rather than aborting the whole batch on the first bad row. Only a batch that is
+not a real sequence at all (not a sequence, or empty) raises `RecordSchemaValidationError` — there
+being no row to attach that failure's evidence to.
+
+Wrote `tests/tasks/test_ftf_0508.py` (20 no-DB test functions): a fully valid two-record batch
+accepted with zero issues; one dedicated negative test per acceptance-clause check (unknown schema
+version with row-evidence assertion, unknown dialect, content exceeding the 2MiB bound, two missing
+provenance fields counted independently, and one negative test per quality-field enum); unknown
+content in three distinct shapes (missing required key, extra unrecognized key, non-mapping,
+non-JSON-serializable); three `invalid_sequence` variants (non-int, negative int, bool)  plus
+cross-batch duplicate `record_index` (proving only the later, ambiguous duplicate is penalized, not
+the first occurrence); row evidence falling back to `batch_position` when `record_index` itself is
+the invalid field under dispute; a non-mapping candidate row; a mixed accepted/rejected batch
+proving partition correctness; both batch-shape error paths (non-sequence, empty) confirmed to
+raise; and a direct assertion that `CANONICAL_SCHEMA_VERSIONS` really does equal FTF-0506's own
+`{SCHEMA_VERSION}`, not a silently-diverged copy.
+
+**Own fault injection (Law 1), two distinct vectors, both reverted byte-identical, suite
+re-confirmed clean immediately after each:** (1) disabled the duplicate-`record_index` guard
+(removed the `if record_index in seen_record_indices: ... else: ...` branch inside
+`validate_record_batch`, so every index was recorded unconditionally without ever checking for a
+prior occurrence) — run in a fresh process, the mutated module genuinely lets a duplicate
+`record_index` through; 1 genuine `FAIL [FTF-0508]` line. (2) disabled the `quality_status` enum
+guard (`if False and quality_status not in QUALITY_STATUS_VALUES:`) — run in a fresh process, the
+mutated module genuinely accepts an arbitrary, unrecognized `quality_status` string; 1 genuine
+`FAIL [FTF-0508]` line. Both reverted (`diff` against the pre-fault copy confirmed byte-identical);
+suite re-ran clean both times.
+
+`ruff check`/`ruff format --check` clean repo-wide; `uv run mypy workers/data/
+record_schema_validator.py` and the test file clean; `validate_spec.py --strict` clean (after `git
+fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact, same disclosed class of
+gap already on record for prior shifts); `product_truth_check.py --fail-on-unwired` unchanged at
+`19/19` (no live caller yet — no dataset-import route exists in this repository to call
+`validate_record_batch`, same disclosed "no live caller yet" precedent already established for
+FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304); `status.py` unchanged at `63/300` certified;
+`verify_task.py --task FTF-0508 --stage task` reports `BLOCKED` pre-merge (expected, same precedent
+as every sibling PROVISIONAL submission).
+
+Diff scope confirmed exactly this task's own new files (`workers/data/record_schema_validator.py`,
+`tests/tasks/test_ftf_0508.py`, `docs/implementation/task-packets/FTF-0508.md`) plus one new `gate`
+job CI step and the expected `docs/spec-matrix.yaml` tracking update — no scope creep.
+
+Added this task's own CI gate step to `.github/workflows/ci.yml`'s `gate` job.
+`docs/spec-matrix.yaml`'s FTF-0508 entry set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the
+real merge commit hash is known (same precedent as every sibling PROVISIONAL submission).
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are needed before certification.
+Appended to `docs/certifications/queue.md` for Control plane. Commit `4abc8b4` on branch
+`claude/ftf-0508-record-schema-validator`. **PR:** https://github.com/SJZLab/Sovra/pull/257, title
+`[relay] FTF-0508: Record schema validator`.
+
+## Next shift
+PR #257 (FTF-0508) is open, awaiting CI plus an independent Control-plane L2 certifier shift (not
+this relay's role) — do not re-implement. PRs #246 (FTF-1303 tracking-doc reconciliation), #243
+(FTF-04A06 owner-direct-merge certification, supersedes #241), #250 (FTF-1304 flag-certification
+tracking doc) remain separately open from before, awaiting Control-plane attention.
+FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret
+backend) remain outside this relay sandbox's practical reach. Recompute the dependency-ready
+frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note alone before picking a
+next item — candidates already identified this shift (pending FTF-0508's own certification landing,
+which may free further dependents) include FTF-0302/0303 (artifact resolvers — need real outbound
+network egress), FTF-04A17/04A19 (share the `contracts:04A` lock, need a live Postgres migration),
+FTF-0902, FTF-1201/FTF-H004 (need a real reachable LiteLLM gateway/credential), FTF-1503, FTF-1506
+(dependency scanning — likely needs a CVE/advisory feed reachable only via network egress, verify
+before claiming), and FTF-1703 (needs >=1000 real curated/reviewed traces, a data-curation task).

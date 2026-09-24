@@ -14357,3 +14357,63 @@ a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved F
 
 - **Validated-by:** session https://claude.ai/code/session_01DfzHGRTG4C3bo11N4fu9N4
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-24 — FTF-0508 — Record schema validator
+- **PR:** https://github.com/SJZLab/Sovra/pull/257 (claude/ftf-0508-record-schema-validator → main)
+- **Commit:** 4abc8b4
+- **Test:** tests/tasks/test_ftf_0508.py — 20 checks
+- **Evidence:** ran clean (20/20) against the real implementation; two independent fault
+  injections each shown to genuinely fail the suite, both reverted byte-identical, suite
+  re-confirmed clean immediately after each:
+  1. disabled the duplicate-`record_index` guard inside `validate_record_batch` (removed the
+     `if record_index in seen_record_indices: ... else: seen_record_indices[...] = ...` branch,
+     always recording the index unconditionally) — 1 genuine
+     `FAIL [FTF-0508] negative_acceptance: a record_index duplicating another row in the same
+     batch is 'invalid sequence', ordering is ambiguous`.
+  2. disabled the `quality_status` enum guard (`if False and quality_status not in
+     QUALITY_STATUS_VALUES:`) — 1 genuine `FAIL [FTF-0508] acceptance: an arbitrary,
+     unrecognized quality_status string is rejected, never silently accepted`.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
+  awaiting Control plane L2 review per Law 4.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-0508 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Validate schema/dialect/content size and
+  required provenance/quality fields per canonical version" — proven by the shipped suite's
+  positive path plus one dedicated negative test per check: `unknown_schema_version`,
+  `unknown_dialect`, `content_too_large`, `missing_provenance_field`,
+  `invalid_quality_status`/`invalid_pii_status`/`invalid_tool_schema_status`) and
+  `negative_acceptance` ("Unknown content or schema version and invalid sequence produces
+  blocking issues with row evidence" — proven by `test_rejects_unknown_content_wrong_shape`,
+  `test_rejects_unknown_content_not_json_serializable`, the schema-version test's own row-evidence
+  assertion, and the three `invalid_sequence` tests — non-int/negative/bool `record_index` and
+  cross-batch duplicate `record_index` — plus `test_row_evidence_uses_batch_position_when_
+  record_index_itself_invalid` proving the report never raises on a per-row violation) both
+  genuinely met. `dependencies` FTF-0500/FTF-0506/FTF-0507 confirmed already `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Design decisions disclosed in the module's own docstring** (Section 84.3's "task titles alone
+  are not an implementation recipe" applied): `CANONICAL_SCHEMA_VERSIONS` is reused directly from
+  FTF-0506's own `SCHEMA_VERSION` constant rather than a second invented version string;
+  `SUPPORTED_SOURCE_TYPES` ("dialect") is Section 6.8F's own frozen `DatasetSourceConnection.
+  source_type` enum, reused verbatim rather than a new vocabulary; `MAX_CANONICAL_RECORD_BYTES` is
+  Section 67.3's own literal "canonical single-record max 2MiB"; `QUALITY_STATUS_VALUES`/
+  `PII_STATUS_VALUES`/`TOOL_SCHEMA_STATUS_VALUES` are this task's own disclosed enums since the
+  master spec names the Section 6.11 fields but not their literal value sets, each grounded
+  directly in Section 8.1's own pipeline-stage language (steps 8/14/15/17/18) and Section 67.4's
+  "quarantined for reviewer resolution" — not silently invented, not left unstated.
+- `ruff check`/`ruff format --check` clean; `uv run mypy workers/data/record_schema_validator.py`
+  (and the test file) clean; `validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` unchanged at `19/19` — this task's `proving_symbol` is the empty string, no
+  dataset-import route exists yet in this repository to call `validate_record_batch` (same
+  accepted scope-narrowing precedent as FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304); confirmed
+  legitimate by reading `scripts/product_truth_check.py`'s own skip-if-no-symbol logic directly,
+  not merely asserted. `scripts/status.py` unchanged at `63/300` certified (PROVISIONAL does not
+  count until L2-certified). `verify_task.py --task FTF-0508 --stage task` reports `BLOCKED`
+  pre-merge (expected, same precedent as every sibling PROVISIONAL submission).
+- Diff scope confirmed exactly this task's own new files (`workers/data/record_schema_validator.py`,
+  `tests/tasks/test_ftf_0508.py`, `docs/implementation/task-packets/FTF-0508.md`) plus one new
+  `gate` job CI step and the expected `docs/spec-matrix.yaml` tracking update — no scope creep.
+- Path refinement recorded before READY (Section 84.3), same precedent as FTF-0506/FTF-0507:
+  placed at `workers/data/record_schema_validator.py`, not the packet's suggested non-existent
+  `services/training-worker/...` tree.
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are needed before certification.
