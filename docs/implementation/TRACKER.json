@@ -2092,9 +2092,11 @@
       "blockers": []
     },
     "FTF-R002": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "d257254c78678e978533190b327d4d8758fb3914"
+      ],
       "independent_review": null,
       "blockers": []
     },
