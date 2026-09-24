@@ -14461,3 +14461,8 @@ at the two JSON-decoded token call sites, and a small local async wrapper around
 call in the test file. Reproduced the original failure locally first, then confirmed `uv run mypy
 .` clean (236 source files) plus both suites still passing (7/7 live scenarios, all no-DB checks)
 before pushing. Pushed as a follow-up commit on the same PR/branch.
+
+**CI confirmed green, same shift (2026-09-24):** all 29 jobs on PR #258's current head (`f6a53dd`),
+including `gate`, completed `success`; `mergeable_state: clean`, no conflicts, no review comments
+yet. PR body updated to reflect this. Awaiting an independent Control-plane L2 certifier shift --
+not self-certified (Law 4).
