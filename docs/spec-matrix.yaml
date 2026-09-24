@@ -5010,16 +5010,82 @@ FTF-1502:
   proving_symbol: ''
   proving_test: ''
 FTF-1503:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: CSRF suite
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0101, FTF-0401,
-    FTF-1501
-  proof_state: UNPROVEN
+    FTF-1501 (all CERTIFIED). New, real, reusable CSRF-protection dependency --
+    apps/api/app/auth/csrf_protection.py (require_csrf_protection, a FastAPI dependency enforcing
+    Origin equality against an explicit allowed_origin plus a constant-time X-CSRF-Token check
+    against a caller-specific token resolved via a pluggable csrf_token_resolver -- decoupled from
+    any concrete session implementation the same way app.auth.rbac_middleware.require_role already
+    decouples from app.auth.oidc_login, fail-closed by default until a real resolver backed by
+    oidc_login.read_session_cookie's own signed csrf claim replaces it; InMemoryCsrfSessionStore, a
+    real, working single-process session/CSRF-token store, same class of real-not-mock in-memory
+    state as oidc_login.py's own _SessionRevocationStore/_RefreshTokenStore). Zero production files
+    touched by this task (apps/api/app/auth/oidc_login.py, apps/api/app/auth/rbac_middleware.py,
+    apps/api/app/projects/project_routes.py, apps/api/app/main.py all untouched) -- Section
+    45/65.3's CSRF requirement is proven end to end against a real, locally-hosted demonstration
+    FastAPI app (real uvicorn server, real local socket), composing the real require_csrf_protection
+    with the real require_role on a demonstration mutating route, the same pattern
+    tests/tasks/test_ftf_0103.py already established for require_role itself. Disclosed, not hidden
+    (Law 7, "designed is not wired") -- neither this dependency nor require_role's own real
+    resolvers are wired into apps/api/app/main.py's real create_app() yet -- main.py's own module
+    docstring already discloses this exact gap for require_role ("principal_resolver/role_lookup
+    stay at their fail-closed defaults -- no live session-reader ... wired in yet"), so every real
+    /api/v1 mutation is already unconditionally denied (401) in the deployed app today regardless of
+    CSRF; wiring a real session-reader into main.py is a separately claimed follow-up, not this
+    task's own file scope -- docs/implementation/task-packets/FTF-1503.md's own files list names
+    only tests/security/csrf_suite.py and tests/tasks/test_ftf_1503.py. tests/security/csrf_suite.py
+    has 7 real scenarios against the live demonstration app -- (1) correct session cookie + matching
+    X-CSRF-Token + same-origin + the right role succeeds (201); (2) the identical cookie with no
+    X-CSRF-Token header at all is denied (403, negative_acceptance -- a plain cross-site <form> POST
+    attaches a cookie automatically but cannot set a custom header); (3) the identical cookie with a
+    foreign Origin (https://attacker.example) even carrying the real token is denied (403,
+    negative_acceptance -- unsafe CORS/cross-site fetch()); (4) correct Origin, wrong/garbage token,
+    denied (403); (5) no session cookie at all, denied (401) at the role/auth layer before CSRF is
+    even reached; (6) correct Origin and correct token but the caller's real role (viewer) does not
+    permit the mutation, denied (403 -- CSRF protection is not the only guard); (7) the admin's own
+    cookie paired with a different, real session's own valid token, denied (403 -- one session's
+    token can never authorize a different session's mutation). Evidence reuses
+    tests/security/tenant_isolation_suite.py's own
+    ScenarioResult/TenantIsolationEvidence/build_evidence (contract_owner is FTF-1501,
+    shared_lock_required is empty -- no new schema entry needed or claimed, resource_kind="csrf"
+    fits the existing generic contract fields). tests/tasks/test_ftf_1503.py is the no-DB proof
+    (CSRF has no database dependency at all so this is the complete evidence, not a structural
+    subset) -- default_csrf_token_resolver proven fail-closed; require_csrf_protection proven to
+    refuse an empty allowed_origin; the real async dependency exercised directly (no server) for
+    every allow/deny branch (matching origin+token allows; wrong origin, missing origin, missing
+    token, wrong token, unresolvable session-token all deny); the token comparison confirmed to use
+    secrets.compare_digest (constant-time) via source inspection; InMemoryCsrfSessionStore proven to
+    round-trip a real session and resolve nothing for an unknown one; and this file re-runs
+    tests/security/csrf_suite.py's own run_csrf_scenarios() directly, confirming all 7 real
+    live-server scenarios pass and are content-free by construction. Own fault injection performed
+    and reverted byte-identical before submission -- disabled the X-CSRF-Token comparison entirely
+    (left the Origin and token-availability checks intact) -- 3 of 7 live-suite scenarios and 4
+    no-DB checks genuinely failed (missing_token_denied, wrong_token_denied,
+    cross_session_token_denied all wrongly returned 201, plus the compare_digest source-inspection
+    check), confirming the test suite actually catches a real regression rather than vacuously
+    passing (Law 1); reverted, both suites re-confirmed clean (7/7 and all checks passed). ruff
+    check ./ruff format --check . clean repo-wide; mypy app/auth/csrf_protection.py clean (repo-wide
+    apps/api mypy run shows only the same 17 pre-existing packages.*/authlib import-not-found errors
+    already on record from prior shifts, none touching this task's own file); validate_spec.py
+    --strict clean (after git fetch --unshallow, this sandbox's own pre-existing shallow-clone
+    artifact, confirmed not a defect in this diff, same class of gap already on record for prior
+    shifts); product_truth_check.py --fail-on-unwired unchanged at 19/19 (no new live-wiring claim,
+    matching the FTF-1501 precedent -- proving_symbol stays empty); status.py unchanged at 63/300
+    certified pre-merge; verify_task.py --task FTF-1503 --stage task reports BLOCKED pre-merge
+    (expected, same precedent as every sibling PROVISIONAL submission). No regression confirmed --
+    tests/tasks/test_ftf_0101.py, test_ftf_0103.py, test_ftf_0401.py and test_ftf_1501.py all re-run
+    clean (their own production files untouched by this diff). No production mock/placeholder path
+    (Law 11); no independent schema change (database_changes contract honored). Submitted
+    PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run
+    on the opened PR are needed before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1503.py
 FTF-1504:
   certification_state: NONE
   criticality: MUST

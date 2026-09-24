@@ -239,6 +239,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r002.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
+      - name: FTF-1503 negative-test proof (CSRF suite, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1503.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
