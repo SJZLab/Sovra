@@ -1,4 +1,66 @@
 # PROGRESS — Sovra
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered
+by the `pull_request.opened` webhook for PR #228) — independently
+re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe).
+
+The 2026-09-23 review (recorded below) found PR #226's own module/test
+logic sound but its `gate` job genuinely crashing on the real GitHub
+Actions runner (`test_ftf_h006.py`'s `_detect_ipv6_support()` probe
+disagreeing with `_SERVER_V6`'s real bind address family) — NOT
+CERTIFIED solely on that CI failure. A relay shift then merged PR #226's
+exact head into its own branch, fixed the IPv6 mismatch
+(`_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
+`address_family = socket.AF_INET6`), added a regression test, and opened
+PR #228 (also recorded below).
+
+This shift independently re-verified PR #228 end to end rather than
+trusting either producer's own claims:
+- **Session-ID check (Law 4):** PR #226's three commits carry
+  `session_013qR8o5xkLqEQ2WQwpYyora`; PR #228's own follow-up commits
+  carry **no `Claude-Session` trailer at all** — a disclosed process gap,
+  flagged in `docs/certifications/ledger.md` — but PR #228's body
+  identifies `session_01YP8vr5mwHG2enbUQPMYXtf`. This session's own ID is
+  `session_01UhsKjWNrrPmXWNxNwK2rw2` — no match to either, independent.
+- **Diff read directly**, no scope creep. PR #228's head moved twice more
+  during this review under a concurrent relay session (a424f91 → 027c3fc
+  → e0918796e7060342f8e32e92e7731796861d13d9); each intervening push was
+  confirmed tracking-docs-only via `git diff --stat`, and a fresh CI run
+  was independently re-verified on each new head rather than trusted from
+  the prior one.
+- **CI re-checked to full completion on the real final head, not taken on
+  faith:** run `35941721974`, **27/27 jobs green**, `gate` job success in
+  3m29s — pulled its real log via `get_job_logs` and directly confirmed
+  `tests/tasks/test_ftf_h006.py`/`test_ftf_0211.py` both genuinely
+  executed and passed, the exact step that previously crashed.
+- **Own independent local verification:** `uv sync --all-packages`, full
+  suite re-run clean (`test_ftf_h006.py`/`test_ftf_0211.py`/
+  `test_ftf_0210.py`/`test_ftf_0201.py`, ruff, mypy, `validate_spec.py
+  --strict`, `product_truth_check.py --fail-on-unwired` 17/17 unchanged).
+- **Own fault injection, two vectors** (independent of the producer's own
+  claimed ones): (1) reverted `_ThreadingHTTPServerV6.address_family` to
+  `AF_INET` — the new regression check genuinely failed; (2) disabled
+  `probe_stream_chat`'s `approved_model_ids` authorization gate — the
+  negative test genuinely failed. Both reverted byte-identical, suite
+  re-ran clean.
+- `tools/r1_handoff.py packet FTF-0211` pulled directly: acceptance
+  clause 2 ("Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded") is now met — the one
+  clause the prior review could not confirm.
+
+No blocking defect found. **Merged PR #228** (merge commit
+`423eb560ac7a7a5c088c33f30eda916bbff2ec77`) into `main`; **closed PR #226
+as superseded** (comment posted there). `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to that merge commit. Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-0211']` updated.
+Certified count moves 55/300 → 56/300. Product-true: unchanged at 17/17.
+Full record: `docs/certifications/ledger.md`'s FTF-0211 entry,
+`docs/certifications/queue.md`, `QUEUE.md`.
+
+`docs/spec-matrix.yaml` has no PROVISIONAL entries at this shift's end.
+
+---
+
 Updated: 2026-09-24T01:08:34Z (scheduled relay shift) — fixed the real
 CI gate-wiring defect blocking FTF-0211 (PR #226); PR #228 now
 genuinely green (27/27 checks, `gate` included) and mergeable. Not
