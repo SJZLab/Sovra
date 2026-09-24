@@ -14105,3 +14105,31 @@ its owner-direct merge — are both open, awaiting Control-plane attention. Left
 
 - **Validated-by:** session https://claude.ai/code/session_017Uiok74naZssjNvuuhXncs (producer —
   independent Control-plane L2 certification still required, Law 4).
+
+## 2026-09-24 — Flag: FTF-1304 needs Control-plane L2 certification against main
+PR #249 (FTF-1304, "Cost-per-success calculator") went CI-green (29/29, `gate` included) on head
+`f7dd5d3bd1a0cad69bc0d6686b09d25dcd9f6d02` and was then **merged into `main` directly by the repo
+owner** (`merged_by: samerzakaria`, merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831` — its
+own commit title reads "Control plane: certify FTF-1304," but `merged_by` confirms this was an
+owner merge, not an independent Control-plane certifier session), same pattern already on record
+for PR #238/FTF-04A06 and PR #245/FTF-1303.
+
+Per Law 4 ("Producer never certifies own work. Merge = PROVISIONAL only"), a plain merge — whoever
+performs it, whatever its own commit title says — never certifies. Confirmed directly on `main`
+rather than assumed: `docs/spec-matrix.yaml`'s FTF-1304 entry still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`; `scripts/status.py` on a fresh
+`origin/main` checkout still reads `61/300 certified` (unchanged from before this merge — FTF-1304
+not yet counted). No `sync_certified_status()` call has run for FTF-1304.
+
+This relay session will not self-certify its own submission (same producer session, Law 4 applies
+doubly here). Since PR #249 is now closed/merged, the usual `pull_request.opened` webhook that
+would trigger a fresh Control-plane certifier shift will not fire again for this item — without an
+open PR to surface it, this PROVISIONAL entry risks going unnoticed. This entry, plus the matching
+`QUEUE.md`/`PROGRESS.md` updates, flags it explicitly for the next Control-plane certifier shift:
+the code is on `main`, already exercised by a full green CI run on its exact pre-merge head
+(run `36030893786`), and this task's own `tests/tasks/test_ftf_1304.py` (20 checks) is available
+for independent re-verification against the merge commit — only the real Control-plane CERTIFY
+procedure remains.
+
+- **Validated-by:** session https://claude.ai/code/session_017Uiok74naZssjNvuuhXncs (producer of
+  both PR #249 and this flag — independent Control-plane L2 certification still required, Law 4).

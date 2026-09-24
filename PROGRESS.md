@@ -16919,3 +16919,36 @@ certification landing, which would free FTF-1301/1302/1303/1304 dependents if an
 FTF-0302/0303 (artifact resolvers, deps include FTF-0202/OpenBao — verify FTF-0202 is actually
 implemented, not just dependency-ready, before claiming), FTF-04A17/04A19, FTF-0507, FTF-0902,
 FTF-1201, FTF-1503, FTF-1506, FTF-1703, and FTF-H004.
+
+## 2026-09-24T[relay] (same shift, continued) — Flag: FTF-1304 needs Control-plane certification against main
+PR #249 (FTF-1304) went CI-green (29/29, `gate` included) on head `f7dd5d3` and was then merged
+into `main` directly by the repo owner (merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`,
+`merged_by: samerzakaria` — its own commit title reads "Control plane: certify FTF-1304," but
+`merged_by` confirms this was an owner merge, not an independent Control-plane certifier session,
+same pattern already on record for PR #238/FTF-04A06 and PR #245/FTF-1303).
+
+Per Law 4 ("Producer never certifies own work. Merge = PROVISIONAL only"), a plain merge never
+certifies regardless of who performs it or what its own commit title says. Confirmed directly
+against `main`, not assumed: a fresh `git worktree` checkout of `origin/main` shows
+`docs/spec-matrix.yaml`'s FTF-1304 entry still `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`, and `scripts/status.py` still reads `61/300 certified` (unchanged).
+
+Since PR #249 is now closed, the usual `pull_request.opened` webhook that triggers a
+Control-plane certifier shift will not fire again for this item. This relay session cannot
+self-certify its own submission (Law 4 applies doubly here — same producer session). Opened a
+tracking-docs-only PR (branch `claude/ftf-1304-flag-certification`) recording this in
+`QUEUE.md`'s "## Provisional" section and `docs/certifications/queue.md`, so the next
+Control-plane certifier shift finds it without re-discovering it from scratch: the code is on
+`main`, already exercised by a full green CI run on its exact pre-merge head (run
+`36030893786`), and `tests/tasks/test_ftf_1304.py` (20 checks) is available for independent
+re-verification against the merge commit — only the real Control-plane CERTIFY procedure
+remains.
+
+## Next shift
+FTF-1304 is on `main` but genuinely still PROVISIONAL (owner-direct merge, not a Control-plane
+certification) — needs a real independent CERTIFY review against `main` directly, same as the
+still-open asks for FTF-04A06 (PR #243, superseding #241). PRs #246 (FTF-1303 tracking-doc
+reconciliation) and #243/#241 (FTF-04A06) remain open, awaiting Control-plane attention.
+FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret
+backend) remain outside this relay sandbox's practical reach. Recompute the dependency-ready
+frontier fresh from `docs/spec-matrix.yaml` before picking a next relay item.

@@ -1,4 +1,23 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (same relay shift, continued) — PR #249 (FTF-1304)
+  went CI-green (29/29) and was then **merged into `main` directly by the
+  repo owner** (merge commit `4b432a44`, `merged_by: samerzakaria` — not
+  an independent Control-plane certifier session, same pattern as PR
+  #238/FTF-04A06 and PR #245/FTF-1303). Per Law 4 this does not certify
+  the task: confirmed on a fresh `origin/main` checkout that
+  `docs/spec-matrix.yaml`'s FTF-1304 entry still reads
+  `certification_state: PROVISIONAL` and `scripts/status.py` still reads
+  `61/300 certified`, unchanged. Opening a tracking-docs-only PR (branch
+  `claude/ftf-1304-flag-certification`, PR link recorded in this file's
+  own next commit once opened) to flag this for the next Control-plane
+  certifier shift, since the closed PR #249
+  will not refire the usual `pull_request.opened` webhook — same
+  precedent as PR #241 for FTF-04A06. This relay session did not
+  self-certify its own submission (Law 4 applies doubly: same producer
+  session). See "## Provisional" below and
+  `docs/certifications/queue.md` for the full flag record.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled autonomous relay shift, dynamic queue-check
   fire, not a PR webhook) — implemented and submitted **FTF-1304
   (Cost-per-success calculator) PROVISIONAL** via **PR:**
@@ -3986,6 +4005,22 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1304 — **PR #249 went CI-green (29/29) and was merged into `main`
+directly by the repo owner** (merge commit `4b432a44`, `merged_by:
+samerzakaria` — its own commit title reads "Control plane: certify
+FTF-1304," but `merged_by` confirms this was an owner merge, not an
+independent Control-plane certifier session, same pattern as PR
+#238/FTF-04A06 and PR #245/FTF-1303). Per Law 4 a plain merge never
+certifies: `docs/spec-matrix.yaml` on `main` still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`;
+`status.py` on a fresh `origin/main` checkout still reads `61/300`
+(unchanged). Since PR #249 is now closed, the usual `pull_request.opened`
+webhook will not refire for this item — **flagged here (and in
+`docs/certifications/queue.md`) for a genuine Control-plane L2 review
+against `main` directly**, since no relay session can self-certify its
+own submission (Law 4). The code, CI evidence and test suite are all
+already on record — see the submission entry immediately below.
+
 FTF-1304 ("Cost-per-success calculator") — submitted 2026-09-24 via
 **PR:** https://github.com/SJZLab/Sovra/pull/249
 (`claude/wizardly-fermat-fkyn9x` → `main`), commits `0e0390a`/`bbc9175`.
