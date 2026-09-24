@@ -1,4 +1,35 @@
 # PROGRESS — Sovra
+## 2026-09-24T15:30:00Z — Relay: PR #246 second merge conflict resolved (FTF-1303 now CERTIFIED), CI green, shift stop
+Continuation of this same shift. `pull_request_read get` on PR #246 showed
+`mergeable_state: dirty` -- a Control-plane certifier shift independently
+**CERTIFIED FTF-1303** while PR #246 was open (PR #247, merge commit
+`98358c3` on `main`), touching the same `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` sections PR #246's own commits touched.
+Exactly the outcome the prior "Next shift" note asked for.
+
+Merged `origin/main` into `claude/wizardly-fermat-8lsly3`: confirmed only
+the three tracking docs conflicted (`docs/spec-matrix.yaml`/
+`docs/certifications/ledger.md`/`docs/implementation/TRACKER.json`/
+`spec/tasks.json` -- the certification's own file changes -- all
+auto-merged cleanly), resolved keeping both sides. Re-verified:
+`validate_spec.py --strict` clean, `ruff check` clean,
+`product_truth_check.py` 19/19 unchanged, `status.py` now correctly reads
+**`61/300 certified`** (FTF-1303 included). Pushed (commit `076c1eb`). CI
+re-ran fully green on the real final head (run `36019755302`, 29/29,
+`gate` included), `mergeable_state: clean`. Posted an updated status
+comment on PR #246 naming the certification and the green re-run.
+
+**Stopping this shift here again (STEP 4(a))** -- FTF-1303 is now genuinely
+CERTIFIED (not merely merged), PR #246 is a clean tracking-doc-only
+reconciliation ready to merge whenever convenient, no code review needed,
+no owner ask open, no blocker.
+
+## Next shift
+Merge PR #246 if not already merged. Recompute the dependency-ready
+frontier fresh from `docs/spec-matrix.yaml` before picking new work --
+FTF-1304 ("Cost-per-success calculator") is now dependency-ready since
+FTF-1303 is genuinely CERTIFIED.
+
 ## 2026-09-24 — FTF-1303 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #245 (FTF-1303,
 supersedes PR #240). Per this session's standing certifier duty, checked

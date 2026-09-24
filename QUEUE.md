@@ -1,4 +1,15 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24T15:30:00Z (same relay shift, continued) — **FTF-1303
+  is now genuinely CERTIFIED** (Control-plane PR #247, merge `98358c3`,
+  `61/300 certified`). Resolved PR #246's resulting tracking-doc conflict
+  (merge `main` in, kept both sides), re-verified clean, pushed (`076c1eb`)
+  — CI green again (29/29, `gate` included), `mergeable_state: clean`.
+  Posted an updated status comment. **Shift stopping here again (STEP
+  4(a))** — PR #246 is a clean tracking-doc reconciliation ready to merge,
+  no code review needed. FTF-1304 ("Cost-per-success calculator") is now
+  dependency-ready. See "## Provisional"/"## Done" below.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #245) — checked `docs/certifications/queue.md` for
   pending PROVISIONAL items per the certifier's standing duty; found
