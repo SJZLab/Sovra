@@ -13728,3 +13728,194 @@ needed.
 
 - **Validated-by:** session https://claude.ai/code/session_01TSZ3SyJvmLrNbuDqXVYRtE
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-24 — FTF-1303 — Provider token costing
+- **PR:** https://github.com/SJZLab/Sovra/pull/240
+  (`claude/wizardly-fermat-vwrwp6` → `main`), title
+  `[relay] FTF-1303: Provider token costing`.
+- **Commits:** `be9775f60ce248cd411cc22ccf82692415798c82` (implementation +
+  test); `bee5b55` (records the implementation commit hash in
+  `docs/spec-matrix.yaml`, matching the established two-commit precedent);
+  `4be55bf` (records this shift in `PROGRESS.md`/`QUEUE.md`/this entry).
+- **Ground truth checked before picking work:** STEP 0 verified
+  `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
+  `BLOCKER.md` read in full — both entries resolved history, no live
+  blocker. This is a scheduled autonomous relay shift (dynamic queue-check
+  fire), not a `pull_request.opened` webhook shift — no certifier standing
+  this shift, so no certification action was taken on any open PR.
+  Confirmed via a fresh `pull_request_read`/`get_check_runs` call that PR
+  #238 (FTF-04A06) is now CI-green and `mergeable_state: clean` (a fix
+  already pushed to that branch by an earlier session, per its own
+  PROGRESS.md) — left untouched for the next Control-plane certifier
+  shift; see `QUEUE.md`'s "## Provisional" section for the full note.
+  Recomputed the dependency-ready frontier: `docs/certifications/
+  queue.md`'s own 2026-09-24 `09a6cf5` note names FTF-0214/0215/0500A/
+  0500D/1303/04A02 as the remaining ready set once FTF-04A07 certified.
+  FTF-0214 ("Model catalog UI")/FTF-0215 ("Periodic sync workflow")/
+  FTF-0500A/FTF-0500D are `apps/web` UI or Temporal-workflow tasks outside
+  this text-only relay sandbox's practical reach this shift; FTF-04A02
+  ("GitHub App/token read-only secret integration") depends on a real
+  OpenBao secret backend this sandbox cannot stand up for a genuine
+  integration test. FTF-1303 is a pure computation module (`database_
+  changes: "No independent schema change"`), the same tractable shape as
+  the already-CERTIFIED FTF-1302 sibling, with both its dependencies
+  (FTF-0210, FTF-1301) already CERTIFIED — picked this shift.
+- **Task contract:** `python3 tools/r1_handoff.py packet FTF-1303 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Calculate billed
+  input/output/cache/reasoning/request charges using actual provider usage
+  rules"), negative_acceptance ("Missing usage/rate/unknown upstream
+  cannot be replaced by invented or zero dollar value"), `database_
+  changes: "No independent schema change. Consume frozen contract; any
+  required change is a separately claimed migration prerequisite."`,
+  `api_contract: "/api/v1/projects/{id}/costs/cost-per-success/search;
+  /organizations/{id}/cost-profiles."` (FTF-1301's own already-frozen
+  contract slot 13; `shared_lock_required: []`), `files: [apps/api/app/
+  services/provider_token_costing.py, tests/tasks/test_ftf_1303.py]`,
+  `dependencies: [FTF-0210, FTF-1301]` (both CERTIFIED),
+  `contract_owner: FTF-1301`.
+- **Scope disclosed, not hidden:** FTF-1301's own closed `RATE_UNITS`
+  vocabulary (`apps/api/app/costs/cost_profile_schema.py`) has no
+  `per_cache_token`/`per_reasoning_token`/per-request rate-card member,
+  and `CostProfile.label` is unstructured free text with no provider/
+  model-keyed lookup — so this module cannot resolve a rate by querying
+  `CostProfile` rows itself without a schema change this task's own
+  `database_changes` charter forbids. It instead takes an already-declared
+  `ProviderRateCard` (the caller resolves which real rate backs each
+  category before calling this module), the same "declared, already-known
+  real input" separation FTF-1302's own `ServiceWindow` already
+  established for local compute costing. Separately, FTF-0210's own real
+  chat probe (`packages/litellm_client/real_chat_probe.py`) reports only
+  `prompt_tokens`/`completion_tokens`/`total_tokens` today — no cache or
+  reasoning token fields exist anywhere in this repository yet
+  (grepped for `reasoning_tokens`/`cache_read`/`cached_tokens`/
+  `cache_creation`/`cache_token`: zero matches). A caller integrating this
+  module with today's probe output passes `cache_tokens=None`/
+  `reasoning_tokens=None` (not applicable, not zero) until a future,
+  separately-scoped task adds that upstream reporting.
+- **Design:** `ProviderTokenUsage`/`ProviderRateCard` are frozen
+  dataclasses with construction-time validation (non-negative ints/
+  Decimals, `bool` rejected as an `int` subclass, non-empty currency).
+  `input_tokens`/`output_tokens`/`input_token_rate`/`output_token_rate`
+  are always required — Section 32's own two named terms are always
+  billed. `cache_tokens`/`reasoning_tokens`/`billable_requests` are each
+  `int | None` (`None` = not applicable to this call, distinct from a
+  declared `0` = a real, billable-but-zero observation); their matching
+  rates are independently `Decimal | None`. `_priced_category` is the one
+  function enforcing the negative_acceptance: `None` usage contributes
+  `Decimal("0")` and needs no rate (nothing to price); declared `0` usage
+  also contributes `Decimal("0")` regardless of whether a rate exists
+  (`0 * anything == 0`, nothing invented); real nonzero usage with no
+  matching rate raises `ProviderTokenCostingError` naming the category —
+  never a silently invented or zero-filled dollar figure.
+- **13 no-DB test functions** (`tests/tasks/test_ftf_1303.py`):
+  construction guards for both dataclasses (negative counts, `bool` for an
+  int field, non-Decimal rate, negative optional rate, blank currency); a
+  golden example covering all five named categories (1000 input @ $0.01 +
+  500 output @ $0.02 + 200 cache @ $0.005 + 100 reasoning @ $0.02 + 1
+  request @ $0.50 = exactly $23.50); an only-input-output case when the
+  other three are `None`; three independent negative_acceptance cases
+  (nonzero cache/reasoning/billable_requests each with no matching rate,
+  each raises); a declared-zero-vs-`None` equivalence case (both
+  contribute exactly $0 when no rate is supplied); and the fault-injection
+  pair below.
+- **Own fault injection (Law 1):** patched `_priced_category` (the sole
+  function implementing the negative_acceptance) to `return Decimal("0")`
+  instead of raising when a real, nonzero, declared usage category has no
+  matching rate — exactly the "invented or zero dollar value" failure mode
+  this task's own negative_acceptance forbids. Ran the real suite against
+  the faulted code: **4 genuine `FAIL [FTF-1303]` lines** — the three
+  independent negative_acceptance tests (cache/reasoning/billable_requests)
+  plus the dedicated fault-injection test's own first assertion (which
+  expects the real code to still refuse). Confirmed the inline naive
+  reimplementation used by that same fault-injection test
+  (`_naive_incorrect_provider_call_cost_zero_fills_missing_rates`)
+  produces a concrete but wrong `$20.00` (silently omitting the real
+  200-token, unpriced cache charge) where the real implementation
+  correctly raises. Reverted the production-code fault byte-identical
+  (`diff` against the pre-fault copy confirmed identical) and re-ran the
+  real suite immediately after: all 13 checks pass again.
+- **Verification run this shift:** `ruff check`/`ruff format --check`
+  clean on both new files; repo-wide `mypy .` shows no new findings beyond
+  the pre-existing, disclosed `alembic.op`/`alembic.context` noise (14
+  errors, all in `apps/api/alembic/versions/*.py`/`env.py`, none touched
+  by this diff); `validate_spec.py --strict` clean — after `git fetch
+  --unshallow origin` (this sandbox's checkout started shallow; confirmed
+  via `git stash -u` that the one `stale_commit` defect it otherwise
+  reports, on FTF-0401's unrelated evidence hash, pre-exists on `main`
+  itself with or without this diff, matching the disclosed precedent other
+  PRs in this repo's history have already hit); `product_truth_check.py
+  --fail-on-unwired` unchanged at `19/19` (this task adds no live HTTP
+  caller — `proving_symbol` deliberately left empty, matching the
+  FTF-1302/1401/1601/1701/1810 precedent, a genuine disclosed 0/0);
+  `status.py` unchanged at `59/300` certified · `19` product-true;
+  `verify_task.py --task FTF-1303 --stage task` reports `BLOCKED`
+  (expected pre-merge, same precedent as every sibling PROVISIONAL
+  submission). Regression: `tests/tasks/test_ftf_1302.py` (sibling,
+  clean); `tests/tasks/test_ftf_1301.py` blocked locally only by a
+  pre-existing, disclosed `ModuleNotFoundError: uvicorn` sandbox gap (no
+  `pyproject.toml`/`uv.lock` change in this diff — CI's own `gate` job
+  proves it via `uv sync`, same disclosed gap PR #238's own submission
+  hit for the same reason).
+- **`docs/spec-matrix.yaml`:** FTF-1303 entry set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash:
+  be9775f60ce248cd411cc22ccf82692415798c82`, `implementation_state:
+  IMPLEMENTED`, `proving_test: tests/tasks/test_ftf_1303.py`,
+  `proving_symbol: ''` (disclosed 0/0, see above).
+- **No blocking defect found. Submitted PROVISIONAL, not self-certified
+  (Law 4)** — independent Control-plane L2 review, a real CI run on the
+  opened PR, and merge are needed before certification.
+- **Next shift:** if this branch has not yet been opened as a PR, open it
+  (title `[relay] FTF-1303: Provider token costing`, base `main`) before
+  claiming any new work. Once CI is green on the real PR head, this item
+  is ready for an independent Control-plane certifier shift (this relay
+  shift has no certifier standing to review its own submission, Law 4).
+- **Validated-by:** session https://claude.ai/code/session_01CuuVLc7aGhNUrpFbQmrpVk,
+  2026-09-24 (producer session — independent Control-plane review still
+  required before certification).
+
+## 2026-09-24T14:53:00Z — FTF-1303 — Relay: PR #240 superseded by PR #245 (tracking-doc merge conflict resolved)
+The certifier review directly above this entry found PR #240 sound in
+full but blocked from merging solely by a self-inflicted tracking-doc
+conflict with the same shift's own FTF-04A06 certification landing on
+`main` moments earlier, and left the mechanical fix ("merge `main` into
+`claude/wizardly-fermat-vwrwp6`, keep both sides, push, confirm CI
+green") for the next relay shift.
+
+This relay session's own designated branch is `claude/wizardly-fermat-
+8lsly3` — a different, unrelated session owns `claude/wizardly-fermat-
+vwrwp6`, so pushing onto it directly was outside this session's scope.
+Built `claude/wizardly-fermat-8lsly3` from PR #240's own head instead,
+ran `git merge --no-commit --no-ff origin/main`: `docs/spec-matrix.yaml`
+and `.github/workflows/ci.yml` both auto-merged cleanly, confirming the
+certifier's own dry-run finding that this is purely a narrative-doc
+conflict, no code or CI-wiring conflict. Resolved `PROGRESS.md`/
+`QUEUE.md`/`docs/certifications/queue.md` programmatically, keeping both
+sides' content in each.
+
+Re-verified after the merge: `tests/tasks/test_ftf_1303.py` and
+`tests/tasks/test_ftf_04a06.py` (regression) both pass directly; `ruff
+check`/`ruff format --check` clean; `mypy .` shows only the pre-existing
+disclosed `alembic.op`/`context` noise (14 errors, unchanged);
+`validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact); `product_truth_check.py
+--fail-on-unwired` unchanged at `19/19`; `status.py` now correctly reads
+`60/300` certified (FTF-04A06's own already-CERTIFIED status now present
+on this branch via the merge), `19` product-true unchanged.
+
+Pushed `claude/wizardly-fermat-8lsly3` (merge commit `0ef89a0`). Opened
+**PR #245** (`[relay] FTF-1303: Provider token costing (supersedes PR
+#240, merge-conflict resolved)`) against `main` — the production diff
+(`provider_token_costing.py`/`test_ftf_1303.py`) is byte-identical to PR
+#240's, already covered in full by the independent review recorded
+directly above this entry. Commented on PR #240 explaining the
+supersession and **closed it** (same precedent as PR #226 → #228). CI
+triggered fresh on PR #245's head (run `36016066208`).
+
+**No new code review needed** — PR #245 carries the same production diff
+already independently reviewed sound above. **Next Control-plane
+certifier shift:** confirm PR #245's CI is green on its real final head,
+then merge/certify per the review already on record (Law 4 — this relay
+session still cannot certify its own work or merge this PR itself).
+- **Validated-by:** session https://claude.ai/code/session_017pYedfdGZ2ZUSt4PKRdqAn,
+  2026-09-24 (relay session — independent Control-plane certification
+  still required, unchanged from the entry above).

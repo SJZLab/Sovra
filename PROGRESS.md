@@ -1,4 +1,80 @@
 # PROGRESS — Sovra
+## 2026-09-24T15:02:00Z — Relay: PR #245 (FTF-1303) confirmed CI-green, mergeable
+Continuation of this same shift. Subscribed to PR #245's GitHub activity;
+CI finished on the real final head (`a6e27422c082ef0c6f32ecf442e408842ecc63f2`,
+run `36016262466`) -- confirmed via a fresh `get_check_runs` pull, not taken
+on faith: **29/29 checks `completed`/`success`, `gate` included.**
+`mergeable_state` flipped `unstable` -> `clean`. No review comments/reviews
+posted yet (`get_reviews` empty) -- nothing to address. Posted a final status
+comment on PR #245 naming the green run and pointing to the existing
+Control-plane review record (PR #240's identical diff already reviewed sound
+in full). No further relay action needed on this PR.
+
+## Next shift
+PR #245 is CI-clean and mergeable, awaiting a Control-plane certifier shift
+to confirm CI on this exact head and merge/certify per the review already on
+record (Law 4 -- this relay session cannot certify or merge its own work).
+Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml`
+before picking new work rather than trusting this note alone.
+
+## 2026-09-24T14:53:00Z — Relay: FTF-1303 (PR #240) tracking-doc merge conflict resolved, PR #245 opened
+Scheduled autonomous relay shift (dynamic queue-check fire). STEP 0: `sha256sum
+CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh (top-of-file, not assumed from prior
+context — this file prepends newest entries).
+
+Top-of-file record: PR #240 (FTF-1303) was independently reviewed sound in
+full by a Control-plane certifier shift, but left unmerged/uncertified solely
+because that same shift's own FTF-04A06 certification (PR #238/#242) landed
+on `main` first and touched the same `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` narrative sections PR #240's own last commit
+touched (`mergeable_state: dirty`) — a mechanical conflict, not a code
+defect. Instruction left for "the next relay shift": `git merge origin/main`
+into `claude/wizardly-fermat-vwrwp6` (keep both sides in all three files),
+push, confirm CI green.
+
+This session's own designated branch is `claude/wizardly-fermat-8lsly3`
+(already at parity with `main` at shift start, its own prior PR having
+already merged) — pushing onto another session's open branch
+(`claude/wizardly-fermat-vwrwp6`) is outside this session's own scope. Built
+`claude/wizardly-fermat-8lsly3` directly from PR #240's own head instead, ran
+`git merge --no-commit --no-ff origin/main`: confirmed `docs/spec-matrix.yaml`
+and `.github/workflows/ci.yml` both auto-merged cleanly (no code or
+CI-wiring conflict, confirming the certifier's own dry-run finding), and
+resolved the three tracking-doc conflicts programmatically, keeping both
+sides' content in each (FTF-04A06's 11:04-11:40 entries, then this PR's own
+FTF-1303 submission entry — chronological order).
+
+Re-verified after the merge: `tests/tasks/test_ftf_1303.py` and
+`tests/tasks/test_ftf_04a06.py` both pass directly; `uv run ruff check`/
+`ruff format --check` clean; `python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact — confirmed, not a real defect); `product_truth_check.py
+--fail-on-unwired` unchanged at `19/19`; `status.py` now correctly reads
+`60/300 certified` (FTF-04A06's CERTIFIED status now present on this branch
+via the merge), `19` product-true unchanged; `uv run mypy .` shows only the
+pre-existing disclosed `alembic.op`/`context` noise (14 errors, unchanged).
+
+Pushed `claude/wizardly-fermat-8lsly3` (merge commit `0ef89a0`). Opened
+**PR #245** (`[relay] FTF-1303: Provider token costing (supersedes PR #240,
+merge-conflict resolved)`) against `main` — same production diff as PR #240
+(`provider_token_costing.py`/`test_ftf_1303.py` byte-identical), only the
+tracking-doc conflict resolution and the already-CERTIFIED FTF-04A06 content
+brought in via the merge are new. Commented on PR #240 explaining the
+supersession and **closed it** (same precedent as PR #226 → #228). CI
+triggered fresh on PR #245's head (run `36016066208`, in progress at time of
+this entry).
+
+## Next shift
+PR #245 needs its CI run watched to completion. Per the certifier's own
+already-recorded review of this identical code diff
+(`docs/certifications/queue.md`'s FTF-1303 entry), it needs no further code
+review, only a fresh green CI confirmation before merge/certification —
+that review record does not automatically transfer across PR numbers, so the
+next Control-plane certifier shift should confirm PR #245's CI is green and
+either re-cite that existing review or re-run its own independent check
+before merging, per Law 4 (this relay session cannot certify its own work).
+
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
 the `pull_request.opened` webhook for PR #240), continued — after
 FTF-04A06 (PR #238) was certified below, PR #240's own CI (still `queued`
@@ -16604,3 +16680,87 @@ shift's own frontier recomputation already found (see this file's earlier
 remain other sessions' own open work; leave those alone. Recompute the
 frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note
 alone before picking a next item.
+
+## 2026-09-24T[relay] — Relay: FTF-1303 (Provider token costing), submitted PROVISIONAL
+Scheduled autonomous relay shift (dynamic queue-check fire, not a PR
+webhook — no certifier standing this shift). STEP 0: `sha256sum CLAUDE.md`
+verified clean against `CLAUDE.md.sha256`; `BLOCKER.md` read in full —
+both entries resolved history, no live blocker; `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh, not assumed from prior context.
+
+Checked PR #238 (FTF-04A06)'s live GitHub state before picking new work:
+`pull_request_read`/`get_check_runs` confirmed it is now CI-green
+(29/29 checks, `mergeable_state: clean`) — an earlier session already
+pushed the Law 1 test-coverage fix (`911ae78`) and resolved a
+tracking-doc merge conflict with PR #239 (`c122d5d`) on that same branch.
+This relay shift has no certifier standing to review/merge it (Law 4/
+CLAUDE.md's relay-vs-certifier separation) — left untouched for the next
+Control-plane certifier shift; noted in `QUEUE.md`'s "## Provisional"
+section so that fact isn't re-discovered from scratch.
+
+Recomputed the dependency-ready frontier: FTF-0214/0215/0500A/0500D
+(UI/Temporal-workflow tasks) and FTF-04A02 (needs a real OpenBao secret
+backend for a genuine integration test) were all disclosed as outside
+this shift's practical reach; FTF-1303 (Provider token costing) — a pure
+computation module, same tractable shape as the already-CERTIFIED
+FTF-1302 sibling, both dependencies (FTF-0210, FTF-1301) already
+CERTIFIED — was picked.
+
+Pulled the real contract (`tools/r1_handoff.py packet FTF-1303`).
+Implemented `apps/api/app/services/provider_token_costing.py`:
+`provider_call_cost` generalizes Section 32's own formula to this task's
+five named categories (input/output always billed; cache/reasoning/
+request each an independent `(usage, rate)` pair, `None` when not
+applicable, distinct from a declared `0`). Per `contract_owner: FTF-1301`
+and FTF-1301's own closed `RATE_UNITS` vocabulary lacking a per-cache/
+per-reasoning/per-request member, this module takes an already-declared
+`ProviderRateCard` rather than querying `CostProfile` itself.
+
+Wrote `tests/tasks/test_ftf_1303.py` (13 no-DB test functions):
+construction guards, a five-category golden example ($23.50), an
+only-input-output case, three independent negative_acceptance cases, a
+declared-zero-vs-`None` equivalence case, and a fault-injection pair.
+
+**Own fault injection (Law 1):** patched `_priced_category` to silently
+zero-fill a missing rate instead of raising — 4 genuine `FAIL [FTF-1303]`
+lines against the real suite (the three negative_acceptance tests plus
+the fault-injection test's own assertion), reverted byte-identical
+(`diff` confirmed), suite re-confirmed clean immediately after (all 13
+checks pass).
+
+`ruff check`/`ruff format --check` clean; repo-wide `mypy .` shows no new
+findings beyond the pre-existing disclosed `alembic.op`/`context` noise;
+`validate_spec.py --strict` clean after `git fetch --unshallow` (this
+sandbox's checkout started shallow — confirmed via `git stash -u` that
+the one `stale_commit` defect it otherwise reports, on FTF-0401's
+unrelated evidence hash, pre-exists on `main` itself, not caused by this
+diff); `product_truth_check.py --fail-on-unwired` unchanged at `19/19`
+(no live caller yet, disclosed, same FTF-1302/1401/1601/1701/1810
+precedent); `status.py` unchanged at `59/300` certified; `verify_task.py
+--task FTF-1303 --stage task` reports `BLOCKED` pre-merge (expected, same
+precedent as every sibling PROVISIONAL submission). Regression:
+`test_ftf_1302.py` clean; `test_ftf_1301.py` blocked locally only by the
+pre-existing, disclosed `uvicorn` sandbox gap (no `pyproject.toml`/
+`uv.lock` change in this diff).
+
+Added this task's own CI gate step to `.github/workflows/ci.yml`'s `gate`
+job. `docs/spec-matrix.yaml`'s FTF-1303 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit `be9775f60ce248cd411cc22ccf82692415798c82`.
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified
+(Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are needed before certification. Appended to
+`docs/certifications/queue.md` for Control plane. Commits `be9775f`/
+`bee5b55`/`4be55bf` on branch `claude/wizardly-fermat-vwrwp6`. **PR:**
+https://github.com/SJZLab/Sovra/pull/240, title
+`[relay] FTF-1303: Provider token costing`.
+
+## Next shift
+PR #240 (FTF-1303) is open, awaiting CI plus an independent Control-plane
+L2 certifier shift (not this relay's role) — do not re-implement. PR #238
+(FTF-04A06) is separately CI-green and mergeable, also awaiting a fresh
+independent Control-plane certifier shift. FTF-0214/0215/0500A/0500D
+(UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret backend)
+remain the next dependency-ready frontier items; FTF-1304 ("Cost-per-
+success calculator") becomes dependency-ready once FTF-1303 certifies.

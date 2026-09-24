@@ -4537,15 +4537,51 @@ FTF-1302:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1302.py
 FTF-1303:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Provider token costing
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0210, FTF-1301
-  proof_state: UNPROVEN
+  evidence_hash: be9775f60ce248cd411cc22ccf82692415798c82
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0210, FTF-1301 (both
+    CERTIFIED). `contract_owner` is FTF-1301 and `database_changes` charters "No independent
+    schema change. Consume frozen contract" -- FTF-1301's own closed `RATE_UNITS` vocabulary has
+    no `per_cache_token`/`per_reasoning_token`/per-request rate-card member and `CostProfile.label`
+    is unstructured free text, so this task does not resolve a rate by querying `CostProfile` rows
+    itself. `apps/api/app/services/provider_token_costing.py`'s own module docstring discloses this
+    explicitly: `provider_call_cost` takes an already-declared `ProviderRateCard` (the caller
+    resolves which real rate backs each category before calling this module), mirroring the
+    separation FTF-1302's own `ServiceWindow` (a declared, already-known real bill) already
+    established for local compute costing.
+    This task's own acceptance clause ("Calculate billed input/output/cache/reasoning/request
+    charges using actual provider usage rules") is Section 32's own named formula
+    (`provider_call_cost = input_tokens * effective_input_rate + output_tokens *
+    effective_output_rate + actual_other_billable_units`), generalized to five named categories:
+    input/output are always billed (required rate fields); cache/reasoning/request are each an
+    independent `(usage, rate)` pair that is `None` (not applicable) when the category does not
+    apply to this call, distinct from a declared `0` (a real, billable-but-zero observation).
+    This task's own negative_acceptance ("Missing usage/rate/unknown upstream cannot be replaced
+    by invented or zero dollar value") is enforced by `provider_call_cost` raising
+    `ProviderTokenCostingError` whenever a category has real, nonzero, declared usage and no
+    matching rate -- proven directly by `tests/tasks/test_ftf_1303.py`'s own fault injection: a
+    naive reimplementation that silently zero-fills a missing rate returns a concrete but wrong
+    dollar figure ($20.00, omitting a real 200-token cache charge) where the real implementation
+    correctly refuses. Disclosed integration gap (same module docstring): FTF-0210's own real chat
+    probe (`packages/litellm_client/real_chat_probe.py`) reports only prompt/completion/total
+    tokens today, with no cache/reasoning fields to source from -- a caller integrating this module
+    with today's probe output passes `cache_tokens=None`/`reasoning_tokens=None` (not applicable)
+    until a future, separately-scoped task adds that upstream reporting; this module already
+    implements the full five-category formula this task's acceptance clause names, so no further
+    change to this module is needed once that upstream reporting exists.
+    No live HTTP route is added by this task (`api_contract`/`shared_lock_required` both point at
+    FTF-1301's own, already-frozen contract slot 13); `proving_symbol` is deliberately left empty,
+    matching the FTF-1302/FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent for a computation module
+    with no live product-runtime caller in this repository yet -- a genuine, disclosed 0/0, not
+    inflation. Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2
+    review and a real CI run are needed before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1303.py
 FTF-1304:
   certification_state: NONE
   criticality: MUST

@@ -182,6 +182,8 @@ jobs:
         run: uv run python3 tests/reference/test_ftf_1702.py
       - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1302.py
+      - name: FTF-1303 negative-test proof (Provider token costing catches real defects, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1303.py
       - name: FTF-0500 negative-test proof (DatasetSourceConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0500.py
       - name: FTF-H006 negative-test proof (Shared outbound URL and credential guard, no DB required)
