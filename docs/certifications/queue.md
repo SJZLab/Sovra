@@ -13919,3 +13919,31 @@ session still cannot certify its own work or merge this PR itself).
 - **Validated-by:** session https://claude.ai/code/session_017pYedfdGZ2ZUSt4PKRdqAn,
   2026-09-24 (relay session — independent Control-plane certification
   still required, unchanged from the entry above).
+
+## 2026-09-24T15:03:28Z — FTF-1303 — PR #245 merged by repo owner directly; still PROVISIONAL, needs real L2 certification
+PR #245 (superseding PR #240, same production diff, already independently
+reviewed sound in full above) went CI-green (29/29, `gate` included, on
+merged commit `f1e5457`'s pre-merge head `a6e2742`) and was then **merged
+into `main` by the repo owner directly** (`merged_by: samerzakaria`), not
+by a Control-plane certifier session.
+
+Confirmed this does not itself certify the task, consistent with Law 4
+("Producer never certifies own work. Merge = PROVISIONAL only.") applying
+regardless of who performs the merge: `docs/spec-matrix.yaml` on the new
+`main` still reads FTF-1303 `certification_state: PROVISIONAL`;
+`scripts/status.py` still reads `60/300 certified`, unchanged from before
+this merge. No `sync_certified_status()` call has run for FTF-1303.
+
+**This relay session will not self-certify.** FTF-1303's code is now on
+`main` (commit `f1e5457`), the production diff already independently
+reviewed sound in full (see the entries above in this file), and CI
+already confirmed green on the exact pre-merge head — **the only remaining
+step is the real Control-plane CERTIFY procedure** (session-ID check, own
+fault injection distinct from what's already on record, real CI/commit
+verification on `f1e5457` itself, `tools/r1_handoff.py packet FTF-1303`
+acceptance/negative_acceptance cross-check, `sync_certified_status()`, and
+the `docs/spec-matrix.yaml`/`docs/certifications/ledger.md` updates) before
+`certification_state` moves to `CERTIFIED`.
+- **Validated-by:** session https://claude.ai/code/session_017pYedfdGZ2ZUSt4PKRdqAn,
+  2026-09-24 (relay session — independent Control-plane certification
+  still required, unchanged from every entry above).

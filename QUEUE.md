@@ -1,4 +1,18 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24T15:03:28Z (same relay shift, continued) — **PR #245
+  (FTF-1303) merged** into `main` (merge commit `f1e5457`), by the repo
+  owner directly (`merged_by: samerzakaria`), not a Control-plane certifier
+  session. Confirmed this does **not** certify the task: `docs/spec-matrix
+  .yaml` on the new `main` still reads `certification_state: PROVISIONAL`;
+  `scripts/status.py` still `60/300 certified`, unchanged — Law 4 holds
+  regardless of who performed the merge. This relay session will not
+  self-certify. See "## Provisional" below and `docs/certifications/
+  queue.md` for the full record. **Next Control-plane certifier shift:**
+  run the real CERTIFY procedure against merged commit `f1e5457` — the code
+  is already independently reviewed sound in full and CI-green on this
+  exact commit, only the certification step itself remains.
+
+## Previous shift
 Updated: 2026-09-24T15:02:00Z (same relay shift, continued) — PR #245
   (FTF-1303)'s CI finished fully green on its real final head (`a6e2742`,
   run `36016262466`): 29/29 checks, `gate` included, `mergeable_state:
@@ -4017,6 +4031,18 @@ on the real final head (`a6e2742`), `gate` included**, run `36016262466`.
 yet. Posted a final status comment on PR #245. **PR #245 is CI-clean and
 mergeable, awaiting a Control-plane certifier shift** — Law 4 still applies,
 this relay session cannot certify or merge its own work.
+
+**Update, same shift (2026-09-24T15:03:28Z): PR #245 merged into `main`**
+(merge commit `f1e5457`), by the repo owner directly (`merged_by:
+samerzakaria`) — not by a Control-plane certifier session. Confirmed this
+alone does not certify the task: `docs/spec-matrix.yaml` on the new `main`
+still reads `certification_state: PROVISIONAL`; `scripts/status.py` still
+`60/300 certified`, unchanged — Law 4 ("merge = PROVISIONAL only") holds
+regardless of who performs the merge. **FTF-1303 stays PROVISIONAL,
+awaiting a genuine Control-plane L2 CERTIFY procedure** against commit
+`f1e5457` (session-ID check, own fault injection, `sync_certified_status()`,
+spec-matrix update) — the code review and CI-green confirmation are already
+on record above, only certification itself remains.
 
 FTF-04A06 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #238 (merge commit

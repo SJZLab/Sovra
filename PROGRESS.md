@@ -1,4 +1,40 @@
 # PROGRESS — Sovra
+## 2026-09-24T15:03:28Z — PR #245 (FTF-1303) merged directly by repo owner; still PROVISIONAL
+Continuation of this same shift. A `pull_request.closed` webhook fired for
+PR #245 (`outcome: "merged"`) while this session was still watching for CI —
+confirmed directly via `pull_request_read get`: `merged: true`,
+`merged_by: "samerzakaria"` (the repo owner), merge commit `f1e5457` on
+`main`, at `2026-09-24T15:03:28Z`. **Not merged by a Control-plane
+certifier session** — the owner merged the already-CI-green PR directly.
+
+This does not itself certify FTF-1303: confirmed `docs/spec-matrix.yaml` on
+the new `main` still reads `certification_state: PROVISIONAL` (unchanged),
+and `scripts/status.py` still reads `60/300 certified` (unchanged from
+before this merge) — exactly Law 4's own rule ("Producer never certifies
+own work. Merge = PROVISIONAL only."), holding even for an owner-initiated
+merge, not only a relay/producer one. No `sync_certified_status()` call has
+run for FTF-1303. Fast-forwarded this session's own branch to the new
+`main` (`f1e5457`) — clean, no divergence.
+
+**This relay session will not self-certify FTF-1303** (Law 4 — a producer
+session, which this one is for FTF-1303's own submission lineage, never
+certifies its own work, merge notwithstanding). Recorded in
+`docs/certifications/queue.md` so the next Control-plane certifier shift
+finds this state without re-discovering it from scratch: FTF-1303's code is
+now on `main`, already independently reviewed sound in full (PR #240's
+review, carried forward unchanged in PR #245), CI green on the exact merged
+commit — the only remaining step is the real CERTIFY procedure (session-ID
+check, own fault injection, `sync_certified_status()`, spec-matrix update).
+
+## Next shift
+FTF-1303 is L1-PROVEN and merged to `main`, awaiting Control-plane L2
+certification only (Law 4) — no code work needed, no blocker, just the
+certifier's own standing procedure against commit `f1e5457`. Recompute the
+dependency-ready frontier fresh from `docs/spec-matrix.yaml` before picking
+any new relay work rather than trusting this note alone; FTF-1304
+("Cost-per-success calculator") becomes dependency-ready once FTF-1303
+actually certifies (not merely merges).
+
 ## 2026-09-24T15:02:00Z — Relay: PR #245 (FTF-1303) confirmed CI-green, mergeable
 Continuation of this same shift. Subscribed to PR #245's GitHub activity;
 CI finished on the real final head (`a6e27422c082ef0c6f32ecf442e408842ecc63f2`,
