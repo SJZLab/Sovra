@@ -13574,3 +13574,129 @@ Certify FTF-04A06 against the real `main` commit (not a PR), or continue
 with the next dependency-ready frontier item if a certifier session picks
 this up first. Recompute the dependency-ready frontier fresh from
 `docs/spec-matrix.yaml` rather than trusting any prior note.
+
+### Control plane review — 2026-09-24 — FTF-04A06 (PR #238, merged directly by the owner as `249ff06`) — CERTIFIED
+- **Trigger:** scheduled Control-plane certifier shift, triggered by PR
+  #241's own `pull_request.opened` webhook. PR #241
+  (`claude/wizardly-fermat-04a06-merge-note` → `main`, opened by the repo
+  owner, tracking docs only) flagged that PR #238 had been merged into
+  `main` directly by the repo owner (merge commit
+  `249ff0663df74fe25f33f35673a319ea6d728b90`, `merged_by: samerzakaria`)
+  rather than through a Control-plane `CERTIFY` shift. Per Law 4 that is
+  correct behavior — a plain merge never certifies — and
+  `docs/spec-matrix.yaml`'s FTF-04A06 entry had correctly stayed
+  `certification_state: PROVISIONAL` on `main`. Since PR #238 was already
+  closed, the usual `pull_request.opened` webhook for it would not fire
+  again, so this PROVISIONAL entry needed an explicit flag to stay
+  visible — PR #241 is that flag.
+- **Session-ID check:** every commit on PR #238
+  (`38ea4e450fcbf9e2f65032e78490bf632d30adac`,
+  `37e6b494523a820fd7def97decc8692ca6d1d869`,
+  `4badf5af9f1d0056248be670c0ffbe84d27034fe`,
+  `911ae789cbc2f3f9b1c9977c087c9911d8cce7aa`,
+  `3fb33672c1b6da1f63fb3407459ec4146e94e421`,
+  `693f61949d6c2a8a8fc3bd21e8c9caf3f7cfa5de`) and on PR #241
+  (`003c93e2fa8fbb1c4d586fb6f0e859a40bdb41ae`) carries `Claude-Session:
+  .../session_0159tZvUhDCyk3rdhW7fMscf`; the one earlier NOT CERTIFIED
+  review commit (PR #239, `89bed8954e219388fa3afa7eaf1b8d3925b2d0ef`)
+  carries `session_01MM33SzxPJuU62Z4SY45XKg`. This reviewing session's own
+  ID is `session_01EgbUgjCVMJLLXyxsmmxbeZ` — no match to either,
+  independent per Law 4.
+- **Prior review, not re-litigated, only re-verified:** PR #239
+  (2026-09-24, session_01MM33SzxPJuU62Z4SY45XKg) found the shipped
+  `resolve_allowed_root` sound (a real `Path.parents` structural check,
+  never a string-prefix comparison) but a real Law 1 evidence gap: no
+  test used a prefix-colliding sibling allowlist pair (`allowed` vs
+  `allowed-evil`), so the module's own docstring-claimed guarantee and
+  this task's own literal "path traversal" `negative_acceptance` clause
+  were asserted but never shown able to fail. NOT CERTIFIED. The relay
+  fixed it in commit `911ae78`
+  (`test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`).
+- **Contract pulled fresh**, not reused from a prior review: `python3
+  tools/r1_handoff.py packet FTF-04A06 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` -> `docs/implementation/task-packets/
+  FTF-04A06.md`. Acceptance clause 1 ("Read approved local root, handle
+  detached/dirty worktree and create immutable content manifest")
+  confirmed met: `resolve_allowed_root` + `capture_local_repository`
+  branch on real `git status --porcelain` output into
+  `local_git_commit`/`local_dirty_snapshot`, with a real deterministic
+  sha256 content manifest for the dirty case. `negative_acceptance`
+  ("Path/symlink traversal and concurrent file drift fail; never edit the
+  target working tree") confirmed met by the three independent
+  fault-injection vectors below.
+- **Diff read directly**, this session's own `git worktree` checkout of
+  the real merged head `249ff06` (`git fetch --unshallow origin` first —
+  this sandbox's clone was shallow, producing the same spurious
+  `stale_commit` artifact on unrelated already-CERTIFIED tasks a prior
+  shift already noted; clean once unshallowed):
+  `apps/api/app/target_connectors/local_repository_connector.py` (431
+  lines) + `tests/tasks/test_ftf_04a06.py` (462 lines, including the
+  `911ae78` fix) + the one-line CI gate step + the
+  `docs/spec-matrix.yaml` entry — matches the PR's own description and
+  every prior review's own account, no scope creep.
+- **CI re-checked on the real head, not taken on faith:** the real head
+  that was merged into `249ff06` is
+  `693f61949d6c2a8a8fc3bd21e8c9caf3f7cfa5de` (PR #238's own branch tip, an
+  ancestor of the merge commit, includes the `911ae78` fix). Fetched
+  workflow run `35994361000` directly: `event: pull_request`,
+  `head_branch: claude/wizardly-fermat-azo96v`, `head_sha: 693f619`,
+  `status: completed`, `conclusion: success` — **29/29 check runs
+  `completed`/`success`**, `gate` included.
+- **Own independent verification, directly on this session's worktree
+  checkout of the real merged commit `249ff06`** (`uv sync --all-packages`
+  first): `uv run python3 tests/tasks/test_ftf_04a06.py` — all checks
+  passed. `ruff check`/`ruff format --check`/`mypy` clean on both new
+  files. `validate_spec.py --strict` clean (after unshallowing).
+  `product_truth_check.py --fail-on-unwired` — `19/19`, confirmed a
+  legitimate skip, not a masked 0/0 pass: read
+  `scripts/product_truth_check.py` directly — an entry with
+  `proving_symbol: ''` is excluded from both the numerator and
+  denominator entirely (`if not sym: continue`), never counted as a
+  passing 0/0. FTF-04A06's own `proving_symbol` is genuinely `''`,
+  matching its disclosed scope (returns a `LocalRepositoryCapture` value;
+  no live route of its own yet) and the established `FTF-R017`
+  (`proving_symbol: ''`, already CERTIFIED/L2-CERTIFIED) precedent.
+  Regression: `test_ftf_04a01.py`/`test_ftf_04a07.py` both re-ran clean.
+- **Own fault injection, three vectors, independent of both prior
+  reviews' own vectors but targeting the same three enforcement points,
+  each reverted byte-identical (`diff` confirmed) and the suite
+  re-confirmed clean immediately after:**
+  1. Patched `resolve_allowed_root`'s real `real_root == real_allowed or
+     real_allowed in real_root.parents` check to a naive
+     `str(real_root).startswith(str(real_allowed))` comparison (the same
+     bug class the first review found uncovered) —
+     `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`
+     genuinely failed for real (1 `FAIL` line), confirming the `911ae78`
+     fix actually closes the gap the prior review identified.
+  2. Disabled both `ConcurrentModificationError` raises (wrapped each `if
+     dirty_after != dirty_before or head_after != commit_sha:` in `if
+     False and (...)`) — the dedicated concurrent-modification negative
+     check genuinely failed for real (1 `FAIL` line).
+  3. Disabled the content-walk symlink-escape raise (wrapped `if
+     real_target != root and root not in real_target.parents:` in `if
+     False and (...)`) — the dedicated symlink-escape negative check
+     genuinely failed for real (1 `FAIL` line).
+  All three reverted byte-identical (`diff` confirmed against the
+  original) and the delivered suite re-confirmed clean immediately after
+  each.
+- **Conclusion:** no blocking defect found. PR #238 was already merged
+  (by the repo owner, not by this review) as `249ff06`; this review does
+  not re-merge it. `docs/spec-matrix.yaml`'s FTF-04A06 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` corrected from the implementation commit (`38ea4e4`) to
+  the real merge commit (`249ff06`, per the CERTIFY procedure's own
+  "evidence_hash = merge commit SHA" step); `proving_symbol` stays `''`.
+  Ran `scripts.task_claim.sync_certified_status()` — `['FTF-04A06']`
+  updated. Certified count moves 59/300 → 60/300. Product-true stays
+  19/19 (this criterion carries no `proving_symbol`). Full entry:
+  `docs/certifications/ledger.md`'s new FTF-04A06 entry.
+- **Validated-by:** session https://claude.ai/code/session_01EgbUgjCVMJLLXyxsmmxbeZ
+  (independent — see session-ID check above), 2026-09-24.
+
+## Next shift
+Nothing currently pending in this queue. PR #241 (tracking docs only,
+still open) is superseded by this CERTIFY review's own doc updates —
+left open and untouched, not this session's PR to close. Recompute the
+dependency-ready frontier fresh from `docs/spec-matrix.yaml` before
+picking a next relay item — FTF-0212 (PR #231) and FTF-0304 (PRs
+#194/#195) remain other sessions' own open work; leave those alone.

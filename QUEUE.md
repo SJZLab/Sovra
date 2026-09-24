@@ -1,4 +1,35 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #241) — independently reviewed
+  and **CERTIFIED FTF-04A06** ("Local repository connector with root
+  allowlist/path protections") against the real merged commit
+  `249ff0663df74fe25f33f35673a319ea6d728b90` on `main` (PR #238, merged
+  directly by the repo owner; certification is a separate act from the
+  merge, per Law 4 — see the entry directly below for that merge's own
+  record). PR #241 (tracking docs only) correctly flagged that this
+  PROVISIONAL entry needed an explicit Control-plane L2 review since PR
+  #238 was already closed and the usual `pull_request.opened` webhook
+  would not fire again for it. Session-ID check clean (no match to any of
+  PR #238/#239/#241's commit session IDs). Own fresh `git worktree` at
+  `origin/main` (unshallowed), CI re-checked directly on the real merged
+  head (`693f619`, 29/29 checks green, includes the `911ae78` Law 1 fix),
+  `product_truth_check.py` 19/19 confirmed a legitimate `proving_symbol:
+  ''` skip, three independent fault-injection vectors (prefix-colliding
+  sibling comparison, concurrent-drift check, content-walk symlink
+  escape) all genuinely caught by `tests/tasks/test_ftf_04a06.py`, each
+  reverted byte-identical. `tools/r1_handoff.py packet FTF-04A06`
+  re-pulled fresh; acceptance/negative_acceptance clauses confirmed met.
+  `docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` corrected to
+  the real merge commit `249ff06` (was the implementation commit). Ran
+  `sync_certified_status()` — `['FTF-04A06']` updated. Certified count
+  moves 59/300 → 60/300. Product-true stays 19/19 (this criterion carries
+  no `proving_symbol`). Full record: `docs/certifications/ledger.md`'s new
+  FTF-04A06 entry, `docs/certifications/queue.md`'s matching CERTIFY
+  entry, `PROGRESS.md`. See "## Done" below (moved out of "##
+  Provisional").
+
+## Previous shift
 Updated: 2026-09-24 (relay, tracking-doc only) — **PR #238 (FTF-04A06,
   "Local repository connector with root allowlist/path protections") was
   merged into `main` directly by the repo owner** (merge commit `249ff06`,
@@ -3834,25 +3865,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-04A06 ("Local repository connector with root allowlist/path
-protections") -- **merged into `main` 2026-09-24** (merge commit `249ff06`,
-merged directly by the repo owner, not via a Control-plane `CERTIFY`
-shift). Real, DB-free capture connector composing with the
-already-CERTIFIED FTF-04A01/FTF-04A07; disclosed scope boundary (does not
-itself persist a `TargetSourceSnapshot` row or upload the dirty-tree
-archive to real object storage -- a later, separately-scoped caller's
-job). Full history: `docs/certifications/queue.md`'s 2026-09-24 entries,
-`PROGRESS.md`. First review (PR #239) was NOT CERTIFIED for a real Law 1
-evidence gap (no prefix-colliding-sibling allowlist test); fixed in commit
-`911ae78` -- no production code changed. CI was fully green (29/29) on
-the merged head (`693f619`) before the owner's merge, including one
-re-run of a genuine, unrelated flake in FTF-R002's own already-certified
-`test_ftf_r002.py` (confirmed not caused by this diff). `main`'s own
-`docs/spec-matrix.yaml` correctly still reads `certification_state:
-PROVISIONAL` per Law 4 (a merge alone is never a certification). **Needs
-a genuine Control-plane L2 review against the real commit on `main`**
-(no open PR remains to trigger the usual webhook-driven review -- flagged
-here so this is not silently skipped).
+None currently.
+
+FTF-04A06 is no longer in this section; it was independently reviewed
+against the real merged commit and **CERTIFIED 2026-09-24** (merge commit
+`249ff0663df74fe25f33f35673a319ea6d728b90`, merged directly by the repo
+owner; certification is a separate act from the merge, per Law 4) — see
+"## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full two-review history (PR #239's 2026-09-24 NOT CERTIFIED review for a
+real Law 1 evidence gap, the relay's `911ae78` fix, and this 2026-09-24
+CERTIFY review triggered by PR #241).
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit
@@ -5873,6 +5896,35 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certified before, `59/300` after. Product-true unchanged at `19/19`
   (the live caller was already wired at PR #236's own merge, not newly
   added by certification). Full entry: docs/certifications/ledger.md.
+- FTF-04A06 — Local repository connector with root allowlist/path
+  protections. **CERTIFIED 2026-09-24**, PR #238 (merge commit
+  `249ff0663df74fe25f33f35673a319ea6d728b90`, merged directly by the repo
+  owner; independently reviewed and certified separately, per Law 4 — a
+  plain merge never certifies). First review (PR #239) was NOT CERTIFIED
+  for a real Law 1 evidence gap: no test used a prefix-colliding sibling
+  allowlist pair (`allowed` vs `allowed-evil`), so the module's own
+  "never a string-prefix comparison" guarantee and the task's own literal
+  "path traversal" `negative_acceptance` clause were asserted but never
+  shown able to fail. Fixed in commit `911ae78`
+  (`test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`). This
+  review (triggered by PR #241, which flagged that the already-merged PR
+  #238 still needed a genuine L2 review since a plain owner merge never
+  certifies) independently re-verified against the real merged commit in
+  a fresh unshallowed `git worktree`: session-ID check clean, CI
+  re-checked directly on the real merged head (`693f619`, 29/29 checks
+  green), `product_truth_check.py` 19/19 confirmed a legitimate
+  `proving_symbol: ''` skip, and three independent fault-injection
+  vectors (the prefix-colliding comparison, the concurrent-drift check,
+  the content-walk symlink escape) all genuinely caught by
+  `tests/tasks/test_ftf_04a06.py`, each reverted byte-identical. Both
+  acceptance and negative_acceptance clauses reconfirmed against the real
+  DoD via `tools/r1_handoff.py packet FTF-04A06`.
+  `docs/spec-matrix.yaml`'s `evidence_hash` corrected from the
+  implementation commit to the real merge commit `249ff06`, per the
+  CERTIFY procedure. Ran `sync_certified_status()`. `scripts/status.py`:
+  `59/300` certified before, `60/300` after. Product-true unchanged at
+  `19/19` (this criterion carries no `proving_symbol`). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
