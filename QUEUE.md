@@ -4063,8 +4063,8 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1503 ("CSRF suite") — submitted 2026-09-24 via a PR from branch
-`claude/wizardly-fermat-gae8i9` against `main`, title `[relay] FTF-1503:
+FTF-1503 ("CSRF suite") — submitted 2026-09-24 via PR #258
+(`claude/wizardly-fermat-gae8i9` against `main`), title `[relay] FTF-1503:
 CSRF suite`. New, real, reusable CSRF-protection dependency
 (`apps/api/app/auth/csrf_protection.py`) proven end to end against a real
 uvicorn demonstration app composing the real `require_csrf_protection`

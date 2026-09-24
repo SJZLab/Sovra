@@ -14441,7 +14441,7 @@ commit hash is known, same precedent as every sibling PROVISIONAL submission.
 
 **No production mock/placeholder path (Law 11); no independent schema change
 (`database_changes` contract honored -- no new table or column). Not self-certified (Law 4).**
-Opened as a PR from branch `claude/wizardly-fermat-gae8i9` -> `main`, title `[relay] FTF-1503:
+Opened as PR #258 (`claude/wizardly-fermat-gae8i9` -> `main`), title `[relay] FTF-1503:
 CSRF suite`. Independent Control-plane L2 review and a real CI run on the opened PR are required
 before certification.
 

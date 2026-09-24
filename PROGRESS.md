@@ -17317,12 +17317,12 @@ commit hash is known, same precedent as every sibling PROVISIONAL submission.
 
 **No production mock/placeholder path (Law 11); no independent schema change
 (`database_changes` contract honored — no new table or column). Not self-certified (Law 4).**
-Opened as a PR from branch `claude/wizardly-fermat-gae8i9` against `main`, title `[relay] FTF-1503:
+Opened as PR #258 (`claude/wizardly-fermat-gae8i9` against `main`), title `[relay] FTF-1503:
 CSRF suite`. Appended a matching entry to `docs/certifications/queue.md` for Control plane; updated
 `QUEUE.md`'s "## Provisional" section.
 
 ## Next shift
-The PR opened this shift for FTF-1503 (CSRF suite) is open, awaiting CI plus an independent
+PR #258 (FTF-1503, CSRF suite) is open, awaiting CI plus an independent
 Control-plane L2 certifier shift (not this relay's role) — do not re-implement. PRs #246 (FTF-1303
 tracking-doc reconciliation) and #243 (FTF-04A06 owner-direct-merge certification, supersedes #241)
 remain separately open from before, awaiting Control-plane attention, if still unresolved. Recompute
