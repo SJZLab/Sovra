@@ -7,10 +7,10 @@ Updated: 2026-09-24 (same relay shift, continued) — PR #249 (FTF-1304)
   the task: confirmed on a fresh `origin/main` checkout that
   `docs/spec-matrix.yaml`'s FTF-1304 entry still reads
   `certification_state: PROVISIONAL` and `scripts/status.py` still reads
-  `61/300 certified`, unchanged. Opening a tracking-docs-only PR (branch
-  `claude/ftf-1304-flag-certification`, PR link recorded in this file's
-  own next commit once opened) to flag this for the next Control-plane
-  certifier shift, since the closed PR #249
+  `61/300 certified`, unchanged. Opened **PR:**
+  https://github.com/SJZLab/Sovra/pull/250 (branch
+  `claude/ftf-1304-flag-certification`, tracking-docs only) to flag this
+  for the next Control-plane certifier shift, since the closed PR #249
   will not refire the usual `pull_request.opened` webhook — same
   precedent as PR #241 for FTF-04A06. This relay session did not
   self-certify its own submission (Law 4 applies doubly: same producer
