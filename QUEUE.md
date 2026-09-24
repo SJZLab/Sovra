@@ -1,4 +1,15 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24T15:13:00Z (same relay shift, continued) — PR #246
+  (tracking-doc-only follow-up) went CI-green (29/29, `gate` included, run
+  `36017531339`), `mergeable_state: clean`, no reviews. Posted a final
+  status comment. **Shift stopping here (STEP 4(a))** — not self-merged,
+  matching this repo's own relay precedent; left for the owner or a
+  Control-plane certifier shift to merge. FTF-1303 itself is L1-PROVEN and
+  already on `main` (commit `f1e5457`), awaiting only the real
+  Control-plane L2 CERTIFY procedure (Law 4). No owner ask open ("Owner
+  actions — current": None). See "## Provisional" below.
+
+## Previous shift
 Updated: 2026-09-24T15:03:28Z (same relay shift, continued) — **PR #245
   (FTF-1303) merged** into `main` (merge commit `f1e5457`), by the repo
   owner directly (`merged_by: samerzakaria`), not a Control-plane certifier

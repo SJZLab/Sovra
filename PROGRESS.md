@@ -1,4 +1,40 @@
 # PROGRESS — Sovra
+## 2026-09-24T15:13:00Z — Relay: PR #246 CI-green; shift stop (N/N L1-PROVEN, awaiting Control plane)
+Continuation of this same shift. Opened **PR #246** (tracking-doc-only,
+no production code) to record PR #245's owner-direct merge and FTF-1303's
+still-`PROVISIONAL` state for the next Control-plane certifier shift.
+Subscribed to its activity; CI finished on the real final head (`04baa20`,
+run `36017531339`) -- confirmed via a fresh `get_check_runs` pull: **29/29
+checks `completed`/`success`, `gate` included**, `mergeable_state: clean`.
+No reviews posted (`get_reviews` empty). Posted a final status comment on
+PR #246.
+
+**Not self-merged**, matching this repo's own established relay
+precedent (every prior relay shift left a CI-green PR for either the owner
+or a Control-plane certifier to merge, e.g. PR #238's own "no further relay
+action needed" note) even though `docs/spec-matrix.yaml` shows this PR
+makes no certification claim at all (tracking docs only).
+
+**Stopping this shift here — STEP 4(a): N/N of this shift's own work is now
+L1-PROVEN/merged-or-ready, nothing further for a relay session to do.**
+FTF-1303's code is on `main` (merge commit `f1e5457`), independently
+reviewed sound in full, CI-green twice over (PR #245's pre-merge head and
+PR #246's own head) -- awaiting only the real Control-plane L2 CERTIFY
+procedure (Law 4). No owner ask is open (`QUEUE.md`'s "Owner actions --
+current" unchanged, "None currently"). No blocker.
+
+## Next shift
+1. Merge PR #246 (tracking-doc-only, CI-green, no code) if not already
+   merged by the owner.
+2. Run the real Control-plane CERTIFY procedure for FTF-1303 against
+   merged commit `f1e5457` (session-ID check, own fault injection,
+   `sync_certified_status()`, `docs/spec-matrix.yaml`/
+   `docs/certifications/ledger.md` updates) -- the code review and CI-green
+   confirmation are already on record, only certification itself remains.
+3. Once FTF-1303 certifies, recompute the dependency-ready frontier fresh
+   from `docs/spec-matrix.yaml` (FTF-1304 "Cost-per-success calculator"
+   becomes dependency-ready) rather than trusting this note alone.
+
 ## 2026-09-24T15:03:28Z — PR #245 (FTF-1303) merged directly by repo owner; still PROVISIONAL
 Continuation of this same shift. A `pull_request.closed` webhook fired for
 PR #245 (`outcome: "merged"`) while this session was still watching for CI —
