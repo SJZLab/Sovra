@@ -6971,3 +6971,91 @@ reasons given above.
   task adds no live caller).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0507 — Tool-trace normalizer
+- Criterion ID: FTF-0507
+- PR: https://github.com/SJZLab/Sovra/pull/253 (`claude/wizardly-fermat-svcgeh`
+  → `main`). Merged by this review as merge commit
+  `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`.
+- Merge commit (evidence): c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4
+- Implementation commit: 83c865e8163387e4d016a60f544405fe345e6d11
+- Validated-by: session https://claude.ai/code/session_01DfzHGRTG4C3bo11N4fu9N4
+  (Control-plane certifier shift, triggered by the `pull_request.opened`
+  webhook for PR #253), 2026-09-24
+- Date: 2026-09-24
+- **Session-ID check:** both commits on PR #253 carry `Claude-Session`
+  trailer `session_01NCb1NKVWuvGDb5GfFvXxMh` (producer) — no match against
+  this reviewing session's own ID (`session_01DfzHGRTG4C3bo11N4fu9N4`),
+  independent per Law 4.
+- **Diff read directly:** `workers/data/tool_trace_normalizer.py` (268
+  lines) and `tests/tasks/test_ftf_0507.py` (18 test functions) read in
+  full. This PR's head moved once while under review (`83c865e` →
+  `69a5497`), confirmed via `git diff --stat` between the two heads that
+  the new commit was tracking-doc-only (`PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md`, adding the previously-missing queue
+  append), zero production/test changes — the code already read stayed
+  the code that shipped. Confirmed `normalize_tool_trace` genuinely
+  composes FTF-0506's already-CERTIFIED `normalize_conversation` rather
+  than reimplementing any of its guards; confirmed dependencies
+  FTF-0500/FTF-0506 both `CERTIFIED` in `docs/spec-matrix.yaml` directly
+  before relying on them.
+- **Own local reproduction:** ran `python3 tests/tasks/test_ftf_0507.py`
+  directly against the checked-out head — all 18 checks passed. `ruff
+  check`/`ruff format --check` clean; `uv run mypy
+  workers/data/tool_trace_normalizer.py` clean; `python3
+  scripts/validate_spec.py --strict` clean.
+- **CI independently watched to completion on the real final head, not
+  taken on faith:** GitHub Actions run `36045751066` on head
+  `69a5497266187cf5fba252c8121cea08fbd058f7` polled to completion — all 29
+  checks, `gate` included, `status: completed` / `conclusion: success`,
+  `mergeable_state: clean`. Pulled the `gate` job's own step-level log
+  text directly (`get_job_logs`, job id `107788753568`): the step "Run uv
+  run python3 tests/tasks/test_ftf_0507.py" genuinely executed and
+  printed "FTF-0507 tool-trace normalizer: all checks passed" — real
+  execution, not a self-reported claim.
+- **Own fault injection (Law 1), distinct from the producer's own two
+  vectors** (mixed-session guard, authorized-bool guard): disabled the
+  trace-level duplicate tool-call-id guard across the whole batch (the
+  `if call_id in authorizations: raise ...` check in
+  `normalize_tool_trace`), so a repeated `id` on two different assistant
+  tool calls within one trace was silently accepted instead of refused.
+  Ran the real suite against the faulted code: 1 genuine `FAIL
+  [FTF-0507]` line (`test_rejects_duplicate_tool_call_id_across_trace`).
+  Reverted byte-identical (`diff` against the pre-fault copy empty,
+  confirmed via `git diff --stat` showing no changes); re-ran the real
+  suite immediately after — all 18 checks passed again.
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19`
+  unchanged, and confirmed legitimate rather than an evasion:** this
+  task's `proving_symbol` is the empty string — no trace-source importer
+  exists in this repository yet to call `normalize_tool_trace` (Section
+  67.1's actual REST/trace connector is a separate, later,
+  dependency-gated task), the same accepted scope-narrowing precedent as
+  FTF-0506/FTF-0202/FTF-0205/FTF-0207/FTF-1302/FTF-1303/FTF-1304 before
+  each one's own first live caller existed. Read
+  `scripts/product_truth_check.py`'s own logic directly: an entry with no
+  `proving_symbol` is skipped entirely, never counted as a false 0/0 pass
+  against a claimed symbol.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-0507 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Convert approved trace messages, tool IDs/results and outcomes
+  preserving ordering and actual permissions" — proven by the shipped
+  suite's out-of-order golden-trace and authorization-preservation cases;
+  "Independent review, exact merged commit, real relevant integration and
+  negative-test evidence recorded" — this review) and `negative_acceptance`
+  ("Orphan/duplicate call IDs, malformed tool result and mixed-session
+  traces cannot be accepted" — proven by the shipped suite's own cases
+  plus this review's own fault injection above) both genuinely met, not
+  merely "tests pass". `dependencies` FTF-0500/FTF-0506 confirmed already
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- `validate_spec.py --strict` clean on this diff (ran after `git fetch
+  --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+- No blocking defect found. Merged PR #253 (merge commit
+  `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`). `docs/spec-matrix.yaml`'s
+  FTF-0507 entry set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to the merge commit; `proving_symbol`
+  stays `''` (no live caller, confirmed legitimate above).
+  `sync_certified_status()` updated — `['FTF-0507']`. Certified count
+  moves 62/300 → 63/300. Product-true: 19/19 → 19/19 (unchanged — this
+  task adds no live caller).
+
+**Conclusion:** Certified L2-CERTIFIED.

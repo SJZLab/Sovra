@@ -3244,10 +3244,10 @@ FTF-0506:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0506.py
 FTF-0507:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool-trace normalizer
-  evidence_hash: ''
+  evidence_hash: c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31;
@@ -3334,22 +3334,29 @@ FTF-0507:
     copy confirmed byte-identical; suite re-ran clean both times.
 
     `ruff check`/`ruff format --check`/`mypy` clean. `validate_spec.py
-    --strict` clean (after `git fetch --unshallow`, this sandbox's own
-    pre-existing shallow-clone artifact -- confirmed pre-existing, not a
-    defect in this diff, same class of gap already on record for prior
-    shifts). `product_truth_check.py --fail-on-unwired` unchanged at
-    19/19 (no live caller yet -- no trace-source importer exists in this
-    repository yet to call `normalize_tool_trace`, Section 67.1's actual
-    REST/trace connector is a separate, later, dependency-gated task;
-    same disclosed "no live caller yet" precedent already established for
-    FTF-0506/FTF-0202/FTF-0205/FTF-0207). `status.py` unchanged at
-    62/300 certified. `verify_task.py --task FTF-0507 --stage task`
-    reports BLOCKED pre-merge (expected, same precedent as every sibling
-    PROVISIONAL submission).
+    --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged
+    at 19/19 (no live caller yet -- no trace-source importer exists in
+    this repository yet to call `normalize_tool_trace`, same disclosed
+    "no live caller yet" precedent already established for
+    FTF-0506/FTF-0202/FTF-0205/FTF-0207).
 
-    Not self-certified (Law 4) -- independent Control-plane L2 review and
-    a real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+    Independently reviewed and CERTIFIED by Control plane (PR #253,
+    merge commit `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`) --
+    session-ID check (producer `session_01NCb1NKVWuvGDb5GfFvXxMh`, no
+    match against this reviewing session), direct diff read of both the
+    module and its test suite, a real CI run watched to completion on the
+    real final head (GitHub Actions run `36045751066`, `gate` job's own
+    step log pulled directly and confirmed to have genuinely executed
+    `tests/tasks/test_ftf_0507.py` and printed "all checks passed"), an
+    independent fault injection distinct from the producer's own two
+    vectors (disabled the trace-level duplicate tool-call-id guard across
+    the whole batch -- 1 genuine FAIL, reverted byte-identical, suite
+    re-confirmed clean), `product_truth_check.py` 19/19 reconfirmed
+    legitimate (no proving_symbol claimed, entry skipped rather than
+    counted as a false 0/0 pass), and the task contract's
+    acceptance/negative_acceptance clauses and FTF-0500/FTF-0506
+    dependencies reconfirmed via `tools/r1_handoff.py packet FTF-0507`.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0507.py
 FTF-0508:

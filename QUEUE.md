@@ -1,4 +1,30 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #253) — checked `docs/certifications/queue.md` for
+  pending PROVISIONAL items per the certifier's standing duty; cross-checked
+  `docs/spec-matrix.yaml` directly and found exactly one genuinely
+  PROVISIONAL entry, **FTF-0507 (PR #253)**, this shift's only pending item.
+  Ran the complete independent CERTIFY procedure: session-ID check clean
+  (producer `session_01NCb1NKVWuvGDb5GfFvXxMh`, no overlap with this
+  reviewing session `session_01DfzHGRTG4C3bo11N4fu9N4`); full diff read
+  (`workers/data/tool_trace_normalizer.py`, `tests/tasks/test_ftf_0507.py`);
+  task contract pulled via `tools/r1_handoff.py packet FTF-0507` and its
+  acceptance/negative_acceptance clauses reconfirmed genuinely met;
+  dependencies FTF-0500/FTF-0506 reconfirmed `CERTIFIED`; own local
+  reproduction (`ruff`/`mypy`/`validate_spec.py --strict` clean, suite
+  18/18 passing); an own fault injection distinct from the producer's own
+  two vectors (disabled the trace-level duplicate tool-call-id guard —
+  caught for real, reverted byte-identical); `product_truth_check.py`
+  19/19 legitimacy confirmed (no `proving_symbol` claimed); and a fresh
+  real CI run watched to completion on the PR's actual final head after it
+  moved mid-review (`83c865e` → `69a5497`, tracking-doc-only). **Merged PR
+  #253 and CERTIFIED FTF-0507** — merge commit
+  `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`. `docs/spec-matrix.yaml` set
+  to CERTIFIED/L2-CERTIFIED; `sync_certified_status()` updated;
+  `status.py`: 62/300 → 63/300 certified, product-true unchanged at
+  19/19. Full record: "## Done" below and `docs/certifications/ledger.md`.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
   submitted **FTF-0507 (Tool-trace normalizer) PROVISIONAL** via **PR:**
   https://github.com/SJZLab/Sovra/pull/253 (branch
@@ -4037,11 +4063,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0507 ("Tool-trace normalizer") — this shift's own submission, see the
-top-of-file 2026-09-24 relay entry for the full record. **PR:**
-https://github.com/SJZLab/Sovra/pull/253
-(`claude/wizardly-fermat-svcgeh` → `main`), commit `83c865e`. Awaiting
-CI + independent Control-plane L2 review (Law 4).
+None currently.
+
+FTF-0507 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #253 (merge commit
+`c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full evidence, including the
+independent session-ID check, own local reproduction, an own fault
+injection (distinct vector from the producer's own two: the trace-level
+duplicate tool-call-id guard), and the real CI step-level log confirmation
+on the PR's actual final head.
 
 FTF-1304 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via
@@ -5997,6 +6029,30 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   landed first — see that entry above). `scripts/status.py`: `50/300`
   certified before, `51/300` after. Product-true unchanged at 17. Full
   entry: docs/certifications/ledger.md.
+- FTF-0507 — Tool-trace normalizer. CERTIFIED 2026-09-24, merge commit
+  `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4` (PR #253). Independently
+  re-verified: session-ID check clean (producer
+  `session_01NCb1NKVWuvGDb5GfFvXxMh`, no overlap with this reviewing
+  session); `workers/data/tool_trace_normalizer.py` and
+  `tests/tasks/test_ftf_0507.py` read in full, confirming
+  `normalize_tool_trace` genuinely composes FTF-0506's already-CERTIFIED
+  `normalize_conversation` rather than reimplementing its guards; a fault
+  injection distinct from the producer's own two (mixed-session guard,
+  authorized-bool guard) — disabled the trace-level duplicate
+  tool-call-id guard across the whole batch, caught for real (1 genuine
+  FAIL), reverted byte-identical; `ruff`/`mypy`/`validate_spec.py
+  --strict` clean; CI watched to completion on the real final head
+  (GitHub Actions run `36045751066`, 29/29 jobs green, `gate` job's own
+  step log confirmed genuine execution of `test_ftf_0507.py`);
+  `product_truth_check.py` 19/19 confirmed legitimately unchanged (no
+  `proving_symbol` yet, same disclosed "no live caller" precedent as
+  FTF-0506/FTF-0202/FTF-0205/FTF-0207). Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0507` — acceptance and
+  negative_acceptance clauses both confirmed genuinely met. Dependencies
+  FTF-0500/FTF-0506 confirmed genuinely `CERTIFIED`. Ran
+  `sync_certified_status()`. `scripts/status.py`: `62/300` certified
+  before, `63/300` after. Product-true unchanged at 19. Full entry:
+  docs/certifications/ledger.md.
 - FTF-0206 — `/model_group/info` optional enrichment. First reviewed and
   found NOT CERTIFIED (CI's `gate` job never ran `tests/tasks/
   test_ftf_0206.py`); a later relay shift closed that CI gate-coverage
