@@ -16426,3 +16426,53 @@ Control-plane L2 review (Law 4 -- this session cannot certify its own
 work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
 record, on branch `claude/sleepy-pasteur-xe53d0`) is a separate PR this
 relay does not own or merge.
+
+## 2026-09-24T11:40:00Z — Relay: FTF-04A06 (PR #238) merge conflict resolved, CI green
+While waiting on CI for the Law 1 fix (commit `911ae78`), PR #239 (the
+Control-plane certifier's own documentation-only NOT CERTIFIED record for
+this same PR) merged into `main`, touching the same `PROGRESS.md`/
+`QUEUE.md`/`docs/certifications/queue.md` sections this PR had also
+appended to -- a real merge conflict (`mergeable_state: dirty`), not a
+code conflict (`git diff --stat` confirmed only tracking-doc files
+differed on `main`).
+
+CI's `gate` job also failed once on commit `3fb3367` (pre-merge): root-
+caused directly from the job log to `test_job_identity_rejects_tampered_token`
+in `tests/tasks/test_ftf_r002.py` (FTF-R002, already CERTIFIED, merged via
+PR #236) -- a genuine, timestamp-dependent flake in that test's own tamper
+construction (it replaces the token's `[-4]` character with `"A"`/`"B"`
+chosen by comparing `token[-1]`, but the signed token embeds a real
+`datetime.now(UTC)`, so on rare runs the replacement character coincides
+with the original and the "tamper" is a no-op). Confirmed via
+`git diff 71f1131...HEAD --stat` that this PR's diff never touches
+`component_bindings`/`test_ftf_r002.py`, and this task's own
+`test_ftf_04a06.py` step passed cleanly in the same job run. Posted one
+PR comment naming the failure and the root cause before re-running
+(workflow was still `in_progress` overall at first attempt, so
+`rerun-failed-jobs` was refused with `403`; re-ran once after the full
+run completed -- genuinely green on the re-run, confirming the flake
+diagnosis).
+
+Merged `origin/main` into this branch (merge commit `c122d5d`) to resolve
+the tracking-doc conflict: kept both the certifier's detailed NOT
+CERTIFIED review record and this session's own fix follow-up entry, in
+chronological order (review first, fix second) -- no production code
+involved in the conflict. Re-verified after the merge:
+`tests/tasks/test_ftf_04a06.py` all checks passed, `ruff` clean,
+`validate_spec.py --strict` clean, `product_truth_check.py` unchanged at
+`19/19`, `status.py` unchanged at `59/300 certified`. Pushed; CI re-ran
+fully green on the merge commit (run `35993524782`, all 29 checks
+including `gate`), `mergeable_state: clean`.
+
+**PR #238 is now CI-clean and mergeable, awaiting a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work).** Posted a final status comment on the PR. No further relay action
+needed on this PR unless new review/CI activity arrives.
+
+## Next shift
+Nothing else is currently dependency-ready and unclaimed beyond what this
+shift's own frontier recomputation already found (see this file's earlier
+2026-09-24 entry) -- FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195)
+remain other sessions' own open work; leave those alone. Recompute the
+frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note
+alone before picking a next item.
