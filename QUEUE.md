@@ -3739,18 +3739,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0213** (Real structured-output probe) — submitted 2026-09-24 by a
-relay shift as PR https://github.com/SJZLab/Sovra/pull/232, not
-self-certified (Law 4). Real, bounded synthetic
-`response_format: json_schema` probe against a real local HTTPS gateway,
-schema-validated with a small purpose-built JSON Schema subset validator.
-Shown able to fail first (Law 1): a real dataclass-arity `TypeError` was
-caught by running the suite against the initial implementation, then
-fixed by switching every `StructuredOutputProbeResult` construction to
-keyword arguments. Three own fault injections (authorization gate,
-integer-coercion guard, `response_format`-rejection classification), each
-reverted byte-identical and the suite re-confirmed clean. Full evidence:
-`docs/certifications/queue.md`, `PROGRESS.md`.
+None currently.
+
+FTF-0213 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #232 (merge commit
+`1751211044041e15fc4708b4be552c3957509e80`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full evidence.
 
 FTF-0211 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #228 (merge commit
@@ -5672,6 +5667,25 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   Merged PR #228, closed PR #226 as superseded. Ran
   `sync_certified_status()`. `scripts/status.py`: `55/300` certified
   before, `56/300` after. Product-true unchanged at 17. Full entry:
+  docs/certifications/ledger.md.
+- FTF-0213 — Real structured-output probe. Independently reviewed and
+  **CERTIFIED 2026-09-24**, merge commit
+  `1751211044041e15fc4708b4be552c3957509e80` (PR #232). Diff read in
+  full (563-line probe module + 971-line test suite), CI polled to
+  completion on the PR's real final head (27/27, `gate` included,
+  `mergeable_state: clean`), own fresh re-run of the full suite clean in
+  a dedicated git worktree, own fault injection (integer-schema check
+  coerced via `int()` instead of strict `isinstance`) genuinely caught by
+  two dedicated checks, reverted byte-identical. `ruff`/`mypy`/
+  `validate_spec.py --strict` clean; `product_truth_check.py` 17/17
+  unchanged (no live caller yet, disclosed, same precedent as
+  FTF-0210/FTF-0211). Both acceptance clauses and the full
+  three-state negative_acceptance reconfirmed against the real DoD via
+  `tools/r1_handoff.py packet FTF-0213`. Session-ID check clean (all
+  three PR commits carry the producer's own session ID, no match to this
+  reviewing session — Law 4). Merged PR #232. Ran
+  `sync_certified_status()`. `scripts/status.py`: `56/300` certified
+  before, `57/300` after. Product-true unchanged at 17. Full entry:
   docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)

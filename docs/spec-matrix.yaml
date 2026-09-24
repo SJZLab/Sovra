@@ -1239,10 +1239,10 @@ FTF-0212:
   proving_symbol: ''
   proving_test: ''
 FTF-0213:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Real structured-output probe
-  evidence_hash: 3db8b84a9ddea64642e239126eb38d962dd77b33
+  evidence_hash: 1751211044041e15fc4708b4be552c3957509e80
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201,
     FTF-0210 (both CERTIFIED). Built for real in a new
@@ -1338,8 +1338,53 @@ FTF-0213:
     already established (verify_task.py only resolves merged evidence, so a
     pre-merge BLOCKED here is not itself a defect). Submitted PROVISIONAL,
     not self-certified (Law 4) -- an independent Control-plane L2 review is
-    required before CERTIFIED.'
-  proof_state: L1-PROVEN
+    required before CERTIFIED.
+
+
+    Independent Control-plane L2 review (2026-09-24, session
+    session_01J2UD5rqhJWHsPCn88wgMp8, distinct from the producer session
+    session_01XvEtUhKF5SaS7brwfqGkeZ that authored both commits on PR #232 --
+    Law 4 satisfied): re-read the full diff directly from GitHub. Re-ran
+    tests/tasks/test_ftf_0213.py in a fresh worktree checked out from the
+    PR''s actual head (61d80a3bd1da22ddd5ae06e1958dc1a0b713f752) -- "all
+    checks passed", exit code 0, zero FAIL lines. Ran this review''s own
+    fault injection, independent of the producer''s three claimed vectors:
+    changed _validate_against_schema''s integer check from a strict
+    isinstance guard to int()-coercion (accepting a numeric-looking string) --
+    the suite genuinely failed for real (2 assertions: the pure validator
+    unit test and the live schema-violation round trip), then reverted,
+    `diff` confirmed byte-identical against the original, and the suite
+    re-confirmed clean immediately after. Re-ran uv run ruff check/ruff
+    format --check/mypy on both new files -- clean. Re-ran
+    scripts/validate_spec.py --strict (after `git fetch --unshallow origin`
+    in the review worktree) -- clean. Re-ran scripts/product_truth_check.py
+    --fail-on-unwired -- 17/17, legitimately unchanged (proving_symbol
+    stays blank, no live caller yet -- same disclosed Law 2 precedent every
+    sibling FTF-020x probe task already established, not a fabricated
+    pass). Confirmed dependencies FTF-0201/FTF-0210 are genuinely CERTIFIED
+    in this file before relying on them. Pulled this task''s real DoD via
+    `python tools/r1_handoff.py packet FTF-0213 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both clauses are
+    actually met by the real, passing test suite, not merely "tests
+    pass": acceptance ("Exercise the model''s advertised structured-output
+    protocol and schema-validate actual response") by
+    test_probe_succeeds_and_records_route_usage_latency and
+    test_probe_sends_a_bounded_synthetic_json_schema_request; negative_acceptance
+    ("JSON-looking prose, unknown parameter rejection or coercion is not
+    silently treated as strict schema support") by
+    test_json_looking_prose_is_not_json,
+    test_unsupported_response_format_parameter_is_not_fabricated (including
+    its dedicated exactly-one-request assertion) and
+    test_coerced_type_is_a_schema_violation_not_probed plus the sibling
+    schema-violation tests (missing required field, additional property,
+    enum mismatch, top-level array). Independently confirmed real CI on
+    the PR''s actual final head (61d80a3) via a fresh `gh api` poll to
+    completion, not the producer''s own report alone: 27/27 checks
+    `completed`/`success`, `gate` included, `mergeable_state: clean`.
+    Merged PR #232 (merge commit
+    1751211044041e15fc4708b4be552c3957509e80) into `main`. No blocking
+    defect found.'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0213.py
 FTF-0214:
