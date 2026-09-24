@@ -1,4 +1,24 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (relay, tracking-doc only) — **PR #238 (FTF-04A06,
+  "Local repository connector with root allowlist/path protections") was
+  merged into `main` directly by the repo owner** (merge commit `249ff06`,
+  `merged_by: samerzakaria`), not through a Control-plane `CERTIFY` shift.
+  Per Law 4 ("Producer never certifies own work. Merge = PROVISIONAL
+  only") this is exactly as it should be: `docs/spec-matrix.yaml`'s
+  FTF-04A06 entry on `main` correctly still reads
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` — a plain
+  merge never certifies. CI was fully green on the merged head (`693f619`,
+  29/29 checks) and the one earlier NOT CERTIFIED finding (PR #239, a Law
+  1 test-coverage gap) was already fixed and independently re-verifiable
+  before this merge (see the "Previous shift" entries below for the full
+  history). **This item now needs a genuine Control-plane L2 review
+  against the real merged commit on `main`** (not a PR review, since #238
+  is closed) before `certification_state` may move to `CERTIFIED` — flagged
+  here so the next Control-plane shift does not miss it for lacking an
+  open PR to trigger on. No relay action beyond this tracking-doc update;
+  this session does not certify its own work.
+
+## Previous shift
 Updated: 2026-09-24 (same relay shift, continued) — an independent
   Control-plane certification review (PR #239, comment on PR #238) found
   PR #238's shipped `resolve_allowed_root` sound but flagged a real Law 1
@@ -3815,24 +3835,24 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-04A06 ("Local repository connector with root allowlist/path
-protections") -- submitted 2026-09-24 via PR #238 against `main`. Real,
-DB-free capture connector composing with the already-CERTIFIED
-FTF-04A01/FTF-04A07; disclosed scope boundary (does not itself persist a
-`TargetSourceSnapshot` row or upload the dirty-tree archive to real object
-storage -- a later, separately-scoped caller's job). Full submission
-record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
-`PROGRESS.md`. First review (PR #239, merged into `main`) was NOT
-CERTIFIED for a real Law 1 evidence gap (no prefix-colliding-sibling
-allowlist test); fixed in commit `911ae78` on the same PR #238 (see this
-file's own top status note and `docs/certifications/queue.md`'s matching
-follow-up entry) -- no production code changed. CI re-ran green on the
-fixed head (`3fb3367`) after one re-run of a genuine, unrelated flake in
-FTF-R002's own already-certified `test_ftf_r002.py`
-(`test_job_identity_rejects_tampered_token`, a timestamp-dependent
-same-character coincidence in that test's own tamper construction --
-confirmed not caused by this PR's diff). Needs a fresh independent
-Control-plane L2 review (Law 4 -- this session cannot certify its own
-work).
+protections") -- **merged into `main` 2026-09-24** (merge commit `249ff06`,
+merged directly by the repo owner, not via a Control-plane `CERTIFY`
+shift). Real, DB-free capture connector composing with the
+already-CERTIFIED FTF-04A01/FTF-04A07; disclosed scope boundary (does not
+itself persist a `TargetSourceSnapshot` row or upload the dirty-tree
+archive to real object storage -- a later, separately-scoped caller's
+job). Full history: `docs/certifications/queue.md`'s 2026-09-24 entries,
+`PROGRESS.md`. First review (PR #239) was NOT CERTIFIED for a real Law 1
+evidence gap (no prefix-colliding-sibling allowlist test); fixed in commit
+`911ae78` -- no production code changed. CI was fully green (29/29) on
+the merged head (`693f619`) before the owner's merge, including one
+re-run of a genuine, unrelated flake in FTF-R002's own already-certified
+`test_ftf_r002.py` (confirmed not caused by this diff). `main`'s own
+`docs/spec-matrix.yaml` correctly still reads `certification_state:
+PROVISIONAL` per Law 4 (a merge alone is never a certification). **Needs
+a genuine Control-plane L2 review against the real commit on `main`**
+(no open PR remains to trigger the usual webhook-driven review -- flagged
+here so this is not silently skipped).
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit

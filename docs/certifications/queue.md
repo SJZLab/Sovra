@@ -13544,3 +13544,33 @@ Control-plane L2 review (Law 4 -- this session cannot certify its own
 work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
 record, now merged into `main`) is a separate PR this relay did not merge
 or edit.
+
+## 2026-09-24 — Relay: FTF-04A06 (PR #238) merged into `main` by repo owner, still PROVISIONAL
+PR #238 was merged into `main` directly by the repo owner (merge commit
+`249ff06`, `merged_by: samerzakaria`), not via a Control-plane `CERTIFY`
+shift. Per Law 4 ("Producer never certifies own work. Merge = PROVISIONAL
+only"), `docs/spec-matrix.yaml`'s FTF-04A06 entry on `main` correctly
+still reads `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` -- a plain merge never certifies, and this relay session does
+not certify its own work either.
+
+CI was fully green on the merged head (`693f619`, 29/29 checks including
+`gate`) before the merge. The one earlier NOT CERTIFIED finding (PR #239,
+a real Law 1 test-coverage gap -- no prefix-colliding-sibling allowlist
+test) was fixed in commit `911ae78` and independently re-verifiable
+against the real shipped code (see this file's earlier 2026-09-24
+entries for the full history: the original NOT CERTIFIED review, the fix,
+and the FTF-R002 flake root-cause/re-run).
+
+**This item now needs a genuine Control-plane L2 review against the real
+commit on `main`**, not a PR review -- PR #238 is closed/merged, so the
+usual `pull_request.opened` webhook that normally triggers a certifier
+shift will not fire for it again. Flagged here and in `QUEUE.md`'s top
+status note so a future Control-plane shift picks this up explicitly
+rather than missing it for lacking an open PR.
+
+## Next shift
+Certify FTF-04A06 against the real `main` commit (not a PR), or continue
+with the next dependency-ready frontier item if a certifier session picks
+this up first. Recompute the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` rather than trusting any prior note.

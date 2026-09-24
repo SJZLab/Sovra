@@ -16476,3 +16476,32 @@ shift's own frontier recomputation already found (see this file's earlier
 remain other sessions' own open work; leave those alone. Recompute the
 frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note
 alone before picking a next item.
+
+## 2026-09-24T13:15:00Z — Relay: FTF-04A06 (PR #238) merged by owner, flagged for Control-plane certification
+Notified via subscribed PR activity (`pull_request.closed`, outcome
+`merged`) that PR #238 was merged into `main` directly by the repo owner
+(merge commit `249ff06`, `merged_by: samerzakaria`), not through a
+Control-plane `CERTIFY` shift. Re-verified CLAUDE.md hash against
+`CLAUDE.md.sha256` on the new `main` (clean) before touching anything.
+Confirmed directly via `git show origin/main:docs/spec-matrix.yaml` that
+FTF-04A06's entry correctly still reads `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN` -- per Law 4, a plain merge is
+never a certification, and this relay session does not certify its own
+work either, merged or not.
+
+Since PR #238 is now closed, the usual `pull_request.opened` webhook that
+triggers a Control-plane certifier shift will not fire again for this
+item -- there is a real risk this PROVISIONAL entry goes unnoticed with
+no open PR to surface it. Added an explicit flag to `QUEUE.md`'s top
+status note and "## Provisional" section, and to
+`docs/certifications/queue.md`, naming the real merged commit (`249ff06`)
+and stating this needs a genuine Control-plane L2 review against `main`
+directly (not a PR review). No production code touched -- tracking docs
+only.
+
+## Next shift
+A future Control-plane shift should certify FTF-04A06 against the real
+`main` commit directly. A future relay shift should recompute the
+dependency-ready frontier fresh from `docs/spec-matrix.yaml` (FTF-0212/
+FTF-0304 still excluded as other sessions' own open work, subject to
+reconfirmation) rather than trusting this note alone.
