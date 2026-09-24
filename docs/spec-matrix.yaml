@@ -2550,6 +2550,18 @@ FTF-04A06:
     task's own verification_commands name only validate_spec.py/verify_task.py, no dedicated
     integration test), since every check here runs against a real local git repository with no
     external service dependency at all.
+
+    2026-09-24 fix (independent Control-plane review, PR #238, NOT CERTIFIED first pass):
+    the shipped resolve_allowed_root was already sound (a real Path.parents structural check,
+    never a string-prefix comparison), but the delivered suite had no test using a
+    prefix-colliding sibling allowlist pair (e.g. 'allowed' vs 'allowed-evil') -- a real Law 1
+    evidence gap distinct from the already-covered symlink-escape case, not a code defect.
+    Added test_resolve_allowed_root_refuses_a_prefix_colliding_sibling to
+    tests/tasks/test_ftf_04a06.py; own fault injection (patched the real .parents check to a
+    naive str(...).startswith(...) comparison, matching the reviewer's own independent
+    injection) confirmed the new test genuinely fails against that naive implementation and
+    passes against the real, unmodified shipped code -- reverted byte-identical. ruff/mypy
+    clean; validate_spec.py --strict clean; product_truth_check.py/status.py unchanged.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py

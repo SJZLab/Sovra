@@ -119,6 +119,34 @@ def test_resolve_allowed_root_accepts_inside_and_refuses_outside() -> None:
         )
 
 
+def test_resolve_allowed_root_refuses_a_prefix_colliding_sibling() -> None:
+    """This task's own `resolve_allowed_root` docstring claims "never a
+    string-prefix comparison" -- a root under a differently-named sibling
+    directory that merely shares a text prefix with an allowlisted one
+    (`allowed-evil` vs `allowed`) must be refused exactly like any other
+    outside root, distinct from the symlink-escape case covered above.
+    This is this task's own real, literal "path traversal" negative
+    acceptance, as distinct from "symlink traversal"."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        allowed = base / "allowed"
+        prefix_colliding_sibling = base / "allowed-evil"
+        allowed.mkdir()
+        (prefix_colliding_sibling / "repo").mkdir(parents=True)
+
+        check(
+            "FTF-04A06",
+            "a root under a prefix-colliding sibling directory is refused, "
+            "never accepted by a naive string-prefix comparison",
+            _raises(
+                PathAllowlistError,
+                resolve_allowed_root,
+                prefix_colliding_sibling / "repo",
+                [allowed],
+            ),
+        )
+
+
 def test_resolve_allowed_root_refuses_a_symlinked_escape() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
