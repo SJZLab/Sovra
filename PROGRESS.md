@@ -1,4 +1,70 @@
 # PROGRESS — Sovra
+## 2026-09-24 — FTF-1303 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #245 (FTF-1303,
+supersedes PR #240). Per this session's standing certifier duty, checked
+`docs/certifications/queue.md` for pending PROVISIONAL items — found only
+FTF-1303. A prior 2026-09-24 review (different session) had already run
+the full independent CERTIFY procedure against PR #240's identical code
+diff and found it sound, but left it PROVISIONAL, blocked only on a
+tracking-doc merge conflict (not a code defect). A later relay shift
+resolved that conflict and opened PR #245 with the byte-identical
+production diff.
+
+Session-ID check: PR #245's commits (and the PR #240 history they carry
+forward) show `Claude-Session` trailers `session_01CuuVLc7aGhNUrpFbQmrpVk`
+(producer), `session_01TSZ3SyJvmLrNbuDqXVYRtE` (prior reviewer), and
+`session_017pYedfdGZ2ZUSt4PKRdqAn` (merge-conflict resolution) — none
+match this session's own ID (`session_017qNX6TzAVGoA2bi9CXwvix`),
+independent per Law 4.
+
+Read the full diff directly: `apps/api/app/services/provider_token_costing.py`
+and `tests/tasks/test_ftf_1303.py`, confirmed byte-identical to PR #240's
+own already-reviewed diff via `git diff --stat` between the two PR heads
+(only tracking-doc changes differ). Pulled the real task contract via
+`tools/r1_handoff.py packet FTF-1303 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+and confirmed both `acceptance` and `negative_acceptance` clauses are
+genuinely met, not merely "tests pass". Checked out the branch locally and
+re-ran `tests/tasks/test_ftf_1303.py` directly — 13/13 clean. Ran an own
+fault injection distinct from the producer's own (silent zero-fill on a
+missing rate): patched `_priced_category` to invent a fallback rate
+(`Decimal("0.01")`) instead of raising — 4 genuine `FAIL [FTF-1303]`
+lines, reverted byte-identical, suite re-confirmed clean.
+`product_truth_check.py --fail-on-unwired` confirmed legitimately `19/19`
+unchanged (empty `proving_symbol`, disclosed no-live-caller scope, same
+FTF-1302/1401/1601/1701/1810 precedent, verified by reading the script's
+own skip-if-no-symbol logic).
+
+This PR's head moved twice while under review this shift (`0ef89a0` →
+`a6e2742`) — confirmed via `git diff --stat` that the new commit was a
+tracking-doc-only addition (recording the PR #245 link), no code change.
+Waited for and independently confirmed a fresh, real GitHub Actions run
+on the actual final head `a6e27422c082ef0c6f32ecf442e408842ecc63f2` (run
+`36016262466`): all 29 checks, `gate` included, `status: completed` /
+`conclusion: success`, `mergeable_state: clean`. Pulled the `gate` job's
+own step-level log text directly (`get_job_logs`, job id `107689464196`):
+confirmed `uv run python3 tests/tasks/test_ftf_1303.py` genuinely executed
+in CI and printed "FTF-1303 Provider token costing tests: all checks
+passed" — real execution, not a self-reported claim.
+
+Merged PR #245 (merge commit `f1e545745f7679ed19628d66ffc84955329a6f50`);
+PR #240 was already closed as superseded by its own author session.
+`docs/spec-matrix.yaml`'s FTF-1303 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` updated `spec/tasks.json` and
+`docs/implementation/TRACKER.json`. `status.py`: `60/300` → `61/300`
+certified, product-true unchanged at `19/19`. `validate_spec.py --strict`
+shows one pre-existing, disclosed `stale_commit` defect on FTF-R016,
+confirmed present on `main` before this change (`git stash`) — unrelated
+to this certification. Full ledger entry: `docs/certifications/ledger.md`.
+
+## Next shift
+FTF-1303 is CERTIFIED — no further action needed on it. FTF-1304
+("Cost-per-success calculator") becomes dependency-ready now that
+FTF-1303 has certified (its other dependency, FTF-1301, was already
+CERTIFIED). Recompute the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` before picking new work rather than trusting this
+note alone.
+
 ## 2026-09-24T15:13:00Z — Relay: PR #246 CI-green; shift stop (N/N L1-PROVEN, awaiting Control plane)
 Continuation of this same shift. Opened **PR #246** (tracking-doc-only,
 no production code) to record PR #245's owner-direct merge and FTF-1303's

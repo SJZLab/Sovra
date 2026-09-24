@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #245) — checked `docs/certifications/queue.md` for
+  pending PROVISIONAL items per the certifier's standing duty; found
+  **FTF-1303 (PR #245)**, this shift's only pending item. Ran the complete
+  independent CERTIFY procedure (session-ID check clean, full diff read,
+  task contract pulled via `r1_handoff.py`, own local reproduction, an own
+  fault injection distinct from the producer's, `product_truth_check.py`
+  legitimacy confirmed, and a fresh real CI run watched to completion on
+  the PR's actual final head after it moved mid-review). **Merged PR #245
+  and CERTIFIED FTF-1303** — merge commit
+  `f1e545745f7679ed19628d66ffc84955329a6f50`. `docs/spec-matrix.yaml` set
+  to CERTIFIED/L2-CERTIFIED; `sync_certified_status()` updated
+  `spec/tasks.json`/`TRACKER.json`; `status.py`: 60/300 → 61/300 certified,
+  product-true unchanged at 19/19. Full record: "## Done" below and
+  `docs/certifications/ledger.md`.
+
 Updated: 2026-09-24T15:13:00Z (same relay shift, continued) — PR #246
   (tracking-doc-only follow-up) went CI-green (29/29, `gate` included, run
   `36017531339`), `mergeable_state: clean`, no reviews. Posted a final
@@ -3974,6 +3990,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1303 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #245 (supersedes PR #240, merge commit
+`f1e545745f7679ed19628d66ffc84955329a6f50`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full evidence, including the
+independent session-ID check, own local reproduction, an own fault
+injection, and the real CI step-level log confirmation on the PR's actual
+final head. History below, kept for the record, not a live next-step.
+
 FTF-1303 ("Provider token costing") -- submitted 2026-09-24 via PR #240
 against `main`. Real, DB-free Section 32 `provider_call_cost` calculator,
 dependency-ready on FTF-0210/FTF-1301 (both CERTIFIED). Full submission
@@ -6165,6 +6190,45 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   shallow-clone artifact — confirmed not a real defect). Merged PR #238.
   Ran `sync_certified_status()` — `['FTF-04A06']` updated.
   `scripts/status.py`: `59/300` certified before, `60/300` after.
+  Product-true unchanged at `19/19` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
+- FTF-1303 — Provider token costing. Independently reviewed and
+  **CERTIFIED 2026-09-24**, merge commit
+  `f1e545745f7679ed19628d66ffc84955329a6f50` (PR #245, supersedes PR #240,
+  same implementation commit `be9775f60ce248cd411cc22ccf82692415798c82`
+  byte-identical on both). Session-ID check clean (PR commits carry the
+  producer's `session_01CuuVLc7aGhNUrpFbQmrpVk`, a prior reviewer's
+  `session_01TSZ3SyJvmLrNbuDqXVYRtE` — sound but left PROVISIONAL, blocked
+  only on a tracking-doc merge conflict, never certified — and a
+  merge-conflict-resolution session's `session_017pYedfdGZ2ZUSt4PKRdqAn`;
+  none match this reviewing session — Law 4). Diff read in full
+  (`apps/api/app/services/provider_token_costing.py` 262 lines,
+  `tests/tasks/test_ftf_1303.py`), confirmed byte-identical to PR #240's
+  already-reviewed diff — PR #245's only other commits are a tracking-doc
+  merge-conflict resolution, confirmed via `git diff --stat`. This PR's
+  head moved twice mid-review (`0ef89a0` → `a6e2742`, tracking-docs only);
+  waited for and confirmed a fresh real CI run on the actual final head
+  `a6e2742` (run `36016262466`): 29/29 checks completed/success including
+  `gate`, `mergeable_state: clean`, and the `gate` job's own step-level
+  log text (pulled directly) showed `tests/tasks/test_ftf_1303.py`
+  actually executing in CI and printing "FTF-1303 Provider token costing
+  tests: all checks passed". Own local reproduction: 13/13 clean. Own
+  fault injection, distinct from the producer's own (silent zero-fill):
+  patched `_priced_category` to invent a fallback rate (`Decimal("0.01")`)
+  instead of raising on a missing rate — 4 genuine `FAIL` lines, reverted
+  byte-identical, suite re-confirmed clean. `product_truth_check.py
+  --fail-on-unwired` confirmed legitimately `19/19` unchanged —
+  `proving_symbol` is the empty string for this task (disclosed, no live
+  HTTP caller yet, same accepted class as FTF-1302/FTF-1401/FTF-1601/
+  FTF-1701/FTF-1810), confirmed by reading the script's own
+  skip-if-no-symbol logic directly. Both acceptance and negative_acceptance
+  clauses reconfirmed against the real DoD via `tools/r1_handoff.py packet
+  FTF-1303`. `validate_spec.py --strict` shows one pre-existing,
+  disclosed `stale_commit` defect on FTF-R016 unrelated to this diff
+  (confirmed present on `main` before this change via `git stash`).
+  Merged PR #245; PR #240 was already closed as superseded by its own
+  author session. Ran `sync_certified_status()` — `['FTF-1303']` updated.
+  `scripts/status.py`: `60/300` certified before, `61/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
 
