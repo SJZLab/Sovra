@@ -6540,3 +6540,123 @@ reasons given above.
   Product-true: 17/17 → 18/18.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-R002 — Authenticated internal component bindings and reconciled adapter foundation
+- Criterion ID: FTF-R002
+- PR: https://github.com/SJZLab/Sovra/pull/236 (`claude/wizardly-fermat-lqx141`
+  → `main`). Merged by this review as merge commit
+  `d257254c78678e978533190b327d4d8758fb3914`.
+- Merge commit (evidence): d257254c78678e978533190b327d4d8758fb3914
+- Implementation commit: b1906932a57420b96b8bd4d039b876c55d74661d
+- Validated-by: session https://claude.ai/code/session_01HvNguPrCrUuXqqFkduNmQi
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #236)
+- Date: 2026-09-24
+- **Session-ID check:** both commits on PR #236 (`b190693`/`4552bad`) carry
+  `Claude-Session: .../session_01MNfCDcY6erxuhN5p3JfbGm` — no match to this
+  reviewing session's own ID (`session_01HvNguPrCrUuXqqFkduNmQi`),
+  independent per Law 4.
+- **Diff read directly**: 16 files changed (4635 insertions/12 deletions).
+  Confirmed the new domain files
+  (`apps/api/app/component_bindings/component_binding_schema.py`/
+  `_crud.py`/`_routes.py`), the new migration
+  (`apps/api/alembic/versions/0013_component_bindings.py`), the new
+  worker job identity module (`packages/component_contracts/job_identity.py`),
+  the CI wiring (`.github/workflows/ci.yml`: gate step + dedicated
+  `component-bindings-integration` job), the two new test files, and the
+  tracking-doc/spec-matrix updates — no unexplained scope creep.
+- **Frozen-contract cross-check**: read
+  `packages/component-contracts/architecture.schema.json`'s own
+  `componentBinding` definition directly and compared it field-by-field
+  against `component_binding_schema.py`'s `ComponentBinding` ORM model —
+  exact match on all nine frozen fields
+  (`component_key`/`security_zone_scope`/`project_scope`/
+  `deployment_mode`/`approved_endpoint`/`secret_reference`/
+  `network_policy_identity`/`health_result`/`compatibility_lock_reference`)
+  and both `allOf`/`if`/`then` structural invariants (Axolotl/Inspect AI
+  must be `worker_package`; LiteLLM must be `existing_gateway`), the
+  disclosed mid-implementation correction this task's own PROGRESS.md
+  entry flagged for extra scrutiny.
+- **CI re-checked on the real final head, not taken on faith:** polled
+  `pull_request_read get_check_runs` directly on head
+  `4552badb58a173688433bb290540c076aea52c7f` until all jobs completed —
+  **29/29 checks `completed`/`success`**, `gate` and the dedicated
+  `component-bindings-integration` job included, `mergeable_state: clean`.
+  No open reviews or comments.
+- **Own independent verification, directly on this session's checkout of
+  the PR's actual head** (`uv sync --all-packages` first):
+  - `uv run python3 tests/tasks/test_ftf_r002.py` — "all checks passed",
+    no-DB suite, exit code 0.
+  - `uv run python3 tests/integration/test_component_bindings.py` against
+    a real, freshly created local PostgreSQL 16 database (`sovra_migrate`
+    role, `sovra_ftfr002` db, matching the CI job's own credentials) — "all
+    checks passed".
+  - Full migration chain independently round-tripped in the same scratch
+    database: `alembic upgrade head` → `downgrade -1` → `upgrade head`,
+    clean at every step (`alembic current` confirmed `0013_component_bindings
+    (head)` afterward).
+  - `uv run ruff check .` / `ruff format --check .` / `uv run mypy .` —
+    clean repo-wide.
+  - `python3 scripts/validate_spec.py --strict` — clean.
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` — `19/19`,
+    confirmed legitimate (not a 0/0 pass): `build_component_binding_router`
+    is a real non-test caller, confirmed directly in
+    `apps/api/app/main.py` (imported and `app.include_router(...)`'d).
+  - Regression: `test_ftf_r001.py`, `test_ftf_04a01.py`, `test_ftf_04a07.py`,
+    `test_ftf_1001.py`, `test_ftf_0201.py` all re-ran clean — no regression
+    to FTF-R001's own frozen-contract evidence or any other certified
+    table (this task touches no existing migration/table).
+  - **Own fault injection, three vectors, independent of the producer's
+    own three claimed vectors but targeting the same code paths, each
+    reverted byte-identical (`diff` confirmed) and the suite re-confirmed
+    clean immediately after:**
+    1. Collapsed `compute_health`'s non-2xx branch to always return
+       `("healthy", ...)` — the no-DB suite genuinely failed for real (3
+       distinct `FAIL` lines: a real 404/500/503 response never reports
+       `healthy`). Reverted; re-ran clean.
+    2. Removed both frozen-architecture structural invariant checks from
+       `ComponentBinding.__init__` (Axolotl/Inspect AI worker_package-only;
+       LiteLLM existing_gateway-only) — the no-DB suite genuinely failed
+       for real (3 distinct `FAIL` lines, one per invariant case).
+       Reverted; re-ran clean.
+    3. Removed `ck_component_bindings_worker_package_no_endpoint` from the
+       migration and re-applied it against a fresh real local Postgres 16
+       database — the dedicated live-Postgres raw-INSERT-bypass check
+       genuinely failed for real (exit 1, "the real
+       ck_component_bindings_worker_package_no_endpoint CHECK constraint
+       rejects a raw INSERT that bypasses the ORM entirely" — FAIL).
+       Reverted; `diff` confirmed byte-identical; full round-trip re-ran
+       clean.
+- `python3 tools/r1_handoff.py packet FTF-R002 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance ("Real
+  service identity/version/health with approved TLS/CA and tenant-aware
+  grants; packages use worker identities, existing LiteLLM is not
+  overwritten" and "Idempotent sync outbox maps Factory jobs to external
+  IDs and reports actual pending/failure states") confirmed met —
+  `compute_health`/`validate_component_binding` dial through the existing
+  FTF-H006 outbound guard and never fabricate `healthy`; Axolotl/Inspect
+  AI/LiteLLM are structurally constrained to their real deployment modes
+  at both the ORM and database-CHECK level; `record_sync_outcome` provides
+  real replay-same-fingerprint/reject-different-fingerprint semantics
+  proven live against Postgres. `negative_acceptance` ("Deny cross-tenant
+  IDs, arbitrary URLs/redirects, browser vendor-admin credentials, direct
+  vendor DB writes and fake health after dependency outage") confirmed met
+  by composition of the already-certified FTF-H003 (`authorize_resource_
+  ownership`, cross-tenant denial) and FTF-H006 (`guarded_fetch`, URL/
+  redirect policy) primitives — no new authorization primitive introduced,
+  confirmed by reading the imports directly — plus the three fault
+  injections above proving the "fake health" guarantee is real, not
+  merely asserted. Dependencies FTF-R001/FTF-H003/FTF-H006 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #236 (merge commit
+  `d257254c78678e978533190b327d4d8758fb3914`) into `main`.
+  `docs/spec-matrix.yaml`'s FTF-R002 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+  merge commit; `proving_symbol` stays `build_component_binding_router`
+  (real live caller, confirmed above). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-R002']` updated.
+  Certified count moves 58/300 → 59/300. Product-true: 19/19 → 19/19
+  (unchanged — the live caller was already wired and counted at PR #236's
+  own merge, not newly added by certification).
+
+**Conclusion:** Certified L2-CERTIFIED.

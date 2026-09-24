@@ -16114,3 +16114,95 @@ FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) remain other sessions'
 own open work — leave those alone. This was a certification-only shift
 (CERTIFY mode); no new task work, design decisions, or queue
 reprioritization beyond what certifying FTF-04A07 required.
+
+## 2026-09-24 — Control plane: FTF-R002 (PR #236) independently
+reviewed, CERTIFIED
+Scheduled Control-plane certifier shift, triggered by PR #236's own
+`pull_request.opened` webhook. Session-ID check: both PR commits carry
+`session_01MNfCDcY6erxuhN5p3JfbGm`, no match to this reviewing session
+(`session_01HvNguPrCrUuXqqFkduNmQi`) — independent per Law 4.
+
+CI was still mid-run when this shift started (`gate` and several
+integration jobs `in_progress`); rather than certify against a stale
+claim, continued independent review work (diff read, frozen-contract
+cross-check, own fault injections against a local checkout) and
+re-polled `pull_request_read get_check_runs` on the PR's real final head
+until all 29 checks reported `completed`/`success` — `gate` and the
+dedicated `component-bindings-integration` job included,
+`mergeable_state: clean`, no open reviews/comments.
+
+Read the full diff (16 files). Cross-checked `component_binding_schema.py`'s
+`ComponentBinding` field names/enums directly against
+`packages/component-contracts/architecture.schema.json`'s own
+`componentBinding` definition — exact match, including both `allOf`/
+`if`/`then` structural invariants (Axolotl/Inspect AI must be
+`worker_package`; LiteLLM must be `existing_gateway`), the disclosed
+mid-implementation correction the producer's own PROGRESS.md/queue.md
+entries flagged for extra scrutiny.
+
+Ran the no-DB suite (`tests/tasks/test_ftf_r002.py`, clean) and, against a
+freshly created local Postgres 16 database (`sovra_migrate` role,
+`sovra_ftfr002` db, matching the CI job's own credentials), the live
+integration suite (`tests/integration/test_component_bindings.py`,
+clean). Independently round-tripped the full migration chain in the same
+scratch database (`upgrade head` → `downgrade -1` → `upgrade head`, clean
+at every step). `ruff`/`ruff format --check`/`mypy` clean repo-wide.
+`scripts/validate_spec.py --strict` clean.
+`scripts/product_truth_check.py --fail-on-unwired` independently
+confirmed `19/19` (not a 0/0 pass) — `build_component_binding_router` is
+a real non-test caller, confirmed directly in `apps/api/app/main.py`.
+
+**Own fault injection, three vectors, independent of the producer's own
+three claimed vectors but targeting the same code paths, each reverted
+byte-identical (`diff` confirmed) and the suite re-confirmed clean
+immediately after:**
+1. Collapsed `compute_health`'s non-2xx branch (`apps/api/app/
+   component_bindings/component_binding_crud.py`) to always return
+   `("healthy", ...)` — the no-DB suite genuinely failed for real (3
+   distinct `FAIL` lines: a real 404/500/503 response never reports
+   `healthy`).
+2. Removed both frozen-architecture structural invariant checks from
+   `ComponentBinding.__init__` (`component_binding_schema.py`) — the
+   no-DB suite genuinely failed for real (3 distinct `FAIL` lines: Axolotl
+   claiming `internal_service`, Inspect AI claiming `existing_gateway`,
+   LiteLLM claiming `internal_service` are each no longer refused).
+3. Removed `ck_component_bindings_worker_package_no_endpoint` from the
+   migration and re-applied the full chain against a fresh real local
+   Postgres 16 database — the dedicated live-Postgres raw-INSERT-bypass
+   check in `tests/integration/test_component_bindings.py` genuinely
+   failed for real (exit 1).
+
+Regression: `test_ftf_r001.py`, `test_ftf_04a01.py`, `test_ftf_04a07.py`,
+`test_ftf_1001.py`, `test_ftf_0201.py` all re-ran clean.
+
+Pulled the real contract via `python3 tools/r1_handoff.py packet FTF-R002
+--plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance ("Real service
+identity/version/health...packages use worker identities, existing
+LiteLLM is not overwritten" and "Idempotent sync outbox maps Factory jobs
+to external IDs and reports actual pending/failure states") and
+negative_acceptance ("Deny cross-tenant IDs, arbitrary URLs/redirects,
+browser vendor-admin credentials, direct vendor DB writes and fake health
+after dependency outage") both confirmed genuinely met — not merely
+"tests pass" — by direct code reading plus the fault injections above.
+Dependencies FTF-R001/FTF-H003/FTF-H006 confirmed genuinely `CERTIFIED`
+in `docs/spec-matrix.yaml` before relying on them.
+
+**No blocking defect found.** Merged PR #236 (merge commit
+`d257254c78678e978533190b327d4d8758fb3914`) into `main`.
+`docs/spec-matrix.yaml`'s FTF-R002 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+merge commit; `proving_symbol` stays `build_component_binding_router`
+(real live caller, confirmed above). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-R002']` updated.
+`scripts/status.py`: `58/300` certified before, `59/300` after.
+Product-true unchanged at `19/19` (the live caller was already wired and
+counted at PR #236's own merge, not newly added by certification). Full
+entry: `docs/certifications/ledger.md`, `QUEUE.md`.
+
+## Next shift
+`docs/spec-matrix.yaml` has no PROVISIONAL entries at this shift's end —
+nothing else is currently awaiting Control-plane certification.
+FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) remain other sessions'
+own open work — leave those alone. This was a certification-only shift
+(CERTIFY mode); no new task work, design decisions, or queue
+reprioritization beyond what certifying FTF-R002 required.

@@ -3739,17 +3739,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-R002 — Authenticated internal component bindings and reconciled
-  adapter foundation. PR #236, `claude/wizardly-fermat-lqx141`, implementation
-  commit `b1906932a57420b96b8bd4d039b876c55d74661d`. `ComponentBinding`/
-  `ComponentSyncOutbox` field names/enums matching FTF-R001's own frozen
-  `architecture.schema.json` contract literally (discovered and reconciled
-  mid-implementation — see PROGRESS.md's own matching entry for the full
-  disclosure). Real health check never fabricates `healthy` after a
-  dependency outage (three real fault-injection vectors, each reverted
-  byte-identical). `scripts/product_truth_check.py`: 18/18 -> 19/19.
-  Needs independent Control-plane L2 review (Law 4) — this session cannot
-  certify its own work.
+None currently.
+
+FTF-R002 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #236 (merge commit
+`d257254c78678e978533190b327d4d8758fb3914`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md` for the full
+evidence.
 
 FTF-04A07 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #234 (merge commit
@@ -5730,6 +5726,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   Merged PR #234. Ran `sync_certified_status()`. `scripts/status.py`:
   `57/300` certified before, `58/300` after. Product-true: `17/17` →
   `18/18`. Full entry: docs/certifications/ledger.md.
+- FTF-R002 — Authenticated internal component bindings and reconciled
+  adapter foundation. Independently reviewed and **CERTIFIED 2026-09-24**,
+  merge commit `d257254c78678e978533190b327d4d8758fb3914` (PR #236).
+  Session-ID check clean (both PR commits carry the producer's own
+  session `session_01MNfCDcY6erxuhN5p3JfbGm`, no match to this reviewing
+  session `session_01HvNguPrCrUuXqqFkduNmQi` — Law 4). Diff read in full
+  (16 files); field-by-field cross-checked `ComponentBinding` against
+  FTF-R001's own frozen `architecture.schema.json` `componentBinding`
+  definition directly — exact match, both structural invariants included.
+  CI independently confirmed on the PR's real final head (`4552bad`):
+  29/29 checks green, `gate` and the dedicated
+  `component-bindings-integration` job included, `mergeable_state:
+  clean`. Own fresh run of both the no-DB and live-Postgres-16 suites
+  clean. Own three fault injections, independent of the producer's own
+  but targeting the same code paths: (1) `compute_health`'s non-2xx
+  branch collapsed to always return `healthy` — 3 no-DB checks genuinely
+  failed; (2) both frozen-architecture structural invariant checks
+  removed from `ComponentBinding.__init__` — 3 no-DB checks genuinely
+  failed; (3) `ck_component_bindings_worker_package_no_endpoint` removed
+  from the migration, against a real local Postgres 16 database — the
+  dedicated live-Postgres raw-INSERT-bypass check genuinely failed. All
+  three reverted byte-identical, suite re-confirmed clean. Full migration
+  chain (`upgrade head`/`downgrade -1`/`upgrade head`) independently
+  round-tripped clean. `ruff`/`mypy` clean; `validate_spec.py --strict`
+  clean; `product_truth_check.py` confirmed legitimately `19/19` (not a
+  0/0 pass) — `build_component_binding_router` is a real, confirmed live
+  caller in `apps/api/app/main.py`. No regression to
+  `FTF-R001`/`FTF-04A01`/`FTF-04A07`/`FTF-1001`/`FTF-0201`'s own test
+  suites. Both acceptance and negative_acceptance clauses reconfirmed
+  against the real DoD via `tools/r1_handoff.py packet FTF-R002`. Merged
+  PR #236. Ran `sync_certified_status()`. `scripts/status.py`: `58/300`
+  certified before, `59/300` after. Product-true unchanged at `19/19`
+  (the live caller was already wired at PR #236's own merge, not newly
+  added by certification). Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
