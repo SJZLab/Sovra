@@ -36,7 +36,13 @@ router from `app.model_versions.model_version_routes.build_model_version_router`
 `/api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources`
 router from
 `app.datasets.dataset_source_connection_routes.build_dataset_source_connection_router`
--- the tenth.
+-- the tenth, and (FTF-R002) the real
+`/api/v1/organizations/{organization_id}/component-bindings` and
+`/api/v1/organizations/{organization_id}/component-status` routes from
+`app.component_bindings.component_binding_routes.build_component_binding_router`
+-- the eleventh (FTF-04A01's own `target-connections`/`target-snapshots`
+routers landed between the tenth and eleventh, see their own module
+docstrings).
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -94,6 +100,7 @@ from app.auth.oidc_login import build_oidc_login_router
 from app.auth.oidc_settings import OidcSettings
 from app.auth.tenant_isolation_query_guards import install_tenant_pool_reset_guard
 from app.budget.budget_policy_routes import build_budget_policy_router
+from app.component_bindings.component_binding_routes import build_component_binding_router
 from app.config.configuration_system import Settings
 from app.costs.cost_profile_routes import build_cost_profile_router
 from app.datasets.dataset_source_connection_routes import (
@@ -143,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(build_dataset_source_connection_router(session_factory))
     app.include_router(build_target_application_connection_router(session_factory))
     app.include_router(build_target_source_snapshot_router(session_factory))
+    app.include_router(build_component_binding_router(session_factory))
     return app
 
 
