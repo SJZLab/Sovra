@@ -13039,12 +13039,20 @@ by Control plane, never by a producer at PROVISIONAL submission.
 https://github.com/SJZLab/Sovra/pull/232 (title `[relay] FTF-0213: Real
 structured-output probe`). Full entry: `QUEUE.md`, `PROGRESS.md`.
 
+## 2026-09-24 -- FTF-0213 -- relay: PR #232 confirmed green, watched to completion
+Subscribed to PR #232's own activity after opening it. A
+`check_suite.completed` webhook arrived; verified directly via
+`pull_request_read` rather than trusting the webhook alone: **27/27
+checks completed `success`** on the PR's real final head
+(`39c5feb886380b297296aa8ba3e793911a966a35`, no further pushes since
+submission), `gate` included (completed clean in 2m50s).
+`mergeable_state: clean` -- no merge conflict against `main`. No open
+review comments or reviews (`get_comments`/`get_reviews` both empty).
+
 ## Next shift
-PR #232 is submitted PROVISIONAL and needs an independent Control-plane
-L2 review (this session cannot certify its own work -- Law 4) -- confirm
-CI is genuinely green on its actual current head at review time (not
-watched to completion by this shift; a `subscribe_pr_activity`
-subscription was not set up since this is a producer, not a watcher,
-shift). `docs/spec-matrix.yaml` has no other PROVISIONAL entries at this
-shift's end. FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are other
-sessions' own open work -- leave those alone.
+PR #232 is genuinely green (27/27, confirmed on its real final head) and
+mergeable -- ready for an independent Control-plane L2 review (this
+session cannot certify its own work -- Law 4). `docs/spec-matrix.yaml`
+has no other PROVISIONAL entries at this shift's end. FTF-0212 (PR #231)
+and FTF-0304 (PRs #194/#195) are other sessions' own open work -- leave
+those alone.
