@@ -3244,15 +3244,114 @@ FTF-0506:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0506.py
 FTF-0507:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tool-trace normalizer
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0506
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31;
+    deps=FTF-0500, FTF-0506 (both CERTIFIED, confirmed before relying on
+    them). Path refinement recorded before READY (Section 84.3), same
+    precedent as FTF-0506: the packet names
+    `services/training-worker/data/tool_trace_normalizer.py`, but this
+    repo's real `SOURCE_ROOTS` (FTF-0001, PR #10) name `workers/data` as
+    the real data/review worker root -- no `services/` tree exists in this
+    repository. Placed at `workers/data/tool_trace_normalizer.py`
+    alongside FTF-0506's own module instead.
+
+    Built for real: `normalize_tool_trace` composes FTF-0506's
+    already-CERTIFIED `normalize_conversation` directly (reuse-first,
+    Section 77.1, applied to a sibling already-CERTIFIED module, not just
+    the seven external components) rather than reimplementing any Section
+    7 "Required validator". Section 67.1's "Agent traces / production
+    conversations" connector row names a per-source "declared trace
+    schema" resolved through the Section 67.2 mapping wizard, not one
+    fixed wire format frozen anywhere in this repo's contracts (the
+    05-domain schema only fixes the `agent_traces`/`production_conversations`
+    enum value) -- this module is the real place a `session_id`-scoped,
+    `sequence`-ordered batch of already-field-mapped raw trace events
+    becomes one canonical `CanonicalConversationRecord`.
+
+    This task's own acceptance clause ("Convert approved trace messages,
+    tool IDs/results and outcomes preserving ordering and actual
+    permissions") is met by three real, independently testable pieces
+    FTF-0506 has no concept of: (1) ordering -- events sort by an explicit
+    `sequence` int (never assumed to arrive in order), with a duplicate
+    sequence value rejected as ambiguous; a real SHA-256 over the exact
+    caller-given batch before sorting (`metadata["trace_raw_sha256"]`)
+    keeps the as-received order independently verifiable even after this
+    module reorders it; (2) actual permissions -- every trace tool call
+    must declare an explicit boolean `authorized` (Section 7A.6's tool
+    confirmation policy / Section 84.4's "no effect authorized solely by
+    a UI control"), stripped before reaching FTF-0506's own tool-call
+    schema and collected instead into
+    `metadata["tool_call_authorizations"]` (`{call_id: bool}`), never
+    guessed/defaulted and never silently dropped; (3) tool IDs/results --
+    delegated to FTF-0506's own already-proven tool-call/tool-result
+    handling unchanged.
+
+    negative_acceptance ("Orphan/duplicate call IDs, malformed tool
+    result and mixed-session traces cannot be accepted") is met two ways:
+    orphan call IDs, a duplicate call ID within one already-assembled
+    record, and a malformed tool result are all refused via FTF-0506's
+    own already-CERTIFIED guards, proven here end-to-end through this
+    module's real event-shaped input (not re-asserting FTF-0506's own
+    suite a second time); a trace-level duplicate call ID across the
+    whole batch and a mixed-session trace (an event declaring a different
+    `session_id` than the batch's own declared one) are this module's own
+    new, genuinely owned checks -- FTF-0506 has no notion of "session" at
+    all.
+
+    Tests: `tests/tasks/test_ftf_0507.py` (18 test functions, real no-DB,
+    no-external-egress checks, wired into the `gate` job's own CI step).
+    Positive coverage: an out-of-order golden trace normalizing correctly
+    (role order restored from `sequence`, not arrival order); tool call
+    authorizations collected and preserved; authorizations key absent
+    when no tools were used; `trace_raw_sha256` sensitive to arrival
+    order yet deterministic for the same input and yielding identical
+    canonical message content regardless of order; group_id derived from
+    `session_id`; real FTF-0405 `validate_instance` wired in directly
+    (same precedent as FTF-0506's own suite). Negative coverage: mixed-
+    session trace; missing/non-boolean `authorized` flag; duplicate tool
+    call id across the trace; orphan tool_call_id and a malformed tool
+    result, both via FTF-0506's own delegated guards; duplicate/non-
+    int/bool `sequence`; empty events list; non-mapping event; empty
+    `session_id`; a caller metadata key colliding with this module's own
+    reserved metadata keys.
+
+    Own fault injection (Law 1, two distinct vectors, both demonstrated
+    live this shift and reverted byte-identical, suite re-confirmed clean
+    immediately after each): (1) disabled the mixed-session `session_id`
+    guard (`if False and event_session_id != session_id`) -- run in a
+    fresh process, the mutated module genuinely lets a mixed-session
+    trace through; the negative_acceptance mixed-session check failed for
+    real (1 genuine FAIL line). (2) disabled the "authorized must be an
+    explicit bool" guard (`if False and not isinstance(authorized,
+    bool)`) -- run in a fresh process, the mutated module genuinely
+    accepts a tool call with no `authorized` flag and a non-boolean one
+    (2 genuine FAIL lines). Both reverted; `diff` against the pre-fault
+    copy confirmed byte-identical; suite re-ran clean both times.
+
+    `ruff check`/`ruff format --check`/`mypy` clean. `validate_spec.py
+    --strict` clean (after `git fetch --unshallow`, this sandbox's own
+    pre-existing shallow-clone artifact -- confirmed pre-existing, not a
+    defect in this diff, same class of gap already on record for prior
+    shifts). `product_truth_check.py --fail-on-unwired` unchanged at
+    19/19 (no live caller yet -- no trace-source importer exists in this
+    repository yet to call `normalize_tool_trace`, Section 67.1's actual
+    REST/trace connector is a separate, later, dependency-gated task;
+    same disclosed "no live caller yet" precedent already established for
+    FTF-0506/FTF-0202/FTF-0205/FTF-0207). `status.py` unchanged at
+    62/300 certified. `verify_task.py --task FTF-0507 --stage task`
+    reports BLOCKED pre-merge (expected, same precedent as every sibling
+    PROVISIONAL submission).
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and
+    a real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0507.py
 FTF-0508:
   certification_state: NONE
   criticality: MUST
