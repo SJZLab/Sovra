@@ -223,6 +223,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0211.py
       - name: FTF-0213 negative-test proof (Real structured-output probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0213.py
+      - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a07.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1229,6 +1231,54 @@ jobs:
           bao version
       - name: Prove the real TargetApplicationConnection evidence against the live database and live OpenBao
         run: uv run python3 tests/integration/test_ftf_04a01_target_application_connection.py
+
+  target-source-snapshot-integration:
+    # FTF-04A07: real Postgres TargetSourceSnapshot evidence (Section
+    # 6.8B/7A.1-7A.3/9/45/65-67/77/81) -- two real organizations (org1 with
+    # two real TargetApplicationConnection rows, org2 with one), a real
+    # uvicorn server proving create/get/list, the organization_admin-only
+    # RBAC boundary, the cross-tenant IDOR case, and this task's own full
+    # negative_acceptance: a snapshot cannot be reassigned to another
+    # repository (refused identically to missing whether the mismatch is
+    # same-organization-different-connection or cross-tenant), a dirty
+    # snapshot with no archive is refused, the real
+    # ck_target_source_snapshots_dirty_requires_archive CHECK constraint
+    # and the real self-referencing composite foreign key both catch a raw
+    # INSERT that bypasses the ORM entirely, and sovra_app can neither
+    # UPDATE nor DELETE a row directly (immutable by construction, a
+    # stronger grant than FTF-04A01's own SELECT/INSERT/UPDATE). No
+    # OpenBao needed -- this resource carries no credential. Same real
+    # `services: postgres` container pattern as
+    # model-version-schema-api-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a07
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a07"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a07
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real TargetSourceSnapshot evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a07_target_source_snapshot.py
 
   connection-validation-integration:
     # FTF-0203: real Postgres + real gateway connection-validation

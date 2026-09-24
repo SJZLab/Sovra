@@ -1,17 +1,18 @@
 openapi: 3.1.0
 info:
-  title: Sovra Phase 04A Interface (TargetApplicationConnection)
-  version: 0.1.0
+  title: Sovra Phase 04A Interface (TargetApplicationConnection, TargetSourceSnapshot)
+  version: 0.2.0
   description: >-
     Frozen shared component schemas and real live routes for the
     project-scoped TargetApplicationConnection resource (Section 6.8A/
-    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01). `paths` declares exactly the
-    surface this task actually implements and wires into
-    `apps/api/app/main.py` -- create/get/list/edit/revoke of the
-    connection record itself -- and nothing else. It deliberately does not
-    declare a `/snapshots`, `/candidates`, `/manifests`, `/evidence` or
-    `/target-drift` route (the task packet's own abbreviated
-    `api_contract` line): no `TargetSourceSnapshot`/
+    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01) and the connection-scoped
+    TargetSourceSnapshot resource (Section 6.8B, FTF-04A07). `paths`
+    declares exactly the surface these two tasks actually implement and
+    wire into `apps/api/app/main.py` -- create/get/list/edit/revoke of the
+    connection record, and create/get/list (no edit/delete -- immutable)
+    of the snapshot record -- and nothing else. It deliberately does not
+    declare a `/candidates`, `/manifests`, `/evidence` or `/target-drift`
+    route (the task packet's own abbreviated `api_contract` line): no
     `DiscoveredAgentCandidate`/`AgentManifest`/`ManifestEvidence` entity
     exists anywhere in this repository yet, and the real GitHub/local-
     repository connector implementations (Section 7A.1's own
@@ -174,6 +175,122 @@ paths:
           $ref: '#/components/responses/RoleNotAuthorized'
         '404':
           description: Missing, wrong organization, or wrong project -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a connection's target source snapshots, oldest first.
+      operationId: listTargetSourceSnapshots
+      responses:
+        '200':
+          description: The connection's target source snapshots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TargetSourceSnapshot'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: connection_id missing or belongs to a different organization -- identical.
+    post:
+      summary: >-
+        Record a new, immutable target source snapshot for this
+        connection. `analysis_status` is never accepted here -- it is
+        always the single Release-1 starting value `not_analyzed`. A
+        `supersedes_snapshot_id` that exists but belongs to a different
+        connection is refused identically to a missing one (this task's
+        own "reassigned to another repository/project" negative_acceptance).
+      operationId: createTargetSourceSnapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetSourceSnapshotCreateRequest'
+      responses:
+        '201':
+          description: The created target source snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetSourceSnapshot'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            connection_id missing/wrong organization, or
+            supersedes_snapshot_id missing/wrong organization/belongs to a
+            different connection -- identical in every case.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots/{snapshot_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one target source snapshot.
+      operationId: getTargetSourceSnapshot
+      responses:
+        '200':
+          description: The target source snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetSourceSnapshot'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different connection than the one named in the path --
+            identical in every case.
 components:
   responses:
     NotAuthenticated:
@@ -306,4 +423,92 @@ components:
         - created_by
         - created_at
         - updated_at
+      additionalProperties: false
+    TargetSourceSnapshotCaptureMethod:
+      type: string
+      enum: [github_resolved_commit, local_git_commit, local_dirty_snapshot]
+    TargetSourceSnapshotAnalysisStatus:
+      type: string
+      description: >-
+        A closed one-value set for Release 1 -- Section 7A.4's own real
+        analysis pipeline (FTF-04A17) is a separate, later task that
+        records its own results on DiscoveredAgentCandidate rows, never by
+        advancing this field (this table is insert-only).
+      enum: [not_analyzed]
+    TargetSourceSnapshotCreateRequest:
+      type: object
+      properties:
+        commit_sha:
+          type: string
+          description: A real, fully-qualified lowercase-hex git object id (40 or 64 hex chars).
+        branch:
+          type: [string, 'null']
+          description: Nullable -- a real local detached-HEAD capture has no branch name.
+        tree_hash:
+          type: string
+          description: A real, fully-qualified lowercase-hex git object id (40 or 64 hex chars).
+        capture_method:
+          $ref: '#/components/schemas/TargetSourceSnapshotCaptureMethod'
+        source_archive_object_key:
+          type: [string, 'null']
+          description: >-
+            Both this and source_archive_sha256 must be set together or
+            both null; required when capture_method is
+            local_dirty_snapshot (a dirty tree has no other durable
+            content reference).
+        source_archive_sha256:
+          type: [string, 'null']
+          description: 64 lowercase hex characters, or null.
+        supersedes_snapshot_id:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            The prior snapshot this one replaces. Must belong to the same
+            connection -- refused (404) identically to missing otherwise.
+      required: [commit_sha, tree_hash, capture_method]
+      additionalProperties: false
+    TargetSourceSnapshot:
+      type: object
+      description: >-
+        Section 6.8B -- an immutable, connection-scoped source snapshot.
+        No PATCH/DELETE exists for this resource at all.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        target_application_connection_id:
+          type: string
+          format: uuid
+        commit_sha:
+          type: string
+        branch:
+          type: [string, 'null']
+        tree_hash:
+          type: string
+        captured_at:
+          type: string
+          format: date-time
+        capture_method:
+          $ref: '#/components/schemas/TargetSourceSnapshotCaptureMethod'
+        source_archive_object_key:
+          type: [string, 'null']
+        source_archive_sha256:
+          type: [string, 'null']
+        analysis_status:
+          $ref: '#/components/schemas/TargetSourceSnapshotAnalysisStatus'
+        supersedes_snapshot_id:
+          type: [string, 'null']
+          format: uuid
+      required:
+        - id
+        - organization_id
+        - target_application_connection_id
+        - commit_sha
+        - tree_hash
+        - captured_at
+        - capture_method
+        - analysis_status
       additionalProperties: false

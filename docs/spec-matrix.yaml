@@ -2486,15 +2486,27 @@ FTF-04A06:
   proving_symbol: ''
   proving_test: ''
 FTF-04A07:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: TargetSourceSnapshot schema + immutable provenance
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 5b34723e2be2ba243927962c7b4c1a269b370c62
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01
+    (CERTIFIED). Real forward Alembic migration (0012_target_source_snapshots) adds the
+    connection-scoped TargetSourceSnapshot table (Section 6.8B) with the same FORCE-RLS/
+    composite-tenant-FK discipline every prior migration in this chain already established, plus
+    a real self-referencing composite FK (organization_id, supersedes_snapshot_id) for the
+    cross-tenant half of "cannot be reassigned to another repository/project" and a real
+    SELECT/INSERT-only grant (no UPDATE/DELETE at all -- immutable by construction, the same
+    stronger discipline FTF-1001's own model_versions migration already established). Also adds
+    a purely-additive UNIQUE (organization_id, id) constraint onto the already-CERTIFIED
+    target_application_connections table (trivially true; cannot invalidate FTF-04A01's own
+    certified evidence). PROVISIONAL submitted via PR (not yet opened as of this commit -- see
+    docs/certifications/queue.md/QUEUE.md/PROGRESS.md for the real PR link once pushed).
+  proof_state: L1-PROVEN
+  proving_symbol: build_target_source_snapshot_router
+  proving_test: tests/tasks/test_ftf_04a07.py
 FTF-04A08:
   certification_state: NONE
   criticality: MUST

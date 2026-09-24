@@ -13056,3 +13056,137 @@ session cannot certify its own work -- Law 4). `docs/spec-matrix.yaml`
 has no other PROVISIONAL entries at this shift's end. FTF-0212 (PR #231)
 and FTF-0304 (PRs #194/#195) are other sessions' own open work -- leave
 those alone.
+
+Superseded by the entry below: PR #232 was independently reviewed and
+**CERTIFIED 2026-09-24** (see `QUEUE.md`'s "## Done" list, merge commit
+`1751211044041e15fc4708b4be552c3957509e80`) by an intervening
+Control-plane shift before this note was acted on.
+
+## 2026-09-24 -- FTF-04A07 -- relay: implementation, submitted PROVISIONAL
+Picked FTF-04A07 (TargetSourceSnapshot schema + immutable provenance) as
+the next real, tractable dependency-ready item after re-deriving the
+frontier fresh against `docs/spec-matrix.yaml`/`spec/tasks.json`.
+Dependency FTF-04A01 confirmed CERTIFIED first. FTF-0212 (PR #231) and
+FTF-0304 (PRs #194/#195) are other sessions' own open work, left alone;
+FTF-0902 ("Network-policy templates"), also dependency-ready, needs a
+real CNI-enforcing Kubernetes cluster this sandbox does not have --
+deferred, not claimed, per its own `resource_gate` clause.
+
+**Built:** `apps/api/app/target_connectors/target_source_snapshot_schema.py`
+(`TargetSourceSnapshot` ORM model, field validators, closed
+`ALLOWED_CAPTURE_METHODS`/`ALLOWED_ANALYSIS_STATUSES` sets),
+`target_source_snapshot_crud.py` (`create_target_source_snapshot`/
+`get_target_source_snapshot`/`list_target_source_snapshots`, composing
+FTF-H003's `authorize_resource_ownership`/FTF-0105's
+`execute_tenant_scoped` directly -- no new authorization primitive), and
+`target_source_snapshot_routes.py` (`build_target_source_snapshot_router`,
+wired into `apps/api/app/main.py`). Migration
+`apps/api/alembic/versions/0012_target_source_snapshots.py` (revision id
+kept to 28 characters, under the 32-char `alembic_version.version_num`
+limit FTF-04A01's own migration already found the hard way).
+
+**Acceptance** ("Store immutable snapshot provenance, source identity,
+status and superseded relationship") is proven by Section 6.8B's own
+literal field list, implemented without narrowing (unlike FTF-1001's own
+Section 6.17, it names no not-yet-built dependency) plus one inherited
+addition (`organization_id`, denormalized per Section 65.1, the same
+FTF-04A01/FTF-1001 precedent) -- disclosed in the schema module's own
+docstring for why no `created_by`/`updated_at` was added despite
+FTF-04A01 having both (a snapshot is realistically captured by an
+automated connector/sync workflow, not a direct user action; Section 6.8B
+names neither field).
+
+**Negative_acceptance** ("Existing snapshot cannot be mutated or
+reassigned to another repository/project") splits into two real,
+disclosed enforcement layers: "cannot be mutated" is a real database
+privilege guarantee (SELECT/INSERT-only grant, no edit path anywhere in
+this module at all -- the same stronger discipline FTF-1001's own
+`model_versions` migration already established, even stronger than
+FTF-04A01's own SELECT/INSERT/UPDATE grant); "cannot be ... reassigned"
+splits again into a real self-referencing composite foreign key
+`(organization_id, supersedes_snapshot_id)` for the cross-tenant half
+(a database-level guarantee) and a CRUD-layer fetch-and-compare check in
+`create_target_source_snapshot` for the cross-connection half (no `CHECK`
+constraint can compare against another row's own column) -- refused with
+the same `TargetSourceSnapshotNotFoundError` as a genuinely missing
+reference, the identical "cross-parent-within-the-same-organization is
+refused exactly like missing" precedent `model_version_crud.py`'s own
+cross-project case already established.
+
+**Shown able to fail first (Law 1):** the migration's own two `CHECK`
+constraints, built from `f"{ALLOWED_CAPTURE_METHODS!r}"`/
+`f"{ALLOWED_ANALYSIS_STATUSES!r}"`, genuinely failed against a real local
+Postgres 16 server on first run -- a real `psycopg.errors.SyntaxError` at
+`analysis_status in ('not_analyzed',)` (Python's own trailing comma on a
+1-tuple's `repr()`, invalid SQL). Fixed by building the `IN (...)` clause
+from a real `", ".join(...)` instead of relying on tuple `repr()` --
+confirmed by re-running the full migration chain (`0001`-`0012`) clean
+against a real local Postgres 16 cluster, `upgrade head` -> `downgrade -1`
+-> `upgrade head` round-tripping cleanly.
+
+**Own fault-injection evidence (Law 1), two distinct vectors**, each
+reverted byte-identical (`diff` confirmed) and the suite re-confirmed
+clean immediately after each: (1) no-DB suite -- disabled the
+`local_dirty_snapshot`-requires-archive check in
+`TargetSourceSnapshot.__init__` -- the dedicated no-archive negative
+check genuinely failed for real; (2) live-Postgres suite -- replaced the
+CRUD layer's own connection-scoped fetch for `supersedes_snapshot_id`
+with an organization-scoped-only check (simulating exactly the bug this
+task's own "reassigned to another repository" negative_acceptance guards
+against) -- the dedicated cross-connection-reassignment check genuinely
+failed for real against the live server.
+
+**Own verification, full run:** `uv sync --all-packages`; `uv run ruff
+check`/`ruff format --check` clean (two real `E501` findings genuinely
+fixed); `uv run mypy` clean on every new/changed file, repo-wide `uv run
+mypy .` shows no new findings; `git fetch --unshallow origin` (this
+sandbox's checkout was shallow) then `scripts/validate_spec.py --strict`
+clean; `scripts/product_truth_check.py --fail-on-unwired`: `17/17` ->
+**`18/18`** -- this task's own real live caller
+(`build_target_source_snapshot_router`, wired into
+`apps/api/app/main.py`), unlike every disclosed "no live caller yet"
+sibling. `scripts/status.py` unchanged at `57/300 certified · 17
+product-true` (correct -- PROVISIONAL is not yet `CERTIFIED`).
+`scripts/verify_task.py --task FTF-04A07 --stage task` reports `BLOCKED`
+pre-merge -- expected, same precedent every sibling PROVISIONAL
+submission already established. Regression-checked directly:
+`tests/tasks/test_ftf_04a01.py`/`test_ftf_1001.py`/`test_ftf_0201.py`
+(no-DB) and `tests/integration/test_ftf_1001_model_version_schema_api.py`
+(live Postgres) all re-ran clean -- no regression to FTF-04A01's own
+schema (the new purely-additive `UNIQUE (organization_id, id)`
+constraint) or any other certified table.
+`tests/integration/test_ftf_04a01_target_application_connection.py`
+itself reports a real, disclosed `BLOCKED_EXTERNAL` in this sandbox (no
+`bao` binary on `PATH`) -- an environment limitation predating and
+unrelated to this change.
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_04a07.py`) plus
+a new dedicated `target-source-snapshot-integration` job (real
+`services: postgres`, no OpenBao needed -- this resource carries no
+credential) to `.github/workflows/ci.yml` in the same commit as the
+implementation, per the disclosed FTF-0205/FTF-0206 watchdog finding on
+missing gate-wiring steps. `docs/spec-matrix.yaml`'s FTF-04A07 entry set
+to `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`5b34723e2be2ba243927962c7b4c1a269b370c62`), `proving_symbol:
+build_target_source_snapshot_router`, `proving_test:
+tests/tasks/test_ftf_04a07.py`. `spec/tasks.json`/
+`docs/implementation/TRACKER.json` left untouched -- confirmed by git
+history both are only ever written at certification time by Control
+plane, never by a producer at PROVISIONAL submission.
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** -- pushed to this
+session's own branch `claude/wizardly-fermat-i9vw6i`, opened as a PR
+against `main` (title `[relay] FTF-04A07: TargetSourceSnapshot schema +
+immutable provenance`). Full entry: `QUEUE.md`, `PROGRESS.md`.
+
+## Next shift
+This PR needs a real CI run watched to completion on its actual pushed
+head, then an independent Control-plane L2 review (this session cannot
+certify its own work -- Law 4). Recompute the dependency-ready frontier
+fresh from `docs/spec-matrix.yaml`/`spec/tasks.json` rather than trusting
+this note alone: FTF-0902 ("Network-policy templates") is genuinely
+dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
+sandbox does not have (disclosed above, not claimed); FTF-0212 (PR #231)
+and FTF-0304 (PRs #194/#195) remain other sessions' own open work -- leave
+those alone.
