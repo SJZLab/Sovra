@@ -1,4 +1,44 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #240) — checked `docs/certifications/queue.md` for
+  pending PROVISIONAL items per the certifier's standing duty. Two items were
+  awaiting L2 certification: **FTF-1303 (PR #240)**, still `queued` on every
+  one of its 29 checks at the moment of this review (CI had not finished
+  running yet -- left PROVISIONAL, not certified, no gap to report since
+  nothing has failed, just not yet complete; the next certifier shift or
+  check-in should re-check once CI finishes), and **FTF-04A06 (PR #238)**,
+  whose earlier Law 1 evidence gap (missing prefix-colliding-sibling test)
+  had already been fixed (commit `911ae78`) and CI re-run fully green
+  (29/29, run `35994361000`). Independently re-verified FTF-04A06 from
+  scratch: session-ID check (all 7 commits on PR #238 carry
+  `session_0159tZvUhDCyk3rdhW7fMscf`, no overlap with this session's own
+  `session_01TSZ3SyJvmLrNbuDqXVYRtE`); read the full diff; pulled a fresh
+  `get_check_runs` on head `693f6194` (29/29 completed/success) and the
+  `gate` job's own step-level log text (confirmed
+  `tests/tasks/test_ftf_04a06.py` genuinely ran in CI and printed "all
+  checks passed", not a self-reported claim); checked out the branch
+  locally and re-ran the suite directly (13/13 clean); ran two own
+  fault-injection vectors distinct from the producer's and the prior
+  reviewer's own (a naive `str.startswith()` prefix check, and disabling
+  the dirty-tree concurrent-drift raise) -- both genuinely caught, both
+  reverted byte-identical; confirmed `product_truth_check.py`'s 19/19 is a
+  legitimate 0/0-class result (empty `proving_symbol`, disclosed no-live-
+  caller scope) by reading the script's own skip-if-no-symbol logic;
+  pulled the real task contract via `tools/r1_handoff.py packet FTF-04A06`
+  and confirmed both `acceptance` and `negative_acceptance` clauses
+  genuinely met. **Merged PR #238** (merge commit
+  `249ff0663df74fe25f33f35673a319ea6d728b90`). `docs/spec-matrix.yaml`
+  FTF-04A06 set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. Ran `task_claim.sync_certified_status()` --
+  `['FTF-04A06']` updated. `scripts/status.py`: 59/300 -> 60/300 certified,
+  19 product-true (unchanged, no live caller added). `validate_spec.py
+  --strict` clean (after `git fetch --unshallow`, confirmed this sandbox's
+  shallow-clone artifact, not a real defect -- same class of gap already on
+  record for prior shifts). Full record:
+  `docs/certifications/ledger.md`'s new FTF-04A06 entry,
+  `docs/certifications/queue.md`.
+
+## Previous shift
 Updated: 2026-09-24 (same relay shift, continued) — an independent
   Control-plane certification review (PR #239, comment on PR #238) found
   PR #238's shipped `resolve_allowed_root` sound but flagged a real Law 1
@@ -3814,25 +3854,29 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-04A06 ("Local repository connector with root allowlist/path
-protections") -- submitted 2026-09-24 via PR #238 against `main`. Real,
-DB-free capture connector composing with the already-CERTIFIED
-FTF-04A01/FTF-04A07; disclosed scope boundary (does not itself persist a
-`TargetSourceSnapshot` row or upload the dirty-tree archive to real object
-storage -- a later, separately-scoped caller's job). Full submission
+FTF-1303 ("Provider token costing") -- submitted 2026-09-24 via PR #240
+against `main`. Real, DB-free Section 32 `provider_call_cost` calculator,
+dependency-ready on FTF-0210/FTF-1301 (both CERTIFIED). Full submission
 record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
-`PROGRESS.md`. First review (PR #239, merged into `main`) was NOT
-CERTIFIED for a real Law 1 evidence gap (no prefix-colliding-sibling
-allowlist test); fixed in commit `911ae78` on the same PR #238 (see this
-file's own top status note and `docs/certifications/queue.md`'s matching
-follow-up entry) -- no production code changed. CI re-ran green on the
-fixed head (`3fb3367`) after one re-run of a genuine, unrelated flake in
-FTF-R002's own already-certified `test_ftf_r002.py`
-(`test_job_identity_rejects_tampered_token`, a timestamp-dependent
-same-character coincidence in that test's own tamper construction --
-confirmed not caused by this PR's diff). Needs a fresh independent
-Control-plane L2 review (Law 4 -- this session cannot certify its own
-work).
+`PROGRESS.md`. **Checked this shift (2026-09-24, scheduled Control-plane
+certifier, `pull_request.opened` webhook for this same PR): every one of
+PR #240's 29 checks, including `gate`, was still `status: queued` at the
+moment of this review -- CI had not finished running yet.** Left
+PROVISIONAL, not certified; this is not a gap in the submission, just not
+yet complete -- the next certifier shift or check-in should re-check once
+CI finishes and, if green, proceed with a fresh independent L2 review
+(Law 4 -- this session's own producer identity for FTF-04A06 below is
+unrelated and does not disqualify a *future* session from reviewing
+FTF-1303; the session-ID check must simply be run again against FTF-1303's
+own PR #240 commits at that time).
+
+FTF-04A06 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #238 (merge commit
+`249ff0663df74fe25f33f35673a319ea6d728b90`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full evidence, including the
+independent session-ID check, own local reproduction, two independent
+fault-injection vectors, and the real CI step-level log confirmation.
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit
@@ -5853,6 +5897,45 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certified before, `59/300` after. Product-true unchanged at `19/19`
   (the live caller was already wired at PR #236's own merge, not newly
   added by certification). Full entry: docs/certifications/ledger.md.
+- FTF-04A06 — Local repository connector with root allowlist/path
+  protections. Independently reviewed and **CERTIFIED 2026-09-24**, merge
+  commit `249ff0663df74fe25f33f35673a319ea6d728b90` (PR #238). Session-ID
+  check clean (all 7 PR commits carry the producer's own session
+  `session_0159tZvUhDCyk3rdhW7fMscf`, no match to this reviewing session
+  `session_01TSZ3SyJvmLrNbuDqXVYRtE` — Law 4). Diff read in full (8
+  files, +2535/−27), including the module and its 463-line test suite in
+  full. A prior 2026-09-24 review (different session) had found the code
+  sound but left one real Law 1 gap (no prefix-colliding-sibling
+  allowlist test) NOT CERTIFIED; the producer's follow-up commit
+  (`911ae78`) closed it — this review independently re-verified that fix
+  rather than trusting the branch's own account: a fresh
+  `get_check_runs` on the real final head (`693f6194`) confirmed 29/29
+  checks completed/success including `gate`, and the `gate` job's own
+  step-level log text (pulled directly) showed
+  `tests/tasks/test_ftf_04a06.py` actually executing in CI and printing
+  "all checks passed". Own local reproduction (checked out the head,
+  ran the suite directly): 13/13 clean. Own two fault injections,
+  independent of the producer's own two and of the prior reviewer's own:
+  (1) `resolve_allowed_root`'s real `Path.parents` check replaced with a
+  naive `str.startswith()` comparison — the prefix-collision test
+  genuinely failed; (2) the dirty-tree branch's own after-capture
+  `ConcurrentModificationError` raise disabled — the dedicated
+  concurrent-drift test genuinely failed. Both reverted byte-identical,
+  suite re-confirmed clean after each. `product_truth_check.py --fail-
+  on-unwired` confirmed legitimately `19/19` unchanged — `proving_symbol`
+  is the empty string for this task (disclosed, no live HTTP caller yet,
+  same accepted class as FTF-1302/FTF-0005/FTF-0006/FTF-0102–0105/
+  `storage_semantics_client.py`), confirmed by reading
+  `product_truth_check.py`'s own skip-if-no-symbol logic directly rather
+  than assuming 0/0 is always fine. Both acceptance and
+  negative_acceptance clauses reconfirmed against the real DoD via
+  `tools/r1_handoff.py packet FTF-04A06`. `validate_spec.py --strict`
+  clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+  shallow-clone artifact — confirmed not a real defect). Merged PR #238.
+  Ran `sync_certified_status()` — `['FTF-04A06']` updated.
+  `scripts/status.py`: `59/300` certified before, `60/300` after.
+  Product-true unchanged at `19/19` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

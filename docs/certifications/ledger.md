@@ -6660,3 +6660,114 @@ reasons given above.
   own merge, not newly added by certification).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A06 — Local repository connector with root allowlist/path protections
+- Criterion ID: FTF-04A06
+- PR: https://github.com/SJZLab/Sovra/pull/238 (`claude/wizardly-fermat-azo96v`
+  → `main`). Merged by this review as merge commit
+  `249ff0663df74fe25f33f35673a319ea6d728b90`.
+- Merge commit (evidence): 249ff0663df74fe25f33f35673a319ea6d728b90
+- Implementation commit: 38ea4e450fcbf9e2f65032e78490bf632d30adac (Law 1
+  fix commit: 911ae789cbc2f3f9b1c9977c087c9911d8cce7aa)
+- Validated-by: session https://claude.ai/code/session_01TSZ3SyJvmLrNbuDqXVYRtE
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #240 — this review also picked up PR #238, the other item
+  awaiting L2 certification per `QUEUE.md`'s "## Provisional" section)
+- Date: 2026-09-24
+- **Session-ID check:** all seven commits on PR #238 carry
+  `Claude-Session: https://claude.ai/code/session_0159tZvUhDCyk3rdhW7fMscf`
+  (the merge commit `c122d5d` has no trailer, expected for a plain `git
+  merge` commit) — no match to this reviewing session's own ID
+  (`session_01TSZ3SyJvmLrNbuDqXVYRtE`), independent per Law 4.
+- **Diff read directly**: 8 files changed (+2535/−27) — the new
+  `apps/api/app/target_connectors/local_repository_connector.py` (431
+  lines, read in full), the new `tests/tasks/test_ftf_04a06.py` (463
+  lines, read in full), the new task packet
+  `docs/implementation/task-packets/FTF-04A06.md`, a 2-line
+  `.github/workflows/ci.yml` gate-step addition, and the expected
+  PROGRESS.md/QUEUE.md/spec-matrix.yaml/certifications-queue.md
+  tracking-doc updates — no unexplained scope creep. The packet's own
+  generic suggested path
+  (`packages/target-connectors/local_repository_connector_with_root_allowlist_path_protections.py`)
+  was correctly refined to match FTF-04A01's/FTF-04A07's real
+  `apps/api/app/target_connectors/*.py` layout precedent, disclosed in
+  the module's own docstring.
+- **Prior review history on this same PR:** a 2026-09-24 Control-plane
+  review (different session) found the shipped `resolve_allowed_root`
+  sound but flagged a real Law 1 evidence gap (no test for a
+  prefix-colliding sibling allowlist pair, e.g. `allowed` vs
+  `allowed-evil`) and left it **NOT CERTIFIED**. The producer pushed
+  commit `911ae78` adding
+  `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`,
+  resolved a tracking-doc merge conflict against PR #239 (`c122d5d`), and
+  re-ran CI fully green. This review independently verified that fix
+  rather than trusting the branch's own account of it (below).
+- **CI independently re-checked on the real final head, not taken on
+  faith:** a fresh `pull_request_read get_check_runs` call on head
+  `693f61949d6c2a8a8fc3bd21e8c9caf3f7cfa5de` confirmed all 29 checks,
+  including `gate`, `status: completed` / `conclusion: success` — nothing
+  pending or skipped. Pulled the `gate` job's own step-level log text
+  directly (`get_job_logs`, job id `107615677654`): the step "FTF-04A06
+  negative-test proof (Local repository connector, no DB required)" ran
+  `uv run python3 tests/tasks/test_ftf_04a06.py` and printed "FTF-04A06
+  local repository connector tests: all checks passed" — genuine
+  execution in CI, not a self-reported claim.
+- **Own local reproduction:** checked out the PR head locally and ran
+  `python3 tests/tasks/test_ftf_04a06.py` directly — all 13 checks
+  passed.
+- **Own fault injection (Law 1), two vectors distinct from the
+  producer's own two (symlink-escape guard, concurrent-drift-on-dirty-
+  path guard) and distinct from the prior reviewer's own (missing
+  prefix-collision test):**
+  1. Replaced `resolve_allowed_root`'s real `Path.parents` structural
+     check with a naive `str(real_root).startswith(str(real_allowed))`
+     comparison — the new `test_resolve_allowed_root_refuses_a_prefix_
+     colliding_sibling` check genuinely failed for real (1 FAIL) against
+     the exact string-prefix defect its own docstring disclaims.
+     Reverted; `diff` confirmed byte-identical; suite re-ran clean.
+  2. Disabled the dirty-tree branch's own after-capture
+     `ConcurrentModificationError` raise
+     (`capture_local_repository`'s second `if dirty_after != dirty_before
+     or head_after != commit_sha` guard, replaced with `if False`) — the
+     dedicated `test_concurrent_drift_during_capture_is_refused` check
+     genuinely failed for real (1 FAIL). Reverted; `diff` confirmed
+     byte-identical; suite re-ran clean immediately after ("all checks
+     passed").
+- **`product_truth_check.py --fail-on-unwired` confirmed 19/19
+  unchanged**, and confirmed this is a legitimate 0/0-class result, not
+  an evasion: this task's `proving_symbol` in `docs/spec-matrix.yaml` is
+  the empty string (a pure, DB-free capture module with no live HTTP
+  caller yet, disclosed in both the module's own docstring and the PR
+  body — the same accepted scope-narrowing precedent as
+  FTF-1302/FTF-0005/FTF-0006/FTF-0102–0105/`storage_semantics_client.py`
+  before each one's own first live caller existed). Read
+  `scripts/product_truth_check.py`'s own logic directly: an entry with no
+  `proving_symbol` is skipped entirely, never counted as a 0/0 pass
+  against a claimed symbol — Law 5 is not being evaded here.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-04A06 --plan FINE_TUNING_FACTORY_RELEASE_1.md`:
+  `acceptance` ("Read approved local root, handle detached/dirty worktree
+  and create immutable content manifest" — proven by
+  `test_capture_clean_git_checkout_reports_real_commit_and_tree`/
+  `test_capture_detached_head_reports_none_branch`/
+  `test_capture_dirty_tree_is_deterministic_and_content_hashed`;
+  "Independent review, exact merged commit, real relevant integration and
+  negative-test evidence recorded" — this review) and
+  `negative_acceptance` ("Path/symlink traversal and concurrent file
+  drift fail; never edit the target working tree" — proven by the
+  prefix-collision, symlinked-root, symlink-escape-inside-repository, and
+  concurrent-drift tests, plus the dedicated before/after `git status`
+  byte-identical assertion in
+  `test_symlink_escape_inside_repository_is_refused_and_never_edits_the_tree`)
+  are both genuinely met by real, independently-reproduced evidence, not
+  merely "tests pass". `dependencies` FTF-04A01/FTF-04A07 confirmed
+  already `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #238 (merge commit
+  `249ff0663df74fe25f33f35673a319ea6d728b90`) into `main`.
+  `docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+  merge commit; `proving_symbol` stays `''` (no live caller, confirmed
+  legitimate above). Certified count moves 59/300 → 60/300. Product-true:
+  19/19 → 19/19 (unchanged — this task adds no live caller).
+
+**Conclusion:** Certified L2-CERTIFIED.
