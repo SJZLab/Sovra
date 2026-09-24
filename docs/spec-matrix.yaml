@@ -4425,7 +4425,7 @@ FTF-1303:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Provider token costing
-  evidence_hash: ''
+  evidence_hash: be9775f60ce248cd411cc22ccf82692415798c82
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0210, FTF-1301 (both
