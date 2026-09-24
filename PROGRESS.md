@@ -16997,15 +16997,129 @@ Appended to `docs/certifications/queue.md` for Control plane. Commits `0e0390a`/
 branch `claude/wizardly-fermat-fkyn9x`. **PR:** https://github.com/SJZLab/Sovra/pull/249, title
 `[relay] FTF-1304: Cost-per-success calculator`.
 
+## 2026-09-24T[relay] — Relay: FTF-0507 (Tool-trace normalizer), submitted PROVISIONAL
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`; `BLOCKER.md` read in full — no live blocker, both entries resolved history;
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (all three are large append-only
+logs exceeding the file-read size limit — read via `tail`/targeted `offset`/`grep` rather than in
+full, same practical approach any session hits at this file size). cognee-cli not installed in this
+sandbox (`command not found`) — text-search fallback declared, same as prior shifts.
+
+Confirmed live state before picking work: FTF-1304 (this file's own last-picked item) was already
+independently CERTIFIED and merged (PR #249, merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`)
+before this shift started — this session's own `HEAD` was already at parity with `origin/main`'s
+tip, confirmed via `git rev-parse`. `docs/spec-matrix.yaml` on `main` confirmed FTF-1304
+`certification_state: CERTIFIED` before treating it as resolved.
+
+Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml` (parsed with PyYAML
+directly, 12 tasks with `implementation_state: ABSENT`/`NONE` and every declared dependency already
+`CERTIFIED`) rather than trusting the prior shift's "Next shift" candidate list unchecked.
+FTF-0212/FTF-0304 remain other sessions' own open PRs (#231, #195/#194) — left untouched.
+FTF-0302/FTF-0303 need real outbound network egress (Hugging Face/S3) this sandbox lacks.
+FTF-1201/FTF-H004 need a real reachable LiteLLM gateway/credential (`BLOCKED_EXTERNAL` class, same
+as the already-excluded FTF-04A02). FTF-1703 needs >=1000 real curated/reviewed traces (a
+data-curation task, not pure computation). FTF-04A17/FTF-04A19 share the `contracts:04A` lock (only
+one claimable at a time) and both need a live Postgres migration. FTF-1506 (dependency scanning)
+likely needs a CVE/advisory feed reachable only via network egress — flagged as risk, not claimed.
+Checked GitHub directly via `list_pull_requests` (8 open PRs) before claiming: none referenced
+FTF-0507 in title or branch.
+
+**FTF-0507 (Tool-trace normalizer)** was picked — same tractable, pure-computation, no-DB,
+no-external-dependency shape as the already-CERTIFIED FTF-0506/FTF-1302/FTF-1303/FTF-1304 siblings.
+Both dependencies (FTF-0500, FTF-0506) confirmed `CERTIFIED` in `docs/spec-matrix.yaml` directly
+before relying on them.
+
+Read FTF-0506's own real module (`workers/data/canonical_conversation_normalizer.py`, 563 lines)
+and its full test suite (703 lines) before writing any code. Confirmed the frozen
+`packages/contracts/jsonschema/05-domain.schema.json` only fixes the `agent_traces`/
+`production_conversations` source-type enum value, not a trace event wire schema — Section 67.1's
+own row declares a trace source's schema per-source, resolved through the Section 67.2 mapping
+wizard, so this task's own raw trace event shape (`session_id`/`sequence`/role-per-event) is a
+disclosed design choice, not one already frozen elsewhere in this repository's contracts.
+
+Implemented `workers/data/tool_trace_normalizer.py::normalize_tool_trace`, composing FTF-0506's
+already-CERTIFIED `normalize_conversation` directly (reuse-first, Section 77.1, applied to a
+sibling already-CERTIFIED module, not just the seven external components) rather than
+reimplementing any Section 7 "Required validator". Path refinement recorded before READY (Section
+84.3), same precedent as FTF-0506 itself: placed at `workers/data/tool_trace_normalizer.py`, not
+the packet's suggested non-existent `services/training-worker/...` tree.
+
+This task's own acceptance clause ("Convert approved trace messages, tool IDs/results and outcomes
+preserving ordering and actual permissions") is met by two real pieces FTF-0506 has no concept of:
+(1) **ordering** — events sort by an explicit `sequence` int (never assumed to arrive in order), a
+duplicate sequence is rejected as ambiguous, and a real SHA-256 over the exact caller-given batch
+*before* sorting (`metadata["trace_raw_sha256"]`) keeps the as-received order independently
+verifiable even after this module reorders it; (2) **actual permissions** — every trace tool call
+must declare an explicit boolean `authorized` (Section 7A.6/84.4: no effect authorized solely by a
+UI control), stripped before reaching FTF-0506's own tool-call schema and preserved instead into
+`metadata["tool_call_authorizations"]` — never guessed, never silently dropped.
+
+negative_acceptance ("Orphan/duplicate call IDs, malformed tool result and mixed-session traces
+cannot be accepted") is met two ways: orphan call IDs, an in-record duplicate call ID, and a
+malformed tool result are all refused via FTF-0506's own already-CERTIFIED guards, proven here
+end-to-end through this module's own real event-shaped input (not re-asserting FTF-0506's own suite
+a second time). A trace-level duplicate call ID across the whole batch and a **mixed-session
+trace** (an event declaring a different `session_id` than the batch's own declared one) are this
+module's own new, genuinely owned checks — FTF-0506 has no notion of "session" at all.
+
+Wrote `tests/tasks/test_ftf_0507.py` (18 no-DB test functions): an out-of-order golden trace
+normalizing correctly; tool call authorizations collected/preserved and absent when no tools used;
+`trace_raw_sha256` sensitive to arrival order yet deterministic, with identical canonical message
+content regardless of order; `group_id` derived from `session_id`; real FTF-0405
+`validate_instance` wired in directly (same precedent as FTF-0506's own suite); mixed-session trace
+rejection; missing/non-boolean `authorized` rejection; trace-level duplicate call-id rejection;
+orphan tool_call_id and malformed-tool-result rejection via FTF-0506's own delegated guards;
+duplicate/non-int/bool `sequence` rejection; empty events/non-mapping event/empty `session_id`
+rejection; reserved-metadata-key-collision rejection.
+
+**Own fault injection (Law 1), two distinct vectors, both reverted byte-identical, suite
+re-confirmed clean immediately after each:** (1) disabled the mixed-session `session_id` guard —
+run in a fresh process, the mutated module genuinely lets a mixed-session trace through; 1 genuine
+`FAIL [FTF-0507]` line. (2) disabled the "authorized must be an explicit bool" guard — run in a
+fresh process, the mutated module genuinely accepts a tool call with no `authorized` flag and a
+non-boolean one; 2 genuine `FAIL [FTF-0507]` lines. Both reverted (`diff` against the pre-fault
+copy confirmed byte-identical); suite re-ran clean both times.
+
+`ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy workers/data/
+tool_trace_normalizer.py` clean; `validate_spec.py --strict` clean (after `git fetch --unshallow`,
+this sandbox's own pre-existing shallow-clone artifact, confirmed not a defect in this diff, same
+class of gap already on record for prior shifts); `product_truth_check.py --fail-on-unwired`
+unchanged at `19/19` (no live caller yet — no trace-source importer exists in this repository to
+call `normalize_tool_trace`, same disclosed "no live caller yet" precedent already established for
+FTF-0506/FTF-0202/FTF-0205/FTF-0207); `status.py` unchanged at `62/300` certified; `verify_task.py
+--task FTF-0507 --stage task` reports `BLOCKED` pre-merge (expected, same precedent as every
+sibling PROVISIONAL submission).
+
+Diff scope confirmed exactly this task's own new files (`workers/data/tool_trace_normalizer.py`,
+`tests/tasks/test_ftf_0507.py`, `docs/implementation/task-packets/FTF-0507.md`) plus one new `gate`
+job CI step and the expected `docs/spec-matrix.yaml` tracking update — no scope creep. (An
+exploratory subagent used earlier this shift to survey the dependency-ready frontier incidentally
+generated 9 unrelated task packets as a side effect of running `r1_handoff.py packet <id>` for
+several other candidates; those were deleted before committing, keeping this PR scoped to FTF-0507
+alone.)
+
+Added this task's own CI gate step to `.github/workflows/ci.yml`'s `gate` job.
+`docs/spec-matrix.yaml`'s FTF-0507 entry set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the
+real merge commit hash is known (same precedent as every sibling PROVISIONAL submission).
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are needed before certification.
+Appended to `docs/certifications/queue.md` for Control plane. Commit `83c865e` on branch
+`claude/wizardly-fermat-svcgeh`. **PR:** https://github.com/SJZLab/Sovra/pull/253, title
+`[relay] FTF-0507: Tool-trace normalizer`.
+
 ## Next shift
-PR #249 (FTF-1304) is open, awaiting CI plus an independent Control-plane L2 certifier shift (not
+PR #253 (FTF-0507) is open, awaiting CI plus an independent Control-plane L2 certifier shift (not
 this relay's role) — do not re-implement. PRs #246 (FTF-1303 tracking-doc reconciliation) and #243
-(FTF-04A06 owner-direct-merge certification, supersedes #241) are separately open and awaiting
-Control-plane attention. FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a
-real OpenBao secret backend) remain outside this relay sandbox's practical reach. Recompute the
-dependency-ready frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note alone
-before picking a next item — candidates already identified this shift (pending FTF-1304's own
-certification landing, which would free FTF-1301/1302/1303/1304 dependents if any exist) include
-FTF-0302/0303 (artifact resolvers, deps include FTF-0202/OpenBao — verify FTF-0202 is actually
-implemented, not just dependency-ready, before claiming), FTF-04A17/04A19, FTF-0507, FTF-0902,
-FTF-1201, FTF-1503, FTF-1506, FTF-1703, and FTF-H004.
+(FTF-04A06 owner-direct-merge certification, supersedes #241) remain separately open from before,
+awaiting Control-plane attention. FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02
+(needs a real OpenBao secret backend) remain outside this relay sandbox's practical reach.
+Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml` rather than trusting
+this note alone before picking a next item — candidates already identified this shift (pending
+FTF-0507's own certification landing, which would free FTF-0508/FTF-0509-adjacent dependents if
+any exist) include FTF-0302/0303 (artifact resolvers — need real outbound network egress),
+FTF-04A17/04A19 (share the `contracts:04A` lock, need a live Postgres migration), FTF-0902,
+FTF-1201/FTF-H004 (need a real reachable LiteLLM gateway/credential), FTF-1503, FTF-1506 (dependency
+scanning — likely needs a CVE/advisory feed reachable only via network egress, verify before
+claiming), and FTF-1703 (needs >=1000 real curated/reviewed traces, a data-curation task).

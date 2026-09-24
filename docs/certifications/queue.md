@@ -14197,3 +14197,87 @@ a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved F
 
 - **Validated-by:** session https://claude.ai/code/session_016j3oFawdjCmJveQAiaAyDy
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-24 — FTF-0507 — relay: implemented, submitted PROVISIONAL
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`; `BLOCKER.md` read (no live blocker, both entries resolved history);
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (large append-only logs, read
+via `tail`/targeted offsets/`grep`). Confirmed FTF-1304 (the prior top-of-queue item) was already
+independently CERTIFIED via PR #249 before this shift started; this session's own `HEAD` was
+already at parity with `origin/main`'s tip. cognee-cli not installed in this sandbox -- text-search
+fallback declared.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (parsed with
+PyYAML, not grepped): 12 `ABSENT`/`NONE` tasks with every dependency genuinely `CERTIFIED`.
+Excluded FTF-0212/FTF-0304 (other sessions' own open PRs #231/#195/#194), FTF-0302/FTF-0303
+(need real outbound network egress to Hugging Face/S3), FTF-1201/FTF-H004 (need a real reachable
+LiteLLM gateway/credential, `BLOCKED_EXTERNAL` class), FTF-1703 (needs >=1000 real curated/
+reviewed traces, a data-curation task), FTF-04A17/FTF-04A19 (share the `contracts:04A` lock and
+both need a live Postgres migration), FTF-1506 (likely needs a CVE/advisory feed reachable only
+via network egress -- flagged as risk, not claimed). Checked GitHub directly via
+`list_pull_requests` (8 open PRs) before claiming: none referenced FTF-0507 in title or branch.
+
+Picked **FTF-0507** ("Tool-trace normalizer") -- same tractable, pure-computation, no-DB,
+no-external-dependency shape as the already-CERTIFIED FTF-0506/FTF-1302/FTF-1303/FTF-1304
+siblings. Both dependencies (FTF-0500, FTF-0506) confirmed `CERTIFIED` in `docs/spec-matrix.yaml`
+directly before relying on them.
+
+**PEV, not mixed:**
+- **P:** read FTF-0506's own real module (`workers/data/canonical_conversation_normalizer.py`,
+  563 lines) and its full test suite (`tests/tasks/test_ftf_0506.py`, 703 lines) before writing any
+  code. Read the task packet (`tools/r1_handoff.py packet FTF-0507`), the master plan's Section
+  67.1 ("Agent traces / production conversations" connector row -- declares a per-source trace
+  schema resolved through the Section 67.2 mapping wizard, not one fixed wire format), and
+  confirmed the frozen `packages/contracts/jsonschema/05-domain.schema.json` only fixes the
+  `agent_traces`/`production_conversations` enum value, not an event wire schema -- this task's own
+  raw trace event shape is a deliberate, disclosed design choice, not one already frozen elsewhere.
+- **E:** implemented `workers/data/tool_trace_normalizer.py::normalize_tool_trace`, composing
+  FTF-0506's already-CERTIFIED `normalize_conversation` directly (reuse-first, Section 77.1)
+  instead of reimplementing any Section 7 "Required validator". Adds exactly what FTF-0506 has no
+  concept of: ordering restored from an explicit `sequence` int with a real pre-sort SHA-256
+  (`metadata["trace_raw_sha256"]`) keeping the as-received batch independently verifiable, and
+  explicit per-tool-call `authorized: bool` permission preserved into
+  `metadata["tool_call_authorizations"]` (never guessed, never dropped). Path refinement recorded
+  before READY (Section 84.3), same precedent as FTF-0506: placed at
+  `workers/data/tool_trace_normalizer.py`, not the packet's suggested non-existent
+  `services/training-worker/...` tree. `tests/tasks/test_ftf_0507.py` written alongside (18 no-DB
+  test functions); ran genuinely FAILING against two deliberately faulted copies before being
+  confirmed passing against the real, unmodified implementation (see fault injection below).
+- **V:** `product_truth_check.py --fail-on-unwired` confirmed 19/19 unchanged (no live caller yet
+  -- no trace-source importer exists in this repository to call `normalize_tool_trace`, same
+  disclosed precedent as FTF-0506/FTF-0202/FTF-0205/FTF-0207); `verify_task.py --task FTF-0507
+  --stage task` reports BLOCKED pre-merge (expected). Opened PR #253, appended this entry.
+
+**Own fault injection (Law 1), two distinct vectors, both reverted byte-identical, suite
+re-confirmed clean immediately after each:** (1) disabled the mixed-session `session_id` guard
+(`if False and event_session_id != session_id`) -- run in a fresh process, the mutated module
+genuinely lets a mixed-session trace through; 1 genuine `FAIL [FTF-0507]` line. (2) disabled the
+"authorized must be an explicit bool" guard (`if False and not isinstance(authorized, bool)`) --
+run in a fresh process, the mutated module genuinely accepts a tool call with no `authorized` flag
+and a non-boolean one; 2 genuine `FAIL [FTF-0507]` lines. Both reverted; `diff` against the
+pre-fault copy confirmed byte-identical; suite re-ran clean both times.
+
+`ruff check .`/`ruff format --check .` clean repo-wide; `mypy` clean on touched files.
+`validate_spec.py --strict` clean after `git fetch --unshallow origin` (this sandbox's own
+pre-existing shallow-clone artifact -- the `stale_commit: FTF-0401 ...` finding it otherwise
+reports was confirmed a pre-existing sandbox artifact, not a defect in this diff, same class of gap
+already on record for prior shifts). `status.py` unchanged at 62/300 certified.
+
+Diff scope confirmed exactly this task's own new files (`workers/data/tool_trace_normalizer.py`,
+`tests/tasks/test_ftf_0507.py`, `docs/implementation/task-packets/FTF-0507.md`) plus one new `gate`
+job CI step and the expected `docs/spec-matrix.yaml` tracking update -- no scope creep. (An
+exploratory subagent used earlier this shift to survey the dependency-ready frontier incidentally
+generated 9 unrelated task packets as a side effect of running `r1_handoff.py packet <id>` for
+several candidates; those were deleted before committing, keeping this PR scoped to FTF-0507
+alone.)
+
+`docs/spec-matrix.yaml` FTF-0507 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` placeholder recorded as a follow-up commit once the real merge commit
+hash is known, same precedent as every sibling PROVISIONAL submission.
+
+**Not self-certified (Law 4).** Opened as PR #253 (`claude/wizardly-fermat-svcgeh` -> `main`),
+title `[relay] FTF-0507: Tool-trace normalizer`. Independent Control-plane L2 review and a real CI
+run on the opened PR are required before certification.
+
+- **Submitted-by:** session https://claude.ai/code/session_01NCb1NKVWuvGDb5GfFvXxMh (producer --
+  independent Control-plane L2 certification still required, Law 4).

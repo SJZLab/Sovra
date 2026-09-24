@@ -1,4 +1,55 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
+  submitted **FTF-0507 (Tool-trace normalizer) PROVISIONAL** via **PR:**
+  https://github.com/SJZLab/Sovra/pull/253 (branch
+  `claude/wizardly-fermat-svcgeh`, commit `83c865e`), title `[relay]
+  FTF-0507: Tool-trace normalizer`. STEP 0: `sha256sum CLAUDE.md` verified
+  clean against `CLAUDE.md.sha256`; `BLOCKER.md` read — no live blocker
+  (both entries resolved history); `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` read fresh (huge append-only logs, read
+  via `tail`/targeted `offset`/`grep` rather than in full). Confirmed
+  FTF-1304 (this file's own previously-top item) was already independently
+  CERTIFIED via PR #249 (merge commit `4b432a44...`) before this shift
+  started — this session's own `HEAD` was already at parity with
+  `origin/main`'s tip. cognee-cli not installed in this sandbox
+  (`command not found`) — text-search fallback declared, same as prior
+  shifts.
+
+  Recomputed the dependency-ready frontier directly from
+  `docs/spec-matrix.yaml` (12 `ABSENT`/`NONE` tasks with every dependency
+  `CERTIFIED`, verified field-by-field, not trusted from a subagent's
+  report alone) rather than trusting the prior shift's note alone:
+  FTF-0212/FTF-0304 remain other sessions' own open PRs (#231, #195/#194);
+  FTF-0302/FTF-0303 (HF/S3 artifact resolvers) need real outbound network
+  egress this sandbox lacks; FTF-1201/FTF-H004 need a real reachable
+  LiteLLM gateway/credential (`BLOCKED_EXTERNAL` class, same as the
+  already-excluded FTF-04A02); FTF-1703 needs ≥1000 real curated/
+  reviewed traces (a data-curation task, not pure computation);
+  FTF-04A17/FTF-04A19 both hold the shared `contracts:04A` lock (only one
+  claimable at a time, and both need a live local Postgres migration --
+  heavier than a pure-compute candidate); FTF-1506 (dependency scanning)
+  likely needs a CVE/advisory feed reachable only via network egress,
+  flagged as a real risk, not claimed. **FTF-0507** was picked -- same
+  tractable, pure-computation, no-external-dependency, no-DB shape as the
+  already-CERTIFIED FTF-0506/FTF-1302/FTF-1303/FTF-1304 siblings, both
+  deps (FTF-0500, FTF-0506) CERTIFIED. Checked GitHub directly (8 open
+  PRs, none mentioning FTF-0507/tool_trace/0507 in title or branch) before
+  claiming it.
+
+  Read FTF-0506's own real module (`workers/data/
+  canonical_conversation_normalizer.py`) and test suite in full before
+  writing any code (PEV "P" phase, no changes yet). Implemented
+  `workers/data/tool_trace_normalizer.py::normalize_tool_trace`, composing
+  FTF-0506's already-CERTIFIED `normalize_conversation` directly rather
+  than reimplementing any Section 7 "Required validator" (reuse-first,
+  Section 77.1, applied to a sibling already-CERTIFIED module). Path
+  refinement recorded before READY (Section 84.3), same precedent as
+  FTF-0506: placed at `workers/data/tool_trace_normalizer.py`, not the
+  packet's suggested non-existent `services/training-worker/...` tree.
+  Full implementation record: this file's own "## Provisional" section
+  below, `docs/certifications/queue.md`, `PROGRESS.md`.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled autonomous relay shift, dynamic queue-check
   fire, not a PR webhook) — implemented and submitted **FTF-1304
   (Cost-per-success calculator) PROVISIONAL** via **PR:**
@@ -3986,8 +4037,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-1304 ("Cost-per-success calculator") was the only
-item here; it was independently reviewed and **CERTIFIED 2026-09-24** via
+FTF-0507 ("Tool-trace normalizer") — this shift's own submission, see the
+top-of-file 2026-09-24 relay entry for the full record. **PR:**
+https://github.com/SJZLab/Sovra/pull/253
+(`claude/wizardly-fermat-svcgeh` → `main`), commit `83c865e`. Awaiting
+CI + independent Control-plane L2 review (Law 4).
+
+FTF-1304 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via
 PR #249 (merge commit `4b432a44d4d6ef511796bce5f30faec4d948b831`) — see
 "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
