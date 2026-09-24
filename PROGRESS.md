@@ -1,4 +1,33 @@
 # PROGRESS — Sovra
+## 2026-09-24 — FTF-1503 (PR #258) — Control plane: NOT CERTIFIED (real CI failure)
+Triggered by the `pull_request.opened` webhook for PR #258 (FTF-1503, "CSRF suite"). Per this
+session's standing certifier duty, checked `docs/certifications/queue.md` and found exactly one
+pending PROVISIONAL item: FTF-1503 (its submission exists only on PR #258's own branch — `main`
+carried no FTF-1503 entry yet). Session-ID check: PR #258's sole commit carries `Claude-Session`
+trailer `session_01VDvxngihngbBfK5xfR5kt4` (producer) — no match against this session's own ID
+(`session_01BhjGUmxHhsY22GbYTJTBgn`) — independent.
+
+Re-read the diff (9 files, `apps/api/app/auth/csrf_protection.py` plus tests/docs/tracking
+updates). Polled the real CI run (`36071258234`, triggered directly by this PR's own webhook
+event) via `gh api`/`pull_request_read get_check_runs` until it completed (~8 min, not trusting
+the PR's own pre-CI checklist) — genuine result: `conclusion: failure`, isolated to the `gate`
+job. `get_job_logs` showed 6 real `mypy` type errors, all in this PR's own new test files
+(`tests/security/csrf_suite.py`, `tests/tasks/test_ftf_1503.py`), none in the production
+`csrf_protection.py` module — the PR's own checklist had only run the narrower per-file `mypy`
+command, which is clean but isn't the actual repo-wide gate step.
+
+**Not certified.** PR #258 not merged, so `main`'s `docs/spec-matrix.yaml` never carried an
+FTF-1503 entry to downgrade; the claim stays `PROVISIONAL` on the PR branch (the underlying CSRF
+logic and its own fault-injection evidence are unaffected by this finding — this is a scoped
+type-annotation defect). Full finding, root cause per line, and the exact fix needed: `docs/
+certifications/queue.md`'s "Control plane review — 2026-09-24 — FTF-1503 (PR #258) — NOT
+CERTIFIED" entry; `QUEUE.md`'s "## Provisional" section updated with the same summary for the
+next relay shift. Did not touch anything outside certification scope (no new task work, no
+design decisions, no queue reprioritization).
+
+- **Reviewed-by:** session https://claude.ai/code/session_01BhjGUmxHhsY22GbYTJTBgn
+  (independent, see session-ID check above), 2026-09-24.
+
 ## 2026-09-24 — FTF-0507 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #253 (FTF-0507,
 "Tool-trace normalizer"). Per this session's standing certifier duty,

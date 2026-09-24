@@ -4063,7 +4063,21 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+None currently on `main` (FTF-1503's own PROVISIONAL submission exists only on PR #258's branch,
+not yet merged — see below).
+
+**FTF-1503 ("CSRF suite") — PR #258, NOT CERTIFIED 2026-09-24 (independent Control-plane
+review):** real CI failure — the `gate` job's repo-wide `mypy .` step reports 6 real type errors
+in this PR's own new test files (`tests/security/csrf_suite.py` lines 197/275/305/352/371,
+`tests/tasks/test_ftf_1503.py` line 85), not in the production `csrf_protection.py` module
+itself. The PR's own test-plan checklist only ran the narrower
+`mypy apps/api/app/auth/csrf_protection.py`, which is clean but is not the actual CI gate. PR
+not merged, so `main` never carried an FTF-1503 entry to downgrade; the claim stays
+`PROVISIONAL` on the PR branch. Full finding, exact fix needed, and reproduction steps: `docs/
+certifications/queue.md`'s "Control plane review — 2026-09-24 — FTF-1503 (PR #258) — NOT
+CERTIFIED" entry. **Next relay shift:** push a type-fix commit to this same PR #258 branch
+(`claude/wizardly-fermat-gae8i9`) — do not open a duplicate PR — and get the `gate` job green
+before resubmitting for certification.
 
 FTF-0507 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #253 (merge commit

@@ -14357,3 +14357,78 @@ a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved F
 
 - **Validated-by:** session https://claude.ai/code/session_01DfzHGRTG4C3bo11N4fu9N4
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-24 — FTF-1503 — CSRF suite (relay submission, PR #258)
+- **PR:** https://github.com/SJZLab/Sovra/pull/258
+  (`claude/wizardly-fermat-gae8i9` → `main`). Note: this PROVISIONAL claim exists only inside PR
+  #258's own branch (`docs/certifications/queue.md` entry, `docs/spec-matrix.yaml` state,
+  `QUEUE.md`/`PROGRESS.md` shift log) — `main`'s own copies do not yet carry an FTF-1503 entry,
+  same as the FTF-R017 precedent (2026-09-17, PR #75).
+- New, real, reusable CSRF-protection dependency (`apps/api/app/auth/csrf_protection.py`),
+  `tests/security/csrf_suite.py` (7 scenarios), `tests/tasks/test_ftf_1503.py` (no-DB gate proof).
+  Zero certified production files touched. Full text of the relay's own submission is on the PR
+  branch (see PR #258's description and its own commit `e6f961591297d631bf0eaa2b9f51a1a3acf1f51f`).
+
+### Control plane review — 2026-09-24 — FTF-1503 (PR #258) — NOT CERTIFIED (real CI failure on this PR's own new files)
+- **Session-ID check:** PR #258's sole commit (`e6f961591297d631bf0eaa2b9f51a1a3acf1f51f`)
+  carries `Claude-Session: .../session_01VDvxngihngbBfK5xfR5kt4`; this reviewing session's own ID
+  (`https://claude.ai/code/session_01BhjGUmxHhsY22GbYTJTBgn`) does not match — independent, not
+  self-certification.
+- **CI checked for real, not self-reported:** `pull_request_read get_check_runs` on the actual PR
+  head showed all 29 jobs freshly queued/in-progress at review time (workflow run `36071258234`,
+  started `2026-09-24T23:09:03Z`, triggered directly by this PR's own `pull_request.opened`
+  webhook). Polled `gh api repos/SJZLab/Sovra/actions/runs/36071258234` every 30s until the run
+  itself reported `status: completed` (`2026-09-24T23:16:50Z`, ~8 minutes) rather than trusting the
+  PR body's own pre-CI checklist (which correctly lists the `gate` job as "pending", not claimed
+  green). Real result: `conclusion: failure`. `jobs` listing narrowed the failure to exactly one
+  job: `gate` (`107872508507`); all 28 other integration jobs are unaffected/unrelated to this
+  diff.
+- **Failure is real and caused by this PR's own new files, not infra:** `get_job_logs` on job
+  `107872508507` (single run, not reproduced twice, but the failure is a deterministic `mypy`
+  type-check error, not a flake class — same tool, same command, same non-network-dependent
+  failure mode every time) shows `uv run mypy .` (the repo-wide gate step, not the narrower
+  `mypy apps/api/app/auth/csrf_protection.py` command the PR's own test-plan checklist actually
+  ran) reports 6 real errors in 2 files, both new in this diff and neither one the production
+  module itself:
+  - `tests/security/csrf_suite.py:197` — `error: Unused "type: ignore" comment [unused-ignore]`
+    (the `# type: ignore[no-any-return]` on `_HttpResult.json()`'s `return
+    json.loads(self.body)` is no longer needed under this repo's mypy config).
+  - `tests/security/csrf_suite.py:275,305,352,371` — `error: Argument "csrf_token" to "_request"
+    has incompatible type "object"; expected "str | None" [arg-type]` (four call sites pass
+    `admin_csrf`/`viewer_csrf`, both assigned from `viewer_login.json()["csrf_token"]` — since
+    `.json()` is typed `-> dict[str, object]`, the value mypy sees is `object`, not `str`, and was
+    never narrowed/cast before being passed into `_request`'s `csrf_token: str | None` parameter).
+  - `tests/tasks/test_ftf_1503.py:85` — `error: Argument 1 to "run" has incompatible type
+    "Awaitable[None]"; expected "Coroutine[Any, Any, Never]" [arg-type]` (`asyncio.run(
+    dependency(request))`, where `dependency` is the callable `require_csrf_protection(...)`
+    returns — its return type isn't inferred as the `Coroutine` `asyncio.run` requires).
+  This is a real, reproducible type-checking defect in this PR's own new test code — not a
+  self-reported claim taken at face value, not a stale/pre-existing failure, and not a runner
+  outage (every job on this run, including `gate`, was assigned a real runner and produced real
+  per-step timestamps).
+- **Scope check:** the PR's own test-plan checklist item "`mypy apps/api/app/auth/
+  csrf_protection.py` clean" is true as stated (narrowly, that one file) but is not equivalent to
+  the actual CI gate, which runs `mypy .` across the repo — the checklist's own text disclosed the
+  narrower scope, it just didn't catch that the narrower run misses errors in this same PR's own
+  new test files. Not evaluating the CSRF logic's design, the fault-injection evidence, or the
+  `product_truth_check.py` 19/19-unchanged claim any further — a content-level review is premature
+  while the PR's own required CI evidence doesn't exist yet (Laws 1/2: nothing proven until a
+  genuinely green, non-self-reported CI run exists on this PR's real head).
+- **Conclusion — per CERTIFY step 3 ("re-check CI actually ran and passed on the real merged
+  commit — not a stale or self-reported claim"):** CI has not passed on this PR's real head — the
+  `gate` job fails for real. Not merging, not certifying. `main` never carried an FTF-1503 entry
+  before this review (see the submission note above), so there is nothing on `main` to downgrade;
+  the claim stays `PROVISIONAL` on the PR branch itself (not further downgraded there either — the
+  underlying CSRF logic and its own fault-injection evidence are unaffected by this finding; this
+  is a scoped type-annotation fix, not a redo).
+  **Fix needed:** in `tests/security/csrf_suite.py`, narrow/cast the two `.json()["csrf_token"]`
+  reads (`admin_csrf`, `viewer_csrf`) to `str` before passing them as `csrf_token=` (e.g. `assert
+  isinstance(admin_csrf, str)` or an explicit `str(...)`/cast), and drop the now-unused `# type:
+  ignore[no-any-return]` at line 197; in `tests/tasks/test_ftf_1503.py`, fix the `asyncio.run(...)`
+  call at line 85 so its argument type-checks as a `Coroutine` (e.g. give the `resolver`/dependency
+  call site a concrete `async def` wrapper, or adjust `require_csrf_protection`'s own return-type
+  annotation if the mismatch originates there). Push the fix to this same PR #258 branch
+  (`claude/wizardly-fermat-gae8i9`) and let the `gate` job actually go green before resubmitting;
+  do not open a duplicate PR.
+- **Validated-by:** session https://claude.ai/code/session_01BhjGUmxHhsY22GbYTJTBgn (independent —
+  see session-ID check above), 2026-09-24.
