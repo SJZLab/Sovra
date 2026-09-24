@@ -81,8 +81,12 @@ def _dependency_status(
     dependency = require_csrf_protection(
         allowed_origin="https://app.sovra.example", csrf_token_resolver=resolver
     )
+
+    async def _call() -> None:
+        await dependency(request)
+
     try:
-        asyncio.run(dependency(request))
+        asyncio.run(_call())
     except HTTPException as exc:
         return exc.status_code
     return None

@@ -62,6 +62,7 @@ import urllib.parse
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import cast
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "apps" / "api"))
@@ -194,7 +195,7 @@ class _HttpResult:
     cookie: str | None
 
     def json(self) -> dict[str, object]:
-        return json.loads(self.body)  # type: ignore[no-any-return]
+        return cast(dict[str, object], json.loads(self.body))
 
 
 def _request(
@@ -258,12 +259,12 @@ def run_csrf_scenarios() -> list[ScenarioResult]:
 
         login = _request(base_url, "POST", f"/demo/login?subject={_ADMIN_SUBJECT}")
         admin_cookie = login.cookie
-        admin_csrf = login.json()["csrf_token"]
+        admin_csrf = cast(str, login.json()["csrf_token"])
         assert admin_cookie is not None
 
         viewer_login = _request(base_url, "POST", f"/demo/login?subject={_VIEWER_SUBJECT}")
         viewer_cookie = viewer_login.cookie
-        viewer_csrf = viewer_login.json()["csrf_token"]
+        viewer_csrf = cast(str, viewer_login.json()["csrf_token"])
 
         # 1. Everything correct -> mutation succeeds.
         result = _request(
