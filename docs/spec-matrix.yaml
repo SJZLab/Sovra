@@ -4537,10 +4537,10 @@ FTF-1302:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1302.py
 FTF-1303:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Provider token costing
-  evidence_hash: be9775f60ce248cd411cc22ccf82692415798c82
+  evidence_hash: f1e545745f7679ed19628d66ffc84955329a6f50
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-0210, FTF-1301 (both
@@ -4577,9 +4577,42 @@ FTF-1303:
     FTF-1301's own, already-frozen contract slot 13); `proving_symbol` is deliberately left empty,
     matching the FTF-1302/FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent for a computation module
     with no live product-runtime caller in this repository yet -- a genuine, disclosed 0/0, not
-    inflation. Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2
-    review and a real CI run are needed before certification.
-  proof_state: L1-PROVEN
+    inflation.
+
+    L2-CERTIFIED 2026-09-24 by an independent Control-plane certifier session
+    (session_017qNX6TzAVGoA2bi9CXwvix). Session-ID check: this PR's commits carry
+    Claude-Session session_01CuuVLc7aGhNUrpFbQmrpVk (producer), session_01TSZ3SyJvmLrNbuDqXVYRtE
+    (prior reviewer, PR #240) and session_017pYedfdGZ2ZUSt4PKRdqAn (merge-conflict resolution,
+    PR #245) -- no overlap with this reviewing session, independent per Law 4. Read
+    apps/api/app/services/provider_token_costing.py and tests/tasks/test_ftf_1303.py in full
+    (byte-identical to PR #240's own already-reviewed diff; PR #245 only carried a tracking-doc
+    merge-conflict resolution forward). Pulled the real task contract via
+    `tools/r1_handoff.py packet FTF-1303 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed
+    both acceptance clauses (five-category `provider_call_cost` formula; independent review
+    recorded) and the negative_acceptance clause (missing usage/rate cannot become an invented or
+    zero dollar value) are genuinely met, not merely "tests pass". Ran
+    tests/tasks/test_ftf_1303.py locally -- 13/13 clean. Own fault injection, distinct from the
+    producer's own and from FTF-04A06's own reviewer precedent: patched `_priced_category` to
+    invent a fallback rate (`Decimal("0.01")`) instead of raising when a real, nonzero, declared
+    usage category has no matching rate -- exactly the "invented ... dollar value" failure this
+    task's negative_acceptance forbids. The real suite genuinely failed (4 `FAIL [FTF-1303]`
+    lines: the three independent negative_acceptance cache/reasoning/billable_requests tests plus
+    the dedicated fault-injection test's own first assertion); reverted byte-identical (`diff`
+    empty) and re-ran clean. product_truth_check.py --fail-on-unwired confirmed 19/19 legitimate
+    (proving_symbol deliberately empty, a genuine disclosed 0/0 for a DB-free module with no live
+    HTTP caller yet, same FTF-1302/1401/1601/1701/1810 precedent). CI independently re-checked on
+    the real final PR #245 head, not taken on faith: this PR's head moved twice while under
+    review (0ef89a0 -> a6e2742, a tracking-doc-only commit recording the PR link, confirmed via
+    `git diff --stat` to touch only PROGRESS.md/QUEUE.md/docs/certifications/queue.md) -- waited
+    for and confirmed a fresh, real GitHub Actions run on the actual final head
+    a6e27422c082ef0c6f32ecf442e408842ecc63f2 (run 36016262466): all 29 jobs including `gate`
+    completed with conclusion=success, mergeable_state=clean. Pulled the `gate` job's own
+    step-level log text directly (`get_job_logs`, job id 107689464196): the step
+    "uv run python3 tests/tasks/test_ftf_1303.py" genuinely ran and printed "FTF-1303 Provider
+    token costing tests: all checks passed" in CI, not a self-reported claim. Merged PR #245,
+    merge commit f1e545745f7679ed19628d66ffc84955329a6f50. See docs/certifications/ledger.md for
+    the full ledger entry.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1303.py
 FTF-1304:

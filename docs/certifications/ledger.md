@@ -6771,3 +6771,112 @@ reasons given above.
   19/19 → 19/19 (unchanged — this task adds no live caller).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1303 — Provider token costing
+- Criterion ID: FTF-1303
+- PR: https://github.com/SJZLab/Sovra/pull/245 (`claude/wizardly-fermat-8lsly3`
+  → `main`, supersedes PR #240 `claude/wizardly-fermat-vwrwp6`, closed as
+  superseded). Merged by this review as merge commit
+  `f1e545745f7679ed19628d66ffc84955329a6f50`.
+- Merge commit (evidence): f1e545745f7679ed19628d66ffc84955329a6f50
+- Implementation commit: be9775f60ce248cd411cc22ccf82692415798c82
+  (byte-identical on both PR #240 and PR #245 — confirmed by the PR #245
+  author's own disclosure and independently by this review's own diff read)
+- Validated-by: session https://claude.ai/code/session_017qNX6TzAVGoA2bi9CXwvix
+  (Control-plane certifier shift, triggered by the `pull_request.opened`
+  webhook for PR #245), 2026-09-24
+- Date: 2026-09-24
+- **Session-ID check:** commits on PR #245 (and the PR #240 history it
+  carries forward) show `Claude-Session` trailers
+  `session_01CuuVLc7aGhNUrpFbQmrpVk` (producer, implementation),
+  `session_01TSZ3SyJvmLrNbuDqXVYRtE` (prior reviewer — found the PR #240
+  submission sound but blocked only by a tracking-doc merge conflict, left
+  PROVISIONAL, never certified it), and `session_017pYedfdGZ2ZUSt4PKRdqAn`
+  (merge-conflict resolution that produced PR #245) — none match this
+  reviewing session's own ID, independent per Law 4.
+- **Diff read directly:** `apps/api/app/services/provider_token_costing.py`
+  (262 lines) and `tests/tasks/test_ftf_1303.py` read in full — confirmed
+  byte-identical to PR #240's own diff (the only production-code PR this
+  task ever shipped); PR #245's own additional commits are a tracking-doc
+  merge-conflict resolution only (`git diff --stat` between the two heads
+  under review, `0ef89a0`→`a6e2742`, touched only
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`, no code). The
+  module implements `provider_call_cost(usage, rates)` -- Section 32's own
+  two named `input_tokens`/`output_tokens` terms always billed via
+  required rate fields, plus `cache_tokens`/`reasoning_tokens`/
+  `billable_requests` each an independent `(usage, rate)` pair that is
+  `None` when not applicable to a call, distinct from a declared `0`
+  (real, billable-but-zero). `_priced_category` is the one function
+  enforcing the negative_acceptance clause.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-1303 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Calculate billed input/output/cache/reasoning/request charges using
+  actual provider usage rules" — proven by the five-category golden
+  example, $23.50, covering all named categories at once; "Independent
+  review, exact merged commit, real relevant integration and negative-test
+  evidence recorded" — this review) and `negative_acceptance` ("Missing
+  usage/rate/unknown upstream cannot be replaced by invented or zero
+  dollar value" — proven below by this review's own fault injection, plus
+  the shipped suite's own three independent cache/reasoning/
+  billable_requests cases and the declared-zero-vs-`None` equivalence
+  case) are both genuinely met by real, independently-reproduced evidence,
+  not merely "tests pass". `dependencies` FTF-0210/FTF-1301 confirmed
+  already `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them;
+  `contract_owner` FTF-1301's closed `RATE_UNITS` vocabulary (read
+  directly in `apps/api/app/costs/cost_profile_schema.py`) confirmed to
+  have no `per_cache_token`/`per_reasoning_token`/per-request member,
+  supporting the module's own disclosed reason for taking an
+  already-declared `ProviderRateCard` rather than querying `CostProfile`
+  itself.
+- **Own local reproduction:** checked out the PR head locally and ran
+  `python3 tests/tasks/test_ftf_1303.py` directly — all 13 checks passed.
+- **Own fault injection (Law 1), distinct from the producer's own vector
+  (silent zero-fill) and from the FTF-04A06 reviewer precedent's own
+  vectors:** patched `_priced_category` in
+  `apps/api/app/services/provider_token_costing.py` so a missing rate
+  paired with real, nonzero, declared usage invents a fallback rate
+  (`Decimal("0.01")`) instead of raising — the "invented ... dollar value"
+  failure mode this task's own negative_acceptance names directly (as
+  opposed to the "zero dollar value" half other fault injections on this
+  task already covered). Ran the real suite against the faulted code: 4
+  genuine `FAIL [FTF-1303]` lines (the independent cache/reasoning/
+  billable_requests negative_acceptance tests, plus the dedicated
+  fault-injection test's own first assertion, which expects the real code
+  to still refuse). Reverted the production file byte-identical (`diff`
+  against the pre-fault copy empty) and re-ran the real suite immediately
+  after: all 13 checks passed again.
+- **`product_truth_check.py --fail-on-unwired` independently re-run:**
+  19/19 — confirmed legitimate by reading the script's own skip logic
+  directly: `proving_symbol` is deliberately empty for this task (a pure,
+  DB-free computation module with no live HTTP route or caller in this
+  repository yet, `api_contract`/`shared_lock_required` both pointing at
+  FTF-1301's own already-frozen contract slot), the same disclosed 0/0
+  precedent as FTF-1302/FTF-1401/FTF-1601/FTF-1701/FTF-1810 before their
+  own first live caller existed — an entry with no `proving_symbol` is
+  skipped entirely, never counted as a false 0/0 pass against a claimed
+  symbol.
+- **CI independently re-checked on the real final PR head, not taken on
+  faith:** this PR's head moved twice while under review this shift
+  (`0ef89a0` → `a6e2742`, confirmed via `git diff --stat` to be a
+  tracking-doc-only commit recording the PR #245 link, no code). Waited
+  for and confirmed a fresh, real GitHub Actions run on the actual final
+  head `a6e27422c082ef0c6f32ecf442e408842ecc63f2` (workflow run
+  `36016262466`): all 29 jobs including `gate` reported
+  `status: completed` / `conclusion: success`, `mergeable_state: clean` —
+  nothing pending, skipped, or stale. Pulled the `gate` job's own
+  step-level log text directly (`get_job_logs`, job id `107689464196`):
+  the step "Run uv run python3 tests/tasks/test_ftf_1303.py" genuinely
+  executed and printed "FTF-1303 Provider token costing tests: all checks
+  passed" in CI — real execution, not a self-reported claim.
+- No blocking defect found. Merged PR #245 (merge commit
+  `f1e545745f7679ed19628d66ffc84955329a6f50`) into `main`; PR #240 was
+  already closed as superseded by its own author session before this
+  review began. `docs/spec-matrix.yaml`'s FTF-1303 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit; `proving_symbol` stays `''`
+  (no live caller, confirmed legitimate above). `sync_certified_status()`
+  updated `spec/tasks.json` and `docs/implementation/TRACKER.json`.
+  Certified count moves 60/300 → 61/300. Product-true: 19/19 → 19/19
+  (unchanged — this task adds no live caller).
+
+**Conclusion:** Certified L2-CERTIFIED.
