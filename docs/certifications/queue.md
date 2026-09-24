@@ -13509,3 +13509,38 @@ sandbox does not have (disclosed by a prior shift, not claimed here).
   would apply regardless of CI's outcome.
 - **Validated-by:** session https://claude.ai/code/session_01MM33SzxPJuU62Z4SY45XKg
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-24 — Relay: FTF-04A06 (PR #238) Law 1 fix pushed in response to review
+Independent Control-plane certification review (PR #239) found the
+shipped `resolve_allowed_root` sound (a real `Path.parents` structural
+check, never a string-prefix comparison) but flagged a real Law 1 gap:
+`tests/tasks/test_ftf_04a06.py` had no test using a prefix-colliding
+sibling allowlist pair (e.g. `allowed` vs `allowed-evil`), so the
+module's own docstring-claimed "never a string-prefix comparison"
+guarantee and this task's own `negative_acceptance` ("path traversal",
+distinct from "symlink traversal") were asserted but never shown able to
+fail. The reviewer's own independent fault injection (a naive
+`str(...).startswith(...)` implementation) passed the delivered suite
+undetected, confirming the gap; the real shipped code already refused the
+concrete exploit correctly.
+
+Added `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`
+(commit `911ae78`). Independently reran the identical fault injection: the
+new test genuinely fails against the naive `startswith()` implementation
+and passes against the real, unmodified shipped code -- reverted
+byte-identical. No production code changed. `ruff`/`mypy` clean,
+`validate_spec.py --strict` clean, `product_truth_check.py`/`status.py`
+unchanged at 19/19 · 59/300. `docs/spec-matrix.yaml`'s FTF-04A06 notes
+updated to disclose this fix. Replied on PR #238's review comment naming
+the fix commit.
+
+## Next shift
+PR #238's fix (commit `911ae78`) was independently re-verified this same
+shift: CI re-ran green on the fixed head (`3fb3367`) after one re-run of a
+genuine, unrelated flake in FTF-R002's own already-certified
+`test_ftf_r002.py` (confirmed not caused by this PR's diff -- see this
+PR's own comment thread). PR #238 now needs a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
+record, now merged into `main`) is a separate PR this relay did not merge
+or edit.

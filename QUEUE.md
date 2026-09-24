@@ -1,4 +1,46 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (same relay shift, continued) — an independent
+  Control-plane certification review (PR #239, comment on PR #238) found
+  PR #238's shipped `resolve_allowed_root` sound but flagged a real Law 1
+  evidence gap: no test used a prefix-colliding sibling allowlist pair
+  (`allowed` vs `allowed-evil`), distinct from the already-covered
+  symlink-escape case. Added
+  `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`; own
+  fault injection (the reviewer's own naive `str.startswith()`
+  implementation) confirmed the new test genuinely fails against it and
+  passes against the real, unmodified shipped code -- reverted
+  byte-identical. No production code changed. Pushed as commit `911ae78`
+  on the same PR #238; replied on the review comment naming the fix. PR
+  #238 now needs a fresh CI run and a fresh independent Control-plane L2
+  review. Full record: `docs/certifications/queue.md`'s matching
+  follow-up entry, `PROGRESS.md`.
+
+## Previous shift
+Updated: 2026-09-24 (scheduled relay shift) — recomputed the
+  dependency-ready frontier fresh from `docs/spec-matrix.yaml` (39
+  `implementation_state: ABSENT` tasks with every dependency CERTIFIED,
+  excluding FTF-0212/FTF-0304 which remain other sessions' own open PR
+  work), picked **FTF-04A06** ("Local repository connector with root
+  allowlist/path protections") -- dependency-ready on FTF-04A01/FTF-04A07
+  (both CERTIFIED), needs no external network egress or live service this
+  relay sandbox lacks, and has a full Section 85 contract
+  (`docs/implementation/task-packets/FTF-04A06.md`). Implemented a real,
+  DB-free capture connector (`apps/api/app/target_connectors/
+  local_repository_connector.py`) with a disclosed scope boundary (does
+  not itself persist a `TargetSourceSnapshot` row or upload the
+  dirty-tree archive to real object storage -- a later, separately-scoped
+  caller's job, same precedent as FTF-04A07/`storage_semantics_client.py`).
+  `tests/tasks/test_ftf_04a06.py` builds real Git repositories with the
+  real `git` binary (no mocks); two own fault-injection vectors both
+  genuinely caught and reverted byte-identical. `ruff`/`mypy` clean;
+  `validate_spec.py --strict` clean; `product_truth_check.py` unchanged at
+  19/19 (no live caller yet, disclosed); `status.py` unchanged at 59/300
+  certified · 19 product-true. **No blocking defect found. Submitted
+  PROVISIONAL, not self-certified (Law 4)** -- opened as PR #238 against
+  `main`. Full record: `docs/certifications/queue.md`'s matching
+  2026-09-24 entry, `PROGRESS.md`. See "## Provisional" below.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #238) — independently reviewed
   FTF-04A06 (Local repository connector with root allowlist/path
@@ -3772,25 +3814,25 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-04A06 (PR #238, `claude/wizardly-fermat-azo96v`) — implementation
-sound (own independent re-run of both producer fault-injection vectors,
-symlink-escape and concurrent-drift, both genuinely caught), but
-**independently reviewed and NOT CERTIFIED 2026-09-24**: a real Law 1 gap
-— `tests/tasks/test_ftf_04a06.py` has no test case for a prefix-colliding
-allowlist pair (e.g. `allowed` vs `allowed-evil`), so the module's own
-docstring-claimed "never a string-prefix comparison" guarantee, and this
-task's own `negative_acceptance` clause naming "path traversal" (not just
-"symlink traversal"), are asserted but never shown able to fail. The
-shipped `resolve_allowed_root` itself is not vulnerable (confirmed by
-reverting the reviewer's own fault injection and re-testing the real
-code) — only the test evidence is missing. **Next relay shift:** add one
-test case constructing `base/allowed` and `base/allowed-evil` as sibling
-directories and asserting `resolve_allowed_root(evil, [allowed])` raises
-`PathAllowlistError`, shown able to fail first against a naive
-`str(...).startswith(...)` implementation before confirming it passes
-against the real one — same pattern this task's own existing symlink-
-escape test already follows. No other part of this PR needs rework. Full
-record: `docs/certifications/queue.md`'s 2026-09-24 FTF-04A06 entry.
+FTF-04A06 ("Local repository connector with root allowlist/path
+protections") -- submitted 2026-09-24 via PR #238 against `main`. Real,
+DB-free capture connector composing with the already-CERTIFIED
+FTF-04A01/FTF-04A07; disclosed scope boundary (does not itself persist a
+`TargetSourceSnapshot` row or upload the dirty-tree archive to real object
+storage -- a later, separately-scoped caller's job). Full submission
+record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
+`PROGRESS.md`. First review (PR #239, merged into `main`) was NOT
+CERTIFIED for a real Law 1 evidence gap (no prefix-colliding-sibling
+allowlist test); fixed in commit `911ae78` on the same PR #238 (see this
+file's own top status note and `docs/certifications/queue.md`'s matching
+follow-up entry) -- no production code changed. CI re-ran green on the
+fixed head (`3fb3367`) after one re-run of a genuine, unrelated flake in
+FTF-R002's own already-certified `test_ftf_r002.py`
+(`test_job_identity_rejects_tampered_token`, a timestamp-dependent
+same-character coincidence in that test's own tamper construction --
+confirmed not caused by this PR's diff). Needs a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work).
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit
