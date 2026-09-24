@@ -12916,17 +12916,29 @@ https://github.com/SJZLab/Sovra/pull/228 (title `[relay] FTF-0211: fix
 IPv6 gate-wiring CI failure blocking PR #226`). Full entry: `QUEUE.md`,
 `PROGRESS.md`.
 
+**CI outcome:** watched to completion via a live `subscribe_pr_activity`
+subscription (`check_suite.completed` events), not manual polling --
+covered both the merge commit's own CI run and the doc-follow-up
+commit's re-run (a docs-only push retriggers CI on this repo). Confirmed
+directly via `pull_request_read`'s `get_check_runs`/`get` methods on the
+PR's actual final head (`027c3fc`), not inferred from the webhook alone:
+**27/27 checks completed `success`**, `gate` included (the specific job
+this fix targeted -- completed clean in ~3m17s, no crash).
+`mergeable_state: clean` -- no merge conflict against `main`. This repo
+runs no separate "Claude Approvals" check, so CI-green plus no-conflict
+is the full bar; PR #228 meets it and is ready for review.
+
 ## Next shift
-PR #228 needs a fresh CI run watched to completion (in progress as this
-entry is written -- confirm the actual result rather than trusting this
-note) and, once genuinely green, an independent Control-plane L2 review
-(this session cannot certify its own work -- Law 4). FTF-0211's own
-module logic and test suite were already independently confirmed sound
-by the 2026-09-23 review above, so if CI is green the re-review should be
-a fast pass focused on: the real CI run on PR #228's actual head, whether
-PR #226 should be closed in favor of #228 (left as a Control-plane
-judgment call, disclosed above), and the branch-continuity resolution
-itself. `docs/spec-matrix.yaml` has no other PROVISIONAL entries at this
-shift's end. `FTF-0304` still has two open, unmerged candidate PRs
-(#194/#195) from other sessions -- leave those for their own producer
-sessions or a certifier, do not redo the work.
+PR #228 is genuinely green (27/27, confirmed on its real final head) and
+mergeable -- ready for an independent Control-plane L2 review (this
+session cannot certify its own work -- Law 4). FTF-0211's own module
+logic and test suite were already independently confirmed sound by the
+2026-09-23 review above, so re-review should be a fast pass focused on:
+re-confirming CI is still green on PR #228's actual current head at
+review time (don't trust this note alone -- a later push could change
+it), whether PR #226 should be closed in favor of #228 (left as a
+Control-plane judgment call, disclosed above), and the branch-continuity
+resolution itself. `docs/spec-matrix.yaml` has no other PROVISIONAL
+entries at this shift's end. `FTF-0304` still has two open, unmerged
+candidate PRs (#194/#195) from other sessions -- leave those for their
+own producer sessions or a certifier, do not redo the work.

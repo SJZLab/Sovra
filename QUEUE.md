@@ -3746,8 +3746,11 @@ shown able to fail first (Law 1) before being fixed. Full local re-run
 clean: `ruff`/`mypy`/`test_ftf_h006.py`/`test_ftf_0211.py`/`test_ftf_0210.py`/
 `test_ftf_0201.py`/`test_ftf_0204.py`/`validate_spec.py --strict`/
 `product_truth_check.py --fail-on-unwired` (17/17, unchanged, Law 2).
-Pushed as **PR #228**, watching CI to completion before this can be
-resubmitted with real green-CI evidence for re-review.
+Pushed as **PR #228** and watched to completion via a live
+`subscribe_pr_activity` subscription (not manual polling): **27/27
+checks completed `success`** on the PR's actual final head (`027c3fc`),
+`gate` included, `mergeable_state: clean`. PR #228 is now genuinely
+green and mergeable, ready for independent Control-plane L2 review.
 `docs/spec-matrix.yaml`'s FTF-0211 entry is left unchanged at
 `certification_state: PROVISIONAL` (a producer-role CI fix is not a
 certification, Law 4) — its own `notes` field now also carries this

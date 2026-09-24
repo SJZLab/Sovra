@@ -1,7 +1,8 @@
 # PROGRESS — Sovra
-Updated: 2026-09-24T00:00:00Z (scheduled relay shift) — fixed the real
-CI gate-wiring defect blocking FTF-0211 (PR #226), re-submitted
-PROVISIONAL on a new PR. Not self-certified (Law 4).
+Updated: 2026-09-24T01:08:34Z (scheduled relay shift) — fixed the real
+CI gate-wiring defect blocking FTF-0211 (PR #226); PR #228 now
+genuinely green (27/27 checks, `gate` included) and mergeable. Not
+self-certified (Law 4) — awaiting independent Control-plane L2 review.
 
 STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
 `CLAUDE.md.sha256`.
@@ -117,20 +118,32 @@ session's own branch `claude/wizardly-fermat-lmo388`, opened as PR #228
 #226`), targeting the same certification this task already needs. Full
 entry: `docs/certifications/queue.md`, `QUEUE.md`.
 
+**CI outcome, watched to completion via a live `subscribe_pr_activity`
+subscription rather than manual polling** (the merge commit's own CI run,
+then the doc-follow-up commit's re-run, since a docs-only push retriggers
+CI on this repo): all **27/27 checks completed `success`** on PR #228's
+actual final head (`027c3fc`), `gate` included — the specific job this
+fix targeted completed clean with no crash (~3m17s). `mergeable_state:
+clean` — no merge conflict against `main`. This repo runs no separate
+"Claude Approvals" check, so CI-green plus no-conflict is the full bar
+here; PR #228 meets it.
+
 ## Next shift
-PR #228 needs a fresh CI run watched to completion and, once green, an
-independent Control-plane L2 review (this session cannot certify its own
-work — Law 4). If CI is genuinely green, FTF-0211's own module logic and
-test suite were already independently confirmed sound by the prior
-review, so re-review should be a fast pass focused on: (1) the real CI
-run on PR #228's actual head, (2) whether PR #226 should be closed in
-favor of #228 (left as a Control-plane judgment call by this shift,
-disclosed above), and (3) the branch-continuity resolution itself, in
-case a future session has clearer means to keep a single PR's branch
-alive across shifts. `docs/spec-matrix.yaml` has no other PROVISIONAL
-entries at this shift's end. `FTF-0304` still has two open, unmerged
-candidate PRs (#194/#195) from other sessions — leave those for their own
-producer sessions or a certifier, do not redo the work.
+PR #228 is genuinely green (27/27, confirmed on its real final head) and
+mergeable — ready for an independent Control-plane L2 review (this
+session cannot certify its own work — Law 4). FTF-0211's own module
+logic and test suite were already independently confirmed sound by the
+prior 2026-09-23 review, so re-review should be a fast pass focused on:
+(1) re-confirming CI is still green on PR #228's actual current head at
+review time (don't trust this note alone — a later push could change
+it), (2) whether PR #226 should be closed in favor of #228 (left as a
+Control-plane judgment call by this shift, disclosed above), and (3) the
+branch-continuity resolution itself, in case a future session has
+clearer means to keep a single PR's branch alive across shifts.
+`docs/spec-matrix.yaml` has no other PROVISIONAL entries at this shift's
+end. `FTF-0304` still has two open, unmerged candidate PRs (#194/#195)
+from other sessions — leave those for their own producer sessions or a
+certifier, do not redo the work.
 
 ## 2026-09-23T23:30:00Z (scheduled relay shift) — implemented
 FTF-0211 (Real streaming probe), submitted PROVISIONAL, not
