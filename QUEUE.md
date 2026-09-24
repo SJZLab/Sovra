@@ -1,5 +1,38 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+  the `pull_request.opened` webhook for PR #238) — independently reviewed
+  FTF-04A06 (Local repository connector with root allowlist/path
+  protections). Session-ID check: all three of PR #238's commits carry
+  `session_0159tZvUhDCyk3rdhW7fMscf`, no match to this session's own ID
+  (`session_01MM33SzxPJuU62Z4SY45XKg`, Law 4). Contract pulled directly
+  via `tools/r1_handoff.py packet FTF-04A06` — its `negative_acceptance`
+  names "path traversal" explicitly, distinct from "symlink traversal".
+  Diff read directly — no scope creep. Own re-run of the delivered suite
+  on the PR's real head matched the producer's own claims (all checks
+  pass; ruff/mypy clean). **Own fault injection, independent of the
+  producer's own two claimed vectors:** patched `resolve_allowed_root`'s
+  real structural check to a naive string-prefix comparison — exactly the
+  bug class the module's own docstring names by name
+  (`/approved-evil` vs `/approved`) — and the delivered suite stayed
+  green throughout (`all checks passed`), because no test in
+  `tests/tasks/test_ftf_04a06.py` uses a prefix-colliding sibling pair.
+  Independently confirmed the concrete exploit directly: a real
+  `base/allowed-evil` root was wrongly accepted against an allowlist of
+  `[base/allowed]` under the patched module. Reverted byte-identical and
+  confirmed the real, unmodified shipped code correctly refuses the same
+  exploit (it already uses a real `.parents` structural check, not a
+  string comparison) — **the shipped code is sound; the delivered test
+  evidence for this specific, explicitly-claimed guarantee is not**, a
+  real Law 1 gap ("nothing proven until test shown able to fail"). **NOT
+  CERTIFIED solely because of this test-coverage gap** — `main` carries no
+  FTF-04A06 spec-matrix entry yet (PR #238 unmerged), so no downgrade is
+  needed. PR #238 left open, unmerged. Full record:
+  `docs/certifications/queue.md`'s matching 2026-09-24 FTF-04A06 entry.
+  Certified: unchanged at 59/300. Product-true: unchanged at 19/19. See
+  "## Provisional" below for what the next relay shift needs to fix.
+
+## Previous shift
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #228) — independently
   re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe). PR #228
   (superset of PR #226's diff plus a relay's IPv6 gate-wiring CI fix,
@@ -3739,7 +3772,25 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-04A06 (PR #238, `claude/wizardly-fermat-azo96v`) — implementation
+sound (own independent re-run of both producer fault-injection vectors,
+symlink-escape and concurrent-drift, both genuinely caught), but
+**independently reviewed and NOT CERTIFIED 2026-09-24**: a real Law 1 gap
+— `tests/tasks/test_ftf_04a06.py` has no test case for a prefix-colliding
+allowlist pair (e.g. `allowed` vs `allowed-evil`), so the module's own
+docstring-claimed "never a string-prefix comparison" guarantee, and this
+task's own `negative_acceptance` clause naming "path traversal" (not just
+"symlink traversal"), are asserted but never shown able to fail. The
+shipped `resolve_allowed_root` itself is not vulnerable (confirmed by
+reverting the reviewer's own fault injection and re-testing the real
+code) — only the test evidence is missing. **Next relay shift:** add one
+test case constructing `base/allowed` and `base/allowed-evil` as sibling
+directories and asserting `resolve_allowed_root(evil, [allowed])` raises
+`PathAllowlistError`, shown able to fail first against a naive
+`str(...).startswith(...)` implementation before confirming it passes
+against the real one — same pattern this task's own existing symlink-
+escape test already follows. No other part of this PR needs rework. Full
+record: `docs/certifications/queue.md`'s 2026-09-24 FTF-04A06 entry.
 
 FTF-R002 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #236 (merge commit
