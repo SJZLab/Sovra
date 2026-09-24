@@ -1,4 +1,140 @@
 # PROGRESS — Sovra
+Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
+submitted **FTF-0213** (Real structured-output probe) as PROVISIONAL.
+
+## 2026-09-24 — FTF-0213 — relay: implemented, submitted PROVISIONAL
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh at shift start (the checked-out branch was even with `origin/main`,
+so all three were already current — FTF-0211 CERTIFIED 56/300 via PR
+#230, `## Active`/`## Provisional` both empty). Recomputed the real
+dependency-ready frontier directly against `docs/spec-matrix.yaml` and
+`spec/tasks.json` (via `scripts.spec_verification.load_tasks`/
+`scripts.task_claim.load_certification_states`) rather than trusting the
+prior shift's own enumeration — 21 tasks ready. Checked open PRs first:
+FTF-0212 already has an open PR (#231, another session's own work — left
+untouched, not redone) and FTF-0304 already has two (#194/#195, per prior
+shift's own note — also left untouched). Picked **FTF-0213** (Real
+structured-output probe), the next ready, unclaimed item, lowest task
+number among the rest.
+
+Pulled the real DoD via `tools/r1_handoff.py packet FTF-0213 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance: "Exercise the model's
+advertised structured-output protocol and schema-validate actual
+response," negative_acceptance: "JSON-looking prose, unknown parameter
+rejection or coercion is not silently treated as strict schema support."
+Dependencies FTF-0201/FTF-0210 confirmed CERTIFIED in `docs/spec-matrix.yaml`
+before relying on them. Read `real_chat_probe.py` (FTF-0210) and
+`real_streaming_probe.py` (FTF-0211) in full first to reuse their
+established composition (`guarded_fetch`, OpenBao secret resolution, the
+`ChatProbeNotAuthorizedError`/`ChatUsage`/`RouteIdentityState` contracts)
+rather than duplicating them, same convention FTF-0211 itself already
+established for reusing FTF-0210's types.
+
+**Built:** `packages/litellm_client/real_structured_output_probe.py::probe_structured_output`
+(path refined from the task packet's own hyphenated
+`packages/litellm-client/` suggestion to this repository's real,
+already-CERTIFIED `packages/litellm_client/` directory, same refinement
+FTF-0210/FTF-0211 already recorded). Issues one real, bounded, synthetic
+`POST /v1/chat/completions` call with a strict OpenAI-compatible
+`response_format: {"type": "json_schema", "json_schema": {"strict": true,
+"schema": ...}}` request, then schema-validates the actual response
+content with `_validate_against_schema` — a small, purpose-built JSON
+Schema subset validator (`type`/`properties`/`required`/
+`additionalProperties`/`enum`), since this repository has no existing
+JSON Schema validation dependency and the probe's own schema is small and
+fixed. This task's own negative_acceptance is met by three distinct real
+states, never collapsed into a fabricated `PROBED`: `NOT_JSON` (content
+that fails to parse as JSON at all — "JSON-looking prose"),
+`UNSUPPORTED_PARAMETER` (a real gateway 400 rejecting `response_format`,
+with a dedicated test asserting the probe issues exactly one real request
+and never silently retries without structured mode — "unknown parameter
+rejection"), and `SCHEMA_VIOLATION` (real JSON that fails schema
+validation, including a numeric-looking string where an integer is
+required, since a Python `bool` is deliberately never accepted for
+`integer`/`number` and a numeric string is never coerced — "coercion").
+
+**Shown able to fail first (Law 1):** ran the suite directly against the
+initial implementation and got a real `TypeError`
+(`StructuredOutputProbeResult.__init__() missing 1 required positional
+argument: 'probed_at'`) — a genuine positional-argument arity bug in four
+of the dataclass construction call sites (each missing the `usage=None`
+field, shifting every argument after it by one position). Fixed by
+switching every construction site to explicit keyword arguments,
+eliminating the whole bug class; full suite then ran clean.
+
+**Own fault-injection evidence (Law 1), three distinct vectors**, each
+reverted byte-identical (`diff` confirmed) and the suite re-confirmed
+clean immediately after each: (1) removed the `approved_model_ids`
+authorization gate entirely — the authorization negative check genuinely
+failed for real; (2) changed the integer schema check to accept a
+numeric-looking string via `int()` coercion instead of a strict
+`isinstance` check — both dedicated coercion checks (the pure validator
+unit test and the live round trip) genuinely failed for real; (3) removed
+the `UNSUPPORTED_PARAMETER` branch from `_classify_rejection` entirely —
+both dedicated `response_format`-rejection checks genuinely failed for
+real.
+
+**Own verification, full run:** `uv sync --all-packages`; `uv run ruff
+check`/`ruff format --check` clean on both new files (one real `UP038`
+and two real `E501` findings fixed, not suppressed); `uv run mypy`
+clean on both new files (required switching `_parse_structured_content`'s
+return shape from an untyped `dict[str, object]` to a plain typed tuple
+to resolve real type errors — not a suppression; repo-wide `mypy .` shows
+only the pre-existing, unrelated `apps/api/alembic` `Module has no
+attribute` findings, confirmed present before this change too); `uv run
+python3 tests/tasks/test_ftf_0201.py`/`test_ftf_0210.py`/
+`test_ftf_0211.py` (this task's own CERTIFIED dependencies plus its
+closest sibling) re-run clean — no regression; `git fetch --unshallow
+origin` then `scripts/validate_spec.py --strict` clean;
+`scripts/product_truth_check.py --fail-on-unwired` — 17/17, legitimately
+unchanged (Law 2, this task deliberately has no live caller yet, same
+disclosed precedent FTF-0202/.../FTF-0211; `proving_symbol` left blank).
+`scripts/verify_task.py --task FTF-0213 --stage task` reports `BLOCKED`
+("no merged verification evidence yet") pre-merge — expected, same
+precedent every sibling FTF-020x PROVISIONAL submission already
+established (it only resolves merged evidence).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0213.py`) to
+`.github/workflows/ci.yml` in the same commit, per the disclosed
+FTF-0205/FTF-0206 watchdog finding on missing gate-wiring steps.
+`docs/spec-matrix.yaml`'s FTF-0213 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit (`3db8b84a9ddea64642e239126eb38d962dd77b33`).
+`spec/tasks.json`/`docs/implementation/TRACKER.json` left untouched —
+confirmed by git history that both are only ever written at
+certification time by Control plane, never by a producer at PROVISIONAL
+submission (checked every prior FTF-020x certification commit).
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** — pushed to
+`claude/wizardly-fermat-y3ozcu`, opened as PR
+https://github.com/SJZLab/Sovra/pull/232 (title `[relay] FTF-0213: Real
+structured-output probe`). Full entry: `docs/certifications/queue.md`.
+
+## 2026-09-24 — FTF-0213 — relay: PR #232 confirmed green, watched to completion
+Subscribed to PR #232's activity after opening it. A `check_suite.completed`
+webhook arrived; verified directly via `pull_request_read` rather than
+trusting the webhook alone: **27/27 checks completed `success`** on the
+PR's actual final head (`39c5feb886380b297296aa8ba3e793911a966a35`, no
+further pushes since submission), `gate` included (completed clean in
+2m50s). `mergeable_state: clean` — no merge conflict against `main`. No
+open review comments or reviews (`get_comments`/`get_reviews` both
+empty). This repo runs no separate "Claude Approvals" check, so
+CI-green plus no-conflict is the full bar; PR #232 meets it.
+
+## Next shift
+PR #232 is genuinely green (27/27, confirmed on its real final head) and
+mergeable — ready for an independent Control-plane L2 review (this
+session cannot certify its own work — Law 4). `docs/spec-matrix.yaml` has
+one PROVISIONAL entry (`FTF-0213`) at this shift's end. Recomputing the
+dependency-ready frontier fresh at this shift's end (do not trust this
+note alone) still shows the same 20 other ready-but-unclaimed items this
+shift found minus FTF-0213 itself — re-derive from `docs/spec-matrix.yaml`
+directly, since a certification landing after this shift ends could
+unlock further items (FTF-0212's own dependents, for instance, once
+PR #231 lands). FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are other
+sessions' own open work — leave those alone, do not redo them.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered
 by the `pull_request.opened` webhook for PR #228) — independently
 re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe).
