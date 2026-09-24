@@ -6215,3 +6215,149 @@ reasons given above.
   Product-true: unchanged at 17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0211 — Real streaming probe
+- Criterion ID: FTF-0211
+- PR: https://github.com/SJZLab/Sovra/pull/226 (`claude/wizardly-fermat-pvnd0o`
+  → `main`) — original implementation and PROVISIONAL submission; left
+  open, unmerged (superseded, see below). Real merged evidence is PR
+  https://github.com/SJZLab/Sovra/pull/228 (`claude/wizardly-fermat-lmo388`
+  → `main`) — the relay's CI-fix follow-up, already merged by the repo
+  owner (`samerzakaria`) before this review began.
+- Merge commit (evidence): 423eb560ac7a7a5c088c33f30eda916bbff2ec77
+  (`Merge pull request #228 from SJZLab/claude/wizardly-fermat-lmo388`,
+  two clean parents: main's prior tip `9a65c25db1f6a30320f1184f0f23abe00cbe3558`
+  and PR #228's real head `e0918796e7060342f8e32e92e7731796861d13d9` — no
+  merge conflict, main's current tree is byte-identical to that head)
+- Implementation commit: 1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54
+- Validated-by: session https://claude.ai/code/session_01J1C7FL3yUtjXHKBY2PVjh7
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #229, a docs-only follow-up PR from the same producer branch —
+  see queue.md/PROGRESS.md for why this webhook, not PR #228's own, is
+  what triggered this review; PR #228 itself was already merged by the
+  time this shift started)
+- Date: 2026-09-24
+- **Session-ID check:** this session's own designated branch is
+  `claude/sleepy-pasteur-394ufe`. PR #226's implementation/submission
+  commits carry `Claude-Session: .../session_013qR8o5xkLqEQ2WQwpYyora`;
+  PR #228's own commits (the real fix and its tracking-doc updates) carry
+  no `Claude-Session` trailer at all — disclosed here as a minor process
+  gap in that producer shift, not a blocker, since independence is
+  established by branch identity regardless (neither producer branch is
+  this session's own, and this session authored none of the commits under
+  review). No match — independent per Law 4.
+- **Diff read directly** against the real merged tree
+  (`git diff 1d23dd3^ 423eb56`): new module
+  `packages/litellm_client/real_streaming_probe.py` (`probe_stream_chat`,
+  consuming a real SSE stream and reconstructing text/tool-call
+  deltas/usage/termination, with the authorization gate reused verbatim
+  from FTF-0210 and a new bounded `_PROBE_MAX_STREAM_CHUNKS` read
+  ceiling); `packages/security/outbound_guard.py` gained a purely
+  additive `guarded_stream_fetch`/`GuardedStreamResponse` export plus a
+  no-behavior-change extraction of `guarded_fetch`'s own connection-pinning
+  logic into `_prepare_pinned_connection` (existing `guarded_fetch`
+  behavior, signature and redirect handling unchanged; the one cosmetic
+  drop — the wrapped error message losing `(pinned_ip:port)` — is not
+  asserted by any existing test); `tests/tasks/test_ftf_0211.py` (new, 19
+  test functions); `tests/tasks/test_ftf_h006.py` gained new coverage for
+  the additive surface plus the IPv6 gate-wiring fix
+  (`_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
+  `address_family = socket.AF_INET6`, fixing the real
+  `ThreadingHTTPServer`/`_detect_ipv6_support` address-family mismatch
+  that crashed the real GitHub Actions runner on PR #226); `.github/workflows/ci.yml`
+  gained the new `FTF-0211` gate step plus the previously-unwired
+  `FTF-0211` and `FTF-H006` steps. No scope creep beyond FTF-0211's own
+  contract plus the disclosed FTF-H006 gate-wiring-gap fix.
+- **CI re-checked on the real head, not taken on faith:** PR #228's actual
+  head `e091879` shows **27/27 checks `completed`/`success`**, `gate`
+  included (job id 107450854572, run 35941721974) — fetched directly via
+  `pull_request_read`'s `get_check_runs`, not inferred from a webhook or
+  from the producer's own self-reported note. `mergeable_state: clean`;
+  `merged: true`, `merged_by: samerzakaria`, `merged_at: 2026-09-24T01:18:09Z`.
+  The merge commit's own parents (`git log --format=%P 423eb56`) confirm a
+  clean two-parent merge with no conflict resolution, so this real,
+  green CI run is genuinely representative of the exact code now on
+  `main` — the specific gap the 2026-09-23 NOT-CERTIFIED review on PR
+  #226 identified (real CI never reaching `test_ftf_0211.py` at all) is
+  closed.
+- **Own independent verification, this sandbox, after the fact:** `uv
+  sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0211.py` —
+  "all checks passed" (this sandbox has real passwordless
+  `sudo`/`openssl`/`update-ca-certificates`, so the real local-TLS-gateway
+  round trips, including `test_probe_closes_the_real_connection_on_every_return_path`
+  and `test_gateway_retry_never_happens_silently_inside_the_probe`,
+  genuinely ran rather than hitting the disclosed skip path); `uv run
+  python3 tests/tasks/test_ftf_h006.py` — "all checks passed" (IPv6
+  `::1` sub-check still disclosed-skipped, this sandbox has no IPv6
+  stack — unrelated to the address-family fix, which is a pure,
+  always-run check); `uv run ruff check .` / `ruff format --check .` —
+  clean; `uv run mypy .` — clean, 208 source files; `git fetch
+  --unshallow origin` then `python3 scripts/validate_spec.py --strict` —
+  clean; `python3 scripts/product_truth_check.py --fail-on-unwired` —
+  own run, **17/17**, legitimately unchanged (`proving_symbol` confirmed
+  blank in `docs/spec-matrix.yaml` — no live caller yet, same disclosed
+  precedent already accepted for FTF-0202/FTF-0205/FTF-0207/.../FTF-0210).
+  `python3 scripts/verify_task.py --task FTF-0211 --stage task` reports
+  `BLOCKED` ("no merged verification evidence yet") — confirmed this is a
+  pre-existing, repo-wide `spec/verification-map.json` gap (only 32/300
+  tasks have an entry at all) shared identically by already-`CERTIFIED`
+  sibling tasks run the same way in this same sandbox (`FTF-0210`,
+  `FTF-0207` both report the identical `BLOCKED` reason), not a defect
+  specific to this task, so not treated as a blocker here.
+- **Own fault injection, three vectors, independent of the producer's own
+  claimed evidence, each reverted byte-identical (`diff` confirmed) and
+  the relevant suite re-run clean immediately after:**
+  1. Reverted `_ThreadingHTTPServerV6.address_family` from `AF_INET6`
+     back to the old bare-class default (`AF_INET`) — the new regression
+     check (`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`)
+     genuinely failed for real.
+  2. Removed the `if model_id not in approved_model_ids: raise
+     ChatProbeNotAuthorizedError(...)` gate from `probe_stream_chat`
+     entirely — the authorization negative check genuinely failed for
+     real.
+  3. Neutralized the `if not saw_done: return TRUNCATED_STREAM` check
+     (`if False:`) — the negative_acceptance-mapped truncated-stream
+     check genuinely failed for real, proving a truncated stream would
+     otherwise be fabricated into `PROBED`.
+- `python3 tools/r1_handoff.py packet FTF-0211 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("Consume actual SSE stream, reconstruct text/tool deltas and account
+  usage/termination") confirmed met by direct reading of
+  `probe_stream_chat`/`_iter_sse_events`/`_accumulate_tool_calls` and
+  their dedicated tests, matching the sound-module finding the
+  2026-09-23 review on PR #226 already reached. Acceptance clause 2
+  ("Independent review, exact merged commit, real relevant integration
+  and negative-test evidence recorded") — the one clause that review
+  could not confirm, precisely because of the then-failing `gate` job —
+  is met by this review itself, now that real CI is confirmed green on
+  the exact commit merged into `main`. negative_acceptance
+  ("Malformed/truncated streams, client cancellation and gateway retry
+  do not leak connection resources or double-bill silently") confirmed
+  both by direct reading (every return path closes the real connection
+  through `GuardedStreamResponse`'s context manager exactly once; the
+  module contains no retry loop anywhere) and by
+  `test_probe_closes_the_real_connection_on_every_return_path` /
+  `test_gateway_retry_never_happens_silently_inside_the_probe`, both
+  genuinely exercised in this sandbox (see above). Dependencies
+  FTF-0201/FTF-0210 confirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- **Disclosed, not this task's own blocker:** PR #226's closing comment
+  stated "FTF-0211 is now certified via that PR" after PR #228 merged,
+  before any genuine independent review of the merged code had actually
+  happened — already caught and logged by the producer shift itself in
+  `docs/certifications/watchdog-findings.md`'s 2026-09-24 entry. This
+  review is the actual, genuine independent certification that entry
+  said was still outstanding; it does not re-litigate the finding
+  itself, which stays in the watchdog log as the record of the earlier
+  overstated claim.
+- No blocking defect found. PR #228 already merged (by the repo owner,
+  not by this review). `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the real merge commit
+  `423eb560ac7a7a5c088c33f30eda916bbff2ec77`. `proving_symbol` stays
+  blank (no live caller yet, disclosed — same precedent as every sibling
+  FTF-020x task certified so far). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0211']` updated.
+  Product-true: unchanged at 17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.

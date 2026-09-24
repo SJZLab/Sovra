@@ -1,4 +1,124 @@
 # PROGRESS — Sovra
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+the `pull_request.opened` webhook for PR #229 — a docs-only follow-up on
+the same producer branch as PR #228, already merged by the time this
+shift started) — independently reviewed and **CERTIFIED FTF-0211** (Real
+streaming probe).
+
+This shift's own mandate: check `docs/certifications/queue.md` for
+anything PROVISIONAL and not yet certified. Found FTF-0211 as the sole
+pending item — its code is on `main` via PR #228's merge commit `423eb56`
+(merged directly by the repo owner, `samerzakaria`, before this shift
+started), still `certification_state: PROVISIONAL` per the prior relay
+shift's own disclosed record below.
+
+**Session-ID / independence check:** this session's own designated
+branch is `claude/sleepy-pasteur-394ufe`. Neither PR #226's own branch
+(`claude/wizardly-fermat-pvnd0o`) nor PR #228's (`claude/wizardly-fermat-lmo388`)
+is this session's — this session authored none of the commits under
+review. PR #226's implementation/submission commits carry
+`Claude-Session: .../session_013qR8o5xkLqEQ2WQwpYyora`; PR #228's own
+commits carry no `Claude-Session` trailer at all — disclosed here as a
+minor process gap in that producer shift, not a certification blocker,
+since branch identity alone already establishes independence. No match —
+independent per Law 4.
+
+**Diff re-read directly** against the real merged tree
+(`git diff 1d23dd3^ 423eb56`): the FTF-0211 module
+(`real_streaming_probe.py`), the additive `guarded_stream_fetch`/
+`GuardedStreamResponse` export plus the no-behavior-change
+`_prepare_pinned_connection` extraction in `outbound_guard.py`,
+`test_ftf_0211.py`, the IPv6 gate-wiring fix and its new pure regression
+check in `test_ftf_h006.py`, and the two new `ci.yml` gate steps — no
+scope creep beyond FTF-0211's own contract plus the disclosed FTF-H006
+gate-wiring-gap fix, matching what the 2026-09-23 review already found
+sound.
+
+**CI re-checked on the real merged head, not taken on faith:** fetched
+PR #228 directly — its actual head `e0918796e7060342f8e32e92e7731796861d13d9`
+shows **27/27 checks `completed`/`success`**, `gate` included (job
+107450854572, run 35941721974). The merge commit `423eb56`'s own parents
+(`git log --format=%P`) confirm a clean two-parent merge of that exact
+head onto `main`'s prior tip `9a65c25` — no conflict, so `main`'s current
+tree is byte-identical to what that real, green CI run actually tested.
+This closes the exact gap the 2026-09-23 review found (the `gate` job had
+crashed on `test_ftf_h006.py`'s IPv6 defect before `test_ftf_0211.py`
+itself ever ran in CI on PR #226).
+
+**Own independent verification, this sandbox:** `uv sync --all-packages`;
+`uv run python3 tests/tasks/test_ftf_0211.py` and `test_ftf_h006.py` both
+"all checks passed" — this sandbox has real passwordless
+`sudo`/`openssl`/`update-ca-certificates`, so the real local-TLS-gateway
+round trips (including `test_probe_closes_the_real_connection_on_every_return_path`
+and `test_gateway_retry_never_happens_silently_inside_the_probe`)
+genuinely ran, not the disclosed skip path. `ruff check`/`ruff format
+--check` clean; `mypy` clean (208 source files); `git fetch --unshallow
+origin` then `validate_spec.py --strict` clean; `product_truth_check.py
+--fail-on-unwired` — 17/17, legitimately unchanged (`proving_symbol`
+confirmed blank, same disclosed "no live caller" precedent as every
+sibling FTF-020x task). `scripts/verify_task.py --task FTF-0211 --stage
+task` reports `BLOCKED` ("no merged verification evidence yet") —
+confirmed this is a pre-existing, repo-wide `spec/verification-map.json`
+gap shared identically by already-`CERTIFIED` sibling tasks run the same
+way in this same sandbox (`FTF-0210`, `FTF-0207`), not a defect specific
+to this task.
+
+**Own fault injection, three vectors, each reverted byte-identical
+(`diff` confirmed) and the relevant suite re-run clean immediately
+after:** (1) reverted `_ThreadingHTTPServerV6.address_family` from
+`AF_INET6` back to the old bare-class `AF_INET` default — the new
+regression check genuinely failed for real; (2) removed the
+`approved_model_ids` authorization gate from `probe_stream_chat` entirely
+— the authorization negative check genuinely failed for real; (3)
+neutralized the `if not saw_done:` truncated-stream guard (`if False:`)
+— the negative_acceptance-mapped check genuinely failed for real.
+
+`tools/r1_handoff.py packet FTF-0211 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+pulled directly: acceptance clause 1 (SSE reconstruction) confirmed met
+by direct reading, matching the 2026-09-23 review's own sound-module
+finding. Acceptance clause 2 ("Independent review, exact merged commit,
+real relevant integration and negative-test evidence recorded") — the
+one clause that review could not confirm, precisely because of the
+then-failing `gate` job — is met by this review itself, now that real CI
+is confirmed green on the exact commit merged into `main`.
+negative_acceptance (no resource leak/double-bill) confirmed both by
+direct reading (every return path closes the real connection through
+`GuardedStreamResponse`'s context manager exactly once; no retry loop
+anywhere) and by the two dedicated tests, genuinely exercised in this
+sandbox. Dependencies FTF-0201/FTF-0210 confirmed genuinely `CERTIFIED`.
+
+**Disclosed, not this task's own blocker:** PR #226's closing comment
+had stated "FTF-0211 is now certified via that PR" before any genuine
+independent review of the merged code had actually happened — already
+caught and logged by the producer shift itself in
+`docs/certifications/watchdog-findings.md`'s 2026-09-24 entry (see the
+prior shift's own entry below for the full record). This review is the
+actual, genuine independent certification that entry said was still
+outstanding.
+
+**No blocking defect found.** PR #228 was already merged (by the repo
+owner, not by this review). `docs/spec-matrix.yaml` set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the real merge commit
+`423eb560ac7a7a5c088c33f30eda916bbff2ec77`. `proving_symbol` stays blank
+(no live caller yet, disclosed). Ran `scripts.task_claim.sync_certified_status()`
+— `['FTF-0211']` updated. `scripts/status.py`: `55/300` certified before,
+`56/300` after. Product-true: unchanged at 17/17. Appended
+`docs/certifications/ledger.md`; `QUEUE.md` moved FTF-0211 from
+"## Provisional" to "## Done".
+
+## Next shift
+`docs/spec-matrix.yaml` has no `certification_state: PROVISIONAL` entries
+left as of this shift's end (confirmed: `grep -n "^  certification_state:
+PROVISIONAL"` returns nothing) — nothing pending for the next certifier
+shift. `FTF-0304` still has two open, unmerged candidate PRs (#194/#195)
+from other sessions — leave those for their own producer sessions or a
+certifier, do not redo the work. PR #226 is left open, unmerged
+(superseded by #228, per the prior relay shift's own disclosure) —
+whether to close it stays a Control-plane judgment call, not exercised
+by this shift since it is not a certification action.
+
+## Previous shift
 Updated: 2026-09-24T01:18:19Z (scheduled relay shift) — PR #228 merged
 into `main` (merge commit `423eb56`) by another session while this shift
 was still watching it; FTF-0211 remains `certification_state:
