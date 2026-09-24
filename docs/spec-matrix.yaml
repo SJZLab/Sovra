@@ -2486,10 +2486,10 @@ FTF-04A06:
   proving_symbol: ''
   proving_test: ''
 FTF-04A07:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: TargetSourceSnapshot schema + immutable provenance
-  evidence_hash: 5b34723e2be2ba243927962c7b4c1a269b370c62
+  evidence_hash: e0e17920b9df2fae57fb635c1549a244183af106
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01
@@ -2502,9 +2502,27 @@ FTF-04A07:
     stronger discipline FTF-1001's own model_versions migration already established). Also adds
     a purely-additive UNIQUE (organization_id, id) constraint onto the already-CERTIFIED
     target_application_connections table (trivially true; cannot invalidate FTF-04A01's own
-    certified evidence). PROVISIONAL submitted via PR (not yet opened as of this commit -- see
-    docs/certifications/queue.md/QUEUE.md/PROGRESS.md for the real PR link once pushed).
-  proof_state: L1-PROVEN
+    certified evidence).
+    Control plane CERTIFY review (2026-09-24, session_01GcVXDuiPV5A82LTGNSh5Mu):
+    session-ID check clear against every PR #234 commit (all carry
+    session_01JCgZ323QmB1GH3gjt8tePc, not this session -- Law 4 satisfied). Diff read directly.
+    CI independently confirmed on the PR's actual final head (019e538e): 28/28 checks
+    `completed`/`success`, `gate` and the dedicated `target-source-snapshot-integration` job
+    included; `mergeable_state: clean`; no open reviews/comments. Own fault injection against a
+    real local Postgres 16 server (not the producer's report alone): removed the CRUD-layer
+    cross-connection reassignment guard in `target_source_snapshot_crud.py` -- 3 checks genuinely
+    failed for real; reverted byte-identical, suite re-ran clean. Independently confirmed the
+    `sovra_app` grant via `\dp` is `ar` (SELECT+INSERT only, no UPDATE/DELETE). Independently
+    reproduced the `ck_target_source_snapshots_dirty_requires_archive` CHECK constraint failing
+    at raw SQL as postgres superuser, bypassing the app layer entirely. Full migration chain
+    (0001-0012) round-tripped upgrade->downgrade->upgrade clean. `product_truth_check.py
+    --fail-on-unwired`: 18/18, confirmed legitimate (not 0/0) -- `build_target_source_snapshot_router`
+    is a real non-test caller in `apps/api/app/main.py`. Pulled the real contract via
+    `tools/r1_handoff.py packet FTF-04A07`: acceptance (provenance/source identity/status/
+    superseded relationship) and negative_acceptance (cannot be mutated or reassigned) both
+    genuinely met, not merely "tests pass". No blocking defect found. Merged PR #234 (merge
+    commit e0e17920b9df2fae57fb635c1549a244183af106) into `main`.
+  proof_state: L2-CERTIFIED
   proving_symbol: build_target_source_snapshot_router
   proving_test: tests/tasks/test_ftf_04a07.py
 FTF-04A08:

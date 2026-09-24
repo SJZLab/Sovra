@@ -3739,20 +3739,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-- FTF-04A07 (TargetSourceSnapshot schema + immutable provenance),
-  implemented 2026-09-24, PR against `main` from branch
-  `claude/wizardly-fermat-i9vw6i` (title `[relay] FTF-04A07:
-  TargetSourceSnapshot schema + immutable provenance`), implementation
-  commit `5b34723e2be2ba243927962c7b4c1a269b370c62`. Real local Postgres
-  16 evidence produced directly in this sandbox (full migration chain
-  `upgrade head`/`downgrade -1`/`upgrade head` round-trip, both no-DB and
-  live-Postgres suites clean, two real fault injections each caught and
-  reverted byte-identical); CI wiring added (gate step +
-  `target-source-snapshot-integration` job) but not yet watched to a real
-  GitHub Actions run from this shift. Awaiting: (1) a real CI run on the
-  actual pushed head, (2) independent Control-plane L2 review (Law 4 --
-  this session cannot self-certify). Full entry: `PROGRESS.md`,
-  `docs/certifications/queue.md`.
+None currently.
+
+FTF-04A07 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** via PR #234 (merge commit
+`e0e17920b9df2fae57fb635c1549a244183af106`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full evidence.
 
 FTF-0213 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #232 (merge commit
@@ -5700,6 +5693,33 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `sync_certified_status()`. `scripts/status.py`: `56/300` certified
   before, `57/300` after. Product-true unchanged at 17. Full entry:
   docs/certifications/ledger.md.
+- FTF-04A07 — TargetSourceSnapshot schema + immutable provenance.
+  Independently reviewed and **CERTIFIED 2026-09-24**, merge commit
+  `e0e17920b9df2fae57fb635c1549a244183af106` (PR #234). Session-ID check
+  clean (all three PR commits carry the producer's own session
+  `session_01JCgZ323QmB1GH3gjt8tePc`, no match to this reviewing session
+  `session_01GcVXDuiPV5A82LTGNSh5Mu` — Law 4). Diff read in full (21
+  files). CI watched to completion via a live `subscribe_pr_activity`
+  subscription and independently confirmed on the PR's real final head
+  (`019e538e`): 28/28 checks green, `gate` and the dedicated
+  `target-source-snapshot-integration` job included, `mergeable_state:
+  clean`. Own fresh run of both the no-DB and live-Postgres-16 suites
+  clean. Own two fault injections, independent of the producer's own:
+  (1) removed the CRUD-layer cross-connection reassignment guard — 3
+  live checks genuinely failed for real, reverted byte-identical; (2)
+  reproduced the `dirty_requires_archive` CHECK constraint failing at
+  raw SQL as the Postgres superuser, bypassing the app layer entirely.
+  Independently confirmed the SELECT/INSERT-only grant via `\dp`
+  (`sovra_app=ar` — no UPDATE/DELETE). Full migration chain
+  (`upgrade head`/`downgrade -1`/`upgrade head`) independently
+  round-tripped clean. `ruff`/`mypy` clean; `product_truth_check.py`
+  confirmed legitimately `18/18` (`build_target_source_snapshot_router`
+  is a real, confirmed live caller in `apps/api/app/main.py`, not a 0/0
+  pass). Both acceptance and negative_acceptance clauses reconfirmed
+  against the real DoD via `tools/r1_handoff.py packet FTF-04A07`.
+  Merged PR #234. Ran `sync_certified_status()`. `scripts/status.py`:
+  `57/300` certified before, `58/300` after. Product-true: `17/17` →
+  `18/18`. Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and
