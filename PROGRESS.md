@@ -16952,3 +16952,73 @@ reconciliation) and #243/#241 (FTF-04A06) remain open, awaiting Control-plane at
 FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret
 backend) remain outside this relay sandbox's practical reach. Recompute the dependency-ready
 frontier fresh from `docs/spec-matrix.yaml` before picking a next relay item.
+
+## 2026-09-24 — Control plane: FTF-1304 (PR #249, flagged by PR #250) independently reviewed, CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+#250 (`claude/ftf-1304-flag-certification`, a tracking-docs-only PR flagging that FTF-1304's
+already-merged code still needed independent certification, since the closed PR #249 could not
+refire the certifier webhook itself). Checked `docs/certifications/queue.md` for every item
+PROVISIONAL and not yet certified per this session's standing duty — FTF-1304 was the only
+pending item.
+
+**Session-ID check:** PR #249's implementation commits and PR #250's flag commits both carry
+`Claude-Session` trailer `session_017Uiok74naZssjNvuuhXncs` — does not match this reviewing
+session's own ID (`session_011utAQqfER8WMCgtd9Zvm4j`), independent per Law 4.
+
+**Re-ran the CERTIFY procedure in a fresh git worktree at `origin/main`** (merge commit
+`4b432a44d4d6ef511796bce5f30faec4d948b831`, PR #249's own merge — CI-green 29/29 including
+`gate` on the real pre-merge head `f7dd5d3bd1a0cad69bc0d6686b09d25dcd9f6d02`, then merged directly
+by the repo owner, which per Law 4 does not itself certify):
+- Read `apps/api/app/services/cost_per_success_calculator.py` (270 lines) and
+  `tests/tasks/test_ftf_1304.py` (382 lines, 20 checks) in full. Confirms `AttemptCost` (the
+  per-attempt accounting unit) and `cost_per_success`/`amortized_cost_per_success` compose
+  already-CERTIFIED FTF-1302's `window_total_cost`/FTF-1303's `provider_call_cost` into Section
+  32's own named formulas, per `contract_owner: FTF-1301`, never re-deriving a price from raw
+  usage itself.
+- `CLAUDE.md` integrity verified (`sha256sum` matches `CLAUDE.md.sha256`).
+- Own local reproduction: `python3 tests/tasks/test_ftf_1304.py` — all 20 checks passed.
+- **Own fault injection (Law 1):** patched `AttemptCost.total_cost()` to drop `pending_cost` from
+  the sum — exactly the "silently drop a declared charge to reach a cheaper figure" failure mode
+  this task's own negative_acceptance forbids. 2 genuine `FAIL [FTF-1304]` lines (the golden-example
+  total assertion plus the dedicated fault-injection test's own first assertion). Reverted
+  byte-identical (`diff` confirmed empty); suite re-confirmed clean immediately after.
+- `product_truth_check.py --fail-on-unwired`: `19/19` unchanged. Read `scripts/product_truth_check.py`'s
+  own logic directly — an entry with no `proving_symbol` is skipped entirely (`if not sym:
+  continue`), never counted as a false 0/0 pass. FTF-1304's `proving_symbol` is deliberately empty
+  (disclosed, no live HTTP caller yet), same accepted precedent as FTF-1302/FTF-1303/FTF-1401/
+  FTF-1601/FTF-1701/FTF-1810.
+- `python3 tools/r1_handoff.py packet FTF-1304 --plan FINE_TUNING_FACTORY_RELEASE_1.md`:
+  `acceptance` ("Total costs across all attempts divided by independently successful tasks, plus
+  optional training amortization" — proven by the five-attempt golden example $38/4=$9.50 and the
+  amortization golden example $12.00) and `negative_acceptance` ("Zero successes, pending charges
+  and unobserved fallback use cannot yield misleading cheap passing metric" — enforced by
+  construction, proven above) both genuinely met. Dependencies FTF-1301/FTF-1302/FTF-1303
+  confirmed already `CERTIFIED` in `docs/spec-matrix.yaml`.
+- **CI independently re-checked, not taken on faith:** `get_check_runs` on commit `f7dd5d3`
+  (real pre-merge PR #249 head) — 29/29 `success`, `gate` included. Pulled the `gate` job's own
+  step-level log text directly (`get_job_logs`, job id `107739065356`): the step "Run uv run
+  python3 tests/tasks/test_ftf_1304.py" genuinely executed and printed "FTF-1304 Cost-per-success
+  calculator tests: all checks passed" — real execution, not a self-reported claim.
+- `validate_spec.py --strict` clean after `git fetch --unshallow` cleared this worktree's own
+  pre-existing shallow-clone artifact (32 `stale_commit` warnings before, 0 after — none of them
+  named FTF-1304 either way).
+
+**No blocking defect found.** Merge already done (PR #249's merge commit `4b432a44`, owner-
+performed, PROVISIONAL per Law 4 until this review). `docs/spec-matrix.yaml`'s FTF-1304 entry set
+to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (confirmed legitimate above). Ran
+`scripts.task_claim.sync_certified_status()` — `spec/tasks.json`/`docs/implementation/TRACKER.json`
+updated for `['FTF-1304']`. `scripts/status.py`: `61/300` → `62/300` certified; product-true
+unchanged at `19/19` (no live caller added by this certification). Appended a matching entry to
+`docs/certifications/ledger.md` ("FTF-1304 — Cost-per-success calculator"); updated `QUEUE.md`
+(moved FTF-1304 out of "## Provisional" into "## Done") and `docs/certifications/queue.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_011utAQqfER8WMCgtd9Zvm4j (independent
+  — see session-ID check above), 2026-09-24.
+
+## Next shift
+FTF-1304 is CERTIFIED. `docs/certifications/queue.md` has no other pending PROVISIONAL items as
+of this review. PRs #246 (FTF-1303 tracking-doc reconciliation) and #243/#241 (FTF-04A06
+owner-direct-merge certification) remain open and are Control-plane's to review, not relay's.
+This was a certifier-only shift (per its standing duty) — no relay task work, no design
+decisions, and no queue reprioritization beyond what this certification naturally required.

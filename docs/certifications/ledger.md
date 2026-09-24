@@ -6880,3 +6880,100 @@ reasons given above.
   (unchanged — this task adds no live caller).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1304 — Cost-per-success calculator
+- Criterion ID: FTF-1304
+- PR: https://github.com/SJZLab/Sovra/pull/249 (`claude/wizardly-fermat-fkyn9x`
+  → `main`), CI-green (29/29, `gate` included) on head
+  `f7dd5d3bd1a0cad69bc0d6686b09d25dcd9f6d02`, then merged directly by the
+  repo owner (`merged_by: samerzakaria`, merge commit
+  `4b432a44d4d6ef511796bce5f30faec4d948b831`; that commit's own title reads
+  "Control plane: certify FTF-1304" but `merged_by` confirms this was an
+  owner merge, not an independent Control-plane certifier session — per
+  Law 4 a plain merge, whoever performs it, never certifies). PR #250
+  (`claude/ftf-1304-flag-certification`, tracking-docs only) flagged this
+  gap explicitly since the closed PR #249 could no longer trigger a fresh
+  certifier webhook.
+- Merge commit (evidence): 4b432a44d4d6ef511796bce5f30faec4d948b831
+- Implementation commit: 0e0390aa5c7a75be1bd04c805733dacd4f2350b6
+- Validated-by: session https://claude.ai/code/session_011utAQqfER8WMCgtd9Zvm4j
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #250), 2026-09-24
+- Date: 2026-09-24
+- **Session-ID check:** PR #249's implementation commits and PR #250's
+  flag commits both carry `Claude-Session` trailer
+  `session_017Uiok74naZssjNvuuhXncs` (producer of both the implementation
+  and the certification flag) — does not match this reviewing session's
+  own ID, independent per Law 4.
+- **Diff read directly** against a fresh `origin/main` worktree at the
+  real merge commit: `apps/api/app/services/cost_per_success_calculator.py`
+  (270 lines) and `tests/tasks/test_ftf_1304.py` (382 lines, 20 no-DB
+  checks) read in full. `AttemptCost` is the per-attempt accounting unit
+  (`settled_cost` required; `pending_cost`/`fallback_used`/`fallback_cost`
+  each declared explicitly, never inferred); `cost_per_success`/
+  `amortized_cost_per_success` compose already-CERTIFIED FTF-1302's
+  `window_total_cost` and FTF-1303's `provider_call_cost` into Section
+  32's own named formulas, per `contract_owner: FTF-1301` and
+  `database_changes: "No independent schema change. Consume frozen
+  contract"` — this module never re-derives a price from raw usage
+  itself. `TASK_OUTCOMES` imported directly from `local_compute_costing`
+  rather than duplicated.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-1304 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Total costs across all attempts divided by independently successful
+  tasks, plus optional training amortization" — proven by the five-attempt
+  golden example, $38/4 successes = $9.50, plus the amortization golden
+  example $10.00 + $100.00/50 = $12.00; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence recorded"
+  — this review) and `negative_acceptance` ("Zero successes, pending
+  charges and unobserved fallback use cannot yield misleading cheap
+  passing metric" — enforced by construction: zero successes raises
+  `CostPerSuccessError`; `pending_cost`/`fallback_cost` are summed
+  unconditionally by `AttemptCost.total_cost()`, structurally no path can
+  drop a declared charge; `fallback_used=True` with no `fallback_cost`
+  raises at construction) both confirmed genuinely met, not merely "tests
+  pass". `dependencies` FTF-1301/FTF-1302/FTF-1303 confirmed already
+  `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- **Own local reproduction:** ran `python3 tests/tasks/test_ftf_1304.py`
+  directly against the checked-out merge commit — all 20 checks passed.
+- **Own fault injection (Law 1):** patched `AttemptCost.total_cost()` in
+  the checked-out worktree to drop `pending_cost` from the sum (exactly
+  the "silently drop a declared charge to reach a cheaper figure" failure
+  mode this task's own negative_acceptance forbids) — 2 genuine
+  `FAIL [FTF-1304]` lines against the real suite (the golden-example total
+  assertion plus the dedicated fault-injection test's own first
+  assertion). Reverted byte-identical (`diff` against the pre-fault copy
+  empty); re-ran the real suite immediately after — all 20 checks passed
+  again.
+- **`product_truth_check.py --fail-on-unwired` independently re-run:**
+  19/19 unchanged — confirmed legitimate by reading the script's own skip
+  logic directly (`scripts/product_truth_check.py`): an entry with no
+  `proving_symbol` is skipped entirely (`if not sym: continue`), never
+  counted as a false 0/0 pass against a claimed symbol. This task's
+  `proving_symbol` is deliberately empty — a pure, DB-free computation
+  module with no live HTTP route or caller in this repository yet,
+  disclosed in the module's own docstring, the same accepted
+  scope-narrowing precedent as FTF-1302/FTF-1303/FTF-1401/FTF-1601/
+  FTF-1701/FTF-1810 before each one's own first live caller existed.
+- **CI independently re-checked, not taken on faith:** `get_check_runs` on
+  commit `f7dd5d3` (the real pre-merge PR #249 head) — 29/29 checks
+  `success`, `gate` included. Pulled the `gate` job's own step-level log
+  text directly (`get_job_logs`, job id `107739065356`): the step "Run uv
+  run python3 tests/tasks/test_ftf_1304.py" genuinely executed and
+  printed "FTF-1304 Cost-per-success calculator tests: all checks passed"
+  in CI — real execution, not a self-reported claim.
+- `validate_spec.py --strict` clean after `git fetch --unshallow` (this
+  worktree's own pre-existing shallow-clone artifact, unrelated to this
+  diff — confirmed by re-running after unshallowing, which cleared every
+  `stale_commit` warning with none naming FTF-1304).
+- No blocking defect found. Merge already done (PR #249's merge commit
+  `4b432a44d4d6ef511796bce5f30faec4d948b831`, owner-performed, PROVISIONAL
+  per Law 4). `docs/spec-matrix.yaml`'s FTF-1304 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit; `proving_symbol` stays `''`
+  (no live caller, confirmed legitimate above). `sync_certified_status()`
+  updated `spec/tasks.json` and `docs/implementation/TRACKER.json` for
+  `['FTF-1304']`. Certified count moves 61/300 → 62/300. Product-true:
+  19/19 → 19/19 (unchanged — this task adds no live caller).
+
+**Conclusion:** Certified L2-CERTIFIED.

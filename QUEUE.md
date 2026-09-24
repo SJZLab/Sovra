@@ -4005,6 +4005,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1304 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-24** (session_011utAQqfER8WMCgtd9Zvm4j, scheduled
+Control-plane certifier shift triggered by the `pull_request.opened`
+webhook for PR #250) directly against `main`'s merge commit `4b432a44`
+(PR #249, owner-merged, per Law 4 that merge alone did not certify) — see
+"## Done" for the certification summary and `docs/certifications/
+ledger.md`/`docs/certifications/queue.md` for the full evidence,
+including the independent session-ID check, diff read against the real
+merge commit, own local reproduction, an own fault injection, the real
+CI step-level log confirmation, and the `r1_handoff.py` contract
+re-check. History below, kept for the record, not a live next-step.
+
 FTF-1304 — **PR #249 went CI-green (29/29) and was merged into `main`
 directly by the repo owner** (merge commit `4b432a44`, `merged_by:
 samerzakaria` — its own commit title reads "Control plane: certify
@@ -6268,6 +6280,43 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   Merged PR #245; PR #240 was already closed as superseded by its own
   author session. Ran `sync_certified_status()` — `['FTF-1303']` updated.
   `scripts/status.py`: `60/300` certified before, `61/300` after.
+  Product-true unchanged at `19/19` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
+- FTF-1304 — Cost-per-success calculator. Independently reviewed and
+  **CERTIFIED 2026-09-24**, merge commit
+  `4b432a44d4d6ef511796bce5f30faec4d948b831` (PR #249, CI-green 29/29 on
+  head `f7dd5d3`, then merged directly by the repo owner — per Law 4 that
+  owner merge alone did not certify; PR #250 flagged the gap since the
+  closed PR #249 could not refire the certifier webhook). Session-ID
+  check clean (PR #249/#250 commits all carry the producer's
+  `session_017Uiok74naZssjNvuuhXncs`; no overlap with this reviewing
+  session — Law 4). Diff read in full against a fresh `origin/main`
+  worktree at the merge commit
+  (`apps/api/app/services/cost_per_success_calculator.py` 270 lines,
+  `tests/tasks/test_ftf_1304.py` 382 lines/20 checks): composes
+  already-CERTIFIED FTF-1302's `window_total_cost`/FTF-1303's
+  `provider_call_cost` into Section 32's `cost_per_success`/
+  `amortized_cost_per_success`, never re-deriving a price itself.
+  `get_check_runs` on the real pre-merge head `f7dd5d3` confirmed 29/29
+  success including `gate`; the `gate` job's own step-level log text
+  (pulled directly, job id `107739065356`) showed
+  `tests/tasks/test_ftf_1304.py` actually executing in CI and printing
+  "FTF-1304 Cost-per-success calculator tests: all checks passed". Own
+  local reproduction: 20/20 clean. Own fault injection: patched
+  `AttemptCost.total_cost()` to drop `pending_cost` from the sum (exactly
+  the negative_acceptance failure mode this task forbids) — 2 genuine
+  `FAIL` lines, reverted byte-identical, suite re-confirmed clean.
+  `product_truth_check.py --fail-on-unwired` confirmed legitimately
+  `19/19` unchanged — `proving_symbol` is the empty string for this task
+  (disclosed, no live HTTP caller yet, same accepted class as
+  FTF-1302/FTF-1303/FTF-1401/FTF-1601/FTF-1701/FTF-1810), confirmed by
+  reading the script's own skip-if-no-symbol logic directly. Both
+  acceptance and negative_acceptance clauses reconfirmed against the real
+  DoD via `tools/r1_handoff.py packet FTF-1304`. `validate_spec.py
+  --strict` clean after `git fetch --unshallow` cleared this worktree's
+  own pre-existing shallow-clone artifact (none of the warnings named
+  FTF-1304). Ran `sync_certified_status()` — `['FTF-1304']` updated.
+  `scripts/status.py`: `61/300` certified before, `62/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
 
