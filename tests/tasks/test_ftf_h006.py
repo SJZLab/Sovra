@@ -347,6 +347,26 @@ def test_generic_link_local_denied_by_default_but_allowlistable() -> None:
 # -- 4. IPv6 -------------------------------------------------------------
 
 
+def test_ipv6_server_class_uses_the_same_address_family_the_probe_checks() -> None:
+    """Regression coverage for the real CI defect FTF-0211's own review
+    caught (PR #226): `_detect_ipv6_support` probes with an explicit
+    `AF_INET6` socket, but `_SERVER_V6` was originally constructed via a
+    bare `ThreadingHTTPServer(("::1", 0), _Handler)`, which silently binds
+    with `socketserver.TCPServer`'s `AF_INET` default regardless of the
+    address passed in -- the two disagreed on a real dual-stack GitHub
+    Actions runner (`socket.gaierror: Address family for hostname not
+    supported`), even though they happen to agree in this sandbox, which
+    has no IPv6 stack at all. Pure, no socket required, always runs
+    regardless of `_IPV6_SUPPORTED`.
+    """
+    check(
+        "FTF-H006",
+        "the real IPv6 server class binds with AF_INET6, matching "
+        "_detect_ipv6_support's own probe socket family exactly",
+        _ThreadingHTTPServerV6.address_family == socket.AF_INET6,
+    )
+
+
 def test_ipv6_loopback_denied_by_default_and_reachable_once_allowlisted() -> None:
     try:
         validate_resolved_address(
