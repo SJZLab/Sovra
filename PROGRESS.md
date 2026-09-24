@@ -110,10 +110,22 @@ submission (checked every prior FTF-020x certification commit).
 https://github.com/SJZLab/Sovra/pull/232 (title `[relay] FTF-0213: Real
 structured-output probe`). Full entry: `docs/certifications/queue.md`.
 
+## 2026-09-24 — FTF-0213 — relay: PR #232 confirmed green, watched to completion
+Subscribed to PR #232's activity after opening it. A `check_suite.completed`
+webhook arrived; verified directly via `pull_request_read` rather than
+trusting the webhook alone: **27/27 checks completed `success`** on the
+PR's actual final head (`39c5feb886380b297296aa8ba3e793911a966a35`, no
+further pushes since submission), `gate` included (completed clean in
+2m50s). `mergeable_state: clean` — no merge conflict against `main`. No
+open review comments or reviews (`get_comments`/`get_reviews` both
+empty). This repo runs no separate "Claude Approvals" check, so
+CI-green plus no-conflict is the full bar; PR #232 meets it.
+
 ## Next shift
-PR #232 needs an independent Control-plane L2 review (this session
-cannot certify its own work — Law 4). `docs/spec-matrix.yaml` has one
-PROVISIONAL entry (`FTF-0213`) at this shift's end. Recomputing the
+PR #232 is genuinely green (27/27, confirmed on its real final head) and
+mergeable — ready for an independent Control-plane L2 review (this
+session cannot certify its own work — Law 4). `docs/spec-matrix.yaml` has
+one PROVISIONAL entry (`FTF-0213`) at this shift's end. Recomputing the
 dependency-ready frontier fresh at this shift's end (do not trust this
 note alone) still shows the same 20 other ready-but-unclaimed items this
 shift found minus FTF-0213 itself — re-derive from `docs/spec-matrix.yaml`
