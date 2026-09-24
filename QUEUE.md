@@ -3739,7 +3739,20 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+- FTF-04A07 (TargetSourceSnapshot schema + immutable provenance),
+  implemented 2026-09-24, PR against `main` from branch
+  `claude/wizardly-fermat-i9vw6i` (title `[relay] FTF-04A07:
+  TargetSourceSnapshot schema + immutable provenance`), implementation
+  commit `5b34723e2be2ba243927962c7b4c1a269b370c62`. Real local Postgres
+  16 evidence produced directly in this sandbox (full migration chain
+  `upgrade head`/`downgrade -1`/`upgrade head` round-trip, both no-DB and
+  live-Postgres suites clean, two real fault injections each caught and
+  reverted byte-identical); CI wiring added (gate step +
+  `target-source-snapshot-integration` job) but not yet watched to a real
+  GitHub Actions run from this shift. Awaiting: (1) a real CI run on the
+  actual pushed head, (2) independent Control-plane L2 review (Law 4 --
+  this session cannot self-certify). Full entry: `PROGRESS.md`,
+  `docs/certifications/queue.md`.
 
 FTF-0213 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #232 (merge commit
