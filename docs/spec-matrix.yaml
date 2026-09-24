@@ -4537,7 +4537,7 @@ FTF-1302:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1302.py
 FTF-1303:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Provider token costing
   evidence_hash: be9775f60ce248cd411cc22ccf82692415798c82
@@ -4577,9 +4577,40 @@ FTF-1303:
     FTF-1301's own, already-frozen contract slot 13); `proving_symbol` is deliberately left empty,
     matching the FTF-1302/FTF-1401/FTF-1601/FTF-1701/FTF-1810 precedent for a computation module
     with no live product-runtime caller in this repository yet -- a genuine, disclosed 0/0, not
-    inflation. Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2
-    review and a real CI run are needed before certification.
-  proof_state: L1-PROVEN
+    inflation.
+
+    CERTIFIED 2026-09-24 by an independent Control-plane certifier session
+    (session_01KPx9BrS3Po3RzHFpkXLNgd), triggered by the `pull_request.opened` webhook for PR #246
+    (a tracking-doc-only follow-up). Code landed on `main` via PR #245 (merge commit `f1e5457`),
+    merged by the repo owner directly, not by a certifying session -- confirmed per Law 4 that a
+    direct owner merge does not itself certify (this entry stayed `PROVISIONAL` through that merge
+    until this independent review). Session-ID check: every commit on PR #245's own lineage
+    (`be9775f`, `bee5b55`, `4be55bf`, `d3c5ed1`, `4bd53a0`) carries `session_01CuuVLc7aGhNUrpFbQmrpVk`;
+    the tracking-only commits `a6e2742`/`04baa20` carry `session_017pYedfdGZ2ZUSt4PKRdqAn` -- neither
+    overlaps this certifying session. Read `apps/api/app/services/provider_token_costing.py` and
+    `tests/tasks/test_ftf_1303.py` in full on the real merged head. Re-checked CI on the real merged
+    commit, not a stale claim: GitHub Actions run `36017316786` (triggered by PR #246 against base
+    `f1e5457`) shows the `gate` job `completed`/`success`; its own step-level log text (job id
+    `107693067264`) prints "FTF-1303 Provider token costing tests: all checks passed" from a genuine
+    `uv run python3 tests/tasks/test_ftf_1303.py` step, followed by `Product-truth: 19/19
+    product-true` and `Status: 60/300 certified · 19 product-true` in the same job run -- real
+    execution, not a self-reported claim. Own local reproduction on the real merged head: all checks
+    in `tests/tasks/test_ftf_1303.py` passed. Own fault injection, distinct from the test suite's own
+    built-in naive-shadow-function check: directly mutated the real `_priced_category` in
+    `provider_token_costing.py` to `return Decimal("0")` instead of raising when a real, nonzero,
+    declared usage category has no matching rate -- 4 genuine, correctly-attributed `FAIL` lines
+    (the three negative_acceptance tests plus the fault-injection test itself); reverted, `git diff`
+    confirmed byte-identical, suite re-ran clean. `product_truth_check.py --fail-on-unwired`: `19/19`
+    unchanged; confirmed legitimate by reading the script's own logic directly -- an entry with an
+    empty `proving_symbol` is `continue`d before being added to `results` at all, so it is excluded
+    from the count entirely rather than counted as an inflated 0/0 pass (Law 5 not weakened). Task
+    contract pulled directly via `python3 tools/r1_handoff.py packet FTF-1303 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`: both `acceptance` clauses (the five-category
+    `provider_call_cost` formula; this independent review itself) and the `negative_acceptance`
+    clause (missing-rate refusal, just reproduced via fault injection above) genuinely met, not
+    merely "tests pass". Dependencies FTF-0210/FTF-1301 confirmed already `CERTIFIED`. No blocking
+    defect found. Full record: `docs/certifications/queue.md`, `docs/certifications/ledger.md`.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1303.py
 FTF-1304:

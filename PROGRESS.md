@@ -1,4 +1,53 @@
 # PROGRESS — Sovra
+## 2026-09-24 — Control plane: FTF-1303 (PR #245, merged directly by owner) independently CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.
+opened` webhook for PR #246 (a tracking-doc-only follow-up recording the
+prior shift's finding that PR #245 was merged directly by the repo owner,
+not by a certifying session). Checked `docs/certifications/queue.md`/
+`docs/spec-matrix.yaml` for every item `PROVISIONAL` and not yet certified,
+not only the triggering PR: exactly one was pending, FTF-1303.
+
+**Session-ID check:** every commit on PR #245's own producing lineage
+carries `session_01CuuVLc7aGhNUrpFbQmrpVk`; the later tracking-only commits
+carry `session_017pYedfdGZ2ZUSt4PKRdqAn`. Neither overlaps this reviewing
+session's own ID (`session_01KPx9BrS3Po3RzHFpkXLNgd`) — independent per Law
+4. Read the full diff (`provider_token_costing.py`/`test_ftf_1303.py`) on
+the real merged head. Re-checked CI on the real merged commit rather than
+trusting the PR's own claim: GitHub Actions run `36017316786` (PR #246
+against base `f1e5457`) — the `gate` job was still `in_progress` at first
+check, re-polled until it completed `success`; its own step-level log
+confirmed a genuine `uv run python3 tests/tasks/test_ftf_1303.py` execution
+printing "all checks passed", followed by `product_truth_check.py`'s
+`19/19` and `status.py`'s `60/300 certified` in the same real job run. Own
+local reproduction: all checks passed. Own fault injection, distinct from
+the test suite's own built-in check: mutated the real `_priced_category`
+in `provider_token_costing.py` to silently zero-fill a missing rate instead
+of raising — 4 genuine, correctly-attributed `FAIL` lines; reverted, `git
+diff` confirmed byte-identical. `product_truth_check.py --fail-on-unwired`
+19/19 confirmed a legitimate disclosed 0/0 (empty `proving_symbol`, no live
+caller yet — read the script's own skip-before-count logic directly). Task
+contract pulled via `tools/r1_handoff.py packet FTF-1303`: both
+`acceptance` clauses and the `negative_acceptance` clause confirmed
+genuinely met, not merely "tests pass". Dependencies FTF-0210/FTF-1301
+confirmed already `CERTIFIED`. `validate_spec.py --strict` clean (after
+`git fetch --unshallow`, this sandbox's own pre-existing shallow-clone
+artifact).
+
+**No blocking defect found.** Code was already on `main` via PR #245
+(merge commit `f1e5457`, merged directly by the repo owner) — this review
+performed the real Control-plane CERTIFY procedure against that exact
+commit rather than a merge. Set `docs/spec-matrix.yaml`'s FTF-1303 entry to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`
+(`evidence_hash` kept at the original implementation commit `be9775f`,
+confirmed a real ancestor of `f1e5457`). Ran
+`scripts.task_claim.sync_certified_status()` — `['FTF-1303']` updated.
+Appended a matching entry to `docs/certifications/ledger.md`. Certified:
+60/300 → 61/300. Product-true: unchanged at 19/19. Updated `QUEUE.md`
+(moved FTF-1303 to "## Done", updated "## Provisional" to empty).
+
+- **Validated-by:** session https://claude.ai/code/session_01KPx9BrS3Po3RzHFpkXLNgd
+  (independent — see session-ID check above), 2026-09-24.
+
 ## 2026-09-24T15:03:28Z — PR #245 (FTF-1303) merged directly by repo owner; still PROVISIONAL
 Continuation of this same shift. A `pull_request.closed` webhook fired for
 PR #245 (`outcome: "merged"`) while this session was still watching for CI —

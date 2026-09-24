@@ -1,16 +1,23 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-24T15:03:28Z (same relay shift, continued) — **PR #245
-  (FTF-1303) merged** into `main` (merge commit `f1e5457`), by the repo
-  owner directly (`merged_by: samerzakaria`), not a Control-plane certifier
-  session. Confirmed this does **not** certify the task: `docs/spec-matrix
-  .yaml` on the new `main` still reads `certification_state: PROVISIONAL`;
-  `scripts/status.py` still `60/300 certified`, unchanged — Law 4 holds
-  regardless of who performed the merge. This relay session will not
-  self-certify. See "## Provisional" below and `docs/certifications/
-  queue.md` for the full record. **Next Control-plane certifier shift:**
-  run the real CERTIFY procedure against merged commit `f1e5457` — the code
-  is already independently reviewed sound in full and CI-green on this
-  exact commit, only the certification step itself remains.
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #246) — **FTF-1303 independently CERTIFIED**
+  against the real merged commit `f1e5457` (PR #245, merged directly by the
+  repo owner). Session-ID check clean (no overlap with either the producer
+  session or the tracking-only relay session); full diff read; CI
+  re-confirmed on the real merged commit via a fresh `gate` job log pull
+  (was still `in_progress` at first check, re-polled to `success`); own
+  local reproduction; an own fault injection distinct from the test
+  suite's own (mutated the real `_priced_category` to silently zero-fill a
+  missing rate — 4 genuine FAILs, reverted byte-identical);
+  `product_truth_check.py` 19/19 confirmed a legitimate disclosed 0/0; both
+  `acceptance`/`negative_acceptance` clauses cross-checked against the real
+  task contract via `tools/r1_handoff.py packet FTF-1303` — every
+  substantive check passed. Set `docs/spec-matrix.yaml` to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, ran
+  `sync_certified_status()`, appended `docs/certifications/ledger.md`.
+  Certified: 60/300 → 61/300. Product-true: unchanged at 19/19. Moved
+  FTF-1303 to "## Done" below; "## Provisional" is now empty. Full record:
+  `docs/certifications/queue.md`, `PROGRESS.md`.
 
 ## Previous shift
 Updated: 2026-09-24T15:02:00Z (same relay shift, continued) — PR #245
@@ -3963,6 +3970,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+This section is now empty. FTF-1303 is no longer PROVISIONAL — it was
+independently reviewed and **CERTIFIED 2026-09-24** against the real
+merged commit `f1e5457` (PR #245, merged directly by the repo owner) by a
+scheduled Control-plane certifier shift (`pull_request.opened` webhook for
+PR #246). See "## Done" below for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full evidence (session-ID check, own fault injection distinct from the
+test suite's own, real CI `gate`-job log confirmation on the merged
+commit, `product_truth_check.py` 19/19, task-contract cross-check). The
+narrative below is retained as history of the submission/merge sequence,
+not a currently-open item.
+
 FTF-1303 ("Provider token costing") -- submitted 2026-09-24 via PR #240
 against `main`. Real, DB-free Section 32 `provider_call_cost` calculator,
 dependency-ready on FTF-0210/FTF-1301 (both CERTIFIED). Full submission
@@ -6154,6 +6173,50 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   shallow-clone artifact — confirmed not a real defect). Merged PR #238.
   Ran `sync_certified_status()` — `['FTF-04A06']` updated.
   `scripts/status.py`: `59/300` certified before, `60/300` after.
+  Product-true unchanged at `19/19` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
+- FTF-1303 — Provider token costing. Independently reviewed and
+  **CERTIFIED 2026-09-24**, evidence commit
+  `be9775f60ce248cd411cc22ccf82692415798c82` (PR #245, code merged into
+  `main` as `f1e545745f7679ed19628d66ffc84955329a6f50` directly by the
+  repo owner — not by a certifying session; confirmed per Law 4 that the
+  owner merge alone did not certify the task, which stayed `PROVISIONAL`
+  until this review). Triggered by the `pull_request.opened` webhook for
+  PR #246 (a tracking-doc-only follow-up recording that owner merge).
+  Session-ID check clean (the producing lineage carries
+  `session_01CuuVLc7aGhNUrpFbQmrpVk`, the tracking-only relay carries
+  `session_017pYedfdGZ2ZUSt4PKRdqAn`, neither matches this reviewing
+  session `session_01KPx9BrS3Po3RzHFpkXLNgd`). Diff read in full
+  (`provider_token_costing.py`, 261 lines; `test_ftf_1303.py`, 304
+  lines). CI re-checked on the real merged commit rather than trusted:
+  GitHub Actions run `36017316786` (PR #246 against base `f1e5457`) — the
+  `gate` job was `in_progress` at first check, re-polled to
+  `completed`/`success`; its own step-level log confirmed a genuine
+  `test_ftf_1303.py` execution printing "all checks passed", followed by
+  `product_truth_check.py`'s `19/19` and `status.py`'s prior `60/300` in
+  the same real job run. Own local reproduction: all checks passed. Own
+  fault injection, distinct from the test suite's own built-in
+  naive-shadow-function check: mutated the real `_priced_category` in the
+  production module to silently `return Decimal("0")` instead of raising
+  on real, nonzero, unrated usage — 4 genuine, correctly-attributed
+  `FAIL` lines; reverted, `git diff` confirmed byte-identical, suite
+  re-ran clean. `product_truth_check.py --fail-on-unwired` confirmed
+  legitimately `19/19` unchanged — `proving_symbol` is the empty string
+  for this task (disclosed, no live HTTP caller yet, same accepted class
+  as FTF-1302/FTF-1401/FTF-1601/FTF-1701/FTF-1810/FTF-04A06), confirmed
+  by reading `product_truth_check.py`'s own skip-if-no-symbol logic
+  directly. Both `acceptance` (the five-category `provider_call_cost`
+  formula) and `negative_acceptance` (missing-rate refusal, reproduced
+  directly by this review's own fault injection) clauses reconfirmed
+  against the real DoD via `tools/r1_handoff.py packet FTF-1303`.
+  Dependencies FTF-0210/FTF-1301 confirmed already `CERTIFIED`.
+  `validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+  sandbox's own pre-existing shallow-clone artifact — confirmed not a
+  real defect). `docs/spec-matrix.yaml` set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED` (`evidence_hash` kept at the
+  original implementation commit, confirmed a real ancestor of the merge
+  commit). Ran `sync_certified_status()` — `['FTF-1303']` updated.
+  `scripts/status.py`: `60/300` certified before, `61/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
 

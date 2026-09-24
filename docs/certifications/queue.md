@@ -13947,3 +13947,105 @@ the `docs/spec-matrix.yaml`/`docs/certifications/ledger.md` updates) before
 - **Validated-by:** session https://claude.ai/code/session_017pYedfdGZ2ZUSt4PKRdqAn,
   2026-09-24 (relay session — independent Control-plane certification
   still required, unchanged from every entry above).
+
+## 2026-09-24 — Control plane review — FTF-1303 (PR #245) — CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.
+opened` webhook for PR #246 (a tracking-doc-only follow-up recording that
+PR #245 was merged directly by the repo owner, not by a certifying
+session). Per this session's standing duty, checked `docs/certifications/
+queue.md`/`docs/spec-matrix.yaml` for every item PROVISIONAL and not yet
+certified, not only the triggering PR: exactly one was pending, FTF-1303
+(the entry immediately above records why it stayed PROVISIONAL through
+the owner's direct merge — Law 4 holds regardless of who performs the
+merge).
+
+**FTF-1303 (PR #245, code on `main` as merge commit `f1e5457`) —
+independently reviewed and CERTIFIED:**
+- **Session-ID check:** every commit on PR #245's own producing lineage
+  (`be9775f`, `bee5b55`, `4be55bf`, `d3c5ed1`, `4bd53a0`) carries
+  `Claude-Session: https://claude.ai/code/session_01CuuVLc7aGhNUrpFbQmrpVk`;
+  the later tracking-only commits (`a6e2742`, `04baa20`) carry
+  `Claude-Session: https://claude.ai/code/session_017pYedfdGZ2ZUSt4PKRdqAn`.
+  No overlap with this reviewing session's own
+  `session_01KPx9BrS3Po3RzHFpkXLNgd` — genuinely independent per Law 4.
+- **Diff read directly:** `apps/api/app/services/provider_token_costing.py`
+  (261 lines) and `tests/tasks/test_ftf_1303.py` (304 lines) in full on
+  the real merged head.
+- **CI re-checked on the real merged commit, not taken on faith:** GitHub
+  Actions run `36017316786` (triggered by PR #246 against base `f1e5457`)
+  — a first `list_workflow_jobs` pull found the `gate` job (and three
+  unrelated long-running integration jobs) still `in_progress`, only
+  ~4 minutes after the run started; re-polled after doing the rest of
+  this review (task-contract read, own fault injection) and confirmed
+  `gate` (job id `107693067264`) had finished `completed`/`success`.
+  Pulled its own step-level log text directly (`get_job_logs`): the step
+  running `uv run python3 tests/tasks/test_ftf_1303.py` printed "FTF-1303
+  Provider token costing tests: all checks passed" — genuine execution
+  against the real merged tree — immediately followed in the same job run
+  by `product_truth_check.py --fail-on-unwired` printing `Product-truth:
+  19/19 product-true` and `scripts/status.py` printing `Status: 60/300
+  certified · 19 product-true` (the pre-certification count, confirming
+  no premature inflation on that same commit).
+- **Own local reproduction:** ran `python3 tests/tasks/test_ftf_1303.py`
+  directly on the real merged head (after `git fetch --unshallow origin`
+  to clear this sandbox's own pre-existing shallow-clone artifact) — all
+  checks passed.
+- **Own fault injection (Law 1), distinct from the test suite's own
+  built-in naive-shadow-function comparison:** directly mutated the real
+  `_priced_category` function inside `provider_token_costing.py` itself
+  — replaced its `raise ProviderTokenCostingError(...)` branch with
+  `return Decimal("0")`, i.e. silently zero-filling a missing rate for
+  real, nonzero, declared usage, applied to the actual production code
+  path rather than a parallel shadow function. Result: 4 genuine,
+  correctly-attributed `FAIL` lines (the three negative_acceptance tests
+  for cache/reasoning/billable_requests, plus the suite's own
+  fault-injection test). Reverted; `git diff`/`git status` confirmed
+  byte-identical; suite re-ran clean ("all checks passed").
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19`
+  unchanged**, and confirmed legitimate rather than an evasion: this
+  task's `proving_symbol` in `docs/spec-matrix.yaml` is the empty string
+  — a pure decimal-arithmetic module with no live HTTP route (disclosed
+  explicitly in the module's own docstring: `contract_owner` is
+  FTF-1301, no independent schema/route added), the same accepted
+  scope-narrowing precedent as FTF-1302/FTF-1401/FTF-1601/FTF-1701/
+  FTF-1810/FTF-04A06 before each one's own first live caller existed.
+  Read `scripts/product_truth_check.py`'s own logic directly: an entry
+  with no `proving_symbol` is `continue`d before being appended to
+  `results` at all — excluded from the denominator entirely, never
+  counted as an inflated 0/0 pass against a claimed symbol (Law 5 not
+  weakened).
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-1303 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Calculate billed input/output/cache/reasoning/request charges using
+  actual provider usage rules" — proven by
+  `test_provider_call_cost_golden_example_all_five_categories`;
+  "Independent review, exact merged commit, real relevant integration and
+  negative-test evidence recorded" — this review) and
+  `negative_acceptance` ("Missing usage/rate/unknown upstream cannot be
+  replaced by invented or zero dollar value" — proven by the three
+  dedicated negative_acceptance tests and just reproduced directly
+  against the real production code by this review's own fault injection
+  above) both genuinely met, not merely "tests pass". `dependencies`
+  FTF-0210/FTF-1301 confirmed already `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- `validate_spec.py --strict` clean after the unshallow above.
+
+**No blocking defect found.** Code was already merged to `main` via PR
+#245 (merge commit `f1e545745f7679ed19628d66ffc84955329a6f50`) by the
+repo owner directly; this review performed the real Control-plane
+CERTIFY procedure against that exact commit rather than a merge.
+`docs/spec-matrix.yaml`'s FTF-1303 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`; `evidence_hash` kept at the
+original implementation commit `be9775f60ce248cd411cc22ccf82692415798c82`
+(confirmed a real ancestor of the merge commit via `git merge-base
+--is-ancestor`), matching the FTF-1302/FTF-0102/FTF-0104/FTF-1601
+convention; `proving_symbol` stays `''` (no live caller, confirmed
+legitimate above). Ran `scripts.task_claim.sync_certified_status()` —
+`['FTF-1303']` updated. `scripts/status.py`: `60/300` -> `61/300`
+certified; product-true unchanged at `19/19` (no live caller added).
+Appended a matching entry to `docs/certifications/ledger.md`; updated
+`QUEUE.md` (moved FTF-1303 to "## Done", "## Provisional" now empty) and
+`PROGRESS.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_01KPx9BrS3Po3RzHFpkXLNgd
+  (independent — see session-ID check above), 2026-09-24.
