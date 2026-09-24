@@ -3857,18 +3857,43 @@ full history and evidence.
 FTF-1303 ("Provider token costing") -- submitted 2026-09-24 via PR #240
 against `main`. Real, DB-free Section 32 `provider_call_cost` calculator,
 dependency-ready on FTF-0210/FTF-1301 (both CERTIFIED). Full submission
-record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
-`PROGRESS.md`. **Checked this shift (2026-09-24, scheduled Control-plane
-certifier, `pull_request.opened` webhook for this same PR): every one of
-PR #240's 29 checks, including `gate`, was still `status: queued` at the
-moment of this review -- CI had not finished running yet.** Left
-PROVISIONAL, not certified; this is not a gap in the submission, just not
-yet complete -- the next certifier shift or check-in should re-check once
-CI finishes and, if green, proceed with a fresh independent L2 review
-(Law 4 -- this session's own producer identity for FTF-04A06 below is
-unrelated and does not disqualify a *future* session from reviewing
-FTF-1303; the session-ID check must simply be run again against FTF-1303's
-own PR #240 commits at that time).
+record: `docs/certifications/queue.md`'s matching 2026-09-24 entries,
+`PROGRESS.md`.
+
+**Update, same shift:** CI (which was still all-`queued` earlier this
+shift) finished and went fully green (29/29, `gate` included). This
+session ran the complete independent CERTIFY procedure: session-ID check
+clean (PR #240's 4 commits all carry `session_01CuuVLc7aGhNUrpFbQmrpVk`,
+no overlap with this reviewing session), full module/test read, a fresh
+CI check-run pull plus the `gate` job's own step-level log text
+confirming genuine execution, own local reproduction, an own fault
+injection (mutated the real `_priced_category` to silently zero-fill a
+missing rate instead of raising -- 4 genuine FAIL lines, reverted
+byte-identical), `product_truth_check.py`'s `19/19` confirmed a
+legitimate disclosed 0/0 (empty `proving_symbol`, no live caller yet),
+and both `acceptance`/`negative_acceptance` clauses cross-checked against
+the real task contract via `tools/r1_handoff.py packet FTF-1303` --
+**every substantive check passed.**
+
+**Not yet certified -- blocked only by a self-inflicted merge conflict,
+not a code defect:** at merge time `mergeable_state` had flipped to
+`"dirty"` because this exact shift's own FTF-04A06 certification (PR
+#238/#242, merge commits `249ff066`/`5f0d6f02`) landed on `main` moments
+earlier and edited the same three narrative tracking docs PR #240's own
+last commit touched. A local dry-run merge (aborted, nothing pushed)
+confirmed the conflict is contained entirely to `PROGRESS.md`/
+`QUEUE.md`/`docs/certifications/queue.md` -- `docs/spec-matrix.yaml` and
+`.github/workflows/ci.yml` both auto-merged cleanly, so there is no code
+or CI-wiring conflict at all. Per this repo's own precedent (FTF-04A06's
+earlier tracking-doc conflict against PR #239 was resolved by a later
+session on the producer's own branch, not by the certifying session),
+this certifying session left PR #240's branch untouched rather than
+pushing a conflict resolution onto another session's still-open branch.
+**Next relay shift:** merge `main` into `claude/wizardly-fermat-vwrwp6`
+(keep both sides' additions in all three files), push, confirm CI is
+still green on the new head -- at that point this PR needs no further
+code review and can be merged/certified on sight per the review already
+recorded in `docs/certifications/queue.md`'s matching 2026-09-24 entry.
 
 FTF-04A06 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #238 (merge commit

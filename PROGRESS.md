@@ -1,5 +1,25 @@
 # PROGRESS — Sovra
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+the `pull_request.opened` webhook for PR #240), continued — after
+FTF-04A06 (PR #238) was certified below, PR #240's own CI (still `queued`
+at the start of this shift) finished and went fully green. Ran the
+complete independent CERTIFY procedure on FTF-1303 too: session-ID check
+clean, full read, own fault injection (genuinely caught, reverted
+byte-identical), CI step-level log confirmed real execution,
+`product_truth_check.py`/task-contract cross-checks both clean — every
+substantive check passed. **Not merged/certified yet**: `mergeable_state`
+had flipped to `dirty` because this same shift's own FTF-04A06
+certification landed on `main` first and touched the same tracking docs.
+Confirmed via a local dry-run merge (aborted, nothing pushed) that the
+conflict is contained entirely to `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` — no code or CI conflict. Per this repo's
+own precedent, left PR #240's branch for the next relay shift to
+merge-and-resolve rather than pushing onto another session's open branch
+from a certifying session. Full record in
+`docs/certifications/queue.md`'s matching entry and `QUEUE.md`'s
+"## Provisional" section.
+
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
 the `pull_request.opened` webhook for PR #240) — checked
 `docs/certifications/queue.md` for every pending PROVISIONAL item, not
 only the trigger. FTF-1303 (PR #240) was still `queued` on all 29 checks,
@@ -10,6 +30,48 @@ fault-injection vectors, real CI step-level log pull, task-contract
 cross-check) and **CERTIFIED**, merge commit
 `249ff0663df74fe25f33f35673a319ea6d728b90`. Certified count moves
 59/300 → 60/300.
+
+## 2026-09-24 — FTF-1303 — Control plane: review sound, merge blocked (not a code defect)
+Continuation of the same certifier shift, after the FTF-04A06 entry
+below. PR #240's CI finished going green while that review was in
+progress. Ran the full independent CERTIFY procedure — session-ID check
+(all 4 commits carry `session_01CuuVLc7aGhNUrpFbQmrpVk`, no overlap with
+this session's own `session_01TSZ3SyJvmLrNbuDqXVYRtE`); read
+`provider_token_costing.py` (262 lines) and its test suite in full; a
+fresh `get_check_runs` pull confirmed 29/29 checks `completed`/`success`
+including `gate`, and the `gate` job's own step-level log text confirmed
+`tests/tasks/test_ftf_1303.py` genuinely printed "all checks passed" in
+CI; own local reproduction (all checks passed); own fault injection
+distinct from the producer's own (mutated the real `_priced_category` to
+silently zero-fill a missing rate instead of raising — 4 genuine FAIL
+lines, reverted byte-identical); `product_truth_check.py`'s `19/19`
+confirmed a legitimate disclosed 0/0 by reading the script's own skip
+logic; both `acceptance`/`negative_acceptance` clauses cross-checked
+against the real task contract via `tools/r1_handoff.py packet
+FTF-1303` and confirmed genuinely met.
+
+At merge time, `pull_request_read get` showed `mergeable_state: "dirty"`.
+A local dry-run merge of `main` into the PR branch (`git merge
+--no-commit --no-ff`, aborted immediately, nothing pushed) showed the
+conflict is contained entirely to `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` — three narrative tracking docs this PR's
+own last commit touched, now also touched by this same shift's own
+FTF-04A06 certification landing on `main` moments earlier (merge commits
+`249ff0663df74fe25f33f35673a319ea6d728b90`/
+`5f0d6f02e59fc0a5263358ef294f6b086e693fc1`). `docs/spec-matrix.yaml` and
+`.github/workflows/ci.yml` both auto-merged cleanly — no code or
+CI-wiring conflict.
+
+Per this repo's own precedent (FTF-04A06's earlier tracking-doc conflict
+against PR #239 was resolved by a later session on the producer's own
+branch, not the certifying session), left PR #240's branch untouched
+rather than push a conflict resolution onto another session's still-open
+branch from a certifying session. `certification_state` stays
+`PROVISIONAL` — not a rejection, every substantive check passed; this
+needs only a mechanical `git merge origin/main` (keep both sides in all
+three files) + push + green-CI reconfirmation before it can be merged
+and certified on sight. Full record: `docs/certifications/queue.md`'s
+matching entry, `QUEUE.md`'s "## Provisional" section.
 
 ## 2026-09-24 — FTF-04A06 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #240 (a different
