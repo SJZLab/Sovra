@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sovra.internal/contracts/phase-04A/domain.schema.json",
-  "title": "Sovra Phase 04A Domain Schemas (FTF-04A01 — TargetApplicationConnection schema/API/RBAC)",
-  "description": "Frozen shared domain schemas for the project-scoped TargetApplicationConnection resource (Section 6.8A/7A.1-7A.3/9/45/65-67/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source — apps/api/app/target_connectors/target_application_connection_schema.py (tested in tests/tasks/test_ftf_04a01.py) — so this file cannot silently drift from the code that actually validates these shapes.",
+  "title": "Sovra Phase 04A Domain Schemas (FTF-04A01 — TargetApplicationConnection schema/API/RBAC; FTF-04A07 — TargetSourceSnapshot schema + immutable provenance)",
+  "description": "Frozen shared domain schemas for the project-scoped TargetApplicationConnection resource (Section 6.8A/7A.1-7A.3/9/45/65-67/77/81) and the connection-scoped TargetSourceSnapshot resource (Section 6.8B). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source for each — apps/api/app/target_connectors/target_application_connection_schema.py (tested in tests/tasks/test_ftf_04a01.py) and apps/api/app/target_connectors/target_source_snapshot_schema.py (tested in tests/tasks/test_ftf_04a07.py) — so this file cannot silently drift from the code that actually validates these shapes.",
   "$defs": {
     "TargetConnectorType": {
       "type": "string",
@@ -80,6 +80,62 @@
         "created_by",
         "created_at",
         "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "TargetSourceSnapshotCaptureMethod": {
+      "type": "string",
+      "enum": ["github_resolved_commit", "local_git_commit", "local_dirty_snapshot"]
+    },
+    "TargetSourceSnapshotAnalysisStatus": {
+      "type": "string",
+      "description": "A closed one-value set for Release 1 -- see apps/api/app/target_connectors/target_source_snapshot_schema.py's own module docstring.",
+      "enum": ["not_analyzed"]
+    },
+    "GitObjectId": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "TargetSourceSnapshotCreateRequest": {
+      "type": "object",
+      "properties": {
+        "commit_sha": { "$ref": "#/$defs/GitObjectId" },
+        "branch": { "type": ["string", "null"], "maxLength": 200 },
+        "tree_hash": { "$ref": "#/$defs/GitObjectId" },
+        "capture_method": { "$ref": "#/$defs/TargetSourceSnapshotCaptureMethod" },
+        "source_archive_object_key": { "type": ["string", "null"], "maxLength": 1024 },
+        "source_archive_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "supersedes_snapshot_id": { "type": ["string", "null"], "format": "uuid" }
+      },
+      "required": ["commit_sha", "tree_hash", "capture_method"],
+      "additionalProperties": false
+    },
+    "TargetSourceSnapshot": {
+      "type": "object",
+      "description": "Section 6.8B — an immutable, connection-scoped source snapshot. No PATCH/DELETE exists for this resource at all.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "target_application_connection_id": { "type": "string", "format": "uuid" },
+        "commit_sha": { "$ref": "#/$defs/GitObjectId" },
+        "branch": { "type": ["string", "null"] },
+        "tree_hash": { "$ref": "#/$defs/GitObjectId" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "capture_method": { "$ref": "#/$defs/TargetSourceSnapshotCaptureMethod" },
+        "source_archive_object_key": { "type": ["string", "null"] },
+        "source_archive_sha256": { "type": ["string", "null"] },
+        "analysis_status": { "$ref": "#/$defs/TargetSourceSnapshotAnalysisStatus" },
+        "supersedes_snapshot_id": { "type": ["string", "null"], "format": "uuid" }
+      },
+      "required": [
+        "id",
+        "organization_id",
+        "target_application_connection_id",
+        "commit_sha",
+        "tree_hash",
+        "captured_at",
+        "capture_method",
+        "analysis_status"
       ],
       "additionalProperties": false
     }
