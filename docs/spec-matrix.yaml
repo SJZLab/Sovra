@@ -1239,15 +1239,109 @@ FTF-0212:
   proving_symbol: ''
   proving_test: ''
 FTF-0213:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Real structured-output probe
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210
-  proof_state: UNPROVEN
+  evidence_hash: 3db8b84a9ddea64642e239126eb38d962dd77b33
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201,
+    FTF-0210 (both CERTIFIED). Built for real in a new
+    packages/litellm_client/real_structured_output_probe.py::probe_structured_output --
+    issues one real, bounded, synthetic POST /v1/chat/completions call with an
+    OpenAI-compatible strict response_format: json_schema request, through the
+    same guarded_fetch/OpenBao secret-resolution composition FTF-0210/FTF-0211
+    already established, returning a StructuredOutputProbeResult (state/
+    route_identity_state/resolved_model/parsed_content/usage/latency_ms/detail/
+    probed_at). Section 3.4''s "Probe only selected or explicitly approved
+    auto-probe models" and "using synthetic non-sensitive content and an
+    approved probe budget" are enforced by construction, unchanged from
+    FTF-0210''s own precedent -- probe_structured_output raises
+    ChatProbeNotAuthorizedError (reused directly from real_chat_probe.py, not
+    a parallel type) before any network call when model_id is not in the
+    caller-supplied approved_model_ids set, and the probe prompt/schema/
+    max_tokens ceiling are fixed module constants, never caller-supplied. This
+    task''s own acceptance clause ("Exercise the model''s advertised
+    structured-output protocol and schema-validate actual response") is
+    proven by a real local-HTTPS-gateway round trip against a real
+    response_format: json_schema request whose schema-valid response content
+    is decoded and returned, and by a dedicated round trip asserting the real
+    request bytes sent over the wire carry a strict json_schema response_format
+    naming this task''s own probe schema. This task''s own negative_acceptance
+    ("JSON-looking prose, unknown parameter rejection or coercion is not
+    silently treated as strict schema support") is proven by three distinct
+    real states, never collapsed into a fabricated PROBED: NOT_JSON (a real
+    response whose content merely looks JSON-ish -- unquoted keys -- but does
+    not actually parse); UNSUPPORTED_PARAMETER (a real gateway 400 naming
+    response_format as an unsupported parameter, with a dedicated assertion
+    that the probe issues exactly one real request and never silently retries
+    without structured mode); and SCHEMA_VIOLATION (real, valid JSON that
+    fails the actual schema check -- covering a numeric-looking string where
+    an integer is required, since Python''s bool is an int subclass and a
+    numeric string is never coerced; a missing required field; an undeclared
+    additional property when additionalProperties is false; a value outside
+    an enum; and a real top-level JSON array, kept distinct from NOT_JSON
+    since it is valid JSON of the wrong shape, not a parse failure). Since
+    this repository has no existing JSON Schema validation dependency and
+    this probe''s own schema is small and fixed, _validate_against_schema is
+    a small, purpose-built subset validator (type/properties/required/
+    additionalProperties/enum) rather than a new runtime dependency, covered
+    by its own dedicated pure unit test (test_validate_against_schema_never_coerces)
+    proving it never coerces a bool into an integer check or a numeric string
+    into passing one. Section 3.5''s "record the deployment fingerprint and
+    resolved model/artifact per call" and Section 3.4''s "Missing usage
+    becomes unpriced/unknown, not zero cost" reuse RouteIdentityState/
+    ChatUsage directly from real_chat_probe.py -- the exact same contracts,
+    not parallel types. No independent schema change (this task''s own
+    database_changes clause) -- a probe result is computed fresh on every
+    call and returned directly, never persisted, same convention every
+    sibling FTF-020x module already established. Files path refined from the
+    task packet''s own hyphenated packages/litellm-client/ suggestion to this
+    repository''s real, already-CERTIFIED packages/litellm_client/ directory
+    every sibling FTF-020x module uses. tests/tasks/test_ftf_0213.py (real
+    local-HTTPS-gateway integration suite, same no-DB/no-external-egress
+    convention as every sibling FTF-020x module -- a real self-signed CA
+    trusted into this sandbox''s system trust store for the run''s duration --
+    plus pure no-network unit checks for _classify_guard_failure/
+    _classify_rejection/_parse_structured_content/_validate_against_schema).
+    Shown able to fail first (Law 1): ran the suite directly against the
+    initial implementation and found a real TypeError (StructuredOutputProbeResult.__init__()
+    missing 1 required positional argument: ''probed_at'') caused by a real
+    positional-argument arity bug in four of the dataclass construction call
+    sites (missing the usage=None field); fixed by switching every
+    construction site to explicit keyword arguments (eliminating the whole
+    bug class), then the full suite re-ran clean. Own fault-injection
+    evidence (Law 1), three distinct vectors, each reverted byte-identical
+    (diff confirmed) and the suite re-confirmed clean after each: (1) removed
+    the approved_model_ids authorization gate entirely -- the authorization
+    negative check genuinely failed for real; (2) made the integer schema
+    check accept a numeric-looking string via int() coercion instead of a
+    strict isinstance check -- both dedicated coercion checks (the pure
+    validator unit test and the live round trip) genuinely failed for real;
+    (3) removed the UNSUPPORTED_PARAMETER branch from _classify_rejection
+    entirely -- both dedicated response_format-rejection checks genuinely
+    failed for real. product_truth_check.py --fail-on-unwired stays 17/17
+    (unchanged -- Law 2, this task deliberately has no live caller yet, same
+    disclosed precedent FTF-0202/.../FTF-0211; proving_symbol left blank). uv
+    run ruff check/ruff format --check/mypy clean on both new files using the
+    pinned toolchain (mypy required switching _parse_structured_content''s
+    return shape from an untyped dict to a plain typed tuple to resolve real
+    type errors, not a suppression). uv run python3
+    tests/tasks/test_ftf_0201.py/test_ftf_0210.py/test_ftf_0211.py (this
+    task''s own CERTIFIED dependencies plus its closest sibling) re-run clean
+    afterward -- no regression. scripts/validate_spec.py --strict clean
+    (post-unshallow). Added this task''s own CI gate step
+    (tests/tasks/test_ftf_0213.py) to .github/workflows/ci.yml in this same
+    commit, per the disclosed FTF-0205/FTF-0206 watchdog finding on missing
+    gate-wiring steps. scripts/verify_task.py --task FTF-0213 --stage task
+    reports BLOCKED ("no merged verification evidence yet") pre-merge, as
+    expected -- same precedent every sibling FTF-020x PROVISIONAL submission
+    already established (verify_task.py only resolves merged evidence, so a
+    pre-merge BLOCKED here is not itself a defect). Submitted PROVISIONAL,
+    not self-certified (Law 4) -- an independent Control-plane L2 review is
+    required before CERTIFIED.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0213.py
 FTF-0214:
   certification_state: NONE
   criticality: MUST

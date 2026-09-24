@@ -3739,6 +3739,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-0213** (Real structured-output probe) — submitted 2026-09-24 by a
+relay shift as PR https://github.com/SJZLab/Sovra/pull/232, not
+self-certified (Law 4). Real, bounded synthetic
+`response_format: json_schema` probe against a real local HTTPS gateway,
+schema-validated with a small purpose-built JSON Schema subset validator.
+Shown able to fail first (Law 1): a real dataclass-arity `TypeError` was
+caught by running the suite against the initial implementation, then
+fixed by switching every `StructuredOutputProbeResult` construction to
+keyword arguments. Three own fault injections (authorization gate,
+integer-coercion guard, `response_format`-rejection classification), each
+reverted byte-identical and the suite re-confirmed clean. Full evidence:
+`docs/certifications/queue.md`, `PROGRESS.md`.
+
 FTF-0211 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #228 (merge commit
 `423eb560ac7a7a5c088c33f30eda916bbff2ec77`), superseding PR #226 (closed

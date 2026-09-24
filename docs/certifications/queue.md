@@ -12942,3 +12942,109 @@ resolution itself. `docs/spec-matrix.yaml` has no other PROVISIONAL
 entries at this shift's end. `FTF-0304` still has two open, unmerged
 candidate PRs (#194/#195) from other sessions -- leave those for their
 own producer sessions or a certifier, do not redo the work.
+
+## 2026-09-24 -- FTF-0213 -- relay: implementation, submitted PROVISIONAL
+Picked FTF-0213 (Real structured-output probe) as the next real
+dependency-ready, unclaimed item after re-deriving the frontier fresh
+against `docs/spec-matrix.yaml`/`spec/tasks.json` (FTF-0212 and FTF-0304,
+also ready, already have other sessions' own open PRs -- left alone).
+Dependencies FTF-0201/FTF-0210 confirmed CERTIFIED first. Pulled the real
+DoD via `tools/r1_handoff.py packet FTF-0213`.
+
+**Built:** `packages/litellm_client/real_structured_output_probe.py::probe_structured_output`
+-- one real, bounded, synthetic `POST /v1/chat/completions` call with a
+strict OpenAI-compatible `response_format: json_schema` request, reusing
+`real_chat_probe.py`'s (FTF-0210) `ChatProbeNotAuthorizedError`/
+`ChatUsage`/`RouteIdentityState` directly (not parallel types, same
+convention FTF-0211 already established) and the same `guarded_fetch`/
+OpenBao secret-resolution composition. The actual response content is
+schema-validated with `_validate_against_schema`, a small purpose-built
+JSON Schema subset validator (`type`/`properties`/`required`/
+`additionalProperties`/`enum`) -- this repository has no existing JSON
+Schema dependency and the probe's own schema is small and fixed, so a new
+runtime dependency was not warranted.
+
+**Acceptance** ("Exercise the model's advertised structured-output
+protocol and schema-validate actual response") is proven by a real
+local-HTTPS-gateway round trip against a real `response_format:
+json_schema` request whose schema-valid content is decoded and returned,
+plus a dedicated round trip asserting the actual request bytes sent over
+the wire.
+
+**Negative_acceptance** ("JSON-looking prose, unknown parameter rejection
+or coercion is not silently treated as strict schema support") is proven
+by three distinct real states, never collapsed into a fabricated
+`PROBED`: `NOT_JSON` (real content that merely looks JSON-ish -- unquoted
+keys -- but does not parse), `UNSUPPORTED_PARAMETER` (a real gateway 400
+naming `response_format`, with a dedicated assertion that the probe
+issues exactly one real request and never silently retries without
+structured mode) and `SCHEMA_VIOLATION` (real, valid JSON that fails
+schema validation -- a numeric-looking string where an integer is
+required, a missing required field, an undeclared additional property, a
+value outside an enum, and a real top-level array kept distinct from
+`NOT_JSON` since it is valid JSON of the wrong shape).
+
+**Shown able to fail first (Law 1):** the suite genuinely failed against
+the initial implementation with a real `TypeError`
+(`StructuredOutputProbeResult.__init__() missing 1 required positional
+argument: 'probed_at'`) -- a real positional-argument arity bug (four
+construction sites missing the `usage=None` field, shifting every later
+argument by one position). Fixed by switching every construction site to
+explicit keyword arguments; full suite then ran clean.
+
+**Own fault-injection evidence (Law 1), three distinct vectors**, each
+reverted byte-identical (`diff` confirmed) and the suite re-confirmed
+clean immediately after each: (1) removed the `approved_model_ids`
+authorization gate entirely -- the authorization negative check
+genuinely failed for real; (2) changed the integer schema check to accept
+a numeric-looking string via `int()` coercion instead of a strict
+`isinstance` check -- both dedicated coercion checks (the pure validator
+unit test and the live round trip) genuinely failed for real; (3) removed
+the `UNSUPPORTED_PARAMETER` branch from `_classify_rejection` entirely --
+both dedicated `response_format`-rejection checks genuinely failed for
+real.
+
+**Own verification, full run:** `uv sync --all-packages`; `uv run ruff
+check`/`ruff format --check` clean on both new files (one real `UP038`
+and two real `E501` findings genuinely fixed, not suppressed); `uv run
+mypy` clean on both new files (required switching
+`_parse_structured_content`'s return shape from an untyped
+`dict[str, object]` to a plain typed tuple to resolve real type errors --
+not a suppression; repo-wide `mypy .` shows only the pre-existing,
+unrelated `apps/api/alembic` `Module has no attribute` findings, confirmed
+present before this change); `uv run python3
+tests/tasks/test_ftf_0201.py`/`test_ftf_0210.py`/`test_ftf_0211.py` (this
+task's own CERTIFIED dependencies plus its closest sibling) re-run clean
+-- no regression; `git fetch --unshallow origin` then
+`scripts/validate_spec.py --strict` clean; `scripts/product_truth_check.py
+--fail-on-unwired` -- 17/17, legitimately unchanged (Law 2, no live
+caller yet, `proving_symbol` left blank, same disclosed precedent
+FTF-0202/.../FTF-0211). `scripts/verify_task.py --task FTF-0213 --stage
+task` reports `BLOCKED` ("no merged verification evidence yet") pre-merge
+-- expected, same precedent every sibling FTF-020x PROVISIONAL submission
+already established.
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0213.py`) to
+`.github/workflows/ci.yml` in the same commit, per the disclosed
+FTF-0205/FTF-0206 watchdog finding on missing gate-wiring steps.
+`docs/spec-matrix.yaml`'s FTF-0213 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit (`3db8b84a9ddea64642e239126eb38d962dd77b33`).
+`spec/tasks.json`/`docs/implementation/TRACKER.json` left untouched --
+confirmed by git history both are only ever written at certification time
+by Control plane, never by a producer at PROVISIONAL submission.
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** -- pushed to
+`claude/wizardly-fermat-y3ozcu`, opened as
+https://github.com/SJZLab/Sovra/pull/232 (title `[relay] FTF-0213: Real
+structured-output probe`). Full entry: `QUEUE.md`, `PROGRESS.md`.
+
+## Next shift
+PR #232 is submitted PROVISIONAL and needs an independent Control-plane
+L2 review (this session cannot certify its own work -- Law 4) -- confirm
+CI is genuinely green on its actual current head at review time (not
+watched to completion by this shift; a `subscribe_pr_activity`
+subscription was not set up since this is a producer, not a watcher,
+shift). `docs/spec-matrix.yaml` has no other PROVISIONAL entries at this
+shift's end. FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are other
+sessions' own open work -- leave those alone.
