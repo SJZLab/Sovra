@@ -16341,3 +16341,34 @@ work -- leave those alone. FTF-0902 ("Network-policy templates") is
 genuinely dependency-ready but needs a real CNI-enforcing Kubernetes
 cluster this sandbox does not have (disclosed by a prior shift, not
 claimed here).
+
+## 2026-09-24T11:14:00Z — Relay: FTF-04A06 (PR #238) Law 1 fix pushed
+Independent Control-plane certification review (PR #239, comment on PR
+#238) found the shipped `resolve_allowed_root` sound but flagged a real
+Law 1 evidence gap: no test exercised a prefix-colliding sibling
+allowlist pair (`allowed` vs `allowed-evil`), distinct from the
+already-covered symlink-escape case. Reviewer's own independent fault
+injection (a naive `str.startswith()` implementation) passed the
+delivered suite undetected -- a missing test, not a code defect, since
+the real shipped check already uses a structural `Path.parents`
+comparison.
+
+Added `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling` to
+`tests/tasks/test_ftf_04a06.py`. Independently reran the identical fault
+injection (patched the real `.parents` check to
+`str(...).startswith(...)`): the new test genuinely fails against that
+naive implementation (1 `FAIL` line) and passes against the real,
+unmodified shipped code -- reverted byte-identical. No production code
+changed. `ruff`/`mypy` clean; `validate_spec.py --strict` clean;
+`product_truth_check.py`/`status.py` unchanged at `19/19` ·
+`59/300 certified`. `docs/spec-matrix.yaml`'s FTF-04A06 notes updated to
+disclose this fix. Pushed as commit `911ae78` on the same branch/PR
+(`claude/wizardly-fermat-azo96v`, PR #238). Replied on the review comment
+naming the fix commit.
+
+## Next shift
+PR #238 needs a fresh CI run on its new head and a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
+record, on branch `claude/sleepy-pasteur-xe53d0`) is a separate PR this
+relay does not own or merge.

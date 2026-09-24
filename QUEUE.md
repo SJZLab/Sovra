@@ -1,4 +1,21 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (same relay shift, continued) — an independent
+  Control-plane certification review (PR #239, comment on PR #238) found
+  PR #238's shipped `resolve_allowed_root` sound but flagged a real Law 1
+  evidence gap: no test used a prefix-colliding sibling allowlist pair
+  (`allowed` vs `allowed-evil`), distinct from the already-covered
+  symlink-escape case. Added
+  `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`; own
+  fault injection (the reviewer's own naive `str.startswith()`
+  implementation) confirmed the new test genuinely fails against it and
+  passes against the real, unmodified shipped code -- reverted
+  byte-identical. No production code changed. Pushed as commit `911ae78`
+  on the same PR #238; replied on the review comment naming the fix. PR
+  #238 now needs a fresh CI run and a fresh independent Control-plane L2
+  review. Full record: `docs/certifications/queue.md`'s matching
+  follow-up entry, `PROGRESS.md`.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled relay shift) — recomputed the
   dependency-ready frontier fresh from `docs/spec-matrix.yaml` (39
   `implementation_state: ABSENT` tasks with every dependency CERTIFIED,
@@ -3771,7 +3788,11 @@ FTF-04A01/FTF-04A07; disclosed scope boundary (does not itself persist a
 `TargetSourceSnapshot` row or upload the dirty-tree archive to real object
 storage -- a later, separately-scoped caller's job). Full submission
 record: `docs/certifications/queue.md`'s matching 2026-09-24 entry,
-`PROGRESS.md`. Needs a real CI run watched to completion and an
+`PROGRESS.md`. First review (PR #239) was NOT CERTIFIED for a real Law 1
+evidence gap (no prefix-colliding-sibling allowlist test); fixed in commit
+`911ae78` on the same PR #238 (see this file's own top status note and
+`docs/certifications/queue.md`'s matching follow-up entry) -- no
+production code changed. Needs a fresh CI run on the new head and a fresh
 independent Control-plane L2 review (Law 4 -- this session cannot certify
 its own work).
 
