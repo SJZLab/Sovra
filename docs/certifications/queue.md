@@ -14357,3 +14357,93 @@ a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved F
 
 - **Validated-by:** session https://claude.ai/code/session_01DfzHGRTG4C3bo11N4fu9N4
   (independent -- see session-ID check above), 2026-09-24.
+
+
+## 2026-09-24 — FTF-1503 — relay: implemented, submitted PROVISIONAL
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`. `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (large
+append-only logs, read via `tail`/targeted offsets/`grep`). QUEUE.md's "Owner actions -- current",
+"## Active" and "## Provisional" sections were all empty (FTF-0507 had just been independently
+CERTIFIED via PR #253 this same day). This session's own `HEAD` was already at parity with
+`origin/main`'s tip (`39983ab`).
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (parsed with
+PyYAML). Picked **FTF-1503** ("CSRF suite") -- dependencies FTF-0101, FTF-0401, FTF-1501 all
+confirmed `CERTIFIED` directly in `docs/spec-matrix.yaml` before relying on them, and CSRF is a
+pure HTTP-layer concern with no database or external-network prerequisite, unlike several other
+frontier candidates this shift explicitly ruled out (FTF-0302/FTF-0303 need real outbound network
+egress; FTF-04A17/FTF-04A19 share the `contracts:04A` lock and need a live Postgres migration;
+FTF-1201/FTF-H004 need a real reachable LiteLLM gateway/credential; FTF-1506 likely needs a
+CVE/advisory feed reachable only via network egress; FTF-1703 needs >=1000 real curated/reviewed
+traces). Full task contract pulled via `tools/r1_handoff.py packet FTF-1503`.
+
+**PEV, not mixed:**
+- **P:** read `apps/api/app/auth/oidc_login.py` (the only existing CSRF logic in this repository --
+  `_csrf_error`, applied only to `/auth/logout`/`/auth/refresh`, a private closure, not reusable),
+  `apps/api/app/auth/rbac_middleware.py` (the `require_role`/`principal_resolver`/`role_lookup`
+  decoupling convention this task's own dependency mirrors), `apps/api/app/projects/
+  project_routes.py` (confirmed its own write routes -- create/update/save-ui-state/archive -- have
+  zero CSRF check today, RBAC is the only guard), and `apps/api/app/main.py` (confirmed
+  `principal_resolver`/`role_lookup` still sit at their fail-closed defaults in the real
+  `create_app()`, so every real `/api/v1` mutation is already unconditionally denied (401) in the
+  deployed app regardless of CSRF -- the same disclosed "designed, not yet wired into the real
+  product route" gap `require_role` itself already carries there). Read `tests/tasks/
+  test_ftf_0103.py` (the real-uvicorn-demonstration-app pattern for `require_role`) and
+  `tests/security/tenant_isolation_suite.py`/`tests/tasks/test_ftf_1501.py` (the `ScenarioResult`/
+  `TenantIsolationEvidence`/`build_evidence` contract this task's own `shared_contracts_read`
+  names, `contract_owner: FTF-1501`, `shared_lock_required: []` -- reuse, not a new schema entry).
+- **E:** wrote `tests/tasks/test_ftf_1503.py` and `tests/security/csrf_suite.py` before writing the
+  production module, ran them, watched the real `ModuleNotFoundError: No module named
+  'app.auth.csrf_protection'` failure (bound to this criterion), then implemented
+  `apps/api/app/auth/csrf_protection.py` (`require_csrf_protection`, `InMemoryCsrfSessionStore`).
+  Zero certified production files touched (`oidc_login.py`, `rbac_middleware.py`,
+  `project_routes.py`, `main.py` all untouched) -- proven end to end against a real, locally-hosted
+  demonstration FastAPI app (real uvicorn server, real local socket) composing the real
+  `require_csrf_protection` with the real `require_role`, the same pattern `test_ftf_0103.py`
+  already established for `require_role` itself.
+- **V:** `product_truth_check.py --fail-on-unwired` confirmed 19/19 unchanged (no live-wiring claim
+  -- `proving_symbol` stays empty, matching the FTF-1501 precedent of a consolidated evidence suite
+  over primitives not yet wired into the real product route); `verify_task.py --task FTF-1503
+  --stage task` reports BLOCKED pre-merge (expected). Opened PR, appended this entry.
+
+**Own fault injection (Law 1), reverted byte-identical, both suites re-confirmed clean
+immediately after:** disabled the `X-CSRF-Token` comparison entirely in `require_csrf_protection`
+(left the Origin check and the token-availability check intact) -- run in a fresh process, the
+mutated module genuinely let a mutation through with no token, with a wrong token, and with a
+different session's own valid token: 3 of 7 real `tests/security/csrf_suite.py` scenarios and 4
+`tests/tasks/test_ftf_1503.py` checks failed for real (`missing_token_denied`, `wrong_token_denied`,
+`cross_session_token_denied` all wrongly returned `201`, plus the `secrets.compare_digest`
+source-inspection check). Reverted (`diff`/`cp` against the pre-fault copy confirmed
+byte-identical); both suites re-ran clean immediately after (7/7 and all checks passed).
+
+`ruff check .`/`ruff format --check .` clean repo-wide; `mypy app/auth/csrf_protection.py` clean
+(the repo-wide `apps/api` `mypy` run shows only the same 17 pre-existing `packages.*`/`authlib`
+import-not-found errors already on record from prior shifts, none touching this task's own file).
+`validate_spec.py --strict` clean after `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact -- the `stale_commit: FTF-0401 ...` finding it otherwise reports was
+confirmed a pre-existing sandbox artifact, not a defect in this diff, same class of gap already on
+record for prior shifts). `status.py` unchanged at 63/300 certified (PROVISIONAL, not yet
+CERTIFIED). No regression: `tests/tasks/test_ftf_0101.py`, `test_ftf_0103.py`, `test_ftf_0401.py`
+and `test_ftf_1501.py` all re-run clean (their own production files untouched by this diff).
+
+Diff scope confirmed exactly this task's own new files (`apps/api/app/auth/csrf_protection.py`,
+`tests/security/csrf_suite.py`, `tests/tasks/test_ftf_1503.py`,
+`docs/implementation/task-packets/FTF-1503.md`) plus one new `gate` job CI step and the expected
+`docs/spec-matrix.yaml` tracking update -- no scope creep. (Two exploratory packet files generated
+earlier this shift while checking the dependency-ready frontier, `FTF-1503.md`'s own initial draft
+and `FTF-1506.md`, were deleted before this task's own real work began, matching the same
+established precedent as FTF-0507's own prior shift; `FTF-1503.md` was then regenerated fresh once
+this task was actually picked.)
+
+`docs/spec-matrix.yaml` FTF-1503 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the real merge
+commit hash is known, same precedent as every sibling PROVISIONAL submission.
+
+**No production mock/placeholder path (Law 11); no independent schema change
+(`database_changes` contract honored -- no new table or column). Not self-certified (Law 4).**
+Opened as a PR from branch `claude/wizardly-fermat-gae8i9` -> `main`, title `[relay] FTF-1503:
+CSRF suite`. Independent Control-plane L2 review and a real CI run on the opened PR are required
+before certification.
+
+- **Submitted-by:** session https://claude.ai/code/session_01VDvxngihngbBfK5xfR5kt4 (producer --
+  independent Control-plane L2 certification still required, Law 4).

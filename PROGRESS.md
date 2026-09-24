@@ -17207,3 +17207,126 @@ FTF-04A17/04A19 (share the `contracts:04A` lock, need a live Postgres migration)
 FTF-1201/FTF-H004 (need a real reachable LiteLLM gateway/credential), FTF-1503, FTF-1506 (dependency
 scanning — likely needs a CVE/advisory feed reachable only via network egress, verify before
 claiming), and FTF-1703 (needs >=1000 real curated/reviewed traces, a data-curation task).
+
+## 2026-09-24T[relay] — Relay: FTF-1503 (CSRF suite), submitted PROVISIONAL
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`. `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (large
+append-only logs, read via `tail`/targeted offsets/`grep`).
+
+Confirmed live state before picking work: FTF-0507 (this file's own last-picked item) was already
+independently CERTIFIED and merged (PR #253, merge commit
+`c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`) before this shift started — this session's own `HEAD`
+was already at parity with `origin/main`'s tip (`39983ab`). `QUEUE.md`'s "Owner actions — current",
+"## Active" and "## Provisional" sections were all empty.
+
+Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml` (parsed with PyYAML
+directly) rather than trusting the prior shift's "Next shift" candidate list unchecked. Confirmed
+FTF-0101/FTF-0401/FTF-1501 (FTF-1503's own declared dependencies) all genuinely `CERTIFIED`. Ruled
+out several other listed candidates as needing infrastructure this sandbox does not have
+(FTF-0302/FTF-0303: outbound network egress; FTF-04A17/FTF-04A19: share the `contracts:04A` lock
+and need a live Postgres migration; FTF-1201/FTF-H004: a real reachable LiteLLM gateway/credential;
+FTF-1506: likely a CVE/advisory feed reachable only via network egress; FTF-1703: >=1000 real
+curated/reviewed traces). Picked **FTF-1503** ("CSRF suite") — a pure HTTP-layer concern, no
+database or external-network prerequisite. Full task contract pulled via `tools/r1_handoff.py
+packet FTF-1503`.
+
+**PEV, not mixed:**
+- **P:** read `apps/api/app/auth/oidc_login.py` in full (the only existing CSRF logic in this
+  repository — `_csrf_error`/`_read_active_session`, private closures inside
+  `build_oidc_login_router`, applied only to `/auth/logout`/`/auth/refresh`, not reusable
+  elsewhere), `apps/api/app/auth/rbac_middleware.py` in full (the `require_role`/
+  `principal_resolver`/`role_lookup` decoupling convention — "session authentication itself is
+  injected via `principal_resolver`, decoupled from FTF-0101's own concrete session-cookie
+  implementation ... so that module's already-certified evidence is never put at risk" — this
+  task's own dependency mirrors that same convention), `apps/api/app/projects/project_routes.py`
+  in full (confirmed its own write routes — create/update/save-ui-state/archive, all gated by
+  `PROJECT_WRITE_ROLES` via `require_role` — have zero CSRF/Origin check today), and
+  `apps/api/app/main.py` in full (confirmed `principal_resolver`/`role_lookup` still sit at their
+  fail-closed defaults in the real `create_app()` — "no live session-reader backed by
+  `oidc_login.read_session_cookie` ... wired in yet" — so every real `/api/v1` mutation is already
+  unconditionally denied 401 in the deployed app regardless of CSRF; this is the same disclosed
+  "designed, not yet wired into the real product route" class of gap `require_role` itself already
+  carries there, not a new one this task introduces). Read `tests/tasks/test_ftf_0103.py` in full
+  (the real-uvicorn-demonstration-app pattern already established for proving `require_role`) and
+  `tests/security/tenant_isolation_suite.py`/`tests/tasks/test_ftf_1501.py` (the `ScenarioResult`/
+  `TenantIsolationEvidence`/`build_evidence` contract this task's own `shared_contracts_read`
+  names — `contract_owner: FTF-1501`, `shared_lock_required: []` — so this task reuses that
+  contract rather than defining a new schema entry it has no lock to write).
+- **E:** wrote `tests/tasks/test_ftf_1503.py` and `tests/security/csrf_suite.py` first and ran them
+  against not-yet-existing code — real `ModuleNotFoundError: No module named
+  'app.auth.csrf_protection'`, bound to this criterion — then implemented
+  `apps/api/app/auth/csrf_protection.py` (`require_csrf_protection`: a FastAPI dependency
+  enforcing `Origin` equality against an explicit `allowed_origin` plus a constant-time
+  `X-CSRF-Token` comparison via `secrets.compare_digest` against a token resolved through a
+  pluggable, fail-closed-by-default `csrf_token_resolver`; `InMemoryCsrfSessionStore`: a real,
+  working single-process session/CSRF-token store, same class of real-not-mock in-memory state as
+  `oidc_login.py`'s own `_SessionRevocationStore`/`_RefreshTokenStore`). Zero certified production
+  files touched (`oidc_login.py`, `rbac_middleware.py`, `project_routes.py`, `main.py` all
+  untouched). Proven end to end against a real, locally-hosted demonstration FastAPI app (real
+  uvicorn server, real local socket) composing the real `require_csrf_protection` with the real
+  `require_role` on a demonstration mutating route — 7 real scenarios in
+  `tests/security/csrf_suite.py::run_csrf_scenarios`: (1) correct cookie + matching token +
+  same-origin + the right role succeeds (201); (2) the identical cookie with no `X-CSRF-Token`
+  header is denied (403 — a plain cross-site `<form>` POST attaches a cookie automatically but
+  cannot set a custom header); (3) the identical cookie with a foreign `Origin` even carrying the
+  real token is denied (403 — unsafe CORS/cross-site `fetch()`); (4) correct `Origin`,
+  wrong/garbage token, denied (403); (5) no session cookie at all, denied (401) at the role/auth
+  layer before CSRF is even reached; (6) correct `Origin` and correct token but the wrong role,
+  denied (403 — CSRF protection is not the only guard); (7) one session's cookie paired with a
+  different session's own valid token, denied (403).
+- **V:** `product_truth_check.py --fail-on-unwired` confirmed `19/19` unchanged — `proving_symbol`
+  stays empty, matching the FTF-1501 precedent of a consolidated evidence suite over primitives not
+  yet wired into the real product route, not a false 0/0 pass against a claimed symbol.
+  `verify_task.py --task FTF-1503 --stage task` reports `BLOCKED` pre-merge (expected, same
+  precedent as every sibling PROVISIONAL submission).
+
+**Own fault injection (Law 1), reverted byte-identical, both suites re-confirmed clean
+immediately after:** disabled the `X-CSRF-Token` comparison entirely in `require_csrf_protection`
+(replaced the `secrets.compare_digest` branch with `pass`, leaving the `Origin` check and the
+token-availability check intact). Run in a fresh process: the mutated module genuinely let a
+mutation through with a missing token, a wrong token, and a different session's own valid token —
+3 of 7 real `tests/security/csrf_suite.py` scenarios (`missing_token_denied`, `wrong_token_denied`,
+`cross_session_token_denied`, all wrongly returning `201`) and 4 `tests/tasks/test_ftf_1503.py`
+checks (the same three plus the `secrets.compare_digest` source-inspection check) genuinely
+`FAIL`ed, bound to `FTF-1503`. Reverted (`cp`/`diff` against the pre-fault copy confirmed
+byte-identical); both suites re-ran clean immediately after (7/7 and all checks passed).
+
+`ruff check .`/`ruff format --check .` clean repo-wide; `mypy app/auth/csrf_protection.py` clean
+(the repo-wide `apps/api` `mypy` run shows only the same 17 pre-existing `packages.*`/`authlib`
+import-not-found errors already on record from prior shifts, none touching this task's own file).
+`validate_spec.py --strict` clean after `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact — the `stale_commit: FTF-0401 ...` finding it otherwise reports was
+confirmed a pre-existing sandbox artifact, not a defect in this diff, same class of gap already on
+record for prior shifts). `status.py` unchanged at `63/300` certified (this task is PROVISIONAL,
+not yet CERTIFIED — the count does not move until an independent Control-plane review does). No
+regression: `tests/tasks/test_ftf_0101.py`, `test_ftf_0103.py`, `test_ftf_0401.py` and
+`test_ftf_1501.py` all re-run clean (their own production files untouched by this diff).
+
+Diff scope confirmed exactly this task's own new files (`apps/api/app/auth/csrf_protection.py`,
+`tests/security/csrf_suite.py`, `tests/tasks/test_ftf_1503.py`,
+`docs/implementation/task-packets/FTF-1503.md`) plus one new `gate` job CI step and the expected
+`docs/spec-matrix.yaml` tracking update — no scope creep. (Two exploratory packet files generated
+earlier this shift while checking the dependency-ready frontier — `FTF-1503.md`'s own initial
+draft and `FTF-1506.md` — were deleted before this task's own real work began, same established
+precedent as FTF-0507's own prior shift; `FTF-1503.md` was then regenerated fresh once this task
+was actually picked.)
+
+`docs/spec-matrix.yaml` FTF-1503 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the real merge
+commit hash is known, same precedent as every sibling PROVISIONAL submission.
+
+**No production mock/placeholder path (Law 11); no independent schema change
+(`database_changes` contract honored — no new table or column). Not self-certified (Law 4).**
+Opened as a PR from branch `claude/wizardly-fermat-gae8i9` against `main`, title `[relay] FTF-1503:
+CSRF suite`. Appended a matching entry to `docs/certifications/queue.md` for Control plane; updated
+`QUEUE.md`'s "## Provisional" section.
+
+## Next shift
+The PR opened this shift for FTF-1503 (CSRF suite) is open, awaiting CI plus an independent
+Control-plane L2 certifier shift (not this relay's role) — do not re-implement. PRs #246 (FTF-1303
+tracking-doc reconciliation) and #243 (FTF-04A06 owner-direct-merge certification, supersedes #241)
+remain separately open from before, awaiting Control-plane attention, if still unresolved. Recompute
+the dependency-ready frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note
+alone before picking a next item — candidates already ruled out this shift for lacking sandbox
+infrastructure (FTF-0302/0303, FTF-04A17/04A19, FTF-1201/H004, FTF-1506, FTF-1703) may be worth
+re-checking if the environment changes.
