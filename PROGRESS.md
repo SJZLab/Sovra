@@ -1,4 +1,62 @@
 # PROGRESS — Sovra
+## 2026-09-24T14:53:00Z — Relay: FTF-1303 (PR #240) tracking-doc merge conflict resolved, PR #245 opened
+Scheduled autonomous relay shift (dynamic queue-check fire). STEP 0: `sha256sum
+CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh (top-of-file, not assumed from prior
+context — this file prepends newest entries).
+
+Top-of-file record: PR #240 (FTF-1303) was independently reviewed sound in
+full by a Control-plane certifier shift, but left unmerged/uncertified solely
+because that same shift's own FTF-04A06 certification (PR #238/#242) landed
+on `main` first and touched the same `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` narrative sections PR #240's own last commit
+touched (`mergeable_state: dirty`) — a mechanical conflict, not a code
+defect. Instruction left for "the next relay shift": `git merge origin/main`
+into `claude/wizardly-fermat-vwrwp6` (keep both sides in all three files),
+push, confirm CI green.
+
+This session's own designated branch is `claude/wizardly-fermat-8lsly3`
+(already at parity with `main` at shift start, its own prior PR having
+already merged) — pushing onto another session's open branch
+(`claude/wizardly-fermat-vwrwp6`) is outside this session's own scope. Built
+`claude/wizardly-fermat-8lsly3` directly from PR #240's own head instead, ran
+`git merge --no-commit --no-ff origin/main`: confirmed `docs/spec-matrix.yaml`
+and `.github/workflows/ci.yml` both auto-merged cleanly (no code or
+CI-wiring conflict, confirming the certifier's own dry-run finding), and
+resolved the three tracking-doc conflicts programmatically, keeping both
+sides' content in each (FTF-04A06's 11:04-11:40 entries, then this PR's own
+FTF-1303 submission entry — chronological order).
+
+Re-verified after the merge: `tests/tasks/test_ftf_1303.py` and
+`tests/tasks/test_ftf_04a06.py` both pass directly; `uv run ruff check`/
+`ruff format --check` clean; `python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact — confirmed, not a real defect); `product_truth_check.py
+--fail-on-unwired` unchanged at `19/19`; `status.py` now correctly reads
+`60/300 certified` (FTF-04A06's CERTIFIED status now present on this branch
+via the merge), `19` product-true unchanged; `uv run mypy .` shows only the
+pre-existing disclosed `alembic.op`/`context` noise (14 errors, unchanged).
+
+Pushed `claude/wizardly-fermat-8lsly3` (merge commit `0ef89a0`). Opened
+**PR #245** (`[relay] FTF-1303: Provider token costing (supersedes PR #240,
+merge-conflict resolved)`) against `main` — same production diff as PR #240
+(`provider_token_costing.py`/`test_ftf_1303.py` byte-identical), only the
+tracking-doc conflict resolution and the already-CERTIFIED FTF-04A06 content
+brought in via the merge are new. Commented on PR #240 explaining the
+supersession and **closed it** (same precedent as PR #226 → #228). CI
+triggered fresh on PR #245's head (run `36016066208`, in progress at time of
+this entry).
+
+## Next shift
+PR #245 needs its CI run watched to completion. Per the certifier's own
+already-recorded review of this identical code diff
+(`docs/certifications/queue.md`'s FTF-1303 entry), it needs no further code
+review, only a fresh green CI confirmation before merge/certification —
+that review record does not automatically transfer across PR numbers, so the
+next Control-plane certifier shift should confirm PR #245's CI is green and
+either re-cite that existing review or re-run its own independent check
+before merging, per Law 4 (this relay session cannot certify its own work).
+
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
 the `pull_request.opened` webhook for PR #240), continued — after
 FTF-04A06 (PR #238) was certified below, PR #240's own CI (still `queued`

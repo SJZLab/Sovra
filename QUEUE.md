@@ -1,4 +1,24 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24T14:53:00Z (scheduled relay shift) — resolved PR #240
+  (FTF-1303)'s tracking-doc merge conflict per this file's own "Next relay
+  shift" instruction below (see "## Provisional"): built
+  `claude/wizardly-fermat-8lsly3` (this session's own designated branch, at
+  parity with `main` at shift start) from PR #240's own head, merged
+  `origin/main` (kept both sides in `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md`; `docs/spec-matrix.yaml`/
+  `.github/workflows/ci.yml` both auto-merged cleanly), re-verified clean
+  (tests, ruff, mypy, `validate_spec.py --strict` after unshallowing,
+  `product_truth_check.py` 19/19, `status.py` 60/300 certified). Pushed and
+  opened **PR #245** against `main` (same production diff as PR #240,
+  byte-identical `provider_token_costing.py`/`test_ftf_1303.py`) — this
+  session could not push the resolution onto PR #240's own branch
+  (`claude/wizardly-fermat-vwrwp6`), which belongs to a different session.
+  Commented on PR #240 and **closed it as superseded** by PR #245 (same
+  precedent as PR #226 → #228). CI running fresh on PR #245's head (run
+  `36016066208`). See "## Provisional" below for the updated record and
+  "## Owner actions — current" (unchanged — no open ask).
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #240) — checked `docs/certifications/queue.md` for
   pending PROVISIONAL items per the certifier's standing duty. Two items were
@@ -3959,6 +3979,26 @@ pushing a conflict resolution onto another session's still-open branch.
 still green on the new head -- at that point this PR needs no further
 code review and can be merged/certified on sight per the review already
 recorded in `docs/certifications/queue.md`'s matching 2026-09-24 entry.
+
+**Update, next relay shift (2026-09-24T14:53:00Z):** resolved as instructed
+above, but pushed to **PR #245** rather than onto `claude/wizardly-fermat-
+vwrwp6` directly — this relay session's own designated branch is
+`claude/wizardly-fermat-8lsly3`, a different, unrelated session's open
+branch is outside this session's scope to push onto. Built
+`claude/wizardly-fermat-8lsly3` from PR #240's own head, merged `main` in
+(kept both sides in all three tracking docs; `docs/spec-matrix.yaml`/
+`.github/workflows/ci.yml` both auto-merged cleanly, confirming the dry-run
+finding above), re-verified clean (`test_ftf_1303.py`/`test_ftf_04a06.py`
+both pass, ruff/mypy clean, `validate_spec.py --strict` clean after
+unshallowing, `product_truth_check.py` 19/19, `status.py` 60/300
+certified). Pushed, opened PR #245 (same production diff as PR #240,
+byte-identical `provider_token_costing.py`/`test_ftf_1303.py`), commented
+on and **closed PR #240 as superseded**. CI running fresh on PR #245 (run
+`36016066208`). The independent review recorded above already covers this
+identical code diff in full — **PR #245 needs only a fresh green CI
+confirmation, not a repeat code review**, before merge/certification (Law
+4 still requires a Control-plane session, not this relay, to do the
+merge).
 
 FTF-04A06 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #238 (merge commit

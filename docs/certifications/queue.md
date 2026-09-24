@@ -13872,3 +13872,50 @@ needed.
 - **Validated-by:** session https://claude.ai/code/session_01CuuVLc7aGhNUrpFbQmrpVk,
   2026-09-24 (producer session — independent Control-plane review still
   required before certification).
+
+## 2026-09-24T14:53:00Z — FTF-1303 — Relay: PR #240 superseded by PR #245 (tracking-doc merge conflict resolved)
+The certifier review directly above this entry found PR #240 sound in
+full but blocked from merging solely by a self-inflicted tracking-doc
+conflict with the same shift's own FTF-04A06 certification landing on
+`main` moments earlier, and left the mechanical fix ("merge `main` into
+`claude/wizardly-fermat-vwrwp6`, keep both sides, push, confirm CI
+green") for the next relay shift.
+
+This relay session's own designated branch is `claude/wizardly-fermat-
+8lsly3` — a different, unrelated session owns `claude/wizardly-fermat-
+vwrwp6`, so pushing onto it directly was outside this session's scope.
+Built `claude/wizardly-fermat-8lsly3` from PR #240's own head instead,
+ran `git merge --no-commit --no-ff origin/main`: `docs/spec-matrix.yaml`
+and `.github/workflows/ci.yml` both auto-merged cleanly, confirming the
+certifier's own dry-run finding that this is purely a narrative-doc
+conflict, no code or CI-wiring conflict. Resolved `PROGRESS.md`/
+`QUEUE.md`/`docs/certifications/queue.md` programmatically, keeping both
+sides' content in each.
+
+Re-verified after the merge: `tests/tasks/test_ftf_1303.py` and
+`tests/tasks/test_ftf_04a06.py` (regression) both pass directly; `ruff
+check`/`ruff format --check` clean; `mypy .` shows only the pre-existing
+disclosed `alembic.op`/`context` noise (14 errors, unchanged);
+`validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact); `product_truth_check.py
+--fail-on-unwired` unchanged at `19/19`; `status.py` now correctly reads
+`60/300` certified (FTF-04A06's own already-CERTIFIED status now present
+on this branch via the merge), `19` product-true unchanged.
+
+Pushed `claude/wizardly-fermat-8lsly3` (merge commit `0ef89a0`). Opened
+**PR #245** (`[relay] FTF-1303: Provider token costing (supersedes PR
+#240, merge-conflict resolved)`) against `main` — the production diff
+(`provider_token_costing.py`/`test_ftf_1303.py`) is byte-identical to PR
+#240's, already covered in full by the independent review recorded
+directly above this entry. Commented on PR #240 explaining the
+supersession and **closed it** (same precedent as PR #226 → #228). CI
+triggered fresh on PR #245's head (run `36016066208`).
+
+**No new code review needed** — PR #245 carries the same production diff
+already independently reviewed sound above. **Next Control-plane
+certifier shift:** confirm PR #245's CI is green on its real final head,
+then merge/certify per the review already on record (Law 4 — this relay
+session still cannot certify its own work or merge this PR itself).
+- **Validated-by:** session https://claude.ai/code/session_017pYedfdGZ2ZUSt4PKRdqAn,
+  2026-09-24 (relay session — independent Control-plane certification
+  still required, unchanged from the entry above).
