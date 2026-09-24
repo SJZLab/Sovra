@@ -1064,15 +1064,133 @@ FTF-0210:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0210.py
 FTF-0211:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Real streaming probe
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210
-  proof_state: UNPROVEN
+  evidence_hash: 1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210 (both
+    CERTIFIED). Built for real in a new packages/litellm_client/real_streaming_probe.py::probe_stream_chat
+    -- issues one real, bounded, synthetic streamed POST /v1/chat/completions call (stream=true)
+    and reconstructs the actual Server-Sent-Events response into a StreamProbeResult
+    (state/route_identity_state/resolved_model/text/tool_calls/termination_reason/usage/chunk_count/
+    latency_ms/detail/probed_at). Reuses FTF-0210's exact authorization contract
+    (ChatProbeNotAuthorizedError, raised before any network call when model_id is not in the
+    caller-supplied approved_model_ids set) and its ChatUsage/RouteIdentityState dataclasses directly
+    (public API reuse); the probe prompt and token ceiling are this module's own private constants
+    with the same fixed values FTF-0210 established, duplicated rather than cross-imported, matching
+    the convention every sibling FTF-020x module already follows of never importing another module's
+    private names even for identical values. This task's own new probe budget,
+    _PROBE_MAX_STREAM_CHUNKS, bounds real network reads so a gateway that never terminates a stream
+    cannot be read from forever.
+
+    packages/security/outbound_guard.py (FTF-H006, already CERTIFIED) gained one small, purely
+    additive export needed for this task -- guarded_stream_fetch/GuardedStreamResponse -- since
+    guarded_fetch reads its entire response body up front (response.read()), which a real SSE stream
+    must never do. The new function reuses the identical validate-then-pin connection path
+    guarded_fetch already used, extracted verbatim into _prepare_pinned_connection with no behavior
+    change to guarded_fetch itself (its own signature, redirect handling and existing tests are
+    unchanged -- the full tests/tasks/test_ftf_h006.py suite was re-run and stays green after the
+    extraction). New coverage for this new surface (incremental real reads, idempotent close,
+    destination-denial, connection-failure wrapping) was added to FTF-H006's own suite in this same
+    commit, since a shared module's new capability should be proven by that module's own test suite,
+    not only indirectly through a consumer. While implementing this, discovered and fixed a real,
+    disclosed gate-wiring gap of the same class the FTF-0205/FTF-0206 watchdog finding already
+    documents: tests/tasks/test_ftf_h006.py (an already-CERTIFIED task's own suite) was never wired
+    into .github/workflows/ci.yml's gate job at all -- added it in this same commit alongside this
+    task's own new FTF-0211 step.
+
+    Real defect caught and fixed during implementation (Law 1): GuardedStreamResponse.read_chunk
+    initially used HTTPResponse.read(size), which is io.BufferedReader's ordinary "read exactly
+    `size` bytes, issuing as many underlying socket reads as it takes, or block until EOF" behavior
+    -- for any real stream smaller than the requested chunk size, this silently defeated streaming
+    entirely by blocking until the connection closed and returning the whole body in one call. A
+    real test (a bounded chunk-read-budget test against a real delayed multi-write local server)
+    caught this for real: the probe reported PROBED with all 51 events reconstructed from a single
+    buffered read instead of hitting the (deliberately tiny, test-only) budget, proving the reads
+    were not actually incremental. Fixed by switching to HTTPResponse.read1(size) (io.BufferedIOBase's
+    "at most one underlying system call" method), re-verified against the same real test.
+
+    This task's own acceptance clause ("Consume actual SSE stream, reconstruct text/tool deltas and
+    account usage/termination") is proven by test_probe_reconstructs_text_deltas_usage_and_termination
+    (a real delayed multi-chunk stream reconstructed into text/usage/termination_reason, with the
+    real resolved model differing from the requested alias) and
+    test_probe_reconstructs_tool_call_deltas (the OpenAI-compatible incremental tool-call delta shape
+    -- only the first fragment per index carries id/name, later fragments append to arguments,
+    accumulated arguments never parsed/executed). This task's own negative_acceptance ("Malformed/
+    truncated streams, client cancellation and gateway retry do not leak connection resources or
+    double-bill silently") is proven by: test_truncated_stream_is_never_fabricated_into_a_success and
+    test_malformed_stream_event_is_never_fabricated_into_a_success (a real stream ending without
+    [DONE], and a real malformed data event, are both TRUNCATED_STREAM/MALFORMED_RESPONSE, never a
+    fabricated PROBED); test_stream_budget_ceiling_stops_an_unterminated_stream (a real
+    never-terminating stream is stopped at the bounded read ceiling); test_probe_closes_the_real_
+    connection_on_every_return_path (every return path -- success, truncation, malformed data --
+    closes the real underlying connection exactly once, verified by wrapping
+    GuardedStreamResponse.close itself and counting real calls); and
+    test_gateway_retry_never_happens_silently_inside_the_probe (a real rejected first attempt is
+    reported as its own failure and the probe makes exactly one real request -- this module contains
+    no retry loop anywhere, so a second, silently billable call can never happen inside it).
+    test_mid_stream_timeout_is_normalized_not_a_raw_exception additionally proves a real socket-level
+    failure occurring after headers arrive but before the stream completes is a classified
+    StreamProbeResult (via the new _classify_read_failure, distinct from _classify_guard_failure),
+    never an unhandled exception escaping this module.
+
+    Own fault-injection evidence (Law 1), reverted byte-identical (diff confirmed) and the suite
+    re-confirmed clean immediately after each: (1) removed the approved_model_ids authorization gate
+    from probe_stream_chat entirely -- the authorization-gate negative check genuinely failed for
+    real; (2) neutralized the "if not saw_done: return TRUNCATED_STREAM" check (via `if False:`) --
+    the truncated-stream negative check genuinely failed for real, proving a truncated stream would
+    otherwise be fabricated into PROBED; (3) against FTF-H006's own suite, neutralized
+    GuardedStreamResponse.close's actual socket-close call -- the new close-idempotency/real-release
+    check genuinely failed for real. Shown able to fail first (Law 1): moved the not-yet-restored
+    module aside and ran tests/tasks/test_ftf_0211.py directly, producing a real ModuleNotFoundError
+    bound to this task's own import; the module was then restored and the full suite re-run clean.
+
+    Scope decision (disclosed, same class as FTF-0210's/FTF-0301's own narrowing): this task owns
+    exactly the streamed plain-chat capability (text deltas, tool-call deltas insofar as they arrive
+    in a plain chat stream, usage/termination accounting); structured output (FTF-0213) is its own
+    later, separately dependency-gated probe task, and aggregating probe kinds into a per-model
+    capability registry (Section 3.4) is FTF-0214's job, not this module's. No independent schema
+    change (this task's own database_changes clause) -- a probe result is computed fresh on every
+    call and returned directly, never persisted, same convention every sibling FTF-020x module
+    already established. product_truth_check.py --fail-on-unwired stays 17/17 (unchanged -- Law 2,
+    this task deliberately has no live caller yet, same disclosed precedent
+    FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209/FTF-0210; proving_symbol left blank). uv run ruff
+    check/ruff format --check clean repo-wide; uv run mypy clean repo-wide (208 source files). uv run
+    python3 tests/tasks/test_ftf_0201.py/test_ftf_0204.py/test_ftf_0210.py/test_ftf_h006.py (this
+    task's own CERTIFIED dependencies plus the shared module it extended) re-run clean afterward --
+    no regression. scripts/validate_spec.py --strict clean (git fetch --unshallow origin first, this
+    sandbox's own documented shallow-clone artifact). Not self-certified (Law 4) -- submitted
+    PROVISIONAL, awaiting independent Control-plane L2 review.
+
+    2026-09-24 relay follow-up: an independent Control-plane review (see docs/certifications/
+    queue.md's 2026-09-23 FTF-0211 entry) found PR #226's gate job genuinely failing on the real
+    GitHub Actions runner -- tests/tasks/test_ftf_h006.py's _detect_ipv6_support() probes with an
+    explicit AF_INET6 socket, but the real _SERVER_V6 was built via a bare
+    ThreadingHTTPServer(("::1", 0), _Handler), which inherits socketserver.TCPServer's AF_INET
+    default regardless of the address passed in -- the two disagreed on a real dual-stack runner
+    (socket.gaierror: Address family for hostname not supported), crashing the gate job before
+    test_ftf_0211.py ever ran. This session's own designated git branch differs from PR #226's own
+    branch (claude/wizardly-fermat-pvnd0o) and this session cannot push to a branch other than its
+    own, so the fix was merged onto this session's own branch instead of PR #226's -- see PROGRESS.md
+    and docs/certifications/queue.md for the full record and the new PR this produced. Fix: added
+    _ThreadingHTTPServerV6(ThreadingHTTPServer) with address_family = socket.AF_INET6 and used it for
+    _SERVER_V6, so the real server now binds with the same address family the probe already checks.
+    Reproduced the exact CI symptom locally byte-for-byte (bare ThreadingHTTPServer(("::1", 0), ...)
+    raises socket.gaierror: [Errno -9] Address family for hostname not supported in this sandbox too,
+    independent of real IPv6 routing support) before applying the fix. Added a pure, always-run
+    regression check (test_ipv6_server_class_uses_the_same_address_family_the_probe_checks) shown
+    able to fail first (Law 1: reverted address_family to the old default, exactly that check failed
+    for real; reverted byte-identical, suite re-ran clean). Full re-run after the fix: ruff
+    check/format --check clean, mypy clean (208 files), tests/tasks/test_ftf_0211.py/test_ftf_0210.py/
+    test_ftf_0201.py/test_ftf_0204.py/test_ftf_h006.py all re-run clean (no regression),
+    scripts/validate_spec.py --strict clean, scripts/product_truth_check.py --fail-on-unwired stays
+    17/17 (unchanged, Law 2). certification_state left at PROVISIONAL, not self-certified (Law 4) --
+    this is a producer-role CI fix, not a certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0211.py
 FTF-0212:
   certification_state: NONE
   criticality: MUST

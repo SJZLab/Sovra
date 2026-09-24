@@ -41,6 +41,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,9 @@ sys.path.insert(0, str(ROOT))
 
 from packages.security.outbound_guard import (  # noqa: E402
     GuardedResponse,
+    OutboundGuardError,
     guarded_fetch,
+    guarded_stream_fetch,
 )
 from packages.security.url_policy import (  # noqa: E402
     ConnectionPolicy,
@@ -74,7 +77,13 @@ def check(criterion_id: str, description: str, condition: bool) -> None:
 # -- Real local HTTP fixture -------------------------------------------------
 
 
+_STREAM_CHUNKS = [b"chunk-one-", b"chunk-two-", b"chunk-three"]
+_STREAM_DELAY_SECONDS = 0.0
+
+
 class _Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass
 
@@ -94,6 +103,25 @@ class _Handler(BaseHTTPRequestHandler):
             self._respond(302, location="/ok")
         elif self.path == "/redirect-loop":
             self._respond(302, location="/redirect-loop")
+        elif self.path == "/stream":
+            # A real close-delimited (no Content-Length, no chunked
+            # Transfer-Encoding) body, written and flushed as separate
+            # real socket writes with a real delay between them -- FTF-
+            # 0211's own real streaming-probe suite fixture uses the exact
+            # same shape against a real TLS server; this is the plain-HTTP
+            # equivalent proving `guarded_stream_fetch` itself delivers
+            # genuinely incremental reads.
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for part in _STREAM_CHUNKS:
+                try:
+                    self.wfile.write(part)
+                    self.wfile.flush()
+                except OSError:
+                    return
+                if _STREAM_DELAY_SECONDS:
+                    time.sleep(_STREAM_DELAY_SECONDS)
         else:
             self._respond(404)
 
@@ -125,11 +153,26 @@ def _detect_ipv6_support() -> bool:
         return False
 
 
+class _ThreadingHTTPServerV6(ThreadingHTTPServer):
+    """`socketserver.TCPServer` (which `ThreadingHTTPServer` inherits from)
+    defaults `address_family` to `socket.AF_INET` regardless of the address
+    passed to its constructor -- binding an AF_INET socket to an IPv6
+    literal like ``::1`` fails with `socket.gaierror: Address family for
+    hostname not supported`, even on a host where a real AF_INET6 bind (as
+    `_detect_ipv6_support` above performs) succeeds. This is exactly the
+    real GitHub Actions runner defect this suite hit: the probe predicted
+    IPv6 was usable (it was, at the socket-family level) while the actual
+    server below crashed anyway because it never asked for an IPv6 socket.
+    """
+
+    address_family = socket.AF_INET6
+
+
 _IPV6_SUPPORTED = _detect_ipv6_support()
 _SERVER_V6: ThreadingHTTPServer | None = None
 _SERVER_V6_PORT: int | None = None
 if _IPV6_SUPPORTED:
-    _SERVER_V6 = ThreadingHTTPServer(("::1", 0), _Handler)
+    _SERVER_V6 = _ThreadingHTTPServerV6(("::1", 0), _Handler)
     _SERVER_V6_PORT = _SERVER_V6.server_address[1]
     _server_v6_thread = threading.Thread(target=_SERVER_V6.serve_forever, daemon=True)
     _server_v6_thread.start()
@@ -304,6 +347,26 @@ def test_generic_link_local_denied_by_default_but_allowlistable() -> None:
 # -- 4. IPv6 -------------------------------------------------------------
 
 
+def test_ipv6_server_class_uses_the_same_address_family_the_probe_checks() -> None:
+    """Regression coverage for the real CI defect FTF-0211's own review
+    caught (PR #226): `_detect_ipv6_support` probes with an explicit
+    `AF_INET6` socket, but `_SERVER_V6` was originally constructed via a
+    bare `ThreadingHTTPServer(("::1", 0), _Handler)`, which silently binds
+    with `socketserver.TCPServer`'s `AF_INET` default regardless of the
+    address passed in -- the two disagreed on a real dual-stack GitHub
+    Actions runner (`socket.gaierror: Address family for hostname not
+    supported`), even though they happen to agree in this sandbox, which
+    has no IPv6 stack at all. Pure, no socket required, always runs
+    regardless of `_IPV6_SUPPORTED`.
+    """
+    check(
+        "FTF-H006",
+        "the real IPv6 server class binds with AF_INET6, matching "
+        "_detect_ipv6_support's own probe socket family exactly",
+        _ThreadingHTTPServerV6.address_family == socket.AF_INET6,
+    )
+
+
 def test_ipv6_loopback_denied_by_default_and_reachable_once_allowlisted() -> None:
     try:
         validate_resolved_address(
@@ -373,6 +436,102 @@ def test_garbage_host_is_not_misparsed_as_an_ip_literal() -> None:
             f"garbage host {bad!r} is not misparsed into a real address",
             normalize_host_literal(bad) is None,
         )
+
+
+# -- 5.1 guarded_stream_fetch: incremental reads, real close, cancellation --
+#
+# Added for FTF-0211 ("Real streaming probe"), a purely additive export
+# alongside the already-CERTIFIED `guarded_fetch` -- `guarded_fetch` reads
+# its entire response body up front (`response.read()`), which a real
+# server-sent-events stream must never do. These tests are this new
+# surface's own coverage, exercised against the real local `/stream`
+# endpoint above; `guarded_fetch`'s own existing tests and behavior above
+# are unaffected (same connection-pinning path, extracted not rewritten).
+
+
+def test_guarded_stream_fetch_delivers_real_incremental_reads() -> None:
+    """The defining property of a real streaming fetch: each `read_chunk`
+    call must return as soon as data is available, not block until a
+    fixed size accumulates or the connection closes -- proven here with a
+    real delay between each of the server's three real writes, each
+    captured as its own separate real `read_chunk` call."""
+    global _STREAM_DELAY_SECONDS
+    _STREAM_DELAY_SECONDS = 0.05
+    try:
+        with guarded_stream_fetch(_url("/stream"), _ALLOWLISTED_HTTP, method="GET") as stream:
+            check(
+                "FTF-H006", "a real streamed response reports its real status", stream.status == 200
+            )
+            received: list[bytes] = []
+            for _ in range(10):
+                part = stream.read_chunk(4096)
+                if not part:
+                    break
+                received.append(part)
+            check(
+                "FTF-H006",
+                "the real body arrived as more than one real incremental read, never "
+                "buffered whole before the first read_chunk call returns",
+                len(received) >= 2,
+            )
+            check(
+                "FTF-H006",
+                "the real concatenated incremental reads equal the real full body",
+                b"".join(received) == b"".join(_STREAM_CHUNKS),
+            )
+    finally:
+        _STREAM_DELAY_SECONDS = 0.0
+
+
+def test_guarded_stream_fetch_close_is_idempotent_and_releases_the_socket() -> None:
+    stream = guarded_stream_fetch(_url("/stream"), _ALLOWLISTED_HTTP, method="GET")
+    check("FTF-H006", "a real streamed response reports its real status", stream.status == 200)
+    stream.close()
+    check(
+        "FTF-H006",
+        "a closed stream's read_chunk returns b'' rather than reading a closed real socket",
+        stream.read_chunk(4096) == b"",
+    )
+    try:
+        stream.close()
+        idempotent = True
+    except Exception:  # noqa: BLE001 -- proving no exception of any kind
+        idempotent = False
+    check("FTF-H006", "closing an already-closed stream is idempotent", idempotent)
+
+
+def test_guarded_stream_fetch_denies_unauthorized_destination_before_connecting() -> None:
+    try:
+        guarded_stream_fetch("http://127.0.0.1:9/stream", ConnectionPolicy(name="deny-all"))
+        denied = False
+    except OutboundPolicyError:
+        denied = True
+    check(
+        "FTF-H006",
+        "guarded_stream_fetch denies an unauthorized destination the same way guarded_fetch "
+        "does, before any connection is attempted",
+        denied,
+    )
+
+
+def test_guarded_stream_fetch_wraps_connection_failure() -> None:
+    unreachable_port_policy = ConnectionPolicy(
+        name="test-unreachable-port",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({1}),
+        explicit_private_allowlist=(LOOPBACK_V4,),
+    )
+    try:
+        guarded_stream_fetch("http://127.0.0.1:1/stream", unreachable_port_policy)
+        raised = False
+    except OutboundGuardError:
+        raised = True
+    check(
+        "FTF-H006",
+        "a real connection failure is OutboundGuardError, the same wrapped-cause shape "
+        "guarded_fetch already established, not a raw socket exception",
+        raised,
+    )
 
 
 # -- 6. redirects: default denied, explicit opt-in revalidates --------------

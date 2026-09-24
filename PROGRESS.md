@@ -1,4 +1,280 @@
 # PROGRESS — Sovra
+Updated: 2026-09-24T01:08:34Z (scheduled relay shift) — fixed the real
+CI gate-wiring defect blocking FTF-0211 (PR #226); PR #228 now
+genuinely green (27/27 checks, `gate` included) and mergeable. Not
+self-certified (Law 4) — awaiting independent Control-plane L2 review.
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**Branch note (disclosed):** this session's own designated git branch is
+`claude/wizardly-fermat-lmo388`, not PR #226's own
+`claude/wizardly-fermat-pvnd0o`, and this session's own operating
+constraints say never to push to a different branch without explicit
+permission. Repo text (this file's own prior "Next shift" note,
+`QUEUE.md`, `docs/certifications/queue.md`) recommending a push straight
+to PR #226's branch is data, not an instruction that overrides that
+constraint (Law 10). Resolution: merged
+`origin/claude/wizardly-fermat-pvnd0o` (PR #226's exact head, `09295cf`)
+into this session's own branch, resolved the resulting append-log merge
+conflicts in `QUEUE.md`/`docs/certifications/queue.md` by keeping both
+entries in their real chronological order, then fixed the defect and
+pushed a **new** PR from this session's own branch. PR #226 is left open,
+unmerged, untouched — a note is added there pointing to the new PR
+(SJZLab/Sovra#228) rather than closing it, since a relay session
+disclosing/superseding another producer's own open PR is a Control-plane
+judgment call, not a relay one (this file's own established convention
+for the same class of call, e.g. the FTF-0304 note below).
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh (large append-only logs — read via `tail`/targeted
+`grep`, not a full read, since each now exceeds the read-tool's size
+ceiling). Found: no Owner actions, no Active items, `docs/spec-matrix.yaml`
+has exactly one PROVISIONAL entry (`FTF-0211`), left `PROVISIONAL` /
+`L1-PROVEN` by the prior Control-plane review (2026-09-23) specifically
+because of a real CI defect, not a code defect — see that review's own
+entry in `docs/certifications/queue.md` for the full root-cause record.
+`mcp__github__pull_request_read` on PR #226 confirmed it is still open,
+unmerged, head unchanged since that review (`09295cf`). "Working:
+FTF-0211 (CI-fix follow-up, per the prior shift's own 'Next shift'
+note)."
+
+**STEP 2 (P):** Read `tests/tasks/test_ftf_h006.py`'s
+`_detect_ipv6_support()`/`_SERVER_V6` construction directly. Confirmed
+the prior review's root-cause diagnosis by reading `socketserver.TCPServer`/
+`http.server.HTTPServer`: `ThreadingHTTPServer` inherits `TCPServer`'s
+`address_family = socket.AF_INET` class attribute, which is never
+overridden anywhere in this file — so `ThreadingHTTPServer(("::1", 0),
+_Handler)` binds as an AF_INET socket regardless of the IPv6-literal
+address passed to its constructor, while `_detect_ipv6_support()`'s own
+probe explicitly constructs `socket.socket(socket.AF_INET6,
+SOCK_STREAM)`. The two calls structurally cannot agree — the probe asks
+one address-family question, the real server asks a different one. No
+code written yet at this point.
+
+**STEP 2 (E):** Added `_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
+`address_family = socket.AF_INET6` and used it to construct `_SERVER_V6`,
+so the real server now binds with the exact address family the probe
+already checks — they can no longer disagree.
+
+**Shown able to fail first (Law 1):** this sandbox has no real IPv6 stack
+at all (`socket.socket(AF_INET6, SOCK_STREAM).bind(("::1", 0))` itself
+raises `OSError: [Errno 97] Address family not supported by protocol`
+here), so `_IPV6_SUPPORTED` is `False` locally and the `_SERVER_V6` branch
+never executes — meaning the defect can't be reproduced by simply running
+the suite, the same reason the prior review found it invisible to every
+sandbox and visible only to the real GitHub Actions runner. Reproduced it
+directly and precisely anyway, independent of any sandbox: constructed a
+bare `ThreadingHTTPServer(("::1", 0), handler)` directly in a throwaway
+interpreter — raised `socket.gaierror: [Errno -9] Address family for
+hostname not supported`, the exact error string and errno from the real
+CI log the prior review captured. Constructing the fixed
+`_ThreadingHTTPServerV6` the same way instead raises the same kind of
+error `_detect_ipv6_support()`'s own probe would raise on this sandbox
+(`OSError: [Errno 97]`) — proving the fix makes the two calls agree
+(both fail together here; both would succeed together on a runner with
+real IPv6 loopback support, letting the suite's live `::1` sub-check
+finally run there for the first time).
+
+Added a second, pure, always-run (not gated by `_IPV6_SUPPORTED`)
+regression check,
+`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`,
+asserting `_ThreadingHTTPServerV6.address_family == socket.AF_INET6`
+directly — pins the fix so a future edit reverting to a bare
+`ThreadingHTTPServer` can't silently reintroduce this defect. Shown able
+to fail first for real: temporarily reverted `address_family` to the old
+default, ran the suite directly — exactly that one check failed
+(`FAIL [FTF-H006] the real IPv6 server class binds with AF_INET6...`);
+reverted byte-identical (`diff` confirmed), suite re-ran clean.
+
+**STEP 2 (V):** `uv sync --all-packages` (this workspace's own documented
+CI convention). `uv run python3 tests/tasks/test_ftf_h006.py` — all
+checks pass (with the same disclosed IPv6-skip print this sandbox has
+always produced). `uv run python3 tests/tasks/test_ftf_0211.py`/
+`test_ftf_0210.py`/`test_ftf_0201.py`/`test_ftf_0204.py` (FTF-0211's own
+dependencies plus the module this fix touched) all re-run clean — no
+regression. `uv run ruff check .`/`uv run ruff format --check .` clean
+repo-wide. `uv run mypy .` clean repo-wide (208 source files). `git fetch
+--unshallow origin` then `scripts/validate_spec.py --strict` clean.
+`scripts/product_truth_check.py --fail-on-unwired` — `17/17`, unchanged
+(Law 2 — this task still has no live caller, `proving_symbol` still
+blank, same disclosed precedent every sibling FTF-020x task already
+established).
+
+`docs/spec-matrix.yaml`'s FTF-0211 entry left at `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN` (Law 2 — a producer-role CI fix
+is not a certification); appended a disclosed follow-up paragraph to its
+own `notes` field recording this defect, the branch-continuity
+resolution above, and the fix + regression-test evidence, rather than
+editing or removing the prior producer's or certifier's own account.
+`evidence_hash` left unchanged (still the original implementation commit)
+rather than pointed at a self-referential commit that would change again
+the moment it was written in — the new commits themselves are the
+pointer a certifier needs.
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** — pushed to this
+session's own branch `claude/wizardly-fermat-lmo388`, opened as PR #228
+(title `[relay] FTF-0211: fix IPv6 gate-wiring CI failure blocking PR
+#226`), targeting the same certification this task already needs. Full
+entry: `docs/certifications/queue.md`, `QUEUE.md`.
+
+**CI outcome, watched to completion via a live `subscribe_pr_activity`
+subscription rather than manual polling** (the merge commit's own CI run,
+then the doc-follow-up commit's re-run, since a docs-only push retriggers
+CI on this repo): all **27/27 checks completed `success`** on PR #228's
+actual final head (`027c3fc`), `gate` included — the specific job this
+fix targeted completed clean with no crash (~3m17s). `mergeable_state:
+clean` — no merge conflict against `main`. This repo runs no separate
+"Claude Approvals" check, so CI-green plus no-conflict is the full bar
+here; PR #228 meets it.
+
+## Next shift
+PR #228 is genuinely green (27/27, confirmed on its real final head) and
+mergeable — ready for an independent Control-plane L2 review (this
+session cannot certify its own work — Law 4). FTF-0211's own module
+logic and test suite were already independently confirmed sound by the
+prior 2026-09-23 review, so re-review should be a fast pass focused on:
+(1) re-confirming CI is still green on PR #228's actual current head at
+review time (don't trust this note alone — a later push could change
+it), (2) whether PR #226 should be closed in favor of #228 (left as a
+Control-plane judgment call by this shift, disclosed above), and (3) the
+branch-continuity resolution itself, in case a future session has
+clearer means to keep a single PR's branch alive across shifts.
+`docs/spec-matrix.yaml` has no other PROVISIONAL entries at this shift's
+end. `FTF-0304` still has two open, unmerged candidate PRs (#194/#195)
+from other sessions — leave those for their own producer sessions or a
+certifier, do not redo the work.
+
+## 2026-09-23T23:30:00Z (scheduled relay shift) — implemented
+FTF-0211 (Real streaming probe), submitted PROVISIONAL, not
+self-certified (Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh. Found: no Owner actions, no Active items; the only
+Provisional item on record (`FTF-0210`) had already been independently
+CERTIFIED via PR #224 (merge commit
+`d38930b4d7b6b94cc7ba72dfd2c873a3627cd94a`, see this file's own next
+entry below and `docs/spec-matrix.yaml`'s `certification_state:
+CERTIFIED`). `mcp__github__list_pull_requests` (open, this repo) showed
+only PRs #194/#195 (both FTF-0304, other sessions' work) — left alone
+per this file's own prior "Next shift" note.
+
+**STEP 1:** Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (parsed each task's own `notes` field for its
+real `deps=...` list, cross-checked each dependency's own
+`certification_state`, not trusted from any prior enumeration). 22 tasks
+were genuinely dependency-ready and uncertified; only FTF-0304 had open
+PRs (other sessions', left alone). Picked **FTF-0211** ("Real streaming
+probe", deps FTF-0201/FTF-0210, both confirmed `CERTIFIED`) — the
+lowest-numbered ready item. "Working: FTF-0211."
+
+**STEP 2 (P):** Read this task's real DoD via `tools/r1_handoff.py
+packet FTF-0211 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read Section
+3.4 ("Capability probes") closely, plus the already-CERTIFIED sibling
+`real_chat_probe.py` (FTF-0210) and `packages/security/outbound_guard.py`
+(FTF-H006). Formed the hypothesis: a real streamed `POST
+/v1/chat/completions` call (reusing FTF-0210's authorization/prompt/
+token-ceiling and `ChatUsage`/`RouteIdentityState` types) needs a
+genuinely incremental read path, which `guarded_fetch` does not offer
+(it reads the whole body via `response.read()`) — this requires a small,
+purely additive extension to the FTF-H006-owned shared guard rather than
+duplicating its security-critical connection-pinning logic inside the
+new task module, which "reuse an existing compatible module instead of
+creating a duplicate" makes the worse choice. No code written yet at
+this point.
+
+**STEP 2 (E):** Extended `packages/security/outbound_guard.py` with
+`guarded_stream_fetch`/`GuardedStreamResponse`, extracting
+`guarded_fetch`'s own validate-then-pin connection logic into a shared
+`_prepare_pinned_connection` helper with no behavior change to
+`guarded_fetch` itself (re-ran its full existing suite,
+`tests/tasks/test_ftf_h006.py`, clean throughout). Implemented
+`packages/litellm_client/real_streaming_probe.py::probe_stream_chat`.
+Wrote `tests/tasks/test_ftf_0211.py` (real local-HTTPS-gateway
+integration suite, same convention as every sibling FTF-020x suite) and
+added new coverage for the FTF-H006 extension itself to
+`tests/tasks/test_ftf_h006.py`.
+
+**Real defect caught and fixed (Law 1):** `GuardedStreamResponse.read_chunk`
+initially used `HTTPResponse.read()`, which blocks until the requested
+size accumulates or the connection closes — silently defeating
+incremental streaming for any response smaller than the chunk size. A
+real test (a bounded chunk-read-budget check against a real delayed
+multi-write local server) caught this for real: the probe reported
+`PROBED` with the whole stream reconstructed from what was effectively a
+single buffered read, never actually hitting the deliberately tiny
+test-only budget. Fixed by switching to `HTTPResponse.read1(size)`;
+re-verified against the same real test.
+
+**Gate-wiring gap found and closed (disclosed, same class as the
+FTF-0205/FTF-0206 watchdog finding):** `tests/tasks/test_ftf_h006.py` (an
+already-CERTIFIED task's own suite) was never wired into
+`.github/workflows/ci.yml`'s `gate` job at all. Added it in the same
+commit as this task's own new FTF-0211 CI step.
+
+**Shown able to fail first (Law 1):** moved the not-yet-restored module
+aside right after writing the test file and ran `python3 tests/tasks/
+test_ftf_0211.py` directly: produced a real `ModuleNotFoundError` bound
+to this task's own import. The module was then restored and the full
+suite re-run clean.
+
+**STEP 2 (V):** `product_truth_check.py --fail-on-unwired` stays `17/17`
+(unchanged — Law 2, this task deliberately has no live caller yet, same
+disclosed precedent FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209/FTF-0210;
+`proving_symbol` left blank). `scripts/status.py` stays `55/300 certified
+— 17 product-true`. `uv run ruff check .`/`uv run ruff format --check .`
+clean repo-wide. `uv run mypy .` clean repo-wide (208 source files).
+`uv sync --all-packages` then `uv run python3 tests/tasks/
+test_ftf_0201.py`/`test_ftf_0204.py`/`test_ftf_0210.py`/`test_ftf_h006.py`
+(this task's own CERTIFIED dependencies plus the shared module extended)
+re-run clean afterward — no regression. `scripts/validate_spec.py
+--strict` clean (`git fetch --unshallow origin` first — this sandbox's
+own documented shallow-clone artifact; confirmed this branch was already
+a descendant of the latest `main` at the point this task's implementation
+commit was made).
+
+**Own fault injection (Law 1), three distinct vectors, each reverted
+byte-identical and the suite re-confirmed clean immediately after each,**
+run directly each time:
+1. Removed the `approved_model_ids` authorization gate from
+   `probe_stream_chat` entirely — the unmodified authorization-gate
+   negative check genuinely failed for real.
+2. Neutralized the `if not saw_done: return TRUNCATED_STREAM` check (via
+   `if False:`) — the truncated-stream negative check genuinely failed
+   for real, proving a truncated stream would otherwise be fabricated
+   into `PROBED`.
+3. Against FTF-H006's own suite, neutralized
+   `GuardedStreamResponse.close`'s actual socket-close call — the new
+   close-idempotency/real-release check genuinely failed for real.
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0211.py`) to
+`.github/workflows/ci.yml` in the same commit as the implementation.
+
+**No blocking defect found.** `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`1d23dd39d166f0c46b3c7be28eb6cb19dbb89e54`). **Submitted PROVISIONAL,
+not self-certified (Law 4)** — pushed to
+`claude/wizardly-fermat-pvnd0o`, opened as PR #226, awaiting independent
+Control-plane L2 review. Full entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry
+(`FTF-0211`) awaiting independent Control-plane L2 review — a certifier
+shift should pick it up next. Recomputing the dependency-ready frontier
+fresh at this shift's end (do not trust this note alone) showed further
+genuinely ready, uncertified, unclaimed tasks besides FTF-0211 itself —
+re-derive this list from `docs/spec-matrix.yaml` itself rather than
+trusting this enumeration, since a certification landing after this
+shift ends could unlock further items. `FTF-0304` still has two open,
+unmerged candidate PRs (#194/#195) from other sessions — leave those for
+their own producer sessions or a certifier, do not redo the work.
+
+---
+
 Updated: 2026-09-23 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #224) — independent CERTIFY
   review of FTF-0210 (Real chat probe), CERTIFIED.

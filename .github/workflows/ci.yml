@@ -184,6 +184,12 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1302.py
       - name: FTF-0500 negative-test proof (DatasetSourceConnection schema/API/RBAC, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0500.py
+      - name: FTF-H006 negative-test proof (Shared outbound URL and credential guard, no DB required)
+        # Gate-wiring gap found and closed while implementing FTF-0211: this
+        # already-CERTIFIED task's own suite (tests/tasks/test_ftf_h006.py)
+        # was never wired into this job at all -- the same class of gap the
+        # FTF-0205/FTF-0206 comments above already document for this file.
+        run: uv run python3 tests/tasks/test_ftf_h006.py
       - name: FTF-0203 negative-test proof (Connection validation, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0203.py
       - name: FTF-0204 negative-test proof (`/v1/models` discovery, no DB required)
@@ -213,6 +219,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0209.py
       - name: FTF-0210 negative-test proof (Real chat probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0210.py
+      - name: FTF-0211 negative-test proof (Real streaming probe, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0211.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
