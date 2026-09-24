@@ -6341,3 +6341,96 @@ reasons given above.
   17/17.
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0213 — Real structured-output probe
+- Criterion ID: FTF-0213
+- PR: https://github.com/SJZLab/Sovra/pull/232 (`claude/wizardly-fermat-y3ozcu`
+  → `main`). Merged by this review as merge commit
+  `1751211044041e15fc4708b4be552c3957509e80`.
+- Merge commit (evidence): 1751211044041e15fc4708b4be552c3957509e80
+- Implementation commit: 3db8b84a9ddea64642e239126eb38d962dd77b33
+- Validated-by: session https://claude.ai/code/session_01J2UD5rqhJWHsPCn88wgMp8
+  (scheduled Control-plane certifier shift, `pull_request.opened` webhook
+  for PR #232)
+- Date: 2026-09-24
+- **Session-ID check:** all three commits on PR #232 (`3db8b84`/`39c5feb`/
+  `61d80a3`) carry `Claude-Session: .../session_01XvEtUhKF5SaS7brwfqGkeZ` —
+  no match to this reviewing session's own ID
+  (`session_01J2UD5rqhJWHsPCn88wgMp8`), independent per Law 4.
+- **Diff read directly**: read the full PR diff via GitHub (1950 lines).
+  Confirmed exactly seven files touched: `.github/workflows/ci.yml` (one
+  added gate step), `PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`,
+  `docs/spec-matrix.yaml` (FTF-0213 → `PROVISIONAL`/`L1-PROVEN`), and the
+  two new files `packages/litellm_client/real_structured_output_probe.py`
+  (563 lines) and `tests/tasks/test_ftf_0213.py` (971 lines) — no scope
+  creep. The PR's head moved once during this review (`39c5feb` →
+  `61d80a3`, the same producer session recording its own confirmed-green-CI
+  note); confirmed via `git show --stat` to be `PROGRESS.md`/
+  `docs/certifications/queue.md` tracking-docs-only, no code change.
+- **CI re-checked on the real final head, not taken on faith:** polled
+  `gh api .../commits/61d80a3.../check-runs` to completion (not the
+  producer's own report alone) — **27/27 checks `completed`/`success`**,
+  `gate` included, `mergeable_state: clean`, `mergeable: true`.
+- **Own independent verification, directly in a fresh git worktree
+  checked out from the PR's actual head** (`uv sync --all-packages`
+  first):
+  - `uv run python3 tests/tasks/test_ftf_0213.py` — "all checks passed",
+    exit code 0, zero `FAIL` lines (the SSL EOF traceback printed to
+    stderr mid-run is expected server-thread noise from the deliberate
+    client-side timeout test's connection drop, not a failure — same
+    convention every sibling FTF-020x suite already documents).
+  - `uv run ruff check` / `ruff format --check` on both new files — clean.
+  - `uv run mypy` on both new files — clean.
+  - `python3 scripts/validate_spec.py --strict` — clean (`git fetch
+    --unshallow origin` first; the shallow-clone `stale_commit` noise
+    seen before unshallowing is the same pre-existing artifact every
+    prior certifying session has already documented).
+  - `python3 scripts/product_truth_check.py --fail-on-unwired` — `17/17`,
+    legitimately unchanged (`proving_symbol` stays blank — this task
+    deliberately has no live caller yet, same disclosed Law 2 precedent
+    every sibling FTF-020x probe task, including already-CERTIFIED
+    FTF-0210/FTF-0211, already established — not a fabricated pass).
+  - **Own fault injection, one vector, independent of the producer's own
+    three claimed vectors, reverted byte-identical and the suite
+    re-confirmed clean immediately after:** changed
+    `_validate_against_schema`'s integer check from a strict
+    `isinstance(instance, int)` guard to an `int(instance)`-coercion
+    fallback (so a numeric-looking string like `"1"` would pass) — the
+    suite genuinely failed for real (exit code 1, 2 `FAIL` lines: the
+    pure `test_validate_against_schema_never_coerces` unit check and the
+    live `test_coerced_type_is_a_schema_violation_not_probed` round
+    trip). Reverted; `diff` against the original confirmed
+    byte-identical; suite re-ran clean (exit 0, 0 `FAIL` lines).
+- `python3 tools/r1_handoff.py packet FTF-0213 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled directly: acceptance clause 1
+  ("Exercise the model's advertised structured-output protocol and
+  schema-validate actual response") confirmed met by
+  `test_probe_succeeds_and_records_route_usage_latency` (a real
+  schema-valid round trip) and
+  `test_probe_sends_a_bounded_synthetic_json_schema_request` (the real
+  `response_format: json_schema` bytes actually sent over the wire).
+  `negative_acceptance` ("JSON-looking prose, unknown parameter rejection
+  or coercion is not silently treated as strict schema support")
+  confirmed met by three distinct real states, never collapsed into a
+  fabricated `PROBED`: `NOT_JSON` (`test_json_looking_prose_is_not_json`),
+  `UNSUPPORTED_PARAMETER`
+  (`test_unsupported_response_format_parameter_is_not_fabricated`,
+  including its dedicated exactly-one-request assertion — no silent
+  retry without structured mode), and `SCHEMA_VIOLATION`
+  (`test_coerced_type_is_a_schema_violation_not_probed` plus the sibling
+  missing-required-field/additional-property/enum-mismatch/top-level-array
+  checks). Acceptance clause 2 ("Independent review, exact merged commit,
+  real relevant integration and negative-test evidence recorded") is met
+  by this review itself. Dependencies FTF-0201/FTF-0210 confirmed
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them.
+- No blocking defect found. Merged PR #232 (merge commit
+  `1751211044041e15fc4708b4be552c3957509e80`) into `main`.
+  `docs/spec-matrix.yaml`'s FTF-0213 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+  merge commit; `proving_symbol` stays blank (no live caller yet,
+  disclosed — same precedent as every sibling FTF-020x task). Ran
+  `scripts.task_claim.sync_certified_status()` — `['FTF-0213']` updated.
+  Certified count moves 56/300 → 57/300. Product-true: unchanged at
+  17/17.
+
+**Conclusion:** Certified L2-CERTIFIED.

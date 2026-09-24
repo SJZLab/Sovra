@@ -1,4 +1,69 @@
 # PROGRESS — Sovra
+Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
+the `pull_request.opened` webhook for PR #232) — independently reviewed
+and **CERTIFIED FTF-0213** (Real structured-output probe).
+
+## 2026-09-24 — FTF-0213 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #232. Checked
+`docs/certifications/queue.md` per this session's own mandate and found
+FTF-0213/PR #232 the sole pending PROVISIONAL item. Session-ID check:
+all three commits on PR #232 carry `Claude-Session: .../
+session_01XvEtUhKF5SaS7brwfqGkeZ` — no match to this session's own ID
+(`session_01J2UD5rqhJWHsPCn88wgMp8`), independent per Law 4.
+
+Read the full PR diff directly (1950 lines) — exactly the seven files the
+PR description claims, no scope creep. Polled real CI to completion on
+the PR's actual head (`gh api` against the commit SHA directly, not the
+producer's own report): the head moved once mid-review (a docs-only
+tracking-notes commit from the same producer session, confirmed via
+`git show --stat`); final head `61d80a3` reached **27/27 checks
+`completed`/`success`**, `gate` included, `mergeable_state: clean`.
+
+Checked out the PR's real head into a dedicated git worktree and
+independently re-ran everything rather than trusting the PR body: `uv run
+python3 tests/tasks/test_ftf_0213.py` — all checks passed, exit 0, zero
+`FAIL` lines; `ruff check`/`ruff format --check`/`mypy` on both new
+files — clean; `scripts/validate_spec.py --strict` (after `git fetch
+--unshallow origin`) — clean; `scripts/product_truth_check.py
+--fail-on-unwired` — 17/17, legitimately unchanged (no live caller yet,
+`proving_symbol` blank, same disclosed Law 2 precedent every sibling
+FTF-020x probe task already established). Ran this review's own fault
+injection, independent of the producer's three claimed vectors: changed
+`_validate_against_schema`'s integer check to accept a numeric-looking
+string via `int()` coercion instead of a strict `isinstance` guard — the
+suite genuinely failed for real (exit 1, 2 `FAIL` lines); reverted, `diff`
+confirmed byte-identical, suite re-ran clean.
+
+Pulled the real DoD via `tools/r1_handoff.py packet FTF-0213 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both the acceptance
+clause ("Exercise the model's advertised structured-output protocol and
+schema-validate actual response") and the full three-state
+negative_acceptance ("JSON-looking prose, unknown parameter rejection or
+coercion is not silently treated as strict schema support" — `NOT_JSON`/
+`UNSUPPORTED_PARAMETER`/`SCHEMA_VIOLATION`) are genuinely met by the real,
+passing test suite, not merely "tests pass." Confirmed dependencies
+FTF-0201/FTF-0210 are genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+first.
+
+No blocking defect found. Merged PR #232 (merge commit
+`1751211044041e15fc4708b4be552c3957509e80`) into `main`.
+`docs/spec-matrix.yaml`'s FTF-0213 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that
+merge commit — appended a disclosed follow-up paragraph to its own
+`notes` field recording this review, without editing or removing the
+producer's own prior account. Ran `scripts.task_claim.sync_certified_status()`
+— `['FTF-0213']` updated. `scripts/status.py`: `56/300` certified before,
+`57/300` after; product-true unchanged at `17/17`. Updated `QUEUE.md`
+(moved FTF-0213 from "## Provisional" to "## Done") and appended the full
+entry to `docs/certifications/ledger.md`.
+
+## Next shift
+`docs/spec-matrix.yaml` has no PROVISIONAL entries at this shift's end.
+FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are other sessions' own
+open work — leave those alone; nothing else for Control plane to certify
+right now.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
 submitted **FTF-0213** (Real structured-output probe) as PROVISIONAL.
 
