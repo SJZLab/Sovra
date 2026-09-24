@@ -14447,3 +14447,17 @@ before certification.
 
 - **Submitted-by:** session https://claude.ai/code/session_01VDvxngihngbBfK5xfR5kt4 (producer --
   independent Control-plane L2 certification still required, Law 4).
+
+**Addendum, same shift (2026-09-24):** the `gate` job's real CI run on PR #258 (`check_run_id
+107872326978`, head `e6f9615`) genuinely failed -- `uv run mypy .` from the repo root (not the
+`apps/api`-scoped run this submission validated locally) surfaced 6 real type errors this shift's
+own local check missed: an unused `type: ignore[no-any-return]` and 4 `object`-vs-`str | None`
+argument-type errors in `tests/security/csrf_suite.py`, plus an `asyncio.run` argument-type error
+in `tests/tasks/test_ftf_1503.py` (it needs an actual `Coroutine`, not the abstract
+`Awaitable[None]` `require_csrf_protection` returns). Root-caused directly (not a flake -- a real,
+reproducible type error, confirmed by running `uv run mypy .` from root locally and getting the
+identical 6 errors), fixed with an explicit `cast` in place of the unused ignore, `cast(str, ...)`
+at the two JSON-decoded token call sites, and a small local async wrapper around the dependency
+call in the test file. Reproduced the original failure locally first, then confirmed `uv run mypy
+.` clean (236 source files) plus both suites still passing (7/7 live scenarios, all no-DB checks)
+before pushing. Pushed as a follow-up commit on the same PR/branch.
