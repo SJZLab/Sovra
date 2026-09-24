@@ -3699,34 +3699,61 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0211 — Real streaming probe. PR #226 (`claude/wizardly-fermat-pvnd0o`
--> `main`), still open/unmerged. Independently reviewed 2026-09-23 and
-**NOT CERTIFIED — a real CI failure, not a code defect in the shipped
-module.** `tests/tasks/test_ftf_h006.py` (newly wired into the `gate`
-job by this same PR) crashes at import time on the real GitHub Actions
-runner with `socket.gaierror: [Errno -9] Address family for hostname not
-supported` from a real `ThreadingHTTPServer(("::1", 0), _Handler)` bind
-at `test_ftf_h006.py:160` — the file's own `_detect_ipv6_support()`
-probe wrongly predicts IPv6 is usable there, so the real server
-construction crashes uncaught and the `gate` job stops before the
-also-new `tests/tasks/test_ftf_0211.py` step ever runs. Reproduced
-identically on both commits pushed to this PR so far (`0c9167d` and
-`09295cf`) — not a flake. `real_streaming_probe.py`'s own logic and its
-own test suite were independently confirmed sound (own local run, two
-own fault injections, task contract re-pulled) — this is solely a
-CI-wiring defect blocking real evidence, per this task's own acceptance
-clause 2 ("Independent review, exact merged commit, real relevant
-integration and negative-test evidence recorded"). Needs a relay fix:
-make `_detect_ipv6_support()` actually predict the real runner's own
-`ThreadingHTTPServer` bind failure (e.g. probe with that exact
-construction instead of a bare `socket.bind`), or wrap the real
-`_SERVER_V6` construction itself in the same `try/except OSError`
-fallback the file already uses for its own probe, so an under-predicting
-runner still degrades to the disclosed skip path instead of crashing the
-whole `gate` job. Push to PR #226's own branch, watch a fresh CI run go
-green, then resubmit for certification — `docs/spec-matrix.yaml`'s
-FTF-0211 entry is left unchanged at `certification_state: PROVISIONAL`.
-Full record: `docs/certifications/queue.md`'s 2026-09-23 FTF-0211 entry.
+FTF-0211 — Real streaming probe. **PR #226 superseded by PR #228**
+(`claude/wizardly-fermat-lmo388` -> `main`) — see 2026-09-24 relay
+follow-up below. PR #226 (`claude/wizardly-fermat-pvnd0o` -> `main`) is
+left open, unmerged, untouched (a comment there points to #228; whether
+to close it is a Control-plane call, not a relay one).
+
+Independently reviewed 2026-09-23 and **NOT CERTIFIED — a real CI
+failure, not a code defect in the shipped module.**
+`tests/tasks/test_ftf_h006.py` (newly wired into the `gate` job by this
+same PR) crashed at import time on the real GitHub Actions runner with
+`socket.gaierror: [Errno -9] Address family for hostname not supported`
+from a real `ThreadingHTTPServer(("::1", 0), _Handler)` bind at
+`test_ftf_h006.py:160` — the file's own `_detect_ipv6_support()` probe
+wrongly predicted IPv6 was usable there, so the real server construction
+crashed uncaught and the `gate` job stopped before the also-new
+`tests/tasks/test_ftf_0211.py` step ever ran. Reproduced identically on
+both commits pushed to PR #226 (`0c9167d` and `09295cf`) — not a flake.
+`real_streaming_probe.py`'s own logic and its own test suite were
+independently confirmed sound (own local run, two own fault injections,
+task contract re-pulled) — this was solely a CI-wiring defect blocking
+real evidence, per this task's own acceptance clause 2 ("Independent
+review, exact merged commit, real relevant integration and
+negative-test evidence recorded"). Full record: `docs/certifications/
+queue.md`'s 2026-09-23 FTF-0211 review entry.
+
+**2026-09-24 relay follow-up:** this session's own designated git branch
+(`claude/wizardly-fermat-lmo388`) differs from PR #226's own branch
+(`claude/wizardly-fermat-pvnd0o`), and this session's own operating
+constraints say never to push to a different branch without explicit
+permission — so the fix could not land as a further push to PR #226
+itself. Merged PR #226's exact head (`09295cf`) into this session's own
+branch instead, resolved the resulting `QUEUE.md`/`docs/certifications/
+queue.md` append-log merge conflicts by keeping both entries in real
+chronological order, then fixed the root cause: added
+`_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
+`address_family = socket.AF_INET6`, used for `_SERVER_V6`, so the real
+server now binds with the exact address family
+`_detect_ipv6_support()`'s own probe already checks — the two can no
+longer disagree. Reproduced the exact CI symptom locally byte-for-byte
+first (a bare `ThreadingHTTPServer(("::1", 0), handler)` raises the same
+`socket.gaierror: [Errno -9]`, independent of this sandbox's own real
+IPv6 support), then added a pure, always-run regression check
+(`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`)
+shown able to fail first (Law 1) before being fixed. Full local re-run
+clean: `ruff`/`mypy`/`test_ftf_h006.py`/`test_ftf_0211.py`/`test_ftf_0210.py`/
+`test_ftf_0201.py`/`test_ftf_0204.py`/`validate_spec.py --strict`/
+`product_truth_check.py --fail-on-unwired` (17/17, unchanged, Law 2).
+Pushed as **PR #228**, watching CI to completion before this can be
+resubmitted with real green-CI evidence for re-review.
+`docs/spec-matrix.yaml`'s FTF-0211 entry is left unchanged at
+`certification_state: PROVISIONAL` (a producer-role CI fix is not a
+certification, Law 4) — its own `notes` field now also carries this
+follow-up, disclosed rather than overwriting the prior accounts. Full
+record: `docs/certifications/queue.md`'s 2026-09-24 FTF-0211 entry,
+`PROGRESS.md`.
 
 FTF-0210 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #224 (merge commit

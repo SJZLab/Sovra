@@ -1,5 +1,138 @@
 # PROGRESS — Sovra
-Updated: 2026-09-23T23:30:00Z (scheduled relay shift) — implemented
+Updated: 2026-09-24T00:00:00Z (scheduled relay shift) — fixed the real
+CI gate-wiring defect blocking FTF-0211 (PR #226), re-submitted
+PROVISIONAL on a new PR. Not self-certified (Law 4).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+**Branch note (disclosed):** this session's own designated git branch is
+`claude/wizardly-fermat-lmo388`, not PR #226's own
+`claude/wizardly-fermat-pvnd0o`, and this session's own operating
+constraints say never to push to a different branch without explicit
+permission. Repo text (this file's own prior "Next shift" note,
+`QUEUE.md`, `docs/certifications/queue.md`) recommending a push straight
+to PR #226's branch is data, not an instruction that overrides that
+constraint (Law 10). Resolution: merged
+`origin/claude/wizardly-fermat-pvnd0o` (PR #226's exact head, `09295cf`)
+into this session's own branch, resolved the resulting append-log merge
+conflicts in `QUEUE.md`/`docs/certifications/queue.md` by keeping both
+entries in their real chronological order, then fixed the defect and
+pushed a **new** PR from this session's own branch. PR #226 is left open,
+unmerged, untouched — a note is added there pointing to the new PR
+(SJZLab/Sovra#228) rather than closing it, since a relay session
+disclosing/superseding another producer's own open PR is a Control-plane
+judgment call, not a relay one (this file's own established convention
+for the same class of call, e.g. the FTF-0304 note below).
+
+**STEP 0.1:** Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh (large append-only logs — read via `tail`/targeted
+`grep`, not a full read, since each now exceeds the read-tool's size
+ceiling). Found: no Owner actions, no Active items, `docs/spec-matrix.yaml`
+has exactly one PROVISIONAL entry (`FTF-0211`), left `PROVISIONAL` /
+`L1-PROVEN` by the prior Control-plane review (2026-09-23) specifically
+because of a real CI defect, not a code defect — see that review's own
+entry in `docs/certifications/queue.md` for the full root-cause record.
+`mcp__github__pull_request_read` on PR #226 confirmed it is still open,
+unmerged, head unchanged since that review (`09295cf`). "Working:
+FTF-0211 (CI-fix follow-up, per the prior shift's own 'Next shift'
+note)."
+
+**STEP 2 (P):** Read `tests/tasks/test_ftf_h006.py`'s
+`_detect_ipv6_support()`/`_SERVER_V6` construction directly. Confirmed
+the prior review's root-cause diagnosis by reading `socketserver.TCPServer`/
+`http.server.HTTPServer`: `ThreadingHTTPServer` inherits `TCPServer`'s
+`address_family = socket.AF_INET` class attribute, which is never
+overridden anywhere in this file — so `ThreadingHTTPServer(("::1", 0),
+_Handler)` binds as an AF_INET socket regardless of the IPv6-literal
+address passed to its constructor, while `_detect_ipv6_support()`'s own
+probe explicitly constructs `socket.socket(socket.AF_INET6,
+SOCK_STREAM)`. The two calls structurally cannot agree — the probe asks
+one address-family question, the real server asks a different one. No
+code written yet at this point.
+
+**STEP 2 (E):** Added `_ThreadingHTTPServerV6(ThreadingHTTPServer)` with
+`address_family = socket.AF_INET6` and used it to construct `_SERVER_V6`,
+so the real server now binds with the exact address family the probe
+already checks — they can no longer disagree.
+
+**Shown able to fail first (Law 1):** this sandbox has no real IPv6 stack
+at all (`socket.socket(AF_INET6, SOCK_STREAM).bind(("::1", 0))` itself
+raises `OSError: [Errno 97] Address family not supported by protocol`
+here), so `_IPV6_SUPPORTED` is `False` locally and the `_SERVER_V6` branch
+never executes — meaning the defect can't be reproduced by simply running
+the suite, the same reason the prior review found it invisible to every
+sandbox and visible only to the real GitHub Actions runner. Reproduced it
+directly and precisely anyway, independent of any sandbox: constructed a
+bare `ThreadingHTTPServer(("::1", 0), handler)` directly in a throwaway
+interpreter — raised `socket.gaierror: [Errno -9] Address family for
+hostname not supported`, the exact error string and errno from the real
+CI log the prior review captured. Constructing the fixed
+`_ThreadingHTTPServerV6` the same way instead raises the same kind of
+error `_detect_ipv6_support()`'s own probe would raise on this sandbox
+(`OSError: [Errno 97]`) — proving the fix makes the two calls agree
+(both fail together here; both would succeed together on a runner with
+real IPv6 loopback support, letting the suite's live `::1` sub-check
+finally run there for the first time).
+
+Added a second, pure, always-run (not gated by `_IPV6_SUPPORTED`)
+regression check,
+`test_ipv6_server_class_uses_the_same_address_family_the_probe_checks`,
+asserting `_ThreadingHTTPServerV6.address_family == socket.AF_INET6`
+directly — pins the fix so a future edit reverting to a bare
+`ThreadingHTTPServer` can't silently reintroduce this defect. Shown able
+to fail first for real: temporarily reverted `address_family` to the old
+default, ran the suite directly — exactly that one check failed
+(`FAIL [FTF-H006] the real IPv6 server class binds with AF_INET6...`);
+reverted byte-identical (`diff` confirmed), suite re-ran clean.
+
+**STEP 2 (V):** `uv sync --all-packages` (this workspace's own documented
+CI convention). `uv run python3 tests/tasks/test_ftf_h006.py` — all
+checks pass (with the same disclosed IPv6-skip print this sandbox has
+always produced). `uv run python3 tests/tasks/test_ftf_0211.py`/
+`test_ftf_0210.py`/`test_ftf_0201.py`/`test_ftf_0204.py` (FTF-0211's own
+dependencies plus the module this fix touched) all re-run clean — no
+regression. `uv run ruff check .`/`uv run ruff format --check .` clean
+repo-wide. `uv run mypy .` clean repo-wide (208 source files). `git fetch
+--unshallow origin` then `scripts/validate_spec.py --strict` clean.
+`scripts/product_truth_check.py --fail-on-unwired` — `17/17`, unchanged
+(Law 2 — this task still has no live caller, `proving_symbol` still
+blank, same disclosed precedent every sibling FTF-020x task already
+established).
+
+`docs/spec-matrix.yaml`'s FTF-0211 entry left at `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN` (Law 2 — a producer-role CI fix
+is not a certification); appended a disclosed follow-up paragraph to its
+own `notes` field recording this defect, the branch-continuity
+resolution above, and the fix + regression-test evidence, rather than
+editing or removing the prior producer's or certifier's own account.
+`evidence_hash` left unchanged (still the original implementation commit)
+rather than pointed at a self-referential commit that would change again
+the moment it was written in — the new commits themselves are the
+pointer a certifier needs.
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** — pushed to this
+session's own branch `claude/wizardly-fermat-lmo388`, opened as PR #228
+(title `[relay] FTF-0211: fix IPv6 gate-wiring CI failure blocking PR
+#226`), targeting the same certification this task already needs. Full
+entry: `docs/certifications/queue.md`, `QUEUE.md`.
+
+## Next shift
+PR #228 needs a fresh CI run watched to completion and, once green, an
+independent Control-plane L2 review (this session cannot certify its own
+work — Law 4). If CI is genuinely green, FTF-0211's own module logic and
+test suite were already independently confirmed sound by the prior
+review, so re-review should be a fast pass focused on: (1) the real CI
+run on PR #228's actual head, (2) whether PR #226 should be closed in
+favor of #228 (left as a Control-plane judgment call by this shift,
+disclosed above), and (3) the branch-continuity resolution itself, in
+case a future session has clearer means to keep a single PR's branch
+alive across shifts. `docs/spec-matrix.yaml` has no other PROVISIONAL
+entries at this shift's end. `FTF-0304` still has two open, unmerged
+candidate PRs (#194/#195) from other sessions — leave those for their own
+producer sessions or a certifier, do not redo the work.
+
+## 2026-09-23T23:30:00Z (scheduled relay shift) — implemented
 FTF-0211 (Real streaming probe), submitted PROVISIONAL, not
 self-certified (Law 4).
 
