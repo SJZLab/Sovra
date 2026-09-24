@@ -4619,7 +4619,7 @@ FTF-1304:
   certification_state: PROVISIONAL
   criticality: MUST
   description: Cost-per-success calculator
-  evidence_hash: <IMPLEMENTATION_COMMIT_PLACEHOLDER>
+  evidence_hash: 0e0390aa5c7a75be1bd04c805733dacd4f2350b6
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-22; scenarios=Q15, Q19; deps=FTF-1301, FTF-1302, FTF-1303
