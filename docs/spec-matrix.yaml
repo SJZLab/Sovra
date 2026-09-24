@@ -2475,16 +2475,131 @@ FTF-04A05:
   proving_symbol: ''
   proving_test: ''
 FTF-04A06:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local repository connector with root allowlist/path protections
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
-    FTF-04A07
-  proof_state: UNPROVEN
+  evidence_hash: 249ff0663df74fe25f33f35673a319ea6d728b90
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A07 (both CERTIFIED). Built for real in
+    apps/api/app/target_connectors/local_repository_connector.py -- a pure, DB-free capture
+    connector for Section 7A.3's own "Local repository connector", the second of the two
+    "Minimum production connectors required by DoD" (Section 7A.1). resolve_allowed_root
+    real-path-resolves (following every symlink) both the requested root and every allowlist
+    entry before comparing, so a root cannot escape the allowlist via a symlink or a `..`
+    traversal; capture_local_repository refuses anything that is not a real Git working-tree
+    top level (Section 7A.3's own "resolve current Git commit when repository is a Git
+    checkout"), then branches on the real `git status --porcelain` output -- a clean checkout
+    returns capture_method='local_git_commit' with the real HEAD commit sha, the real
+    HEAD^{tree} git object hash, and the real current branch (None for a real detached HEAD,
+    Section 7A.3's own "support detached HEAD"); a dirty checkout returns
+    capture_method='local_dirty_snapshot' with a real, deterministic sha256 content manifest
+    and a real, deterministic tar archive of the actual on-disk bytes plus its own sha256 --
+    matching Section 7A.3's own "for dirty trees, create a content-hashed snapshot and visibly
+    mark it non_committed_source" and target_source_snapshot_schema.py's own closed
+    capture_method/CHECK-constraint contract (FTF-04A07) exactly, without this module needing
+    to import or duplicate that schema. Scope decision (disclosed, matching the FTF-04A07/
+    storage_semantics_client.py precedent of an explicit, non-hidden scope narrowing) --
+    this connector returns a real LocalRepositoryCapture (every field
+    create_target_source_snapshot needs); it deliberately does not itself persist a
+    TargetSourceSnapshot row, assign a real tenant-scoped object-storage key
+    (packages/storage/tenant_policy.py's own build_tenant_scoped_object_key needs a real
+    organization_id/resource_id this connector has no reason to know), or upload the archive
+    bytes it produces to the real SeaweedFS S3-compatible fixture
+    (apps/api/app/services/storage_semantics_client.py, FTF-R017, itself still awaiting its
+    first live caller) -- that composition is a later, separately-scoped caller's job; declaring
+    it here without a real backing wire-up would be exactly the "placeholder endpoint" Law 11
+    forbids. tests/tasks/test_ftf_04a06.py builds real Git repositories with the real `git`
+    binary in real temporary directories (no mocked git command, no canned capture result) and
+    proves: a root inside/outside an allowlist and a symlinked-allowlist escape are
+    accepted/refused correctly before any content is read; a clean checkout's commit_sha/
+    tree_hash/branch match git's own real values, including a real detached HEAD reporting
+    branch=None; a dirty checkout's tree_hash/archive sha256 are deterministic across two
+    captures of byte-identical content and change when content changes; a symlink inside the
+    repository pointing outside its own root is refused and the working tree is proven
+    byte-identical (`git status` before/after) rather than edited; a symlink pointing inside
+    the root is followed safely; a plain non-Git directory and a real subdirectory of a larger
+    repository (not its own top level) are both refused rather than silently captured; a real
+    Git checkout with no commits yet is refused; and a real concurrent modification between
+    this connector's own before/after git-identity check is refused
+    (ConcurrentModificationError), exercised by making the module's own dirty-signature probe
+    report a real changed value on its second call rather than asserting on an unreliable
+    filesystem race window. Own fault injection (Law 1), two distinct vectors, both reverted
+    byte-identical (`diff` confirmed) and the suite re-confirmed clean immediately after each:
+    (1) disabled the symlink-escape raise in the content walk -- the dedicated symlink-escape
+    negative check genuinely failed for real; (2) disabled the concurrent-drift raise on the
+    dirty-tree path -- the dedicated concurrent-modification negative check genuinely failed
+    for real. `uv run ruff check`/`ruff format --check` clean on both new files. `uv run mypy`
+    clean on both new files, and repo-wide `uv run mypy .` shows no new findings beyond the
+    pre-existing, unrelated `alembic.op`/`alembic.context` attr-defined noise already present
+    on every prior migration file in this chain. `git fetch --unshallow origin` (this sandbox's
+    checkout was shallow) then `scripts/validate_spec.py --strict` clean.
+    `scripts/product_truth_check.py --fail-on-unwired`: unchanged at 19/19 -- this task has no
+    live product-route caller yet (disclosed above), the same accepted class as
+    FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105/storage_semantics_client.py before
+    each one's own first live caller existed. `scripts/status.py`: 59/300 certified · 19
+    product-true, unchanged (correct -- PROVISIONAL, not yet certified).
+    `scripts/verify_task.py --task FTF-04A06 --stage task` reports BLOCKED ("no merged
+    verification evidence yet") pre-merge -- expected, the same precedent every sibling
+    FTF-020x/FTF-04A0x PROVISIONAL submission already established. Regression-checked directly:
+    tests/tasks/test_ftf_04a01.py/test_ftf_04a07.py both re-ran clean -- no regression to
+    either dependency. Added this task's own CI gate step
+    (tests/tasks/test_ftf_04a06.py) to .github/workflows/ci.yml's `gate` job in the same
+    commit as the implementation -- no live-Postgres/live-S3 integration job is needed (this
+    task's own verification_commands name only validate_spec.py/verify_task.py, no dedicated
+    integration test), since every check here runs against a real local git repository with no
+    external service dependency at all.
+
+    2026-09-24 fix (independent Control-plane review, PR #238, NOT CERTIFIED first pass):
+    the shipped resolve_allowed_root was already sound (a real Path.parents structural check,
+    never a string-prefix comparison), but the delivered suite had no test using a
+    prefix-colliding sibling allowlist pair (e.g. 'allowed' vs 'allowed-evil') -- a real Law 1
+    evidence gap distinct from the already-covered symlink-escape case, not a code defect.
+    Added test_resolve_allowed_root_refuses_a_prefix_colliding_sibling to
+    tests/tasks/test_ftf_04a06.py; own fault injection (patched the real .parents check to a
+    naive str(...).startswith(...) comparison, matching the reviewer's own independent
+    injection) confirmed the new test genuinely fails against that naive implementation and
+    passes against the real, unmodified shipped code -- reverted byte-identical. ruff/mypy
+    clean; validate_spec.py --strict clean; product_truth_check.py/status.py unchanged.
+
+    L2-CERTIFIED 2026-09-24 by an independent Control-plane certifier session
+    (session_01TSZ3SyJvmLrNbuDqXVYRtE; every commit on PR #238 carries
+    Claude-Session session_0159tZvUhDCyk3rdhW7fMscf -- no overlap, genuinely
+    independent per Law 4). Re-read the diff directly; re-ran
+    tests/tasks/test_ftf_04a06.py locally (13/13 clean); ran two own fault
+    injections distinct from the producer's two (a naive str.startswith()
+    prefix-comparison in resolve_allowed_root, and disabling the dirty-tree
+    concurrent-drift raise) -- both genuinely caught by the real suite,
+    both reverted byte-identical, suite re-confirmed clean after each.
+    Independently confirmed via a fresh pull_request_read/get_check_runs
+    call that all 29 checks (including gate) were status=completed,
+    conclusion=success on the real PR head 693f6194, and independently
+    pulled the gate job's own step-level log text confirming
+    "uv run python3 tests/tasks/test_ftf_04a06.py" actually executed and
+    printed "all checks passed" in CI, not just a self-reported claim.
+    product_truth_check.py --fail-on-unwired confirmed 19/19 unchanged
+    (this task's proving_symbol is legitimately empty -- a pure, DB-free
+    module with no live HTTP caller yet, the same disclosed scope as
+    FTF-1302/FTF-0005/FTF-0006/FTF-0102-0105/storage_semantics_client.py
+    before their own first live caller existed -- confirmed by reading
+    product_truth_check.py's own logic: an entry with no proving_symbol
+    is skipped, not counted 0/0 against a claimed symbol). Pulled the real
+    task contract via tools/r1_handoff.py packet FTF-04A06 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md and confirmed both acceptance clauses
+    ("Read approved local root, handle detached/dirty worktree and create
+    immutable content manifest" -- proven by the clean/detached-HEAD/dirty-
+    tree test cases; "Independent review... recorded" -- this review) and
+    the negative_acceptance clause ("Path/symlink traversal and concurrent
+    file drift fail; never edit the target working tree" -- proven by the
+    symlink-escape, prefix-collision, and concurrent-drift tests, plus the
+    dedicated before/after git-status-identical assertion) are genuinely
+    met, not merely "tests pass". Merged PR #238, merge commit
+    249ff0663df74fe25f33f35673a319ea6d728b90. See
+    docs/certifications/ledger.md for the full ledger entry.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a06.py
 FTF-04A07:
   certification_state: CERTIFIED
   criticality: MUST

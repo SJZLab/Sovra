@@ -13510,6 +13510,225 @@ sandbox does not have (disclosed by a prior shift, not claimed here).
 - **Validated-by:** session https://claude.ai/code/session_01MM33SzxPJuU62Z4SY45XKg
   (independent -- see session-ID check above), 2026-09-24.
 
+## 2026-09-24 — Relay: FTF-04A06 (PR #238) Law 1 fix pushed in response to review
+Independent Control-plane certification review (PR #239) found the
+shipped `resolve_allowed_root` sound (a real `Path.parents` structural
+check, never a string-prefix comparison) but flagged a real Law 1 gap:
+`tests/tasks/test_ftf_04a06.py` had no test using a prefix-colliding
+sibling allowlist pair (e.g. `allowed` vs `allowed-evil`), so the
+module's own docstring-claimed "never a string-prefix comparison"
+guarantee and this task's own `negative_acceptance` ("path traversal",
+distinct from "symlink traversal") were asserted but never shown able to
+fail. The reviewer's own independent fault injection (a naive
+`str(...).startswith(...)` implementation) passed the delivered suite
+undetected, confirming the gap; the real shipped code already refused the
+concrete exploit correctly.
+
+Added `test_resolve_allowed_root_refuses_a_prefix_colliding_sibling`
+(commit `911ae78`). Independently reran the identical fault injection: the
+new test genuinely fails against the naive `startswith()` implementation
+and passes against the real, unmodified shipped code -- reverted
+byte-identical. No production code changed. `ruff`/`mypy` clean,
+`validate_spec.py --strict` clean, `product_truth_check.py`/`status.py`
+unchanged at 19/19 · 59/300. `docs/spec-matrix.yaml`'s FTF-04A06 notes
+updated to disclose this fix. Replied on PR #238's review comment naming
+the fix commit.
+
+## Next shift
+PR #238's fix (commit `911ae78`) was independently re-verified this same
+shift: CI re-ran green on the fixed head (`3fb3367`) after one re-run of a
+genuine, unrelated flake in FTF-R002's own already-certified
+`test_ftf_r002.py` (confirmed not caused by this PR's diff -- see this
+PR's own comment thread). PR #238 now needs a fresh independent
+Control-plane L2 review (Law 4 -- this session cannot certify its own
+work). PR #239 (the certifier's own documentation-only NOT CERTIFIED
+record, now merged into `main`) is a separate PR this relay did not merge
+or edit.
+
+## 2026-09-24 — Control plane review — FTF-04A06 (PR #238) — CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.
+opened` webhook for PR #240 (FTF-1303). Per this session's standing
+duty, checked `docs/certifications/queue.md` for every item PROVISIONAL
+and not yet certified, not only the triggering PR. Two were pending:
+FTF-1303 (PR #240, this session's own trigger) and FTF-04A06 (PR #238,
+left ready-for-review by an earlier session's note in `QUEUE.md`'s
+"## Provisional" section).
+
+**FTF-1303 (PR #240):** a fresh `pull_request_read get_check_runs` call
+on the real head (`d3c5ed1`) showed all 29 checks, including `gate`,
+still `status: queued` -- CI had not run yet at the moment of this
+review. Left PROVISIONAL, not certified. This is not a defect to report
+back, just incomplete; noted in `QUEUE.md`'s "## Provisional" section for
+the next check-in to pick up once CI finishes.
+
+**FTF-04A06 (PR #238) — independently reviewed and CERTIFIED:**
+- **Session-ID check:** all 7 commits on PR #238 carry `Claude-Session:
+  https://claude.ai/code/session_0159tZvUhDCyk3rdhW7fMscf` (the merge
+  commit `c122d5d` carries none, expected for a plain `git merge`). No
+  overlap with this session's own `session_01TSZ3SyJvmLrNbuDqXVYRtE` --
+  genuinely independent per Law 4.
+- **Diff read directly:** all 8 changed files (+2535/-27), including the
+  431-line `local_repository_connector.py` and the 463-line
+  `test_ftf_04a06.py` in full.
+- **CI re-checked on the real final head, not taken on faith:** a fresh
+  `get_check_runs` call on head `693f61949d6c2a8a8fc3bd21e8c9caf3f7cfa5de`
+  confirmed all 29 checks `status: completed` / `conclusion: success`,
+  `gate` included. Pulled the `gate` job's own step-level log text
+  directly (`get_job_logs`, job id `107615677654`): the step "FTF-04A06
+  negative-test proof (Local repository connector, no DB required)" ran
+  `uv run python3 tests/tasks/test_ftf_04a06.py` and printed "FTF-04A06
+  local repository connector tests: all checks passed" -- genuine
+  execution in CI, not a self-reported claim from the branch's own
+  PROGRESS.md.
+- **Own local reproduction:** checked out the PR head into a local
+  review branch and ran `python3 tests/tasks/test_ftf_04a06.py` directly
+  -- all 13 checks passed.
+- **Own fault injection (Law 1), two vectors, both distinct from the
+  producer's own two (symlink-escape guard, concurrent-drift guard) and
+  from the prior reviewer's own (the missing prefix-collision test
+  itself):**
+  1. Replaced `resolve_allowed_root`'s real `Path.parents` structural
+     check with a naive `str(real_root).startswith(str(real_allowed))`
+     comparison -- `test_resolve_allowed_root_refuses_a_prefix_colliding_
+     sibling` genuinely failed (1 FAIL). Reverted; `diff` confirmed
+     byte-identical; suite re-ran clean.
+  2. Disabled the dirty-tree branch's own after-capture
+     `ConcurrentModificationError` raise in `capture_local_repository`
+     (`if dirty_after != dirty_before or head_after != commit_sha:`
+     replaced with `if False:`) --
+     `test_concurrent_drift_during_capture_is_refused` genuinely failed
+     (1 FAIL). Reverted; `diff` confirmed byte-identical; suite re-ran
+     clean immediately after ("all checks passed").
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19`
+  unchanged, and confirmed legitimate rather than an evasion:** this
+  task's `proving_symbol` in `docs/spec-matrix.yaml` is the empty string
+  -- a pure, DB-free capture module with no live HTTP caller yet,
+  disclosed in both the module's own docstring and the PR body, the same
+  accepted scope-narrowing precedent as
+  FTF-1302/FTF-0005/FTF-0006/FTF-0102-0105/`storage_semantics_client.py`
+  before each one's own first live caller existed. Read
+  `scripts/product_truth_check.py`'s own logic directly: an entry with no
+  `proving_symbol` is skipped entirely, never counted as a 0/0 pass
+  against a claimed symbol -- Law 5 is not being weakened here.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-04A06 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Read approved local root, handle detached/dirty worktree and create
+  immutable content manifest" -- proven by the clean-checkout/
+  detached-HEAD/dirty-tree test cases; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence recorded"
+  -- this review) and `negative_acceptance` ("Path/symlink traversal and
+  concurrent file drift fail; never edit the target working tree" --
+  proven by the prefix-collision, symlinked-allowlist, symlink-escape,
+  and concurrent-drift tests, plus the dedicated before/after `git
+  status` byte-identical assertion) both genuinely met, not merely "tests
+  pass". `dependencies` FTF-04A01/FTF-04A07 confirmed already `CERTIFIED`
+  in `docs/spec-matrix.yaml` before relying on them.
+- `validate_spec.py --strict` clean (after `git fetch --unshallow origin`
+  -- this sandbox's checkout started shallow; confirmed the resulting
+  `stale_commit` noise before unshallowing was this sandbox's own
+  artifact, not a real defect, same class of gap already on record for
+  prior shifts).
+
+**No blocking defect found. Merged PR #238** (merge commit
+`249ff0663df74fe25f33f35673a319ea6d728b90`) into `main`.
+`docs/spec-matrix.yaml`'s FTF-04A06 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (no live caller, confirmed
+legitimate above). Ran `scripts.task_claim.sync_certified_status()` --
+`['FTF-04A06']` updated. `scripts/status.py`: `59/300` -> `60/300`
+certified; product-true unchanged at `19/19` (no live caller added).
+Appended a matching entry to `docs/certifications/ledger.md`; updated
+`QUEUE.md` (moved FTF-04A06 to "## Done", updated "## Provisional" to
+carry only FTF-1303 with its own current CI-pending state) and
+`PROGRESS.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_01TSZ3SyJvmLrNbuDqXVYRtE
+  (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-24 — Control plane review — FTF-1303 (PR #240) — REVIEW SOUND, MERGE BLOCKED (not a code defect)
+Same certifier session/shift as the FTF-04A06 review directly above,
+continued after PR #240's CI (which was still `queued` at the start of
+this shift) finished and went fully green (29/29, including `gate`) while
+the FTF-04A06 review was in progress.
+
+**Full independent CERTIFY procedure run, all substantive checks pass:**
+- **Session-ID check:** all 4 commits on PR #240 carry `Claude-Session:
+  https://claude.ai/code/session_01CuuVLc7aGhNUrpFbQmrpVk` -- no overlap
+  with this session's own `session_01TSZ3SyJvmLrNbuDqXVYRtE`, independent
+  per Law 4.
+- **Diff/module read directly:** `apps/api/app/services/
+  provider_token_costing.py` (262 lines) and `tests/tasks/
+  test_ftf_1303.py` (both read in full).
+- **CI independently re-checked on the real final head, not taken on
+  faith:** a fresh `get_check_runs` call on head `d3c5ed1fa09fb9cdd440
+  b3dcfe4bcb0c50557483` confirmed all 29 checks `status: completed` /
+  `conclusion: success`, `gate` included. Pulled the `gate` job's own
+  step-level log text directly (job id `107645009628`, run
+  `36003308741`): the step running `uv run python3 tests/tasks/
+  test_ftf_1303.py` printed "FTF-1303 Provider token costing tests: all
+  checks passed" -- genuine execution in CI.
+- **Own local reproduction:** ran `python3 tests/tasks/test_ftf_1303.py`
+  directly on the checked-out PR head -- all checks passed.
+- **Own fault injection (Law 1), distinct from the producer's own** (the
+  producer's own fault injection used a naive *reimplementation* run
+  alongside the real code; this review instead mutated the real shipped
+  `_priced_category` function directly): changed its `raise
+  ProviderTokenCostingError(...)` branch to `return Decimal("0")` (silent
+  zero-fill for a missing rate) -- 4 genuine `FAIL` lines against the real
+  suite (the three independent negative_acceptance tests plus the
+  dedicated fault-injection test's own first assertion). Reverted;
+  `diff` confirmed byte-identical; suite re-ran clean immediately after.
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19`
+  unchanged, and confirmed legitimate:** this task's `proving_symbol` in
+  `docs/spec-matrix.yaml` is the empty string (disclosed, no live caller
+  yet, same accepted class as FTF-1302/FTF-0005/FTF-0006/FTF-0102-0105/
+  FTF-1401/FTF-1601/FTF-1701/FTF-1810/FTF-04A06) -- confirmed by reading
+  `product_truth_check.py`'s own skip-if-no-symbol logic, not assumed.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py
+  packet FTF-1303 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Calculate billed input/output/cache/reasoning/request charges using
+  actual provider usage rules" -- proven by the five-category golden
+  example, $23.50) and `negative_acceptance` ("Missing usage/rate/unknown
+  upstream cannot be replaced by invented or zero dollar value" -- proven
+  by the three independent negative_acceptance tests plus this review's
+  own fault injection above) both genuinely met, not merely "tests pass".
+  `dependencies` FTF-0210/FTF-1301 confirmed already `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them. `files` match exactly.
+
+**Merge blocked -- not a code defect, a self-inflicted timing conflict:**
+a `pull_request_read get` call immediately before attempting to merge
+showed `mergeable_state: "dirty"` (not `clean`). A local dry-run merge of
+`origin/main` into the PR branch (`git merge --no-commit --no-ff`,
+aborted immediately after, no push) confirmed the conflict is contained
+entirely to three narrative tracking docs this PR's own last commit
+touched -- `PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` (this
+file) -- each a textual collision between PR #240's own "record PR #240's
+link" entry and this exact shift's own FTF-04A06 certification entries
+that landed on `main` moments earlier (merge commits
+`249ff0663df74fe25f33f35673a319ea6d728b90` and
+`5f0d6f02e59fc0a5263358ef294f6b086e693fc1`). `docs/spec-matrix.yaml` and
+`.github/workflows/ci.yml` auto-merged cleanly -- no code or CI-wiring
+conflict at all.
+
+Per this repo's own established precedent (FTF-04A06's own prior
+tracking-doc conflict against PR #239, resolved by a later session on the
+producer's own branch, not by the certifying session), conflict
+resolution on a relay/producer branch is left to the next relay shift
+rather than performed by this certifying session -- Relay is
+execution-only, but pushing a merge-conflict resolution onto another
+session's still-open branch is exactly the kind of branch-owning action
+that repo's history treats as the producer's, not the certifier's, to
+do. **Leaving `certification_state: PROVISIONAL`** (not merged, so not
+yet CERTIFIED) -- this is not a rejection: every substantive check above
+passed cleanly, and this PR needs only a mechanical merge-conflict
+resolution (`git fetch origin main && git merge origin/main`, keep both
+sides' additions in all three files, push, confirm CI green again) before
+it is ready to merge and certify on sight, with no further code review
+needed.
+
+- **Validated-by:** session https://claude.ai/code/session_01TSZ3SyJvmLrNbuDqXVYRtE
+  (independent -- see session-ID check above), 2026-09-24.
+
 ## 2026-09-24 — FTF-1303 — Provider token costing
 - **PR:** https://github.com/SJZLab/Sovra/pull/240
   (`claude/wizardly-fermat-vwrwp6` → `main`), title

@@ -227,6 +227,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0213.py
       - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a07.py
+      - name: FTF-04A06 negative-test proof (Local repository connector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a06.py
       - name: FTF-R002 negative-test proof (Authenticated internal component bindings, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r002.py
       - name: Product-truth check

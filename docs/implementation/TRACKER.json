@@ -423,9 +423,11 @@
       "blockers": []
     },
     "FTF-04A06": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "249ff0663df74fe25f33f35673a319ea6d728b90"
+      ],
       "independent_review": null,
       "blockers": []
     },
