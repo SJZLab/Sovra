@@ -16830,3 +16830,92 @@ independent Control-plane certifier shift. FTF-0214/0215/0500A/0500D
 (UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret backend)
 remain the next dependency-ready frontier items; FTF-1304 ("Cost-per-
 success calculator") becomes dependency-ready once FTF-1303 certifies.
+
+## 2026-09-24T[relay] — Relay: FTF-1304 (Cost-per-success calculator), submitted PROVISIONAL
+Scheduled autonomous relay shift (dynamic queue-check fire, not a PR webhook — no certifier
+standing this shift). STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`;
+`BLOCKER.md` read in full — no live blocker; `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh, not assumed from prior context.
+
+Confirmed live GitHub state before picking work: FTF-1303 (this repo's own last-picked item) is
+already CERTIFIED and merged (PR #245, merge commit `f1e545745f7679ed19628d66ffc84955329a6f50`,
+independently reviewed by a Control-plane certifier shift, PR #247) — `docs/spec-matrix.yaml` on
+`main` confirmed `certification_state: CERTIFIED` before relying on it as a dependency. Also
+confirmed FTF-04A06 CERTIFIED (owner-direct merge `249ff06` plus a Control-plane certification PR
+#242/#243), and noticed two further open PRs — #246 (FTF-1303 tracking-doc reconciliation, already
+resolved and marked "safe to merge" by its own author session) and #243 (superseding #241, an
+independent FTF-04A06 certification after its owner-direct merge) — both awaiting Control-plane
+attention, not relay action; left untouched per "Relay is execution-only."
+
+Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml` (20 tasks with
+`certification_state: NONE` and every declared `deps=` already `CERTIFIED`) rather than trusting
+the prior shift's own "Next shift" note alone. FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are
+already claimed by other sessions' own open work — left untouched. FTF-0214/0215/0500A/0500D
+(UI/Temporal-workflow tasks) and FTF-04A02 (needs a real OpenBao secret backend for a genuine
+integration test) remain outside this relay sandbox's practical reach, same disclosure as every
+prior shift. **FTF-1304 (Cost-per-success calculator)** was picked — same tractable,
+pure-computation, no-external-dependency shape as the already-CERTIFIED FTF-1302/FTF-1303
+siblings, both non-FTF-1301 dependencies (FTF-1302, FTF-1303) CERTIFIED.
+
+Pulled the real contract (`tools/r1_handoff.py packet FTF-1304`). Implemented
+`apps/api/app/services/cost_per_success_calculator.py`: `AttemptCost` is the per-attempt
+accounting unit (`settled_cost` required; `pending_cost` — Section 70.1's own
+`RECONCILIATION_REQUIRED` state — and `fallback_used`/`fallback_cost` each declared explicitly).
+`cost_per_success`/`amortized_cost_per_success` compose already-CERTIFIED FTF-1302's
+`window_total_cost` and FTF-1303's `provider_call_cost` (already-priced, declared per-attempt
+totals) into Section 32's own named formulas, per `contract_owner: FTF-1301` and
+`database_changes: "No independent schema change. Consume frozen contract"`. `TASK_OUTCOMES` is
+imported directly from `local_compute_costing` rather than duplicated.
+
+negative_acceptance ("Zero successes, pending charges and unobserved fallback use cannot yield
+misleading cheap passing metric") is enforced by construction: (1) zero successes raises
+`CostPerSuccessError`; (2) `pending_cost` is summed unconditionally into the total by
+`AttemptCost.total_cost()` — no code path here can drop a declared pending figure to reach a
+cheaper number; (3) `fallback_used=True` with no matching `fallback_cost` raises at construction,
+the same "real declared usage with no matching price cannot become an invented/zero dollar value"
+rule FTF-1303 already applies to cache/reasoning/request charges.
+
+Wrote `tests/tasks/test_ftf_1304.py` (20 no-DB test functions): construction guards, a
+five-attempt golden example mixing settled/pending/fallback charges plus one `model_fail` outcome
+that still costs money ($38 / 4 successes = $9.50), `request_id` dedup for a retry (one success,
+both attempts' cost still counted, $15.00), the zero-successes negative_acceptance case,
+`amortized_cost_per_success` (golden value $10.00 + $100.00/50 = $12.00, plus refusal when only
+one of the two amortization arguments is supplied), and an own fault injection.
+
+**Own fault injection (Law 1):** patched `AttemptCost.total_cost()` to drop `pending_cost`/
+`fallback_cost` from the sum — 3 genuine `FAIL [FTF-1304]` lines against the real suite, reverted
+byte-identical (`diff` confirmed empty), suite re-confirmed clean immediately after (all 20 checks
+pass).
+
+`ruff check`/`ruff format --check` clean; `uv run mypy app/services/cost_per_success_calculator.py`
+clean; `validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own
+pre-existing shallow-clone artifact); `product_truth_check.py --fail-on-unwired` unchanged at
+`19/19` (no live caller yet, disclosed, same FTF-1302/FTF-1303 precedent); `status.py` unchanged at
+`61/300` certified; `verify_task.py --task FTF-1304 --stage task` reports `BLOCKED` pre-merge
+(expected, same precedent as every sibling PROVISIONAL submission). Regression: `test_ftf_1302.py`/
+`test_ftf_1303.py` clean; `test_ftf_1301.py` blocked locally only by the pre-existing, disclosed
+`uvicorn` sandbox gap.
+
+Added this task's own CI gate step to `.github/workflows/ci.yml`'s `gate` job.
+`docs/spec-matrix.yaml`'s FTF-1304 entry set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`, `evidence_hash` set to the implementation commit
+`0e0390aa5c7a75be1bd04c805733dacd4f2350b6`.
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are needed before certification.
+Appended to `docs/certifications/queue.md` for Control plane. Commits `0e0390a`/`bbc9175` on
+branch `claude/wizardly-fermat-fkyn9x`. **PR:** https://github.com/SJZLab/Sovra/pull/249, title
+`[relay] FTF-1304: Cost-per-success calculator`.
+
+## Next shift
+PR #249 (FTF-1304) is open, awaiting CI plus an independent Control-plane L2 certifier shift (not
+this relay's role) — do not re-implement. PRs #246 (FTF-1303 tracking-doc reconciliation) and #243
+(FTF-04A06 owner-direct-merge certification, supersedes #241) are separately open and awaiting
+Control-plane attention. FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a
+real OpenBao secret backend) remain outside this relay sandbox's practical reach. Recompute the
+dependency-ready frontier fresh from `docs/spec-matrix.yaml` rather than trusting this note alone
+before picking a next item — candidates already identified this shift (pending FTF-1304's own
+certification landing, which would free FTF-1301/1302/1303/1304 dependents if any exist) include
+FTF-0302/0303 (artifact resolvers, deps include FTF-0202/OpenBao — verify FTF-0202 is actually
+implemented, not just dependency-ready, before claiming), FTF-04A17/04A19, FTF-0507, FTF-0902,
+FTF-1201, FTF-1503, FTF-1506, FTF-1703, and FTF-H004.
