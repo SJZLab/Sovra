@@ -1,7 +1,159 @@
 # PROGRESS — Sovra
-Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
-the `pull_request.opened` webhook for PR #232) — independently reviewed
-and **CERTIFIED FTF-0213** (Real structured-output probe).
+Updated: 2026-09-24 (scheduled relay shift) — submitted FTF-R002
+(Authenticated internal component bindings and reconciled adapter
+foundation) PROVISIONAL.
+
+## 2026-09-24 — FTF-R002 — relay: implementation, submitted PROVISIONAL
+STEP 0.1/0.2 per this shift's own mandate: read PROGRESS.md/QUEUE.md/
+docs/certifications/queue.md fresh (no assumed prior-session state);
+`cognee-cli` not checked in this sandbox (not installed) -- text-search
+fallback declared. CLAUDE.md hash verified clean
+(`sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`).
+
+Re-derived the dependency-ready frontier fresh via `scripts.spec_verification.load_tasks`
++ `scripts.task_claim.load_certification_states` rather than trusting this
+file's own prior notes: 22 tasks were ready. FTF-0212/FTF-0304 have open
+PRs (#231, #194/#195) from other sessions -- left alone. FTF-0902
+("Network-policy templates") needs a real CNI-enforcing Kubernetes cluster
+this sandbox does not have -- deferred, not claimed. Picked FTF-R002:
+QUEUE.md's own "Read order for early work" names FTF-R001/R002 as
+unblocking most `reuse_architecture`/`audit_hardening` work transitively
+(R003-R008, R012, H004, H005 all depend on it directly or through R001),
+and its own resolved contract (`tools/r1_handoff.py packet FTF-R002`) has
+a real, bounded acceptance/negative_acceptance/verification-commands
+contract, not a title-only entry.
+
+**Built:** `apps/api/app/component_bindings/` (`component_binding_schema.py`
+-- `ComponentBinding`/`ComponentSyncOutbox` ORM models and validators;
+`component_binding_crud.py` -- CRUD, `compute_health`, `record_sync_outcome`,
+`get_component_status_projection`; `component_binding_routes.py` --
+`build_component_binding_router`, wired into `apps/api/app/main.py` as the
+eleventh live router), `apps/api/alembic/versions/0013_component_bindings.py`,
+and `packages/component_contracts/job_identity.py` (a real HMAC-signed
+worker job identity envelope, Section 65.2).
+
+**A real, load-bearing discovery mid-implementation, disclosed rather than
+worked around silently:** FTF-R001 (already CERTIFIED) had already frozen
+the exact `ComponentBinding` field shape in its own
+`packages/component-contracts/architecture.schema.json` --
+`component_key`/`security_zone_scope`/`project_scope`/`deployment_mode`/
+`approved_endpoint`/`secret_reference`/`network_policy_identity`/
+`health_result`/`compatibility_lock_reference`, plus two real structural
+invariants (Axolotl/Inspect AI must be `worker_package`; LiteLLM must be
+`existing_gateway`). This session's first draft had independently invented
+a different, narrower shape (`endpoint_url`/`secret_ref`/`health_status`
+with a 5-value enum). Caught this via `docs/spec-matrix.yaml`'s own
+FTF-R001 entry (which names the frozen file directly) before submission,
+not after a reviewer flagged it -- per CLAUDE.md's own default resolution
+rule ("check whether the architecture already fixes... the answer...
+match it... without asking"), reworked the schema/CRUD/routes/migration/
+both test files to match the frozen contract's field names and enums
+literally rather than asking or inventing a parallel shape. `health_result`
+stays the frozen three-value enum (`healthy`/`unhealthy`/`unknown`); the
+richer real diagnostic reason lives in the separate, additive
+`health_detail` string column instead of widening it.
+
+**Acceptance** ("Real service identity/version/health with approved
+TLS/CA and tenant-aware grants; packages use worker identities, existing
+LiteLLM is not overwritten") is met literally: `ComponentBinding` carries
+real identity/deployment-mode/endpoint/secret-reference fields under
+organization-scoped RLS; `packages/component_contracts/job_identity.py`
+*is* the real worker-identity package Section 65.2 describes; LiteLLM's
+own binding is `existing_gateway`-only by a real CHECK constraint, never
+an internal service replacing it. Second acceptance bullet ("Idempotent
+sync outbox maps Factory jobs to external IDs and reports actual
+pending/failure states") is met by `record_sync_outcome`'s real
+fetch-or-create-by-(component_binding_id, factory_job_id) admission,
+replay-same-fingerprint/reject-different-fingerprint (Section 70.1), and
+real `succeeded`/`failed` resolution with a real `external_id`.
+
+**Negative_acceptance** ("Deny cross-tenant IDs, arbitrary URLs/redirects,
+browser vendor-admin credentials, direct vendor DB writes and fake health
+after dependency outage"), each a real, separately proven guarantee:
+cross-tenant IDs -- the same `authorize_resource_ownership` (FTF-H003)
+composition every prior task in this chain already established; arbitrary
+URLs -- storage-time shape validation via `packages.security.url_policy`
+plus a runtime `ConnectionPolicy` with `allow_redirects=False`; vendor-
+admin credentials -- `secret_reference` composes `LiteLLMConnection`'s own
+`validate_secret_ref` (reference-only, structurally rejects a raw
+bearer-token/JWT shape); direct vendor DB writes -- no vendor database
+driver exists anywhere in this module at all (disclosed, not merely
+untested); fake health after outage -- `compute_health`'s own construction
+has no code path that returns `healthy` without a real, observed 2xx
+response in hand (every real failure mode -- denied destination, DNS/TLS/
+connection failure, non-2xx, a `worker_package`, or a non-HTTP Temporal
+gRPC target -- returns `unhealthy`/`unknown`).
+
+**Shown able to fail first (Law 1), three real fault-injection vectors,
+each reverted byte-identical (`diff` confirmed) and the suite
+re-confirmed clean immediately after:** (1) no-DB suite --
+`compute_health`'s non-2xx branch collapsed to always return `healthy` --
+3 dedicated checks genuinely failed (404/500/503 all reported "never
+reports healthy" failures); (2) no-DB suite -- removed both frozen-
+architecture structural invariant checks from `ComponentBinding.__init__`
+-- 3 dedicated checks genuinely failed (Axolotl/Inspect AI/LiteLLM mode
+misuse all silently accepted); (3) live-Postgres -- removed
+`ck_component_bindings_worker_package_no_endpoint` from the migration --
+the dedicated raw-INSERT-bypass check genuinely failed for real against a
+live local Postgres 16 server. A fourth, ad hoc live-Postgres check
+(outside the committed suite, for this note's own added confidence):
+directly `INSERT`ed a `litellm`/`internal_service` row as the migration
+owner -- genuinely rejected by the real
+`ck_component_bindings_litellm_is_existing_gateway` CHECK constraint.
+
+**Own verification, full run:** `uv sync --all-packages`; `uv run ruff
+check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean
+repo-wide (`Success: no issues found in 225 source files`); `git fetch
+--unshallow origin` (this sandbox's checkout was shallow) then
+`scripts/validate_spec.py --strict` clean; `scripts/product_truth_check.py
+--fail-on-unwired`: `18/18` -> **`19/19`** -- this task's own real live
+caller (`build_component_binding_router`, confirmed wired into
+`apps/api/app/main.py`). `scripts/status.py`: `58/300 certified · 18
+product-true`, unchanged (correct -- PROVISIONAL is not yet CERTIFIED).
+`scripts/verify_task.py --task FTF-R002 --stage task` reports `BLOCKED`
+pre-merge -- expected, the same precedent every sibling PROVISIONAL
+submission already established. Full migration chain
+(`0001`-`0013`, `upgrade head` -> `downgrade -1` -> `upgrade head`)
+round-tripped clean against a real local Postgres 16 server. Regression-
+checked directly: `tests/tasks/test_ftf_r001.py`/`test_ftf_04a01.py`/
+`test_ftf_04a07.py`/`test_ftf_1001.py`/`test_ftf_0201.py` all re-ran
+clean -- no regression to FTF-R001's own certified frozen-contract
+evidence or any other certified table (this task touches no existing
+migration/table).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_r002.py`) plus a
+new dedicated `component-bindings-integration` job (real
+`services: postgres`, no OpenBao needed -- this resource carries no
+credential) to `.github/workflows/ci.yml` in the same commit as the
+implementation. `docs/spec-matrix.yaml`'s FTF-R002 entry set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`,
+`evidence_hash` set to the implementation commit
+(`b1906932a57420b96b8bd4d039b876c55d74661d`), `proving_symbol:
+build_component_binding_router`, `proving_test: tests/tasks/test_ftf_r002.py`.
+`spec/tasks.json`/`docs/implementation/TRACKER.json` left untouched --
+confirmed by git history both are only ever written at certification
+time by Control plane, never by a producer at PROVISIONAL submission.
+
+**Submitted PROVISIONAL, not self-certified (Law 4)** -- pushed to this
+session's own branch `claude/wizardly-fermat-lqx141`, opened as PR #236
+against `main` (title `[relay] FTF-R002: Authenticated internal component
+bindings and reconciled adapter foundation`). Full entry: `QUEUE.md`,
+`docs/certifications/queue.md`.
+
+## Next shift
+This PR needs a real CI run watched to completion on its actual pushed
+head, then an independent Control-plane L2 review (this session cannot
+certify its own work -- Law 4). Recompute the dependency-ready frontier
+fresh from `docs/spec-matrix.yaml`/`spec/tasks.json` rather than trusting
+this note alone: FTF-0902 ("Network-policy templates") is genuinely
+dependency-ready but needs a real CNI-enforcing Kubernetes cluster this
+sandbox does not have (disclosed above, not claimed); FTF-0212 (PR #231)
+and FTF-0304 (PRs #194/#195) remain other sessions' own open work -- leave
+those alone. A reviewer should specifically re-check this task's own
+field-shape reconciliation against FTF-R001's frozen
+`architecture.schema.json` line by line, since it was this session's own
+mid-implementation correction, not the original submitted shape.
+
 
 ## 2026-09-24 — FTF-0213 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #232. Checked

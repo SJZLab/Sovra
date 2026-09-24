@@ -225,6 +225,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0213.py
       - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a07.py
+      - name: FTF-R002 negative-test proof (Authenticated internal component bindings, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_r002.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1279,6 +1281,51 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real TargetSourceSnapshot evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a07_target_source_snapshot.py
+
+  component-bindings-integration:
+    # FTF-R002: real Postgres ComponentBinding/ComponentSyncOutbox evidence
+    # (Section 39/45/65/70/77.1/77.3/77.5/77.6) -- two real organizations,
+    # the organization_admin-only RBAC boundary, the cross-tenant IDOR
+    # case, optimistic-version-conflict (409), a real health check against
+    # a real local HTTP server (2xx -> healthy, 503 -> unhealthy, a real
+    # closed port -> unhealthy, never a fabricated healthy), an idempotent
+    # sync-outbox admit/replay/resolve/conflict cycle, the component-status
+    # projection reporting an unconfigured component honestly, sovra_app's
+    # own SELECT/INSERT/UPDATE-only grant (never DELETE), and a raw INSERT
+    # bypassing the ORM entirely genuinely rejected by the real
+    # ck_component_bindings_worker_package_no_endpoint CHECK constraint.
+    # No OpenBao needed -- this resource carries no credential. Same real
+    # `services: postgres` container pattern as
+    # target-source-snapshot-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfr002
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfr002"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfr002
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real ComponentBinding/ComponentSyncOutbox evidence against the live database
+        run: uv run python3 tests/integration/test_component_bindings.py
 
   connection-validation-integration:
     # FTF-0203: real Postgres + real gateway connection-validation

@@ -3739,7 +3739,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+- FTF-R002 — Authenticated internal component bindings and reconciled
+  adapter foundation. PR #236, `claude/wizardly-fermat-lqx141`, implementation
+  commit `b1906932a57420b96b8bd4d039b876c55d74661d`. `ComponentBinding`/
+  `ComponentSyncOutbox` field names/enums matching FTF-R001's own frozen
+  `architecture.schema.json` contract literally (discovered and reconciled
+  mid-implementation — see PROGRESS.md's own matching entry for the full
+  disclosure). Real health check never fabricates `healthy` after a
+  dependency outage (three real fault-injection vectors, each reverted
+  byte-identical). `scripts/product_truth_check.py`: 18/18 -> 19/19.
+  Needs independent Control-plane L2 review (Law 4) — this session cannot
+  certify its own work.
 
 FTF-04A07 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #234 (merge commit
