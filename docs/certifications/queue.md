@@ -12928,17 +12928,39 @@ this fix targeted -- completed clean in ~3m17s, no crash).
 runs no separate "Claude Approvals" check, so CI-green plus no-conflict
 is the full bar; PR #228 meets it and is ready for review.
 
+**2026-09-24 update -- merged by another session while this shift was
+still watching:** PR #228 was merged into `main` (merge commit
+`423eb56`, `merged_by: samerzakaria`) and PR #226 closed as superseded,
+both by `session_01UhsKjWNrrPmXWNxNwK2rw2` (no session-ID overlap with
+this shift). Verified independently rather than trusted from the webhook
+alone: `git fetch origin main` confirms `423eb56` is exactly PR #228's
+merge, and `docs/spec-matrix.yaml` on that real head still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` -- the
+merge correctly did not certify anything by itself (no
+`docs/certifications/ledger.md` entry exists for FTF-0211), matching
+`CLAUDE.md`'s "merge on green + L1 doc (PROVISIONAL)" convention.
+
+PR #226's own closing comment stated "FTF-0211 is now certified via that
+PR," which the tracker directly contradicts. Logged as a low-severity
+finding in `docs/certifications/watchdog-findings.md` (2026-09-24 entry
+-- a status claim outrunning the tracker, not tracker corruption, since
+`certification_state` itself was never touched) and corrected via a
+reply comment on PR #226 pointing at the real tracker state. This shift
+did not certify FTF-0211 itself either way -- only recorded the
+discrepancy for Control plane, per "producer never certifies own work"
+applying symmetrically.
+
 ## Next shift
-PR #228 is genuinely green (27/27, confirmed on its real final head) and
-mergeable -- ready for an independent Control-plane L2 review (this
-session cannot certify its own work -- Law 4). FTF-0211's own module
-logic and test suite were already independently confirmed sound by the
-2026-09-23 review above, so re-review should be a fast pass focused on:
-re-confirming CI is still green on PR #228's actual current head at
-review time (don't trust this note alone -- a later push could change
-it), whether PR #226 should be closed in favor of #228 (left as a
-Control-plane judgment call, disclosed above), and the branch-continuity
-resolution itself. `docs/spec-matrix.yaml` has no other PROVISIONAL
-entries at this shift's end. `FTF-0304` still has two open, unmerged
-candidate PRs (#194/#195) from other sessions -- leave those for their
-own producer sessions or a certifier, do not redo the work.
+FTF-0211's code is now on `main` (via PR #228's merge, `423eb56`) and CI
+was independently confirmed genuinely green (27/27 checks, `gate`
+included, on PR #228's real final head) before the merge -- but
+`certification_state` is still `PROVISIONAL`. A genuine independent
+Control-plane L2 review of the code now on `main` (not of either closed
+PR in isolation) is still needed before it may move to `CERTIFIED`.
+FTF-0211's own module logic and test suite were already independently
+confirmed sound by the 2026-09-23 review above, so this should be a fast
+pass, but it must actually happen and be recorded in
+`docs/certifications/ledger.md`. `docs/spec-matrix.yaml` has no other
+PROVISIONAL entries at this shift's end. `FTF-0304` still has two open,
+unmerged candidate PRs (#194/#195) from other sessions -- leave those
+for their own producer sessions or a certifier, do not redo the work.

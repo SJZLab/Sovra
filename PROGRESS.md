@@ -1,5 +1,61 @@
 # PROGRESS — Sovra
-Updated: 2026-09-24T01:08:34Z (scheduled relay shift) — fixed the real
+Updated: 2026-09-24T01:18:19Z (scheduled relay shift) — PR #228 merged
+into `main` (merge commit `423eb56`) by another session while this shift
+was still watching it; FTF-0211 remains `certification_state:
+PROVISIONAL` on `main` (unaffected by the merge, per this repo's own
+"merge on green + L1 doc (PROVISIONAL)" convention). Flagged and
+corrected a separate session's PR #226 closing comment that overstated
+FTF-0211 as "certified" — logged in
+`docs/certifications/watchdog-findings.md`.
+
+**What happened, in order:** this shift opened PR #228 (see the
+2026-09-24T01:08:34Z entry below for the full fix/evidence record) and
+subscribed to its activity to watch CI rather than poll. While a
+docs-only follow-up push was still re-running CI, a `pull_request.closed`
+event arrived: PR #228 had been merged (`merged_by: samerzakaria`,
+merge commit `423eb56`) and PR #226 closed as superseded, both by
+another session (`session_01UhsKjWNrrPmXWNxNwK2rw2`, not this one — no
+session-ID overlap). Verified independently rather than trusting the
+event alone: `git fetch origin main` shows `423eb56` is exactly PR #228's
+merge, and `docs/spec-matrix.yaml` on that real `main` head still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` — the
+merge did not (and per Law 4, should not) certify anything by itself.
+
+PR #226's own closing comment stated "FTF-0211 is now certified via that
+PR," which the tracker directly contradicts (no `docs/certifications/
+ledger.md` entry exists for FTF-0211, and no independent L2 review has
+run against the code now on `main` — the 2026-09-23 review that did run
+returned NOT CERTIFIED, against the pre-fix head). This is a status claim
+in PR prose outrunning the tracker, not tracker corruption (the tracker
+itself was never touched) — logged as a low-severity finding in
+`docs/certifications/watchdog-findings.md` rather than left uncorrected,
+and a reply posted on PR #226 itself pointing at the real tracker state.
+This session did not attempt to correct or re-open anything merged by
+the other session — only recorded the discrepancy for Control plane,
+consistent with "producer never certifies own work" applying symmetrically
+(a relay session doesn't decide certification either way, in either
+direction).
+
+`docs/spec-matrix.yaml`/`QUEUE.md`/`docs/certifications/queue.md` are
+updated below to reflect the real state: FTF-0211's code is now on
+`main`, CI is genuinely green, but certification is still pending a
+genuine independent review.
+
+## Next shift
+FTF-0211 needs a genuine independent Control-plane L2 review of the code
+now on `main` (not of either closed PR in isolation) before
+`certification_state` may move to `CERTIFIED`. Its own module logic and
+test suite were already independently confirmed sound by the 2026-09-23
+review, and CI is independently confirmed genuinely green (27/27 on PR
+#228's real final head, `mergeable_state: clean`) — so this should be a
+fast pass, but it must actually happen and be recorded in
+`docs/certifications/ledger.md` before the tracker moves. `docs/
+spec-matrix.yaml` has no other PROVISIONAL entries at this shift's end.
+`FTF-0304` still has two open, unmerged candidate PRs (#194/#195) from
+other sessions — leave those for their own producer sessions or a
+certifier, do not redo the work.
+
+## 2026-09-24T01:08:34Z (scheduled relay shift) — fixed the real
 CI gate-wiring defect blocking FTF-0211 (PR #226); PR #228 now
 genuinely green (27/27 checks, `gate` included) and mergeable. Not
 self-certified (Law 4) — awaiting independent Control-plane L2 review.

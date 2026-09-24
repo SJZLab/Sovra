@@ -1,6 +1,51 @@
 # Watchdog Findings
 Watchdog appends adversarial audit findings here; Control plane reviews.
 
+## 2026-09-24 — PR #226 closing comment overstated FTF-0211 as "certified"
+- **found_by:** the relay shift that opened PR #228 (this repo's own
+  `subscribe_pr_activity` webhook delivered the merge/close events live)
+- **first_seen:** 2026-09-24T01:18:19Z — PR
+  [SJZLab/Sovra#226](https://github.com/SJZLab/Sovra/pull/226)'s closing
+  comment (`session_01UhsKjWNrrPmXWNxNwK2rw2`)
+- **severity:** low — the tracker itself was not touched; this is a
+  status claim in PR prose that outran the tracker, not tracker
+  corruption (contrast the 2026-09-15 FTF-0001 finding above, where the
+  tracker itself was flipped).
+- **affected criterion IDs:** FTF-0211
+- **What changed:** after merging PR #228 (merge commit `423eb56`), the
+  same session closed PR #226 with a comment stating "FTF-0211 is now
+  certified via that PR." `docs/spec-matrix.yaml`'s FTF-0211 entry on the
+  actual merged `main` (`certification_state: PROVISIONAL`,
+  `proof_state: L1-PROVEN`) directly contradicts that: nothing in PR
+  #228's own diff or the merge commit changed `certification_state`, and
+  no `docs/certifications/ledger.md` entry exists for FTF-0211. No
+  independent Control-plane L2 review of the merged code has actually
+  happened yet — the 2026-09-23 review that ran was against PR #226's
+  pre-fix head and explicitly returned NOT CERTIFIED, precisely because
+  of the CI defect PR #228 fixed; nothing has re-reviewed the code since.
+- **Why it's a finding:** Law 2 ("never inflate tracker") and Law 4
+  ("producer never certifies own work") exist to prevent exactly this
+  gap between what a PR comment claims and what the tracker actually
+  records. A future session skimming PR #226's history rather than
+  `docs/spec-matrix.yaml` itself could wrongly treat FTF-0211 as done.
+  This also confirms this repo's own "merge on green + L1 doc
+  (PROVISIONAL)" convention (`CLAUDE.md` "Do without asking") behaved
+  correctly here — the merge itself did NOT flip `certification_state`
+  to `CERTIFIED` — even though the human-facing comment describing that
+  same merge overstated it.
+- **Disposition:** not resolved by this shift — logged for Control plane
+  review, per this repo's own "producer never certifies own work" norm
+  (this relay session is not the certifier and does not decide
+  certification either way). `docs/certifications/queue.md`'s "## Next
+  shift" note is updated to say plainly that FTF-0211 still needs a
+  genuine independent Control-plane L2 review of the code now on `main`
+  (module logic already confirmed sound by the 2026-09-23 review; CI is
+  now confirmed genuinely green via 27/27 checks on PR #228's real final
+  head) before `certification_state` may move to `CERTIFIED`.
+- **Not yet done:** the actual L2 certification of FTF-0211 as merged
+  into `main` — this finding is about the premature claim, not a
+  substitute for that review.
+
 ## 2026-09-15 — Unearned status claim ("GitHub connector gap resolved")
 - **What:** commit `10c6880` ("Update: GitHub connector gap resolved",
   session `session_01AHbfBeKTxwzBh7tNXduKjw`) pushed directly to a

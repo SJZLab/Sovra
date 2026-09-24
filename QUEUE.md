@@ -3749,14 +3749,28 @@ clean: `ruff`/`mypy`/`test_ftf_h006.py`/`test_ftf_0211.py`/`test_ftf_0210.py`/
 Pushed as **PR #228** and watched to completion via a live
 `subscribe_pr_activity` subscription (not manual polling): **27/27
 checks completed `success`** on the PR's actual final head (`027c3fc`),
-`gate` included, `mergeable_state: clean`. PR #228 is now genuinely
-green and mergeable, ready for independent Control-plane L2 review.
-`docs/spec-matrix.yaml`'s FTF-0211 entry is left unchanged at
-`certification_state: PROVISIONAL` (a producer-role CI fix is not a
-certification, Law 4) — its own `notes` field now also carries this
-follow-up, disclosed rather than overwriting the prior accounts. Full
-record: `docs/certifications/queue.md`'s 2026-09-24 FTF-0211 entry,
-`PROGRESS.md`.
+`gate` included, `mergeable_state: clean`. `docs/spec-matrix.yaml`'s
+FTF-0211 entry is left unchanged at `certification_state: PROVISIONAL`
+(a producer-role CI fix is not a certification, Law 4) — its own `notes`
+field now also carries this follow-up, disclosed rather than overwriting
+the prior accounts.
+
+**Merged while this shift was still watching (by another session, not
+this one):** PR #228 was merged into `main` (merge commit `423eb56`,
+`merged_by: samerzakaria`) and PR #226 closed as superseded, both by
+`session_01UhsKjWNrrPmXWNxNwK2rw2`. Verified independently: `main` at
+`423eb56` is exactly PR #228's merge, and `docs/spec-matrix.yaml` there
+still reads `certification_state: PROVISIONAL` — the merge correctly did
+not certify anything by itself, matching `CLAUDE.md`'s "merge on green +
+L1 doc (PROVISIONAL)" convention. PR #226's own closing comment stated
+"FTF-0211 is now certified via that PR," which the tracker contradicts
+(no `docs/certifications/ledger.md` entry exists for it) — flagged as a
+low-severity finding in `docs/certifications/watchdog-findings.md`
+(status claim outrunning the tracker, not tracker corruption) and
+corrected via a reply on PR #226. **FTF-0211 stays in this section,
+PROVISIONAL, still awaiting a genuine independent Control-plane L2
+review of the code now on `main`** — full record: `docs/certifications/
+queue.md`'s 2026-09-24 FTF-0211 entry, `PROGRESS.md`.
 
 FTF-0210 is no longer in this section; it was independently reviewed and
 CERTIFIED 2026-09-23 via PR #224 (merge commit
