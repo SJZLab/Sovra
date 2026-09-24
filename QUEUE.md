@@ -1,4 +1,70 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-24 (scheduled autonomous relay shift, dynamic queue-check
+  fire, not a PR webhook) — implemented and submitted **FTF-1303 (Provider
+  token costing) PROVISIONAL** via PR (branch `claude/wizardly-fermat-vwrwp6`,
+  commits `be9775f`/`bee5b55`), title `[relay] FTF-1303: Provider token
+  costing`. STEP 0 verified `sha256sum CLAUDE.md` against the committed
+  `CLAUDE.md.sha256` — clean; BLOCKER.md read — both entries resolved
+  history, no live blocker. `docs/certifications/queue.md`'s own
+  "dependency-ready frontier candidates" note (2026-09-24,
+  `09a6cf5`) named FTF-0214/0215/0500A/0500D/1303/04A02 as the remaining
+  ready set once 04A07 certified; of those, FTF-0214/0215/0500A/0500D are
+  UI/Temporal-workflow tasks and FTF-04A02 needs a real OpenBao secret
+  backend this relay sandbox cannot stand up — FTF-1303 was the lowest-risk,
+  fully local, no-external-dependency item (mirrors FTF-1302's own already-
+  CERTIFIED shape: pure computation, `database_changes: "No independent
+  schema change"`, `contract_owner: FTF-1301`, deps FTF-0210/FTF-1301 both
+  CERTIFIED). Pulled the real contract via `tools/r1_handoff.py packet
+  FTF-1303 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+  `apps/api/app/services/provider_token_costing.py`: `provider_call_cost`
+  generalizes Section 32's own `provider_call_cost = input_tokens *
+  effective_input_rate + output_tokens * effective_output_rate +
+  actual_other_billable_units` to this task's own five named categories
+  (input/output always billed, required rate fields; cache/reasoning/
+  request each an independent `(usage, rate)` pair, `None` when not
+  applicable to a call, distinct from a declared `0`). Per
+  `contract_owner: FTF-1301` and FTF-1301's own closed `RATE_UNITS`
+  vocabulary having no per-cache/per-reasoning/per-request member (and
+  `CostProfile.label` being unstructured free text with no provider/model
+  key), this module takes an already-declared `ProviderRateCard` rather
+  than querying `CostProfile` itself — the same declared-input separation
+  FTF-1302's own `ServiceWindow` already established. negative_acceptance
+  ("Missing usage/rate/unknown upstream cannot be replaced by invented or
+  zero dollar value") is enforced by `provider_call_cost` raising
+  `ProviderTokenCostingError` on real, nonzero, declared usage with no
+  matching rate — never a silent $0. **Own fault injection (Law 1):**
+  patched `_priced_category` to zero-fill a missing rate instead of
+  raising — 4 genuine `FAIL` lines against `tests/tasks/test_ftf_1303.py`
+  (the three negative_acceptance tests plus the fault-injection test's own
+  assertion), reverted byte-identical, suite re-confirmed clean
+  immediately after. `ruff`/`ruff format --check`/`mypy` clean (repo-wide
+  `mypy .` shows no new findings beyond the pre-existing disclosed
+  `alembic.op`/`context` noise); `validate_spec.py --strict` clean (after
+  `git fetch --unshallow`, a pre-existing shallow-clone artifact unrelated
+  to this diff — confirmed via `git stash` that the one `stale_commit`
+  defect it otherwise reports, on FTF-0401, pre-exists on `main` itself);
+  `product_truth_check.py --fail-on-unwired` unchanged at `19/19` (no live
+  caller yet, disclosed, same FTF-1302/1401/1601/1701/1810 precedent);
+  `status.py` unchanged at `59/300` certified; `verify_task.py --task
+  FTF-1303 --stage task` reports `BLOCKED` pre-merge (expected, same
+  precedent as every sibling PROVISIONAL submission). Regression:
+  `test_ftf_1302.py` clean; `test_ftf_1301.py` blocked locally only by the
+  pre-existing, disclosed `uvicorn` sandbox gap (no `pyproject.toml`/
+  `uv.lock` change in this PR). Added this task's own CI gate step to
+  `.github/workflows/ci.yml`'s `gate` job.
+  `docs/spec-matrix.yaml`'s FTF-1303 entry set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+  implementation commit `be9775f60ce248cd411cc22ccf82692415798c82`,
+  `proving_test: tests/tasks/test_ftf_1303.py`. `proving_symbol` left
+  empty (no live HTTP route added by this task; FTF-1301 already owns and
+  implements the frozen `/costs/cost-per-success/search` contract slot 13
+  — genuine, disclosed 0/0, not inflation). **No blocking defect found.
+  Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+  Control-plane L2 review and a real CI run are needed before
+  certification. Appended to `docs/certifications/queue.md` for Control
+  plane. See "## Provisional" below.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
   the `pull_request.opened` webhook for PR #238) — independently reviewed
   FTF-04A06 (Local repository connector with root allowlist/path
@@ -3772,6 +3838,30 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-1303 (Provider token costing) — this shift's own submission, see the
+top-of-file 2026-09-24 relay entry for the full record. PR not yet opened
+as of this commit (branch `claude/wizardly-fermat-vwrwp6`, commits
+`be9775f`/`bee5b55`) — see "Next shift" note this entry leaves for
+whichever shift opens/tracks the PR link once GitHub access confirms it.
+
+FTF-04A06 (PR #238, `claude/wizardly-fermat-azo96v`) — **UPDATE, this
+shift (2026-09-24, read-only check, no relay action taken on this item):**
+the Law 1 test-coverage gap the prior NOT-CERTIFIED review found (below)
+was already fixed by a later session on the same PR branch — commit
+`911ae78` added `test_resolve_allowed_root_refuses_a_prefix_colliding_
+sibling`, independently confirmed (via this shift's own `pull_request_read`
+call) to genuinely fail against a naive `str.startswith()` fault injection
+and pass against the real code. A tracking-doc merge conflict with PR #239
+was then resolved (merge commit `c122d5d`) and CI re-ran fully green
+(run `35994361000`, all 29 checks including `gate`, `mergeable_state:
+clean`) — confirmed directly via a fresh `pull_request_read get_check_runs`
+call this shift, not taken on faith from the branch's own PROGRESS.md
+claim. **PR #238 is ready for a fresh independent Control-plane L2
+review** (this relay shift has no certifier standing to perform that
+review itself, per Law 4/CLAUDE.md's relay-vs-certifier separation — left
+for the next Control-plane certifier shift). Original 2026-09-24
+NOT-CERTIFIED finding, preserved for context below:
+
 FTF-04A06 (PR #238, `claude/wizardly-fermat-azo96v`) — implementation
 sound (own independent re-run of both producer fault-injection vectors,
 symlink-escape and concurrent-drift, both genuinely caught), but
@@ -3783,7 +3873,9 @@ task's own `negative_acceptance` clause naming "path traversal" (not just
 "symlink traversal"), are asserted but never shown able to fail. The
 shipped `resolve_allowed_root` itself is not vulnerable (confirmed by
 reverting the reviewer's own fault injection and re-testing the real
-code) — only the test evidence is missing. **Next relay shift:** add one
+code) — only the test evidence is missing. **(Superseded by the update
+above -- kept for history, not a live next-step.)** Original "Next relay
+shift" note, now moot: add one
 test case constructing `base/allowed` and `base/allowed-evil` as sibling
 directories and asserting `resolve_allowed_root(evil, [allowed])` raises
 `PathAllowlistError`, shown able to fail first against a naive

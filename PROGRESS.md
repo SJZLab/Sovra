@@ -16260,3 +16260,87 @@ FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) remain other sessions'
 own open work — leave those alone. This was a certification-only shift
 (CERTIFY mode); no new task work, design decisions, or queue
 reprioritization beyond what certifying FTF-R002 required.
+
+## 2026-09-24T[relay] — Relay: FTF-1303 (Provider token costing), submitted PROVISIONAL
+Scheduled autonomous relay shift (dynamic queue-check fire, not a PR
+webhook — no certifier standing this shift). STEP 0: `sha256sum CLAUDE.md`
+verified clean against `CLAUDE.md.sha256`; `BLOCKER.md` read in full —
+both entries resolved history, no live blocker; `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh, not assumed from prior context.
+
+Checked PR #238 (FTF-04A06)'s live GitHub state before picking new work:
+`pull_request_read`/`get_check_runs` confirmed it is now CI-green
+(29/29 checks, `mergeable_state: clean`) — an earlier session already
+pushed the Law 1 test-coverage fix (`911ae78`) and resolved a
+tracking-doc merge conflict with PR #239 (`c122d5d`) on that same branch.
+This relay shift has no certifier standing to review/merge it (Law 4/
+CLAUDE.md's relay-vs-certifier separation) — left untouched for the next
+Control-plane certifier shift; noted in `QUEUE.md`'s "## Provisional"
+section so that fact isn't re-discovered from scratch.
+
+Recomputed the dependency-ready frontier: FTF-0214/0215/0500A/0500D
+(UI/Temporal-workflow tasks) and FTF-04A02 (needs a real OpenBao secret
+backend for a genuine integration test) were all disclosed as outside
+this shift's practical reach; FTF-1303 (Provider token costing) — a pure
+computation module, same tractable shape as the already-CERTIFIED
+FTF-1302 sibling, both dependencies (FTF-0210, FTF-1301) already
+CERTIFIED — was picked.
+
+Pulled the real contract (`tools/r1_handoff.py packet FTF-1303`).
+Implemented `apps/api/app/services/provider_token_costing.py`:
+`provider_call_cost` generalizes Section 32's own formula to this task's
+five named categories (input/output always billed; cache/reasoning/
+request each an independent `(usage, rate)` pair, `None` when not
+applicable, distinct from a declared `0`). Per `contract_owner: FTF-1301`
+and FTF-1301's own closed `RATE_UNITS` vocabulary lacking a per-cache/
+per-reasoning/per-request member, this module takes an already-declared
+`ProviderRateCard` rather than querying `CostProfile` itself.
+
+Wrote `tests/tasks/test_ftf_1303.py` (13 no-DB test functions):
+construction guards, a five-category golden example ($23.50), an
+only-input-output case, three independent negative_acceptance cases, a
+declared-zero-vs-`None` equivalence case, and a fault-injection pair.
+
+**Own fault injection (Law 1):** patched `_priced_category` to silently
+zero-fill a missing rate instead of raising — 4 genuine `FAIL [FTF-1303]`
+lines against the real suite (the three negative_acceptance tests plus
+the fault-injection test's own assertion), reverted byte-identical
+(`diff` confirmed), suite re-confirmed clean immediately after (all 13
+checks pass).
+
+`ruff check`/`ruff format --check` clean; repo-wide `mypy .` shows no new
+findings beyond the pre-existing disclosed `alembic.op`/`context` noise;
+`validate_spec.py --strict` clean after `git fetch --unshallow` (this
+sandbox's checkout started shallow — confirmed via `git stash -u` that
+the one `stale_commit` defect it otherwise reports, on FTF-0401's
+unrelated evidence hash, pre-exists on `main` itself, not caused by this
+diff); `product_truth_check.py --fail-on-unwired` unchanged at `19/19`
+(no live caller yet, disclosed, same FTF-1302/1401/1601/1701/1810
+precedent); `status.py` unchanged at `59/300` certified; `verify_task.py
+--task FTF-1303 --stage task` reports `BLOCKED` pre-merge (expected, same
+precedent as every sibling PROVISIONAL submission). Regression:
+`test_ftf_1302.py` clean; `test_ftf_1301.py` blocked locally only by the
+pre-existing, disclosed `uvicorn` sandbox gap (no `pyproject.toml`/
+`uv.lock` change in this diff).
+
+Added this task's own CI gate step to `.github/workflows/ci.yml`'s `gate`
+job. `docs/spec-matrix.yaml`'s FTF-1303 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit `be9775f60ce248cd411cc22ccf82692415798c82`.
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified
+(Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are needed before certification. Appended to
+`docs/certifications/queue.md` for Control plane. Commits `be9775f`/
+`bee5b55` on branch `claude/wizardly-fermat-vwrwp6`; PR to be opened
+against `main`, title `[relay] FTF-1303: Provider token costing`.
+
+## Next shift
+If PR for FTF-1303 has not yet been opened, open it before claiming any
+new work — do not re-implement. PR #238 (FTF-04A06) is CI-green and
+mergeable, awaiting a fresh independent Control-plane certifier shift (not
+this relay's role). FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and
+FTF-04A02 (needs a real OpenBao secret backend) remain the next
+dependency-ready frontier items once FTF-1303 and FTF-1302's own
+downstream FTF-1304 ("Cost-per-success calculator", now dependency-ready
+once FTF-1303 certifies) are considered.
