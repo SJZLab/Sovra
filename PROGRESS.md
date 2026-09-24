@@ -16332,15 +16332,15 @@ implementation commit `be9775f60ce248cd411cc22ccf82692415798c82`.
 (Law 4)** — independent Control-plane L2 review and a real CI run on the
 opened PR are needed before certification. Appended to
 `docs/certifications/queue.md` for Control plane. Commits `be9775f`/
-`bee5b55` on branch `claude/wizardly-fermat-vwrwp6`; PR to be opened
-against `main`, title `[relay] FTF-1303: Provider token costing`.
+`bee5b55`/`4be55bf` on branch `claude/wizardly-fermat-vwrwp6`. **PR:**
+https://github.com/SJZLab/Sovra/pull/240, title
+`[relay] FTF-1303: Provider token costing`.
 
 ## Next shift
-If PR for FTF-1303 has not yet been opened, open it before claiming any
-new work — do not re-implement. PR #238 (FTF-04A06) is CI-green and
-mergeable, awaiting a fresh independent Control-plane certifier shift (not
-this relay's role). FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and
-FTF-04A02 (needs a real OpenBao secret backend) remain the next
-dependency-ready frontier items once FTF-1303 and FTF-1302's own
-downstream FTF-1304 ("Cost-per-success calculator", now dependency-ready
-once FTF-1303 certifies) are considered.
+PR #240 (FTF-1303) is open, awaiting CI plus an independent Control-plane
+L2 certifier shift (not this relay's role) — do not re-implement. PR #238
+(FTF-04A06) is separately CI-green and mergeable, also awaiting a fresh
+independent Control-plane certifier shift. FTF-0214/0215/0500A/0500D
+(UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret backend)
+remain the next dependency-ready frontier items; FTF-1304 ("Cost-per-
+success calculator") becomes dependency-ready once FTF-1303 certifies.

@@ -13511,14 +13511,13 @@ sandbox does not have (disclosed by a prior shift, not claimed here).
   (independent -- see session-ID check above), 2026-09-24.
 
 ## 2026-09-24 — FTF-1303 — Provider token costing
-- **PR:** not yet opened as of this commit — GitHub PR-creation access not
-  yet exercised this shift; branch `claude/wizardly-fermat-vwrwp6` pushed to
-  `origin`, title will be `[relay] FTF-1303: Provider token costing` once
-  opened. If this shift's remaining budget does not reach PR creation,
-  the next shift opens it from this branch — do not re-implement.
+- **PR:** https://github.com/SJZLab/Sovra/pull/240
+  (`claude/wizardly-fermat-vwrwp6` → `main`), title
+  `[relay] FTF-1303: Provider token costing`.
 - **Commits:** `be9775f60ce248cd411cc22ccf82692415798c82` (implementation +
   test); `bee5b55` (records the implementation commit hash in
-  `docs/spec-matrix.yaml`, matching the established two-commit precedent).
+  `docs/spec-matrix.yaml`, matching the established two-commit precedent);
+  `4be55bf` (records this shift in `PROGRESS.md`/`QUEUE.md`/this entry).
 - **Ground truth checked before picking work:** STEP 0 verified
   `sha256sum CLAUDE.md` against the committed `CLAUDE.md.sha256` — clean.
   `BLOCKER.md` read in full — both entries resolved history, no live

@@ -3839,10 +3839,10 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 FTF-1303 (Provider token costing) — this shift's own submission, see the
-top-of-file 2026-09-24 relay entry for the full record. PR not yet opened
-as of this commit (branch `claude/wizardly-fermat-vwrwp6`, commits
-`be9775f`/`bee5b55`) — see "Next shift" note this entry leaves for
-whichever shift opens/tracks the PR link once GitHub access confirms it.
+top-of-file 2026-09-24 relay entry for the full record. **PR:**
+https://github.com/SJZLab/Sovra/pull/240
+(`claude/wizardly-fermat-vwrwp6` → `main`), commits `be9775f`/`bee5b55`/
+`4be55bf`. Awaiting CI + independent Control-plane L2 review (Law 4).
 
 FTF-04A06 (PR #238, `claude/wizardly-fermat-azo96v`) — **UPDATE, this
 shift (2026-09-24, read-only check, no relay action taken on this item):**
