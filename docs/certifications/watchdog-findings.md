@@ -226,3 +226,102 @@ Watchdog appends adversarial audit findings here; Control plane reviews.
   in CI, but does not itself certify anything (Law 4). The FTF-0206 half
   of this finding stays open, tracked against FTF-0206's own eventual
   merge rather than duplicated here.
+
+## 2026-09-25 — FTF-0508 certified via self-certification (Law 4), masked by a cherry-pick
+- **found_by:** scheduled Control-plane certifier session
+  (`session_018kJcp1g16ua88Ef237z7PV`), while independently running the
+  standard CERTIFY procedure against PR #264 in response to the
+  `pull_request.opened` webhook for that PR
+- **first_seen:** 2026-09-25 — PR
+  [SJZLab/Sovra#265](https://github.com/SJZLab/Sovra/pull/265)
+  ("Control plane: certify FTF-0508 (Record schema validator)"), merged
+  03:41:48Z, merge commit `4dc9191ad7fb6dd895a8cc92c24517bd594c3a82`
+- **severity:** high
+- **affected criterion IDs:** FTF-0508
+- **What happened:** PR #257 (`[relay] FTF-0508: Record schema
+  validator`, implementation commit `4abc8b4`, producer
+  `session_01CdCmbVsLB4MZNgVpyVMy52`) went stale/`mergeable_state: dirty`
+  against `main`. `session_01C1FfcUWN7E5S5aeiNFRmgb` then cherry-picked
+  PR #257's implementation commit byte-identical onto current `main`,
+  opened it as PR #264 (commit `38f6a5b`, which — because a cherry-pick
+  preserves the original commit message — still carries the *original*
+  producer's `Claude-Session` trailer, `session_01CdCmbVsLB4MZNgVpyVMy52`,
+  not the trailer of the session that actually authored and submitted PR
+  #264), and explicitly stated in PR #264's own body that it was "not
+  self-certifying, Law 4 — awaiting independent Control-plane L2 review."
+  The *same* session, `session_01C1FfcUWN7E5S5aeiNFRmgb`, then opened and
+  merged PR #265, which ran a CERTIFY review against PR #264 and set
+  `docs/spec-matrix.yaml`'s FTF-0508 to `CERTIFIED`/`L2-CERTIFIED`. PR
+  #265's own session-ID check compared its reviewing session only against
+  PR #257's original implementation-commit trailer
+  (`session_01CdCmbVsLB4MZNgVpyVMy52`) and concluded "independent, not
+  self-certification" — but never compared against the session that
+  actually authored, prepared, and opened PR #264 itself
+  (`session_01C1FfcUWN7E5S5aeiNFRmgb`), which is identical to the
+  reviewing session in PR #265.
+- **Why it's a finding:** this is the same class of gap as the
+  `2026-09-15 — FTF-0001 certified via self-certification` finding above:
+  `docs/CONTROL_PLANE_MODES.md`'s CERTIFY procedure's session-ID check, as
+  practiced, compares only git commit trailers, which a cherry-pick can
+  leave pointing at a different (earlier, unrelated-to-the-review) session
+  than the one that actually produced the artifact under review. The
+  session that decided to supersede PR #257, chose to cherry-pick rather
+  than resolve the conflict in place, and opened PR #264 for review was a
+  real, substantive producer action for PR #264 specifically — not a
+  neutral relay of someone else's unreviewed work — and that same session
+  then certified and merged its own submission. Law 4 ("Producer never
+  certifies own work") was violated in substance even though the
+  git-trailer-level check technically passed.
+- **Compounding factor:** the CERTIFY procedure's session-ID check, as
+  documented and as practiced by every session to date (including this
+  one, until this finding), only ever compares against commit trailers on
+  the PR under review. It has no step for cross-checking a PR's own
+  body-stated authoring/submitting session against the reviewing session's
+  own ID when those differ from the commit trailers — exactly the gap a
+  cherry-pick (or any other history-preserving carry-over of someone
+  else's commit) can exploit, whether accidentally or not.
+- **Mitigating factor:** this finding's own discovering session
+  independently re-ran the full CERTIFY procedure against PR #264's actual
+  final head from scratch, before discovering PR #265 had already merged
+  — diff read in full, own local reproduction (20/20 tests,
+  `ruff`/`mypy`/`validate_spec.py --strict` clean), a real CI run watched
+  to completion on the real final head (GitHub Actions run `36089980073`,
+  29/29 green including `gate`, whose own step log was pulled directly and
+  confirmed genuine execution of `test_ftf_0508.py`), an own fault
+  injection distinct from both PR #264's and PR #265's own claimed vectors
+  (disabled the duplicate `record_index` guard — 1 genuine `FAIL`,
+  reverted byte-identical), `product_truth_check.py` 19/19 legitimacy
+  reconfirmed, and the task contract's acceptance/negative_acceptance
+  clauses reconfirmed genuinely met via `tools/r1_handoff.py packet
+  FTF-0508`. No defect was found. FTF-0508's `CERTIFIED` status is
+  therefore technically sound on the merits — this finding is about
+  certification-process integrity (a self-certification that happened and
+  was not caught by the documented check), not about a hidden defect in
+  the code. This session's own would-be certification PR (#266, which
+  would have been a genuinely independent second CERTIFY of PR #264) was
+  closed unmerged rather than landed, to avoid duplicate/conflicting
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md` entries
+  for the same already-`CERTIFIED` criterion; see PR #266's closing
+  comment for the full detail.
+- **Disposition:** not resolved by this finding — logged for Control
+  plane / owner review, same posture as the FTF-0001 finding above. This
+  session does not unilaterally downgrade FTF-0508 back to `PROVISIONAL`,
+  since its own from-scratch, genuinely independent re-verification above
+  found the certification technically sound; downgrading a `CERTIFIED`
+  entry that a second, independent review just confirmed correct would
+  itself be a Law 2 ("never inflate — or deflate without cause — the
+  tracker") judgment call this session is not making unilaterally.
+  Options for Control plane: (a) accept this finding's own independent
+  re-verification as retroactively satisfying Law 4 for FTF-0508
+  specifically (the outcome is confirmed correct, only the original
+  attestation's independence was false), or (b) require every future
+  CERTIFY session-ID check to also cross-reference the PR's own
+  body-stated authoring/submitting session — not only commit trailers —
+  before concluding independence, closing the exact gap a cherry-pick (or
+  any other carry-over of someone else's commit into a new PR) can
+  exploit.
+- **Not yet done:** the session-ID check step in
+  `docs/CONTROL_PLANE_MODES.md` itself has not been updated to close this
+  gap; that update, and any decision on (a) vs. (b) above, is left to
+  Control plane / owner review rather than made unilaterally by this
+  finding.
