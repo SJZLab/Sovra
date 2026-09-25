@@ -379,9 +379,11 @@
       "blockers": []
     },
     "FTF-0408": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "37fe4f5ca16b85af1e6be76db5f007362e21d3e7"
+      ],
       "independent_review": null,
       "blockers": []
     },
