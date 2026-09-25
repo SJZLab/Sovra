@@ -1,5 +1,26 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #272, session
+  https://claude.ai/code/session_017GSKnGTZjjz1cmHkecktXe) — checked
+  `docs/spec-matrix.yaml` on `main` directly: zero `certification_state:
+  PROVISIONAL` entries there (FTF-1503 is `NONE` on `main`, `PROVISIONAL`
+  only on the unmerged PR branch — same class of pre-merge state as prior
+  shifts' FTF-1506/PR #262). Reviewed the triggering PR #272 anyway
+  (`ftf-1503-cherry-pick` → `main`, supersedes stale PR #258, carries
+  **FTF-1503, CSRF suite**) — session-ID check clean (commits carry
+  `session_01VDvxngihngbBfK5xfR5kt4`, no overlap with this reviewing
+  session) — but real CI on the real head (`8514e18`) was still in flight
+  (`gate` job `queued`, most integration jobs `in_progress`) at review
+  time, so **no certification verdict was possible yet — not a defect,
+  just incomplete.** Nothing merged, nothing certified this shift, no
+  `certification_state` on `main` touched. Full detail:
+  `docs/certifications/queue.md`'s 2026-09-25 entry, this file's own
+  "## Provisional" section (updated to point at PR #272). No open owner
+  ask; no other task work, design decisions, or queue reprioritization
+  performed (Law 4).
+
+## Previous shift
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #268, session
   https://claude.ai/code/session_01VDSvao4KMAGwSqasd9Q9sN) — independent
   CERTIFY procedure run on **FTF-1506 (Dependency scanning), PR #268:
@@ -4250,7 +4271,32 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-1503 ("CSRF suite") — submitted 2026-09-24, originally via PR #258
+(branch `claude/wizardly-fermat-gae8i9`) against `main`. PR #258 went
+stale (base fell behind `main`, `mergeable_state: dirty`, conflicts
+confined to append-only tracking docs, not production code) and is now
+**superseded by PR #272** (`ftf-1503-cherry-pick` → `main`), which
+cherry-picks PR #258's two production/test commits byte-identical onto
+current `main` with fresh tracking-doc entries of its own. New, real,
+reusable CSRF-protection dependency
+(`apps/api/app/auth/csrf_protection.py`) proven end to end against a real
+uvicorn demonstration app composing the real `require_csrf_protection`
+with the real `require_role`; zero certified production files touched
+(`oidc_login.py`/`rbac_middleware.py`/`project_routes.py`/`main.py` all
+untouched — same disclosed "designed, not yet wired into the real product
+route" gap `require_role` itself already carries in `main.py` today). Own
+fault injection (disabled the token comparison) genuinely caught by both
+suites, reverted byte-identical. Full record:
+`docs/certifications/queue.md`'s matching 2026-09-24 and 2026-09-25
+entries, `PROGRESS.md`. A 2026-09-25 Control-plane certifier shift
+(triggered by PR #272's own `pull_request.opened` webhook) checked PR #272
+directly — session-ID check clean, no overlap with the producer — but real
+CI on the real head (`8514e18`) was still in flight (`gate` job queued,
+most integration jobs `in_progress`) at review time, so no certification
+verdict was possible yet; not a defect, just incomplete. PR #258 left
+open, unmerged, superseded, not closed by this review. Awaiting
+Control-plane L2 certification and a real, completed CI run on PR #272's
+head — not this relay's role.
 
 FTF-0507 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #253 (merge commit

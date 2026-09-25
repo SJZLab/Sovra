@@ -14757,3 +14757,46 @@ certification naturally required (Law 4). No open owner ask (`QUEUE.md` "Owner a
 — current" unchanged, empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Control plane review — FTF-1503 (PR #272) — not yet ripe, CI in progress
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook
+for PR #272. Per this session's standing duty, checked `docs/spec-matrix.yaml` on `main`
+directly for every `certification_state: PROVISIONAL` entry, not just the triggering PR —
+zero (FTF-1503 itself is `NONE` on `main`; it only reads `PROVISIONAL` on PR #272's own
+unmerged branch, same pre-merge state as prior shifts' FTF-1506/PR #262 and
+FTF-04A06/PR #238). Reviewed the triggering PR #272 anyway (FTF-1503, CSRF suite).
+
+**Session-ID check:** both commits on PR #272 (`c2bf195`, `8514e18`) carry `Claude-Session:
+https://claude.ai/code/session_01VDvxngihngbBfK5xfR5kt4` — no overlap with this reviewing
+session's own `session_017GSKnGTZjjz1cmHkecktXe`, genuinely independent per Law 4.
+
+**PR #272 supersedes stale PR #258:** `pull_request_read get` on PR #258 confirms
+`mergeable_state: dirty` (its base `39983ab` fell behind current `main`; PR #272's own
+description attributes the conflicts to append-only tracking docs — `.github/workflows/
+ci.yml`, `PROGRESS.md`, `docs/certifications/queue.md` — not production code). PR #272
+cherry-picks PR #258's two production/test commits (`e6f96159`→`c2bf195`,
+`0fd8fc09`→`8514e18`) byte-identical onto current `main` (`68ac21a`) with fresh tracking-doc
+entries of its own. `docs/spec-matrix.yaml`'s FTF-1503 entry is unchanged at
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` on this PR (a rebase, not a
+certification claim — correct per Law 4).
+
+**CI status at review time:** `pull_request_read get_check_runs` on the real head
+(`8514e18`) shows the run still in flight — `gate` itself `status: queued`, most of the 30
+integration jobs `in_progress`, a handful already `success`, none failed yet.
+`mergeable_state: unstable` (pending checks, not a real conflict — base `68ac21a` is
+current `main`'s actual tip). Not merged.
+
+**Result: not certified, not rejected — incomplete.** No defect found in the diff itself
+at this point (not yet independently re-reviewed in full — CERTIFY's own procedure re-reads
+the diff and reruns tests only once there is a real merged commit with real green CI to
+certify against, per this session's standing duty). `docs/spec-matrix.yaml`'s FTF-1503
+entry stays `certification_state: NONE` on `main` (this PR has not merged; the
+`PROVISIONAL`/`L1-PROVEN` state only exists on PR #272's own unmerged branch, same as PR
+#258 before it — no downgrade needed, nothing was ever promoted). PR #258 left open, unmerged,
+superseded by PR #272 per the latter's own description — not closed by this review (closing
+a stale/superseded PR is relay housekeeping, not a certification action). `QUEUE.md`'s
+"## Provisional" section FTF-1503 entry updated to point at PR #272. No open owner ask
+(`QUEUE.md` "Owner actions — current" unchanged, empty). No other task work, design
+decisions, or queue reprioritization performed (Law 4).
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-25.
