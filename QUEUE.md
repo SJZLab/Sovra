@@ -1,4 +1,72 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_015bL6zptzbAoWaYKBhFKooj) — **FTF-0514
+  (PII/secrets detector) submitted PROVISIONAL.** STEP 0: CLAUDE.md hash
+  verified clean; `BLOCKER.md` confirmed no open blockers. `docs/spec-matrix.yaml`
+  had zero live `certification_state: PROVISIONAL` entries at shift start
+  (`scripts/status.py`: `69/300` certified, `20` product-true). Checked GitHub
+  directly: 3 open PRs (#231 FTF-0212, #195/#194 FTF-0304), excluded per the
+  same long-standing precedent every prior shift has applied.
+
+  Recomputed the dependency-ready frontier from `docs/spec-matrix.yaml` (19
+  ready tasks). Excluded FTF-0212/FTF-0304 (open PRs), FTF-0302/FTF-0303/
+  FTF-1201/FTF-H004 (real network egress), FTF-1703 (needs >=1000 real
+  curated traces), FTF-04A02 (keyed external credential, ask-first),
+  UI-heavy items (FTF-0214/0215/0408/0500A/0500D), FTF-0902 (`shared_lock_required`).
+
+  **FTF-0513** ("Near-duplicate detector," newly ready now that FTF-0512
+  CERTIFIED) was considered first but set aside: its real acceptance clause
+  needs Section 10 method 6, "Embedding similarity using a local/private
+  embedding model in zero-egress mode" — a genuine new-runtime-dependency
+  decision (no embedding library exists anywhere in this repository today;
+  `workers/data/pyproject.toml`'s own `dependencies = []` is empty).
+  `docs/architecture/REFERENCE_REPOSITORIES.md`/`FINE_TUNING_FACTORY_RELEASE_1.md`
+  name no specific embedding library this could resolve against per
+  CLAUDE.md's own "Default resolution rule." "New runtime deps" is an
+  explicit "Ask owner first" hard stop, and a stdlib hashing-trick
+  substitute risks gaming Section 10's own literal method distinction
+  (n-gram/Jaccard vs. embedding are named as separate methods) rather than
+  genuinely implementing it. Deferred rather than improvised; not written
+  up as an owner ask this shift since a dependency-ready non-ambiguous
+  alternative was available.
+
+  Picked **FTF-0514** (PII/secrets detector) instead — dependency-ready
+  (FTF-0402/FTF-0500/FTF-0508 all CERTIFIED), same tractable
+  pure-computation/no-DB/no-shared-lock/no-new-dependency shape as the
+  already-CERTIFIED FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512 siblings,
+  and reuses FTF-0508's own already-CERTIFIED `PII_STATUS_VALUES`
+  vocabulary directly rather than inventing a second one.
+
+  Implemented `workers/data/pii_secrets_detector.py::detect_pii_and_secrets`:
+  scans text content, `json` content's nested string leaves, and tool-call
+  arguments for named PII/secret shapes (email, phone, Luhn-checked credit
+  card, US SSN, AWS access-key ID, Bearer token, PEM private-key block) plus
+  a generic high-entropy fallback. `pii_status_for()` returns only
+  `clean`/`detected` (never the human-resolved `quarantined` state). No
+  finding ever carries a raw or partial matched value — only
+  category/length/location, matching this repo's own `_redact` house
+  convention. `RESIDUAL_RISK_DISCLOSURE` is a real field disclosing a clean
+  report is not proof of no PII.
+
+  `tests/tasks/test_ftf_0514.py`: 20 no-DB tests, all pass on unmodified
+  code (new code — Law 1 satisfied via fault injection). Two independent
+  fault injections, each reverted byte-identical: bypassed the Luhn check
+  (1 genuine FAIL, the credit-card negative test); leaked raw matched text
+  into a finding's own `content_path` (98 genuine FAIL lines across every
+  planted-secret/prefix check).
+
+  `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide.
+  `product_truth_check.py` unchanged at `20/20` (no live import-pipeline
+  caller yet, same disclosed precedent as every dedup/validator sibling).
+  `status.py` unchanged at `69/300` certified (Law 2). Regression swept
+  `test_ftf_0402/0500/0508/0511/0512.py` — zero regressions. Wired into
+  `.github/workflows/ci.yml`'s `gate` job.
+
+  **PR:** opened against `main` from branch `claude/wizardly-fermat-w9he1w`,
+  title `[relay] FTF-0514: PII/secrets detector` (PR #286). Appended to
+  `docs/certifications/queue.md` for Control plane. No open owner ask.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_01HkpHGfs6aTsVNzWCRNoBNU, triggered by the
   `pull_request.opened` webhook for PR #284) — **FTF-0512 (Normalized
@@ -4599,7 +4667,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0512 ("Normalized duplicate detector") was the only item here; it was
+FTF-0514 ("PII/secrets detector") — submitted 2026-09-25 via PR #286 (branch
+`claude/wizardly-fermat-w9he1w`) from the relay shift documented at the top of this file.
+Awaiting Control-plane L2 certification and a real CI run on the opened PR — not this
+relay's role.
+
+FTF-0512 ("Normalized duplicate detector") was the item here before that; it was
 independently reviewed and **CERTIFIED 2026-09-25** via PR #284 (merge commit
 `bdd9c0e0a07da1ca5b18306277c50f841acc8ee7`) — see "## Done" for the certification
 summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the

@@ -15422,3 +15422,157 @@ naturally required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — cur
 empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Relay: submit FTF-0514 (PII/secrets detector), PR #286
+
+Scheduled autonomous relay shift, session `session_015bL6zptzbAoWaYKBhFKooj`.
+**FTF-0514 (PII/secrets detector) submitted PROVISIONAL.**
+
+STEP 0: CLAUDE.md hash verified clean (`sha256sum` matches `CLAUDE.md.sha256`); `BLOCKER.md`
+confirmed no open blockers (both entries resolved history). Read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh: `docs/spec-matrix.yaml` had zero live
+`certification_state: PROVISIONAL` entries at shift start (the immediately preceding
+certifier shift already merged and CERTIFIED FTF-0512 via PR #284/#285 -- `scripts/status.py`:
+`69/300` certified, `20` product-true, confirmed directly rather than assumed). Checked GitHub
+directly: 3 open PRs (#231 FTF-0212, #195/#194 FTF-0304), none touching this shift's own
+eventual pick -- same long-standing "other sessions' own open PRs" exclusion every prior shift
+has applied to these two items.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (parsed
+`notes`' own `deps=` field against `certification_state: CERTIFIED`): 19 ready tasks. Excluded
+FTF-0212/FTF-0304 (open PRs above), FTF-0302/FTF-0303/FTF-1201/FTF-H004 (real network egress
+this sandbox lacks), FTF-1703 (needs >=1000 real curated traces), FTF-04A02 (keyed external
+credential, ask-first), UI-heavy items (FTF-0214/0215/0408/0500A/0500D), FTF-0902
+(`shared_lock_required`). Pulled full task-packet contracts for the remaining candidates
+(FTF-0509/FTF-0513/FTF-0514/FTF-04A08/FTF-04A19) before choosing.
+
+**FTF-0513** ("Near-duplicate detector," newly dependency-ready now that FTF-0512 CERTIFIED)
+was considered first but set aside: its real acceptance clause ("Use bounded indexed
+n-gram/semantic candidates and reviewed thresholds with **privacy-safe embeddings**") requires
+Section 10 method 6, "Embedding similarity using a local/private embedding model in zero-egress
+mode" -- a genuine new-runtime-dependency decision (no embedding library exists anywhere in
+this repository today, confirmed by a repo-wide grep; `workers/data/pyproject.toml`'s own
+`dependencies = []` is empty). Checked `docs/architecture/REFERENCE_REPOSITORIES.md` and
+`FINE_TUNING_FACTORY_RELEASE_1.md` directly for a named embedding library or model this could
+resolve against, per CLAUDE.md's own "Default resolution rule" -- neither names one. "New
+runtime deps" is explicitly an "Ask owner first" hard-stop category, and inventing a
+stdlib-only hashing-trick substitute and calling it "privacy-safe embeddings" would risk
+gaming Section 10's own literal method distinction (n-gram/Jaccard vs. embedding are named as
+separate methods) rather than genuinely implementing it -- not a call this relay session
+should make unilaterally. Deferred rather than improvised; not written up as a QUEUE.md owner
+ask this shift since a dependency-ready non-ambiguous alternative (FTF-0514) was available and
+picking it kept the shift productive without pre-empting an owner decision that isn't blocking
+any other ready work today.
+
+Picked **FTF-0514** (PII/secrets detector) instead -- dependency-ready (FTF-0402/FTF-0500/
+FTF-0508 all CERTIFIED, confirmed before relying on them), same tractable pure-computation/
+no-DB/no-shared-lock/no-new-dependency shape as the already-CERTIFIED FTF-0506/FTF-0507/
+FTF-0508/FTF-0511/FTF-0512 siblings, and directly reuses FTF-0508's own already-CERTIFIED
+`PII_STATUS_VALUES` vocabulary (`unscanned`/`clean`/`detected`/`quarantined`) rather than
+inventing a second one -- reuse-first, Section 77.1.
+
+**PEV, not mixed.** P: read `workers/data/normalized_duplicate_detector.py`,
+`exact_duplicate_detector.py`, and `record_schema_validator.py` in full (the candidate-batch/
+`batch_position`/`record_index`/never-raise-on-a-row-violation conventions this task reuses,
+plus `record_schema_validator.py`'s own `PII_STATUS_VALUES` constant this task's own detected/
+clean output is bound to). Read this repo's own `_redact` house convention
+(`apps/api/app/config/configuration_system.py`, `"<redacted:{len} chars>"`, length-only, never
+partial content) before designing this module's own no-raw-value finding shape. Pulled
+FTF-0514's real task contract: acceptance ("Run secrets/PII detectors inside private boundary
+and quarantine required findings with human resolution"), negative_acceptance ("Detection
+absence is not proof of no PII; false negatives/residual risks recorded and real secrets not
+logged").
+
+E: wrote `workers/data/pii_secrets_detector.py::detect_pii_and_secrets`. Scans every `text`
+content part, every `json` content part's own nested string leaves (recursive walk), and every
+tool call's `arguments` -- a deliberately broader scan surface than FTF-0512's own dedup
+hashing, which treats `json` content/tool arguments as opaque business data for a different
+purpose. Named detectors: email, phone number (digit-count bounded, non-overlapping with other
+matches), credit card (13-19 digit candidate + real Luhn checksum, so a Luhn-invalid number is
+never falsely flagged), US SSN, AWS access-key ID (`AKIA` + 16 chars, a syntactically
+self-identifying generated shape, same precedent as FTF-0512's own UUID/timestamp redaction),
+Bearer token, PEM private-key block header; plus a generic high-entropy (Shannon entropy >=3.5
+bits/char, 20+ chars) fallback for unnamed secret-shaped tokens, span-deduplicated against
+already-claimed named-pattern matches. `pii_status_for(batch_position)` returns only `"clean"`
+or `"detected"` -- asserted directly against `PII_STATUS_VALUES` (imported, not re-declared) --
+and documents in its own docstring why it can never return `"quarantined"` (a human-resolved
+state) or `"unscanned"` (a position this call inspected was, by definition, scanned).
+`RESIDUAL_RISK_DISCLOSURE` is a real field on every `PiiSecretsReport`, not a comment.
+`PiiSecretsFinding` carries `category`/`match_length`/structural location only -- no raw value,
+hash, or partial preview of any kind, the safest reading of "real secrets not logged" this
+module could implement.
+
+`tests/tasks/test_ftf_0514.py`: 20 no-DB test functions. **Ran first against the unmodified
+code: all pass** (new code, not a bugfix -- Law 1's "show the test able to fail" demonstrated
+by fault injection immediately after, same convention as every sibling). Two independent fault
+injections, each targeting one half of negative_acceptance:
+1. Bypassed `_luhn_checksum_valid` (`return True` unconditionally) -- **1 genuine FAIL line**
+   (`test_credit_card_invalid_luhn_not_detected`: a Luhn-invalid 16-digit number got flagged as
+   a real credit card once the checksum guard was disabled).
+2. Leaked the raw matched text into a finding's own `content_path`
+   (`content_path=content_path + ':' + text`) -- **98 genuine FAIL lines**
+   (`test_finding_never_carries_raw_or_partial_secret_value`: every planted secret and its
+   6+-char prefix, across every category, was found verbatim in a finding's own `repr()` once
+   the redaction discipline was broken).
+
+Both reverted from an untouched backup; `diff` against the backup and `git status --short` both
+confirmed byte-identical after each revert; re-ran clean both times.
+
+Test coverage for both clauses concretely: each named category has its own positive detection
+test; `test_json_content_and_tool_call_arguments_are_scanned` proves the broader-than-dedup scan
+surface; `test_pii_status_for_clean_record`/
+`test_finding_marks_requires_quarantine_but_status_stays_detected_not_quarantined` prove the
+`clean`/`detected`-only, never-`quarantined` acceptance reading concretely rather than by
+assertion alone; `test_credit_card_invalid_luhn_not_detected`,
+`test_low_entropy_secret_like_string_is_a_genuine_false_negative`, and
+`test_bare_personal_name_is_a_genuine_false_negative` are real, disclosed false-negative
+controls proving `RESIDUAL_RISK_DISCLOSURE` is true, not decorative; the raw-value-leak test
+above proves "real secrets not logged" directly rather than by inspection alone.
+
+V: `uv run ruff check .` / `uv run ruff format --check .` clean repo-wide (two line-length
+fixes needed first, both pre-existing house style, not new patterns). `uv run mypy .` clean
+(`uv sync --all-packages` re-run first for the sandbox's own pre-existing `uvicorn`/`alembic`
+freshness gap, same disclosed precedent as every prior shift; one `# type: ignore[list-item]`
+needed on a deliberately-malformed test input, matching the exact precedent already used by
+`test_ftf_0511.py`/`test_ftf_0512.py`'s own `# type: ignore[arg-type]` on their analogous
+non-sequence-batch tests). `uv run python3 scripts/validate_spec.py --strict` clean (after
+`git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent). `product_truth_check.py --fail-on-unwired` unchanged at `20/20` (no live caller yet
+-- no dataset-import pipeline route exists yet in this repository to call
+`detect_pii_and_secrets`, same disclosed "no live caller yet" precedent as
+FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512). `status.py` unchanged at `69/300` certified
+(Law 2 -- tracker not inflated by a PROVISIONAL submission). Regression swept the sibling
+data-pipeline/security suites this task's own dependencies/neighbors touch: `test_ftf_0402.py`,
+`test_ftf_0500.py`, `test_ftf_0508.py`, `test_ftf_0511.py`, `test_ftf_0512.py` -- all "all
+checks passed," zero regressions. `uv run python3 scripts/verify_task.py --task FTF-0514
+--stage task` reports `BLOCKED` pre-merge (expected -- "has no merged verification evidence
+yet," same precedent as every sibling PROVISIONAL submission).
+
+Added the `.github/workflows/ci.yml` `gate`-job step for `tests/tasks/test_ftf_0514.py`
+(directly after the FTF-0512 step) -- pre-empting the class of "gate never wires this task's
+own test" gap `docs/certifications/watchdog-findings.md`'s 2026-09-23 finding caught elsewhere,
+rather than leaving it for a later shift to discover.
+
+`docs/spec-matrix.yaml` FTF-0514 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge
+commit hash is known (same precedent as FTF-0507/FTF-0508/FTF-0511/FTF-0512). **Not
+self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+Generated, then removed before committing, two other candidate task packets
+(`docs/implementation/task-packets/{FTF-0509,FTF-0513}.md`) pulled during STEP 1's own
+comparison of dependency-ready candidates -- not this shift's own pick, not left in the diff as
+scope creep.
+
+Diff scope confirmed exactly the files this task needs
+(`workers/data/pii_secrets_detector.py`, `tests/tasks/test_ftf_0514.py`,
+`docs/implementation/task-packets/FTF-0514.md`, `.github/workflows/ci.yml`,
+`docs/spec-matrix.yaml`'s FTF-0514 entry) plus this shift's own `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` tracking updates -- no scope creep, no other task's files
+touched.
+
+**PR:** opened against `main` from branch `claude/wizardly-fermat-w9he1w`, title
+`[relay] FTF-0514: PII/secrets detector` (PR #286). Appended to `docs/certifications/queue.md`
+for Control plane. No open owner ask. No other task work, design decisions, or queue
+reprioritization performed this shift beyond the disclosed candidate-comparison packets and the
+FTF-0513 embedding-dependency deferral above.
