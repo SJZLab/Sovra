@@ -3616,10 +3616,10 @@ FTF-0508:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0508.py
 FTF-0509:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool argument validator
-  evidence_hash: ''
+  evidence_hash: 0bb549b2f94e99e6d08179dd91643fbdbaa7907c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -3682,7 +3682,29 @@ FTF-0509:
     Wired into `.github/workflows/ci.yml`'s `gate` job. Not
     self-certified (Law 4) -- awaiting independent Control-plane L2
     review and a real CI run on the opened PR.
-  proof_state: L1-PROVEN
+
+    Independently certified 2026-09-25 (Control plane, session
+    session_017A46uPoS88U6M8ZtZHZaqC -- no overlap with producer session
+    session_0168AaEA7QKUtQrJjYwz6fbF, Law 4). PR #288's base (b399da0)
+    was several merges behind main by review time (FTF-0511/0512/0514/
+    04A08 all landed since); merged main into the PR branch to resolve
+    real conflicts in `.github/workflows/ci.yml`/`QUEUE.md`/
+    `docs/certifications/queue.md` (all additive, both sides' content
+    kept) before merging, and re-ran the full local sweep post-merge.
+    Own fault injection distinct from the producer's own two (disabled
+    the extra-critical-argument guard; disabled the wrong-tool-version
+    guard): removed the `if instance_validator is None` refusal entirely
+    -- 1 genuine FAIL line, reverted byte-identical. Confirmed real CI
+    green on the actual merged commit (run 36168122513, `gate` job
+    108180762904, including its own `FTF-0509 negative-test proof` step).
+    `product_truth_check.py` 20/20 confirmed legitimate (blank
+    `proving_symbol`, not a hidden 0/0). Pulled the real contract via
+    `tools/r1_handoff.py packet FTF-0509` -- both `acceptance` clauses and
+    the `negative_acceptance` clause confirmed genuinely met by the named
+    tests. Dependencies FTF-0405/FTF-0500/FTF-0508 reconfirmed CERTIFIED.
+    Regression swept FTF-0405/0500/0506/0507/0508/0511/0512/0514 -- zero
+    regressions.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0509.py
 FTF-0510:

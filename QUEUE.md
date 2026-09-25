@@ -1,4 +1,47 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_017A46uPoS88U6M8ZtZHZaqC, triggered by the
+  `pull_request.opened` webhook for PR #290) — **FTF-0509 (Tool argument validator)
+  independently reviewed and CERTIFIED.** Entire session task per this certifier's standing
+  prompt: checked `docs/certifications/queue.md` for every PROVISIONAL item. Two were pending —
+  FTF-04A08 (PR #289) and FTF-0509 (PR #288). FTF-04A08 was found already independently
+  CERTIFIED by a concurrent Control-plane session (`session_011YeU25q3weEVzow9D8C1jz`) by the
+  time this session reached it — not duplicated, see its own "## Done" entry and
+  `docs/certifications/ledger.md`. This session's own independent work covers the remaining
+  item, FTF-0509.
+
+  Session-ID check: producer session `session_0168AaEA7QKUtQrJjYwz6fbF` — no overlap with this
+  reviewing session. Independent, Law 4.
+
+  **Real merge conflict found and resolved, not hidden:** PR #288's base had fallen several
+  merges behind `main` by review time (FTF-0511/FTF-0512/FTF-0514/FTF-04A08 all landed since);
+  the GitHub merge API refused with a real 405 "Pull Request has merge conflicts". Merged `main`
+  into the PR branch locally, resolved three real conflicts (`.github/workflows/ci.yml`,
+  `QUEUE.md`, `docs/certifications/queue.md` — all additive, both sides' content kept),
+  `docs/spec-matrix.yaml` merged cleanly. Re-ran the full local sweep clean, pushed the
+  resolution back to the PR branch, and watched real CI to genuine completion on that exact
+  merge commit (run `36168122513`, `gate` job `108180762904` `success`, including its own
+  `FTF-0509 negative-test proof` step) before merging.
+
+  Own fault injection, a different vector than either of the producer's own two disclosed ones
+  (disabling the extra-critical-argument guard; disabling the wrong-tool-version guard): removed
+  the missing-`instance_validator` refusal entirely — 1 genuine `FAIL` line, reverted
+  byte-identical. `product_truth_check.py --fail-on-unwired` confirmed legitimately `20/20`
+  unchanged (blank `proving_symbol`, disclosed). Both acceptance and negative_acceptance clauses
+  reconfirmed against the real DoD via `tools/r1_handoff.py packet FTF-0509`; dependencies
+  FTF-0405/FTF-0500/FTF-0508 confirmed already `CERTIFIED`. Regression swept
+  `test_ftf_0405/0500/0506/0507/0508/0511/0512/0514.py` — zero regressions.
+
+  **Result: CERTIFIED.** No blocking defect found. Merged PR #288 (merge commit
+  `0bb549b2f94e99e6d08179dd91643fbdbaa7907c`). `docs/spec-matrix.yaml`'s FTF-0509 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. `sync_certified_status()` run directly. `scripts/status.py`: `71/300` ->
+  `72/300` certified; product-true unchanged at `20/20`. Appended a matching entry to
+  `docs/certifications/ledger.md`; moved FTF-0509 out of "## Provisional" into "## Done" and
+  updated `PROGRESS.md`. No other task work, design decisions, or queue reprioritization
+  performed beyond what this certification naturally required (Law 4). No open owner ask.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_0168AaEA7QKUtQrJjYwz6fbF) — **FTF-0509
   (Tool argument validator) submitted PROVISIONAL.** STEP 0: CLAUDE.md hash
@@ -4843,11 +4886,12 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0509 ("Tool argument validator")** — submitted 2026-09-25 via PR #288 (branch
-`claude/wizardly-fermat-8tsbnt`), title `[relay] FTF-0509: Tool argument validator`. Full
-implementation record: this file's own top dated entry, `docs/certifications/queue.md`,
-`PROGRESS.md`. Awaiting Control-plane L2 certification and a real CI run on the opened PR — not
-this relay's role.
+None currently. **FTF-0509 ("Tool argument validator")** was the item here; submitted 2026-09-25
+via PR #288, it hit a real merge conflict (its base had fallen several merges behind `main` by
+review time) which this reviewing session resolved before re-verifying real CI on the merged
+commit and **CERTIFIED 2026-09-25** via PR #288 (merge commit
+`0bb549b2f94e99e6d08179dd91643fbdbaa7907c`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full evidence.
 
 **FTF-04A08** ("Source-analysis worker foundation") was the item here before that; submitted
 PROVISIONAL 2026-09-25 via PR #289, it hit a real CI failure mid-review (a Python-3.12-incompatible
@@ -7390,6 +7434,38 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   Merged PR #289 (merge commit `2b128ec8b38dc647e6dd68f395e332be48c77e7e`).
   `status.py`: `70/300` -> `71/300` certified. Full record:
   `docs/certifications/ledger.md` and `docs/certifications/queue.md`.
+- FTF-0509 — Tool argument validator. Independently reviewed and **CERTIFIED
+  2026-09-25** via PR #288 (`claude/wizardly-fermat-8tsbnt` -> `main`, implementation commit
+  `93efbfe`, producer session `session_0168AaEA7QKUtQrJjYwz6fbF`, no overlap with this reviewing
+  session `session_017A46uPoS88U6M8ZtZHZaqC` — independent, Law 4). **Real merge conflict found
+  and resolved:** PR #288's base had fallen several merges behind `main` by review time
+  (FTF-0511/FTF-0512/FTF-0514/FTF-04A08 all landed since) — the GitHub merge API refused with a
+  real 405 "merge conflicts". Merged `main` into the PR branch locally, resolved three real
+  conflicts (`.github/workflows/ci.yml`, `QUEUE.md`, `docs/certifications/queue.md` — all
+  additive, both sides' content kept), re-ran the full local sweep clean, pushed the resolution
+  back to the PR branch (`f966377`), and watched real CI to genuine completion on that merge
+  commit (run `36168122513`, `gate` job `108180762904` `success`, including its own `FTF-0509
+  negative-test proof` step) before merging. Diff read directly (original PR):
+  `workers/data/tool_argument_validator.py` (new, `validate_tool_calls`),
+  `tests/tasks/test_ftf_0509.py` (new, 15 no-DB tests), a 2-line `.github/workflows/ci.yml`
+  gate-job wiring addition, and tracking-doc updates — scope matched the PR's own claims, no
+  other production file touched. Own fault injection, a different vector than either of the
+  producer's own two disclosed ones (disabling the extra-critical-argument guard; disabling the
+  wrong-tool-version guard): removed the missing-`instance_validator` refusal entirely — 1
+  genuine `FAIL` line (`test_rejects_missing_instance_validator`), reverted byte-identical,
+  suite re-confirmed clean. `product_truth_check.py --fail-on-unwired` confirmed legitimately
+  `20/20` unchanged — `proving_symbol` is blank for this task (disclosed, no
+  dataset-import-pipeline route exists yet to call `validate_tool_calls`, same accepted class as
+  every dedup/validator/connector sibling). Both acceptance ("Validate arguments against exact
+  locked tool schema and optional reviewed output contract") and negative_acceptance ("Schema
+  coercion, extra critical arguments or wrong manifest/tool version blocks acceptance")
+  reconfirmed against the real DoD via `tools/r1_handoff.py packet FTF-0509`; dependencies
+  FTF-0405/FTF-0500/FTF-0508 confirmed already `CERTIFIED` before relying on them. `ruff`/`mypy`
+  clean repo-wide via the pinned `uv` toolchain. Regression swept `test_ftf_0405/0500/0506/0507/
+  0508/0511/0512/0514.py` — zero regressions. Merged PR #288 (merge commit
+  `0bb549b2f94e99e6d08179dd91643fbdbaa7907c`). `scripts/status.py`: `71/300` -> `72/300`
+  certified. Product-true unchanged at `20/20`. Full record: `docs/certifications/ledger.md` and
+  `docs/certifications/queue.md`.
 - FTF-0514 — PII/secrets detector. Independently reviewed and **CERTIFIED
   2026-09-25** via PR #286 (`claude/wizardly-fermat-w9he1w` -> `main`,
   implementation commit `5d0c1dd` plus a disclosed tracking-only follow-up

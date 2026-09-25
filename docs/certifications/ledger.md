@@ -7665,3 +7665,98 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0509 — Tool argument validator
+- Criterion ID: FTF-0509
+- PR: https://github.com/SJZLab/Sovra/pull/288 (`claude/wizardly-fermat-8tsbnt` -> `main`)
+- Merge commit (evidence): 0bb549b2f94e99e6d08179dd91643fbdbaa7907c
+- Implementation commits: `93efbfe0f614200f708c16d7fd580623b0f30fe2` (implementation, producer
+  session `session_0168AaEA7QKUtQrJjYwz6fbF`), `e19066b9fa525f67d0c68b922e95561f8f4af4f6`
+  (tracking, same session) plus `f96637782221ff4394a6320ac4cae9dc247fbccb` (this reviewing
+  session's own merge of `main` into the PR branch to resolve real conflicts -- see below).
+- Session-ID check: producer session does not overlap this reviewing session
+  (`session_017A46uPoS88U6M8ZtZHZaqC`) -- independent (Law 4).
+- Concurrency note: this session found PR #288 open alongside a separate PROVISIONAL item,
+  FTF-04A08 (PR #289) -- both pending in `docs/certifications/queue.md` at once. FTF-04A08 was
+  found to already be independently CERTIFIED by a concurrent Control-plane session
+  (`session_011YeU25q3weEVzow9D8C1jz`, see the FTF-04A08 entry above) by the time this session
+  reached it; not duplicated. This entry covers this session's own independent review of the
+  remaining pending item, FTF-0509.
+- **Real merge conflict, disclosed and resolved, not hidden:** PR #288's base
+  (`b399da0df263f459abee47720fae33f429fe1571`) was several merges behind `main` by the time this
+  review started (FTF-0511/FTF-0512/FTF-0514/FTF-04A08 had all landed since) -- attempting the
+  merge via the GitHub API failed with a real 405 "Pull Request has merge conflicts". Fetched the
+  PR branch, merged `origin/main` into it locally, and resolved three real conflicts: `.github/
+  workflows/ci.yml` (two different tasks' own new `gate`-job steps added at the same point --
+  kept both), `QUEUE.md` and `docs/certifications/queue.md` (two sessions' own independent
+  append-only tracking entries at the same point -- kept both, in chronological submission
+  order). `docs/spec-matrix.yaml` merged cleanly (disjoint task entries). Re-ran the full local
+  sweep on the merged commit before pushing it back to the PR branch: `test_ftf_0509.py` and
+  `test_ftf_04a08.py` both pass, `ruff`/`mypy` clean (256 files), `validate_spec.py --strict`
+  clean, `product_truth_check.py` 20/20, `status.py` 71/300 -- zero regressions. Watched real CI
+  to genuine completion on this merge commit (run `36168122513`) before merging the PR.
+- Diff read directly (original PR #288 diff, base `b399da0` -> head `e19066b`):
+  `workers/data/tool_argument_validator.py` (new, 355 lines, `validate_tool_calls`),
+  `tests/tasks/test_ftf_0509.py` (new, 394 lines, 15 no-DB tests), `.github/workflows/ci.yml`
+  (+2 lines wiring the new test into the `gate` job), `docs/implementation/task-packets/
+  FTF-0509.md` (new), `docs/spec-matrix.yaml`, and tracking updates (`PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md`). Scope matched the PR's own claims exactly -- no other
+  production file touched.
+- Own local reproduction (fresh `uv sync --all-packages` in an isolated git worktree at the
+  PR's actual head commit, before the merge-conflict resolution above): `uv run python3
+  tests/tasks/test_ftf_0509.py` -- 15/15 pass, "all checks passed".
+- `uv run python3 scripts/product_truth_check.py --fail-on-unwired` -- 20/20, unchanged. This
+  task's `proving_symbol` is blank (no dataset-import-pipeline route exists yet in this
+  repository to call `validate_tool_calls`, same disclosed precedent as every dedup/validator/
+  connector sibling) -- confirmed by reading `scripts/product_truth_check.py`'s own logic
+  directly (a blank `proving_symbol` is skipped, never counted). Legitimate disclosed 0/0.
+- `uv run python3 scripts/validate_spec.py --strict` -- clean (this repo's own working copy was
+  already unshallowed from an earlier check this session).
+- `uv run ruff check .`/`uv run ruff format --check .`/`uv run mypy .` clean repo-wide (254
+  source files in the isolated worktree; `uv sync --all-packages` needed first for `mypy` to
+  resolve `uvicorn`/`sqlalchemy`). `status.py` unchanged at `70/300` certified pre-certification
+  (Law 2). Regression swept `test_ftf_0405.py`, `test_ftf_0500.py`, `test_ftf_0506.py`,
+  `test_ftf_0507.py`, `test_ftf_0508.py`, `test_ftf_0511.py`, `test_ftf_0512.py`,
+  `test_ftf_0514.py` (via `uv run`, needed for `uvicorn`/`sqlalchemy`) -- zero regressions.
+- `uv run python3 tools/r1_handoff.py packet FTF-0509 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  -- pulled the real task contract directly rather than trusting the PR's restatement of it.
+  `acceptance`: "Validate arguments against exact locked tool schema and optional reviewed
+  output contract" -- verified met by reading `LockedToolContract`/`ToolCallValidationReport`
+  and `_validate_one` directly, plus `test_accepts_valid_arguments_against_the_locked_schema`,
+  `test_validates_supplied_tool_result_against_output_schema`, and
+  `test_accepts_when_no_tool_result_is_supplied_output_check_is_skipped`. `negative_acceptance`:
+  "Schema coercion, extra critical arguments or wrong manifest/tool version blocks acceptance"
+  -- verified met by `test_rejects_schema_coercion_wrong_type`,
+  `test_rejects_extra_critical_argument`, and `test_rejects_wrong_tool_version`. Dependencies
+  FTF-0405/FTF-0500/FTF-0508 reconfirmed already `CERTIFIED` in `docs/spec-matrix.yaml` before
+  relying on their contracts.
+- Own fault injection (Law 1), independently reproduced rather than trusting the producer's
+  self-report, and a different vector than either of the producer's own two disclosed ones
+  (disabling the extra-critical-argument guard; disabling the wrong-tool-version guard): in the
+  isolated worktree, removed the `if instance_validator is None` refusal block from
+  `_validate_one` entirely (so a call with no validator supplied would silently fall through
+  rather than being refused), re-ran `tests/tasks/test_ftf_0509.py` directly -- **1 genuine FAIL
+  line** (`test_rejects_missing_instance_validator`: no `no_instance_validator` issue was raised
+  once the refusal was removed). Reverted from the untouched backup; `diff` against the backup
+  confirmed byte-identical, `git status --short` showed no diff; re-ran -- all checks pass
+  again.
+- Real CI confirmed on the actual merged commit `0bb549b2f94e99e6d08179dd91643fbdbaa7907c`'s
+  own pre-merge head (`f96637782221ff4394a6320ac4cae9dc247fbccb`, run `36168122513`, fetched
+  directly via `actions_get`/`actions_list` rather than trusting a summary) -- `conclusion:
+  success`; the `gate` job (`108180762904`) completed `success` with its own `FTF-0509
+  negative-test proof (Tool argument validator, no DB required)` step (step 90) alongside the
+  concurrently-landed `FTF-04A08 negative-test proof` step (step 91), plus `Product-truth check`
+  (step 92) and `Status tool` (step 93), all `success`, confirmed directly from the job's step
+  list, not a summary. All 31 jobs in the run (`gate` plus 30 integration jobs) completed
+  `success`.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0509 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` for FTF-0509). `scripts/status.py`: `71/300` -> `72/300`
+  certified; product-true unchanged at `20/20` (no live caller added by this certification,
+  disclosed).
+- Validated-by: session https://claude.ai/code/session_017A46uPoS88U6M8ZtZHZaqC
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.
