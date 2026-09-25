@@ -1,4 +1,77 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-0509 — Relay: submitted PROVISIONAL (PR #288)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_0168AaEA7QKUtQrJjYwz6fbF`.
+STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`; no `BLOCKER.md` present.
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (`scripts/status.py`:
+`70/300` certified, `20` product-true at shift start). Checked GitHub directly: 3 open PRs
+(#231 FTF-0212, #195/#194 FTF-0304) -- excluded per the same long-standing precedent every
+prior shift has applied (already claimed by other sessions' own open work).
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` joined against
+`docs/TASK_INDEX.md` `Dependencies` (16 `NONE`-state tasks with every declared dependency
+`CERTIFIED`). Excluded FTF-0212/FTF-0304 (open PRs); FTF-0302/FTF-0303/FTF-1201/FTF-H004 (real
+network egress, same disclosed precedent as every prior shift); FTF-1703 (needs >=1000 real
+curated traces); FTF-04A02 (keyed external credential, ask-first); UI-heavy FTF-0214/0215/0408/
+0500A/0500D (outside this sandbox's practical reach, same disclosure every prior shift has
+made); FTF-0902 (`shared_lock_required`); FTF-0513 (needs a new embedding-library runtime
+dependency per Section 10 method 6, an "ask owner first" hard stop, same reasoning the FTF-0514
+shift already recorded). Remaining candidates: FTF-0509, FTF-04A08, FTF-04A19.
+
+**Picked FTF-0509** ("Tool argument validator") -- lowest-ID, dependency-ready (FTF-0405/
+FTF-0500/FTF-0508 all CERTIFIED, reconfirmed before relying on them), same tractable
+pure-computation/no-DB/no-shared-lock/no-new-dependency shape as the already-CERTIFIED
+FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0514 siblings.
+
+Pulled the real contract (`tools/r1_handoff.py packet FTF-0509`). Read
+`apps/api/app/services/json_schema_tool_validation.py` (FTF-0405, CERTIFIED) directly --
+its own `validate_instance` already exists with no live caller and the exact
+`(schema, instance, *, field_name) -> None` shape FTF-0506's own already-CERTIFIED
+`ToolArgumentValidator` Protocol fixes. Read `apps/api/app/tools/tool_definition_schema.py`
+(FTF-0404/FTF-0406/FTF-0407, CERTIFIED) directly for `ToolDefinition`'s real field names
+(`name`/`version`/`input_schema_json`/`output_schema_json`/`is_critical`), and
+`workers/data/record_schema_validator.py` (FTF-0508, CERTIFIED) for the real
+`TOOL_SCHEMA_STATUS_VALUES` enum this task's own output reuses.
+
+Implemented `workers/data/tool_argument_validator.py::validate_tool_calls`: validates a batch
+of Section 7 canonical `tool_calls` entries against a caller-supplied `LockedToolContract`
+manifest snapshot. Design decisions, disclosed in the module's own docstring and this
+`docs/spec-matrix.yaml` entry: (1) `workers/data` does not import `apps/api` (same boundary
+FTF-0506/FTF-0507 already established) -- both the locked manifest and each tool's currently
+active version are caller-supplied, never read from a live `ToolDefinition` table here; (2)
+"wrong manifest/tool version" (negative_acceptance) is read as Section 7A.9 material-drift --
+rejected when the locked contract's own `version` no longer matches the tool's currently active
+version; (3) "extra critical arguments" is an independent guard scoped to `is_critical`
+contracts, rejecting any argument key absent from the schema's own declared `properties`
+regardless of that schema's own `additionalProperties` setting; (4) "schema coercion" rejection
+is inherited by construction from the injected `instance_validator` (FTF-0405's real
+`validate_instance` performs no type coercion) -- not reimplemented; (5) the "optional reviewed
+output contract" only validates a tool result when the caller supplies one for that call id.
+
+`tests/tasks/test_ftf_0509.py`: 15 no-DB tests, including
+`test_tool_arguments_validate_against_a_real_ftf_0405_schema` (passes FTF-0405's own
+`validate_instance` directly, not a stand-in -- same precedent FTF-0506's own suite already
+established). Two independent fault injections, each reverted byte-identical (confirmed via
+`diff` against an untouched backup): disabled the extra-critical-argument guard (1 genuine
+FAIL, `test_rejects_extra_critical_argument`); disabled the wrong-tool-version guard (1 genuine
+FAIL, `test_rejects_wrong_tool_version`).
+
+`uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .` clean repo-wide (254
+source files). `uv run python3 scripts/validate_spec.py --strict` clean (after
+`git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+`product_truth_check.py --fail-on-unwired` unchanged at `20/20` (no live dataset-import-pipeline
+caller yet, same disclosed precedent as every sibling). `status.py` unchanged at `70/300`
+certified (Law 2). Regression swept `test_ftf_0405/0500/0506/0507/0508/0511/0512/0514.py` --
+zero regressions. `verify_task.py --task FTF-0509 --stage task` correctly reports `BLOCKED`
+(expected pre-merge). Wired into `.github/workflows/ci.yml`'s `gate` job.
+
+`docs/spec-matrix.yaml`'s FTF-0509 entry set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`. Not self-certified (Law 4).
+
+**PR:** opened against `main` from branch `claude/wizardly-fermat-8tsbnt`, title
+`[relay] FTF-0509: Tool argument validator` (PR #288). Appended to
+`docs/certifications/queue.md` for Control plane. No open owner ask.
+
 ## 2026-09-25 — FTF-04A17 — Control plane: CERTIFIED (PR #278 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #278, session

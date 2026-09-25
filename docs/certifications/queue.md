@@ -15667,3 +15667,134 @@ naturally required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — cur
 empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — FTF-0509 (Tool argument validator) — Relay: submitted PROVISIONAL, PR #288
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_0168AaEA7QKUtQrJjYwz6fbF`.
+STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`; no `BLOCKER.md` present;
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh, not assumed from prior
+context (`scripts/status.py`: `70/300` certified, `20` product-true at shift start).
+
+Checked GitHub directly (`list_pull_requests`, state=open): 3 open PRs -- #231 (`[relay]
+FTF-0212: Real tool-call probe`), #195/#194 (both `[relay] FTF-0304: Local artifact resolver`,
+two independent duplicate submissions from other sessions). All three left untouched, matching
+the same long-standing precedent every prior relay shift has applied ("left alone per this
+shift").
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`
+(`certification_state: NONE`) joined against `docs/TASK_INDEX.md`'s own `Dependencies` column
+(16 tasks with every declared dependency already `CERTIFIED`), rather than trusting any prior
+shift's note alone: FTF-0214/FTF-0215/FTF-0302/FTF-0303/FTF-0408/FTF-04A02/FTF-04A08/FTF-04A19/
+FTF-0500A/FTF-0500D/FTF-0509/FTF-0513/FTF-0902/FTF-1201/FTF-1703/FTF-H004. Excluded FTF-0212/
+FTF-0304 (open PRs, above); FTF-0302/FTF-0303/FTF-1201/FTF-H004 (real network egress, this
+sandbox's own long-standing disclosed limit); FTF-1703 (needs >=1000 real curated traces);
+FTF-04A02 (keyed external credential -- "Ask owner first" hard stop); FTF-0214/FTF-0215/
+FTF-0408/FTF-0500A/FTF-0500D (UI/Temporal-workflow tasks, outside this sandbox's practical
+reach, same disclosure every prior shift has made); FTF-0902 (`shared_lock_required`); FTF-0513
+(needs a new embedding-library runtime dependency per Section 10 method 6, itself an "ask owner
+first" hard stop -- same reasoning the immediately preceding FTF-0514 shift already recorded and
+deferred, not improvised here). Remaining candidates: FTF-0509, FTF-04A08, FTF-04A19.
+
+**Picked FTF-0509** ("Tool argument validator") -- lowest task ID among the three,
+dependency-ready (FTF-0405/FTF-0500/FTF-0508 all reconfirmed `CERTIFIED` in
+`docs/spec-matrix.yaml` before relying on them), and the same tractable
+pure-computation/no-DB/no-shared-lock/no-new-dependency shape as the already-CERTIFIED
+FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0514 siblings -- unlike FTF-04A08/FTF-04A19,
+whose own dependency chains (FTF-04A01/FTF-04A07/FTF-04A17, a target-repository-connector
+cluster) sit further from this task's own already-well-understood dataset-import-pipeline
+neighborhood.
+
+Pulled the real task contract (`tools/r1_handoff.py packet FTF-0509 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`), not just the title in `docs/TASK_INDEX.md`. Read the
+dependency modules directly before designing against them:
+`apps/api/app/services/json_schema_tool_validation.py` (FTF-0405, CERTIFIED) -- its own
+`validate_instance` already exists, has no live caller, and already fixes the exact
+`(schema, instance, *, field_name) -> None` call shape FTF-0506's own already-CERTIFIED
+`ToolArgumentValidator` Protocol requires a caller to supply; `apps/api/app/tools/
+tool_definition_schema.py` (FTF-0404/FTF-0406/FTF-0407, CERTIFIED) for `ToolDefinition`'s real
+field names (`name`/`version`/`input_schema_json`/`output_schema_json`/`is_critical`); and
+`workers/data/record_schema_validator.py` (FTF-0508, CERTIFIED) for the real
+`TOOL_SCHEMA_STATUS_VALUES` enum (`not_applicable`/`valid`/`invalid`) this task's own output
+reuses verbatim rather than re-declaring a second one.
+
+Implemented `workers/data/tool_argument_validator.py::validate_tool_calls`. Design decisions,
+disclosed in the module's own docstring and the matching `docs/spec-matrix.yaml` entry rather
+than left implicit:
+
+- `workers/data` does not import `apps/api` -- the same cross-package deployable-unit boundary
+  FTF-0506's/FTF-0507's own docstrings already establish and preserve ("nothing else in this
+  repository imports across that boundary in either direction"). Both the locked tool-manifest
+  snapshot (`LockedToolContract`) and each tool's *currently active* version
+  (`current_tool_versions`) are therefore caller-supplied inputs, never read from a live
+  `ToolDefinition` table by this module itself.
+- **"wrong manifest/tool version"** (negative_acceptance) is read as Section 7A.9's own
+  material-drift vocabulary ("tool added/removed/schema changed" invalidates affected evidence
+  "until the project is re-synced, reviewed, and re-qualified") -- a tool call is rejected when
+  the locked contract's own `version` no longer matches that tool's currently active version.
+  Section 7's own canonical `tool_calls` shape (`id`/`name`/`arguments` only, enforced by
+  FTF-0506's own `_coerce_tool_calls`) has no room for a per-call declared version field, so this
+  could not instead be read as a per-call assertion without conflicting with FTF-0506's own
+  already-CERTIFIED contract.
+- **"extra critical arguments"** is an independent guard scoped to `is_critical` contracts
+  (FTF-0407's own already-CERTIFIED field), rejecting any argument key absent from the schema's
+  own declared `properties`, regardless of that schema's own `additionalProperties` setting --
+  Section 84.4's "no effect authorized solely by a UI control" reapplied as "a critical tool's
+  blast radius is never silently widened by an undeclared argument."
+- **"schema coercion"** rejection is inherited by construction from the injected
+  `instance_validator` (FTF-0405's own real `validate_instance` performs no type coercion at
+  all) -- not reimplemented a second time.
+- The **"optional reviewed output contract"** only validates a tool call's result against
+  `output_schema_json` when the caller supplies one for that call id (`tool_results`) --
+  optional because Section 7's own canonical schema allows a `tool` result message to be
+  normalized in a separate pass (FTF-0507) from the `assistant` message carrying the call
+  itself.
+
+`tests/tasks/test_ftf_0509.py`: 15 no-DB tests. Positive path proven both against a
+non-critical tool (`lookup_order`) and a critical one (`issue_refund`), plus a dedicated
+`test_tool_arguments_validate_against_a_real_ftf_0405_schema` that passes FTF-0405's own
+`validate_instance` directly, unmodified -- not a hand-rolled stand-in, the same precedent
+FTF-0506's own already-CERTIFIED suite established. One dedicated negative test per
+negative_acceptance check (`test_rejects_schema_coercion_wrong_type`,
+`test_rejects_extra_critical_argument`, `test_rejects_wrong_tool_version`), plus
+`test_extra_argument_allowed_when_tool_is_not_critical` (proving the critical-only guard does
+not over-reach onto a non-critical tool's own `additionalProperties: true`),
+`test_rejects_unmapped_tool`, `test_rejects_missing_instance_validator`,
+`test_rejects_invalid_tool_result`, `test_rejects_non_sequence_batch`,
+`test_empty_tool_calls_is_not_applicable`, and `test_row_evidence_reports_call_position_and_id`
+(row evidence never just a bare message).
+
+Two independent fault injections (Law 1), each reverted byte-identical (confirmed via `diff`
+against an untouched backup, `git status --short` clean before re-running): disabled the
+extra-critical-argument guard (`if False and contract.is_critical:`) -- **1 genuine FAIL**
+(`test_rejects_extra_critical_argument`); disabled the wrong-tool-version guard (`if False and
+current_version != contract.version:`) -- **1 genuine FAIL**
+(`test_rejects_wrong_tool_version`). Both reverted and the suite re-ran clean (15/15) before
+continuing.
+
+`uv run ruff check .` / `uv run ruff format --check .` -- clean repo-wide. `uv run mypy .` --
+clean repo-wide (254 source files). `uv run python3 scripts/validate_spec.py --strict` -- clean
+(after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+`uv run python3 scripts/product_truth_check.py --fail-on-unwired` -- `20/20`, unchanged
+(legitimate disclosed 0/0, blank `proving_symbol`, no dataset-import-pipeline route exists yet
+to call `validate_tool_calls`, same disclosed precedent as every FTF-0506/0507/0508/0511/0512/
+0514 sibling). `uv run python3 scripts/status.py` -- `70/300` certified, unchanged (Law 2 --
+not self-inflated by this PROVISIONAL submission). Regression swept
+`test_ftf_0405/0500/0506/0507/0508/0511/0512/0514.py` -- zero regressions (`test_ftf_0500.py`'s
+own expected `TenantContextError` traceback printed to stdout mid-run is that suite's own
+negative test working as designed, not a new failure -- confirmed by its own final "all checks
+passed" line). `uv run python3 scripts/verify_task.py --task FTF-0509 --stage task` --
+`BLOCKED` ("no merged verification evidence yet"), expected pre-merge per this repo's own
+two-commit evidence pattern.
+
+Wired into `.github/workflows/ci.yml`'s `gate` job (`FTF-0509 negative-test proof`).
+`docs/spec-matrix.yaml`'s FTF-0509 entry set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`, `proving_test: tests/tasks/test_ftf_0509.py`. Not self-certified
+(Law 4) -- awaiting independent Control-plane L2 review and a real CI run on the opened PR.
+
+**PR:** opened against `main` from branch `claude/wizardly-fermat-8tsbnt`
+(`https://github.com/SJZLab/Sovra/pull/288`), title `[relay] FTF-0509: Tool argument validator`.
+Updated `QUEUE.md` (top dated entry; moved FTF-0509 into "## Provisional") and `PROGRESS.md`.
+No other task work, design decisions, or queue reprioritization performed beyond what this
+submission naturally required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current"
+unchanged, empty).
+
+- **Submitted-by:** this session, 2026-09-25.
