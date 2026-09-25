@@ -4250,7 +4250,20 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-1503 ("CSRF suite") — submitted 2026-09-24 via a PR from branch
+`claude/wizardly-fermat-gae8i9` against `main`, title `[relay] FTF-1503:
+CSRF suite`. New, real, reusable CSRF-protection dependency
+(`apps/api/app/auth/csrf_protection.py`) proven end to end against a real
+uvicorn demonstration app composing the real `require_csrf_protection`
+with the real `require_role`; zero certified production files touched
+(`oidc_login.py`/`rbac_middleware.py`/`project_routes.py`/`main.py` all
+untouched — same disclosed "designed, not yet wired into the real product
+route" gap `require_role` itself already carries in `main.py` today). Own
+fault injection (disabled the token comparison) genuinely caught by both
+suites, reverted byte-identical. Full record:
+`docs/certifications/queue.md`'s matching 2026-09-24 entry, `PROGRESS.md`.
+Awaiting Control-plane L2 certification and a real CI run on the opened
+PR — not this relay's role.
 
 FTF-0507 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #253 (merge commit
