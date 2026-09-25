@@ -18,10 +18,20 @@ Updated: 2026-09-25 (scheduled relay shift, session
   `19/19`/`64/300`). Whether `authlib==1.8.0` actually clears OSV's `PYSEC-2026-287`
   cannot be confirmed locally (sandbox proxy blocks `api.osv.dev` directly) — the real
   `dependency-scanning-integration` CI job on PR #268's own head is the only genuine
-  proof, being watched now. Not self-certified — `docs/spec-matrix.yaml`'s FTF-1506
+  proof. Not self-certified — `docs/spec-matrix.yaml`'s FTF-1506
   entry left at `PROVISIONAL`/`L1-PROVEN`. Full record: `docs/certifications/queue.md`,
-  `PROGRESS.md`. PR #262 left open, to be closed as superseded once PR #268's CI is
-  confirmed green.
+  `PROGRESS.md`.
+
+  **Update, same shift:** real CI on PR #268 finished green — **30/30 jobs, `gate`
+  included.** The `dependency-scanning-integration` job's own log confirms the fix was
+  genuinely sufficient: `DEPENDENCY SCAN: 295 dependencies, 0 finding(s), 0 blocking --
+  clean` (pulled directly via `get_job_logs`, not inferred from the green checkmark
+  alone) — `authlib==1.8.0`/`starlette==1.7.0` clear every one of the 16 prior findings,
+  including `PYSEC-2026-287`, so no policy exception is needed. `mergeable_state: clean`
+  (no conflicts), zero review comments/threads open. PR #268 is fully done from this
+  relay's side — awaiting only Control-plane L2 certification (not a relay action).
+  Closed PR #262 as superseded (comment posted explaining the carry-forward, no code
+  lost).
 
 ## Previous shift
 Updated: 2026-09-25 (same scheduled Control-plane certifier shift as below,

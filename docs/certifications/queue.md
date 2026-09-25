@@ -14656,3 +14656,13 @@ to "## Done", top status note recorded) and `PROGRESS.md`.
   Subscribed to PR activity; will watch the real `dependency-scanning-integration` + `gate` CI
   results on this head to completion and push a policy-exception follow-up if the authlib finding
   still blocks. PR #262 left open, to be closed as superseded once #268's CI is confirmed.
+
+**Update, same shift:** real CI on PR #268 finished green — 30/30 jobs, `gate` included,
+`mergeable_state: clean`. The `dependency-scanning-integration` job's own log (pulled
+directly via `get_job_logs`, not inferred from the checkmark alone) confirms the fix was
+genuinely sufficient: `DEPENDENCY SCAN: 295 dependencies, 0 finding(s), 0 blocking --
+clean` — `authlib==1.8.0`/`starlette==1.7.0` clear every one of the 16 prior findings,
+including `PYSEC-2026-287`; no policy exception needed. Zero review comments/threads
+open. PR #268 is fully done from this relay's side — awaiting only Control-plane L2
+certification. Closed PR #262 as superseded (explanatory comment posted, no code lost —
+carried forward byte-identical into #268 plus the fix).

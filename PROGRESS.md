@@ -17373,3 +17373,32 @@ PYSEC-2026-287)`, re-push, re-watch. FTF-1503 (PR #258) and FTF-04A17 (PR #260) 
 green and need no further relay work — only Control-plane L2 certification, which is out of this
 relay role's scope. Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml`
 before picking any *new* (not-yet-started) task next, rather than trusting this note alone.
+
+## 2026-09-25T05:09:18Z — FTF-1506 (PR #268): real CI confirmed green, shift complete
+
+Follow-up to this shift's own entry above. Subscribed to PR #268's GitHub activity;
+watched its real CI run to completion rather than assuming green from the push. Final
+result: **30/30 jobs green, `gate` included, `mergeable_state: clean`.** Pulled the
+`dependency-scanning-integration` job's own log directly (`get_job_logs`, not inferred
+from the checkmark): `DEPENDENCY SCAN: 295 dependencies, 0 finding(s), 0 blocking --
+clean` — confirms `authlib==1.8.0`/`starlette==1.7.0` genuinely clear all 16 prior
+findings, including the CRITICAL `PYSEC-2026-287`, against the real, live OSV.dev
+database. No policy exception was needed after all. Zero review comments or threads on
+the PR.
+
+Closed PR #262 as superseded (posted an explanatory comment naming #268, confirming no
+code is lost — the implementation commit carries forward byte-identical plus the fix).
+
+This relay's own PEV cycle for FTF-1506 is complete: PROVISIONAL, L1-PROVEN, real CI
+green, not self-certified (Law 4). Stop condition (a) — N/N L1-PROVEN, awaiting Control
+plane L2 certification and the L4 release gate, both out of this relay role's scope.
+Ending this shift here.
+
+## Next shift
+PR #268 (FTF-1506) is green and mergeable, awaiting Control-plane L2 certification —
+do not re-implement. FTF-1503 (PR #258) and FTF-04A17 (PR #260) are also both already
+green, same status. Recompute the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` before picking any new task, rather than trusting this note
+alone. The FTF-0508 self-certification watchdog finding
+(`docs/certifications/watchdog-findings.md`, 2026-09-25) remains open for Control
+plane/owner review — not a relay action.
