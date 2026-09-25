@@ -15980,7 +15980,7 @@ required (Law 4). No open owner ask.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
 
-## 2026-09-25 — Relay shift: FTF-0408 ("Requirements UI") submitted PROVISIONAL
+## 2026-09-25 — Relay shift: FTF-0408 ("Requirements UI") submitted PROVISIONAL (PR #293)
 
 **PEV, not mixed.** P: read `docs/implementation/task-packets/FTF-0408.md`, Section 7A.6/7A.7
 (mandate authoring/manifest build), `critical_behavior_requirement_routes.py` (FTF-0407, already

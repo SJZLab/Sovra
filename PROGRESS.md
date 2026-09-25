@@ -18611,7 +18611,7 @@ No open owner ask. PR #288 (FTF-0509) left entirely alone, a separate concurrent
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
 
-## 2026-09-25T18:59:13Z — Relay shift: FTF-0408 ("Requirements UI") submitted PROVISIONAL
+## 2026-09-25T18:59:13Z — Relay shift: FTF-0408 ("Requirements UI") submitted PROVISIONAL (PR #293)
 
 STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh, no assumed state.
 CLAUDE.md hash self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`

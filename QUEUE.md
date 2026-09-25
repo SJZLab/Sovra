@@ -4899,7 +4899,7 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0408 ("Requirements UI")** — submitted 2026-09-25 via a PR from branch
+**FTF-0408 ("Requirements UI")** — submitted 2026-09-25 via PR #293 from branch
 `claude/wizardly-fermat-q17awc` against `main`, title `[relay] FTF-0408: Requirements UI`. A real
 frontend component (`apps/web/components/project-mandate/requirements_ui.tsx::RequirementsPanel`)
 assembling three already-CERTIFIED live surfaces for one project — FTF-0407's read-only
