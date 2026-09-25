@@ -1,25 +1,32 @@
 openapi: 3.1.0
 info:
-  title: Sovra Phase 04A Interface (TargetApplicationConnection, TargetSourceSnapshot)
-  version: 0.2.0
+  title: >-
+    Sovra Phase 04A Interface (TargetApplicationConnection,
+    TargetSourceSnapshot, DiscoveredAgentCandidate)
+  version: 0.3.0
   description: >-
     Frozen shared component schemas and real live routes for the
     project-scoped TargetApplicationConnection resource (Section 6.8A/
-    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01) and the connection-scoped
-    TargetSourceSnapshot resource (Section 6.8B, FTF-04A07). `paths`
-    declares exactly the surface these two tasks actually implement and
-    wire into `apps/api/app/main.py` -- create/get/list/edit/revoke of the
-    connection record, and create/get/list (no edit/delete -- immutable)
-    of the snapshot record -- and nothing else. It deliberately does not
-    declare a `/candidates`, `/manifests`, `/evidence` or `/target-drift`
-    route (the task packet's own abbreviated `api_contract` line): no
-    `DiscoveredAgentCandidate`/`AgentManifest`/`ManifestEvidence` entity
-    exists anywhere in this repository yet, and the real GitHub/local-
-    repository connector implementations (Section 7A.1's own
-    `TargetApplicationConnector` Protocol) are FTF-04A02/FTF-04A06,
-    separate dependency-gated later tasks. Whichever later task adds its
-    own real route extends this same file under this same contract-owner
-    lock (shared_lock_required: contracts:04A).
+    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01), the connection-scoped
+    TargetSourceSnapshot resource (Section 6.8B, FTF-04A07), and the
+    snapshot-scoped DiscoveredAgentCandidate resource (Section 6.8C,
+    FTF-04A17). `paths` declares exactly the surface these three tasks
+    actually implement and wire into `apps/api/app/main.py` --
+    create/get/list/edit/revoke of the connection record, create/get/list
+    (no edit/delete -- immutable) of the snapshot record, and create/get/
+    list (no edit/delete -- an analysis fact, never mutated) of the
+    candidate record -- and nothing else. It deliberately does not declare
+    a `/manifests`, `/evidence` or `/target-drift` route (the task
+    packet's own abbreviated `api_contract` line): no `AgentManifest`/
+    `ManifestEvidence` entity exists anywhere in this repository yet, and
+    the real GitHub/local-repository connector implementations (Section
+    7A.1's own `TargetApplicationConnector` Protocol) are FTF-04A02/
+    FTF-04A06, separate dependency-gated later tasks. It also declares no
+    selection/confirmation endpoint for a candidate -- FTF-04A18
+    ("Candidate-selection UI -- no auto-selection") is a separate,
+    dependency-gated later task. Whichever later task adds its own real
+    route extends this same file under this same contract-owner lock
+    (shared_lock_required: contracts:04A).
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections:
     parameters:
@@ -291,6 +298,154 @@ paths:
             Missing, belongs to a different organization, or belongs to a
             different connection than the one named in the path --
             identical in every case.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots/{snapshot_id}/candidates:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a snapshot's discovered agent candidates (paginated).
+      operationId: listDiscoveredAgentCandidates
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: A page of the snapshot's discovered agent candidates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredAgentCandidatePage'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            connection_id/snapshot_id missing, belongs to a different
+            organization, or snapshot_id belongs to a different connection
+            -- identical in every case.
+    post:
+      summary: >-
+        Record a new discovered agent candidate for this snapshot. Every
+        `*_evidence_json` field is independently nullable -- an honestly
+        unresolved evidence category is `null`, never a fabricated
+        payload (Section 7A.4). `confidence_score`/`discovery_status` are
+        never a calibrated probability or an automatic in-scope selection
+        (this task's own negative_acceptance): `discovery_status` is a
+        closed one-value Release-1 set, and neither field drives any
+        selection/confirmation transition anywhere in this API.
+      operationId: createDiscoveredAgentCandidate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoveredAgentCandidateCreateRequest'
+      responses:
+        '201':
+          description: The created discovered agent candidate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredAgentCandidate'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            connection_id/snapshot_id missing, belongs to a different
+            organization, or snapshot_id belongs to a different connection
+            -- identical in every case.
+        '409':
+          description: >-
+            candidate_key already exists for this snapshot (the same key
+            on a different snapshot succeeds).
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots/{snapshot_id}/candidates/{candidate_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one discovered agent candidate.
+      operationId: getDiscoveredAgentCandidate
+      responses:
+        '200':
+          description: The discovered agent candidate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredAgentCandidate'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different snapshot than the one named in the path -- identical
+            in every case.
 components:
   responses:
     NotAuthenticated:
@@ -511,4 +666,123 @@ components:
         - captured_at
         - capture_method
         - analysis_status
+      additionalProperties: false
+    DiscoveredAgentCandidateDiscoveryStatus:
+      type: string
+      description: >-
+        A closed one-value set for Release 1 -- Section 6.8C's own record
+        of what an analysis run found, never advanced by this API
+        (FTF-04A18's own selection/confirmation transition is a separate,
+        not-yet-built later task).
+      enum: [candidate]
+    DiscoveredAgentCandidateCreateRequest:
+      type: object
+      properties:
+        candidate_key:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: >-
+            This candidate's real deduplication identity, unique per
+            snapshot -- a second analysis run cannot silently create a
+            duplicate row for the same already-discovered entity.
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        framework_or_runtime:
+          type: [string, 'null']
+          maxLength: 100
+        confidence_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: >-
+            Not a calibrated probability and never used to sort/filter/
+            auto-select a candidate (this task's own negative_acceptance).
+        entrypoint_evidence_json:
+          type: [object, 'null']
+        model_evidence_json:
+          type: [object, 'null']
+        prompt_evidence_json:
+          type: [object, 'null']
+        tool_evidence_json:
+          type: [object, 'null']
+        test_evidence_json:
+          type: [object, 'null']
+        trace_hook_evidence_json:
+          type: [object, 'null']
+        deployment_evidence_json:
+          type: [object, 'null']
+      required: [candidate_key, display_name, confidence_score]
+      additionalProperties: false
+    DiscoveredAgentCandidate:
+      type: object
+      description: >-
+        Section 6.8C -- the read-facing representation. There is no
+        PATCH/DELETE for this resource at all: a candidate record is a
+        fact about what analysis found, never mutated or removed after
+        being recorded.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        target_source_snapshot_id:
+          type: string
+          format: uuid
+        candidate_key:
+          type: string
+        display_name:
+          type: string
+        framework_or_runtime:
+          type: [string, 'null']
+        confidence_score:
+          type: number
+        discovery_status:
+          $ref: '#/components/schemas/DiscoveredAgentCandidateDiscoveryStatus'
+        entrypoint_evidence_json:
+          type: [object, 'null']
+        model_evidence_json:
+          type: [object, 'null']
+        prompt_evidence_json:
+          type: [object, 'null']
+        tool_evidence_json:
+          type: [object, 'null']
+        test_evidence_json:
+          type: [object, 'null']
+        trace_hook_evidence_json:
+          type: [object, 'null']
+        deployment_evidence_json:
+          type: [object, 'null']
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - target_source_snapshot_id
+        - candidate_key
+        - display_name
+        - confidence_score
+        - discovery_status
+        - created_at
+      additionalProperties: false
+    DiscoveredAgentCandidatePage:
+      type: object
+      description: A limit/offset page of discovered agent candidates.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredAgentCandidate'
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+      required: [items, limit, offset, total]
       additionalProperties: false

@@ -2798,13 +2798,41 @@ FTF-04A17:
     suite locally, matching every prior integration-tested task's own local-cluster precedent;
     wired into CI's own new `discovered-agent-candidate-integration` job (a GitHub Actions
     `services: postgres` container, real registry egress on the hosted runner).
-    `product_truth_check.py --fail-on-unwired` unchanged -- no live caller yet (no FTF-04A08-16
-    source-analysis pipeline exists in this repository yet to call
-    `create_discovered_agent_candidate`), same disclosed "no live caller yet" precedent already
-    established for FTF-04A07/FTF-0506/FTF-0507. `status.py` unchanged at implementation time
-    (PROVISIONAL, not yet certified).
+
+    2026-09-25 relay follow-up (Law 7/8 fix, not a new claim of certification): a concurrent
+    Control-plane certifier shift found this task's own `build_discovered_agent_candidate_router`
+    was never `include_router()`d into `apps/api/app/main.py` -- the one real live FastAPI app
+    this repository serves -- unlike every sibling router in this chain (including its own direct
+    dependency FTF-04A07's `build_target_source_snapshot_router`), and correctly declined to
+    certify PR #276 on that basis (see QUEUE.md/PROGRESS.md's matching 2026-09-25 "Law 9" entries).
+    This is a genuine wiring gap, not the legitimate "no live caller yet" class FTF-0507/FTF-0508
+    disclose for pure-computation modules with no HTTP surface at all. Fixed for real this shift:
+    `app.main.create_app()` now imports and `include_router()`s
+    `build_discovered_agent_candidate_router` (twelfth router in that chain), and
+    `packages/contracts/openapi/04A-interface.yaml` (this task's own `shared_lock_required:
+    contracts:04A` file) now declares the real `/candidates` collection/item routes and their
+    request/response schemas, matching the router's actual behavior field-for-field. New test
+    `test_router_is_wired_into_the_live_app` in `tests/tasks/test_ftf_04a17.py` builds the real
+    app via `app.main.create_app()` (a syntactically-valid but never-connected-to
+    `postgresql+psycopg://` URL -- `create_engine()`/`install_tenant_pool_reset_guard()` need no
+    real database) and asserts the candidates path is present in `app.openapi()["paths"]`; shown
+    to genuinely fail before this fix (1 FAIL) and pass after, reverted-and-reconfirmed both ways.
+    `product_truth_check.py --fail-on-unwired` now finds a real, non-test caller of
+    `build_discovered_agent_candidate_router` in `apps/api/app/main.py` -- `proving_symbol` filled
+    in below to reflect this objective, independently-checkable fact (the router really is wired,
+    same convention FTF-04A07/FTF-R002/etc. use once their own router lands in `main.py`); this
+    does NOT change `certification_state`/`proof_state` below, which stay PROVISIONAL/L1-PROVEN --
+    this relay shift does not certify its own work (Law 4). `ruff`/`ruff format`/`mypy` clean
+    repo-wide (`uv run mypy .` from the repo root, matching CI's own invocation exactly, not the
+    narrower `apps/api`-scoped run); `validate_spec.py --strict` clean; the full
+    `tests/tasks/test_ftf_04a17.py` suite (now 35 checks) and
+    `tests/integration/test_ftf_04a17_discovered_agent_candidate.py` both still pass, confirming
+    no regression to the already-verified storage/CRUD/RBAC/RLS/constraint layer. `status.py`
+    unchanged at implementation time (still PROVISIONAL, not yet certified) -- Control-plane L2
+    certification and a real CI run on the opened PR are still required before this can move to
+    CERTIFIED.
   proof_state: L1-PROVEN
-  proving_symbol: ''
+  proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
   certification_state: NONE

@@ -1,4 +1,87 @@
 # PROGRESS — Sovra
+## 2026-09-25T00:00:00Z — Relay shift: FTF-04A17 "designed is not wired" gap fixed (PR pending)
+
+Scheduled autonomous relay shift. STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md
+first, not assumed from prior context. `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`. `BLOCKER.md` confirmed no open blockers. Confirmed via `docs/spec-matrix.yaml`
+that FTF-04A17 is the only `PROVISIONAL` entry, and via a live GitHub read that PR #276 (the
+premature certification a concurrent Control-plane session had opened) is closed, not merged --
+the Law 9 finding immediately above this entry was never overwritten.
+
+Picked up the exact remediation that finding specified: `build_discovered_agent_candidate_router`
+was fully built and tested but never `include_router()`d into `apps/api/app/main.py`, the one
+real live FastAPI app this repository serves -- unlike all eleven sibling routers already wired
+there, including this task's own direct dependency FTF-04A07. Neither of this task's own test
+suites imports `app.main`, so a fully-green CI run cannot catch this.
+
+**PEV.** P: read `apps/api/app/main.py`, `discovered_agent_candidate_routes.py`, and
+`packages/contracts/openapi/04A-interface.yaml` (whose own docstring already names this exact
+task as the one that should extend it under its own `contracts:04A` lock) -- no code changed yet.
+
+E: added `test_router_is_wired_into_the_live_app` to `tests/tasks/test_ftf_04a17.py` -- builds the
+real `app.main.create_app()` under a complete, syntactically-valid env (a `postgresql+psycopg://`
+URL that is never actually connected to -- `create_engine()`'s driver import succeeds without
+connecting, and `install_tenant_pool_reset_guard()` only registers a pool event listener) and
+asserts the candidates path is present in `app.openapi()["paths"]` (the stable way to enumerate
+routes -- `app.routes`'s own element shape is an internal `_IncludedRouter` wrapper in the
+`fastapi==0.141.1` this repo pins, confirmed by direct inspection). **Ran it first against the
+unmodified code: 1 genuine FAIL.** Fixed for real: added the import + `app.include_router(...)`
+line to `main.py` (identical convention to every sibling), extended the module docstring to
+disclose the twelfth router. Re-ran: all checks pass. Reverted the `main.py` fix alone via `git
+stash` and reproduced the same 1 FAIL byte-identically before restoring (Law 1).
+
+Extended `packages/contracts/openapi/04A-interface.yaml` with the real `/candidates`
+collection/item paths and request/response schemas, matching the router's actual behavior
+field-for-field (all seven `*_evidence_json` fields independently nullable, `confidence_score`
+bounded `[0.0, 1.0]`, `discovery_status` the closed one-value set, no PATCH/DELETE, 409 on
+duplicate `candidate_key` within a snapshot). No generated client references this file elsewhere
+in the repo -- nothing else needed regenerating.
+
+V: `uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .` clean repo-wide (246
+files, run from the repo root exactly as CI's `gate` job does). `validate_spec.py --strict` clean
+(after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact). `uv run
+python3 tests/tasks/test_ftf_04a17.py` -- 35/35 (34 pre-existing + this shift's new check),
+matching CI's own invocation exactly. Real live-Postgres integration evidence reproduced locally
+(a directly `apt`-installed PostgreSQL 16 cluster, same precedent as every prior integration-tested
+task): created the `sovra_migrate`/`sovra_ftf04a17` role+database, ran the full Alembic migration
+chain to head, then `tests/integration/test_ftf_04a17_discovered_agent_candidate.py` -- all checks
+pass, confirming zero regression to the already-verified storage/CRUD/RBAC/RLS/constraint layer.
+Regression-swept five sibling suites that also touch `main.py`'s router-wiring convention
+(FTF-04A07, FTF-04A01, FTF-R002, FTF-0500, FTF-1001) -- all clean.
+
+`product_truth_check.py --fail-on-unwired` now genuinely finds a real, non-test caller of
+`build_discovered_agent_candidate_router` in `main.py` -- updated `docs/spec-matrix.yaml`'s
+FTF-04A17 `proving_symbol` from `''` to that real symbol (an objective, independently-checkable
+fact, same convention every already-wired sibling router uses), `19/19` → `20/20` product-true.
+**`certification_state`/`proof_state` deliberately left at `PROVISIONAL`/`L1-PROVEN`** -- this
+shift fixes a disclosed defect, it does not certify its own work (Law 4). `scripts/status.py`
+correctly still reports `66/300` certified / `19` product-true (scoped to CERTIFIED tasks only),
+unchanged -- this shift did not inflate the tracker (Law 2).
+
+Diff scope confirmed exactly the four files this remediation needs (`apps/api/app/main.py`,
+`packages/contracts/openapi/04A-interface.yaml`, `tests/tasks/test_ftf_04a17.py`,
+`docs/spec-matrix.yaml`'s FTF-04A17 entry) plus this shift's own tracking-doc updates -- no scope
+creep.
+
+**Not self-certified. Submitted PROVISIONAL** (unchanged -- this is a defect fix, not a new
+submission). Opened PR against `main` from `claude/wizardly-fermat-66cdlv`, title `[relay]
+FTF-04A17: wire discovered-agent-candidate router into the live app (fixes Law 7 gap from PR
+#274/#276)`. Appended to `docs/certifications/queue.md` for Control plane. Still requires
+independent Control-plane L2 certification and a real CI run on the opened PR before
+`certification_state` can move to `CERTIFIED` -- not this relay shift's role.
+
+No other task work, design decisions, or queue reprioritization performed this shift.
+
+## Next shift
+PR for FTF-04A17's wiring fix is open, awaiting real CI plus independent Control-plane L2
+certification (not this relay's role) -- do not re-implement or re-review from scratch. PRs #246
+(FTF-1303 tracking-doc reconciliation) and #243 (FTF-04A06 owner-direct-merge certification,
+supersedes #241) remain separately open from before, awaiting Control-plane attention.
+FTF-0214/0215/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a real OpenBao secret
+backend) remain outside this relay sandbox's practical reach. Recompute the dependency-ready
+frontier fresh from `docs/spec-matrix.yaml` before picking a next *new* task, rather than trusting
+this note alone.
+
 ## 2026-09-25 — FTF-04A17 — Control plane: adversarial finding (Law 9), NOT CERTIFIED, concurrent-session collision
 Triggered by the `pull_request.opened` webhook for PR #274. While reviewing FTF-04A17
 independently, discovered a concurrent Control-plane certifier session

@@ -42,7 +42,12 @@ router from
 `app.component_bindings.component_binding_routes.build_component_binding_router`
 -- the eleventh (FTF-04A01's own `target-connections`/`target-snapshots`
 routers landed between the tenth and eleventh, see their own module
-docstrings).
+docstrings), and (FTF-04A17) the real, snapshot-scoped
+`/api/v1/organizations/{organization_id}/projects/{project_id}/
+target-connections/{connection_id}/snapshots/{snapshot_id}/candidates`
+router from
+`app.target_connectors.discovered_agent_candidate_routes.build_discovered_agent_candidate_router`
+-- the twelfth.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -109,6 +114,9 @@ from app.datasets.dataset_source_connection_routes import (
 from app.litellm.connection_routes import build_litellm_connection_router
 from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
+from app.target_connectors.discovered_agent_candidate_routes import (
+    build_discovered_agent_candidate_router,
+)
 from app.target_connectors.target_application_connection_routes import (
     build_target_application_connection_router,
 )
@@ -150,6 +158,7 @@ def create_app() -> FastAPI:
     app.include_router(build_dataset_source_connection_router(session_factory))
     app.include_router(build_target_application_connection_router(session_factory))
     app.include_router(build_target_source_snapshot_router(session_factory))
+    app.include_router(build_discovered_agent_candidate_router(session_factory))
     app.include_router(build_component_binding_router(session_factory))
     return app
 
