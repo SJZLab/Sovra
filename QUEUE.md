@@ -1,5 +1,56 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+Updated: 2026-09-25 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk) — **FTF-0215 ("Periodic sync workflow")
+  submitted PROVISIONAL.** STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`:
+  no `## Active`/`## Provisional` item and no open owner ask at shift start. 5 open PRs checked
+  directly on GitHub: #295 (FTF-0214, a genuine blocker escalation from a concurrent session,
+  doc-only — `BLOCKER.md`/`QUEUE.md`/`PROGRESS.md` only, no production code, no claim on this
+  task), #290 (FTF-04A08 tracking fix), #231 (FTF-0212), #194/#195 (a duplicate pair, FTF-0304) —
+  none overlap. Surveyed `docs/spec-matrix.yaml` for every dependency-ready candidate with an
+  existing task packet not yet CERTIFIED — 6 found (FTF-0214/FTF-0215/FTF-04A02/FTF-0500A/
+  FTF-0500D/FTF-0902). FTF-0214 already claimed by PR #295. Ruled out FTF-0902 (needs a real
+  enforcing CNI/firewall cluster) and FTF-04A02 (needs a real GitHub App/private test repository,
+  ask-first) as genuinely BLOCKED_EXTERNAL in this relay sandbox. Spot-checked FTF-0500A/FTF-0500D
+  packets' own `api_contract` lines (both name UI routes with the same shape of no-confirmed-
+  backend risk PR #295 just found for FTF-0214) but did not investigate either with that same
+  depth; picked **FTF-0215** instead — dependency-ready (FTF-0004/FTF-0201/FTF-0207/FTF-0208/
+  FTF-0209 all CERTIFIED), no external prerequisite, and its own two wrapped dependencies'
+  already-CERTIFIED module docstrings (`last_known_good_catalog.py`, `catalog_anomaly_detector.py`)
+  explicitly name this exact task as their own next "real wiring/route task."
+
+  Implemented `packages/litellm_client/periodic_sync_workflow.py::PeriodicSyncWorkflow`: composes
+  `discover_models`-shaped results into the already-CERTIFIED `LastKnownGoodCatalog`/
+  `CatalogAnomalyDetector` pair through a `begin_cycle()`/`complete_cycle()` sequence pair.
+  `register()` is a one-shot idempotency latch (this task's own acceptance clause: "without
+  duplicate schedules"). `complete_cycle()` enforces, before any catalog mutation, that a completed
+  cycle's monotonic `sequence` is strictly newer than the last one actually applied — a stale,
+  out-of-order or concurrently-superseded response (this task's own negative_acceptance: "Revoked
+  key, concurrent sync and out-of-order response cannot reinstate obsolete authorization") is
+  dropped before it can ever reach the wrapped catalog. Consecutive transient discovery failures
+  are bounded against Section 3.3's own reused three-attempt ceiling (`RETRY_SCHEDULED` then
+  `RETRY_CEILING_REACHED`, never silent forever-retry). `acknowledge_anomaly()`/`retry_anomaly()`/
+  `is_call_authorized()` are real, thin passthroughs to the wrapped detector/catalog, closing the
+  one open observation FTF-0209's own certification record flagged for this task.
+
+  `tests/tasks/test_ftf_0215.py`: 38 real checks across 7 test functions. Shown able to fail first:
+  with the module moved aside, the suite failed with a genuine `ModuleNotFoundError`; restored and
+  re-run clean. Two independent fault injections, both reverted byte-identical: (1) disabled the
+  sequence-ordering guard entirely — 8 genuine FAIL lines across the out-of-order/concurrent/
+  revocation tests, reproducing exactly this task's own negative_acceptance risk; (2) disabled the
+  retry-ceiling comparison — 1 genuine FAIL line. `git fetch --unshallow` run (this sandbox's own
+  pre-existing shallow-clone artifact, same disclosed precedent as every prior shift) — the one
+  `stale_commit` (FTF-0401) defect seen before unshallowing was confirmed pre-existing on `main`
+  itself via `git stash -u`, unrelated to this task. `uv run ruff check .`/`ruff format --check .`/
+  `mypy .` clean repo-wide (258 source files). `validate_spec.py --strict` clean after unshallowing.
+  `product_truth_check.py --fail-on-unwired`: `20/20` unchanged (disclosed blank `proving_symbol`,
+  no new backend route of its own). `status.py`: `73/300` certified, unchanged (Law 2). Regression
+  swept `test_ftf_0004.py`/`test_ftf_0201.py`/`test_ftf_0207.py`/`test_ftf_0208.py`/
+  `test_ftf_0209.py` — zero regressions. `verify_task.py --task FTF-0215 --stage task` reports
+  `BLOCKED` pre-merge, expected per precedent. CI gate step added in the same commit. Full record:
+  `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`. Awaiting Control-plane
+  L2 certification and a real CI run on the opened PR — not this relay's role. No open owner ask.
+
+Previously updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_01S4BGserdHm3v3aNDwen6J4, triggered by the
   `pull_request.opened` webhook for PR #293) — **FTF-0408 (Requirements UI) independently
   reviewed and CERTIFIED.** Entire session task per this certifier's standing prompt: checked
@@ -4963,7 +5014,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-0215 ("Periodic sync workflow") — submitted 2026-09-25 via PR #296 (branch
+`relay/ftf-0215-periodic-sync-workflow` → main), session
+`https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk`. Full submission record: this file's own
+top dated entry, `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`. Awaiting
+Control-plane L2 certification and a real CI run on the opened PR — not this relay's role.
 
 FTF-0408 ("Requirements UI") was the item here before that; submitted 2026-09-25 via PR #293, it
 hit a real CI failure mid-review (three unquoted `"word: "` sequences inside a plain YAML scalar

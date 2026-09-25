@@ -16172,3 +16172,98 @@ design decisions, or queue reprioritization performed beyond what this certifica
 required (Law 4). No open owner ask.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — FTF-0215 — Periodic sync workflow
+- **PR:** https://github.com/SJZLab/Sovra/pull/296 (relay/ftf-0215-periodic-sync-workflow → main)
+- **Branch:** relay/ftf-0215-periodic-sync-workflow (session
+  https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk)
+- **Test:** tests/tasks/test_ftf_0215.py -- 38 checks across 7 test functions
+- **Files:** packages/litellm_client/periodic_sync_workflow.py (new),
+  tests/tasks/test_ftf_0215.py (new), .github/workflows/ci.yml (CI gate step),
+  docs/spec-matrix.yaml (FTF-0215 entry)
+
+Picked as the best-scoped dependency-ready item at shift start: no `## Active`/`## Provisional`
+item and no open owner ask (`QUEUE.md`'s own top status). 5 open PRs checked directly on GitHub --
+#295 (FTF-0214, a genuine blocker escalation from a concurrent session, doc-only, no production
+code), #290 (FTF-04A08 tracking fix), #231 (FTF-0212), #194/#195 (a duplicate pair, FTF-0304) --
+none overlap. Surveyed `docs/spec-matrix.yaml` for every dependency-ready candidate with an
+existing task packet not yet CERTIFIED: 6 found (FTF-0214/FTF-0215/FTF-04A02/FTF-0500A/FTF-0500D/
+FTF-0902). FTF-0214 already claimed by PR #295. FTF-0902 needs a real enforcing CNI/firewall
+cluster (BLOCKED_EXTERNAL). FTF-04A02 needs a real GitHub App/private test repository (ask-first,
+keyed external credential). FTF-0500A/FTF-0500D spot-checked (their own `api_contract` lines name
+UI routes with the same shape of no-confirmed-backend risk PR #295 just found for FTF-0214) but not
+investigated with that same depth. Picked FTF-0215: dependency-ready (FTF-0004/FTF-0201/FTF-0207/
+FTF-0208/FTF-0209 all CERTIFIED, confirmed directly in `docs/spec-matrix.yaml` before relying on
+them), no external prerequisite, and its own two wrapped dependencies' already-CERTIFIED module
+docstrings (`packages/litellm_client/last_known_good_catalog.py`,
+`packages/litellm_client/catalog_anomaly_detector.py`) explicitly name this exact task as their own
+next "real wiring/route task."
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0215 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`. Read `packages/litellm_client/v1_models_discovery.py`
+(FTF-0204), `last_known_good_catalog.py` (FTF-0208), `alias_reconciliation.py` (FTF-0207) and
+`catalog_anomaly_detector.py` (FTF-0209) in full, plus `apps/api/app/litellm/connection_routes.py`'s
+own module docstring, which confirms no `sync-models`/`syncs` HTTP route exists or should be
+stubbed here (the same Law-11 placeholder risk PR #295 independently found for FTF-0214).
+
+**Scope, disclosed, not improvised:** this task's own `files` list names only
+`packages/litellm_client/periodic_sync_workflow.py` and its test -- no route file, real Temporal
+registration, or cron trigger exists anywhere in this repository yet for a periodic job to be
+registered against. Declaring an HTTP/Temporal surface here with nothing real behind it would be
+exactly the "production placeholder path" Law 11 forbids. Scoped to the workflow composition
+itself: schedule-registration idempotency, monotonic-sequence ordering against concurrent/
+out-of-order responses, bounded transient-failure retry, and thin passthroughs to the wrapped
+catalog/detector for a future real caller.
+
+**Implementation:** `PeriodicSyncWorkflow.register()` is a one-shot idempotency latch (this task's
+own acceptance clause: "without duplicate schedules") -- a second registration attempt for the same
+connection is refused, never creating a second recurring job. `begin_cycle()`/`complete_cycle()`
+carry a monotonically increasing `sequence`; `complete_cycle()` enforces, *before any catalog
+mutation*, that a completed cycle's sequence is strictly newer than the last one actually applied --
+a stale, out-of-order, or concurrently-superseded response (this task's own negative_acceptance:
+"Revoked key, concurrent sync and out-of-order response cannot reinstate obsolete authorization"),
+even a superficially successful `DISCOVERED` one, is dropped as `SKIPPED_OUT_OF_ORDER` before it
+can ever reach `LastKnownGoodCatalog.apply_discovery_result`. Consecutive transient discovery
+failures (`TIMEOUT`/`DNS_FAILED`/`CONNECTION_REFUSED`/`UNREACHABLE` -- deliberately excluding
+`INVALID_TOKEN`, a definite revocation signal per FTF-0208's own design, and `SECRET_*`, a
+configuration problem) are counted against Section 3.3's own reused three-attempt ceiling,
+surfacing `RETRY_SCHEDULED` then `RETRY_CEILING_REACHED` rather than retrying silently forever; a
+real success resets the counter. `acknowledge_anomaly()`/`retry_anomaly()`/`is_call_authorized()`
+are real, thin passthroughs to the wrapped `CatalogAnomalyDetector`/`LastKnownGoodCatalog`, closing
+the one open observation FTF-0209's own certification record flagged for this task.
+
+**Test evidence:** `tests/tasks/test_ftf_0215.py`, 38 checks across 7 functions. Shown able to fail
+first: with the module moved aside (`mv` to a temp path), the suite failed with a genuine
+`ModuleNotFoundError` bound to this task's own import; restored and re-run clean. **Two independent
+fault injections, both reverted byte-identical (`diff` confirmed) and the suite re-run clean
+immediately after each:**
+1. Disabled the sequence-ordering guard entirely (`if sequence <= self._last_applied_sequence:`
+   replaced with `if False:`) -- **8 genuine FAIL lines**, spanning the out-of-order,
+   concurrent-dispatch and revocation tests, reproducing exactly this task's own
+   negative_acceptance risk (a stale response reinstating removed ids / undoing a revocation).
+2. Disabled the retry-ceiling comparison (`if self._consecutive_transient_failures >=
+   self._retry_ceiling:` replaced with `if False:`) -- **1 genuine FAIL line** on "reaches the
+   configured ceiling instead of retrying silently forever."
+
+**Full local sweep:** `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone
+artifact, same disclosed precedent as prior shifts) -- the one `stale_commit` (FTF-0401) defect
+`validate_spec.py --strict` initially reported was confirmed pre-existing on `main` itself via
+`git stash -u` before unshallowing (unrelated to this task); clean after `--unshallow`.
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide
+(258 source files -- only this task's own two new files plus `.github/workflows/ci.yml`/
+`docs/spec-matrix.yaml` touched). `product_truth_check.py --fail-on-unwired`: `20/20` unchanged
+(this task's `proving_symbol` is genuinely blank -- no new backend dispatcher/route of its own,
+disclosed, same precedent as FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209). `status.py`: `73/300`
+certified, unchanged (Law 2 -- not self-inflated). Regression swept `test_ftf_0004.py`/
+`test_ftf_0201.py`/`test_ftf_0207.py`/`test_ftf_0208.py`/`test_ftf_0209.py` -- all "all checks
+passed," zero regressions. `verify_task.py --task FTF-0215 --stage task` reports `BLOCKED`
+pre-merge ("has no merged verification evidence yet"), expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-0215 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge commit hash is
+known (same precedent as every recent sibling). CI gate step (`FTF-0215 negative-test proof`)
+added to `.github/workflows/ci.yml` in this same commit.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.
