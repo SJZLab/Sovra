@@ -1,4 +1,97 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled autonomous relay shift, dynamic queue-check
+  fire, not a PR webhook) — implemented and submitted **FTF-04A17
+  (DiscoveredAgentCandidate schema/API) PROVISIONAL**. STEP 0: `sha256sum
+  CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `BLOCKER.md` read in
+  full -- no live blocker, both entries resolved history; `PROGRESS.md`/
+  `QUEUE.md`/`docs/certifications/queue.md` read fresh (huge append-only
+  logs, read via targeted `offset`/`grep` rather than in full).
+
+  Checked live GitHub state before picking work (8 open PRs): #259 is a
+  Control-plane review of PR #258 (FTF-1503) flagging a real `mypy`
+  failure on a prior CI run -- re-checked PR #258's own current head
+  directly and found it already fixed and CI genuinely green (run
+  `36072347042`, 29/29 including `gate`), by a commit already on that
+  branch predating PR #259's own review comment; left untouched, awaiting
+  its own independent certifier, not this relay's role. PR #257 (FTF-0508)
+  is a separate open relay submission, also awaiting certification --
+  left untouched. PRs #231/#195/#194 (FTF-0212/FTF-0304) remain other
+  sessions' own open work.
+
+  Recomputed the dependency-ready frontier directly from
+  `docs/spec-matrix.yaml` (19 `NONE`/`ABSENT` tasks with every declared
+  dependency already `CERTIFIED`, parsed with PyYAML) rather than trusting
+  the prior shift's note alone: FTF-0212/FTF-0304/FTF-0508/FTF-1503 are
+  already claimed by other open PRs; FTF-0214/0215/0408/0500A/0500D (UI)
+  and FTF-0215 (Temporal workflow) are outside a relay shift's practical
+  reach; FTF-0302/0303 (HF/S3 artifact resolvers) need real outbound
+  network egress this sandbox's proxy denies (confirmed directly: a real
+  `pypi.org` request succeeds through the proxy, a real `api.osv.dev`
+  request is rejected -- egress is domain-gated, not simply absent);
+  FTF-04A02 needs a real live OpenBao instance; FTF-1201/FTF-H004 need a
+  real reachable LiteLLM gateway/credential; FTF-1703 needs >=1000 real
+  curated traces; FTF-1506 (dependency scanning) likely needs a CVE/
+  advisory feed this sandbox's egress denies (same class as `api.osv.dev`
+  above) -- flagged as risk, not claimed. FTF-04A17/FTF-04A19 share the
+  `contracts:04A` lock; both were previously flagged as needing "a live
+  Postgres migration" this sandbox was assumed to lack -- **that
+  assumption was re-checked this shift and found stale**: this sandbox
+  has root access and a directly-`apt`-installed (not Docker-pulled)
+  PostgreSQL 16 cluster already present, merely not running by default.
+  Started it (`pg_ctlcluster 16 main start`), created a real migration-
+  owner role, and confirmed FTF-04A07's own existing live-Postgres
+  integration suite passes end-to-end locally before claiming any new
+  work on this frontier -- the "no container-registry egress" finding
+  every prior shift correctly disclosed was never actually a "no local
+  Postgres" finding; those are two different constraints, and only the
+  first one is genuinely unavailable here. **FTF-04A17
+  (DiscoveredAgentCandidate schema/API)** was picked over its lock-mate
+  FTF-04A19 (larger, more field-heavy `AgentManifest` entity) as the more
+  bounded of the two; both dependencies (FTF-04A01, FTF-04A07) confirmed
+  `CERTIFIED` in `docs/spec-matrix.yaml` directly before relying on them.
+
+  Pulled the real contract (`tools/r1_handoff.py packet FTF-04A17`).
+  Implemented `apps/api/app/target_connectors/
+  discovered_agent_candidate_{schema,crud,routes}.py` and Alembic
+  migration `0014_discovered_agent_candidates.py`, reusing FTF-04A07's own
+  already-CERTIFIED `get_target_source_snapshot` directly for the
+  (connection_id, snapshot_id) parent-chain IDOR check (reuse-first,
+  Section 77.1) rather than re-deriving it. Full acceptance/
+  negative_acceptance mapping, own two fault injections (schema-level
+  confidence_score bound and CRUD-level cross-snapshot IDOR guard, both
+  demonstrated failing for real then reverted byte-identical), and the
+  real live-Postgres integration evidence (run locally end-to-end, not
+  simulated) are recorded in `docs/spec-matrix.yaml`'s own FTF-04A17 entry
+  and this shift's `docs/certifications/queue.md` submission.
+
+  `ruff check`/`ruff format --check`/`mypy` clean on every new file (a
+  pre-existing, unrelated repo-wide `ruff format`/`UP042` gap in files
+  this PR does not touch was left alone -- no scope creep). `validate_spec.py
+  --strict` clean (after `git fetch --unshallow`, this sandbox's own
+  pre-existing shallow-clone artifact). `product_truth_check.py
+  --fail-on-unwired` unchanged at `19/19` (no live caller yet -- no
+  FTF-04A08-16 source-analysis pipeline exists in this repository yet,
+  same disclosed "no live caller yet" precedent already established for
+  FTF-04A07/FTF-0506/FTF-0507). `status.py` unchanged at `63/300`
+  certified (PROVISIONAL, not yet certified). `verify_task.py --task
+  FTF-04A17 --stage task` reports `BLOCKED` pre-merge (expected, same
+  precedent as every sibling PROVISIONAL submission). Regression:
+  `test_ftf_04a07.py`/`test_ftf_04a01.py` clean.
+
+  Added this task's own CI gate step plus a new dedicated
+  `discovered-agent-candidate-integration` job (real `services: postgres`
+  container) to `.github/workflows/ci.yml`. `docs/spec-matrix.yaml`'s
+  FTF-04A17 entry set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up
+  commit once the real merge commit hash is known (same precedent as every
+  sibling PROVISIONAL submission).
+
+  **No blocking defect found. Submitted PROVISIONAL, not self-certified
+  (Law 4)** -- independent Control-plane L2 review and a real CI run on
+  the opened PR are needed before certification. Appended to
+  `docs/certifications/queue.md` for Control plane.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #253) — checked `docs/certifications/queue.md` for
   pending PROVISIONAL items per the certifier's standing duty; cross-checked

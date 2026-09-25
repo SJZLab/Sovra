@@ -14357,3 +14357,115 @@ a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved F
 
 - **Validated-by:** session https://claude.ai/code/session_01DfzHGRTG4C3bo11N4fu9N4
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-25 — FTF-04A17 — relay: implemented, submitted PROVISIONAL
+Scheduled autonomous relay shift (dynamic queue-check fire, not a PR webhook). STEP 0: `sha256sum
+CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `BLOCKER.md` read in full (no live blocker,
+both entries resolved history); `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh
+(all three exceed the file-read size limit in full, read via targeted offsets/`grep`).
+
+Checked live GitHub state before picking work (8 open PRs). PR #259 is a Control-plane review of
+PR #258 (FTF-1503) reporting a real `mypy` gate failure -- re-checked PR #258's own current head
+directly (`get_check_runs`) and found it already fixed by a commit already on that branch
+(`0fd8fc0`, predating PR #259's own review): the real current run (`36072347042`) is 29/29 green
+including `gate`. Left both untouched -- Control-plane's own re-review to make, not this relay's
+role. PR #257 (FTF-0508) is a separate open relay submission awaiting its own certifier. PRs
+#231/#195/#194 (FTF-0212/FTF-0304) remain other sessions' own open work.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (parsed with PyYAML,
+not grepped): 19 `NONE`/`ABSENT` tasks with every declared dependency already `CERTIFIED`.
+FTF-0212/FTF-0304/FTF-0508/FTF-1503 already claimed by the open PRs above. FTF-0214/FTF-0215/
+FTF-0408/FTF-0500A/FTF-0500D are UI/Temporal-workflow tasks outside a relay shift's practical
+reach. FTF-0302/FTF-0303 need real outbound network egress -- verified directly this shift with a
+real `curl` through this sandbox's egress proxy: `https://pypi.org` succeeds (`200`),
+`https://api.osv.dev` is rejected (`connect_rejected`, "organization policy") -- egress here is
+domain-gated, not uniformly absent, but neither Hugging Face nor S3 is on the allowed list.
+FTF-04A02 needs a real live OpenBao instance (confirmed: no `docker` daemon running in this sandbox
+-- `docker ps` fails, no socket). FTF-1201/FTF-H004 need a real reachable LiteLLM gateway/
+credential. FTF-1703 needs >=1000 real curated/reviewed traces. FTF-1506 likely needs a CVE/
+advisory feed in the same denied-egress class as `api.osv.dev` above -- flagged as risk, not
+claimed.
+
+FTF-04A17/FTF-04A19 share the `contracts:04A` lock and were previously flagged (correctly, at the
+time) as needing "a live Postgres migration" beyond this sandbox's reach. **That assumption was
+re-checked this shift and found stale:** this sandbox runs as `root` and already has PostgreSQL 16
+installed directly via `apt` (`pg_lsclusters` showed a real, present-but-stopped `16/main`
+cluster) -- a materially different constraint from "no container-registry egress for a Docker
+Postgres image" (still true, confirmed again this shift). Started the real local cluster
+(`pg_ctlcluster 16 main start`), created a real Postgres superuser role to serve as the migration
+owner, and -- before claiming any new work on this frontier -- ran FTF-04A07's own existing,
+already-CERTIFIED live-Postgres integration suite
+(`tests/integration/test_ftf_04a07_target_source_snapshot.py`) against it end-to-end: real
+`alembic upgrade head`, real create/get/list, real cross-tenant/cross-connection IDOR denial, real
+CHECK-constraint/self-referencing-FK defense-in-depth proofs, real SELECT/INSERT-only grant-surface
+proof -- all passed for real, confirming the local cluster genuinely supports this class of
+evidence.
+
+Picked **FTF-04A17** ("DiscoveredAgentCandidate schema/API") over its lock-mate FTF-04A19 (a
+larger, more field-heavy `AgentManifest` entity) as the more bounded of the two now-genuinely-
+dependency-ready items. Both dependencies (FTF-04A01, FTF-04A07) confirmed `CERTIFIED` in
+`docs/spec-matrix.yaml` directly before relying on them.
+
+**PEV, not mixed:**
+- **P:** read Section 6.8C's own literal field list and Section 7A.4 (the future, not-yet-built
+  source-analysis pipeline this task's own records will eventually come from) plus FTF-04A07's own
+  real schema/crud/routes/migration modules and integration suite in full before writing any code.
+  Pulled the real contract (`tools/r1_handoff.py packet FTF-04A17`).
+- **E:** implemented `apps/api/app/target_connectors/
+  discovered_agent_candidate_{schema,crud,routes}.py` and Alembic migration
+  `0014_discovered_agent_candidates.py`. `discovered_agent_candidate_crud.py` reuses FTF-04A07's
+  own already-CERTIFIED `get_target_source_snapshot` directly for the (connection_id, snapshot_id)
+  parent-chain IDOR proof (reuse-first, Section 77.1) rather than re-deriving it, and adds a real
+  limit/offset-paginated list (`Page` dataclass with a real total count) -- this task's own real
+  "expose paginated project-scoped API" acceptance half. `confidence_score` is bounded `[0.0, 1.0]`
+  via a real database CHECK, never used anywhere in this chain to sort/filter/select a candidate
+  (negative_acceptance: "not calibrated probability or automatic in-scope selection").
+  `discovery_status` is a closed *one*-value Release-1 set (`'candidate'`, the same "single legal
+  value now" precedent FTF-04A07's own `analysis_status` established) with no PATCH/edit route
+  anywhere in this chain -- FTF-04A18 (candidate-selection UI, "no auto-selection") is a separate,
+  not-yet-built later task. `candidate_key` is unique per snapshot via a real composite UNIQUE
+  constraint, this task's own real deduplication identity. `tests/tasks/test_ftf_04a17.py` (34
+  no-DB test functions) and `tests/integration/test_ftf_04a17_discovered_agent_candidate.py`
+  written alongside; both ran genuinely FAILING against deliberately faulted copies before being
+  confirmed passing against the real, unmodified implementation (see fault injection below).
+- **V:** `product_truth_check.py --fail-on-unwired` confirmed 19/19 unchanged (no live caller yet
+  -- no FTF-04A08-16 source-analysis pipeline exists in this repository to call
+  `create_discovered_agent_candidate`, same disclosed precedent as FTF-04A07/FTF-0506/FTF-0507);
+  `verify_task.py --task FTF-04A17 --stage task` reports BLOCKED pre-merge (expected). Opened the
+  PR, appended this entry.
+
+**Own fault injection (Law 1), two distinct vectors, both reverted byte-identical, suite
+re-confirmed clean immediately after each:** (1) disabled the `confidence_score` range check in
+the schema module (`if False and not (0.0 <= score <= 1.0)`) -- run against the no-DB suite in a
+fresh process, 3 genuine `FAIL [FTF-04A17]` lines. (2) disabled the cross-snapshot ownership check
+in the CRUD module's own `_fetch_or_raise` (`if False and row.target_source_snapshot_id !=
+snapshot_id`) -- run against the real live-Postgres integration suite, 1 genuine `FAIL
+[FTF-04A17]` line: a real candidate belonging to one snapshot became visible under a sibling
+snapshot's own item path, the exact cross-snapshot IDOR case this task's negative_acceptance
+requires refused. Both reverted; `diff` against the pre-fault copy confirmed byte-identical; both
+suites re-ran clean immediately after each revert.
+
+`ruff check`/`ruff format --check`/`mypy` clean on all four new files. A pre-existing, unrelated
+repo-wide `ruff format`/`UP042` gap in files this PR does not touch was left alone -- confirmed via
+`git status` that zero files outside this task's own new files were modified, no scope creep.
+`validate_spec.py --strict` clean after `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact, same class of gap already on record for prior shifts). `status.py`
+unchanged at 63/300 certified.
+
+Real live-Postgres integration evidence was produced locally against the directly-`apt`-installed
+PostgreSQL 16 cluster (not a Docker container -- this sandbox has no container-registry egress, but
+does have `apt`-installed Postgres and root), and is wired into CI's own new dedicated
+`discovered-agent-candidate-integration` job (a GitHub Actions `services: postgres` container, real
+registry egress on the hosted runner), mirroring `target-source-snapshot-integration`'s own
+convention exactly.
+
+`docs/spec-matrix.yaml` FTF-04A17 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the real merge
+commit hash is known, same precedent as every sibling PROVISIONAL submission.
+
+**Not self-certified (Law 4).** Independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+- **Submitted-by:** this relay session (producer -- independent Control-plane L2 certification
+  still required, Law 4; PR number/branch to be recorded as a follow-up tracking commit once the PR
+  is opened).

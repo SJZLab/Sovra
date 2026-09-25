@@ -2737,15 +2737,75 @@ FTF-04A16:
   proving_symbol: ''
   proving_test: ''
 FTF-04A17:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: DiscoveredAgentCandidate schema/API
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A07
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A07 (both CERTIFIED, confirmed before relying on them). Path refined from the task
+    packet's own generic `packages/target-connectors/discoveredagentcandidate_schema_api.py`
+    to `apps/api/app/target_connectors/discovered_agent_candidate_schema.py`, matching
+    FTF-04A01/FTF-04A07's own real layout precedent exactly.
+    Built for real: `discovered_agent_candidates` (Section 6.8C's own literal field list plus
+    the same `organization_id` denormalization precedent FTF-04A07 established) is snapshot-
+    scoped via a real composite FK to `target_source_snapshots`, reusing FTF-04A07's own
+    `get_target_source_snapshot` directly for the (connection_id, snapshot_id) parent-chain
+    IDOR check (reuse-first, Section 77.1) rather than re-deriving it. This task's own
+    acceptance clause 1 ("Store every candidate with traceable evidence and unresolved
+    fields; expose paginated project-scoped API") is met by: the seven `*_evidence_json`
+    columns each independently nullable (an honestly-unresolved evidence category is `null`,
+    never a fabricated payload, per Section 7A.4's own closing sentence); and a real
+    limit/offset-paginated list endpoint returning `{items, limit, offset, total}`, proven
+    against two real rows on the same snapshot in the live-Postgres suite.
+    negative_acceptance ("Candidate priority/confidence is not calibrated probability or
+    automatic in-scope selection") is met two ways, both disclosed in the schema module's own
+    docstring: `confidence_score` is a bounded `[0.0, 1.0]` real database CHECK, never used by
+    any code here to sort/filter/auto-select a candidate; `discovery_status` is a closed
+    *one*-value Release-1 set (`'candidate'`, the same "single legal value now" precedent
+    FTF-04A07's own `analysis_status` established) with no PATCH/edit route anywhere in this
+    chain -- FTF-04A18 (candidate-selection UI, "no auto-selection") is a separate,
+    not-yet-built later task, and this module provides no transition to any confirmed/selected
+    state. `candidate_key` is this task's own real deduplication identity, unique per snapshot
+    via a real composite UNIQUE constraint -- a second analysis run cannot silently create a
+    duplicate row for the same already-discovered entity (proven both at the application layer,
+    409, and via a raw-INSERT defense-in-depth proof against the real constraint).
+    Tests: `tests/tasks/test_ftf_04a17.py` (34 no-DB test functions: field validators, structural
+    construction guards, real-router RBAC-boundary denial never opening a session, and
+    composition-not-duplication checks) plus
+    `tests/integration/test_ftf_04a17_discovered_agent_candidate.py` (real Postgres: two real
+    organizations, create/get/list(paginated), the organization_admin-only RBAC boundary, the
+    cross-tenant IDOR case, cross-snapshot reassignment refused identically to missing,
+    duplicate-candidate_key refused 409 while the same key on a different snapshot succeeds,
+    an out-of-range confidence_score refused 400, and sovra_app's own SELECT/INSERT-only grant
+    -- neither UPDATE nor DELETE succeeds against a real row).
+    Own fault injection (Law 1, two distinct vectors, both demonstrated live this shift and
+    reverted byte-identical, suite re-confirmed clean immediately after each): (1) disabled the
+    `confidence_score` range check in the schema module (`if False and not (0.0 <= score <=
+    1.0)`) -- run in a fresh process against the no-DB suite, 3 genuine FAIL lines. (2) disabled
+    the cross-snapshot ownership check in the CRUD module's own `_fetch_or_raise` (`if False and
+    row.target_source_snapshot_id != snapshot_id`) -- run against the real live-Postgres
+    integration suite, the cross-snapshot negative_acceptance check failed for real (1 genuine
+    FAIL line, a real candidate belonging to one snapshot became visible under a sibling
+    snapshot's own path). Both reverted; `diff` against the pre-fault copy confirmed
+    byte-identical; both suites re-ran clean immediately after.
+    `ruff check`/`ruff format --check`/`mypy` clean on every new file. `validate_spec.py --strict`
+    clean (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone
+    artifact). A real, directly-installed local PostgreSQL 16 cluster (not a Docker container --
+    this sandbox has no container-registry egress, but does have `apt`-installed Postgres and
+    root) ran the real forward+reverse Alembic migration and the full live-Postgres integration
+    suite locally, matching every prior integration-tested task's own local-cluster precedent;
+    wired into CI's own new `discovered-agent-candidate-integration` job (a GitHub Actions
+    `services: postgres` container, real registry egress on the hosted runner).
+    `product_truth_check.py --fail-on-unwired` unchanged -- no live caller yet (no FTF-04A08-16
+    source-analysis pipeline exists in this repository yet to call
+    `create_discovered_agent_candidate`), same disclosed "no live caller yet" precedent already
+    established for FTF-04A07/FTF-0506/FTF-0507. `status.py` unchanged at implementation time
+    (PROVISIONAL, not yet certified).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
   certification_state: NONE
   criticality: MUST

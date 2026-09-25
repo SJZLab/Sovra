@@ -17207,3 +17207,148 @@ FTF-04A17/04A19 (share the `contracts:04A` lock, need a live Postgres migration)
 FTF-1201/FTF-H004 (need a real reachable LiteLLM gateway/credential), FTF-1503, FTF-1506 (dependency
 scanning — likely needs a CVE/advisory feed reachable only via network egress, verify before
 claiming), and FTF-1703 (needs >=1000 real curated/reviewed traces, a data-curation task).
+
+## 2026-09-25T[relay] — Relay: FTF-04A17 (DiscoveredAgentCandidate schema/API), submitted PROVISIONAL
+Scheduled autonomous relay shift (dynamic queue-check fire, not a PR webhook — no certifier
+standing this shift). STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`;
+`BLOCKER.md` read in full — no live blocker, both entries resolved history; `PROGRESS.md`/
+`QUEUE.md`/`docs/certifications/queue.md` read fresh via targeted `offset`/`grep` (all three now
+exceed the file-read size limit in full).
+
+Checked live GitHub state before picking work (8 open PRs). #259 is a Control-plane review of PR
+#258 (FTF-1503) reporting a real `mypy` gate failure on an earlier CI run — re-checked PR #258's
+own current head directly (`get_check_runs`) and found it already fixed: a commit already on that
+branch (`0fd8fc0`, pushed before PR #259's own review) fixed the repo-wide `mypy` errors, and the
+real current run (`36072347042`) is 29/29 green including `gate`. PR #259's own finding is stale
+relative to the branch's current head — left both PRs untouched, this is Control-plane's own
+re-review to make, not this relay's role. PR #257 (FTF-0508) is a separate open relay submission
+awaiting its own certifier. PRs #231/#195/#194 (FTF-0212/FTF-0304) remain other sessions' own open
+work — left untouched.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (19 `NONE`/`ABSENT`
+tasks with every declared dependency already `CERTIFIED`, parsed with PyYAML directly): confirmed
+FTF-0212/FTF-0304/FTF-0508/FTF-1503 already claimed by the open PRs above; FTF-0214/FTF-0215/
+FTF-0408/FTF-0500A/FTF-0500D are UI/Temporal-workflow tasks outside a relay shift's practical
+reach; FTF-0302/FTF-0303 (Hugging Face/S3 artifact resolvers) need real outbound network egress —
+verified directly this shift with a real `curl`: `https://pypi.org` succeeds through this
+sandbox's egress proxy (`200`), `https://api.osv.dev` is rejected by the proxy (`connect_rejected`,
+"organization policy") — egress here is domain-gated, not uniformly absent, but neither of those
+two domains is on the allowed list. FTF-04A02 needs a real live OpenBao instance (confirmed: no
+`docker` daemon running in this sandbox — `docker ps` fails with "no such file or directory" for
+the socket). FTF-1201/FTF-H004 need a real reachable LiteLLM gateway/credential. FTF-1703 needs
+>=1000 real curated/reviewed traces (a data-curation task). FTF-1506 (dependency scanning) likely
+needs a CVE/advisory feed — the same egress class as `api.osv.dev` above, flagged as risk, not
+claimed.
+
+FTF-04A17/FTF-04A19 share the `contracts:04A` lock and were both previously flagged (by this task's
+own prior shifts, correctly, at the time) as needing "a live Postgres migration" beyond this
+sandbox's reach. **That assumption was re-checked this shift and found stale, not re-derived from
+scratch**: this sandbox runs as `root` and already has PostgreSQL 16 installed directly via `apt`
+(`pg_lsclusters` showed a real, present-but-stopped `16/main` cluster) — a materially different
+constraint from "no container-registry egress for a Docker Postgres image," which every prior
+integration-tested task in this chain correctly disclosed and which remains true (confirmed this
+shift too: `docker` has no running daemon at all here). Started the real local cluster
+(`pg_ctlcluster 16 main start`), created a real Postgres superuser role to serve as the migration
+owner (matching this repo's own established `sovra_migrate` convention), and — before claiming any
+new work on this frontier — ran FTF-04A07's own existing, already-CERTIFIED live-Postgres
+integration suite (`tests/integration/test_ftf_04a07_target_source_snapshot.py`) against it
+end-to-end: real `alembic upgrade head`, real create/get/list, real cross-tenant/cross-connection
+IDOR denial, real CHECK-constraint and self-referencing-FK defense-in-depth proofs, real
+SELECT/INSERT-only grant-surface proof — all passed for real, confirming the local cluster
+genuinely supports this class of evidence before relying on it for new work.
+
+**FTF-04A17 (DiscoveredAgentCandidate schema/API)** was picked over its lock-mate FTF-04A19 (a
+larger, more field-heavy `AgentManifest` entity) as the more bounded of the two now-genuinely-
+dependency-ready items; both dependencies (FTF-04A01, FTF-04A07) confirmed `CERTIFIED` in
+`docs/spec-matrix.yaml` directly before relying on them.
+
+Pulled the real contract (`tools/r1_handoff.py packet FTF-04A17`). Read Section 6.8C's own literal
+field list and FTF-04A07's own real schema/crud/routes/migration modules and integration suite in
+full before writing any code (PEV "P" phase). Implemented `apps/api/app/target_connectors/
+discovered_agent_candidate_schema.py` (the `discovered_agent_candidates` domain model: Section
+6.8C's own field list plus the same `organization_id` denormalization precedent FTF-04A07
+established; the seven `*_evidence_json` columns each independently nullable per Section 7A.4's own
+"unresolved fields" rule; `confidence_score` bounded `[0.0, 1.0]` via a real database CHECK, never
+used anywhere in this chain to sort/filter/select a candidate; `discovery_status` a closed
+*one*-value Release-1 set `('candidate',)`, the same "single legal value now" precedent FTF-04A07's
+own `analysis_status` established, since FTF-04A18's own candidate-selection UI is a separate,
+not-yet-built later task and this module provides no transition path at all; `candidate_key` unique
+per snapshot via a real composite UNIQUE constraint, this task's own real deduplication identity).
+`discovered_agent_candidate_crud.py` reuses FTF-04A07's own already-CERTIFIED
+`get_target_source_snapshot` directly for the (connection_id, snapshot_id) parent-chain IDOR proof
+(reuse-first, Section 77.1, the same precedent FTF-0507 already established for a sibling
+already-CERTIFIED module) rather than re-deriving it, and adds a real limit/offset-paginated list
+(`Page` dataclass with a real total count) — this task's own real "expose paginated project-scoped
+API" acceptance half, which FTF-04A07's own plain (unpaginated) list did not need. Alembic migration
+`0014_discovered_agent_candidates.py` FORCEs row-level security and grants `sovra_app`
+SELECT/INSERT only — the same immutability discipline FTF-04A07's own `target_source_snapshots`
+migration established (a discovered candidate is a fact about what a real analysis run found, never
+mutated after being recorded).
+
+Wrote `tests/tasks/test_ftf_04a17.py` (34 no-DB test functions: field validators, structural
+`__init__` consistency guards, the real locally-hosted router denying an unauthenticated request
+and an evaluator role before any session opens, and composition-not-duplication checks against
+FTF-04A07's own reused primitive) and
+`tests/integration/test_ftf_04a17_discovered_agent_candidate.py` (real Postgres: two real
+organizations, org1 with two real snapshots — proving cross-snapshot reassignment is refused
+identically to missing within the same organization, the same cross-parent-IDOR pattern FTF-04A07's
+own suite established one level up), org2 with one (the cross-tenant IDOR case); real create/get/
+list(paginated) against real rows; a real duplicate-`candidate_key`-on-the-same-snapshot refusal
+(409) alongside the same key on a genuinely different snapshot succeeding; a real out-of-range
+`confidence_score` refusal (400); a raw-INSERT defense-in-depth proof against both the real
+composite UNIQUE constraint and the real confidence_score CHECK constraint; and a real
+grant-surface proof that `sovra_app` can neither UPDATE nor DELETE a row directly.
+
+**Own fault injection (Law 1), two distinct vectors, both demonstrated live this shift and reverted
+byte-identical, suite re-confirmed clean immediately after each:** (1) disabled the
+`confidence_score` range check in the schema module (`if False and not (0.0 <= score <= 1.0)`) —
+run against the no-DB suite in a fresh process, 3 genuine `FAIL [FTF-04A17]` lines (the two boundary
+tests plus the construction-rejects-out-of-range-score test). (2) disabled the cross-snapshot
+ownership check in the CRUD module's own `_fetch_or_raise` (`if False and
+row.target_source_snapshot_id != snapshot_id`) — run against the real live-Postgres integration
+suite, 1 genuine `FAIL [FTF-04A17]` line: a real candidate belonging to snapshot1 became visible
+under snapshot1b's own item path, the exact cross-snapshot IDOR case this task's negative_acceptance
+requires refused. Both reverted (`diff` against the pre-fault copy confirmed byte-identical); both
+suites re-ran clean immediately after each revert.
+
+`ruff check`/`ruff format --check`/`uv run mypy` clean on all four new files (schema/crud/routes/
+migration) — a pre-existing, unrelated repo-wide `ruff format`/`UP042` gap in files this PR does not
+touch (confirmed via `git status`: zero files outside this task's own new files were modified) was
+left alone, no scope creep. `validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py --fail-on-unwired`
+unchanged at `19/19` — no live caller yet, no FTF-04A08-16 source-analysis pipeline exists in this
+repository yet to call `create_discovered_agent_candidate`, same disclosed "no live caller yet"
+precedent already established for FTF-04A07/FTF-0506/FTF-0507. `status.py` unchanged at `63/300`
+certified (PROVISIONAL, not yet certified). `verify_task.py --task FTF-04A17 --stage task` reports
+`BLOCKED` pre-merge (expected, same precedent as every sibling PROVISIONAL submission). Regression:
+`test_ftf_04a07.py`/`test_ftf_04a01.py` (the closest sibling suites) both clean.
+
+Added this task's own CI gate step (no-DB suite) plus a new dedicated
+`discovered-agent-candidate-integration` job (a real `services: postgres` container, mirroring
+`target-source-snapshot-integration`'s own convention exactly) to `.github/workflows/ci.yml`.
+`docs/spec-matrix.yaml`'s FTF-04A17 entry set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the real merge
+commit hash is known (same precedent as every sibling PROVISIONAL submission).
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are needed before certification.
+Appended to `docs/certifications/queue.md` for Control plane.
+
+## Next shift
+FTF-04A17's own PR (opened this shift — see this file's own top entry and `QUEUE.md` for the exact
+PR number once recorded) is open, awaiting CI plus an independent Control-plane L2 certifier shift
+— do not re-implement. FTF-04A19 (AgentManifest schema/versioning/hash) shares the `contracts:04A`
+lock with FTF-04A17 and is now the next candidate on that same lock once FTF-04A17 either merges or
+is confirmed not to be holding it — this shift's own discovery that a real local Postgres cluster is
+available in this sandbox (see above) directly unblocks it, the same way it unblocked FTF-04A17;
+re-verify FTF-04A17's own state (merged/still open) before claiming FTF-04A19, since the lock is
+shared. PRs #257 (FTF-0508) and #258 (FTF-1503, CI-green per this shift's own re-check) remain open
+from before, awaiting Control-plane certification — do not re-implement. PR #259 (Control-plane's
+own FTF-1503 review) reports a now-stale finding relative to PR #258's current head; a future
+Control-plane shift should re-run CI on PR #258's actual current head rather than trusting PR #259's
+own recorded run. FTF-0214/0215/0408/0500A/0500D (UI/Temporal-workflow) and FTF-04A02 (needs a real
+OpenBao secret backend) remain outside this relay sandbox's practical reach. FTF-0302/0303 and
+FTF-1506 need network egress this sandbox's proxy denies for their specific required domains
+(confirmed directly this shift, see above) — worth re-verifying per-domain rather than assuming all
+egress is blocked. FTF-1201/FTF-H004 need a real reachable LiteLLM gateway/credential. FTF-1703
+needs >=1000 real curated/reviewed traces.
