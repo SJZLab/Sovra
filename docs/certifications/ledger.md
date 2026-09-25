@@ -7760,3 +7760,83 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0408 — Requirements UI
+- Criterion ID: FTF-0408
+- PR: https://github.com/SJZLab/Sovra/pull/293 (`claude/wizardly-fermat-q17awc` -> `main`)
+- Merge commit (evidence): 37fe4f5ca16b85af1e6be76db5f007362e21d3e7
+- Implementation commits: `d10cb330a76be5741f8837137bd283cdf5c1be9b` (implementation),
+  `3bdaaee68086bb7001f809a099d69dde8007615b` (tracking), `0ec44fd700caf671fb1de0907c3735638ae007a6`
+  (producer's own real CI-fix), all producer session `session_01D3A3ntGTKw67NgNVKiWrtd`.
+- Session-ID check: producer session does not overlap this reviewing session
+  (`session_01S4BGserdHm3v3aNDwen6J4`) -- independent (Law 4).
+- Triggered by the `pull_request.opened` webhook for PR #293. `docs/certifications/queue.md`
+  had exactly one PROVISIONAL item at shift start (FTF-0408 itself); no other pending item found.
+- Diff read directly against the PR's merge base (`22fa4d6`):
+  `apps/web/components/project-mandate/requirements_ui.tsx` (new, 357 lines),
+  `apps/web/tests/ftf_0408.spec.ts` (new, 8 tests), `docs/spec-matrix.yaml`, and tracking-doc
+  updates -- matches the PR's own claimed scope exactly, no scope creep.
+- **Real CI failure found, then found already fixed by the producer's own session:** the PR's
+  original head (`d10cb33`/`3bdaaee`) shipped a `docs/spec-matrix.yaml` `notes` field containing
+  three unquoted `"word: "` sequences inside a plain (unquoted) multi-line YAML scalar -- a bare
+  colon-space mid-scalar is invalid per the YAML spec (parsed as the start of a new mapping key).
+  Independently reproduced via a direct `yaml.safe_load` against the real GitHub blob content at
+  that exact head (`ScannerError: mapping values are not allowed here`, line 2366/2367) -- not a
+  local worktree artifact. This broke `scripts/product_truth_check.py` and `scripts/status.py`
+  outright (both crash before printing a number) and failed `tests/tasks/test_ftf_h034.py` in
+  real CI (run `36177340210`, first attempt). By the time this review checked the PR's current
+  state, the producer's own session had already found and fixed the identical failure via that
+  same real CI signal, in commit `0ec44fd` ("Fix CI: FTF-0408 spec-matrix notes broke YAML
+  parsing") -- a minimal, disclosed fix (the three `"word: "` sequences reworded to this repo's
+  own `"word --"` aside convention), verified to touch nothing else via direct diff.
+- **Own re-verification of the final head (`0ec44fd`), not the producer's fix claims alone,** in
+  an isolated git worktree: `yaml.safe_load` clean (300 top-level keys). `pnpm install
+  --frozen-lockfile`; `pnpm exec vitest run` from the workspace root -- 27/27 clean across 6 files
+  (`apps/web`'s `ftf_0101`/`ftf_0401`/`ftf_1301`/`ftf_0408` + `src/index.test.ts` +
+  `packages/shared`'s own `index.test.ts`). `pnpm run typecheck`/`lint`/`format:check` clean.
+  `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+  repo-wide (256 files, no Python file touched by this task). `python3 scripts/validate_spec.py
+  --strict` clean. `product_truth_check.py --fail-on-unwired`: `20/20` (this task's
+  `proving_symbol` is genuinely blank -- it introduces no new backend dispatcher, composing only
+  already-wired FTF-0407/FTF-0403 routes, a legitimate disclosed case, not a fake 0/0 pass).
+  `status.py`: `72/300` certified pre-certification (Law 2, confirmed not self-inflated).
+  `tests/tasks/test_ftf_h034.py` re-run directly: all checks passed (the exact test CI had
+  reported failing pre-fix). Regression swept `test_ftf_0401.py`/`test_ftf_0403.py`/
+  `test_ftf_0407.py` -- zero regressions.
+- Own fault injection (Law 1), a vector distinct from the producer's own two disclosed ones
+  (hardcoding the conflict flag to `false`; leaking `currency` into the PATCH revise body):
+  swapped `organizationId`/`projectId` inside `requirementsUrl` -- a genuine FAIL on the "URL
+  helpers point at the real FTF-0407/FTF-0403 API contracts" assertion (this would have hit the
+  wrong project's requirements endpoint against the real backend). Reverted from an untouched
+  backup; `diff` confirmed byte-identical; re-ran clean.
+- Task contract re-pulled via `tools/r1_handoff.py packet FTF-0408 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `negative_acceptance` ("No auto approval or irreversible
+  overwrite; show observed/desired/enforced conflicts and preserve saved draft") verified
+  genuinely met -- the conflict badge is real and derived from live FTF-0407 data, never silently
+  resolved, and a real 409 concurrency conflict preserves the user's own draft rather than
+  reverting it (both proven by the delivered tests plus this review's own fault injection).
+  `acceptance` clause 1 ("mandate/scope/languages/outputs/SLO ... explicit lock") is only
+  partially met by design: the scope/version-preview half is real and live (budget-policy scopes
+  with a genuine `expected_row_version` optimistic-concurrency check); the
+  mandate/languages/outputs/SLO/lock half is disclosed out of scope, independently confirmed
+  accurate by direct repository inspection -- no `AgentManifest`/`mandate_json`/
+  `forbidden_actions_json` real storage exists anywhere in this repository (only docstring
+  mentions, no ORM model), matching this repository's own established disclosed-scope-reduction
+  precedent (FTF-04A08/FTF-0509/FTF-0511/FTF-0512/FTF-0514) rather than a hidden gap.
+  Dependencies FTF-0401/FTF-0402/FTF-0403/FTF-0407 reconfirmed genuinely `CERTIFIED`/
+  `L2-CERTIFIED` in `docs/spec-matrix.yaml` before relying on their contracts.
+- Real CI confirmed on the actual final head (`0ec44fd`, run `36177340210`), fetched directly via
+  `pull_request_read get_check_runs` rather than trusting a summary: 31/31 checks green, `gate`
+  included (job `108211033627`, completed `2026-09-25T19:08:14Z`). `mergeable_state: clean`; no
+  open reviews or comments (`get_reviews`/`get_comments` both empty).
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0408 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` for FTF-0408). `scripts/status.py`: `72/300` -> `73/300`
+  certified; product-true unchanged at `20/20` (no live caller added by this certification,
+  disclosed).
+- Validated-by: session https://claude.ai/code/session_01S4BGserdHm3v3aNDwen6J4
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.

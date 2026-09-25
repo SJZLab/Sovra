@@ -1,4 +1,96 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-0408 — Control plane: CERTIFIED (PR #293 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #293, session
+`https://claude.ai/code/session_01S4BGserdHm3v3aNDwen6J4`. Entire task per this certifier's
+standing prompt: checked `docs/certifications/queue.md` for every `PROVISIONAL` item — exactly
+one pending (FTF-0408, PR #293), confirmed by a direct `certification_state: PROVISIONAL` grep
+against `docs/spec-matrix.yaml` (only match repo-wide).
+
+Session-ID check: all three of PR #293's commits (`d10cb33`/`3bdaaee`/`0ec44fd`) carry producer
+session `session_01D3A3ntGTKw67NgNVKiWrtd` — no overlap with this reviewing session. Independent,
+Law 4.
+
+Diff read directly against the PR's merge base (`22fa4d6`):
+`apps/web/components/project-mandate/requirements_ui.tsx` (new, 357 lines, `RequirementsPanel`),
+`apps/web/tests/ftf_0408.spec.ts` (new, 342 lines, 8 real Vitest/RTL component tests),
+`docs/spec-matrix.yaml`, and tracking-doc updates — matches the PR's own claimed scope exactly,
+no scope creep.
+
+**Real CI failure found, then found already fixed by the producer's own session, not hidden:**
+the PR's original head (`d10cb33`/`3bdaaee`) shipped a `docs/spec-matrix.yaml` `notes` field
+containing three unquoted `"word: "` sequences inside a plain (unquoted) multi-line YAML scalar
+-- invalid per the YAML spec, since a bare colon-space mid-scalar is parsed as the start of a new
+mapping key. Independently reproduced this myself, not trusting a summary: a direct
+`yaml.safe_load` against the real GitHub blob content fetched at that exact head raised
+`ScannerError: mapping values are not allowed here` (line 2366/2367) -- confirmed this was the
+real PR content, not a local worktree artifact, by comparing against `git show` of the same
+commit. This genuinely broke `scripts/product_truth_check.py` and `scripts/status.py` outright
+(both crash before printing any number -- neither could have produced the "20/20"/"72/300"
+figures the PR body claimed for that head) and failed `tests/tasks/test_ftf_h034.py` for real in
+CI (run `36177340210`, first attempt, before I had watched it complete). By the time I re-checked
+the PR's current state, the producer's own session (`session_01D3A3ntGTKw67NgNVKiWrtd`), still
+watching its own PR, had already found and fixed the identical failure via that same real CI
+signal -- commit `0ec44fd` ("Fix CI: FTF-0408 spec-matrix notes broke YAML parsing"), a minimal,
+disclosed fix (the three `"word: "` sequences reworded to this repo's own `"word --"` aside
+convention), verified byte-for-byte to touch nothing else.
+
+**Own re-verification of the final head (`0ec44fd`), not the producer's fix claims alone,** in an
+isolated git worktree: `yaml.safe_load` on `docs/spec-matrix.yaml` clean (300 top-level keys).
+`pnpm install --frozen-lockfile`; `pnpm exec vitest run` from the workspace root -- 27/27 clean
+across all 6 test files (`apps/web`'s `ftf_0101`/`ftf_0401`/`ftf_1301`/`ftf_0408` +
+`src/index.test.ts` + `packages/shared`'s own `index.test.ts` -- my first run scoped to
+`apps/web` alone only found 26/5, which is what led me to check the workspace root run and match
+the PR's own claimed count exactly). `pnpm run typecheck`/`lint`/`format:check` clean. `uv sync
+--all-packages`; `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (256
+files, no Python file touched by this task). `python3 scripts/validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired`: `20/20` (this task's `proving_symbol` is genuinely
+blank -- it introduces no new backend dispatcher, composing only already-wired FTF-0407/FTF-0403
+routes, a legitimate disclosed case, not a fake 0/0 pass). `status.py`: `72/300` certified
+pre-certification (Law 2, confirmed not self-inflated). `tests/tasks/test_ftf_h034.py` re-run
+directly: all checks passed (the exact test CI had reported failing pre-fix). Regression swept
+`test_ftf_0401.py`/`test_ftf_0403.py`/`test_ftf_0407.py` -- zero regressions.
+
+Own fault injection, a vector distinct from the producer's own two disclosed ones (hardcoding the
+conflict flag to `false`; leaking `currency` into the PATCH revise body): swapped
+`organizationId`/`projectId` inside `requirementsUrl` -- a genuine FAIL on the "URL helpers point
+at the real FTF-0407/FTF-0403 API contracts" assertion (this would have hit the wrong project's
+requirements endpoint against the real backend in production). Reverted from an untouched backup;
+`diff` confirmed byte-identical; re-ran clean.
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0408 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `negative_acceptance` ("No auto approval or irreversible
+overwrite; show observed/desired/enforced conflicts and preserve saved draft") verified genuinely
+met -- the conflict badge is real and derived from live FTF-0407 data, never silently resolved,
+and a real 409 concurrency conflict preserves the user's own draft rather than reverting it (both
+proven by the delivered tests plus my own fault injection). `acceptance` clause 1
+("mandate/scope/languages/outputs/SLO ... explicit lock") is only partially met by design: the
+scope/version-preview half is real and live (budget-policy scopes with a genuine
+`expected_row_version` optimistic-concurrency check); the mandate/languages/outputs/SLO/lock half
+is disclosed out of scope, and I independently confirmed that's accurate by direct repository
+inspection -- no `AgentManifest`/`mandate_json`/`forbidden_actions_json` real storage exists
+anywhere in this repository (grep finds only docstring mentions, no ORM model), matching this
+repository's own established disclosed-scope-reduction precedent (FTF-04A08/FTF-0509/FTF-0511/
+FTF-0512/FTF-0514) rather than a hidden gap. Dependencies FTF-0401/FTF-0402/FTF-0403/FTF-0407
+reconfirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in `docs/spec-matrix.yaml` before relying on
+their contracts.
+
+Real CI confirmed on the actual final head (`0ec44fd`, run `36177340210`), fetched directly via
+the GitHub check-runs API rather than trusting a summary: 31/31 checks green, `gate` included
+(job `108211033627`, completed `2026-09-25T19:08:14Z`). `mergeable_state: clean`; no open reviews
+or comments.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #293 (merge commit
+`37fe4f5ca16b85af1e6be76db5f007362e21d3e7`). `docs/spec-matrix.yaml`'s FTF-0408 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json` for FTF-0408). `scripts/status.py`: `72/300` -> `73/300`
+certified; product-true unchanged at `20/20` (no live caller added by this certification,
+disclosed). Appended a matching entry to `docs/certifications/ledger.md`; moved FTF-0408 out of
+"## Provisional" into "## Done" in `QUEUE.md`. No other task work, design decisions, or queue
+reprioritization performed beyond what this certification naturally required (Law 4). No open
+owner ask.
+
 ## 2026-09-25 — FTF-0509 — Control plane: CERTIFIED (PR #288 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #290, session
