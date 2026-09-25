@@ -17755,3 +17755,52 @@ scope creep, no other task's files touched.
 `[relay] FTF-0511: Exact duplicate detector`. Appended to `docs/certifications/queue.md` for
 Control plane. No open owner ask. No other task work, design decisions, or queue
 reprioritization performed this shift beyond the disclosed PR hygiene sweep above.
+
+## 2026-09-25 — Control plane certifier shift: FTF-0511 (PR #282) independently reviewed, CERTIFIED
+
+Triggered by the `pull_request.opened` webhook for PR #282 (the relay shift immediately above).
+Session-ID check clean: the PR's single commit (`5f2ee31ee698b035443e7811ed4de55ec305acd8`)
+carries `session_019bmUswhdEXyBFy5F9JxppB`, no overlap with this reviewing session
+(`session_01PC5xR1bubjGorKuwzrtYXa`).
+
+Diff read directly: `workers/data/exact_duplicate_detector.py` (new), `tests/tasks/
+test_ftf_0511.py` (new, 20 no-DB tests), a 2-line `.github/workflows/ci.yml` gate-job wiring
+addition, `docs/spec-matrix.yaml`/task-packet/tracking-doc updates — matched the PR's own
+claims exactly, no other production file touched. Ran `tests/tasks/test_ftf_0511.py` locally:
+20/20 pass. Own fault injection, reproduced independently rather than trusting the producer's
+self-report: forced `DuplicateGroup.is_blocking` to unconditionally `return False` — 2 genuine
+`FAIL` lines (the cross-purpose-raw-blocking and normalized-always-blocking checks), matching
+the PR's own disclosed before-fix failure; reverted from a pre-edit backup, `git status --short`
+confirmed clean, suite re-ran clean. `validate_spec.py --strict` clean after `git fetch
+--unshallow` (this sandbox's own pre-existing shallow-clone artifact — the pre-unshallow run
+showed 32 stale-commit defects across unrelated tasks, confirming the artifact rather than
+assuming it). `product_truth_check.py --fail-on-unwired` confirmed legitimately `20/20`
+unchanged — this task's `proving_symbol` is blank (no dataset-import pipeline route exists yet
+to call `detect_exact_duplicates`, same disclosed precedent as FTF-0506/FTF-0507/FTF-0508), so
+this is not the "0/0 once proving_symbol is filled in" case the CERTIFY procedure warns against.
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0511 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance ("Raw hash duplicate groups remain deterministic
+and trace original record identity") and negative_acceptance ("Cross-purpose duplicate
+detection cannot be disabled to fill sample minimum; hash collisions/errors surfaced") both
+confirmed genuinely met by the test suite, not merely asserted; dependencies FTF-0500/FTF-0508
+reconfirmed already `CERTIFIED`.
+
+Real CI polled to genuine completion on the PR's actual head (GitHub Actions run `36115955286`):
+all 31/31 check runs `success`, including `gate` (job `108010006784`, completed
+`2026-09-25T09:03:14Z`) and its own new `FTF-0511 negative-test proof (Exact duplicate detector,
+no DB required)` step, plus the `Python lint + format + type check (FTF-0002)`/`Python unit
+tests (FTF-0003)` steps — confirmed via the GitHub Actions/check-runs API directly against the
+head SHA, not inferred from a single green summary. Three integration jobs unrelated to this
+task (`target-application-connection-integration`, `dataset-source-connection-integration`,
+`secret-manager-integration`) were still `in_progress` at first read; polled each individually
+until `completed`/`success` before merging.
+
+**Result: CERTIFIED.** Merged PR #282 (merge commit `4602ba7d7b06063085d91d8782b33d946ef644d5`).
+`docs/spec-matrix.yaml`'s FTF-0511 set to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED`, `evidence_hash` set to the merge commit. `scripts/status.py`: `67/300` →
+`68/300` certified; product-true unchanged at `20/20` (no live caller added by this
+certification, disclosed). Full detail: `docs/certifications/queue.md`,
+`docs/certifications/ledger.md`, `QUEUE.md`.
+
+No other task work, design decisions, or queue reprioritization performed beyond what this
+certification naturally required (Law 4). No open owner ask.
