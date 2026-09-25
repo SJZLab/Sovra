@@ -313,9 +313,21 @@ def test_malformed_package_json_does_not_raise() -> None:
 
 
 def test_deeply_nested_package_json_does_not_raise() -> None:
-    nested = ("[" * 5000) + ("]" * 5000)
-    content = ('{"dependencies": {}, "x": ' + nested + "}").encode("utf-8")
-    evidence = run_source_analysis([_ref("package.json", content)])
+    # A fixed nesting depth is not portable: CPython interpreters differ in
+    # how many C-stack frames one `json.loads` recursion level consumes (an
+    # earlier version of this test used a fixed depth that reliably raised
+    # `RecursionError` on Python 3.11 but not on Python 3.12's own CI
+    # runner). Deterministically lower the recursion limit first, then nest
+    # far deeper than that lowered limit -- guaranteed to overflow on any
+    # interpreter, restored afterward so this test cannot affect any other.
+    original_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(100)
+    try:
+        nested = ("[" * 5000) + ("]" * 5000)
+        content = ('{"dependencies": {}, "x": ' + nested + "}").encode("utf-8")
+        evidence = run_source_analysis([_ref("package.json", content)])
+    finally:
+        sys.setrecursionlimit(original_limit)
     check(
         "FTF-04A08",
         "adversarially deep JSON nesting (RecursionError-shaped input) does "
