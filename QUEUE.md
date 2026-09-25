@@ -1,4 +1,46 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #260) — independent review of **FTF-04A17
+  (DiscoveredAgentCandidate schema/API), PR #260: NOT CERTIFIED, real CI
+  `gate` failure.** Session-ID check clean (producer
+  `session_01PCVobExxtV38uMfPkv6R1m`, no overlap with this reviewing
+  session). Diff read in full against the PR's real current head
+  (`61c1dc9`, two commits: the implementation `acc56a8` plus a
+  docs-only PR-number-recording follow-up). Own local reproduction found
+  the PR's own test-plan claim ("ruff check / ruff format --check / mypy
+  clean on all four new files") **false**: `uv run ruff check .` reports 2
+  real `UP038` violations in the production files themselves
+  (`discovered_agent_candidate_schema.py:214`,
+  `discovered_agent_candidate_routes.py:177` — `isinstance(value, (int,
+  float))` should be `isinstance(value, int | float)`) plus 4 real `E501`
+  line-length violations in the new integration test file; `uv run ruff
+  format --check .` would also reformat both
+  `discovered_agent_candidate_crud.py` (a stray docstring-escape space)
+  and the integration test file. Confirmed this is not a local-sandbox
+  artifact: pulled the real CI `gate` job log for this PR's actual head
+  (`get_job_logs`, run `36080641128`, job `107901594816`) and it fails
+  with the *exact same* 6 errors, same files, same line numbers —
+  `conclusion: failure`, genuinely reproduced, not a stale or
+  self-reported claim. Everything else checked out: no-DB suite
+  (`tests/tasks/test_ftf_04a17.py`) genuinely passes (34/34); own fault
+  injection (disabled the `confidence_score` range check) reproduced the
+  producer's own claimed 3 genuine `FAIL` lines, reverted byte-identical,
+  suite re-confirmed clean; `mypy` clean on all four production files and
+  both test files; schema/CRUD/routes/migration design (RLS, restricted
+  `sovra_app` grant, composite FK/UNIQUE, `confidence_score`/
+  `discovery_status` never used for selection) reused FTF-04A07's own
+  already-CERTIFIED patterns correctly; task contract pulled via `tools/
+  r1_handoff.py packet FTF-04A17` and its acceptance/negative_acceptance
+  clauses are genuinely met by the code — **the only defect is the CI-gate
+  lint failure itself.** PR #260 was not merged (CI is red, so the
+  relay's own "merge on green" convention correctly did not fire) — `main`
+  never carried an FTF-04A17 entry to downgrade; the PROVISIONAL claim
+  stays on the PR #260 branch only. This entry records the exact fix
+  needed for the next relay shift: two `UP038` one-line rewrites plus
+  wrapping/shortening the 4 long lines in the integration test, then a
+  fresh CI run. No production code touched by this review — doc-only.
+
+## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #253) — checked `docs/certifications/queue.md` for
   pending PROVISIONAL items per the certifier's standing duty; cross-checked
