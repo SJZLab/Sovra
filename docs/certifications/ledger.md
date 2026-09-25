@@ -7059,3 +7059,83 @@ reasons given above.
   task adds no live caller).
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0508 — Record schema validator
+- Criterion ID: FTF-0508
+- PR: https://github.com/SJZLab/Sovra/pull/264 (`certify-ftf-0508-20260925`
+  → `main`), a byte-identical re-submission of PR #257's own implementation
+  commit onto current `main` (PR #257 was based on a stale parent, `39983ab`,
+  3 commits behind `main` at review time, and reported real merge conflicts
+  in the append-only tracking docs only, not the production code; closed as
+  superseded). Merged by this review as merge commit
+  `37c6abb19a6eff941273df6484162c2c1903410d`.
+- Merge commit (evidence): 37c6abb19a6eff941273df6484162c2c1903410d
+- Implementation commit: 4abc8b42d037e0487a18c0958600d21bb22eab35 (original,
+  on PR #257; cherry-picked byte-identical as the sole commit on PR #264)
+- Session-ID check: PR #257's producer session
+  (`session_01CdCmbVsLB4MZNgVpyVMy52`) does not match this reviewing
+  session (`session_01C1FfcUWN7E5S5aeiNFRmgb`) — independent (Law 4).
+- Diff read directly: `workers/data/record_schema_validator.py` (378 lines)
+  and `tests/tasks/test_ftf_0508.py` (358 lines) read in full.
+  `validate_record_batch` is a pure, synchronous, no-I/O batch validator
+  reusing FTF-0506's own already-CERTIFIED `SCHEMA_VERSION` constant and
+  Section 6.8F's own frozen `DatasetSourceConnection.source_type` enum
+  rather than reinventing either; it owns content-size bounding (Section
+  67.3's 2MiB canonical single-record max), required-provenance-field
+  presence, and required-quality-field enum validity for real, and returns
+  a `RecordSchemaValidationReport` with per-row `batch_position`/
+  `record_index` evidence instead of raising on the first violation (only a
+  non-sequence/empty batch itself raises).
+- Own local reproduction: `uv run python3 tests/tasks/test_ftf_0508.py` —
+  20/20 checks pass. `ruff check`/`ruff format --check` clean; `uv run
+  mypy workers/data/record_schema_validator.py` clean; `python3
+  scripts/validate_spec.py --strict` clean; `python3
+  scripts/product_truth_check.py --fail-on-unwired` unchanged at 19/19
+  (`proving_symbol` genuinely empty — no dataset-import route exists yet
+  to call this module, same disclosed "no live caller yet" precedent as
+  FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304).
+- Dependencies FTF-0500/FTF-0506/FTF-0507 confirmed already `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- Own fault injection (Law 1), distinct from the producer's own two
+  vectors (duplicate-`record_index` guard, `quality_status` enum guard):
+  disabled the required-provenance-field loop (`for field in
+  REQUIRED_PROVENANCE_FIELDS:` → `for field in []:`), so a candidate
+  record missing both `record_sha256`/`normalized_sha256` was silently
+  accepted instead of rejected. Ran the real suite against the faulted
+  code: 1 genuine `FAIL [FTF-0508]` line
+  (`test_rejects_missing_provenance_fields`). Reverted byte-identical
+  (`diff` against the pre-fault copy empty); re-ran the real suite
+  immediately after — all 20 checks passed again.
+- Task contract pulled directly via `python3 tools/r1_handoff.py packet
+  FTF-0508 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance`
+  ("Validate schema/dialect/content size and required provenance/quality
+  fields per canonical version" — proven by the five real per-record
+  checks above; "Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded" — this review, plus
+  PR #264's own real CI run) and `negative_acceptance` ("Unknown content
+  or schema version and invalid sequence produces blocking issues with row
+  evidence" — proven by the shipped suite's own unknown-content/
+  unknown-schema-version/invalid-sequence cases, each carrying real row
+  evidence) both genuinely met, not merely "tests pass". `shared_lock_
+  required` confirmed empty in the same packet.
+- CI independently watched to completion on PR #264's real head
+  (`38f6a5b`, the cherry-picked commit): GitHub Actions run `36089980073`
+  polled to completion — 29/29 checks, `gate` included,
+  `status: completed` / `conclusion: success`.
+- No blocking defect found. Merged PR #264 (merge commit
+  `37c6abb19a6eff941273df6484162c2c1903410d`). `docs/spec-matrix.yaml`'s
+  FTF-0508 entry set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to the merge commit; `proving_symbol`
+  stays `''` (no live caller, confirmed legitimate above).
+  `sync_certified_status()` updated — `['FTF-0508']`. Certified count
+  moves 63/300 → 64/300. Product-true: 19/19 → 19/19 (unchanged — this
+  task adds no live caller).
+- Validated-by: session https://claude.ai/code/session_01C1FfcUWN7E5S5aeiNFRmgb
+  (Control-plane certifier shift, triggered by the `pull_request.opened`
+  webhook for PR #262 (FTF-1506); this item was picked up in the same
+  shift per the certifier's standing duty to check `docs/certifications/
+  queue.md` for every pending item, not only the one that triggered the
+  webhook), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.
