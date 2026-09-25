@@ -16267,3 +16267,101 @@ added to `.github/workflows/ci.yml` in this same commit.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
   before certification.
+
+## 2026-09-25 — Control plane review — FTF-0215 (PR #296) — CERTIFIED
+
+Triggered by the `pull_request.opened` webhook for PR #296. Entire session task per this
+certifier's standing prompt: checked for every PROVISIONAL item; a direct `certification_state:
+PROVISIONAL` grep against `docs/spec-matrix.yaml` found exactly one match, FTF-0215, confirming
+it was the only pending item.
+
+**Session-ID check:** both of PR #296's commits (`f31d713`, `d4ee896`) carry `Claude-Session:
+.../session_0176zkJJ7cjvKszEcgJm9DQk`; this reviewing session's own ID
+(`https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy`) does not match -- independent, not
+self-certification (Law 4).
+
+**Diff read directly** against the PR's merge base (`dbdb2c5`):
+`packages/litellm_client/periodic_sync_workflow.py` (new, 289 lines, `PeriodicSyncWorkflow`),
+`tests/tasks/test_ftf_0215.py` (new, 381 lines, 38 checks across 7 functions), one new
+`.github/workflows/ci.yml` gate step, `docs/spec-matrix.yaml`, and tracking-doc updates --
+matches the PR's own claimed scope exactly, no scope creep. (An early comparison of
+`.github/workflows/ci.yml` briefly appeared to show large unrelated deletions; traced this
+directly to a stale local `FETCH_HEAD` left over from this review's own unrelated
+`git fetch --unshallow`, not the PR's real content -- re-diffed against the PR's actual head SHA
+`d4ee896` and confirmed the change is exactly the one disclosed line.)
+
+Dependencies FTF-0004/FTF-0201/FTF-0207/FTF-0208/FTF-0209 reconfirmed genuinely `CERTIFIED`/
+`L2-CERTIFIED` in this exact `docs/spec-matrix.yaml` (via direct `yaml.safe_load`, not a claim)
+before relying on their contracts.
+
+**Own re-verification of the PR's real head (`d4ee896`), not the producer's claims alone,** in an
+isolated git worktree: `CLAUDE.md` integrity confirmed (`sha256sum` matches the committed
+`CLAUDE.md.sha256`). `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0215.py` --
+38/38 clean. Shown able to fail: with the module moved aside, a genuine `ModuleNotFoundError`
+bound to this task's own import; restored and re-run clean. `uv run ruff check .`/`ruff format
+--check .`/`mypy .` clean repo-wide (258 source files). `python3 scripts/validate_spec.py
+--strict` initially reported a batch of `stale_commit` errors -- traced to this worktree's own
+pre-existing shallow-clone state (confirmed via `git rev-parse --is-shallow-repository`); `git
+fetch --unshallow origin` resolved it cleanly (`validate_spec: task graph and verification-map
+are clean`), the same disclosed precedent every recent shift has hit. `product_truth_check.py
+--fail-on-unwired`: `20/20` unchanged (this task's `proving_symbol` is genuinely blank -- no new
+backend dispatcher/route of its own, disclosed, same precedent as FTF-0202/FTF-0205/FTF-0207/
+FTF-0208/FTF-0209). `status.py`: `73/300` certified pre-certification (Law 2, confirmed not
+self-inflated). Regression swept `test_ftf_0004.py`/`test_ftf_0201.py`/`test_ftf_0207.py`/
+`test_ftf_0208.py`/`test_ftf_0209.py` -- all "all checks passed," zero regressions.
+
+**Own fault injection**, a vector distinct from the producer's own two disclosed ones (disabling
+the sequence-ordering guard entirely; disabling the retry-ceiling comparison): removed
+`register()`'s own idempotency check entirely (`if self._registered: return False` deleted) --
+`tests/tasks/test_ftf_0215.py`'s own "a second/third registration attempt is refused as a
+duplicate schedule" assertions failed for real (2 genuine FAIL lines), reproducing exactly this
+task's own acceptance-clause risk ("without duplicate schedules"). Reverted from an untouched
+backup; `diff` confirmed byte-identical; re-ran clean. A second, narrower probe targeted the
+ordering gate's own boundary directly (`sequence <= self._last_applied_sequence` weakened to
+`sequence < self._last_applied_sequence`, an off-by-one that would let an exact-duplicate
+redelivery of the *already-applied* sequence itself re-apply) -- this was **not** caught by the
+existing suite (0 failures, ran clean under the weakened comparison). The shipped code already
+uses the correct `<=` ("strictly newer") comparison, so this is a genuine test-coverage gap, not
+a code defect in what actually merged; noted in `QUEUE.md` for the next relay shift to close with
+a small additional test, not treated as a blocker to this certification. Reverted from an
+untouched backup; `diff` confirmed byte-identical; re-ran clean.
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0215 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Periodic workflow records sync snapshots,
+bounded retries and alerts without duplicate schedules") verified genuinely met by `register()`'s
+idempotency latch (own fault injection above) and `complete_cycle()`'s bounded-retry/alert
+composition (delivered tests `test_transient_failures_retry_then_reach_ceiling`/
+`test_major_reduction_alert_still_surfaces_through_the_workflow`, both re-run clean). 
+`negative_acceptance` ("Revoked key, concurrent sync and out-of-order response cannot reinstate
+obsolete authorization") verified genuinely met -- `complete_cycle()`'s strict-ordering gate drops
+any non-strictly-newer sequence *before* any catalog mutation, proven by the delivered
+out-of-order/concurrent-dispatch/revocation tests plus this review's own two fault injections
+above. The packet's own `files` line names a hyphenated `packages/litellm-client/...` path;
+confirmed by direct repository inspection this is a stale artifact in the packet text itself --
+Python cannot import a hyphenated package name, and every already-CERTIFIED sibling module in
+this same dependency chain (`last_known_good_catalog.py`, `catalog_anomaly_detector.py`, etc.)
+already lives at the real, consistent underscore path `packages/litellm_client/...` -- not a real
+deviation from the task's own contract.
+
+**Real CI watched to genuine completion on the actual final head** (`d4ee896`, run
+`36199421395`): 31/31 checks green, `gate` included (job `108282578140`, completed
+`2026-09-25T23:07:19Z`) -- confirmed directly via the GitHub check-runs API against this exact
+head SHA, not a self-reported claim, including the three OpenBao-from-source integration jobs
+(`dataset-source-connection-integration`, `secret-manager-integration`,
+`target-application-connection-integration`) polled individually to `completed`/`success` before
+merging. `mergeable_state: clean`; no open reviews or comments (`get_reviews`/`get_comments` both
+empty).
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #296 (merge commit
+`b8134b6fab043520ebadaa2b250456df95d67983`). `docs/spec-matrix.yaml`'s FTF-0215 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json` for FTF-0215). `scripts/status.py`: `73/300` -> `74/300`
+certified; product-true unchanged at `20/20` (no live caller added by this certification,
+disclosed). Appended a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md`
+(moved FTF-0215 out of "## Provisional" into "## Done", with the test-coverage observation
+flagged for the next shift) and `PROGRESS.md`. No other task work, design decisions, or queue
+reprioritization performed beyond what this certification naturally required (Law 4). No open
+owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
