@@ -381,7 +381,9 @@ def main() -> None:
 
     with _running_app(app) as base_url:
         # -- Unauthenticated / role-boundary denial --
-        r = _request(base_url, "GET", collection_path(org1_id, project1_id, connection1_id, snapshot1_id))
+        r = _request(
+            base_url, "GET", collection_path(org1_id, project1_id, connection1_id, snapshot1_id)
+        )
         check("FTF-04A17", "an unauthenticated list request is denied (401)", r.status == 401)
 
         r = _request(
@@ -531,12 +533,17 @@ def main() -> None:
                 "confidence_score": 0.2,
             },
         )
-        check("FTF-04A17", "a second, distinct candidate on snapshot1 is created (201)", r.status == 201)
+        check(
+            "FTF-04A17",
+            "a second, distinct candidate on snapshot1 is created (201)",
+            r.status == 201,
+        )
 
+        snapshot1_path = collection_path(org1_id, project1_id, connection1_id, snapshot1_id)
         r = _request(
             base_url,
             "GET",
-            collection_path(org1_id, project1_id, connection1_id, snapshot1_id) + "?limit=1&offset=0",
+            snapshot1_path + "?limit=1&offset=0",
             principal=org1_admin,
         )
         page1 = r.json() if r.status == 200 else {}
@@ -556,7 +563,7 @@ def main() -> None:
         r = _request(
             base_url,
             "GET",
-            collection_path(org1_id, project1_id, connection1_id, snapshot1_id) + "?limit=1&offset=1",
+            snapshot1_path + "?limit=1&offset=1",
             principal=org1_admin,
         )
         page2 = r.json() if r.status == 200 else {}

@@ -174,7 +174,7 @@ def _optional_evidence(payload: dict[str, Any], key: str) -> dict[str, object] |
 
 def _require_confidence_score(payload: dict[str, Any]) -> float:
     value = payload.get("confidence_score")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise HTTPException(
             status_code=400, detail="confidence_score is required and must be a number"
         )
