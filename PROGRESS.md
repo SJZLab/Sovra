@@ -1,4 +1,48 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-04A17 — Control plane: adversarial finding (Law 9), NOT CERTIFIED, concurrent-session collision
+Triggered by the `pull_request.opened` webhook for PR #274. While reviewing FTF-04A17
+independently, discovered a concurrent Control-plane certifier session
+(`session_01VDSvao4KMAGwSqasd9Q9sN`) had, in parallel, already merged PR #274's production
+code directly into `main` (merge commit `5ae16a988b0953e6af374584f5e6dbc81f0e365e`) and
+opened its own follow-up PR (#276) to mark `docs/spec-matrix.yaml`'s FTF-04A17 entry
+`CERTIFIED`/`L2-CERTIFIED` — without ever checking whether the router this task adds is
+wired into the live app.
+
+Independent verification, directly against the merged commit on `main`: `grep -n
+"discovered_agent_candidate" apps/api/app/main.py` matches nothing.
+`build_discovered_agent_candidate_router` is fully built, same shape as every already-
+CERTIFIED sibling router in this chain, but never imported or `include_router()`d into
+`apps/api/app/main.py` — the one real live FastAPI app this repository serves. This is
+disclosed nowhere (module docstring, task packet, or PR #274/#276's own bodies). Its own
+direct dependency FTF-04A07 is the concrete in-repo counter-example: that already-CERTIFIED
+entry explicitly required and confirmed this exact wiring before accepting
+`product_truth_check.py` as legitimate. Both real test suites (no-DB and live-Postgres
+integration) mount the router onto their own standalone `FastAPI()` instance, never
+`main.py`, so the fully-green CI run (30/30, independently reconfirmed real) does not and
+cannot catch this — a genuine Law 7 ("designed is not wired") / Law 8 ("product-true, not
+merely done") violation, not a legitimate disclosed gap of the FTF-0508/FTF-0507/FTF-1503
+kind (see this session's own separate review confirming FTF-1503's own non-wiring gap IS
+legitimately disclosed, by contrast). Related gap: `packages/contracts/openapi/
+04A-interface.yaml` (named under this task's own `shared_lock_required: contracts:04A`) was
+never extended with the new `/candidates` route despite that file's own docstring naming
+this exact task as the one that should.
+
+Own fault injection (widened `DISCOVERED_CANDIDATE_ROLES` to all roles, distinct from the
+prior PR #260 review's confidence-score vector) — 5 genuine failures, reverted
+byte-identical. Full independent re-verification otherwise found the storage/CRUD/RBAC/
+RLS/constraint layer sound; task contract re-pulled via `tools/r1_handoff.py packet
+FTF-04A17`.
+
+**Posted this finding directly as a comment on PR #276** (the concurrent session's own
+still-open certification PR) before it could merge, recommending FTF-04A17 stay
+`PROVISIONAL` until the wiring fix and contract extension land. `docs/spec-matrix.yaml`'s
+FTF-04A17 entry on `main` remains genuinely `PROVISIONAL` as of this note (PR #276 had not
+yet merged). If a later note shows it flipped to `CERTIFIED` without the wiring fix landing
+first, that is this exact gate-weakening incident materializing and needs an owner
+escalation (Law 9), not a silent overwrite. Full detail: `docs/certifications/queue.md`,
+`QUEUE.md`. No production code touched by this review; no new task work, design decisions,
+or queue reprioritization beyond what this finding naturally required (Law 4).
+
 ## 2026-09-24 — FTF-0507 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #253 (FTF-0507,
 "Tool-trace normalizer"). Per this session's standing certifier duty,

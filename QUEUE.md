@@ -1,4 +1,57 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #274, session
+  https://claude.ai/code/session_0171smi4L49eGux5NeCd3mrt) — **adversarial
+  finding (Law 9): FTF-04A17 (DiscoveredAgentCandidate schema/API) has a
+  real, undisclosed "designed is not wired" defect that a concurrent
+  certifier session's own review (PR #276, still open at the time of this
+  note) missed and was about to certify.** This session independently
+  reviewed PR #274 (same task, cherry-picked onto `main` as commit
+  `5ae16a988b0953e6af374584f5e6dbc81f0e365e` by that other session before
+  this note landed — the production code itself is not unsafe to leave
+  merged, since the router it adds is simply unreachable, not a live
+  security hole) and found: `build_discovered_agent_candidate_router`
+  (`apps/api/app/target_connectors/discovered_agent_candidate_routes.py`)
+  is never imported or `include_router()`d into `apps/api/app/main.py` —
+  the one real live FastAPI app this repository actually serves — and
+  this is disclosed nowhere in the module, the task packet, or PR #274's
+  own body. Every one of its twelve already-wired sibling routers,
+  including its own direct dependency FTF-04A07's own
+  `build_target_source_snapshot_router`, *is* present in `main.py`'s own
+  `app.include_router(...)` list; FTF-04A07's own already-CERTIFIED
+  `docs/spec-matrix.yaml` entry explicitly required and confirmed exactly
+  this wiring before accepting `product_truth_check.py` as legitimate.
+  Both real test suites mount the router onto their own standalone
+  `FastAPI()` instance, never `main.py`, so a fully-green CI run (30/30,
+  confirmed real) does not and cannot catch this — a genuine Law 7/8
+  violation ("DESIGNED IS NOT WIRED"/"PRODUCT-TRUE, NOT MERELY DONE"), not
+  a legitimate disclosed gap of the FTF-0508/FTF-0507/FTF-1503 kind. A
+  second, related gap: `packages/contracts/openapi/04A-interface.yaml`
+  (named under this task's own `shared_lock_required: contracts:04A`) was
+  never extended with the new `/candidates` route despite that file's own
+  docstring naming this exact task as the one that should extend it. Own
+  fault injection (widened `DISCOVERED_CANDIDATE_ROLES` to all roles,
+  distinct from the prior PR #260 review's vector) — 5 genuine failures,
+  reverted byte-identical. Full independent re-verification otherwise
+  found the storage/CRUD/RBAC/RLS/constraint layer sound; task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-04A17`. **Posted this
+  finding directly on the concurrent session's own certification PR
+  (https://github.com/SJZLab/Sovra/pull/276#issuecomment-5827494383)
+  before it could merge**, recommending `docs/spec-matrix.yaml`'s
+  FTF-04A17 entry stay `PROVISIONAL` (not `CERTIFIED`/`L2-CERTIFIED`)
+  until a follow-up wires the router into `main.py` and extends the
+  `04A-interface.yaml` contract under its own named lock. As of this note,
+  `docs/spec-matrix.yaml`'s FTF-04A17 entry on `main` is still genuinely
+  `PROVISIONAL` (PR #276 had not yet merged) — if a future note shows it
+  flipped to `CERTIFIED` without that wiring fix landing first, that is
+  this exact gate-weakening incident and needs an owner escalation, not a
+  silent overwrite. Full detail: `docs/certifications/queue.md`. No new
+  task work, design decisions, or queue reprioritization beyond what this
+  adversarial finding naturally required (Law 4/9). No open owner ask yet
+  (this is being surfaced via the PR comment first, per the instruction to
+  check whether an existing mechanism already resolves it before opening a
+  fresh ask).
+
 Updated: 2026-09-25 (same scheduled Control-plane certifier shift as below —
   after certifying FTF-1506/PR #268, this session's standing duty to check
   every pending PROVISIONAL item surfaced two more open `[relay]` PRs the

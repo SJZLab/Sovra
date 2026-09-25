@@ -14848,3 +14848,86 @@ design decisions, or queue reprioritization performed beyond what this certifica
 required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Control plane: adversarial finding (Law 9) — FTF-04A17 (PR #274/#276) — NOT CERTIFIED, concurrent-session collision
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+PR #274. `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`. `BLOCKER.md` read
+in full (no live blocker). Checked `docs/spec-matrix.yaml` directly for every pending
+`certification_state: PROVISIONAL` entry, per this session's standing duty.
+
+**Independent review of FTF-04A17 (PR #274, "supersedes PR #260, rebased onto current
+main")** proceeded as normal: session-ID check clean (both real production commits carry
+`Claude-Session: session_01PCVobExxtV38uMfPkv6R1m`, no overlap with this session). Diff
+read directly. Own local reproduction: `ruff check .`/`ruff format --check .` both clean
+against CI's exact pinned `ruff==0.6.9` (the real CI-gate lint failure a prior PR #260
+review found is genuinely fixed); `mypy` clean; `tests/tasks/test_ftf_04a17.py` 34/34;
+`validate_spec.py --strict` clean (single linear Alembic chain, no competing head);
+`product_truth_check.py --fail-on-unwired` 19/19. Own fault injection (widened
+`DISCOVERED_CANDIDATE_ROLES` from `frozenset({Role.ORGANIZATION_ADMIN})` to
+`frozenset(Role)`, distinct from the prior PR #260 review's confidence-score vector) — 5
+genuine `FAIL [FTF-04A17]` lines, reverted byte-identical, suite re-confirmed clean.
+
+**Real, blocking defect found (same class the prior PR #260 review did not have occasion
+to check, since that PR never got this far): `apps/api/app/target_connectors/
+discovered_agent_candidate_routes.py`'s `build_discovered_agent_candidate_router` is never
+wired into `apps/api/app/main.py`** — the one real live FastAPI app this repository
+actually serves. Confirmed directly: `grep -n "discovered_agent_candidate" apps/api/app/
+main.py` matches nothing. Every one of its twelve already-wired sibling routers, including
+its own direct dependency FTF-04A07's own `build_target_source_snapshot_router`, *is*
+present in `main.py`'s own `app.include_router(...)` list; FTF-04A07's own already-
+CERTIFIED `docs/spec-matrix.yaml` entry explicitly required and confirmed exactly this
+wiring before accepting `product_truth_check.py --fail-on-unwired` as legitimate (not 0/0).
+Both real test suites (no-DB and live-Postgres integration) mount the router onto their own
+standalone `FastAPI()` instance, never `main.py` — proving the router works in isolation,
+never that a real request to the deployed product reaches it. This is disclosed nowhere
+(the module's own docstring, the task packet, or PR #274's own body) — a genuine Law 7
+("DESIGNED IS NOT WIRED") / Law 8 ("PRODUCT-TRUE, NOT MERELY DONE") violation, not a
+legitimate disclosed gap of the FTF-0508/FTF-0507 kind, and not the same as FTF-1503's own
+genuinely-disclosed non-wiring gap reviewed separately this same shift (see this file's own
+FTF-1503 entry below by a different session — that one discloses the gap unprompted in its
+own module docstring and matches the already-accepted FTF-0103 precedent; this one does
+not). Second, related gap: `packages/contracts/openapi/04A-interface.yaml` (named under
+this task's own `shared_lock_required: contracts:04A`) was never extended with the new
+`/candidates` route, despite that file's own docstring naming this exact task as the one
+that should extend it under that lock.
+
+**Concurrent-session collision discovered mid-review.** While preparing this review's own
+tracking-doc PR, `git fetch origin main` showed `main` had moved past this session's own
+branch point: a *different* Control-plane certifier session
+(`session_01VDSvao4KMAGwSqasd9Q9sN`), running the identical standing CERTIFY duty in
+parallel, had independently reached the *opposite* conclusion — it merged PR #274 directly
+(merge commit `5ae16a988b0953e6af374584f5e6dbc81f0e365e`) and opened its own follow-up PR
+#276 ("Control plane: certify FTF-04A17 ... PR #274") to set `docs/spec-matrix.yaml`'s
+FTF-04A17 entry to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`. Reading
+PR #276's own body directly confirms it never checked `main.py` wiring at all — its own
+fault injection targeted the migration's UNIQUE constraint instead, a real and valid check,
+but not one that would surface this defect. PR #276 was still open, not yet merged, at the
+time this was discovered. Per Law 9 ("GATE-WEAKENING IS WATCHED — adversarial audit runs
+out of band"), posted this finding directly as a comment on PR #276
+(https://github.com/SJZLab/Sovra/pull/276#issuecomment-5827494383) before it could merge,
+with the concrete evidence above and a recommendation that FTF-04A17 stay `PROVISIONAL`
+until the wiring fix and contract extension land. The production code PR #274 itself
+merged is not a live security hole — the unwired router is simply unreachable — so no
+revert was made; only the false certification claim needed to be stopped before it landed.
+
+**Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-04A17 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `shared_lock_required` is `["contracts:04A",
+"migration:application"]` (not empty). `acceptance` clause 1 ("Store every candidate with
+traceable evidence and unresolved fields; expose paginated project-scoped API") is not
+genuinely met on the live path this repository actually serves, for the reasons above.
+
+**Result: NOT CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-04A17 entry remains genuinely
+`PROVISIONAL` on `main` as of this note (PR #276 had not yet merged when this was written).
+If a later shift's own check shows it flipped to `CERTIFIED` without the `main.py` wiring
+fix and `04A-interface.yaml` contract extension landing first, that is this exact
+gate-weakening incident materializing despite the comment above, and needs an owner
+escalation, not a silent overwrite or a second independent "re-certification" that papers
+over it. `QUEUE.md` and `PROGRESS.md` record the same finding and the exact remediation
+needed for the next relay shift: add the missing import + `app.include_router(...)` line to
+`apps/api/app/main.py` (matching every sibling router's own convention exactly), extend
+`packages/contracts/openapi/04A-interface.yaml` under its own named `contracts:04A` lock,
+then re-run the full gate and real CI before resubmitting for certification. No production
+code touched by this review — certification review only, no new task work, no design
+decisions, no queue reprioritization beyond what this rejection naturally requires (Law 4).
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
