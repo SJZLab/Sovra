@@ -1,4 +1,19 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25T16:57:01Z (scheduled relay shift) — **FTF-04A08 (Source-analysis
+  worker foundation) submitted PROVISIONAL.** Frontier recomputed fresh from
+  `docs/spec-matrix.yaml` (18 dependency-ready tasks, one fewer than the
+  immediately preceding shift since FTF-0514 is now certified). A concurrent
+  session's PR #288 (FTF-0509) was found open and excluded to avoid duplicate
+  work; FTF-04A19 was excluded for `shared_lock_required`; FTF-0513 remains
+  deferred pending an owner decision on an embedding-similarity dependency.
+  Picked FTF-04A08 (deps FTF-04A01/FTF-04A07/FTF-04A17 all CERTIFIED,
+  `shared_lock_required: []`, no DB/network). 20 no-DB tests, two independent
+  fault injections each reproducing the expected negative_acceptance failure
+  for real, reverted byte-identical. `ruff`/`mypy`/`validate_spec.py --strict`
+  clean; `product_truth_check.py` unchanged `20/20`; `status.py` unchanged
+  `70/300` (Law 2). Not self-certified (Law 4) — awaiting independent
+  Control-plane L2 review. Full entry: `PROGRESS.md`.
+
 Updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_015egHQyUmbCT14fMFfJCU2p, triggered by the
   `pull_request.opened` webhook for PR #286) — **FTF-0514 (PII/secrets
@@ -4718,7 +4733,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0514 ("PII/secrets detector") was the item here; it was independently
+**FTF-04A08** ("Source-analysis worker foundation") — submitted PROVISIONAL 2026-09-25 via
+[PR #289](https://github.com/SJZLab/Sovra/pull/289) (branch `claude/wizardly-fermat-f056tn`) —
+see `docs/certifications/queue.md` for the full entry. Not self-certified (Law 4); awaiting
+independent Control-plane L2 review. (Note: PR #288, "[relay] FTF-0509: Tool argument
+validator," was opened by a concurrent session shortly before this shift started and is a
+separate, unrelated PROVISIONAL item this shift did not touch — see `docs/certifications/queue.md`
+for it once reviewed.)
+
+FTF-0514 ("PII/secrets detector") was the item here before that; it was independently
 reviewed and **CERTIFIED 2026-09-25** via PR #286 (merge commit
 `1f859be5e520e114eeff08222230337a8a9acd0b`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full evidence.
