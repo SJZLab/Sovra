@@ -1,4 +1,65 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-1506 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #269 (a tracking-docs-only PR
+recording PR #268's real CI-green confirmation for FTF-1506 — no production/test
+changes, so not itself a certification subject). Per this session's standing certifier
+duty, checked `docs/spec-matrix.yaml` directly and confirmed FTF-1506 (dependency
+scanning, PR #268) was the only entry genuinely `PROVISIONAL`/`IMPLEMENTED`.
+
+Session-ID check, including the cross-check the 2026-09-25 FTF-0508 watchdog finding
+(`docs/certifications/watchdog-findings.md`) flagged as missing from the documented
+procedure: compared this session (`session_01NXcpPh3Zag7CA1esSeR57Q`) against every
+commit trailer on PR #268 (original cherry-picked implementation commit `91eb178`,
+producer `session_01QLGmt5BoGWrutFsFSHjZGz`; bump/doc commits `d4c7e63`/`3a60159`,
+`session_01ENwUzgKyzCgRiwm6HLPaKm`) *and* against PR #268's/PR #269's own body-stated
+authoring/submitting session (both `session_01ENwUzgKyzCgRiwm6HLPaKm`). No overlap on
+either check — independent, not self-certification (Law 4).
+
+Read the full diff directly: `tests/security/dependency_scanning.py` (456 lines) and
+`tests/tasks/test_ftf_1506.py` (453 lines). Pulled the real task contract via
+`tools/r1_handoff.py packet FTF-1506 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and
+confirmed both `acceptance` clauses and the `negative_acceptance` clause are genuinely
+met, not merely "tests pass" — proven by the real lockfile-parsing/CVSS-scoring/
+policy-exception logic, the shipped suite's own negative cases, and this review's own
+fault injection below. Confirmed `uv.lock` genuinely resolves
+`starlette==1.7.0`/`fastapi==0.141.1`/`authlib==1.8.0` (grepped the real lockfile
+directly, not just `pyproject.toml`'s widened ranges). Dependencies
+FTF-0002/FTF-0004/FTF-1501 confirmed already `CERTIFIED` in `docs/spec-matrix.yaml`
+before relying on them.
+
+Own local reproduction: `uv run python3 tests/tasks/test_ftf_1506.py` — 19/19 clean.
+`ruff check`/`ruff format --check` clean repo-wide; `uv run mypy
+tests/security/dependency_scanning.py` clean; `python3 scripts/validate_spec.py
+--strict` clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact); `product_truth_check.py --fail-on-unwired` unchanged at 19/19
+(`proving_symbol` genuinely empty — CI security tool, no product-route caller, same
+disclosed precedent as FTF-0506/FTF-0507/FTF-04A17).
+
+Ran an own fault injection distinct from the producer's own two (UNKNOWN-severity
+removal, expired-exception check): widened `PolicyException.covers` to `return True`
+unconditionally — a mismatched-exception-never-over-applies bypass. Real suite against
+the faulted code: 1 genuine `FAIL [FTF-1506]`. Reverted byte-identical (`git diff`
+empty); re-ran clean — 19/19.
+
+Independently re-checked real CI on PR #268's actual merged head (`3a60159`, merge ref
+`71b404e`): GitHub Actions run `36096759389` — 30/30 jobs green, `gate` and
+`dependency-scanning-integration` both included. Pulled that job's own log directly
+(`get_job_logs`): a genuine ~58-second live OSV.dev scan of 295 real pinned
+dependencies, `findings_total: 0, findings_blocking: 0` — not a stale or self-reported
+claim.
+
+No blocking defect found. `docs/spec-matrix.yaml`'s FTF-1506 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to
+PR #268's merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859` (already on `main`).
+Ran `sync_certified_status()` — `['FTF-1506']` updated. `scripts/status.py`: `64/300` →
+`65/300` certified. Product-true unchanged at `19/19`. Appended entries to
+`docs/certifications/ledger.md`/`docs/certifications/queue.md`; moved FTF-1506 to
+`QUEUE.md`'s "## Done" and recorded the top status note.
+
+Not touched by this shift, and still open for Control plane/owner review: the
+2026-09-25 FTF-0508 self-certification watchdog finding — unrelated criterion, outside
+this shift's certify-the-one-pending-item mandate.
+
 ## 2026-09-24 — FTF-0507 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #253 (FTF-0507,
 "Tool-trace normalizer"). Per this session's standing certifier duty,

@@ -1,4 +1,29 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #269, session
+  https://claude.ai/code/session_01NXcpPh3Zag7CA1esSeR57Q) — **FTF-1506
+  (Dependency scanning): CERTIFIED**, merge commit
+  `c805cd03e1c3cb03dfeced0888c373e00a547859` (PR #268, already on `main`).
+  PR #269 itself is tracking-docs-only (no production/test changes) and was
+  not the subject of certification; checked `docs/spec-matrix.yaml` directly
+  and confirmed FTF-1506 was the only genuinely `PROVISIONAL`/`IMPLEMENTED`
+  item pending. Full independent CERTIFY procedure run — session-ID check
+  against every commit trailer on PR #268 *and* against PR #268's/PR #269's
+  own body-stated authoring session (both checks clean, closing the gap the
+  2026-09-25 FTF-0508 watchdog finding flagged), diff read in full, own
+  local reproduction (19/19, lint/mypy clean, `uv.lock` pins independently
+  confirmed), an own fault injection distinct from the producer's two
+  (mismatched-exception-never-over-applies bypass, caught for real), the
+  real `dependency-scanning-integration` CI job's log pulled directly and
+  confirmed a genuine live OSV.dev scan (295 dependencies, 0 blocking), and
+  the task contract re-pulled via `tools/r1_handoff.py packet FTF-1506` —
+  full detail in `docs/certifications/queue.md`, `docs/certifications/
+  ledger.md`, and the "## Done" entry below. `docs/spec-matrix.yaml`'s
+  FTF-1506 set to `CERTIFIED`/`L2-CERTIFIED`; `sync_certified_status()` ran
+  — `['FTF-1506']`; `scripts/status.py`: `64/300` → `65/300` certified,
+  product-true unchanged at `19/19`.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled relay shift, session
   https://claude.ai/code/session_01ENwUzgKyzCgRiwm6HLPaKm) — **FTF-1506's real CI
   dependency-scan finding remediated, PR #268 (supersedes PR #262).** Surveyed the three
@@ -6559,6 +6584,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
   Merged PR #249. Ran `sync_certified_status()` — `['FTF-1304']` updated.
   `scripts/status.py`: `61/300` certified before, `62/300` after.
+  Product-true unchanged at `19/19` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
+- FTF-1506 — Dependency scanning. CERTIFIED 2026-09-25, merge commit
+  `c805cd03e1c3cb03dfeced0888c373e00a547859` (PR #268, a cherry-pick of
+  PR #262's implementation commit onto a fix for the real CI
+  dependency-scan finding that PR #262 itself could not clear — bumped
+  `authlib`/`fastapi`(`starlette`) pins). Independently re-verified:
+  session-ID check clean against every commit trailer on PR #268
+  (producer `session_01QLGmt5BoGWrutFsFSHjZGz`, fixer/PR-author
+  `session_01ENwUzgKyzCgRiwm6HLPaKm`) and against PR #268's/PR #269's own
+  body-stated authoring session (both `session_01ENwUzgKyzCgRiwm6HLPaKm`)
+  — no overlap with this reviewing session (the body-stated-session
+  cross-check the 2026-09-25 FTF-0508 watchdog finding flagged as
+  missing from the documented procedure); `tests/security/
+  dependency_scanning.py` and `tests/tasks/test_ftf_1506.py` read in
+  full; own local reproduction (19/19 clean, `ruff`/`mypy` clean,
+  confirmed `uv.lock` genuinely resolves `starlette==1.7.0`/
+  `fastapi==0.141.1`/`authlib==1.8.0`); own fault injection distinct
+  from the producer's two (UNKNOWN-severity removal, expired-exception
+  check) — widened `PolicyException.covers` to always match (a
+  mismatched-exception-never-over-applies bypass), 1 genuine FAIL,
+  reverted byte-identical; real CI independently re-checked on PR #268's
+  actual merged head (GitHub Actions run `36096759389`, 30/30 jobs
+  green including `gate` and `dependency-scanning-integration`; that
+  job's own log pulled directly confirms a genuine live OSV.dev scan of
+  295 real dependencies, `0 finding(s), 0 blocking`); `product_truth_
+  check.py` 19/19 confirmed legitimately unchanged (`proving_symbol`
+  genuinely empty — CI security tool, no product-route caller, same
+  disclosed precedent as FTF-0506/FTF-0507/FTF-04A17). Task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-1506` — both acceptance
+  clauses and the negative_acceptance clause confirmed genuinely met.
+  Dependencies FTF-0002/FTF-0004/FTF-1501 confirmed genuinely
+  `CERTIFIED`. Ran `sync_certified_status()` — `['FTF-1506']` updated.
+  `scripts/status.py`: `64/300` certified before, `65/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
 

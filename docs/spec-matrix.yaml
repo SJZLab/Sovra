@@ -5043,10 +5043,10 @@ FTF-1505:
   proving_symbol: ''
   proving_test: ''
 FTF-1506:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dependency scanning
-  evidence_hash: ''
+  evidence_hash: c805cd03e1c3cb03dfeced0888c373e00a547859
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
@@ -5163,7 +5163,50 @@ FTF-1506:
     unchanged by this relay fix (still PROVISIONAL/L1-PROVEN,
     self-certification is Law 4) -- Control plane still needs to run its
     own independent CERTIFY procedure.
-  proof_state: L1-PROVEN
+
+    L2-CERTIFIED 2026-09-25 by an independent Control-plane session
+    (session_01NXcpPh3Zag7CA1esSeR57Q): session-ID check against every
+    commit trailer on PR #268 (producer `session_01QLGmt5BoGWrutFsFSHjZGz`
+    on the original cherry-picked implementation commit `91eb178`; fixer/
+    PR-author `session_01ENwUzgKyzCgRiwm6HLPaKm` on the bump and doc
+    commits) and against PR #268's/PR #269's own body-stated authoring
+    session (both `session_01ENwUzgKyzCgRiwm6HLPaKm`) -- no overlap with
+    this reviewing session, independent per Law 4 (including the
+    body-stated-session cross-check the 2026-09-25 FTF-0508 watchdog
+    finding flagged as missing from the documented procedure). Diff read
+    directly (`tests/security/dependency_scanning.py`, 456 lines;
+    `tests/tasks/test_ftf_1506.py`, 453 lines). Own local reproduction:
+    `uv run python3 tests/tasks/test_ftf_1506.py` -- 19/19 clean; `ruff
+    check`/`ruff format --check`/`mypy tests/security/dependency_scanning.py`
+    clean; confirmed `uv.lock` genuinely resolves `starlette==1.7.0`,
+    `fastapi==0.141.1`, `authlib==1.8.0` (not merely the widened
+    `pyproject.toml` ranges). Own fault injection distinct from the
+    producer's two vectors (UNKNOWN-severity removal, expired-exception
+    check): widened `PolicyException.covers` to `return True`
+    (mismatched-exception-never-over-applies bypass) -- 1 genuine FAIL
+    (`an exception naming a different vuln id or a different package
+    never covers this finding`); reverted byte-identical (`git diff`
+    empty), suite re-ran clean. Real CI independently re-checked on PR
+    #268's actual merged head (`3a60159`, merge ref `71b404e`): GitHub
+    Actions run `36096759389`, 30/30 jobs `completed`/`success` including
+    `gate` and `dependency-scanning-integration`; that job's own log
+    pulled directly (`get_job_logs`) confirms a genuine ~58s live OSV.dev
+    round trip against 295 real pinned dependencies --
+    `"dependencies_scanned": 295, "findings_total": 0, "findings_blocking":
+    0` -- not a stale or self-reported claim. `product_truth_check.py
+    --fail-on-unwired` reconfirmed at `19/19`; `proving_symbol` genuinely
+    empty (this is a CI security tool with no product-route caller, same
+    disclosed precedent already accepted for FTF-0506/FTF-0507/FTF-04A17)
+    -- legitimately not a false 0/0 pass. Dependencies FTF-0002/FTF-0004/
+    FTF-1501 reconfirmed `CERTIFIED` in this file before relying on them.
+    Task contract re-pulled via `python3 tools/r1_handoff.py packet
+    FTF-1506 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both `acceptance`
+    clauses and the `negative_acceptance` clause are genuinely met by the
+    code and the real CI evidence above, not merely "tests pass". No
+    blocking defect found. Merge commit (evidence_hash):
+    `c805cd03e1c3cb03dfeced0888c373e00a547859` (PR #268, already on
+    `main`). Full detail: `docs/certifications/ledger.md`.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1506.py
 FTF-1507:

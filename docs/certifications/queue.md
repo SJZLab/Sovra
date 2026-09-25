@@ -14666,3 +14666,98 @@ including `PYSEC-2026-287`; no policy exception needed. Zero review comments/thr
 open. PR #268 is fully done from this relay's side — awaiting only Control-plane L2
 certification. Closed PR #262 as superseded (explanatory comment posted, no code lost —
 carried forward byte-identical into #268 plus the fix).
+
+## 2026-09-25 — Control plane: certify FTF-1506 (Dependency scanning)
+Triggered by the `pull_request.opened` webhook for PR #269 (a tracking-docs-only PR
+recording PR #268's real CI-green confirmation — no production/test changes, so it was
+not itself a certification subject). Per this session's standing duty, checked
+`docs/spec-matrix.yaml` directly for every genuinely `PROVISIONAL`/`IMPLEMENTED` entry
+and confirmed FTF-1506 (this item, PR #268) was the only one pending.
+
+**Session-ID check, including the cross-check the 2026-09-25 FTF-0508 watchdog finding
+flagged as missing from the documented procedure:** compared this session
+(`session_01NXcpPh3Zag7CA1esSeR57Q`) against every commit trailer on PR #268 — the
+original cherry-picked implementation commit `91eb178` (`session_01QLGmt5BoGWrutFsFSHjZGz`,
+the true original producer) and the bump/doc commits `d4c7e63`/`3a60159`
+(`session_01ENwUzgKyzCgRiwm6HLPaKm`) — and separately against PR #268's and PR #269's own
+body-stated authoring/submitting session (both `session_01ENwUzgKyzCgRiwm6HLPaKm`). No
+overlap on either check — independent, not self-certification (Law 4).
+
+**Diff read directly:** `tests/security/dependency_scanning.py` (456 lines) and
+`tests/tasks/test_ftf_1506.py` (453 lines), plus `apps/api/pyproject.toml`/`uv.lock`/
+`.github/workflows/ci.yml`/`tests/security/dependency_scan_policy.yaml` (6 files, 990
+insertions, 13 deletions total). Confirmed the module is a real OSV.dev-backed scanner
+over this repo's actual `uv.lock`/`pnpm-lock.yaml`, with a real CVSS v3.1 base-score
+implementation (not a lookup table), fail-closed UNKNOWN handling, and an
+expiry/justification/exact-tuple-matched policy-exception model.
+
+**Own local reproduction (fresh clone already checked out at PR #269's head, includes
+PR #268's merged commit):**
+- `uv run python3 tests/tasks/test_ftf_1506.py` -- 19/19 clean.
+- `uv run ruff check .` / `uv run ruff format --check .` -- clean repo-wide.
+- `uv run mypy tests/security/dependency_scanning.py` -- clean.
+- `python3 scripts/validate_spec.py --strict` -- clean (after `git fetch --unshallow`,
+  this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent as
+  prior shifts).
+- `python3 scripts/product_truth_check.py --fail-on-unwired` -- unchanged at 19/19;
+  `proving_symbol` genuinely empty (CI security tool, no product-route caller, same
+  disclosed precedent as FTF-0506/FTF-0507/FTF-04A17) -- legitimately not a false 0/0
+  pass.
+- Directly grepped the real `uv.lock` package entries (not just `pyproject.toml`'s
+  widened ranges): confirmed `starlette==1.7.0`, `fastapi==0.141.1`, `authlib==1.8.0`
+  are genuinely resolved.
+- Dependencies `FTF-0002`/`FTF-0004`/`FTF-1501` reconfirmed `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+
+**Own fault injection (Law 1), distinct from the producer's own two vectors** (narrowed
+`BLOCKING_SEVERITIES` to drop `UNKNOWN`; disabled the expired-exception check): widened
+`PolicyException.covers` to `return True` unconditionally -- a
+mismatched-exception-never-over-applies bypass, since any exception would then void any
+finding regardless of which vuln/package it actually names. Ran the real suite against
+the faulted code: 1 genuine `FAIL [FTF-1506]` ("an exception naming a different vuln id
+or a different package never covers this finding -- exceptions cannot silently
+over-apply"). Reverted byte-identical (`git diff` empty); re-ran the real suite
+immediately after -- 19/19 passed again.
+
+**Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-1506 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Scan pinned runtime/development
+dependencies under recorded vulnerability/patch policy" -- proven by the real lockfile
+parsing plus `evaluate()`, and the real CI job's live 295-dependency OSV.dev scan;
+"Independent review, exact merged commit, real relevant integration and negative-test
+evidence recorded" -- this review, plus PR #268's own real CI run) and
+`negative_acceptance` ("Unknown/unpatched critical/high finding cannot be silently
+ignored to satisfy cost or schedule" -- proven by the shipped suite's own
+UNKNOWN-blocks-by-default, expired/unjustified-exception-still-blocks, and
+mismatched-exception-never-covers cases, the last one re-confirmed by this review's own
+fault injection above) are genuinely met, not merely "tests pass". `shared_lock_required`
+confirmed empty in the same packet; `packages/contracts/openapi/15-interface.yaml`/
+`.../jsonschema/15-domain.schema.json` confirmed untouched (read-only context for this
+task).
+
+**Real CI independently re-checked on PR #268's actual merged head** (`3a60159`, merge
+ref `71b404e`): GitHub Actions run `36096759389` pulled directly -- 30/30 jobs
+`completed`/`success`, `gate` and `dependency-scanning-integration` (job
+`107950529479`) both included. That job's own log pulled directly (`get_job_logs`, not
+inferred from the green checkmark alone): a real `uv sync --all-packages` install
+showing `authlib==1.8.0`/`fastapi==0.141.1`/`starlette==1.7.0` genuinely installed, then
+`uv run python3 tests/security/dependency_scanning.py` ran for ~58 real seconds
+(consistent with a genuine live network round trip against 295 dependencies, not a
+mock) and printed `"dependencies_scanned": 295, "findings_total": 0,
+"findings_blocking": 0` / `DEPENDENCY SCAN: 295 dependencies, 0 finding(s), 0 blocking
+-- clean` -- a real, current OSV.dev result, not a stale or self-reported claim.
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-1506
+entry set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to PR #268's merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859`
+(already on `main` prior to this review -- no new merge performed by this review). Ran
+`scripts.task_claim.sync_certified_status()` -- `['FTF-1506']` updated.
+`scripts/status.py`: `64/300` -> `65/300` certified; product-true unchanged at `19/19`
+(no live caller added). Appended a matching entry to `docs/certifications/ledger.md`;
+updated `QUEUE.md` (moved FTF-1506 to "## Done", top status note recorded) and
+`PROGRESS.md`. The FTF-0508 self-certification watchdog finding
+(`docs/certifications/watchdog-findings.md`, 2026-09-25) is unrelated to this item and
+was left untouched -- still open for Control plane/owner review, not addressed by this
+certification shift (out of scope: this shift's mandate was limited to certifying the
+one genuinely pending PROVISIONAL item).
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
