@@ -1,4 +1,37 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled autonomous relay shift) — **FTF-04A17's real
+  "designed is not wired" gap (Law 7), flagged by this file's own
+  immediately-preceding certifier note, is fixed.** `build_discovered_
+  agent_candidate_router` was fully built and tested but never
+  `include_router()`d into `apps/api/app/main.py`, the one real live
+  FastAPI app this repository serves; a new test
+  (`test_router_is_wired_into_the_live_app` in
+  `tests/tasks/test_ftf_04a17.py`) genuinely fails against the unmodified
+  code (1 FAIL) and passes after adding the missing import +
+  `app.include_router(...)` line (same convention as all eleven sibling
+  routers). `packages/contracts/openapi/04A-interface.yaml` (this task's
+  own `shared_lock_required: contracts:04A` file) now declares the real
+  `/candidates` routes and schemas, matching the router's actual behavior.
+  Full verification: `ruff`/`ruff format`/`mypy` clean repo-wide;
+  `validate_spec.py --strict` clean; the no-DB suite (35/35) and a real
+  live-Postgres integration run (a directly-installed local PostgreSQL 16
+  cluster) both pass with zero regressions; five sibling `main.py`-touching
+  task suites (FTF-04A07/04A01/R002/0500/1001) all clean.
+  `product_truth_check.py --fail-on-unwired`: `19/19` → `20/20`
+  (`proving_symbol` filled in to reflect the real, now-wired caller).
+  `docs/spec-matrix.yaml`'s `certification_state`/`proof_state` left
+  unchanged at `PROVISIONAL`/`L1-PROVEN` — this relay shift fixes a
+  disclosed defect, it does not certify its own work (Law 4).
+  `scripts/status.py` correctly unchanged at `66/300` certified / `19`
+  product-true (scoped to CERTIFIED tasks only) — tracker not inflated
+  (Law 2). Opened a PR against `main` from `claude/wizardly-fermat-66cdlv`
+  (title `[relay] FTF-04A17: wire discovered-agent-candidate router into
+  the live app (fixes Law 7 gap from PR #274/#276)`), appended to
+  `docs/certifications/queue.md`. Full detail: `PROGRESS.md`,
+  `docs/certifications/queue.md`. No open owner ask. No other task work,
+  design decisions, or queue reprioritization performed this shift.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #274, session
   https://claude.ai/code/session_0171smi4L49eGux5NeCd3mrt) — **adversarial

@@ -14931,3 +14931,109 @@ code touched by this review — certification review only, no new task work, no 
 decisions, no queue reprioritization beyond what this rejection naturally requires (Law 4).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — FTF-04A17 — Relay: real "designed is not wired" gap fixed (remediation, not certification)
+
+Scheduled autonomous relay shift. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` tails first, not assumed from prior context. `sha256sum
+CLAUDE.md` verified clean against `CLAUDE.md.sha256`. `BLOCKER.md` confirmed no open
+blockers (both entries resolved history). No open PROVISIONAL items other than FTF-04A17
+itself (`grep -n "certification_state: PROVISIONAL" docs/spec-matrix.yaml` — one match);
+PR #276 confirmed closed, not merged (`merged: false`), so the Law 9 finding immediately
+above this entry was never overwritten.
+
+Picked up the exact remediation this file's own immediately-preceding entry (and
+`QUEUE.md`/`PROGRESS.md`'s matching 2026-09-25 "Law 9" notes) specified for the next relay
+shift: `build_discovered_agent_candidate_router` was fully built and tested against its own
+standalone `FastAPI()` instance, but never `include_router()`d into `apps/api/app/main.py`
+-- the one real live FastAPI app this repository serves -- unlike every sibling router in
+this chain, including this task's own direct dependency FTF-04A07's
+`build_target_source_snapshot_router`. This is a genuine Law 7 ("designed is not wired")
+defect, not the legitimate "no live caller yet" class FTF-0507/FTF-0508/FTF-1303/FTF-1304
+disclose for pure-computation modules with no HTTP surface at all -- neither this task's own
+no-DB nor live-Postgres integration suite imports `app.main` at all, so a fully-green CI run
+cannot catch it.
+
+**PEV, not mixed.** P: read `apps/api/app/main.py` (confirmed eleven sibling routers already
+wired, the twelfth genuinely missing), `apps/api/app/target_connectors/
+discovered_agent_candidate_routes.py` (the real router, unchanged), and `packages/contracts/
+openapi/04A-interface.yaml` (confirmed its own docstring already names this exact task as
+the one that should extend it, under its own `shared_lock_required: contracts:04A` lock) --
+no code changed yet.
+
+E: wrote `test_router_is_wired_into_the_live_app` in `tests/tasks/test_ftf_04a17.py` --
+builds the real `app.main.create_app()` under a complete, syntactically-valid env
+(`postgresql+psycopg://` scheme so `create_engine()`'s driver import succeeds without ever
+connecting; `install_tenant_pool_reset_guard()` only registers a SQLAlchemy pool event
+listener, needs no real database either) and asserts the candidates collection path is
+present in `app.openapi()["paths"]` (the stable, public way to enumerate a FastAPI app's
+real routes -- `app.routes`'s own element shape changed to an internal `_IncludedRouter`
+wrapper in the `fastapi==0.141.1` this repo already pins, confirmed by direct inspection
+before settling on `.openapi()`). **Ran it first against the unmodified code: 1 genuine
+FAIL** (`FTF-04A17 DiscoveredAgentCandidate schema tests: 1 failed` --
+`the real live app exposes the candidates collection route ...`). Then fixed for real: added
+the import + `app.include_router(build_discovered_agent_candidate_router(session_factory))`
+line to `apps/api/app/main.py` (identical convention to all eleven siblings, appended after
+`build_target_source_snapshot_router` per this task's own real dependency on FTF-04A07),
+extended `main.py`'s own module docstring to disclose the twelfth router. Re-ran: all checks
+pass. Reverted the `main.py` fix alone via `git stash` and re-ran once more to confirm the
+same 1 FAIL reproduces byte-identically before restoring the fix (Law 1: "nothing proven
+until test shown able to fail").
+
+Extended `packages/contracts/openapi/04A-interface.yaml` under its own named `contracts:04A`
+lock (this task's own `contract_owner: FTF-04A01`, but its own docstring already assigns
+this exact follow-up to whichever later task adds a real route -- FTF-04A17 is that task):
+added the `/candidates` collection (`GET`/`POST`) and item (`GET`) paths and their request/
+response schemas (`DiscoveredAgentCandidateCreateRequest`, `DiscoveredAgentCandidate`,
+`DiscoveredAgentCandidatePage`, `DiscoveredAgentCandidateDiscoveryStatus`), matching
+`discovered_agent_candidate_routes.py`'s real behavior field-for-field (all seven
+`*_evidence_json` fields independently nullable, `confidence_score` bounded `[0.0, 1.0]`,
+`discovery_status` the closed one-value set, no PATCH/DELETE at all, 409 on duplicate
+`candidate_key` within the same snapshot). No generated client references this file
+elsewhere in the repo (checked) -- nothing else needed regenerating.
+
+V: `uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .` clean repo-wide
+(246 source files, run from the repo root exactly as CI's own `gate` job does -- not the
+narrower `apps/api`-project-scoped invocation, which silently misses files outside that
+project). `uv run python3 scripts/validate_spec.py --strict` clean (after `git fetch
+--unshallow`, this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent as every prior shift). `uv run python3 tests/tasks/test_ftf_04a17.py` -- all 35
+checks pass (34 pre-existing + this shift's new one), matching CI's own `gate` job
+invocation exactly. Real live-Postgres integration evidence reproduced locally (a directly
+`apt`-installed local PostgreSQL 16 cluster, same precedent as every prior integration-tested
+task in this chain): created the `sovra_migrate` superuser role + `sovra_ftf04a17` database,
+ran the full forward Alembic migration chain to head (`0014_discovered_agent_candidates`
+included) with `SOVRA_APP_DB_PASSWORD` set, then `uv run python3 tests/integration/
+test_ftf_04a17_discovered_agent_candidate.py` -- all checks pass, confirming this shift's
+`main.py`/contract changes caused zero regression to the already-verified storage/CRUD/RBAC/
+RLS/constraint layer. Regression swept five sibling task suites that also touch `main.py`'s
+own router-wiring convention (FTF-04A07, FTF-04A01, FTF-R002, FTF-0500, FTF-1001) -- all
+"all checks passed," zero regressions.
+
+`product_truth_check.py --fail-on-unwired` now genuinely finds `build_discovered_agent_
+candidate_router` as a real, non-test caller in `apps/api/app/main.py` -- updated
+`docs/spec-matrix.yaml`'s FTF-04A17 `proving_symbol` from `''` to
+`build_discovered_agent_candidate_router` to reflect this objective, independently-checkable
+fact (same convention FTF-04A07/FTF-R002/etc. use once their own router lands in `main.py`).
+`product_truth_check.py`: `19/19` → `20/20` product-true. **`certification_state`/
+`proof_state` deliberately left unchanged at `PROVISIONAL`/`L1-PROVEN`** -- this relay shift
+fixes a disclosed defect, it does not certify its own work (Law 4); `scripts/status.py`
+correctly still reports `19` product-true (scoped to CERTIFIED tasks only) and `66/300`
+certified, both unchanged, confirming this shift did not inflate the tracker (Law 2).
+
+Diff scope confirmed exactly the four files this remediation needs
+(`apps/api/app/main.py`, `packages/contracts/openapi/04A-interface.yaml`,
+`tests/tasks/test_ftf_04a17.py`, `docs/spec-matrix.yaml`'s FTF-04A17 entry) plus this
+shift's own `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tracking updates -- no
+scope creep, no other task's files touched.
+
+**Not self-certified. Submitted PROVISIONAL** (unchanged from before this shift -- this is a
+defect fix, not a new submission). Opened PR against `main` from
+`claude/wizardly-fermat-66cdlv`, title `[relay] FTF-04A17: wire discovered-agent-candidate
+router into the live app (fixes Law 7 gap from PR #274/#276)`. Appended this entry for
+Control plane. Still requires independent Control-plane L2 certification and a real CI run
+on the opened PR before `certification_state` can move to `CERTIFIED` -- not this relay
+shift's role.
+
+No other task work, design decisions, or queue reprioritization performed this shift beyond
+what this remediation naturally required.

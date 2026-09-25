@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import http.client
+import os
 import socket
 import sys
 import threading
@@ -577,6 +578,81 @@ def test_serialize_never_exposes_a_wrong_shape() -> None:
         "an unresolved (null) evidence category serializes as null, never "
         "a fabricated empty object",
         body["tool_evidence_json"] is None,
+    )
+
+
+# -- 6. live-app wiring (Law 7: "designed is not wired" is a real, ------
+#      independently-checkable defect, not a documentation footnote) ----
+
+
+def _full_app_env() -> dict[str, str]:
+    """A complete, syntactically-valid env for `app.main.create_app()`.
+
+    `SOVRA_DATABASE_URL` is a well-formed connection string that is never
+    actually connected to here: `create_engine()` is lazy and
+    `install_tenant_pool_reset_guard()` only registers a SQLAlchemy pool
+    event listener, so building the real app object this way needs no
+    database, matching the no-DB scope of the rest of this suite.
+    """
+    return {
+        "SOVRA_ENVIRONMENT": "staging",
+        "SOVRA_DATABASE_URL": "postgresql+psycopg://sovra_app:s3cr3t@db.internal:5432/sovra",
+        "SOVRA_LITELLM_GATEWAY_URL": "https://litellm.internal.example",
+        "SOVRA_PRIVACY_POLICY": "standard",
+        "SOVRA_TLS_VERIFY": "true",
+        "SOVRA_MAX_TRAINING_BUDGET_USD": "500.00",
+        "SOVRA_LITELLM_API_KEY_SECRET_REF": "vault://sovra/litellm-api-key",
+        "SOVRA_DATABASE_PASSWORD_SECRET_REF": "openbao://sovra/db-password",
+        "SOVRA_OIDC_ISSUER": "https://idp.internal.example",
+        "SOVRA_OIDC_CLIENT_ID": "sovra-factory",
+        "SOVRA_OIDC_CLIENT_SECRET_REF": "vault://sovra/oidc-client-secret",
+        "SOVRA_OIDC_REDIRECT_URI": "https://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "https://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "https://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "https://idp.internal.example/jwks",
+        "SOVRA_SESSION_SIGNING_KEY_SECRET_REF": "vault://sovra/session-signing-key",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "https://factory.internal.example",
+        "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
+        "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
+    }
+
+
+def test_router_is_wired_into_the_live_app() -> None:
+    """`build_discovered_agent_candidate_router` must be reachable from
+    `app.main.create_app()`, the one real FastAPI app this repository
+    serves -- the same wiring precedent this task's own direct dependency
+    FTF-04A07 established for `build_target_source_snapshot_router`.
+
+    A router that exists, is fully tested against its own standalone
+    `FastAPI()` instance, and is never mounted onto the real app is a
+    genuine "designed is not wired" defect (Law 7) that a green CI run
+    cannot catch, since neither test suite for this task ever imports
+    `app.main`.
+    """
+    added_keys = set(_full_app_env()) - set(os.environ)
+    old_values = {k: os.environ[k] for k in _full_app_env() if k in os.environ}
+    os.environ.update(_full_app_env())
+    try:
+        import app.main as main_module
+
+        app = main_module.create_app()
+        # The resolved OpenAPI schema, not `app.routes` (whose element
+        # shape is a FastAPI-internal implementation detail this suite
+        # must not couple to) is the stable, public way to ask "what does
+        # this live app actually serve".
+        route_paths = set(app.openapi()["paths"])
+    finally:
+        for k in added_keys:
+            os.environ.pop(k, None)
+        os.environ.update(old_values)
+
+    check(
+        "FTF-04A17",
+        "the real live app exposes the candidates collection route "
+        "(build_discovered_agent_candidate_router is include_router()'d "
+        "into app.main.create_app(), not merely defined)",
+        "/api/v1/organizations/{organization_id}/projects/{project_id}"
+        "/target-connections/{connection_id}/snapshots/{snapshot_id}/candidates" in route_paths,
     )
 
 
