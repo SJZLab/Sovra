@@ -17417,3 +17417,52 @@ certification naturally required (Law 4). No open owner ask. Noted in passing, n
 finding on FTF-0508's own certification-process integrity (self-certification masked by a
 cherry-pick, technically-sound-on-the-merits per its own independent re-verification) — logged for
 Control plane/owner review, unresolved, not this shift's item to act on.
+
+## 2026-09-25 — Control plane certifier shift: FTF-1503 (PR #258 -> PR #272) independently reviewed, CERTIFIED
+
+Continuing this shift's standing certifier duty (check every pending PROVISIONAL item, not only
+the one that triggered the webhook) after certifying FTF-1506/PR #268: PR #258 ([relay] FTF-1503:
+CSRF suite) had been fully green (29/29) on its own head but was never reviewed, and had since gone
+stale — base several commits behind `main`, real conflicts in `.github/workflows/ci.yml`'s step
+ordering and the append-only tracking docs, not the production code.
+
+Cherry-picked PR #258's own two production/test commits (`e6f96159` — the CSRF suite; `0fd8fc09` —
+a repo-wide mypy fix) byte-identical onto current `main` as a new PR #272, resolving the tracking-
+doc conflicts by keeping `main`'s own already-current content and writing this shift's fresh
+entries instead — same precedent as PR #264 superseding PR #257 for FTF-0508.
+
+Session-ID check clean (producer commits carry `session_01VDvxngihngbBfK5xfR5kt4`, no overlap with
+this session). Diff read in full: `apps/api/app/auth/csrf_protection.py`'s `require_csrf_protection`
+(Origin equality + constant-time `X-CSRF-Token` check via a pluggable, fail-closed resolver,
+decoupled from any concrete session implementation) and `InMemoryCsrfSessionStore`; zero certified
+production files touched. `tests/security/csrf_suite.py`'s 7 real scenarios run against a real
+locally-hosted uvicorn demonstration app; `tests/tasks/test_ftf_1503.py`'s no-DB gate proof reruns
+that same live-server suite internally, so `gate`'s single step covers both layers.
+
+Own local reproduction in an isolated git worktree at the real head: all checks pass (no-DB suite
++ live suite directly); `ruff`/`mypy` clean repo-wide (240 source files, confirming the producer's
+own mypy fix genuinely resolved CI's real failure); `validate_spec.py --strict` clean;
+`product_truth_check.py` unchanged 19/19. Own fault injection distinct from the producer's own
+vector (disabled `X-CSRF-Token` comparison) — this review instead removed the Origin-equality
+check — 1 genuine failure in the live suite, 2 in the no-DB suite, reverted byte-identical, both
+suites re-confirmed clean. Task contract re-pulled via `tools/r1_handoff.py packet FTF-1503` — both
+acceptance clauses and the negative_acceptance clause confirmed genuinely met.
+
+Real CI polled to genuine completion on PR #272's real head (30/30 green, `gate` included). Pulled
+`gate`'s own job log directly — confirmed `test_ftf_1503.py` genuinely ran in CI and printed "all
+checks passed" immediately after the already-certified FTF-1506 step.
+
+**Result: CERTIFIED.** Merged PR #272 (merge commit `62b2c4be710dc9d7534becdeb799e06902cd1b77`).
+Closed PR #258 as superseded, with an explanatory comment. `docs/spec-matrix.yaml`'s FTF-1503 set
+to `CERTIFIED`/`L2-CERTIFIED`, `evidence_hash` set to the merge commit. Ran
+`sync_certified_status()` — `['FTF-1503']` updated. `scripts/status.py`: `65/300` → `66/300`
+certified; product-true unchanged at `19/19` (no live caller added — this task's own dependency is
+not yet wired into `main.py`, matching `require_role`'s own already-disclosed precedent). Full
+detail: `docs/certifications/queue.md`, `docs/certifications/ledger.md`, `QUEUE.md`.
+
+No other task work, design decisions, or queue reprioritization performed beyond what this
+certification naturally required (Law 4). No open owner ask. FTF-04A17 (PR #260 -> PR #274, the
+same class of stale-base rebase) is next in this shift's standing-duty queue — own local
+reproduction (no-DB suite + a real live-Postgres run including an own fault injection against the
+migration's UNIQUE constraint) already complete and clean at the time of this entry; real CI on
+PR #274's own head is still being watched before certifying.

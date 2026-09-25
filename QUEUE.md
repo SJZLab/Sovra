@@ -1,4 +1,32 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (same scheduled Control-plane certifier shift as below —
+  after certifying FTF-1506/PR #268, this session's standing duty to check
+  every pending PROVISIONAL item surfaced two more open `[relay]` PRs the
+  relay's own latest shift had already reported green and awaiting only
+  Control-plane L2 review: FTF-1503 (PR #258) and FTF-04A17 (PR #260).
+  Both had gone stale (base several commits behind `main`, real conflicts
+  in the append-only tracking docs, not the production code) — this
+  session cherry-picked each PR's own production/test commits onto current
+  `main` (PR #272 for FTF-1503, PR #274 for FTF-04A17, same precedent as
+  PR #264 superseding PR #257 for FTF-0508), then ran the full independent
+  CERTIFY procedure on each from scratch (session-ID check, diff read, own
+  local reproduction, an own fault injection distinct from each producer's
+  own vectors, task contract re-pulled via `tools/r1_handoff.py`, real CI
+  watched to completion). **FTF-1503: CERTIFIED, PR #272** (merge commit
+  `62b2c4be710dc9d7534becdeb799e06902cd1b77`) — no blocking defect found;
+  PR #258 closed as superseded; full detail below and in
+  `docs/certifications/queue.md`/`docs/certifications/ledger.md`.
+  `scripts/status.py`: `65/300` → `66/300` certified, product-true
+  unchanged at `19/19`. **FTF-04A17 (PR #274): review in progress at the
+  time of this note** — own local reproduction (no-DB suite + a real
+  live-Postgres run, including an own fault injection against the
+  migration's UNIQUE constraint) already complete and clean; real CI on
+  PR #274's own head still running, watching for completion before
+  certifying — see the next dated entry once it lands. No open owner ask
+  (`QUEUE.md` "Owner actions — current" unchanged, empty); no new task
+  work, design decisions, or queue reprioritization performed beyond what
+  these certifications naturally require (Law 4).
+
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #268, session
   https://claude.ai/code/session_01VDSvao4KMAGwSqasd9Q9sN) — independent
@@ -5861,6 +5889,34 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
+- FTF-1503 — CSRF suite. CERTIFIED 2026-09-25, PR #272 (merge commit
+  `62b2c4be710dc9d7534becdeb799e06902cd1b77`) — a cherry-pick of PR #258's
+  own two production/test commits onto current `main` (PR #258 had gone
+  stale, base several commits behind `main`, with real conflicts in the
+  append-only tracking docs and CI job ordering, not the production code;
+  closed as superseded). Independently re-verified: session-ID check clean
+  (producer commits carry `session_01VDvxngihngbBfK5xfR5kt4`, no overlap
+  with this reviewing session `session_01VDSvao4KMAGwSqasd9Q9sN`); diff
+  read directly confirming `apps/api/app/auth/csrf_protection.py`
+  (`require_csrf_protection`, `InMemoryCsrfSessionStore`), `tests/security/
+  csrf_suite.py`'s 7 real live-uvicorn scenarios, and `tests/tasks/
+  test_ftf_1503.py`'s no-DB gate proof match the claimed scope exactly,
+  with zero certified production files touched; own local reproduction
+  (all checks pass, `ruff`/`mypy`/`validate_spec.py --strict` clean
+  repo-wide, `product_truth_check.py` unchanged 19/19); own fault injection
+  distinct from the producer's own vector (removed the Origin-equality
+  check instead of the token comparison) — 1 genuine failure in the live
+  suite, 2 in the no-DB suite, reverted byte-identical; task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-1503` confirming both
+  acceptance clauses and the negative_acceptance clause genuinely met;
+  real CI watched to completion on the real head — 30/30 green including
+  `gate` (job log confirmed `test_ftf_1503.py` genuinely ran). No blocking
+  defect found. Closed PR #258 as superseded. `docs/spec-matrix.yaml` set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+  `evidence_hash` set to the merge commit. Ran `sync_certified_status()`.
+  `scripts/status.py`: `65/300` certified before, `66/300` after;
+  product-true unchanged at `19/19`. Full entry: docs/certifications/
+  ledger.md.
 - FTF-1506 — Dependency scanning. CERTIFIED 2026-09-25, PR #268 (merge
   commit `c805cd03e1c3cb03dfeced0888c373e00a547859`) — remediation of the
   real CI finding this same session's own prior review (PR #262) left NOT

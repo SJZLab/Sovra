@@ -1534,9 +1534,11 @@
       "blockers": []
     },
     "FTF-1503": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "62b2c4be710dc9d7534becdeb799e06902cd1b77"
+      ],
       "independent_review": null,
       "blockers": []
     },
