@@ -2364,7 +2364,7 @@ FTF-0408:
     is the real "version preview" sent with every revision so a stale concurrent edit is refused
     by the backend, not silently overwritten), and the project's own security_profile rendered
     read-only with a pointer to ProjectSetupForm, its one real write path. Scope disclosed, not
-    hidden: the packet's own acceptance clause additionally names mandate/languages/outputs/SLO
+    hidden -- the packet's own acceptance clause additionally names mandate/languages/outputs/SLO
     editing and an explicit lock after model/runtime resolution -- Section 6.8D's AgentManifest
     (mandate_json, forbidden_actions_json, locking) is not real storage anywhere in this repository
     yet (critical_behavior_requirement_routes.py's own module docstring says so explicitly), so
@@ -2372,10 +2372,10 @@ FTF-0408:
     route/dispatcher symbol is introduced by this task (it composes only already-certified,
     already-wired FTF-0407/FTF-0403 routes), so proving_symbol stays blank -- same disclosed "no
     separate live-caller symbol of its own" precedent this repository's other composition-only
-    tasks already carry. apps/web/tests/ftf_0408.spec.ts: 8 real Vitest + React Testing Library +
+    tasks already carry. apps/web/tests/ftf_0408.spec.ts -- 8 real Vitest + React Testing Library +
     jsdom component tests, mocked fetch, asserting on real request method/URL/JSON body against
     the live FTF-0407/FTF-0403 contracts. Two independent fault injections against the final,
-    formatted committed content: (1) hardcoding the conflict flag to false -- a genuine FAIL on
+    formatted committed content -- (1) hardcoding the conflict flag to false -- a genuine FAIL on
     the declared-critical-but-not-runtime-enforced conflict assertion; (2) adding currency back
     into the PATCH revise body -- a genuine FAIL on the "never sends currency on revise" assertion.
     Both reverted from an untouched backup, diff confirmed byte-identical, re-ran clean both times.
