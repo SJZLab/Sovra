@@ -18339,4 +18339,193 @@ disclosed). Appended a matching entry to `docs/certifications/ledger.md`; update
 design decisions, or queue reprioritization performed beyond what this certification naturally
 required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
 
+## 2026-09-25T16:57:01Z — Relay: FTF-04A08 (Source-analysis worker foundation) submitted PROVISIONAL, PR #289
+
+STEP 0: CLAUDE.md hash verified clean (`sha256sum` matches committed `CLAUDE.md.sha256`).
+`BLOCKER.md` confirmed no open blockers. Read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh, then re-fetched `origin/main` directly (local branch
+`claude/wizardly-fermat-f056tn` was already exactly `origin/main`'s tip, `b399da0` — FTF-0514's
+own certification, confirmed via `git log --oneline origin/main..HEAD`/`HEAD..origin/main`,
+both empty).
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (18 tasks whose
+every `deps=` entry is already `CERTIFIED`/`PROMOTED`, one fewer than the immediately preceding
+shift's own 19 since FTF-0514 itself is now certified). Checked GitHub directly: **4** open PRs,
+not 3 — the same long-standing #231 (FTF-0212)/#195+#194 (FTF-0304, duplicate) plus a brand-new
+**PR #288 ("[relay] FTF-0509: Tool argument validator")**, opened minutes before this shift
+started by a concurrent session not yet reflected in this file's own prior entries. Excluded
+FTF-0509 from this shift's own candidate set to avoid duplicate work on an already-claimed item
+(the same "do not re-do a concurrently-claimed task" discipline the FTF-04A17 concurrent-session
+collision finding already established), alongside the same standing exclusions every recent
+shift has applied: FTF-0212/FTF-0304 (open PRs), FTF-0302/FTF-0303/FTF-1201/FTF-H004 (real
+network egress this sandbox lacks), FTF-1703 (needs >=1000 real curated traces), FTF-04A02
+(keyed external credential, ask-first), UI-heavy items (FTF-0214/0215/0408/0500A/0500D),
+FTF-0902 (`shared_lock_required`).
+
+**FTF-0513** ("Near-duplicate detector") remains deferred for the same reason the immediately
+preceding shift recorded: its real acceptance clause needs a genuine embedding-similarity
+method (Section 10 method 6), a new-runtime-dependency ask-first item, and a dependency-ready
+non-ambiguous alternative was available this shift too.
+
+**FTF-04A19** ("AgentManifest schema/versioning/hash") was considered and set aside: its own
+`shared_lock_required` is non-empty (`["contracts:04A", "migration:application"]`) — the same
+`shared_lock_required` exclusion class already applied to FTF-0902, never claimed by a single
+relay shift without the real contract-lock/migration-serialization coordination that clause
+implies.
+
+Picked **FTF-04A08** ("Source-analysis worker foundation") — dependency-ready (FTF-04A01/
+FTF-04A07/FTF-04A17 all CERTIFIED, confirmed before relying on them), `shared_lock_required: []`,
+`database_changes: "No independent schema change. Consume frozen contract."` — the same
+tractable pure-computation/no-DB/no-shared-lock/no-new-dependency shape as the already-CERTIFIED
+FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0514 siblings.
+
+**PEV, not mixed.** P: read `target_source_snapshot_schema.py`, `discovered_agent_candidate_schema.py`,
+and `local_repository_connector.py` in full (the real domain model this task's own output feeds
+into, and the exact "path/symlink real-path check, never a string-prefix check" defense-in-depth
+convention this task's own path-shape validation reuses). Read `FINE_TUNING_FACTORY_RELEASE_1.md`
+Section 7A.4 in full ("Source-analysis pipeline") — this task's own real scope is exactly steps 1
+("Detect languages/package managers/framework markers") and 2 ("Parse repository tree and ignore
+generated/vendor/secret paths using explicit rules") of that section's own twelve-step analysis
+order; steps 3-11 (entrypoint/model/prompt/tool/test/trace-hook/deployment detection) are later,
+separate, not-yet-built tasks (FTF-04A09 onward) this task does not claim.
+
+E: wrote `apps/api/app/target_connectors/source_analysis_worker.py::run_source_analysis` —
+connector-agnostic (accepts an already-enumerated `SourceFileRef` sequence: relative path, real
+size known up front, lazy content reader — never coupling to either the local-filesystem or a
+future GitHub connector's own I/O shape). Ignore rules: a closed, explicit
+`IGNORED_DIRECTORY_SEGMENTS`/`IGNORED_SECRET_BASENAMES`/`IGNORED_SECRET_SUFFIXES` set, checked
+per real path segment (never a substring match a crafted name could defeat). Language/
+package-manager detection: closed extension/marker-basename maps. Framework-marker detection:
+a closed, named dependency-string set, read only from a real, successfully-parsed manifest
+(`json.loads` for `package.json`, stdlib `tomllib.loads` for `pyproject.toml`, line-parsing for
+`requirements.txt`) — Section 7A.4's own "Unknown/custom frameworks are not guessed" honored by
+construction (no inference path exists at all). Resource limits: `max_total_entries` bounds the
+raw iteration itself (so an unbounded number of *ignored* entries cannot exhaust worker time),
+`max_files` bounds the included/scanned count, `max_file_bytes` skips an oversized manifest file
+without ever invoking its own `read_content`, `max_total_bytes` stops reading further content
+once the cumulative budget is spent — every limit that stops the run early sets `truncated=True`
+on the returned `SourceAnalysisEvidence` rather than silently reporting a complete scan.
+
+`tests/tasks/test_ftf_04a08.py`: 20 no-DB test functions. **Ran first against the unmodified
+code: all pass.** Two independent fault injections, each targeting one half of
+negative_acceptance ("Do not import or execute target code/hooks/build scripts; malicious
+parser input cannot escape worker"), re-run against the final, formatted committed content:
+1. Bypassed the oversized-file skip guard (`if False and file_ref.size > limits.max_file_bytes`)
+   — **2 genuine FAIL lines** (a poisoned oversized `package.json` had its own `read_content`
+   actually invoked; its poisoned framework marker leaked into the evidence).
+2. Removed the manifest-parse exception guard around `_detect_framework_markers_in_manifest` —
+   **a genuine unhandled `RecursionError` propagated out of `run_source_analysis`** when fed a
+   deeply-nested (5000-level) `package.json`, reproducing exactly the "malicious parser input
+   escapes the worker" failure this guard exists to prevent.
+Both reverted from an untouched backup; `diff` against the backup confirmed byte-identical after
+each revert; re-ran clean both times.
+
+V: `uv sync --all-packages` (this sandbox's own pre-existing `uvicorn`/`sqlalchemy`/`authlib`
+freshness gap, same disclosed precedent as every prior shift). `uv run ruff check .` / `uv run
+ruff format --check .` clean repo-wide (254 files; a handful of line-length fixes needed first,
+pre-existing house style). `uv run mypy .` clean repo-wide (254 source files; one
+`list.append`-in-`or`-expression `func-returns-value` finding in this task's own test file fixed
+by using a real helper function instead of the `append(...) or ...` idiom). `uv run python3
+scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own
+pre-existing shallow-clone artifact — this run also surfaced several `relay/*`/`watchdog/*`
+remote branches from earlier sessions, left untouched, out of this task's own scope).
+`product_truth_check.py --fail-on-unwired` unchanged at `20/20` (no live source-analysis-pipeline
+dispatcher exists yet in this repository to call `run_source_analysis`, same disclosed "no live
+caller yet" precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0514).
+`status.py` unchanged at `70/300` certified (Law 2 — not self-inflated). Regression swept the
+sibling target-connector/schema suites this task's own dependencies touch: `test_ftf_04a01.py`,
+`test_ftf_04a06.py`, `test_ftf_04a07.py`, `test_ftf_04a17.py`, `test_ftf_0405.py` — all "all
+checks passed," zero regressions. `uv run python3 scripts/verify_task.py --task FTF-04A08 --stage
+task` reports `BLOCKED` pre-merge ("has no merged verification evidence yet"), expected per
+precedent.
+
+Added the `.github/workflows/ci.yml` `gate`-job step for `tests/tasks/test_ftf_04a08.py`
+(directly after the FTF-0514 step).
+
+`docs/spec-matrix.yaml` FTF-04A08 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge
+commit hash is known (same precedent as every recent sibling). **Not self-certified (Law 4)** —
+independent Control-plane L2 review and a real CI run on the opened PR are required before
+certification.
+
+Generated, then removed before committing, one other candidate task packet's own
+(`docs/implementation/task-packets/FTF-04A19.md`) pulled during STEP 1's own comparison of
+dependency-ready candidates — not this shift's own pick, not left in the diff as scope creep.
+
+Diff scope confirmed exactly the files this task needs
+(`apps/api/app/target_connectors/source_analysis_worker.py`, `tests/tasks/test_ftf_04a08.py`,
+`docs/implementation/task-packets/FTF-04A08.md`, `.github/workflows/ci.yml`,
+`docs/spec-matrix.yaml`'s FTF-04A08 entry) plus this shift's own `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` tracking updates — no scope creep, no other task's files touched,
+`FTF-0509` (PR #288) left entirely alone.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Control plane: FTF-04A08 (PR #289) independently reviewed, CERTIFIED after a real CI-failure-and-fix cycle
+
+Scheduled Control-plane certifier run, session session_011YeU25q3weEVzow9D8C1jz, triggered by
+the `pull_request.opened` webhook for PR #289. Session-ID check: producer session
+session_01C41XHoxqK9mFcxPoaVCbYB does not overlap this reviewing session -- independent, Law 4.
+
+Diff read directly, matched PR #289's own claimed scope. Own local reproduction found a real
+fault-injection vector distinct from the producer's own two (relaxed the path-traversal segment
+check in `_validate_relative_path` from `segment in ("", ".", "..")` to `segment in ("",)`) --
+genuinely failed the delivered suite, reverted byte-identical.
+
+**Real CI failure found and reported before it was fixed:** `pull_request_read get_check_runs`
+on the PR's first head (`7156396`, run `36164278202`) showed `gate` `completed`/`failure`;
+`get_job_logs` (job `108168115516`) read directly showed
+`test_deeply_nested_package_json_does_not_raise` failing for real. Root-caused independently:
+CI pins `python-version: '3.12'`; `json.loads` on the test's own 5000-level bracket-nesting
+payload raises `RecursionError` under Python 3.11 (this review sandbox's own default) but not
+under Python 3.12 (confirmed directly via `/usr/bin/python3.12`) -- a genuine,
+deterministic-every-time, Python-version-dependent test defect, not a flake, and not a security
+defect in the shipped worker itself (which never let an exception escape either way). This
+finding was written to `docs/certifications/queue.md`/`QUEUE.md` as NOT CERTIFIED and pushed
+toward PR #289's own branch.
+
+Before that push landed, the producer's own session -- still watching its own PR per this
+repo's PR-babysitting convention -- independently found and fixed the identical failure via the
+real CI event on its own PR: a first attempt (`b4a1cb1`, deterministically lowering
+`sys.setrecursionlimit` before nesting past it) also failed on CI's real Python 3.12 runner for
+the same underlying version-instability reason (confirmed via that commit's own job log,
+check_run `108169599233`); a second attempt (`ba02d3e`) replaced the real-recursion trigger
+entirely with a direct `unittest.mock.patch.object` on `json.loads` to force `RecursionError`
+deterministically, proving the worker's own catch/count behavior rather than depending on one
+interpreter build's incidental stack-depth behavior -- exactly the fix approach this review's
+own findings had independently converged on.
+
+Own re-verification of the final head (`ba02d3e`), not the producer's fix claims alone:
+confirmed `source_analysis_worker.py` byte-for-byte unchanged across the entire fix cycle (only
+the one test file was rewritten); re-ran `tests/tasks/test_ftf_04a08.py` directly under both
+Python 3.11 and `/usr/bin/python3.12` -- 20/20 both; re-ran this review's own path-traversal
+fault injection against the final head -- still fails for real, reverts byte-identical;
+`ruff check`/`ruff format --check`/`mypy` clean repo-wide (254 source files, after
+`uv sync --all-packages`); `validate_spec.py --strict` clean; `product_truth_check.py
+--fail-on-unwired` unchanged `20/20`; `status.py` unchanged `70/300` pre-certification (Law 2).
+Regression swept `test_ftf_04a01/04a06/04a07/04a17/0405.py` -- zero regressions. Task contract
+re-pulled via `tools/r1_handoff.py packet FTF-04A08 --plan FINE_TUNING_FACTORY_RELEASE_1.md` --
+acceptance ("Run resource-limited static analyzer with read-only snapshot and evidence output
+schema") and negative_acceptance ("Do not import or execute target code/hooks/build scripts;
+malicious parser input cannot escape worker") both reconfirmed genuinely met against the
+corrected tests, not merely "tests pass". Dependencies FTF-04A01/FTF-04A07/FTF-04A17
+reconfirmed CERTIFIED before relying on them.
+
+Real CI watched to genuine completion on the actual final head (`ba02d3e`, run `36165310622`):
+31/31 checks green, `gate` included (job `108171499679`), confirmed directly via the GitHub
+check-runs/jobs API against this exact head SHA -- including the three OpenBao-from-source
+integration jobs polled individually to `completed`/`success` before merging.
+`mergeable_state: clean`; no open reviews or comments.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #289 (merge commit
+`2b128ec8b38dc647e6dd68f395e332be48c77e7e`). `docs/spec-matrix.yaml`'s FTF-04A08 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json` for FTF-04A08). `scripts/status.py`: `70/300` -> `71/300`
+certified; product-true unchanged at `20/20` (no live caller added by this certification,
+disclosed). Appended a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md`
+(moved FTF-04A08 out of "## Provisional" into "## Done"). No other task work, design decisions,
+or queue reprioritization performed beyond what this certification naturally required (Law 4).
+No open owner ask. PR #288 (FTF-0509) left entirely alone, a separate concurrent item.
+
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.

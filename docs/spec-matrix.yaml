@@ -2641,16 +2641,108 @@ FTF-04A07:
   proving_symbol: build_target_source_snapshot_router
   proving_test: tests/tasks/test_ftf_04a07.py
 FTF-04A08:
-  certification_state: NONE
+  certification_state: CERTIFIED
   criticality: MUST
   description: Source-analysis worker foundation
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
-    FTF-04A07, FTF-04A17
-  proof_state: UNPROVEN
+  evidence_hash: 2b128ec8b38dc647e6dd68f395e332be48c77e7e
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A07, FTF-04A17 (all CERTIFIED, confirmed before relying on
+    them). Path refined from the task packet's own generic
+    `packages/target-connectors/source_analysis_worker_foundation.py` suggestion to
+    `apps/api/app/target_connectors/source_analysis_worker.py`, matching
+    FTF-04A01's/FTF-04A06's/FTF-04A07's/FTF-04A17's own real
+    `apps/api/app/target_connectors/*.py` layout precedent.
+
+    Covers Section 7A.4 steps 1-2 only (language/package-manager/framework-marker
+    detection; ignore generated/vendor/secret paths by explicit rule) -- the real
+    foundation later per-category detectors (FTF-04A09 onward, not built or claimed
+    here) will run on top of. Connector-agnostic: accepts an already-enumerated
+    `SourceFileRef` sequence (relative path, real size known up front, lazy content
+    reader) rather than coupling to either connector's own I/O shape. Pure,
+    synchronous, no DB/network -- same tractable shape as the already-CERTIFIED
+    dedup/PII-detector siblings.
+
+    negative_acceptance ("Do not import or execute target code/hooks/build scripts;
+    malicious parser input cannot escape worker") met by: only `json.loads`/
+    `tomllib.loads` (declarative, non-executing parsers) are ever used on scanned
+    content, wrapped so a malformed/adversarially-nested manifest cannot raise out
+    of the worker; oversized files are skipped without ever invoking their own
+    `read_content`; three independent resource bounds (`max_total_entries`,
+    `max_files`, `max_total_bytes`) protect the raw iteration, the scanned-file
+    count, and the cumulative read budget respectively, each disclosing
+    `truncated=True` rather than silently reporting a complete scan.
+
+    20 no-DB tests in `tests/tasks/test_ftf_04a08.py`; two independent fault
+    injections (bypassed the oversized-file skip guard; removed the manifest-parse
+    exception guard) each reproduced the expected negative_acceptance failure for
+    real (a poisoned oversized file got read; a deeply-nested JSON manifest raised
+    `RecursionError` out of the worker), reverted byte-identical. `ruff`/`mypy`/
+    `validate_spec.py --strict` clean; `product_truth_check.py` unchanged at 20/20
+    (no live caller yet -- no source-analysis-pipeline dispatcher exists in this
+    repository yet to call `run_source_analysis`, same disclosed "no live caller
+    yet" precedent as every dedup/validator/connector sibling).
+
+    Control-plane L2 review (2026-09-25, PR #289, session
+    session_011YeU25q3weEVzow9D8C1jz): session-ID checked clean against all of PR
+    #289's commits (producer session_01C41XHoxqK9mFcxPoaVCbYB, no overlap -- Law
+    4). Diff read directly, matched the PR's own claimed scope exactly. Own local
+    reproduction found a real, independent-of-the-producer's-own-two-vectors fault
+    injection (relaxed the path-traversal segment check in
+    `_validate_relative_path`) that genuinely failed the delivered suite and
+    reverted byte-identical.
+
+    **Real CI failure found and fixed mid-review, not self-reported:** the PR's
+    own `gate` job genuinely failed on its first head (`7156396`) --
+    `test_deeply_nested_package_json_does_not_raise` asserted `json.loads` raises
+    `RecursionError` on a fixed 5000-level bracket-nesting payload, which holds
+    under Python 3.11 (this review sandbox's own default) but not under CI's
+    pinned Python 3.12 (confirmed by direct reproduction under `/usr/bin/python3.12`
+    both ways) -- a genuine, deterministic, Python-version-dependent test defect,
+    not a flake, and not a security defect in the shipped worker itself (which
+    never let an exception escape in either environment). Findings written to
+    `docs/certifications/queue.md`/`QUEUE.md` before the producer's own session
+    (still watching its own PR) independently found and fixed the same failure in
+    two attempts: a first fix (lowering `sys.setrecursionlimit` before nesting past
+    it) also failed on CI's Python 3.12 runner for the same underlying
+    version-instability reason; a second fix (`ba02d3e`) replaced the
+    real-recursion approach entirely with a direct `mock.patch.object` on
+    `json.loads` to force `RecursionError`, proving the worker's own catch/count
+    behavior deterministically rather than depending on one interpreter build's
+    incidental stack-depth behavior -- read directly, this is exactly the fix
+    approach this review's own findings recommended.
+
+    Own independent re-verification of the final head (`ba02d3e`), not the
+    producer's fix claims alone: confirmed `apps/api/app/target_connectors/
+    source_analysis_worker.py` (the module itself) unchanged between the original
+    head and the fix commits -- only the one test was rewritten; re-ran
+    `tests/tasks/test_ftf_04a08.py` directly under both Python 3.11 and
+    `/usr/bin/python3.12` -- all 20 checks pass under both; re-ran this review's
+    own path-traversal fault injection against the final head -- still fails for
+    real and reverts byte-identical; `ruff`/`ruff format`/`mypy` clean repo-wide
+    (254 source files, after `uv sync --all-packages`); `validate_spec.py --strict`
+    clean; `product_truth_check.py --fail-on-unwired` unchanged 20/20;
+    `status.py` unchanged 70/300 pre-certification (Law 2). Regression swept
+    `test_ftf_04a01/04a06/04a07/04a17/0405.py` -- zero regressions. Task contract
+    re-pulled via `tools/r1_handoff.py packet FTF-04A08` -- acceptance
+    ("resource-limited static analyzer... evidence output schema") and
+    negative_acceptance ("do not import or execute...; malicious parser input
+    cannot escape worker") both reconfirmed genuinely met against the corrected
+    tests, not merely "tests pass". Dependencies FTF-04A01/FTF-04A07/FTF-04A17
+    reconfirmed CERTIFIED before relying on them.
+
+    **Real CI watched to genuine completion on the actual final head** (`ba02d3e`,
+    run `36165310622`): 31/31 checks green, `gate` included, confirmed directly via
+    the GitHub check-runs/jobs API against this exact head SHA (not a stale or
+    self-reported claim) -- including the three OpenBao-from-source integration
+    jobs polled individually to `completed`/`success`. `mergeable_state: clean`;
+    no open reviews or comments. No blocking defect found. Merged PR #289 (merge
+    commit `2b128ec8b38dc647e6dd68f395e332be48c77e7e`); `evidence_hash` set to that
+    commit.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a08.py
 FTF-04A09:
   certification_state: NONE
   criticality: MUST

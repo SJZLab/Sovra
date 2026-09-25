@@ -61,6 +61,70 @@ Updated: 2026-09-25 (scheduled autonomous relay shift, session
 
 ## Previous shift
 Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_011YeU25q3weEVzow9D8C1jz, triggered by the
+  `pull_request.opened` webhook for PR #289) — independently reviewed FTF-04A08
+  (Source-analysis worker foundation) — **CERTIFIED, after a real CI failure
+  was found and fixed mid-review.** Session-ID check: producer session
+  `session_01C41XHoxqK9mFcxPoaVCbYB` does not overlap this reviewing session —
+  independent, Law 4. Diff read directly, matched the PR's own claimed scope;
+  own fault injection (relaxed the path-traversal segment check in
+  `_validate_relative_path`) reproduced a genuine failure, reverted
+  byte-identical.
+
+  **Real CI failure, not self-reported:** the PR's own `gate` job genuinely
+  failed on its first head (`7156396`) —
+  `test_deeply_nested_package_json_does_not_raise` assumed `json.loads` raises
+  `RecursionError` on a fixed 5000-level bracket-nesting payload, true under
+  Python 3.11 but not under CI's pinned Python 3.12 (confirmed by direct
+  reproduction both ways via `/usr/bin/python3.12`) — deterministic,
+  Python-version-dependent, not a flake, and not a security defect in the
+  shipped worker itself (which never let an exception escape either way).
+  This finding was written up as NOT CERTIFIED before the producer's own
+  session — still watching its own PR — independently found and fixed the
+  same failure: a first attempt (lowering `sys.setrecursionlimit`) also
+  failed on CI's 3.12 runner; a second attempt (`ba02d3e`) replaced the
+  real-recursion trigger with a direct `mock.patch.object` on `json.loads` to
+  force `RecursionError` deterministically — the same fix approach this
+  review had already recommended.
+
+  Own re-verification of the final head (`ba02d3e`): confirmed the worker
+  module itself byte-for-byte unchanged across the whole fix cycle (only the
+  one test was rewritten); re-ran the suite under both Python 3.11 and 3.12 —
+  20/20 both; re-ran this review's own fault injection — still fails for real,
+  reverts clean; `ruff`/`mypy`/`validate_spec.py --strict` clean;
+  `product_truth_check.py` unchanged `20/20`; `status.py` unchanged `70/300`
+  pre-certification (Law 2). Regression swept
+  `test_ftf_04a01/04a06/04a07/04a17/0405.py` — zero regressions. Task contract
+  re-pulled via `tools/r1_handoff.py packet FTF-04A08` — acceptance and
+  negative_acceptance both reconfirmed genuinely met against the corrected
+  tests. Real CI watched to genuine completion on the actual final head
+  (`ba02d3e`, run `36165310622`): 31/31 checks green, `gate` included,
+  confirmed directly via the check-runs/jobs API; `mergeable_state: clean`.
+
+  **Merged PR #289** (merge commit `2b128ec8b38dc647e6dd68f395e332be48c77e7e`).
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`. `sync_certified_status()` run.
+  `scripts/status.py`: `70/300` -> `71/300` certified; product-true unchanged
+  `20/20`. Full record: `docs/certifications/ledger.md` and
+  `docs/certifications/queue.md`'s matching 2026-09-25 entries.
+
+## Previous shift
+Updated: 2026-09-25T16:57:01Z (scheduled relay shift) — **FTF-04A08 (Source-analysis
+  worker foundation) submitted PROVISIONAL.** Frontier recomputed fresh from
+  `docs/spec-matrix.yaml` (18 dependency-ready tasks, one fewer than the
+  immediately preceding shift since FTF-0514 is now certified). A concurrent
+  session's PR #288 (FTF-0509) was found open and excluded to avoid duplicate
+  work; FTF-04A19 was excluded for `shared_lock_required`; FTF-0513 remains
+  deferred pending an owner decision on an embedding-similarity dependency.
+  Picked FTF-04A08 (deps FTF-04A01/FTF-04A07/FTF-04A17 all CERTIFIED,
+  `shared_lock_required: []`, no DB/network). 20 no-DB tests, two independent
+  fault injections each reproducing the expected negative_acceptance failure
+  for real, reverted byte-identical. `ruff`/`mypy`/`validate_spec.py --strict`
+  clean; `product_truth_check.py` unchanged `20/20`; `status.py` unchanged
+  `70/300` (Law 2). Not self-certified (Law 4) — awaiting independent
+  Control-plane L2 review. Full entry: `PROGRESS.md`.
+
+Updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_015egHQyUmbCT14fMFfJCU2p, triggered by the
   `pull_request.opened` webhook for PR #286) — **FTF-0514 (PII/secrets
   detector) independently reviewed and CERTIFIED.** Entire task per this
@@ -4785,6 +4849,14 @@ implementation record: this file's own top dated entry, `docs/certifications/que
 `PROGRESS.md`. Awaiting Control-plane L2 certification and a real CI run on the opened PR — not
 this relay's role.
 
+**FTF-04A08** ("Source-analysis worker foundation") was the item here before that; submitted
+PROVISIONAL 2026-09-25 via PR #289, it hit a real CI failure mid-review (a Python-3.12-incompatible
+test trigger, unrelated to the shipped worker's own safety) that the producer's own session fixed
+in two attempts before this reviewing session re-verified the final head and **CERTIFIED
+2026-09-25** via PR #289 (merge commit `2b128ec8b38dc647e6dd68f395e332be48c77e7e`) — see "## Done"
+for the certification summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
+for the full evidence.
+
 FTF-0514 ("PII/secrets detector") was the item here before that; it was independently
 reviewed and **CERTIFIED 2026-09-25** via PR #286 (merge commit
 `1f859be5e520e114eeff08222230337a8a9acd0b`) — see "## Done" for the certification summary and
@@ -7288,6 +7360,36 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   --strict` clean (after `git fetch --unshallow`, this sandbox's own
   pre-existing shallow-clone artifact). Merged PR #284.
   `scripts/status.py`: `68/300` certified before, `69/300` after.
+- FTF-04A08 — Source-analysis worker foundation. Independently reviewed and
+  **CERTIFIED 2026-09-25** via PR #289 (`claude/wizardly-fermat-f056tn` ->
+  `main`, implementation commits `17b7f6a`/`f5adc59`/`7156396` plus two
+  disclosed CI-fix follow-ups `b4a1cb1`/`ba02d3e` pushed mid-review, all
+  producer session `session_01C41XHoxqK9mFcxPoaVCbYB`, no overlap with this
+  reviewing session `session_011YeU25q3weEVzow9D8C1jz` — independent, Law 4).
+  Diff read directly: `apps/api/app/target_connectors/source_analysis_worker.py`
+  (new, unchanged across the whole fix cycle), `tests/tasks/test_ftf_04a08.py`
+  (new, later amended by the fix commits), a 2-line `.github/workflows/ci.yml`
+  gate-job wiring addition, and tracking-doc updates — scope matched the PR's
+  own claims, no other production file touched. **Real CI failure found and
+  fixed mid-review:** the PR's own `gate` job genuinely failed on its first
+  head — `test_deeply_nested_package_json_does_not_raise` assumed `json.loads`
+  raises `RecursionError` on a fixed nesting depth, true under Python 3.11 but
+  not under CI's pinned Python 3.12 (independently reproduced both ways) — a
+  deterministic, version-dependent test defect, not a defect in the shipped
+  worker (which never let an exception escape either way). The producer's own
+  session, still watching its own PR, fixed it in two attempts (a first
+  attempt also failed on CI's 3.12 runner; the final fix replaced the
+  real-recursion trigger with a deterministic `mock.patch.object` on
+  `json.loads`). Own re-verification of the final head confirmed the worker
+  module itself unchanged, the suite passing under both Python 3.11 and 3.12,
+  this review's own independent fault injection (relaxed the path-traversal
+  segment check) still failing for real and reverting clean, and real CI
+  watched to genuine completion on the actual final head (`ba02d3e`, run
+  `36165310622`): 31/31 checks green including `gate`. `product_truth_check.py`
+  unchanged `20/20` (blank `proving_symbol`, disclosed "no live caller yet").
+  Merged PR #289 (merge commit `2b128ec8b38dc647e6dd68f395e332be48c77e7e`).
+  `status.py`: `70/300` -> `71/300` certified. Full record:
+  `docs/certifications/ledger.md` and `docs/certifications/queue.md`.
 - FTF-0514 — PII/secrets detector. Independently reviewed and **CERTIFIED
   2026-09-25** via PR #286 (`claude/wizardly-fermat-w9he1w` -> `main`,
   implementation commit `5d0c1dd` plus a disclosed tracking-only follow-up
