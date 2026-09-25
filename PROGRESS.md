@@ -1,4 +1,85 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-0509 — Control plane: CERTIFIED (PR #288 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #290, session
+`https://claude.ai/code/session_017A46uPoS88U6M8ZtZHZaqC`. Entire task per this certifier's
+standing prompt: checked `docs/certifications/queue.md` for every `PROVISIONAL` item. Two were
+pending: FTF-04A08 (PR #289) and FTF-0509 (PR #288, this file's own immediately-following
+entry). FTF-04A08 was found already independently CERTIFIED by a concurrent Control-plane
+session (`session_011YeU25q3weEVzow9D8C1jz`) by the time this session reached it — its merge
+commit's own "(independently certified)" message was not trusted at face value (neither
+`docs/spec-matrix.yaml` nor `docs/certifications/ledger.md` had actually been updated at the
+moment this session first checked), but a fresh check of `origin/main` moments later showed that
+session's own tracking-update PR (#291) had since landed for real, with a genuine ledger entry
+and session-ID-checked independent review — not duplicated. This session's own independent work
+covers the remaining item, FTF-0509.
+
+Session-ID check: producer session `session_0168AaEA7QKUtQrJjYwz6fbF` — no overlap with this
+reviewing session. Independent, Law 4.
+
+**Real merge conflict found and resolved, not hidden:** PR #288's base (`b399da0`) had fallen
+several merges behind `main` by review time (FTF-0511/FTF-0512/FTF-0514/FTF-04A08 all landed
+since) — the GitHub merge API refused with a real 405 "Pull Request has merge conflicts" when
+first attempted. Fetched the PR branch into a local checkout, merged `origin/main` into it, and
+resolved three real conflicts: `.github/workflows/ci.yml` (two different tasks' own new
+`gate`-job steps added at the same point — kept both), `QUEUE.md` and
+`docs/certifications/queue.md` (two sessions' own independent append-only tracking entries at
+the same point — kept both, in chronological submission order). `docs/spec-matrix.yaml` merged
+cleanly (disjoint task entries). Re-ran the full local sweep on the merged commit before pushing
+it back to the PR branch: `test_ftf_0509.py` and `test_ftf_04a08.py` both pass, `ruff`/`mypy`
+clean (256 files), `validate_spec.py --strict` clean, `product_truth_check.py` 20/20,
+`status.py` 71/300 — zero regressions. Watched real CI to genuine completion on this exact merge
+commit (run `36168122513`, `gate` job `108180762904` `success`, including its own new `FTF-0509
+negative-test proof` step alongside the concurrently-landed `FTF-04A08 negative-test proof`
+step) before merging the PR.
+
+Diff read directly (original PR #288 diff, base `b399da0` -> head `e19066b`):
+`workers/data/tool_argument_validator.py` (new, 355 lines, `validate_tool_calls`),
+`tests/tasks/test_ftf_0509.py` (new, 394 lines, 15 no-DB tests), a 2-line
+`.github/workflows/ci.yml` gate-job wiring addition, `docs/implementation/task-packets/
+FTF-0509.md` (new), and tracking-doc updates — scope matched the PR's own claims exactly, no
+other production file touched.
+
+Own local reproduction, in an isolated git worktree at the PR's actual pre-merge head commit
+(fresh `uv sync --all-packages`): `tests/tasks/test_ftf_0509.py` — 15/15 pass, "all checks
+passed". `product_truth_check.py --fail-on-unwired` unchanged `20/20` — this task's own
+`proving_symbol` is blank (no dataset-import-pipeline route exists yet in this repository to
+call `validate_tool_calls`, same disclosed precedent as every dedup/validator/connector
+sibling), confirmed by reading `scripts/product_truth_check.py`'s own logic directly (a blank
+`proving_symbol` is skipped, never counted) — legitimate disclosed 0/0. `ruff`/`mypy` clean
+repo-wide (254 source files in the isolated worktree). `validate_spec.py --strict` clean.
+Regression swept `test_ftf_0405/0500/0506/0507/0508/0511/0512/0514.py` (via `uv run`, needed for
+`uvicorn`/`sqlalchemy`) — zero regressions.
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0509 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — acceptance ("Validate arguments against exact locked tool
+schema and optional reviewed output contract") and negative_acceptance ("Schema coercion, extra
+critical arguments or wrong manifest/tool version blocks acceptance") both reconfirmed genuinely
+met by reading `LockedToolContract`/`_validate_one` and the corresponding named tests directly,
+not merely "tests pass". Dependencies FTF-0405/FTF-0500/FTF-0508 reconfirmed CERTIFIED before
+relying on them.
+
+Own fault injection (Law 1), independently reproduced rather than trusting the producer's
+self-report, and a different vector than either of the producer's own two disclosed ones
+(disabling the extra-critical-argument guard; disabling the wrong-tool-version guard): in the
+isolated worktree, removed the `if instance_validator is None` refusal block from
+`_validate_one` entirely, re-ran `tests/tasks/test_ftf_0509.py` directly — **1 genuine FAIL
+line** (`test_rejects_missing_instance_validator`). Reverted from the untouched backup; `diff`
+confirmed byte-identical; re-ran — all checks pass again.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #288 (merge commit
+`0bb549b2f94e99e6d08179dd91643fbdbaa7907c`). `docs/spec-matrix.yaml`'s FTF-0509 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json` for FTF-0509). `scripts/status.py`: `71/300` -> `72/300`
+certified; product-true unchanged at `20/20` (no live caller added by this certification,
+disclosed). Appended a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md`
+(moved FTF-0509 out of "## Provisional" into "## Done"). No other task work, design decisions,
+or queue reprioritization performed beyond what this certification naturally required (Law 4).
+No open owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
 ## 2026-09-25 — FTF-0509 — Relay: submitted PROVISIONAL (PR #288)
 
 Scheduled autonomous relay shift, session `https://claude.ai/code/session_0168AaEA7QKUtQrJjYwz6fbF`.
