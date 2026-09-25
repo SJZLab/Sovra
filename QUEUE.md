@@ -1,4 +1,26 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25T03:10:00Z (same shift, CI follow-up) — PR #262's own new
+  `dependency-scanning-integration` job (real OSV.dev call) genuinely found 16 real,
+  currently-unpatched CRITICAL/HIGH findings in dependencies this repo already had pinned before
+  this PR touched anything: `authlib==1.3.2` (FTF-0101's real OIDC provider dependency; fix
+  requires >=1.6.9) and `starlette==0.46.2` (pinned transitively via `fastapi==0.115.14`; fix
+  requires up to 1.3.1, a 0.x -> 1.x major jump). This is the scanner working correctly, not a bug
+  in this PR -- see the matching PR #262 comment for full detail. **Not fixed in PR #262** (out of
+  that task's own scope, and a real cross-cutting regression/requalification risk -- see below).
+
+  **New tracked item for a future shift/Control plane (no task ID yet, not part of the original
+  300-task queue -- flagging per "Relay is execution-only," not improvising the remediation
+  architecture):** remediate these two real findings. `starlette`'s fix versions cross a major
+  boundary likely incompatible with the currently-pinned `fastapi==0.115.14` -- needs a coordinated
+  bump of both plus a full `apps/api` regression pass. `authlib` is FTF-0101's own already-
+  **CERTIFIED** OIDC dependency -- per Law 15 ("a material source or manifest change invalidates
+  affected evidence until requalification"), bumping it invalidates FTF-0101's certified evidence
+  and requires requalifying it (re-running its own OIDC suite, then a fresh Control-plane
+  certification pass), not a same-PR side effect. Whoever picks this up should pull a fresh
+  `docs/spec-matrix.yaml`/`uv.lock` snapshot first, since fix-version requirements will drift as
+  the real advisory feed changes.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled autonomous relay shift) — implemented and submitted **FTF-1506
   (Dependency scanning) PROVISIONAL** via **PR:** https://github.com/SJZLab/Sovra/pull/262
   (branch `claude/wizardly-fermat-x86twn`), title `[relay] FTF-1506: Dependency scanning`.
