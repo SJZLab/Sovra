@@ -18266,6 +18266,8 @@ disclosed). Appended a matching entry to `docs/certifications/ledger.md`; update
 design decisions, or queue reprioritization performed beyond what this certification naturally
 required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
 
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-25.
+
 ## 2026-09-25T16:57:01Z — Relay: FTF-04A08 (Source-analysis worker foundation) submitted PROVISIONAL, PR #289
 
 STEP 0: CLAUDE.md hash verified clean (`sha256sum` matches committed `CLAUDE.md.sha256`).
@@ -18386,4 +18388,40 @@ Diff scope confirmed exactly the files this task needs
 `docs/certifications/queue.md` tracking updates — no scope creep, no other task's files touched,
 `FTF-0509` (PR #288) left entirely alone.
 
-- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+## 2026-09-25T17:17Z — PR #289 (FTF-04A08): real CI red twice, both fixed and pushed, now green
+
+Subscribed to PR #289's activity immediately after opening it (per this session's own standing
+GitHub PR-ownership obligation for a PR it created). Two genuine `gate`-job CI failures arrived
+in sequence, both traced to the same underlying test, `test_deeply_nested_package_json_does_not_raise`
+(later renamed): a fixed-depth/lowered-recursion-limit approach to proving `RecursionError` is
+caught by `_MANIFEST_PARSE_EXCEPTIONS` is not portable across CPython versions — it reliably
+raised on this sandbox's own Python 3.11 but silently failed to raise on the real CI runner's
+Python 3.12 (twice: once with a bare fixed depth, once with a deterministically lowered
+`sys.setrecursionlimit` combined with a fixed depth — confirmed via each real job log directly,
+`check_run 108168006108`/run `36164245127` then `check_run 108169599233`/run `36164729811`).
+
+Fixed for real by removing dependence on actual interpreter stack-depth behavior entirely:
+`test_deeply_nested_manifest_recursion_error_does_not_raise` now monkeypatches
+`source_analysis_worker.json.loads` (via `unittest.mock.patch.object`, auto-restored) to raise a
+real `RecursionError` directly, proving the guard itself rather than one interpreter build's
+incidental recursion accounting. Re-ran both this task's own fault injections against the
+corrected test after each fix (byte-identical reverts confirmed both times) and the full
+ruff/mypy/validate_spec/product_truth_check/status sweep clean before each push (commits
+`b4a1cb1`, then `ba02d3e`).
+
+**Real CI watched to genuine completion on the actual final head** (`ba02d3eb5c4dae6c19df911b7da2b175cfa31bc6`,
+run `36165310622`): polled the GitHub Actions check-runs API directly against that exact head SHA
+rather than accepting a webhook summary alone — all 31/31 check runs completed `success`,
+including `gate` (job `108171499679`). PR confirmed `mergeable_state: clean`, no open review
+threads. FTF-04A08 is now genuinely green and mergeable, still PROVISIONAL and not
+self-certified (Law 4) — awaiting independent Control-plane L2 review as before. No merge
+performed by this session (producer never certifies own work).
+
+(Also fixed in this same pass: a real structural mistake in this file's own prior edit — the
+FTF-0514 certification entry's own closing "Reviewed-by" attribution bullet had been
+inadvertently displaced past the end of this session's own new FTF-04A08 entry, because this
+session's initial read of this file's tail happened to stop one line short of the file's real
+end. Moved back to immediately follow the FTF-0514 entry it actually belongs to, and the
+misplaced duplicate at the true end removed — this file's own record now correctly attributes
+that independent review to the certifying session, not to this relay shift's own unrelated
+entry.)

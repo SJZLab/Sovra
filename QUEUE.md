@@ -4735,7 +4735,10 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A08** ("Source-analysis worker foundation") — submitted PROVISIONAL 2026-09-25 via
 [PR #289](https://github.com/SJZLab/Sovra/pull/289) (branch `claude/wizardly-fermat-f056tn`) —
-see `docs/certifications/queue.md` for the full entry. Not self-certified (Law 4); awaiting
+see `docs/certifications/queue.md` for the full entry. Two real `gate`-job CI failures (a
+non-portable recursion-depth test, Python 3.11 vs. CI's Python 3.12) were hit, fixed, and pushed
+after the initial submission (commits `b4a1cb1`/`ba02d3e`); PR #289 is now genuinely green
+(31/31 checks) and mergeable, still PROVISIONAL. Not self-certified (Law 4); awaiting
 independent Control-plane L2 review. (Note: PR #288, "[relay] FTF-0509: Tool argument
 validator," was opened by a concurrent session shortly before this shift started and is a
 separate, unrelated PROVISIONAL item this shift did not touch — see `docs/certifications/queue.md`
