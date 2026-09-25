@@ -5010,12 +5010,13 @@ FTF-1502:
   proving_symbol: ''
   proving_test: ''
 FTF-1503:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: CSRF suite
-  evidence_hash: ''
+  evidence_hash: 62b2c4be710dc9d7534becdeb799e06902cd1b77
   implementation_state: IMPLEMENTED
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0101, FTF-0401,
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0101, FTF-0401,
     FTF-1501 (all CERTIFIED). New, real, reusable CSRF-protection dependency --
     apps/api/app/auth/csrf_protection.py (require_csrf_protection, a FastAPI dependency enforcing
     Origin equality against an explicit allowed_origin plus a constant-time X-CSRF-Token check
@@ -5083,7 +5084,34 @@ FTF-1503:
     (Law 11); no independent schema change (database_changes contract honored). Submitted
     PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run
     on the opened PR are needed before certification.
-  proof_state: L1-PROVEN
+
+    2026-09-25 Control-plane certification (PR#272, a cherry-pick of PR#258's own two
+    production/test commits onto current main -- PR#258 had gone stale, base several commits
+    behind main with real conflicts in the append-only tracking docs, not the production code;
+    merged here as merge commit 62b2c4be710dc9d7534becdeb799e06902cd1b77) -- independent CERTIFY
+    procedure run by this reviewing session (session-ID check clean -- PR#258's producer commits
+    carry session_01VDvxngihngbBfK5xfR5kt4, no overlap with this reviewing session). Diff read
+    directly against the real merged content: apps/api/app/auth/csrf_protection.py,
+    tests/security/csrf_suite.py, tests/tasks/test_ftf_1503.py, matching the claimed scope exactly
+    -- zero certified production files touched. Own local reproduction --
+    tests/tasks/test_ftf_1503.py (which reruns csrf_suite.py's own live-uvicorn 7-scenario suite
+    internally) all checks pass; tests/security/csrf_suite.py run directly, 7/7; ruff/ruff
+    format/mypy clean repo-wide (240 source files, confirming the producer's own repo-wide mypy
+    fix genuinely resolved CI's real failure); validate_spec.py --strict clean;
+    product_truth_check.py unchanged 19/19. Dependencies FTF-0101/FTF-0401/FTF-1501 reconfirmed
+    CERTIFIED. Own fault injection, distinct from the producer's own vector (disabled the
+    X-CSRF-Token comparison) -- removed the Origin-equality check instead (the "origin !=
+    allowed_origin" guard deleted) -- 1 genuine FAIL in the live 7-scenario suite
+    (foreign_origin_denied_even_with_real_token) and 2 genuine FAILs in the no-DB gate suite
+    (missing-Origin-denied, foreign-Origin-denied-even-with-token); reverted byte-identical, both
+    suites re-confirmed clean. Task contract re-pulled via tools/r1_handoff.py packet FTF-1503 --
+    both acceptance clauses and the negative_acceptance clause confirmed genuinely met. Real CI
+    watched to genuine completion on PR#272's real head (GitHub Actions, 30/30 green, gate
+    included) -- gate's own job log pulled directly confirmed
+    "FTF-1503 CSRF suite (no-DB) tests: all checks passed" genuinely printed by the real job, not
+    a self-reported claim. No blocking defect found. Merged PR#272 (merge commit
+    62b2c4be710dc9d7534becdeb799e06902cd1b77); closed PR#258 as superseded.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1503.py
 FTF-1504:

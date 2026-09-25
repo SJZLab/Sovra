@@ -7222,3 +7222,68 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1503 — CSRF suite
+- Criterion ID: FTF-1503
+- PR: https://github.com/SJZLab/Sovra/pull/272 (`ftf-1503-cherry-pick` -> `main`), a
+  cherry-pick of PR #258's own two production/test commits onto current `main` (PR #258
+  had gone stale, base several commits behind `main`, with real conflicts in the
+  append-only tracking docs and `.github/workflows/ci.yml`'s step ordering, not the
+  production code; closed as superseded). Merged by this review as merge commit
+  `62b2c4be710dc9d7534becdeb799e06902cd1b77`.
+- Merge commit (evidence): 62b2c4be710dc9d7534becdeb799e06902cd1b77
+- Implementation commits: `e6f96159` (CSRF suite, producer session
+  `session_01VDvxngihngbBfK5xfR5kt4`), `0fd8fc09` (repo-wide mypy fix, same session).
+- Session-ID check: producer session does not overlap this reviewing session
+  (`session_01VDSvao4KMAGwSqasd9Q9sN`) -- independent (Law 4).
+- Diff read directly against the real merged content: `apps/api/app/auth/
+  csrf_protection.py` (`require_csrf_protection`, a FastAPI dependency enforcing Origin
+  equality plus a constant-time `X-CSRF-Token` check via a pluggable, fail-closed-by-
+  default resolver; `InMemoryCsrfSessionStore`), `tests/security/csrf_suite.py` (7 real
+  scenarios against a real, locally-hosted uvicorn demonstration app), `tests/tasks/
+  test_ftf_1503.py` (no-DB gate proof that also reruns the live-server suite internally)
+  -- matching the claimed scope exactly. Zero certified production files touched
+  (`oidc_login.py`/`rbac_middleware.py`/`project_routes.py`/`main.py` all untouched).
+- Own local reproduction: `uv run python3 tests/tasks/test_ftf_1503.py` -- all checks
+  pass (including the internal live-server suite rerun); `uv run python3 tests/security/
+  csrf_suite.py` -- 7/7 directly; `uv run ruff check .` / `uv run ruff format --check .`
+  -- clean repo-wide; `uv run mypy .` -- clean repo-wide (240 source files, confirming
+  the producer's own repo-wide mypy fix genuinely resolved the real CI failure);
+  `python3 scripts/validate_spec.py --strict` -- clean; `python3 scripts/
+  product_truth_check.py --fail-on-unwired` -- unchanged at 19/19.
+- Dependencies FTF-0101/FTF-0401/FTF-1501 reconfirmed `CERTIFIED` in `docs/spec-
+  matrix.yaml` before relying on them.
+- Own fault injection (Law 1), distinct from the producer's own vector (disabled the
+  `X-CSRF-Token` comparison): removed the Origin-equality check instead (the `origin !=
+  allowed_origin` guard deleted). Ran the real suites against the faulted code: 1 genuine
+  failure in the live 7-scenario suite (`foreign_origin_denied_even_with_real_token`) and
+  2 genuine failures in the no-DB gate suite (missing-Origin-denied,
+  foreign-Origin-denied-even-with-token). Reverted byte-identical (`diff` against the
+  pre-fault copy empty); both suites re-ran clean immediately after.
+- Task contract pulled directly via `python3 tools/r1_handoff.py packet FTF-1503 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Real browser/session mutation
+  requires anti-CSRF and correct origin policy" -- proven by the live demonstration app's
+  real uvicorn server and real HTTP mutation attempts; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence recorded" -- this review,
+  plus PR #272's own real CI run) and `negative_acceptance` ("Cross-site forged
+  form/fetch, missing token and unsafe CORS cannot mutate state" -- proven by the 7
+  scenarios: missing-token, foreign-Origin, wrong-token, no-session, wrong-role and
+  cross-session-token-reuse all denied) both genuinely met. `shared_lock_required`
+  confirmed empty in the same packet.
+- Real CI watched to genuine completion on PR #272's real head (`8514e18`): 30/30
+  checks `success`, `gate` included. `gate`'s own job log pulled directly confirmed
+  "FTF-1503 CSRF suite (no-DB) tests: all checks passed" genuinely printed by the real
+  job (immediately after the already-certified FTF-1506 step), not a self-reported claim.
+- No blocking defect found. Merged PR #272 (merge commit
+  `62b2c4be710dc9d7534becdeb799e06902cd1b77`). Closed PR #258 as superseded, with an
+  explanatory comment. `docs/spec-matrix.yaml`'s FTF-1503 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to
+  the merge commit. Ran `sync_certified_status()` -- `['FTF-1503']` updated.
+  `scripts/status.py`: `65/300` -> `66/300` certified. Product-true unchanged at `19/19`
+  (no live caller added -- this task's own dependency is not yet wired into `main.py`,
+  matching `require_role`'s own already-disclosed precedent).
+- Validated-by: session https://claude.ai/code/session_01VDSvao4KMAGwSqasd9Q9sN
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.
