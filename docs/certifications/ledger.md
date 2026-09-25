@@ -7287,3 +7287,64 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A17 — DiscoveredAgentCandidate schema/API
+- Criterion ID: FTF-04A17
+- PR: https://github.com/SJZLab/Sovra/pull/278 (`claude/wizardly-fermat-66cdlv` -> `main`),
+  the wiring-fix remediation this file's own preceding FTF-1503 entry's neighboring Law 9
+  finding (`docs/certifications/queue.md`) specified for the next relay shift. Merged by
+  this review as merge commit `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`.
+- Merge commit (evidence): fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde
+- Implementation commit: `2986e78533b05de4928eacb88e90c695854546de` (router-wiring fix +
+  contract extension + new test, producer session `session_01YFs4HNmG9o3rdFB6JbFqe4`).
+- Session-ID check: producer session does not overlap this reviewing session
+  (`session_01DkbaexyroHG2XnmvqXTC7C`) -- independent (Law 4).
+- Diff read directly against the real merged content: `apps/api/app/main.py` (the missing
+  import + `app.include_router(build_discovered_agent_candidate_router(session_factory))`
+  line, twelfth router, matching every sibling router's own convention exactly),
+  `packages/contracts/openapi/04A-interface.yaml` (the real `/candidates` collection/item
+  paths and their request/response schemas under their own `contracts:04A` lock),
+  `tests/tasks/test_ftf_04a17.py` (new `test_router_is_wired_into_the_live_app`) -- matching
+  the claimed scope exactly, zero scope creep, zero other production file touched.
+- Own local reproduction, directly on the real PR head
+  (`2986e78533b05de4928eacb88e90c695854546de`): `uv run ruff check .` / `uv run ruff format
+  --check .` / `uv run mypy .` all clean repo-wide (246 source files); `uv run python3
+  tests/tasks/test_ftf_04a17.py` -- 35/35; `uv run python3 scripts/product_truth_check.py
+  --fail-on-unwired` -- 20/20, a real non-test text-search hit on `apps/api/app/main.py` for
+  `build_discovered_agent_candidate_router` (not a vacuous 0/0 -- this criterion's
+  `proving_symbol` is filled in, so 0/0 would not have been an acceptable pass).
+- Own fault injection (Law 1), independently reproduced rather than trusting the producer's
+  self-report: manually removed the import and `app.include_router(...)` line this PR added
+  from `apps/api/app/main.py` and re-ran `tests/tasks/test_ftf_04a17.py` directly -- 1
+  genuine `FAIL [FTF-04A17]` ("the real live app exposes the candidates collection route
+  ..."), byte-identical to the PR's own disclosed before-fix failure. Restored the file from
+  an untouched copy (`git status` confirmed clean, no stray diff) and re-ran -- all 35 checks
+  pass again.
+- Task contract re-pulled via `tools/r1_handoff.py packet FTF-04A17 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Store every candidate with
+  traceable evidence and unresolved fields; expose paginated project-scoped API") is now
+  genuinely met on the live path -- the route is reachable from `app.main.create_app()`, not
+  merely defined; `negative_acceptance` ("Candidate priority/confidence is not calibrated
+  probability or automatic in-scope selection") reconfirmed still held (unchanged
+  schema/CRUD layer, restated explicitly in the new OpenAPI descriptions).
+  `shared_lock_required` (`contracts:04A`, `migration:application`) respected -- only the
+  named `contracts:04A` file touched, no competing migration added.
+- Real CI watched to genuine completion on PR #278's real head
+  (`2986e78533b05de4928eacb88e90c695854546de`): 31/31 checks `success`, `gate` and
+  `discovered-agent-candidate-integration` both included -- confirmed via the GitHub
+  check-runs API directly against the head SHA, not a self-reported claim.
+- PR #276 (the earlier, incomplete self-certification this task's own Law 9 finding
+  caught mid-flight) reconfirmed `state: closed`, `merged: false` -- the false-certification
+  path never landed; `docs/spec-matrix.yaml`'s FTF-04A17 entry was never left `CERTIFIED`
+  without this wiring fix.
+- No blocking defect found. Merged PR #278 (merge commit
+  `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`). `docs/spec-matrix.yaml`'s FTF-04A17 entry set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to
+  the merge commit. Ran `sync_certified_status()` -- `['FTF-04A17']` updated.
+  `scripts/status.py`: `66/300` -> `67/300` certified, product-true `19` -> `20` (the router
+  is now a real, reachable live caller).
+- Validated-by: session https://claude.ai/code/session_01DkbaexyroHG2XnmvqXTC7C
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.
