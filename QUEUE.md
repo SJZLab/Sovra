@@ -1,4 +1,65 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_0168AaEA7QKUtQrJjYwz6fbF) — **FTF-0509
+  (Tool argument validator) submitted PROVISIONAL.** STEP 0: CLAUDE.md hash
+  verified clean; no `BLOCKER.md` present. `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` read fresh (`70/300` certified, `20`
+  product-true at shift start). Checked GitHub directly: 3 open PRs (#231
+  FTF-0212, #195/#194 FTF-0304), excluded per the same long-standing
+  precedent every prior shift has applied.
+
+  Recomputed the dependency-ready frontier from `docs/spec-matrix.yaml`
+  joined against `docs/TASK_INDEX.md` (16 ready tasks). Excluded
+  FTF-0212/FTF-0304 (open PRs), FTF-0302/FTF-0303/FTF-1201/FTF-H004 (real
+  network egress), FTF-1703 (needs >=1000 real curated traces), FTF-04A02
+  (keyed external credential, ask-first), UI-heavy FTF-0214/0215/0408/
+  0500A/0500D, FTF-0902 (`shared_lock_required`), and FTF-0513 (new
+  embedding-library runtime dependency, ask-first — same reasoning the
+  FTF-0514 shift already recorded). Remaining candidates: FTF-0509,
+  FTF-04A08, FTF-04A19.
+
+  **Picked FTF-0509** ("Tool argument validator") — lowest-ID,
+  dependency-ready (FTF-0405/FTF-0500/FTF-0508 all CERTIFIED), same
+  tractable pure-computation/no-DB/no-shared-lock/no-new-dependency shape
+  as the already-CERTIFIED FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/
+  FTF-0514 siblings.
+
+  Implemented `workers/data/tool_argument_validator.py::validate_tool_calls`:
+  validates a batch of Section 7 canonical `tool_calls` entries against a
+  caller-supplied `LockedToolContract` manifest snapshot
+  (name/version/input_schema_json/output_schema_json/is_critical — the
+  same fields FTF-0404's/FTF-0407's already-CERTIFIED `ToolDefinition`
+  already fixes). Schema/type checking is delegated to a
+  dependency-injected `instance_validator`, the exact `ToolArgumentValidator`
+  Protocol shape FTF-0506 already fixes, proven against FTF-0405's real
+  `validate_instance` (not a stand-in). `tool_schema_status` reuses
+  FTF-0508's own already-CERTIFIED three-value enum verbatim.
+
+  negative_acceptance ("Schema coercion, extra critical arguments or wrong
+  manifest/tool version blocks acceptance") met by: coercion rejection
+  inherited by construction from `validate_instance`; an independent
+  extra-argument guard scoped to `is_critical` contracts; and a
+  version-drift guard (Section 7A.9) rejecting a tool call when the locked
+  contract's own version no longer matches the tool's currently active
+  version.
+
+  `tests/tasks/test_ftf_0509.py`: 15 no-DB tests, all pass. Two independent
+  fault injections (disabled the extra-critical-argument guard; disabled
+  the wrong-tool-version guard), each reverted byte-identical: 1 genuine
+  FAIL each.
+
+  `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide.
+  `product_truth_check.py` unchanged at `20/20` (no live import-pipeline
+  caller yet, same disclosed precedent as every sibling). `status.py`
+  unchanged at `70/300` certified (Law 2). Regression swept
+  `test_ftf_0405/0500/0506/0507/0508/0511/0512/0514.py` — zero
+  regressions. Wired into `.github/workflows/ci.yml`'s `gate` job.
+
+  **PR:** opened against `main` from branch `claude/wizardly-fermat-8tsbnt`,
+  title `[relay] FTF-0509: Tool argument validator` (PR #288). Appended to
+  `docs/certifications/queue.md` for Control plane. No open owner ask.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_011YeU25q3weEVzow9D8C1jz, triggered by the
   `pull_request.opened` webhook for PR #289) — independently reviewed FTF-04A08
@@ -4782,8 +4843,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-(Note: PR #288, "[relay] FTF-0509: Tool argument validator," is a separate, still-open,
-unrelated PROVISIONAL item — see `docs/certifications/queue.md` for it once reviewed.)
+**FTF-0509 ("Tool argument validator")** — submitted 2026-09-25 via PR #288 (branch
+`claude/wizardly-fermat-8tsbnt`), title `[relay] FTF-0509: Tool argument validator`. Full
+implementation record: this file's own top dated entry, `docs/certifications/queue.md`,
+`PROGRESS.md`. Awaiting Control-plane L2 certification and a real CI run on the opened PR — not
+this relay's role.
 
 **FTF-04A08** ("Source-analysis worker foundation") was the item here before that; submitted
 PROVISIONAL 2026-09-25 via PR #289, it hit a real CI failure mid-review (a Python-3.12-incompatible
