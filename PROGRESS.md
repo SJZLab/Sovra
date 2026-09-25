@@ -1,4 +1,64 @@
 # PROGRESS — Sovra
+## 2026-09-25T20:58:07Z — Relay shift: FTF-0214 (Model catalog UI) — BLOCKED, stopped per STEP 4(b)
+
+Scheduled relay shift. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh — `QUEUE.md` "Owner actions — current": None. "Active": None. "Provisional": None.
+CLAUDE.md self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no
+mismatch, shift continued. Confirmed local `HEAD` (`dbdb2c5`) is byte-identical to the real
+GitHub `main` (fetched directly via the GitHub API, not trusted from a stale local
+`origin/main` ref, which was in fact one fetch behind at first check).
+
+STEP 1: recomputed the dependency frontier fresh from `docs/spec-matrix.yaml`
+`certification_state` joined against each task's `deps=` (`docs/TASK_INDEX.md` cross-checked as
+canonical) — 18 genuinely dependency-ready `NOT_STARTED` items. Checked open PRs first (`gh`/
+GitHub API, not assumed): 4 open, non-tracking two of which (#231 FTF-0212, #194/#195 duplicate
+FTF-0304) already claim two frontier items — excluded both from consideration to avoid a third
+duplicate. Of the remaining 16, lowest task ID is **FTF-0214 (Model catalog UI)** — picked,
+"Working: FTF-0214."
+
+**PEV, P phase only — stopped before any code change.** Pulled the real DoD
+(`tools/r1_handoff.py packet FTF-0214 --plan FINE_TUNING_FACTORY_RELEASE_1.md`), then read the
+actual current backend rather than trusting the packet's own `api_contract` string: full read of
+`apps/api/app/litellm/connection_routes.py`, `packages/litellm_client/{alias_reconciliation,
+last_known_good_catalog,catalog_anomaly_detector,real_chat_probe}.py`, `apps/api/app/main.py`'s
+router wiring, `packages/contracts/openapi/02-interface.yaml`, and (via a research subagent
+whose specific file/route claims were independently re-verified by direct reads before being
+relied on, not trusted at face value) the existing `apps/web` UI component/test conventions.
+
+**Found a genuine blocker, not improvised past it (CLAUDE.md "Relay is execution-only"):**
+FTF-0214's own stated acceptance ("Catalog shows actual access freshness/capability/probe
+evidence... explicit project selection") has no live backend surface to build against.
+`connection_routes.py`'s own module docstring states outright that it deliberately excludes a
+composed `sync-models`/`syncs`/`/models`/`/models/{id}/probe` surface — "declaring that surface
+here without a real backing call would be exactly the placeholder endpoint Law 11... forbid[s]"
+— and `packages/contracts/openapi/02-interface.yaml` repeats the identical exclusion verbatim.
+FTF-0207/0208/0209/0210 are genuinely CERTIFIED but strictly as pure, no-I/O logic with zero HTTP
+surface (confirmed by direct read of all four files, not the docstring summary alone). Separately,
+grepped `apps/api/app/projects/` directly: no `Project`↔`LiteLLMConnection` binding exists
+anywhere in this repository — every certified CAP-02 task scopes a connection to an organization
+only, never a project — so "explicit project selection" has no schema to satisfy it against
+either. Checked whether this phrase is reused spec boilerplate before treating it as load-bearing:
+it appears exactly once in `FINE_TUNING_FACTORY_RELEASE_1.md`, only in FTF-0214's own acceptance
+entry — a specific, intentional requirement, not a copy-paste artifact.
+
+This is not this repo's usual "no live caller yet, disclosed" scope reduction (where the built
+artifact is complete on its own terms and simply unconsumed downstream) — here the *consumer*
+(this UI task) has nothing real to consume for its own criterion's central substance. Wrote
+`BLOCKER.md`'s new "OPEN 2026-09-25 — FTF-0214" entry with the full evidence and three route
+options for Control plane/owner (slice a prerequisite composed-catalog+gated-probe backend task
+and freeze its contract first; formally narrow FTF-0214's acceptance to match what's live today;
+or confirm/resolve whether "project selection" is a spec-authoring artifact or an intended,
+not-yet-built binding). Added the matching entry to `QUEUE.md`'s "## Blocked" section.
+
+**No code, spec-matrix, or tracking-doc changes for FTF-0214 itself** — no file under its own
+`files` write set was touched, no task marked `IN_PROGRESS`. No other frontier item claimed this
+shift, per STEP 4(b)'s own stop condition (a true blocker stops the shift, not a pivot to a
+different item). `scripts/status.py` unchanged at `73/300` certified / `20` product-true — this
+shift made no certification-affecting change. No open owner ask added (this is a Control-plane/
+architecture escalation via `BLOCKER.md`, not a secrets/money/dependency-swap hard-stop matching
+CLAUDE.md's "Ask owner first" categories, so `QUEUE.md`'s "Owner actions — current" block is
+correctly left untouched).
+
 ## 2026-09-25 — FTF-0408 — Control plane: CERTIFIED (PR #293 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #293, session

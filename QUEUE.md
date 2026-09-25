@@ -7659,8 +7659,22 @@ to get its real DoD — read the generated
 not merely because the task looked title-only elsewhere.
 
 ## Blocked
-(no task currently blocked — all three entries below are resolved history,
-kept for the record.)
+- FTF-0214 (Model catalog UI) — **OPEN 2026-09-25.** Frontier-eligible by
+  dependency graph (all five listed deps CERTIFIED), lowest-ID unclaimed,
+  no existing open PR — but its own stated acceptance ("Catalog shows
+  actual access freshness/capability/probe evidence... explicit project
+  selection") has no live backend surface to build against:
+  `connection_routes.py` and the frozen `packages/contracts/openapi/
+  02-interface.yaml` both explicitly, deliberately exclude a composed
+  catalog/probe route (FTF-0207/0208/0209/0210 are CERTIFIED as pure
+  no-I/O logic only, zero HTTP surface); and no `Project`↔
+  `LiteLLMConnection` binding exists anywhere in this repo to back
+  "project selection" (CAP-02 is uniformly organization-scoped). See
+  `BLOCKER.md`'s matching entry for the full evidence and three route
+  options put to Control plane/owner. No code changed for this task; no
+  other item claimed this shift (STEP 4(b) stop).
+
+(the three entries below are resolved history, kept for the record.)
 - (FTF-0101's 2026-09-18 new-runtime-dependency ask — no live FastAPI app,
   no Next.js/React runtime, no OIDC/JWT client or session library — was
   resolved 2026-09-19 by live owner confirmation (option 1: FastAPI +
