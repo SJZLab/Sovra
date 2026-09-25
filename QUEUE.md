@@ -1,5 +1,18 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+Updated: 2026-09-25 (relay shift, this session) — **FTF-0408 ("Requirements UI") submitted
+  PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md: no Active or
+  Provisional item and no open owner ask at shift start (FTF-0509/FTF-04A08 both already
+  CERTIFIED by concurrent Control-plane sessions). Surveyed `docs/spec-matrix.yaml` for every
+  dependency-ready candidate with an existing task packet not yet CERTIFIED — 7 found
+  (FTF-0214/FTF-0215/FTF-0408/FTF-04A02/FTF-0500A/FTF-0500D/FTF-0902), all with every named
+  dependency already CERTIFIED. Ruled out FTF-0902 (needs a real enforcing CNI/firewall cluster)
+  and FTF-04A02 (needs a real GitHub App/private test repository) as genuinely BLOCKED_EXTERNAL
+  in this relay sandbox (no such live external prerequisite reachable here); picked FTF-0408 as
+  the best-scoped, dependency-ready item with no external-service prerequisite. Full PEV record:
+  `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`. See "## Provisional"
+  below for the submission summary. No open owner ask.
+
+Previously updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_017A46uPoS88U6M8ZtZHZaqC, triggered by the
   `pull_request.opened` webhook for PR #290) — **FTF-0509 (Tool argument validator)
   independently reviewed and CERTIFIED.** Entire session task per this certifier's standing
@@ -4886,7 +4899,22 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. **FTF-0509 ("Tool argument validator")** was the item here; submitted 2026-09-25
+**FTF-0408 ("Requirements UI")** — submitted 2026-09-25 via PR #293 from branch
+`claude/wizardly-fermat-q17awc` against `main`, title `[relay] FTF-0408: Requirements UI`. A real
+frontend component (`apps/web/components/project-mandate/requirements_ui.tsx::RequirementsPanel`)
+assembling three already-CERTIFIED live surfaces for one project — FTF-0407's read-only
+critical-behavior requirements view (surfacing a real desired-vs-enforced conflict badge, never
+silently resolved), FTF-0403's budget-policy create/revise (real `expected_row_version`
+optimistic concurrency, `currency` never sent on revise), and a read-only pointer to
+`security_profile`'s one real edit path in FTF-0401's `ProjectSetupForm`. Scope disclosed, not
+hidden: the packet's own "mandate/languages/outputs/SLO" editing and "explicit lock" acceptance
+language is out of scope — no `AgentManifest` storage exists yet anywhere in this repository, a
+later task's job. 8 real Vitest/RTL component tests, two independent fault injections both
+genuinely caught and reverted byte-identical. Full record: `docs/certifications/queue.md`'s
+matching 2026-09-25 entry, `PROGRESS.md`. Awaiting Control-plane L2 certification and a real CI
+run on the opened PR — not this relay's role.
+
+FTF-0509 ("Tool argument validator") was the item here before that; submitted 2026-09-25
 via PR #288, it hit a real merge conflict (its base had fallen several merges behind `main` by
 review time) which this reviewing session resolved before re-verifying real CI on the merged
 commit and **CERTIFIED 2026-09-25** via PR #288 (merge commit

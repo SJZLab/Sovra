@@ -18610,3 +18610,112 @@ or queue reprioritization performed beyond what this certification naturally req
 No open owner ask. PR #288 (FTF-0509) left entirely alone, a separate concurrent item.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25T18:59:13Z — Relay shift: FTF-0408 ("Requirements UI") submitted PROVISIONAL (PR #293)
+
+STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh, no assumed state.
+CLAUDE.md hash self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly. No Cognee CLI available in this sandbox; used the disclosed text-search fallback
+(`product_truth_check.py`'s own caller-resolution method) throughout, declared here per STEP 0.2.
+
+STEP 1: no Active or Provisional item and no open owner ask at shift start — FTF-0509 and
+FTF-04A08 had both already been independently CERTIFIED by concurrent Control-plane sessions
+before this shift began (see QUEUE.md's own top log). Queried `docs/spec-matrix.yaml`
+programmatically for every task with an already-generated `docs/implementation/task-packets/`
+file not yet `CERTIFIED`: 7 found (FTF-0214, FTF-0215, FTF-0408, FTF-04A02, FTF-0500A, FTF-0500D,
+FTF-0902), every one with all of its own named dependencies already `CERTIFIED` — genuinely
+dependency-ready, not merely candidate. Read each packet's own `resource_gate`/acceptance text:
+ruled out FTF-0902 ("Install and test actual CNI/firewall/DNS/IPv6/metadata restrictions" needs
+a real enforcing cluster this sandbox does not have) and FTF-04A02 ("Use real read-only GitHub
+App/approved token ... validate installation/repository scope" against "a real private test
+repository") as genuinely BLOCKED_EXTERNAL here, consistent with this relay's own standing
+"cannot reach external APIs with open egress" sandbox constraint. Picked **FTF-0408** ("Requirements
+UI") as the best-scoped, dependency-ready item with no external-service prerequisite. State: 'Working: FTF-0408.'
+
+**PEV, not mixed.** P: read `docs/implementation/task-packets/FTF-0408.md` in full, Section
+7A.6/7A.7 (mandate authoring / Agent Manifest build), `critical_behavior_requirement_routes.py`
+(FTF-0407, CERTIFIED — its own module docstring names this exact task by name), `budget_policy_
+routes.py`/`budget_policy_schema.py` (FTF-0403, CERTIFIED), and the existing frontend component/
+test conventions this repository already established (`project_schema_api_ui.tsx`/`ftf_0401.spec.ts`,
+`costprofile_schema_ui.tsx`/`ftf_1301.spec.ts` — Vitest + React Testing Library + jsdom, mocked
+`fetch`, `data-testid`-driven assertions on real request method/URL/JSON body, no Next.js app
+shell exists yet). Confirmed FTF-0401/FTF-0402/FTF-0403/FTF-0407 all `CERTIFIED` in
+`docs/spec-matrix.yaml` before relying on them.
+
+Scope refined and disclosed, not improvised: the packet's own acceptance clause literally names
+"mandate/languages/outputs/SLO" editing and an "explicit lock after model/runtime resolution" —
+Section 6.8D's own `AgentManifest` (`mandate_json`/`forbidden_actions_json`/locking) is not real
+storage anywhere in this repository yet (`critical_behavior_requirement_routes.py`'s own module
+docstring says so explicitly, and no later task has built it). A UI control that appeared to
+save those fields or "lock" anything with no real backing table would be exactly the "production
+placeholder path" Law 11 forbids. Scoped this task down to the three surfaces that are genuinely
+real today: FTF-0407's read-only critical-behavior view, FTF-0403's budget-policy create/revise,
+and a read-only pointer to `security_profile`'s one real edit path (`ProjectSetupForm`) — the
+same "claim only dependency-ready, lock-safe work" discipline every packet's own preamble
+requires, and the same precedent FTF-04A08/FTF-0500/FTF-0407 themselves already established for
+their own out-of-scope boundaries.
+
+E: wrote `apps/web/components/project-mandate/requirements_ui.tsx::RequirementsPanel`. Real
+`fetch` calls against the live `GET .../requirements` and `GET/POST/PATCH .../budget-policy`
+routes — every action a real network call, never a fake local state update (Law 9). Every tool's
+declared (`is_critical`/`requires_confirmation`) state is compared against its own
+`runtime_enforced` state; a mismatch renders a real, visible conflict badge, never silently
+resolved (this task's own negative_acceptance: "show observed/desired/enforced conflicts").
+Budget-policy `currency` is only ever sent on create (input disabled thereafter), matching
+`revise_budget_policy`'s own contract, which does not accept a currency change.
+`expected_row_version` (the real "version preview" this task's own acceptance clause names) is
+sent with every revision, so a stale concurrent edit is refused by the backend (409) rather than
+silently overwritten; a failed submit leaves the user's own typed draft in place (never reverts
+it) and surfaces the real server-provided error detail. `security_profile` is rendered read-only
+with no second, competing write surface for the same field `ProjectSetupForm` already owns.
+
+`apps/web/tests/ftf_0408.spec.ts`: 8 real component/DOM-level test functions, all pass against
+the unmodified code. **Two independent fault injections, re-run against the final, formatted
+committed content:**
+1. Hardcoded the conflict flag to `false` (`const conflict = false && ...`) — **a genuine FAIL**
+   on `requirement-conflict-tool-conflict` never rendering, reproducing exactly the "silently
+   resolved conflict" failure this task's own negative_acceptance exists to prevent.
+2. Added `currency` back into the PATCH revise request body — **a genuine FAIL** on the
+   "PATCH never sends currency" assertion, reproducing exactly the "implicit currency overwrite"
+   this task's own scope boundary exists to prevent.
+Both reverted from an untouched backup; `diff` confirmed byte-identical after each revert; re-ran
+clean both times.
+
+V: `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same
+disclosed precedent as every prior shift) — confirmed this branch's own HEAD already equalled
+`origin/main`'s real tip (`22fa4d6`, PR #292 merged) before starting, so no dependency evidence
+relied on here was stale. `pnpm install --frozen-lockfile`; `pnpm exec vitest run` clean, 27/27
+across all 6 test files (no regression in `ftf_0101`/`ftf_0401`/`ftf_1301`/`src/index.test.ts`).
+`pnpm run typecheck` clean (two `possibly undefined` findings in the new test file's own
+non-null-asserted tuple destructuring fixed with an explicit second `!`). `pnpm run lint` clean
+(one `react-hooks/exhaustive-deps` disable-comment removed — that ESLint plugin/rule is not
+configured in this repository, so the comment itself was a lint error; the underlying
+run-once-per-identity-triple behavior is unchanged, now explained in a plain comment instead).
+`pnpm run format:check` clean after one `prettier --write` pass on both new files.
+`uv sync --all-packages`; `uv run ruff check .`/`uv run ruff format --check .`/`uv run mypy .`
+clean repo-wide (256 source files — no Python file touched by this task, confirming zero
+regression). `python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py
+--fail-on-unwired` unchanged at `20/20` (this task introduces no new backend dispatcher/router
+symbol of its own — it composes only already-certified, already-wired FTF-0407/FTF-0403 routes —
+`proving_symbol` left blank, disclosed, same precedent as FTF-04A08/FTF-0509/FTF-0511/FTF-0512/
+FTF-0514). `status.py` unchanged at `72/300` certified (Law 2 — not self-inflated). Regression
+swept `tests/tasks/test_ftf_0401.py`/`test_ftf_0403.py`/`test_ftf_0407.py` — all "all checks
+passed," zero regressions (before/after confirmation only; no Python file was touched by this
+task). `uv run python3 scripts/verify_task.py --task FTF-0408 --stage task` reports `BLOCKED`
+pre-merge ("has no merged verification evidence yet"), expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-0408 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge commit hash is
+known (same precedent as every recent sibling). **Not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+Diff scope confirmed exactly the files this task needs (`apps/web/components/project-mandate/
+requirements_ui.tsx`, `apps/web/tests/ftf_0408.spec.ts`, `docs/spec-matrix.yaml`'s FTF-0408
+entry) plus this shift's own `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tracking
+updates — no scope creep, no other task's files touched.
+
+STEP 4 stop condition (a): this item is now L1-PROVEN, PR opened and queued for Control-plane
+L2 certification and the L4 gate — awaiting Control plane, stop. No open owner ask.
+
+- **Reviewed-by:** not yet — awaiting independent Control-plane L2 certification (Law 4: producer
+  never certifies own work).
