@@ -1,4 +1,29 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled relay shift, session
+  https://claude.ai/code/session_01ENwUzgKyzCgRiwm6HLPaKm) — **FTF-1506's real CI
+  dependency-scan finding remediated, PR #268 (supersedes PR #262).** Surveyed the three
+  open `[relay]` PRs with previously-diagnosed CI failures (FTF-1503/PR #258,
+  FTF-04A17/PR #260, FTF-1506/PR #262) via real `get_check_runs` before picking work:
+  FTF-1503 and FTF-04A17 were both already fixed by their own producer sessions and are
+  fully green (29/29, 30/30) — no relay action left there, only Control-plane L2
+  certification. FTF-1506 was the one genuinely unaddressed item. Cherry-picked its
+  implementation commit onto this session's own designated branch (cannot push to
+  another session's branch), bumped `apps/api/pyproject.toml`'s `fastapi` to
+  `>=0.130.0,<0.142` and `authlib` to `>=1.8.0,<1.9`, forced `uv lock
+  --upgrade-package starlette --upgrade-package authlib` (resolved `starlette==1.7.0`,
+  `fastapi==0.141.1`, `authlib==1.8.0` — a bare `uv lock` alone keeps the old vulnerable
+  `starlette==0.46.2`). Full local gate reproduction clean (lint/format/mypy, every
+  FastAPI/starlette-touching task suite individually re-verified with zero regressions,
+  `validate_spec.py --strict`, `product_truth_check.py` and `status.py` unchanged at
+  `19/19`/`64/300`). Whether `authlib==1.8.0` actually clears OSV's `PYSEC-2026-287`
+  cannot be confirmed locally (sandbox proxy blocks `api.osv.dev` directly) — the real
+  `dependency-scanning-integration` CI job on PR #268's own head is the only genuine
+  proof, being watched now. Not self-certified — `docs/spec-matrix.yaml`'s FTF-1506
+  entry left at `PROVISIONAL`/`L1-PROVEN`. Full record: `docs/certifications/queue.md`,
+  `PROGRESS.md`. PR #262 left open, to be closed as superseded once PR #268's CI is
+  confirmed green.
+
+## Previous shift
 Updated: 2026-09-25 (same scheduled Control-plane certifier shift as below,
   `pull_request.opened` webhook for PR #262) — per the certifier's standing
   duty to check `docs/certifications/queue.md` for every pending

@@ -5043,16 +5043,129 @@ FTF-1505:
   proving_symbol: ''
   proving_test: ''
 FTF-1506:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Dependency scanning
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26; deps=FTF-0002, FTF-0004,
-    FTF-1501
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
+    deps=FTF-0002, FTF-0004, FTF-1501 (all three CERTIFIED, confirmed before
+    relying on them). `shared_lock_required` is empty (confirmed via
+    `tools/r1_handoff.py packet FTF-1506`) -- this task reads the section-15
+    security-domain contract FTF-1501 already froze but adds no new
+    schema/interface entity: it is a CI security tool, not a product API
+    surface, so `packages/contracts/openapi/15-interface.yaml` and
+    `packages/contracts/jsonschema/15-domain.schema.json` stay untouched.
+
+    Built for real: `tests/security/dependency_scanning.py` parses this
+    repo's own real pinned dependencies (`uv.lock` for PyPI, `pnpm-lock.yaml`
+    for npm), queries OSV.dev's public vulnerability database for each one,
+    and enforces a recorded exception policy
+    (`tests/security/dependency_scan_policy.yaml`, committed empty). A
+    CRITICAL/HIGH or severity-UNKNOWN finding blocks unless a matching,
+    non-expired, non-blank-justification policy exception names that exact
+    (ecosystem, package, vuln id) tuple -- negative_acceptance ("Unknown/
+    unpatched critical/high finding cannot be silently ignored to satisfy
+    cost or schedule") is met by construction: UNKNOWN severity blocks by
+    default (fail-closed), an expired exception is void, and a blank/
+    whitespace-only justification is void. Severity is derived from OSV's
+    own `database_specific.severity` (GHSA's enum) when present, else from a
+    real CVSS v3.1 base-score calculation (the published formula --
+    verified against CVE-2021-44228 "Log4Shell"'s own independently
+    published NVD base score of 10.0/CRITICAL) against the vuln's own CVSS
+    vector; anything with neither is UNKNOWN, never guessed as low-risk. A
+    provider/network failure raises rather than returning an empty result
+    (Law 17 -- never silently converted to a false pass).
+
+    Sandbox network reality (disclosed, not assumed): this repo's
+    interactive dev sandbox routes outbound HTTPS through a restricted
+    proxy that blocks `api.osv.dev` directly (`curl` to it returns a 403
+    CONNECT-tunnel failure from the proxy itself) -- the same class of
+    external-network gap FTF-0004's container-registry pull already
+    disclosed. Per this relay's own operating instructions ("route live
+    external proofs through CI Actions workflows"), the real OSV.dev call
+    is proven for real only by the new `dependency-scanning-integration` CI
+    job (a GitHub-hosted runner with real internet egress); every no-network
+    part of this module (lockfile parsing, CVSS scoring, severity bucketing,
+    fixed-version extraction, policy-exception validity, the blocking
+    decision itself) is proven directly, without a live provider, by
+    `tests/tasks/test_ftf_1506.py` (19 checks): a real CVSS v3.1 reference
+    score reproduced exactly; CVSS bucket boundaries; unparseable-vector
+    rejection; `database_specific.severity` taking priority over CVSS;
+    UNKNOWN-severity fallback; fixed-version extraction scoped to the exact
+    (ecosystem, name) pair; Law 1's zero-dependency refusal; an unpatched
+    CRITICAL finding blocking with no exception; MEDIUM/LOW never blocking;
+    UNKNOWN blocking by default; a valid exception voiding a finding; an
+    expired exception still blocking; a blank-justification exception still
+    blocking; a mismatched vuln id/package never over-applying; content-free
+    construction; and this repo's own real `uv.lock`/`pnpm-lock.yaml`
+    parsing (non-trivial counts, a known PyPI package present, a known npm
+    package's real major version, a scoped npm package parsed correctly, no
+    duplicate (name, version) pairs).
+
+    Own fault injection (Law 1, two distinct vectors, both reverted
+    byte-identical, suite re-confirmed clean immediately after each): (1)
+    narrowed `BLOCKING_SEVERITIES` to drop `UNKNOWN` -- 1 genuine FAIL. (2)
+    disabled `PolicyException.is_valid`'s own expiry check -- 1 genuine
+    FAIL (the expired-exception negative_acceptance case). Both reverted;
+    `diff` against the pre-fault copy confirmed byte-identical; suite
+    re-ran clean both times.
+
+    `ruff check`/`ruff format --check`/`mypy` clean repo-wide.
+    `validate_spec.py --strict` clean. `product_truth_check.py
+    --fail-on-unwired` unchanged at 19/19 (no live caller yet -- this is a
+    CI security tool, not a product route, same disclosed "no live caller
+    yet" precedent already established for FTF-0506/FTF-0507). Regression
+    clean: `test_ftf_1501.py`/`test_ftf_0002.py` re-run "all checks
+    passed". Wired into CI: a new `gate` job step (no-network suite) plus a
+    dedicated `dependency-scanning-integration` job (real OSV.dev network
+    call on a GitHub-hosted runner).
+
+    2026-09-25 relay follow-up (real CI finding, not a defect in this
+    module -- see this shift's own submission record in
+    `docs/certifications/queue.md`/`QUEUE.md`/`PROGRESS.md`): the first
+    real `dependency-scanning-integration` run against this PR's original
+    head found 16 real, currently-unpatched CRITICAL/HIGH/UNKNOWN findings
+    against dependency versions already pinned on `main` before this task
+    touched anything (`authlib==1.3.2` CRITICAL/PYSEC-2026-287,
+    `starlette==0.46.2` multiple HIGH via `fastapi`'s own transitive pin).
+    This is the negative_acceptance clause working as specified -- CI
+    correctly refused to go green on a real, unaddressed vulnerable pin.
+    Remediated by bumping `apps/api/pyproject.toml`'s `fastapi` constraint
+    to `>=0.130.0,<0.142` (its own `starlette` floor moves past the fixed
+    versions at that range) and `authlib` to `>=1.8.0,<1.9` (latest
+    available on PyPI at bump time), then `uv lock
+    --upgrade-package starlette --upgrade-package authlib` to force the
+    transitive resolution (a bare `uv lock` alone keeps the previously
+    locked, still-satisfying-the-new-range 0.46.2 -- confirmed by
+    reproducing that exact behavior first). Resolved:
+    `starlette==1.7.0`, `fastapi==0.141.1`, `authlib==1.8.0`. Full gate
+    job reproduced locally end to end on the bumped lockfile before
+    pushing: `ruff`/`ruff format`/`mypy` clean; `pnpm run
+    lint`/`format:check`/`typecheck` clean; every `uv run python3
+    tests/tasks/test_ftf_*.py`/`tests/implementation/*.py`/
+    `tests/reference/*.py` step the real `gate` job runs (all
+    FastAPI/starlette-touching suites explicitly re-checked:
+    FTF-0101/0103/0105/H003/0106/0201/0301/0401/0402/0305/0404/0405/0406/
+    0407/0403/1001/0500/H006/0203-0209/04A01/0506-0508/04A06/04A07/R002)
+    passed clean; `validate_spec.py --strict` clean (after `git fetch
+    --unshallow`, this sandbox's own pre-existing shallow-clone artifact,
+    same disclosed precedent as prior shifts); `product_truth_check.py
+    --fail-on-unwired` and `scripts/status.py` unchanged at `19/19`/
+    `64/300` -- no certified evidence touched by this dependency-only fix.
+    Whether authlib 1.8.0 actually clears OSV's PYSEC-2026-287 finding
+    cannot be confirmed locally (this sandbox's own outbound proxy blocks
+    `api.osv.dev` directly, same disclosed gap as above) -- the real
+    `dependency-scanning-integration` CI job on this fix's actual PR is
+    the only genuine proof, watched to completion as part of this
+    submission. `certification_state`/`proof_state` deliberately left
+    unchanged by this relay fix (still PROVISIONAL/L1-PROVEN,
+    self-certification is Law 4) -- Control plane still needs to run its
+    own independent CERTIFY procedure.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1506.py
 FTF-1507:
   certification_state: NONE
   criticality: MUST
