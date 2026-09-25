@@ -1,4 +1,25 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (same scheduled Control-plane certifier shift as below,
+  continuing the standing duty to check every pending PROVISIONAL item) —
+  **FTF-04A17 (DiscoveredAgentCandidate schema/API), PR #274: CERTIFIED.**
+  The real CI run this session had been watching (see the previous dated
+  entry below) completed 30/30 green, including `gate` and
+  `discovered-agent-candidate-integration` — both job logs pulled directly
+  and confirmed genuine execution against a real Postgres 16 service
+  container, matching the own local live-Postgres reproduction and fault
+  injection already recorded below. **Merged PR #274** (merge commit
+  `5ae16a988b0953e6af374584f5e6dbc81f0e365e`); closed PR #260 as
+  superseded. `docs/spec-matrix.yaml` set to `CERTIFIED`/`L2-CERTIFIED`;
+  `sync_certified_status()` ran. `scripts/status.py`: `66/300` → `67/300`
+  certified, product-true unchanged at `19/19`. Full detail:
+  `docs/certifications/queue.md`, `docs/certifications/ledger.md`, and the
+  "## Done" entry below. With this, all three PRs this shift's standing
+  duty surfaced (FTF-1506/PR #268, FTF-1503/PR #272, FTF-04A17/PR #274)
+  are now certified and merged; `docs/certifications/queue.md` currently
+  has no other pending PROVISIONAL item. No open owner ask; no new task
+  work, design decisions, or queue reprioritization performed beyond what
+  these certifications naturally required (Law 4).
+
 Updated: 2026-09-25 (same scheduled Control-plane certifier shift as below —
   after certifying FTF-1506/PR #268, this session's standing duty to check
   every pending PROVISIONAL item surfaced two more open `[relay]` PRs the
@@ -5917,6 +5938,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `scripts/status.py`: `65/300` certified before, `66/300` after;
   product-true unchanged at `19/19`. Full entry: docs/certifications/
   ledger.md.
+- FTF-04A17 — DiscoveredAgentCandidate schema/API. CERTIFIED 2026-09-25,
+  PR #274 (merge commit `5ae16a988b0953e6af374584f5e6dbc81f0e365e`) — a
+  cherry-pick of PR #260's own two production/test commits onto current
+  `main` (PR #260 had gone stale, base several commits behind `main`,
+  with real conflicts in `.github/workflows/ci.yml`'s job list and the
+  append-only tracking docs, not the production code; closed as
+  superseded). Independently re-verified: session-ID check clean
+  (producer commits carry `session_01PCVobExxtV38uMfPkv6R1m`, no overlap
+  with this reviewing session `session_01VDSvao4KMAGwSqasd9Q9sN`); diff
+  read directly confirming the Alembic migration (composite UNIQUE +
+  CHECK constraints), the snapshot-scoped schema/crud/routes reusing
+  FTF-04A07's own already-CERTIFIED `get_target_source_snapshot`, and
+  both test suites match the claimed scope exactly; migration chain
+  confirmed unforked; `shared_lock_required` (`contracts:04A`,
+  `migration:application`) confirmed respected (contracts read-only, not
+  touched); own local reproduction (34/34 no-DB checks, a real
+  live-Postgres integration run against a freshly created local
+  PostgreSQL 16 role/database, `ruff`/`mypy`/`validate_spec.py --strict`
+  clean, `product_truth_check.py` unchanged 19/19); own fault injection
+  distinct from the producer's own two vectors (removed the migration's
+  own UNIQUE constraint entirely, dropped/recreated the real database) —
+  1 genuine failure in the real live-Postgres suite's raw-INSERT
+  defense-in-depth case, reverted byte-identical; task contract re-pulled
+  via `tools/r1_handoff.py packet FTF-04A17` confirming both acceptance
+  clauses and the negative_acceptance clause genuinely met; real CI
+  watched to completion on the real head — 30/30 green including `gate`
+  and `discovered-agent-candidate-integration` (both job logs pulled
+  directly, confirming genuine execution against a real Postgres service
+  container). No blocking defect found. Closed PR #260 as superseded.
+  `docs/spec-matrix.yaml` set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Ran `sync_certified_status()`. `scripts/status.py`: `66/300` certified
+  before, `67/300` after; product-true unchanged at `19/19`. Full entry:
+  docs/certifications/ledger.md.
 - FTF-1506 — Dependency scanning. CERTIFIED 2026-09-25, PR #268 (merge
   commit `c805cd03e1c3cb03dfeced0888c373e00a547859`) — remediation of the
   real CI finding this same session's own prior review (PR #262) left NOT

@@ -14848,3 +14848,107 @@ design decisions, or queue reprioritization performed beyond what this certifica
 required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Control plane: certify FTF-04A17 (DiscoveredAgentCandidate schema/API), PR #274
+Continuing this shift's standing certifier duty (check every pending PROVISIONAL item, not only
+the one that triggered the webhook) after certifying FTF-1506/PR #268 and FTF-1503/PR #272. PR #260
+([relay] FTF-04A17: DiscoveredAgentCandidate schema/API) had been fully green (30/30) on its own
+head but was never reviewed, and had since gone stale.
+
+**Session-ID check:** PR #260's three commits carry `session_01PCVobExxtV38uMfPkv6R1m` throughout
+-- no overlap with this reviewing session (`session_01VDSvao4KMAGwSqasd9Q9sN`). Independent, not
+self-certification (Law 4).
+
+**PR #260 itself could not be merged directly:** its base (`39983ab`) was several commits behind
+current `main`, and `pull_request_read` reported `mergeable_state: dirty` -- real conflicts in
+`.github/workflows/ci.yml`'s job list (both this task's own new `discovered-agent-candidate-
+integration` job and the already-merged FTF-1506 `dependency-scanning-integration` job needed to
+sit side by side) and the append-only tracking docs, not the production code. Cherry-picked PR
+#260's own two production/test commits byte-identical onto current `main` (`acc56a89` -- the
+schema/crud/routes/migration itself; `8d12da16` -- a ruff UP038/E501/format fix the producer's own
+earlier CI run had caught) as a new PR #274, closed PR #260 as superseded, and certified from there
+-- same precedent as PR #264 superseding PR #257 for FTF-0508 and PR #272 superseding PR #258 for
+FTF-1503.
+
+**Diff read directly:** `apps/api/alembic/versions/0014_discovered_agent_candidates.py` (153
+lines) -- a real forward migration creating `discovered_agent_candidates`, snapshot-scoped, with a
+composite UNIQUE constraint on `(organization_id, target_source_snapshot_id, candidate_key)` and
+CHECK constraints bounding `confidence_score` to `[0.0, 1.0]` and `discovery_status` to the closed
+one-value Release-1 set (`'candidate'`). Migration chain confirmed unforked: `0014`'s own
+`down_revision` (`0013_component_bindings`) is the sole entry in the versions directory pointing at
+that revision. `apps/api/app/target_connectors/discovered_agent_candidate_{schema,crud,routes}.py`
+(936 lines combined) -- reuses FTF-04A07's own already-CERTIFIED `get_target_source_snapshot`
+directly for the `(connection_id, snapshot_id)` parent-chain IDOR proof rather than re-deriving it
+(reuse-first, Section 77.1); `confidence_score` is never used anywhere in this chain to
+sort/filter/select a candidate; `discovery_status` has no PATCH/edit route anywhere in this chain.
+`tests/tasks/test_ftf_04a17.py` (599 lines, 34 checks) and `tests/integration/
+test_ftf_04a17_discovered_agent_candidate.py` (789 lines) -- matching the claimed scope exactly.
+`shared_lock_required` (`contracts:04A`, `migration:application`) confirmed respected: a diff
+against `packages/contracts/openapi/04A-interface.yaml` and
+`packages/contracts/jsonschema/04A-domain.schema.json` is empty -- this PR reads those frozen
+contracts (per `shared_contracts_read`) without modifying either.
+
+**Own local reproduction (own git worktree, `uv sync`):**
+- `uv run python3 tests/tasks/test_ftf_04a17.py` -- 34/34 no-DB checks pass.
+- A real `sovra_migrate` role and `sovra_ftf04a17` database were freshly created on this sandbox's
+  own directly-installed PostgreSQL 16 cluster (`apt`-installed, not Docker-pulled, matching the
+  producer's own disclosed setup -- root access confirmed, `pg_ctlcluster 16 main start`).
+- `SOVRA_DATABASE_URL=postgresql+psycopg://sovra_migrate:...@localhost:5432/sovra_ftf04a17
+  SOVRA_APP_DB_PASSWORD=... uv run python3 tests/integration/
+  test_ftf_04a17_discovered_agent_candidate.py` -- all checks pass, running the real Alembic
+  migration itself as part of the suite.
+- `uv run ruff check .` / `uv run ruff format --check .` -- clean repo-wide.
+- `uv run mypy` on the three new modules -- clean.
+- `python3 scripts/validate_spec.py --strict` -- clean.
+- `python3 scripts/product_truth_check.py --fail-on-unwired` -- unchanged at 19/19 (no live
+  caller yet -- no FTF-04A08-16 source-analysis pipeline exists to call
+  `create_discovered_agent_candidate`, same disclosed precedent as FTF-04A07/FTF-0506/FTF-0507).
+- Dependencies `FTF-04A01`/`FTF-04A07` reconfirmed `CERTIFIED` in `docs/spec-matrix.yaml` before
+  relying on them.
+
+**Own fault injection (Law 1), distinct from the producer's own two already on record** (disabled
+the `confidence_score` range check; disabled the cross-snapshot ownership check in
+`_fetch_or_raise`) -- this review instead removed the migration's own `UniqueConstraint` on
+`(organization_id, target_source_snapshot_id, candidate_key)` entirely, dropped and recreated the
+real database (including dropping the cluster-level `sovra_app` role the migration itself creates,
+to avoid a stale-role collision across runs), and reran the real live-Postgres integration suite:
+1 genuine failure -- the raw-INSERT defense-in-depth case, which names
+`uq_discovered_agent_candidates_snapshot_id_candidate_key` explicitly in its own failure message.
+Restored the migration file byte-identical (`diff` against the pre-fault copy empty); dropped and
+recreated the database again with the constraint restored; reran the real suite -- clean.
+
+**Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-04A17 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Store every candidate with traceable evidence and
+unresolved fields; expose paginated project-scoped API" -- proven by the real
+`{items, limit, offset, total}` list endpoint and the full evidence-field schema; "Independent
+review, exact merged commit, real relevant integration and negative-test evidence recorded" -- this
+review, plus PR #274's own real CI run) and `negative_acceptance` ("Candidate priority/confidence
+is not calibrated probability or automatic in-scope selection" -- proven by `confidence_score`
+never being used anywhere in this chain to sort/filter/select a candidate, and `discovery_status`
+being a closed one-value set with no edit path) both genuinely met, not merely "tests pass".
+`shared_lock_required` confirmed respected above.
+
+**Real CI watched to genuine completion on PR #274's real head** (`e1cf00d`, merged as `5ae16a98`):
+30/30 checks `success`, `gate` included. Pulled `gate`'s own job log directly (`get_job_logs`,
+`return_content: true`): confirmed "FTF-04A17 DiscoveredAgentCandidate schema tests: all checks
+passed" genuinely printed, immediately followed by the already-certified FTF-1503 step in the same
+job. Pulled `discovered-agent-candidate-integration`'s own job log directly: confirmed "FTF-04A17
+real DiscoveredAgentCandidate schema/API proof: all checks passed" against a real Postgres 16
+service container, with the real constraint-violation/permission-denied errors visible in the
+service's own log (duplicate-key on `uq_discovered_agent_candidates_snapshot_id_candidate_key`,
+out-of-range `confidence_score` on `ck_discovered_agent_candidates_confidence_score_range`,
+UPDATE/DELETE both permission-denied for `sovra_app`) -- not a self-reported or stale claim.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #274 (merge commit
+`5ae16a988b0953e6af374584f5e6dbc81f0e365e`). Closed PR #260 (the stale original submission) as
+superseded, with an explanatory comment. `docs/spec-matrix.yaml`'s FTF-04A17 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. Ran `scripts.task_claim.sync_certified_status()` -- `['FTF-04A17']` updated. `scripts/
+status.py`: `66/300` -> `67/300` certified; product-true unchanged at `19/19`. Appended a matching
+entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (top status note, moved FTF-04A17 into
+"## Done") and `PROGRESS.md`. No other task work, design decisions, or queue reprioritization
+performed beyond what this certification naturally required (Law 4). No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged, empty). With this, all three PRs this shift's standing duty
+surfaced (FTF-1506, FTF-1503, FTF-04A17) are now certified and merged.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.

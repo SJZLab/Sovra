@@ -2737,10 +2737,10 @@ FTF-04A16:
   proving_symbol: ''
   proving_test: ''
 FTF-04A17:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: DiscoveredAgentCandidate schema/API
-  evidence_hash: ''
+  evidence_hash: 5ae16a988b0953e6af374584f5e6dbc81f0e365e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -2803,7 +2803,43 @@ FTF-04A17:
     `create_discovered_agent_candidate`), same disclosed "no live caller yet" precedent already
     established for FTF-04A07/FTF-0506/FTF-0507. `status.py` unchanged at implementation time
     (PROVISIONAL, not yet certified).
-  proof_state: L1-PROVEN
+
+    2026-09-25 Control-plane certification (PR274, a cherry-pick of PR260's own two
+    production/test commits onto current main -- PR260 had gone stale, base several commits
+    behind main with real conflicts in ci.yml's job list and the append-only tracking docs, not
+    the production code; merged here as merge commit 5ae16a988b0953e6af374584f5e6dbc81f0e365e).
+    Independent CERTIFY procedure run by this reviewing session (session-ID check clean --
+    producer commits carry session_01PCVobExxtV38uMfPkv6R1m, no overlap with this reviewing
+    session session_01VDSvao4KMAGwSqasd9Q9sN). Diff read directly against the real merged
+    content: the Alembic migration, schema/crud/routes modules and both test suites matched the
+    claimed scope exactly; the migration chain confirmed unforked (0014's own down_revision is
+    the sole entry pointing at 0013, no sibling migration shares it); `shared_lock_required`
+    (contracts:04A, migration:application) confirmed respected -- this PR touches neither
+    packages/contracts/openapi/04A-interface.yaml nor jsonschema/04A-domain.schema.json, reading
+    them only. Own local reproduction: uv run python3 tests/tasks/test_04a17 -- all 34 checks
+    pass; a real, freshly-created sovra_migrate role plus sovra_ftf04a17 database on this
+    sandbox's own directly-installed PostgreSQL 16 cluster -- the real live-Postgres integration
+    suite run directly against it, all checks pass; ruff/mypy clean repo-wide; validate_spec.py
+    --strict clean; product_truth_check.py unchanged 19/19. Dependencies FTF-04A01/FTF-04A07
+    reconfirmed CERTIFIED. Own fault injection, distinct from the producer's own two vectors
+    (disabled confidence_score bound; disabled cross-snapshot ownership check): removed the
+    migration's own UniqueConstraint on (organization_id, target_source_snapshot_id,
+    candidate_key) entirely, dropped and recreated the real database, and reran the real
+    live-Postgres suite -- 1 genuine failure (the raw-INSERT defense-in-depth case naming the
+    constraint by name). Restored the migration file byte-identical (diff against the pre-fault
+    copy empty); dropped and recreated the real database again with the constraint restored;
+    reran the real suite -- clean. Task contract re-pulled via tools/r1_handoff.py packet
+    FTF-04A17 -- both acceptance clauses and the negative_acceptance clause confirmed genuinely
+    met, not merely "tests pass". Real CI watched to genuine completion on the real final head
+    (5ae16a98): 30/30 checks success, gate included -- gate's own job log pulled directly
+    confirmed both "FTF-04A17 DiscoveredAgentCandidate schema tests: all checks passed" and the
+    already-certified FTF-1503 step ran together genuinely; discovered-agent-candidate-
+    integration's own job log pulled directly confirmed "FTF-04A17 real DiscoveredAgentCandidate
+    schema/API proof: all checks passed" against a real Postgres 16 service container, with the
+    real constraint-violation/permission-denied errors visible in the service's own log, not a
+    self-reported or stale claim. No blocking defect found. Merged PR274 (merge commit
+    5ae16a988b0953e6af374584f5e6dbc81f0e365e); closed PR260 as superseded.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:

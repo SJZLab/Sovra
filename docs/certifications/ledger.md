@@ -7287,3 +7287,91 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A17 — DiscoveredAgentCandidate schema/API
+- Criterion ID: FTF-04A17
+- PR: https://github.com/SJZLab/Sovra/pull/274 (`ftf-04a17-cherry-pick` -> `main`), a
+  cherry-pick of PR #260's own two production/test commits onto current `main` (PR #260
+  had gone stale, base several commits behind `main`, with real conflicts in
+  `.github/workflows/ci.yml`'s job list and the append-only tracking docs, not the
+  production code; closed as superseded). Merged by this review as merge commit
+  `5ae16a988b0953e6af374584f5e6dbc81f0e365e`.
+- Merge commit (evidence): 5ae16a988b0953e6af374584f5e6dbc81f0e365e
+- Implementation commits: `acc56a89` (schema/crud/routes/migration, producer session
+  `session_01PCVobExxtV38uMfPkv6R1m`), `8d12da16` (ruff UP038/E501/format fix, same
+  session).
+- Session-ID check: producer session does not overlap this reviewing session
+  (`session_01VDSvao4KMAGwSqasd9Q9sN`) -- independent (Law 4).
+- Diff read directly against the real merged content: `apps/api/alembic/versions/
+  0014_discovered_agent_candidates.py` (real forward migration -- composite UNIQUE
+  constraint on `(organization_id, target_source_snapshot_id, candidate_key)`, CHECK
+  constraints bounding `confidence_score` to `[0.0, 1.0]` and `discovery_status` to the
+  closed one-value Release-1 set), `apps/api/app/target_connectors/
+  discovered_agent_candidate_{schema,crud,routes}.py` (snapshot-scoped CRUD reusing
+  FTF-04A07's own already-CERTIFIED `get_target_source_snapshot` for the parent-chain
+  IDOR proof rather than re-deriving it), `tests/tasks/test_ftf_04a17.py` (34 no-DB
+  checks) and `tests/integration/test_ftf_04a17_discovered_agent_candidate.py` (real
+  live-Postgres suite) -- matching the claimed scope exactly. Migration chain confirmed
+  unforked: `0014`'s own `down_revision` (`0013_component_bindings`) is the sole entry in
+  the migrations directory pointing at that revision. `shared_lock_required`
+  (`contracts:04A`, `migration:application`) confirmed respected -- this PR touches
+  neither `packages/contracts/openapi/04A-interface.yaml` nor
+  `jsonschema/04A-domain.schema.json`, reading them only, per `shared_contracts_read`.
+- Own local reproduction: `uv run python3 tests/tasks/test_ftf_04a17.py` -- 34/34 checks
+  pass. A real `sovra_migrate` role and `sovra_ftf04a17` database were freshly created on
+  this sandbox's own directly-installed PostgreSQL 16 cluster (`apt`-installed, not
+  Docker-pulled, matching the producer's own disclosed setup); `SOVRA_DATABASE_URL=
+  postgresql+psycopg://sovra_migrate:...@localhost:5432/sovra_ftf04a17
+  SOVRA_APP_DB_PASSWORD=... uv run python3 tests/integration/
+  test_ftf_04a17_discovered_agent_candidate.py` -- all checks pass, running the real
+  Alembic migration itself first. `uv run ruff check .` / `uv run ruff format --check .`
+  -- clean repo-wide; `uv run mypy` on the three new modules -- clean; `python3
+  scripts/validate_spec.py --strict` -- clean; `python3 scripts/product_truth_check.py
+  --fail-on-unwired` -- unchanged at 19/19 (no live caller yet -- no FTF-04A08-16
+  source-analysis pipeline exists to call `create_discovered_agent_candidate`, same
+  disclosed precedent as FTF-04A07/FTF-0506/FTF-0507).
+- Dependencies FTF-04A01/FTF-04A07 reconfirmed `CERTIFIED` in `docs/spec-matrix.yaml`
+  before relying on them.
+- Own fault injection (Law 1), distinct from the producer's own two vectors (disabled the
+  `confidence_score` range check; disabled the cross-snapshot ownership check in
+  `_fetch_or_raise`): removed the migration's own `UniqueConstraint` on
+  `(organization_id, target_source_snapshot_id, candidate_key)` entirely, dropped and
+  recreated the real database, and reran the real live-Postgres integration suite -- 1
+  genuine failure (the raw-INSERT defense-in-depth case naming
+  `uq_discovered_agent_candidates_snapshot_id_candidate_key` explicitly). Restored the
+  migration file byte-identical (`diff` against the pre-fault copy empty); dropped and
+  recreated the database again with the constraint restored; reran the real suite --
+  clean.
+- Task contract pulled directly via `python3 tools/r1_handoff.py packet FTF-04A17 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Store every candidate with traceable
+  evidence and unresolved fields; expose paginated project-scoped API" -- proven by the
+  real `{items, limit, offset, total}` list endpoint and the full evidence-field schema;
+  "Independent review, exact merged commit, real relevant integration and negative-test
+  evidence recorded" -- this review, plus PR #274's own real CI run) and
+  `negative_acceptance` ("Candidate priority/confidence is not calibrated probability or
+  automatic in-scope selection" -- proven by `confidence_score` never being used anywhere
+  in this chain to sort/filter/select a candidate, and `discovery_status` being a closed
+  one-value set with no PATCH/edit route) both genuinely met. `shared_lock_required`
+  confirmed respected above.
+- Real CI watched to genuine completion on PR #274's real head (`e1cf00d`, merged as
+  `5ae16a98`): 30/30 checks `success`, `gate` included. Pulled `gate`'s own job log
+  directly: confirmed "FTF-04A17 DiscoveredAgentCandidate schema tests: all checks
+  passed" genuinely printed, immediately followed by the already-certified FTF-1503 step
+  in the same job. Pulled `discovered-agent-candidate-integration`'s own job log directly:
+  confirmed "FTF-04A17 real DiscoveredAgentCandidate schema/API proof: all checks passed"
+  against a real Postgres 16 service container, with the real constraint-violation/
+  permission-denied errors visible in the service's own log (duplicate-key, out-of-range
+  confidence_score, UPDATE/DELETE both permission-denied) -- not a self-reported or stale
+  claim.
+- No blocking defect found. Merged PR #274 (merge commit
+  `5ae16a988b0953e6af374584f5e6dbc81f0e365e`). Closed PR #260 as superseded, with an
+  explanatory comment. `docs/spec-matrix.yaml`'s FTF-04A17 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to
+  the merge commit. Ran `sync_certified_status()` -- `['FTF-04A17']` updated.
+  `scripts/status.py`: `66/300` -> `67/300` certified. Product-true unchanged at `19/19`
+  (no live caller added -- disclosed precedent above).
+- Validated-by: session https://claude.ai/code/session_01VDSvao4KMAGwSqasd9Q9sN
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.
