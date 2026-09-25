@@ -1,4 +1,30 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (Control plane, CERTIFY, triggered by the `pull_request.opened`
+  webhook for PR #279) — **FTF-04A17 (DiscoveredAgentCandidate schema/API) is now
+  `CERTIFIED`/`L2-CERTIFIED`.** PR #279 itself is a tracking-doc-only follow-up (no
+  code, no criterion) — not a certification target. Found exactly one genuinely
+  `PROVISIONAL` entry on `main`: FTF-04A17, merged via PR #278 (the wiring fix)
+  directly by the repo owner, not a Control-plane certifier session — Law 4 applies
+  regardless of who merges, so this ran as a real, independent CERTIFY pass, not a
+  rubber stamp. Session-ID check clean (producer `session_01YFs4HNmG9o3rdFB6JbFqe4`,
+  this session `session_01Ctg3VSDTmhkNiitLmZuNWu`, no overlap). Diff read directly;
+  CI reconfirmed 31/31 `success` on the real PR #278 head (`2986e78`), tree
+  byte-identical to the merge commit (`fb8f626`). Own local reproduction
+  (`ruff`/`ruff format`/`mypy`/`validate_spec.py --strict`/`test_ftf_04a17.py` 35/35/
+  `product_truth_check.py --fail-on-unwired` 20/20, confirmed legitimate by reading
+  the script directly, not a 0/0). Own fault injection (removed the
+  `include_router(...)` line, 1 genuine FAIL, reverted byte-identical). Own
+  independent live-Postgres integration re-run (certifier-owned
+  `sovra_migrate_cert`/`sovra_ftf04a17_cert` cluster, 25/25 real checks), directly
+  reconfirming acceptance clause 1 and negative_acceptance against a real database.
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-04A17`; both clauses
+  genuinely met. `docs/spec-matrix.yaml` set to `CERTIFIED`/`L2-CERTIFIED`,
+  `evidence_hash` = `fb8f626`. `sync_certified_status()` run —
+  `['FTF-04A17']` updated. `scripts/status.py`: `66/300` → `67/300` certified,
+  product-true `19` → `20`. Full entry: `docs/certifications/ledger.md`,
+  `docs/certifications/queue.md`. No other task work, design decisions, or queue
+  reprioritization performed beyond what this certification naturally required.
+
 Updated: 2026-09-25 (same relay shift, tracking-doc follow-up) — **PR #278
   (FTF-04A17's wiring fix, below) was merged into `main` directly by the
   repo owner** (`merged_by: samerzakaria`, merge commit `fb8f626`), not by
@@ -4382,6 +4408,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-04A17 is no longer in this section; it was independently reviewed and
+**CERTIFIED 2026-09-25** via PR #278 (merge commit
+`fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence, including the independent session-ID check, own local
+reproduction, an own fault injection (removed the `main.py` wiring line), and an own
+independent live-Postgres integration re-run.
+
 FTF-1503 ("CSRF suite") — submitted 2026-09-24 via a PR from branch
 `claude/wizardly-fermat-gae8i9` against `main`, title `[relay] FTF-1503:
 CSRF suite`. New, real, reusable CSRF-protection dependency
@@ -4811,6 +4845,12 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 `docs/certifications/queue.md` for the complete review history.
 
 ## Done
+- FTF-04A17 — DiscoveredAgentCandidate schema/API. CERTIFIED 2026-09-25, PR #278
+  (merge commit `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`). Wiring-fix PR on top of
+  the already-fault-injected-sound core CRUD/RBAC/RLS implementation; this review's own
+  independent fault injection (removed the `app.main.create_app()` wiring line) and own
+  independent live-Postgres integration re-run (25/25 real checks, certifier-owned
+  cluster) both confirmed clean. Full entry: docs/certifications/ledger.md.
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
 - FTF-0002 — Add formatting/lint/type checks. CERTIFIED (docs/certifications/ledger.md).
 - FTF-0003 — Add test harnesses. CERTIFIED (docs/certifications/ledger.md).

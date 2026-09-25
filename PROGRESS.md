@@ -1,4 +1,88 @@
 # PROGRESS — Sovra
+## 2026-09-25 — Control plane — FTF-04A17 CERTIFIED (PR #278, PR #279 was tracking-only)
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook
+for PR #279. PR #279 itself is a tracking-doc-only follow-up (PROGRESS.md/QUEUE.md
+updates recording that PR #278 was merged directly by the owner) — not a certification
+target on its own; no code, no criterion attached.
+
+Checked `docs/spec-matrix.yaml` directly for every `certification_state: PROVISIONAL`
+entry: exactly one, FTF-04A17 (DiscoveredAgentCandidate schema/API), merged to `main`
+via PR #278 (the "designed is not wired" remediation) directly by the repo owner
+(`merged_by: samerzakaria`), not a Control-plane certifier session — Law 4
+("Producer never certifies own work") applies regardless of who merges, so this
+proceeded as a real, from-scratch CERTIFY pass, not a rubber stamp of that merge.
+
+**Session-ID check:** PR #278's own commits (`2986e78`, merge `fb8f626`) carry
+`Claude-Session: session_01YFs4HNmG9o3rdFB6JbFqe4` — no overlap with this reviewing
+session (`session_01Ctg3VSDTmhkNiitLmZuNWu`). Independent.
+
+**Diff read directly** against the real merged tree (`git diff 2986e78 fb8f626 --stat`
+empty, confirming the merge commit's tree is byte-identical to the PR head CI actually
+ran on): `apps/api/app/main.py` (+import, +`app.include_router(
+build_discovered_agent_candidate_router(session_factory))`, twelfth router),
+`packages/contracts/openapi/04A-interface.yaml` (`/candidates` collection/item paths +
+schemas), `tests/tasks/test_ftf_04a17.py` (`test_router_is_wired_into_the_live_app`) —
+matches the claimed scope exactly, no other production file touched. This PR is a
+wiring fix on top of the core DiscoveredAgentCandidate implementation, which a prior
+Control-plane adversarial review (`docs/certifications/queue.md`'s 2026-09-25
+"adversarial finding (Law 9)" entry, a different session) already independently
+fault-injected and found sound, blocking certification only on this exact wiring gap.
+
+**CI reconfirmed** on the real PR #278 head (`2986e78`) via `get_check_runs`: 31/31
+`completed`/`success`, `gate` and `discovered-agent-candidate-integration` both
+included (https://github.com/SJZLab/Sovra/actions/runs/36105269391).
+
+**Own local reproduction** (`uv sync --all-packages`, this sandbox): `uv run ruff
+check .` / `uv run ruff format --check .` / `uv run mypy .` clean repo-wide (246
+files); `uv run python3 scripts/validate_spec.py --strict` clean; `uv run python3
+tests/tasks/test_ftf_04a17.py` 35/35; `uv run python3 scripts/product_truth_check.py
+--fail-on-unwired` 20/20 — confirmed legitimate by reading `scripts/
+product_truth_check.py` directly: it text-searches every non-test file under
+`SOURCE_ROOTS` for the literal `proving_symbol`, and `build_discovered_agent_
+candidate_router` is now a real, non-test match in `apps/api/app/main.py`, not a 0/0
+vacuous pass.
+
+**Own fault injection (Law 1),** independently reproduced rather than trusted from
+the PR body: removed the `app.include_router(build_discovered_agent_candidate_router(
+session_factory))` line from `apps/api/app/main.py`, re-ran `tests/tasks/
+test_ftf_04a17.py` in a fresh process — 1 genuine FAIL (`the real live app exposes
+the candidates collection route ...`), matching the producer's own claimed failure
+exactly. Reverted byte-identical (`git diff --stat` clean); suite re-ran clean
+immediately after.
+
+**Own real live-Postgres integration re-run**, independent cluster from the
+producer's and the prior adversarial review's own: stood up a directly
+`apt`-installed local PostgreSQL 16 cluster under a certifier-owned
+`sovra_migrate_cert` role + `sovra_ftf04a17_cert` database; ran `tests/integration/
+test_ftf_04a17_discovered_agent_candidate.py` directly (self-migrating via `alembic
+upgrade head`) — 25/25 real checks passed, independently reconfirming acceptance
+clause 1 (traceable-evidence storage, paginated project-scoped API) and
+negative_acceptance (confidence_score bounded/advisory only, no auto-selection; no
+PATCH/DELETE surface; `sovra_app` cannot UPDATE/DELETE a row directly) against a real
+database. Cluster/role dropped after the run.
+
+**Task contract** pulled directly via `python3 tools/r1_handoff.py packet FTF-04A17
+--plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` clause 1 met per the
+live-Postgres re-run above; clause 2 ("Independent review, exact merged commit, real
+relevant integration and negative-test evidence recorded") met by this review plus
+the prior adversarial review's own fault injection on the core CRUD/RBAC/RLS layer.
+`negative_acceptance` reconfirmed by direct source inspection and this review's own
+live-Postgres re-run. Dependencies FTF-04A01/FTF-04A07 reconfirmed `CERTIFIED`.
+`shared_lock_required` (`contracts:04A`, `migration:application`) confirmed not held
+open by any other in-flight PR.
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A17
+entry set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` set to the merge commit `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`.
+Ran `sync_certified_status()` — `['FTF-04A17']` updated. `scripts/status.py`:
+`66/300` → `67/300` certified, product-true `19` → `20`. Full entry:
+`docs/certifications/ledger.md`, `docs/certifications/queue.md`. No other task work,
+design decisions, or queue reprioritization performed beyond what this certification
+naturally required.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-25.
+
 ## 2026-09-25 — FTF-04A17 — PR #278 merged by owner directly, recorded, still PROVISIONAL
 
 Tracking-doc-only follow-up, same relay shift as the entry immediately below. PR #278

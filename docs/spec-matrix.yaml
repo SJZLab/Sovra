@@ -2737,10 +2737,10 @@ FTF-04A16:
   proving_symbol: ''
   proving_test: ''
 FTF-04A17:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: DiscoveredAgentCandidate schema/API
-  evidence_hash: ''
+  evidence_hash: fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -2831,7 +2831,69 @@ FTF-04A17:
     unchanged at implementation time (still PROVISIONAL, not yet certified) -- Control-plane L2
     certification and a real CI run on the opened PR are still required before this can move to
     CERTIFIED.
-  proof_state: L1-PROVEN
+
+    2026-09-25 Control-plane L2 certification (this entry): triggered by the `pull_request.opened`
+    webhook for PR #279 (a tracking-doc-only follow-up, not itself a certification target). Found
+    exactly one genuinely `PROVISIONAL` entry in `docs/spec-matrix.yaml` on `main`: this one.
+    Session-ID check: PR #278's own commits (`2986e78`, merge `fb8f626`) carry
+    `Claude-Session: session_01YFs4HNmG9o3rdFB6JbFqe4`, no overlap with this reviewing session --
+    independent (Law 4). PR #278 was merged directly by the repo owner (`merged_by: samerzakaria`,
+    not a Control-plane certifier session) -- Law 4 applies regardless of who merges, so this
+    review proceeded as a real, from-scratch CERTIFY pass, not a rubber stamp of that merge.
+    Diff read directly against the real merged tree (`git diff 2986e78 fb8f626` empty, confirming
+    the merge commit's tree is byte-identical to the PR head CI actually ran on): `apps/api/app/
+    main.py` (+import, +`app.include_router(build_discovered_agent_candidate_router(...))`,
+    twelfth router), `packages/contracts/openapi/04A-interface.yaml` (`/candidates`
+    collection+item paths and schemas), `tests/tasks/test_ftf_04a17.py`
+    (`test_router_is_wired_into_the_live_app`) -- matches the claimed scope exactly, no other
+    production file touched. CI reconfirmed on the real PR #278 head (`2986e78`) via
+    `get_check_runs`: 31/31 `completed`/`success`, `gate` and
+    `discovered-agent-candidate-integration` both included
+    (https://github.com/SJZLab/Sovra/actions/runs/36105269391).
+    Own local reproduction (`uv sync --all-packages`): `uv run ruff check .` / `uv run ruff
+    format --check .` / `uv run mypy .` clean repo-wide (246 files); `uv run python3 scripts/
+    validate_spec.py --strict` clean; `uv run python3 tests/tasks/test_ftf_04a17.py` 35/35;
+    `uv run python3 scripts/product_truth_check.py --fail-on-unwired` 20/20 -- confirmed
+    legitimate by reading `scripts/product_truth_check.py` directly: it text-searches every
+    non-test file under `SOURCE_ROOTS` for the literal `proving_symbol`, and
+    `build_discovered_agent_candidate_router` is now a real, non-test match in
+    `apps/api/app/main.py` -- not a 0/0 vacuous pass.
+    Own fault injection (Law 1), distinct from the producer's own and from the prior adversarial
+    review's vectors: removed the `app.include_router(build_discovered_agent_candidate_router(
+    session_factory))` line from `apps/api/app/main.py` and re-ran `tests/tasks/
+    test_ftf_04a17.py` in a fresh process -- 1 genuine FAIL
+    (`the real live app exposes the candidates collection route ...`), matching the producer's
+    own claimed failure exactly. Reverted byte-identical (`git diff --stat` clean); suite
+    re-ran clean immediately after.
+    Own real live-Postgres integration re-run, independent of the producer's and the prior
+    adversarial review's own local clusters: stood up a directly `apt`-installed local
+    PostgreSQL 16 cluster under a certifier-owned `sovra_migrate_cert` role +
+    `sovra_ftf04a17_cert` database (distinct names, same precedent as other certifier reviews'
+    own `_review`/`_cert` cluster convention); ran `tests/integration/
+    test_ftf_04a17_discovered_agent_candidate.py` directly (self-migrating via `alembic upgrade
+    head`) -- all 25 real checks passed, independently reconfirming this task's own acceptance
+    clause 1 (traceable-evidence storage, paginated project-scoped API) and negative_acceptance
+    (confidence_score is a bounded, non-selecting advisory field; no PATCH/DELETE surface; the
+    restricted `sovra_app` role cannot UPDATE/DELETE a row directly) against a real database, not
+    a mock. Cluster/role dropped after the run.
+    Task contract pulled directly via `python3 tools/r1_handoff.py packet FTF-04A17 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` clause 1 met per the live-Postgres re-run
+    above; clause 2 ("Independent review, exact merged commit, real relevant integration and
+    negative-test evidence recorded") met by this review itself plus the prior adversarial
+    review's own fault injection on the core CRUD/RBAC/RLS layer (`docs/certifications/queue.md`,
+    2026-09-25 "adversarial finding (Law 9)" entry) -- that review found the implementation
+    itself sound and blocked only on the wiring gap this PR fixes. `negative_acceptance`
+    reconfirmed both by direct source inspection (`confidence_score`/`discovery_status` never
+    used to sort/filter/auto-select) and by this review's own live-Postgres re-run above.
+    Dependencies FTF-04A01/FTF-04A07 reconfirmed `CERTIFIED` in `docs/spec-matrix.yaml` before
+    relying on them. `shared_lock_required` (`contracts:04A`, `migration:application`) confirmed
+    not held open by any other in-flight PR.
+    No blocking defect found. `certification_state`/`proof_state` set to
+    `CERTIFIED`/`L2-CERTIFIED` below, `evidence_hash` set to the real merge commit `fb8f626`
+    (PR #278's tree, byte-identical to its own CI-green head `2986e78`).
+    Reviewed-by: session https://claude.ai/code/session_01Ctg3VSDTmhkNiitLmZuNWu (independent --
+    see session-ID check above), 2026-09-25.
+  proof_state: L2-CERTIFIED
   proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
