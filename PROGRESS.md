@@ -17322,7 +17322,7 @@ job's real OSV.dev call) are needed before certification. Appended to `docs/cert
 queue.md` for Control plane.
 
 ## Next shift
-The PR opened this shift for FTF-1506 (branch `claude/wizardly-fermat-x86twn`) is awaiting CI plus
+PR #262 opened this shift for FTF-1506 (branch `claude/wizardly-fermat-x86twn`) is awaiting CI plus
 an independent Control-plane L2 certifier shift (not this relay's role) — do not re-implement. PRs
 #260 (FTF-04A17) and #258 (FTF-1503) are both genuinely green and also await a fresh Control-plane
 certifier pass. PRs #257 (FTF-0508), #246 (FTF-1303 tracking), #243/#241 (FTF-04A06

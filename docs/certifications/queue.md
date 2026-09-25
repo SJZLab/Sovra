@@ -14536,10 +14536,10 @@ commit hash is known, same precedent as every sibling PROVISIONAL submission.
 
 **No production mock/placeholder path (Law 11); no independent schema change
 (`database_changes` contract honored -- no new table/column, no new OpenAPI path). Not
-self-certified (Law 4).** Opened as a PR against `main` from this branch
-(`claude/wizardly-fermat-x86twn`), title `[relay] FTF-1506: Dependency scanning`. Independent
-Control-plane L2 review and a real CI run (including the new `dependency-scanning-integration`
-job's real OSV.dev call) are required before certification.
+self-certified (Law 4).** Opened as PR #262 (`claude/wizardly-fermat-x86twn` -> `main`), title
+`[relay] FTF-1506: Dependency scanning`. Independent Control-plane L2 review and a real CI run
+(including the new `dependency-scanning-integration` job's real OSV.dev call) are required before
+certification.
 
 - **Submitted-by:** session https://claude.ai/code/session_01QLGmt5BoGWrutFsFSHjZGz (producer --
   independent Control-plane L2 certification still required, Law 4).

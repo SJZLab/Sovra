@@ -1,7 +1,8 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-25 (scheduled autonomous relay shift) — implemented and submitted **FTF-1506
-  (Dependency scanning) PROVISIONAL** via a PR opened from branch `claude/wizardly-fermat-x86twn`
-  against `main`, title `[relay] FTF-1506: Dependency scanning`. Checked PRs #260 (FTF-04A17) and
+  (Dependency scanning) PROVISIONAL** via **PR:** https://github.com/SJZLab/Sovra/pull/262
+  (branch `claude/wizardly-fermat-x86twn`), title `[relay] FTF-1506: Dependency scanning`.
+  Checked PRs #260 (FTF-04A17) and
   #258 (FTF-1503) first, since both had been reviewed NOT CERTIFIED for a lint/mypy-only CI
   failure — both producer sessions had already pushed a fix and both current heads are genuinely
   green (`gate`: `success`); nothing left for this shift to fix there, both simply await a fresh
@@ -4138,8 +4139,8 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-1506 ("Dependency scanning") -- submitted 2026-09-25 via a PR against `main` from branch
-`claude/wizardly-fermat-x86twn`, title `[relay] FTF-1506: Dependency scanning`. Real OSV.dev-backed
+FTF-1506 ("Dependency scanning") -- submitted 2026-09-25 via PR #262 (`claude/wizardly-fermat-x86twn`
+-> `main`), title `[relay] FTF-1506: Dependency scanning`. Real OSV.dev-backed
 dependency scanner (`uv.lock`/`pnpm-lock.yaml`) with a real CVSS v3.1 base-score calculator and a
 policy-exception blocking decision; dependency-ready on FTF-0002/FTF-0004/FTF-1501 (all CERTIFIED).
 Full submission record: `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`.
