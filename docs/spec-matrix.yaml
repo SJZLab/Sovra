@@ -1399,10 +1399,10 @@ FTF-0214:
   proving_symbol: ''
   proving_test: ''
 FTF-0215:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Periodic sync workflow
-  evidence_hash: ''
+  evidence_hash: b8134b6fab043520ebadaa2b250456df95d67983
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0004, FTF-0201, FTF-0207,
     FTF-0208, FTF-0209 (all CERTIFIED). Built for real in a new packages/litellm_client/periodic_sync_workflow.py::PeriodicSyncWorkflow
@@ -1448,9 +1448,11 @@ FTF-0215:
     "all checks passed," zero regressions. verify_task.py --task FTF-0215 --stage task reports BLOCKED
     pre-merge ("has no merged verification evidence yet"), expected per precedent. Task contract re-pulled
     via tools/r1_handoff.py packet FTF-0215 before claiming; acceptance/negative_acceptance clauses
-    cross-checked against the implementation above. Not self-certified (Law 4) -- independent Control-plane
-    L2 review and a real CI run on the opened PR are required before certification.'
-  proof_state: L1-PROVEN
+    cross-checked against the implementation above. CERTIFIED 2026-09-25 by independent Control-plane
+    review (PR #296, merge commit b8134b6fab043520ebadaa2b250456df95d67983) -- see docs/certifications/ledger.md
+    for full independent evidence (session-ID check, diff re-read, real CI run to completion, own
+    fault injections, task-contract re-pull).'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0215.py
 FTF-0301:

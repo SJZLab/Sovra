@@ -7840,3 +7840,87 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0215 — Periodic sync workflow
+- Criterion ID: FTF-0215
+- PR: https://github.com/SJZLab/Sovra/pull/296 (`relay/ftf-0215-periodic-sync-workflow` -> `main`)
+- Merge commit (evidence): b8134b6fab043520ebadaa2b250456df95d67983
+- Implementation commits: `f31d7138841e6c8f6880295abd0f61a24411af63` (implementation),
+  `d4ee896a37884ec825ff2b7cb93e470ea83c855a` (tracking), both producer session
+  `session_0176zkJJ7cjvKszEcgJm9DQk`.
+- Session-ID check: both of PR #296's commits carry `Claude-Session:
+  .../session_0176zkJJ7cjvKszEcgJm9DQk`; this reviewing session's own ID
+  (`https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy`) does not match -- independent, not
+  self-certification (Law 4).
+- Triggered by the `pull_request.opened` webhook for PR #296. A direct `certification_state:
+  PROVISIONAL` check against `docs/spec-matrix.yaml` found exactly one match, FTF-0215,
+  confirming it was the only pending item.
+- Diff read directly against the PR's merge base (`dbdb2c5`):
+  `packages/litellm_client/periodic_sync_workflow.py` (new, 289 lines, `PeriodicSyncWorkflow`),
+  `tests/tasks/test_ftf_0215.py` (new, 381 lines, 38 checks across 7 functions), one new
+  `.github/workflows/ci.yml` gate step, `docs/spec-matrix.yaml`, and tracking-doc updates --
+  matches the PR's own claimed scope exactly, no scope creep. (An initial `.github/workflows/
+  ci.yml` diff appeared to show large unrelated deletions; traced to this review's own stale
+  `FETCH_HEAD` left over from an unrelated `git fetch --unshallow`, not the PR's real content --
+  re-diffed directly against the PR's actual head SHA and confirmed clean, exactly the disclosed
+  single-line addition.)
+- Dependencies FTF-0004/FTF-0201/FTF-0207/FTF-0208/FTF-0209 reconfirmed genuinely `CERTIFIED`/
+  `L2-CERTIFIED` in this exact `docs/spec-matrix.yaml` (via direct `yaml.safe_load`) before
+  relying on their contracts.
+- **Own re-verification**, in an isolated git worktree on the PR's real head (`d4ee896`):
+  CLAUDE.md integrity confirmed (`sha256sum` matches committed `CLAUDE.md.sha256`).
+  `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0215.py` -- 38/38 clean. Shown
+  able to fail: with the module moved aside, a genuine `ModuleNotFoundError` bound to this task's
+  own import. `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (258 files).
+  `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+  precedent as prior shifts) resolved a `stale_commit` batch `validate_spec.py --strict` initially
+  reported; clean after unshallowing. `product_truth_check.py --fail-on-unwired`: `20/20`
+  unchanged (disclosed blank `proving_symbol` -- no new backend dispatcher of its own).
+  `status.py`: `73/300` certified pre-certification (Law 2, confirmed not self-inflated).
+  Regression swept `test_ftf_0004.py`/`test_ftf_0201.py`/`test_ftf_0207.py`/`test_ftf_0208.py`/
+  `test_ftf_0209.py` -- all "all checks passed," zero regressions.
+- **Own fault injection**, a vector distinct from the producer's own two disclosed ones (disabling
+  the sequence-ordering guard entirely; disabling the retry-ceiling comparison): removed
+  `register()`'s own idempotency check entirely (`if self._registered: return False` deleted) --
+  `tests/ftf_0215.py`'s own "a second/third registration attempt is refused as a duplicate
+  schedule" assertions failed for real (2 genuine FAIL lines), reproducing exactly this task's own
+  acceptance-clause risk ("without duplicate schedules"). Reverted from an untouched backup;
+  `diff` confirmed byte-identical; re-ran clean. A second, narrower probe on the ordering gate's
+  own boundary (`sequence <= self._last_applied_sequence` weakened to `sequence <
+  self._last_applied_sequence`, an off-by-one allowing an exact-duplicate-sequence redelivery to
+  re-apply) was **not** caught by the existing suite -- a genuine test-coverage gap (redelivery of
+  the exact same already-applied sequence, as opposed to a strictly older one, is not explicitly
+  exercised), but the shipped code itself already uses the correct `<=` comparison, so this is a
+  coverage observation, not a code defect; noted in `QUEUE.md` for the next relay shift rather
+  than blocking this certification. Reverted from an untouched backup; `diff` confirmed
+  byte-identical; re-ran clean.
+- Task contract re-pulled via `tools/r1_handoff.py packet FTF-0215 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Periodic workflow records sync snapshots,
+  bounded retries and alerts without duplicate schedules") verified genuinely met by
+  `register()`'s idempotency latch and `complete_cycle()`'s bounded-retry/alert composition, both
+  independently exercised above. `negative_acceptance` ("Revoked key, concurrent sync and
+  out-of-order response cannot reinstate obsolete authorization") verified genuinely met --
+  `complete_cycle()`'s strict-ordering gate drops any non-strictly-newer sequence before any
+  catalog mutation, proven by the delivered out-of-order/concurrent-dispatch/revocation tests plus
+  this review's own fault injections above. The packet's `files` line names a hyphenated
+  `packages/litellm-client/...` path; confirmed this is a stale artifact in the packet text itself
+  (Python cannot import a hyphenated package name, and every already-CERTIFIED sibling module in
+  this same dependency chain already uses the real, consistent underscore path
+  `packages/litellm_client/...`), not a real deviation.
+- Real CI watched to genuine completion on the actual final head (`d4ee896`, run `36199421395`):
+  31/31 checks green, `gate` included (job `108282578140`, completed `2026-09-25T23:07:19Z`) --
+  confirmed directly via the GitHub check-runs API against this exact head SHA, not a
+  self-reported claim, including the three OpenBao-from-source integration jobs polled to
+  `completed`/`success` before merging. `mergeable_state: clean`; no open reviews or comments
+  (`get_reviews`/`get_comments` both empty).
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0215 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` for FTF-0215). `scripts/status.py`: `73/300` -> `74/300`
+  certified; product-true unchanged at `20/20` (no live caller added by this certification,
+  disclosed).
+- Validated-by: session https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.

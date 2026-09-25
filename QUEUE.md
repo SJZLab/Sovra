@@ -1,5 +1,33 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-25 (scheduled autonomous relay shift, session
+Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy, triggered by the
+  `pull_request.opened` webhook for PR #296) — **FTF-0215 (Periodic sync workflow) independently
+  reviewed and CERTIFIED.** Entire session task per this certifier's standing prompt: checked
+  `docs/certifications/queue.md` for every PROVISIONAL item — exactly one pending, FTF-0215
+  (PR #296), confirmed via `docs/spec-matrix.yaml`'s own `certification_state: PROVISIONAL`
+  grep (only match repo-wide). Session-ID check clean (both of PR #296's commits carry
+  `session_0176zkJJ7cjvKszEcgJm9DQk`, no overlap with this reviewing session). Diff re-read
+  directly against the real merge base; dependencies FTF-0004/FTF-0201/FTF-0207/FTF-0208/
+  FTF-0209 reconfirmed genuinely CERTIFIED before relying on them. Own re-verification in an
+  isolated worktree (CLAUDE.md hash check, full test/lint/type sweep, `git fetch --unshallow`
+  resolved a pre-existing shallow-clone `stale_commit` artifact), own fault injection distinct
+  from the producer's two (disabled `register()`'s idempotency guard — 2 genuine FAIL lines) plus
+  a narrower boundary probe that surfaced a non-blocking test-coverage gap (flagged for the next
+  shift, does not affect the shipped code's own correctness — see "## Provisional" below). Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-0215`; acceptance/negative_acceptance
+  clauses cross-checked and confirmed genuinely met. Real CI watched to genuine completion
+  (31/31 green including `gate` and all three OpenBao-from-source jobs) via the check-runs API
+  directly, not a self-reported claim. **Result: CERTIFIED.** Merged PR #296 (merge commit
+  `b8134b6fab043520ebadaa2b250456df95d67983`). `docs/spec-matrix.yaml`'s FTF-0215 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `sync_certified_status()` run directly. `scripts/status.py`: `73/300` -> `74/300`
+  certified; product-true unchanged at `20/20` (no live caller added by this certification,
+  disclosed). Appended a matching entry to `docs/certifications/ledger.md`; moved FTF-0215 out of
+  "## Provisional" into "## Done" below and updated `PROGRESS.md`. No other task work, design
+  decisions, or queue reprioritization performed beyond what this certification naturally
+  required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
+Previously updated: 2026-09-25 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk) — **FTF-0215 ("Periodic sync workflow")
   submitted PROVISIONAL.** STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`:
   no `## Active`/`## Provisional` item and no open owner ask at shift start. 5 open PRs checked
@@ -5014,11 +5042,31 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0215 ("Periodic sync workflow") — submitted 2026-09-25 via PR #296 (branch
-`relay/ftf-0215-periodic-sync-workflow` → main), session
-`https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk`. Full submission record: this file's own
-top dated entry, `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`. Awaiting
-Control-plane L2 certification and a real CI run on the opened PR — not this relay's role.
+None currently. FTF-0215 ("Periodic sync workflow") was the item here; submitted 2026-09-25 via
+PR #296 (branch `relay/ftf-0215-periodic-sync-workflow` → main), producer session
+`https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk`. Independently reviewed this same shift
+(session `https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy`): diff re-read against the
+real merge base, dependencies FTF-0004/FTF-0201/FTF-0207/FTF-0208/FTF-0209 reconfirmed CERTIFIED,
+own re-verification in an isolated worktree (CLAUDE.md hash check, full test/lint/type sweep,
+`git fetch --unshallow` resolved a pre-existing shallow-clone `stale_commit` artifact), own fault
+injection distinct from the producer's two (disabled `register()`'s idempotency check — 2 genuine
+FAIL lines) plus a narrower boundary probe on the ordering-gate comparison that found a real but
+non-blocking test-coverage gap (see "Owner actions" note below), task contract re-pulled and
+acceptance/negative_acceptance clauses cross-checked, real CI watched to 31/31 green including
+`gate` and all three OpenBao-from-source jobs. **CERTIFIED 2026-09-25** via PR #296 (merge commit
+`b8134b6fab043520ebadaa2b250456df95d67983`) — see "## Done" below and
+`docs/certifications/ledger.md` for the full record.
+
+**Flagged for Control plane/next shift (non-blocking, does not affect this CERTIFIED status):**
+`PeriodicSyncWorkflow.complete_cycle()`'s own ordering gate (`packages/litellm_client/
+periodic_sync_workflow.py`) already uses the correct `sequence <= self._last_applied_sequence`
+comparison ("strictly newer"), but `tests/tasks/test_ftf_0215.py` does not explicitly exercise
+the boundary case of an exact-duplicate redelivery of the *last-applied* sequence itself (as
+opposed to a strictly older one) — this reviewing session's own fault injection weakening the
+comparison to `<` was not caught by the existing suite. The shipped code is correct on this axis
+today; this is a test-coverage gap to close, not a defect to fix. A small follow-up test asserting
+that redelivering `complete_cycle(last_applied_sequence, ...)` a second time is also dropped as
+`SKIPPED_OUT_OF_ORDER` would close it.
 
 FTF-0408 ("Requirements UI") was the item here before that; submitted 2026-09-25 via PR #293, it
 hit a real CI failure mid-review (three unquoted `"word: "` sequences inside a plain YAML scalar
@@ -7233,6 +7281,43 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `sync_certified_status()`. `scripts/status.py`: `53/300` certified
   before, `54/300` after. Product-true unchanged at 17. Full entry:
   docs/certifications/ledger.md.
+
+- FTF-0215 — Periodic sync workflow. Independently reviewed and
+  **CERTIFIED 2026-09-25**, merge commit
+  `b8134b6fab043520ebadaa2b250456df95d67983` (PR #296). Session-ID check
+  clean (producer commits both carry
+  `session_0176zkJJ7cjvKszEcgJm9DQk`, no overlap with this reviewing
+  session, `session_017o9VWhyaZNhhohoLbzdzpy`). Diff read directly
+  against the PR's real merge base (`dbdb2c5`) — matches the PR's own
+  claimed scope exactly. Dependencies FTF-0004/FTF-0201/FTF-0207/
+  FTF-0208/FTF-0209 reconfirmed genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them — this closes the
+  observation FTF-0209's own certification flagged above: `acknowledge_
+  anomaly()`/`retry_anomaly()`/`is_call_authorized()` are real, thin
+  passthroughs giving a future caller one coherent per-connection object.
+  Own re-verification in an isolated worktree: `tests/tasks/
+  test_ftf_0215.py` clean (38/38 checks); shown able to fail with the
+  module moved aside (genuine `ModuleNotFoundError`); `ruff`/`ruff
+  format`/`mypy` clean repo-wide; `git fetch --unshallow` resolved a
+  pre-existing shallow-clone `stale_commit` artifact in `validate_spec.py
+  --strict`, clean after; `product_truth_check.py` 20/20 confirmed
+  legitimately unchanged (`proving_symbol` blank, same disclosed "no live
+  caller" precedent); regression swept all 5 dependency tests, zero
+  regressions. Own fault injection distinct from the producer's own two
+  (removed `register()`'s idempotency guard entirely — 2 genuine FAIL
+  lines on the duplicate-schedule assertions), reverted byte-identical.
+  A second, narrower boundary probe on the ordering gate found a
+  non-blocking test-coverage gap (see this file's own "Provisional"
+  section above for the note left for the next shift) — the shipped
+  `<=` comparison itself is correct. Task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0215` — acceptance and
+  negative_acceptance clauses both confirmed genuinely met. Real CI
+  watched to genuine completion (31/31 green, `gate` included, all three
+  OpenBao-from-source jobs polled to success). `mergeable_state: clean`;
+  no open reviews or comments. Ran `sync_certified_status()`.
+  `scripts/status.py`: `73/300` certified before, `74/300` after.
+  Product-true unchanged at 20 (no live caller added by this
+  certification, disclosed). Full entry: docs/certifications/ledger.md.
 
 - FTF-0210 — Real chat probe. Independently reviewed and
   **CERTIFIED 2026-09-23**, merge commit
