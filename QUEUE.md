@@ -1,4 +1,36 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #278, session
+  https://claude.ai/code/session_01DkbaexyroHG2XnmvqXTC7C) — **FTF-04A17
+  CERTIFIED.** Independent CERTIFY procedure run against PR #278 (the
+  wiring-fix remediation this file's own immediately-preceding entry and
+  the Law 9 finding below it specified). Session-ID check clean (producer
+  session `session_01YFs4HNmG9o3rdFB6JbFqe4`, no overlap with this
+  reviewing session). Diff read directly; own local reproduction on the
+  real PR head — `ruff`/`ruff format`/`mypy` clean repo-wide,
+  `tests/tasks/test_ftf_04a17.py` 35/35, `product_truth_check.py
+  --fail-on-unwired` 20/20 (a real, non-vacuous hit on `apps/api/app/
+  main.py`). Own fault injection: removed the PR's own import +
+  `include_router(...)` line from `apps/api/app/main.py` and reran the
+  suite directly — 1 genuine FAIL, byte-identical to the PR's own
+  disclosed before-fix failure; restored and reconfirmed clean. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-04A17` — both
+  acceptance clauses and the negative_acceptance clause confirmed
+  genuinely met. Real CI watched to genuine completion on PR #278's real
+  head — 31/31 checks green, `gate` and
+  `discovered-agent-candidate-integration` both included. PR #276 (the
+  earlier incomplete self-certification) reconfirmed closed, not merged.
+  **Merged PR #278** (merge commit
+  `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`). `docs/spec-matrix.yaml`'s
+  FTF-04A17 set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  Appended `docs/certifications/ledger.md` entry. Ran
+  `sync_certified_status()` — `['FTF-04A17']` updated. `scripts/status.py`:
+  `66/300` → `67/300` certified, product-true `19` → `20`. No open owner
+  ask. No other task work, design decisions, or queue reprioritization
+  performed this shift beyond what this certification naturally required.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled autonomous relay shift) — **FTF-04A17's real
   "designed is not wired" gap (Law 7), flagged by this file's own
   immediately-preceding certifier note, is fixed.** `build_discovered_

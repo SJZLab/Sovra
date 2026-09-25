@@ -2737,10 +2737,10 @@ FTF-04A16:
   proving_symbol: ''
   proving_test: ''
 FTF-04A17:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: DiscoveredAgentCandidate schema/API
-  evidence_hash: ''
+  evidence_hash: fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -2831,7 +2831,47 @@ FTF-04A17:
     unchanged at implementation time (still PROVISIONAL, not yet certified) -- Control-plane L2
     certification and a real CI run on the opened PR are still required before this can move to
     CERTIFIED.
-  proof_state: L1-PROVEN
+
+    2026-09-25 Control-plane certification (PR #278, the wiring-fix remediation this same file's
+    own immediately-preceding paragraph and the Law 9 finding above it both specified) --
+    independent CERTIFY procedure run by this reviewing session. Session-ID check clean: PR #278's
+    sole commit carries session_01YFs4HNmG9o3rdFB6JbFqe4, no overlap with this reviewing session
+    (session_01DkbaexyroHG2XnmvqXTC7C). Diff read directly: apps/api/app/main.py (the missing
+    import + app.include_router(build_discovered_agent_candidate_router(session_factory)) line,
+    twelfth router, matching every sibling's own convention exactly), packages/contracts/openapi/
+    04A-interface.yaml (the real /candidates collection+item paths and schemas under their own
+    contracts:04A lock), tests/tasks/test_ftf_04a17.py (new test_router_is_wired_into_the_live_app)
+    -- matching the claimed scope exactly, zero scope creep.
+    Own local reproduction on the real PR head (2986e78533b05de4928eacb88e90c695854546de):
+    uv run ruff check . / uv run ruff format --check . / uv run mypy . all clean repo-wide (246
+    source files); uv run python3 tests/tasks/test_ftf_04a17.py -- 35/35; uv run python3
+    scripts/product_truth_check.py --fail-on-unwired -- 20/20 (a real, non-test text-search hit on
+    apps/api/app/main.py for build_discovered_agent_candidate_router, not a vacuous 0/0 -- this
+    criterion's proving_symbol is filled in, so a 0/0 pass would not have been acceptable).
+    Own fault injection (Law 1), reproducing the producer's own disclosed vector independently
+    rather than trusting the producer's self-report: manually removed the import and
+    app.include_router(...) line added by this PR from apps/api/app/main.py and re-ran
+    tests/tasks/test_ftf_04a17.py directly -- 1 genuine FAIL
+    ("the real live app exposes the candidates collection route ..."), byte-identical to the PR's
+    own disclosed before-fix failure; restored the file from an untouched copy and re-ran -- all
+    35 checks pass again, git status confirmed clean (no stray diff).
+    Task contract re-pulled via python3 tools/r1_handoff.py packet FTF-04A17 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md: acceptance clause 1 ("Store every candidate with traceable
+    evidence and unresolved fields; expose paginated project-scoped API") is now genuinely met on
+    the live path -- the route is reachable from app.main.create_app(), not merely defined;
+    negative_acceptance ("Candidate priority/confidence is not calibrated probability or automatic
+    in-scope selection") reconfirmed still held by the unchanged schema/CRUD layer and explicitly
+    restated in the new OpenAPI descriptions. shared_lock_required (contracts:04A,
+    migration:application) respected -- only the named contracts:04A file touched, no competing
+    migration added.
+    Real CI watched to genuine completion on PR #278's real head (2986e78533b05de4928eacb88e90c69
+    5854546de): 31/31 checks green, gate and discovered-agent-candidate-integration both included
+    -- confirmed via the GitHub check-runs API directly against the head SHA, not a self-reported
+    claim. PR #276 (the earlier, incomplete self-certification this task's own Law 9 finding
+    caught) reconfirmed closed, merged: false -- the false-certification path never landed.
+    No blocking defect found. Merged PR #278 (merge commit
+    fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde).
+  proof_state: L2-CERTIFIED
   proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:

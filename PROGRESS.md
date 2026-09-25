@@ -1,4 +1,47 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-04A17 — Control plane: CERTIFIED (PR #278 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #278, session
+`https://claude.ai/code/session_01DkbaexyroHG2XnmvqXTC7C`. Read `docs/certifications/queue.md`
+for pending `PROVISIONAL` items first: FTF-04A17 (this file's own immediately-preceding entry)
+was the only one.
+
+Independent CERTIFY procedure (`docs/CONTROL_PLANE_MODES.md`) run against PR #278, the
+wiring-fix remediation the preceding relay shift's entry and the earlier Law 9 finding both
+specified. Session-ID check clean: PR #278's sole commit carries producer session
+`session_01YFs4HNmG9o3rdFB6JbFqe4`, no overlap with this reviewing session (Law 4). Diff read
+directly: `apps/api/app/main.py` (missing import + `include_router(...)` line, twelfth
+router), `packages/contracts/openapi/04A-interface.yaml` (real `/candidates` paths/schemas
+under their own `contracts:04A` lock), `tests/tasks/test_ftf_04a17.py` (new
+`test_router_is_wired_into_the_live_app`) -- matching the claimed scope exactly.
+
+Own local reproduction on the real PR head (`2986e78533b05de4928eacb88e90c695854546de`):
+`uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .` clean repo-wide (246
+files); `uv run python3 tests/tasks/test_ftf_04a17.py` -- 35/35; `uv run python3
+scripts/product_truth_check.py --fail-on-unwired` -- 20/20, a real non-test caller hit (not a
+vacuous 0/0). Own fault injection (Law 1): manually removed the import +
+`include_router(...)` line from `apps/api/app/main.py` and reran the suite directly -- 1
+genuine FAIL, byte-identical to the PR's own disclosed before-fix failure; restored the file
+and reconfirmed 35/35 clean, `git status` clean.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A17 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 now genuinely met on the live path;
+`negative_acceptance` reconfirmed still held. `shared_lock_required` respected. Real CI
+watched to genuine completion on PR #278's real head via the GitHub check-runs API: 31/31
+green, `gate` and `discovered-agent-candidate-integration` both included. PR #276 (the
+earlier incomplete self-certification) reconfirmed `closed`, `merged: false`.
+
+**Merged PR #278** (merge commit `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`).
+`docs/spec-matrix.yaml`'s FTF-04A17 set to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit, with a certification
+paragraph appended to `notes`. Appended a signed entry to `docs/certifications/ledger.md`.
+Ran `sync_certified_status()` -- `['FTF-04A17']` updated. `scripts/status.py`: `66/300` ->
+`67/300` certified, product-true `19` -> `20`. Updated `QUEUE.md` (moved item to this shift's
+entry, no separate owner ask).
+
+No other task work, design decisions, or queue reprioritization performed this shift beyond
+what this certification naturally required.
+
 ## 2026-09-25T00:00:00Z — Relay shift: FTF-04A17 "designed is not wired" gap fixed (PR pending)
 
 Scheduled autonomous relay shift. STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md

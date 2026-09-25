@@ -15037,3 +15037,83 @@ shift's role.
 
 No other task work, design decisions, or queue reprioritization performed this shift beyond
 what this remediation naturally required.
+
+## 2026-09-25 — Control plane: certify FTF-04A17 (DiscoveredAgentCandidate schema/API), PR #278
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+PR #278. `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`. `BLOCKER.md` read in
+full (no live blocker). `docs/spec-matrix.yaml` checked directly for pending
+`certification_state: PROVISIONAL` entries -- FTF-04A17 (this file's own immediately-preceding
+entry) was the only one.
+
+**Independent review of FTF-04A17 (PR #278, "fixes Law 7 gap from PR #274/#276")** proceeded as
+normal: session-ID check clean (PR #278's sole commit carries
+`Claude-Session: session_01YFs4HNmG9o3rdFB6JbFqe4`, no overlap with this reviewing session,
+`session_01DkbaexyroHG2XnmvqXTC7C`). Diff read directly: `apps/api/app/main.py` (the missing
+import + `app.include_router(build_discovered_agent_candidate_router(session_factory))` line,
+twelfth router, matching every sibling router's own convention exactly, with the module
+docstring extended to disclose it), `packages/contracts/openapi/04A-interface.yaml` (the real
+`/candidates` collection (`GET`/`POST`) and item (`GET`) paths and their request/response
+schemas under this task's own `contracts:04A` lock, matching the router's actual behavior
+field-for-field), `tests/tasks/test_ftf_04a17.py` (new `test_router_is_wired_into_the_live_app`)
+-- matching the claimed scope exactly. `docs/spec-matrix.yaml`'s own FTF-04A17 notes and
+`PROGRESS.md`/`QUEUE.md` tracking-doc updates were the only other files touched -- zero scope
+creep, zero other production file touched.
+
+Own local reproduction, directly on the real PR head
+(`2986e78533b05de4928eacb88e90c695854546de`, checked out via `git fetch`/`git checkout -B`, not
+trusted from the PR's own self-report): `uv run ruff check .` / `uv run ruff format --check .` /
+`uv run mypy .` all clean repo-wide (246 source files, matching CI's own `gate` job invocation
+exactly); `uv run python3 tests/tasks/test_ftf_04a17.py` -- 35/35; `uv run python3
+scripts/product_truth_check.py --fail-on-unwired` -- `20/20` product-true, a real, non-test
+text-search hit on `apps/api/app/main.py` for `build_discovered_agent_candidate_router` (this
+criterion's `proving_symbol` is filled in below, so a `0/0` pass would not have been acceptable
+per Law 5/`docs/CONTROL_PLANE_MODES.md` step 4 -- confirmed not the case here).
+
+**Own fault injection (Law 1), independently reproduced rather than trusting the producer's own
+before/after log:** manually removed the import and `app.include_router(...)` line this PR added
+from `apps/api/app/main.py` (a plain Python string-replace, not `git stash`, since the file
+matched `HEAD` exactly with no local diff to stash) and reran `tests/tasks/test_ftf_04a17.py`
+directly -- **1 genuine `FAIL [FTF-04A17]`** (`the real live app exposes the candidates
+collection route (build_discovered_agent_candidate_router is include_router()'d into
+app.main.create_app(), not merely defined)`), byte-identical to the PR's own disclosed
+before-fix failure. Restored `apps/api/app/main.py` from an untouched backup copy, confirmed
+`git status --short apps/api/app/main.py` empty (no stray diff), and reran -- all 35 checks pass
+again.
+
+**Task contract re-pulled directly** via `python3 tools/r1_handoff.py packet FTF-04A17 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` clause 1 ("Store every candidate with traceable
+evidence and unresolved fields; expose paginated project-scoped API") is now genuinely met on
+the live path this repository actually serves -- the route is reachable from
+`app.main.create_app()`, not merely defined against a standalone `FastAPI()` instance as before.
+`negative_acceptance` ("Candidate priority/confidence is not calibrated probability or automatic
+in-scope selection") reconfirmed still held -- the schema/CRUD layer is unchanged by this PR,
+and the new OpenAPI descriptions explicitly restate both halves of it. `shared_lock_required`
+(`contracts:04A`, `migration:application`) respected -- only the named `contracts:04A` file
+touched, no competing migration added, no other task's contract entry disturbed.
+
+**Real CI watched to genuine completion** on PR #278's real head
+(`2986e78533b05de4928eacb88e90c695854546de`) via the GitHub check-runs API polled directly
+against the head SHA (not `gh pr checks`, whose `--json` flag this sandbox's `gh` build does not
+support) -- 31/31 checks `completed`/`success`, `gate` and `discovered-agent-candidate-integration`
+both included, matching CI's own real execution, not a self-reported claim. PR #276 (the earlier,
+incomplete self-certification this task's own Law 9 finding above caught mid-flight) reconfirmed
+directly via a live GitHub read: `state: closed`, `merged: false` -- the false-certification path
+never landed, and `docs/spec-matrix.yaml`'s FTF-04A17 entry was never left `CERTIFIED` without
+this wiring fix landing first, exactly as that finding required.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #278 (merge commit
+`fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`). `docs/spec-matrix.yaml`'s FTF-04A17 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit, with a certification paragraph appended to `notes` (the prior `PROVISIONAL` history left
+intact, not overwritten). Appended a signed entry to `docs/certifications/ledger.md`. Ran
+`sync_certified_status()` -- `['FTF-04A17']` updated. `scripts/status.py`: `66/300` -> `67/300`
+certified, product-true `19` -> `20` (the router is now a real, reachable live caller). Updated
+`QUEUE.md` and `PROGRESS.md` with the same result.
+
+Tracking-docs-only change plus the merge itself: `docs/spec-matrix.yaml`,
+`docs/certifications/ledger.md`, `docs/certifications/queue.md`, `QUEUE.md`, `PROGRESS.md`. No
+production code touched by this review -- certification review only, no new task work, no design
+decisions, no queue reprioritization beyond what this certification naturally required (Law 4).
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
