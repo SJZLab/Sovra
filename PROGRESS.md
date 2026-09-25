@@ -17262,3 +17262,33 @@ real, live security condition on `main` today — not merely a PR defect — it 
 directly to the owner outside this tracking file.
 
 No other task work, design decisions, or queue reprioritization performed this shift.
+
+## 2026-09-25 — Control plane certifier shift: FTF-0508 (PR #257) reviewed, CERTIFIED via PR #264
+
+Found while checking `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every pending
+PROVISIONAL item during the same shift as the FTF-1506 review above (this certifier's standing
+duty covers every pending item, not only the one that triggered the webhook). PR #257 ([relay]
+FTF-0508: Record schema validator) had never been reviewed.
+
+Short version: the implementation is sound — a pure, no-I/O batch validator reusing FTF-0506's
+own already-CERTIFIED `SCHEMA_VERSION` and Section 6.8F's own frozen `source_type` enum, owning
+content-size bounding, required-provenance-field presence, and required-quality-field enum
+validity for real, returning row-evidenced blocking issues rather than raising on the first
+violation. 20/20 tests pass, lint/mypy/`validate_spec.py --strict` clean, task contract's
+acceptance/negative_acceptance clauses genuinely met, an independent fault injection (disabled
+the required-provenance-field guard) caught for real and reverted byte-identical.
+
+PR #257 itself could not be merged directly — its base was 3 commits behind current `main` and
+it reported real merge conflicts in the append-only tracking docs (not the production code). This
+review cherry-picked PR #257's own implementation commit byte-identical onto current `main` as a
+new PR #264, closed PR #257 as superseded (with an explanatory comment), watched PR #264's real
+CI run to completion (29/29 green, `gate` included), and certified from there.
+
+**Merged PR #264** (merge commit `37c6abb19a6eff941273df6484162c2c1903410d`).
+`docs/spec-matrix.yaml`'s FTF-0508 set to `CERTIFIED`/`L2-CERTIFIED`, `evidence_hash` set to the
+merge commit. `sync_certified_status()` ran. `scripts/status.py`: `63/300` → `64/300` certified,
+product-true unchanged at `19/19` (no live caller added by this certification). Full detail in
+`docs/certifications/queue.md`'s matching entry and `docs/certifications/ledger.md`.
+
+No other task work, design decisions, or queue reprioritization performed beyond what re-basing
+this one PR past a stale merge conflict and certifying it naturally required.

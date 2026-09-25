@@ -14532,3 +14532,84 @@ real, currently-live security condition on `main` (not merely a PR defect), it h
 flagged directly to the owner outside this tracking file.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Control plane: certify FTF-0508 (Record schema validator)
+Found while checking `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every pending
+PROVISIONAL item during the same shift as the FTF-1506 review above (this certifier's standing
+duty is to check for every pending item, not only the one that triggered the webhook). PR #257
+([relay] FTF-0508: Record schema validator) had never been reviewed by any Control-plane session.
+
+**Session-ID check:** PR #257's sole implementation commit (`4abc8b4`) carries `Claude-Session:
+https://claude.ai/code/session_01CdCmbVsLB4MZNgVpyVMy52` -- no overlap with this reviewing
+session. Independent, not self-certification (Law 4).
+
+**PR #257 itself could not be merged directly:** its base (`39983ab`) is 3 commits behind current
+`main`, and `pull_request_read` reported `mergeable_state: dirty` -- real conflicts in the
+append-only tracking docs (`QUEUE.md`/`docs/certifications/queue.md`/`PROGRESS.md`) that both
+sides had appended to, not in the production code. Rather than resolve those conflicts in place,
+this review cherry-picked PR #257's own implementation commit (`4abc8b42d037e0487a18c0958600d21bb22eab35`)
+byte-identical onto current `main` (`git cherry-pick` applied with zero conflicts, confirmed via
+`git diff --stat` showing only the expected 5 files) as a new PR #264, and closed PR #257 as
+superseded (comment posted explaining why, per the standing-down convention).
+
+**Diff read directly** (`workers/data/record_schema_validator.py`, 378 lines;
+`tests/tasks/test_ftf_0508.py`, 358 lines, both read in full): `validate_record_batch` is a pure,
+synchronous, no-I/O batch validator for already-normalized Section 6.11 `DatasetRecord`
+candidates. It reuses FTF-0506's own already-CERTIFIED `SCHEMA_VERSION` constant and Section
+6.8F's own frozen `DatasetSourceConnection.source_type` enum rather than reinventing either; it
+owns content-size bounding (Section 67.3's 2MiB canonical single-record max, measured via the
+same canonical-JSON serialization FTF-0506/FTF-0507 already use for hashing), required-
+provenance-field presence (`record_sha256`/`normalized_sha256`), and required-quality-field enum
+validity (`quality_status`/`pii_status`/`tool_schema_status`) for real. Returns a
+`RecordSchemaValidationReport` with per-row `batch_position`/`record_index` evidence instead of
+raising on the first violation; only a non-sequence/empty batch itself raises
+`RecordSchemaValidationError`.
+
+**Own local reproduction (own git worktree, `uv sync`):**
+- `uv run python3 tests/tasks/test_ftf_0508.py` -- 20/20 checks genuinely pass.
+- `uv run ruff check .` / `uv run ruff format --check .` -- clean.
+- `uv run mypy workers/data/record_schema_validator.py` -- clean.
+- `python3 scripts/validate_spec.py --strict` -- clean.
+- `python3 scripts/product_truth_check.py --fail-on-unwired` -- unchanged at 19/19.
+  `docs/spec-matrix.yaml`'s `FTF-0508.proving_symbol` is genuinely empty (no dataset-import route
+  exists yet in this repository to call `validate_record_batch`) -- legitimate, same disclosed
+  precedent already accepted for FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304.
+- Dependencies `FTF-0500`/`FTF-0506`/`FTF-0507` reconfirmed `CERTIFIED` in `docs/spec-matrix.yaml`
+  on `main` before relying on them.
+
+**Own fault injection (Law 1), distinct from the producer's own two vectors** (duplicate-
+`record_index` guard, `quality_status` enum guard): disabled the required-provenance-field loop
+(`for field in REQUIRED_PROVENANCE_FIELDS:` replaced with `for field in []:`), so a candidate
+record missing both `record_sha256` and `normalized_sha256` was silently accepted instead of
+rejected. Ran the real suite against the faulted code: 1 genuine `FAIL [FTF-0508]` line
+(`test_rejects_missing_provenance_fields`). Reverted byte-identical (`diff` against the pre-fault
+copy empty); re-ran the real suite immediately after -- all 20 checks passed again.
+
+**Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-0508 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Validate schema/dialect/content size and
+required provenance/quality fields per canonical version" -- proven by the five real per-record
+checks above; "Independent review, exact merged commit, real relevant integration and
+negative-test evidence recorded" -- this review, plus PR #264's own real CI run) and
+`negative_acceptance` ("Unknown content or schema version and invalid sequence produces blocking
+issues with row evidence" -- proven by the shipped suite's own unknown-content/unknown-schema-
+version/invalid-sequence cases, each carrying real row evidence) both genuinely met, not merely
+"tests pass". `shared_lock_required` confirmed empty in the same packet.
+
+**Real CI watched to completion on PR #264's real head** (the cherry-picked commit `38f6a5b`):
+GitHub Actions run `36089980073` polled to genuine completion -- 29/29 checks, `gate` included,
+`conclusion: success` on every job (the same three integration jobs that ran long on PR #257's
+own run -- `target-application-connection-integration`, `dataset-source-connection-integration`,
+`secret-manager-integration` -- again took ~5-7 minutes each here, consistent with their known
+real duration, not a hang).
+
+**No blocking defect found. Merged PR #264** (merge commit
+`37c6abb19a6eff941273df6484162c2c1903410d`) into `main`. `docs/spec-matrix.yaml`'s FTF-0508 entry
+set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (no live caller, confirmed legitimate above). Ran
+`scripts.task_claim.sync_certified_status()` -- `['FTF-0508']` updated. `scripts/status.py`:
+`63/300` -> `64/300` certified; product-true unchanged at `19/19` (no live caller added).
+Appended a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved FTF-0508
+to "## Done", top status note recorded) and `PROGRESS.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_01C1FfcUWN7E5S5aeiNFRmgb
+  (independent -- see session-ID check above), 2026-09-25.

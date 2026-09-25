@@ -3360,10 +3360,10 @@ FTF-0507:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0507.py
 FTF-0508:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Record schema validator
-  evidence_hash: ''
+  evidence_hash: 37c6abb19a6eff941273df6484162c2c1903410d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0506,
@@ -3381,9 +3381,18 @@ FTF-0508:
     not the packet's suggested non-existent `services/training-worker/...` tree, same precedent as
     FTF-0506/FTF-0507. `proving_symbol` left blank -- no dataset-import route exists yet in this
     repository to call it (disclosed "no live caller yet" precedent, same class as
-    FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304). Submitted PROVISIONAL by the relay, not
-    self-certified (Law 4) -- awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304). Independently L2-certified by Control plane
+    (session https://claude.ai/code/session_01C1FfcUWN7E5S5aeiNFRmgb): PR #257's own implementation
+    commit re-submitted byte-identical via PR #264 (PR #257 was based on a stale parent and
+    reported real merge conflicts in the append-only tracking docs, not the production code;
+    closed as superseded) -- own diff read in full, own local reproduction (20/20 tests,
+    ruff/mypy/validate_spec.py --strict clean, product_truth_check.py unchanged at 19/19), task
+    contract re-pulled via tools/r1_handoff.py (acceptance/negative_acceptance genuinely met), an
+    own fault injection distinct from the producer's two (disabled the required-provenance-field
+    guard -- genuine FAIL, reverted byte-identical), and PR #264's real CI run (36089980073)
+    watched to completion, 29/29 green including gate. Merged as commit
+    37c6abb19a6eff941273df6484162c2c1903410d.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0508.py
 FTF-0509:
