@@ -1,5 +1,64 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #262) — independent review of **FTF-1506
+  (Dependency scanning), PR #262: NOT CERTIFIED, real CI failure — and it's
+  a genuine security finding, not a bug in the PR.** Session-ID check clean
+  (producer `session_01QLGmt5BoGWrutFsFSHjZGz`, no overlap with this
+  reviewing session). Diff read in full against the PR's real current head
+  (`45f4cce`, two commits: the implementation `2b3dc46` plus a docs-only
+  PR-number-recording follow-up — the webhook context's own SHA
+  (`2b3dc46`) was already one commit stale by the time this review started,
+  same class of drift as PR #260's). `tests/security/dependency_scanning.py`
+  (456 lines) and `tests/tasks/test_ftf_1506.py` (453 lines, 19 checks) read
+  in full: a real CVSS v3.1 base-score calculator (own run reproduced the
+  published NVD Log4Shell reference score, 10.0, exactly), real
+  `uv.lock`/`pnpm-lock.yaml` parsing, and an `evaluate()` blocking decision
+  that fails closed on UNKNOWN severity and voids expired/unjustified/
+  mismatched policy exceptions — task contract re-pulled via `tools/
+  r1_handoff.py packet FTF-1506` and both acceptance clauses and the
+  negative_acceptance clause are genuinely met by the code. Own local run:
+  19/19 no-network checks pass; `ruff check .`/`ruff format --check .`
+  clean repo-wide; `mypy` clean on the new module;
+  `scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`,
+  this sandbox's own pre-existing shallow-clone artifact, same as PR #260's
+  review); `product_truth_check.py --fail-on-unwired` unchanged at 19/19
+  (FTF-1506's `proving_symbol` is genuinely empty — legitimate, same
+  disclosed precedent as FTF-0506/FTF-0507/FTF-04A17).
+  Dependencies FTF-0002/FTF-0004/FTF-1501 reconfirmed `CERTIFIED` on `main`.
+  **But the new `dependency-scanning-integration` CI job — the one that
+  makes the real, live OSV.dev call this task exists to make — genuinely
+  fails on this PR's real head** (`get_job_logs`, run `36089089775`, job
+  `107927361832`, polled to real completion, `conclusion: failure`; every
+  other job in the run passed or was still in progress, isolated to this
+  one job). It is not a flake and not a bug in the scanner: the tool
+  correctly found **real, currently-unpatched CRITICAL/HIGH vulnerabilities
+  in dependency versions already pinned on `main` today** (this PR's own
+  `uv.lock`/`pnpm-lock.yaml` diff is empty — it changes zero pinned
+  versions) — `authlib==1.3.2` (`PYSEC-2026-287`, CRITICAL) and multiple
+  findings against `starlette==0.46.2` (`GHSA-wqp7-x3pw-xc5r`,
+  `PYSEC-2026-1942`, `PYSEC-2026-2281`, `PYSEC-2026-249`, all HIGH; plus one
+  `PYSEC-2026-161` UNKNOWN-severity, also blocking by design) — 16 blocking
+  findings total, zero recorded policy exceptions. This is the
+  negative_acceptance clause working exactly as specified ("cannot be
+  silently ignored to satisfy cost or schedule") — but it means CI cannot
+  go green, and therefore this task cannot be certified, until the next
+  relay shift does one of: (a) bump `authlib`/`starlette` to a fixed
+  version in `uv.lock` (`authlib` has no single `fixed` version listed by
+  OSV for `PYSEC-2026-287` in this scan's own output — check upstream
+  before assuming a patch exists; `starlette`'s HIGH findings fix at
+  `1.1.0`/`0.49.1`/`1.3.1`), verify the app still passes its own suite
+  against the bumped version, and re-run; or (b) for any finding without an
+  available/compatible fix yet, add a real, justified, dated
+  `tests/security/dependency_scan_policy.yaml` exception naming the exact
+  (ecosystem, package, vuln id) tuple — never a blanket or permanent one.
+  **This is a real, live finding about `main`'s current pinned dependencies,
+  not merely a PR defect — flagged to the owner separately.** No production
+  code touched by this review; `docs/spec-matrix.yaml`'s `FTF-1506` entry
+  (`certification_state: PROVISIONAL`) stays untouched on the PR #262
+  branch, never merged to `main`.
+
+## Previous shift
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #260) — independent review of **FTF-04A17
   (DiscoveredAgentCandidate schema/API), PR #260: NOT CERTIFIED, real CI
   `gate` failure.** Session-ID check clean (producer
