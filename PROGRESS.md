@@ -17232,3 +17232,102 @@ not touch production code. The exact one-line fixes needed are recorded in `QUEU
 `docs/certifications/queue.md` for the next relay shift.
 
 No other task work, design decisions, or queue reprioritization performed this shift.
+
+## 2026-09-25T00:00:00Z — FTF-1506 — relay: implemented, submitted PROVISIONAL
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`; `BLOCKER.md` read in full (no live blocker); `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh. Confirmed this session's own branch
+(`claude/wizardly-fermat-x86twn`) was already at parity with `origin/main`'s tip (`e532f55`) —
+no rebase needed.
+
+Checked PRs #260 (FTF-04A17) and #258 (FTF-1503) before picking new work, since both had been
+independently reviewed NOT CERTIFIED for a real CI-gate lint/mypy failure (recorded at the top of
+`QUEUE.md`/`docs/certifications/queue.md`). Both producer sessions had already pushed a fix commit
+and both current heads are now genuinely green (`gate`: `success` on PR #260's head `8d12da1` and
+PR #258's head `f6a53dd`, confirmed via `pull_request_read get_check_runs`) — nothing left for this
+relay shift to do there; both simply await a fresh Control-plane certifier shift.
+
+Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml` (19 `ABSENT`/`NONE`
+tasks with every dependency `CERTIFIED`, cross-checked against `spec/tasks.json`'s own structured
+`dependencies` field). Excluded everything already claimed by another open PR (FTF-04A17/FTF-1503/
+FTF-0508/FTF-0212/FTF-0304), UI/workflow tasks outside this sandbox's reach (FTF-0214/0215/0408/
+0500A/0500D), and tasks needing infrastructure this sandbox lacks (FTF-0302/0303: HF/S3 network
+egress; FTF-04A02: OpenBao; FTF-04A19: shares the still-open `contracts:04A` lock; FTF-1201/
+FTF-H004: a live LiteLLM gateway; FTF-1703: >=1000 curated traces). Pulled FTF-0902's own task
+packet and ruled it out too: its negative_acceptance ("NetworkPolicy YAML on a nonenforcing
+cluster is not pass") needs a real CNI-enforcing Kubernetes cluster this sandbox does not have.
+
+**FTF-1506** (dependency scanning) had been flagged by a prior shift as "likely needs a CVE/
+advisory feed reachable only via network egress" and left unclaimed. Verified that for real rather
+than trusting the note: `curl -m 10 https://api.osv.dev/v1/version` genuinely fails this sandbox's
+own outbound-HTTPS proxy (403 CONNECT-tunnel failure from the proxy itself). Resolved it the way
+this relay's own operating instructions already name for exactly this case ("route live external
+proofs through CI Actions workflows") instead of treating the whole task as unclaimable: the real
+OSV.dev call is proven by a new `dependency-scanning-integration` CI job on a GitHub-hosted runner
+with real internet egress; everything else is proven locally without network.
+
+Read `tools/r1_handoff.py packet FTF-1506` and confirmed `shared_lock_required` is empty — this
+task reads the section-15 security-domain contract FTF-1501 already froze but adds no new schema/
+interface entity (a CI security tool, not a product API surface); `packages/contracts/openapi/
+15-interface.yaml`/`packages/contracts/jsonschema/15-domain.schema.json` stay untouched. Read
+`tests/security/tenant_isolation_suite.py`/`tests/tasks/test_ftf_1501.py` in full as the closest
+sibling convention before writing any code.
+
+Implemented `tests/security/dependency_scanning.py`: real `uv.lock`/`pnpm-lock.yaml` parsing; a
+faithful CVSS v3.1 base-score calculator (the published formula, verified against CVE-2021-44228
+"Log4Shell"'s own independently-published NVD score of 10.0/CRITICAL — not a self-invented
+oracle); `severity_from_vuln` (GHSA's own `database_specific.severity` first, else a parsed CVSS
+vector, else `UNKNOWN` — never guessed low-risk); real `query_osv` (raises on any network/parse
+failure, Law 17 — never silently converted to a false pass); `load_policy_exceptions` (a committed-
+empty `tests/security/dependency_scan_policy.yaml`, this task's own path refinement recorded before
+READY per Section 84.3); `evaluate` (CRITICAL/HIGH/UNKNOWN severity blocks unless a valid,
+non-expired, justified, exactly-matching exception excepts it — negative_acceptance: "Unknown/
+unpatched critical/high finding cannot be silently ignored to satisfy cost or schedule").
+`tests/tasks/test_ftf_1506.py` written alongside (19 no-network checks).
+
+**Own fault injection (Law 1), two distinct vectors, both demonstrated live this shift and
+reverted byte-identical, suite re-confirmed clean immediately after each:** (1) narrowed
+`BLOCKING_SEVERITIES` to drop `"UNKNOWN"` — run in a fresh process, the mutated module genuinely
+stops blocking an UNKNOWN-severity finding; 1 genuine `FAIL [FTF-1506]` line. (2) removed
+`PolicyException.is_valid`'s own `expires_on >= today` clause — the mutated module genuinely lets
+an expired exception keep suppressing its finding; 1 genuine `FAIL [FTF-1506]` line. Both reverted;
+`diff` against the pre-fault copy confirmed byte-identical; suite re-ran clean both times.
+
+`ruff check .`/`ruff format --check .` clean repo-wide (235 files); `mypy .` clean repo-wide (235
+source files) once this sandbox's own `apps/api` Python deps (`uv sync --all-packages`) and JS/TS
+deps (`pnpm install --frozen-lockfile`) were actually installed — an initial bare `mypy .`/
+`test_ftf_1501.py`/`test_ftf_0002.py` run before that failed with stale `alembic.op`/
+`alembic.context` stub-attribute errors and a `ModuleNotFoundError: uvicorn`/missing `pnpm`
+node_modules respectively, both confirmed to be this fresh sandbox's own missing-install state, not
+a defect in this diff (re-ran clean immediately once installed). `validate_spec.py --strict`
+clean. `product_truth_check.py --fail-on-unwired` unchanged at 19/19 (no live caller yet — a CI
+security tool, not a product route, same disclosed precedent as FTF-0506/FTF-0507). `status.py`
+unchanged at 63/300 certified. `verify_task.py --task FTF-1506 --stage task` reports `BLOCKED`
+pre-merge (expected). Regression clean: `test_ftf_1501.py`/`test_ftf_0002.py` "all checks passed";
+`tests/unit` 3/3 unaffected.
+
+Diff scope confirmed exactly this task's own new files (`tests/security/dependency_scanning.py`,
+`tests/security/dependency_scan_policy.yaml`, `tests/tasks/test_ftf_1506.py`,
+`docs/implementation/task-packets/FTF-1506.md`) plus one new `gate` job step, one new
+`dependency-scanning-integration` CI job, and the expected `docs/spec-matrix.yaml` tracking update
+— no scope creep.
+
+`docs/spec-matrix.yaml` FTF-1506 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the real merge
+commit hash is known, same precedent as every sibling PROVISIONAL submission.
+
+**No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run (including the new `dependency-scanning-integration`
+job's real OSV.dev call) are needed before certification. Appended to `docs/certifications/
+queue.md` for Control plane.
+
+## Next shift
+The PR opened this shift for FTF-1506 (branch `claude/wizardly-fermat-x86twn`) is awaiting CI plus
+an independent Control-plane L2 certifier shift (not this relay's role) — do not re-implement. PRs
+#260 (FTF-04A17) and #258 (FTF-1503) are both genuinely green and also await a fresh Control-plane
+certifier pass. PRs #257 (FTF-0508), #246 (FTF-1303 tracking), #243/#241 (FTF-04A06
+certification), #231 (FTF-0212), #195/#194 (FTF-0304) remain separately open from before.
+Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml` rather than trusting
+this note alone before picking a next item — once FTF-1506 lands, candidates ruled out this shift
+for lacking sandbox infrastructure (FTF-0302/0303, FTF-04A02, FTF-1201/FTF-H004, FTF-1703,
+FTF-0902) remain worth re-checking only if this sandbox's own network/infra constraints change.

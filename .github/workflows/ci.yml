@@ -235,6 +235,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a06.py
       - name: FTF-R002 negative-test proof (Authenticated internal component bindings, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r002.py
+      - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
+        run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1431,3 +1433,26 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real model-discovery evidence against the live database and live gateway
         run: uv run python3 tests/integration/test_ftf_0204_v1_models_discovery.py
+
+  dependency-scanning-integration:
+    # FTF-1506: real vulnerability-feed integration against OSV.dev's
+    # public API (uv.lock + pnpm-lock.yaml, every real pinned PyPI/npm
+    # dependency). Runs on GitHub Actions' hosted runner because it has
+    # real internet egress; this repo's interactive dev sandbox's own
+    # outbound-HTTPS proxy blocks api.osv.dev directly (confirmed: a
+    # bare `curl` to it fails the CONNECT tunnel with a 403 from the
+    # proxy itself, before ever reaching OSV.dev) -- the same class of
+    # external-network gap already disclosed for FTF-0004's container-
+    # registry pull above. Every no-network part of this task's own
+    # logic (lockfile parsing, CVSS v3.1 scoring, policy-exception
+    # validity) is proven separately, without live network, by the
+    # `gate` job's own FTF-1506 step.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dev dependencies
+        run: uv sync --all-packages
+      - name: Real OSV.dev dependency scan (uv.lock + pnpm-lock.yaml)
+        run: uv run python3 tests/security/dependency_scanning.py

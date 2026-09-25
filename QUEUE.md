@@ -1,4 +1,37 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled autonomous relay shift) — implemented and submitted **FTF-1506
+  (Dependency scanning) PROVISIONAL** via a PR opened from branch `claude/wizardly-fermat-x86twn`
+  against `main`, title `[relay] FTF-1506: Dependency scanning`. Checked PRs #260 (FTF-04A17) and
+  #258 (FTF-1503) first, since both had been reviewed NOT CERTIFIED for a lint/mypy-only CI
+  failure — both producer sessions had already pushed a fix and both current heads are genuinely
+  green (`gate`: `success`); nothing left for this shift to fix there, both simply await a fresh
+  Control-plane certifier shift.
+
+  Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml` (19 `ABSENT`/`NONE`
+  tasks with every dependency `CERTIFIED`): excluded everything already claimed by another open
+  PR (FTF-04A17 #260, FTF-1503 #258, FTF-0508 #257, FTF-0212 #231, FTF-0304 #195/#194),
+  UI/workflow tasks outside this sandbox's reach (FTF-0214/0215/0408/0500A/0500D), tasks needing
+  infrastructure this sandbox lacks (FTF-0302/0303: HF/S3 network egress; FTF-04A02: OpenBao;
+  FTF-04A19: shares the still-open `contracts:04A` lock; FTF-1201/FTF-H004: a live LiteLLM
+  gateway; FTF-1703: >=1000 curated traces; FTF-0902: a real CNI-enforcing Kubernetes cluster).
+  **FTF-1506** (dependency scanning) had been flagged by a prior shift as "likely needs a CVE/
+  advisory feed reachable only via network egress" and left unclaimed — verified that for real
+  (`curl` to `api.osv.dev` genuinely fails this sandbox's own outbound proxy, 403) rather than
+  trusting the note, then resolved it the way this relay's own operating instructions already
+  name for exactly this case: the real OSV.dev call is proven by a new CI job with real internet
+  egress (`dependency-scanning-integration`), not by this sandbox.
+
+  Implemented `tests/security/dependency_scanning.py` (lockfile parsing for `uv.lock`/
+  `pnpm-lock.yaml`, a real CVSS v3.1 base-score calculator verified against CVE-2021-44228
+  "Log4Shell"'s own published NVD score, OSV.dev querying, and the policy-exception blocking
+  decision itself) plus `tests/security/dependency_scan_policy.yaml` (committed empty) and
+  `tests/tasks/test_ftf_1506.py` (19 no-network checks). Two own fault injections (dropping
+  UNKNOWN from the blocking set; disabling the expired-exception check) both genuinely caught,
+  both reverted byte-identical. `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide;
+  `product_truth_check.py` unchanged 19/19; `status.py` unchanged 63/300. Full record: this
+  file's own "## Provisional" section below, `docs/certifications/queue.md`, `PROGRESS.md`.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #260) — independent review of **FTF-04A17
   (DiscoveredAgentCandidate schema/API), PR #260: NOT CERTIFIED, real CI
@@ -4105,7 +4138,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently.
+FTF-1506 ("Dependency scanning") -- submitted 2026-09-25 via a PR against `main` from branch
+`claude/wizardly-fermat-x86twn`, title `[relay] FTF-1506: Dependency scanning`. Real OSV.dev-backed
+dependency scanner (`uv.lock`/`pnpm-lock.yaml`) with a real CVSS v3.1 base-score calculator and a
+policy-exception blocking decision; dependency-ready on FTF-0002/FTF-0004/FTF-1501 (all CERTIFIED).
+Full submission record: `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`.
 
 FTF-0507 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #253 (merge commit
