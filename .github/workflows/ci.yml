@@ -214,6 +214,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0506.py
       - name: FTF-0507 negative-test proof (Tool-trace normalizer, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0507.py
+      - name: FTF-0508 negative-test proof (Record schema validator, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0508.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file

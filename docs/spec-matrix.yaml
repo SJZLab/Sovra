@@ -3360,16 +3360,32 @@ FTF-0507:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0507.py
 FTF-0508:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Record schema validator
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0506,
-    FTF-0507
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0506,
+    FTF-0507 (all CERTIFIED). `database_changes` charters "No independent schema change. Consume
+    frozen contract" -- `workers/data/record_schema_validator.py::validate_record_batch` validates
+    a batch of already-normalized Section 6.11 `DatasetRecord` candidates: schema_version (reused
+    directly from FTF-0506's own `SCHEMA_VERSION`), source_type/dialect (Section 6.8F's own frozen
+    `DatasetSourceConnection.source_type` enum), content size (Section 67.3's 2MiB canonical
+    single-record max), required provenance fields (`record_sha256`/`normalized_sha256`) and
+    required quality fields (`quality_status`/`pii_status`/`tool_schema_status`, each against a
+    disclosed enum grounded in Section 8.1/67.4). Returns a `RecordSchemaValidationReport` with
+    row-level blocking issues (`batch_position`/`record_index` evidence) instead of raising on the
+    first violation -- only a non-sequence/empty batch itself raises. Path refined to
+    `workers/data/record_schema_validator.py` (this repo's real `SOURCE_ROOTS`, FTF-0001/PR #10),
+    not the packet's suggested non-existent `services/training-worker/...` tree, same precedent as
+    FTF-0506/FTF-0507. `proving_symbol` left blank -- no dataset-import route exists yet in this
+    repository to call it (disclosed "no live caller yet" precedent, same class as
+    FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304). Submitted PROVISIONAL by the relay, not
+    self-certified (Law 4) -- awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0508.py
 FTF-0509:
   certification_state: NONE
   criticality: MUST
