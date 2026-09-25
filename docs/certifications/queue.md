@@ -14613,3 +14613,46 @@ to "## Done", top status note recorded) and `PROGRESS.md`.
 
 - **Validated-by:** session https://claude.ai/code/session_01C1FfcUWN7E5S5aeiNFRmgb
   (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — FTF-1506 (PR #268, supersedes PR #262) — real CI dependency-scan finding remediated
+- **Session:** https://claude.ai/code/session_01ENwUzgKyzCgRiwm6HLPaKm (relay shift).
+- **Context:** PR #262's implementation (commit `2b3dc46`) was already independently reviewed
+  sound by Control plane (see this file's 2026-09-25 FTF-1506 entry above) — NOT CERTIFIED only
+  because the real `dependency-scanning-integration` CI job genuinely found 16 unpatched
+  CRITICAL/HIGH/UNKNOWN OSV findings against `authlib==1.3.2` (`PYSEC-2026-287`) and
+  `starlette==0.46.2` (multiple HIGH, transitively pinned by `fastapi`), both already on `main`
+  before this task existed. Remediation path was spelled out for "the next relay shift" in that
+  review; this is it.
+- **Branch constraint:** this session's designated branch is `claude/wizardly-fermat-btkdtw`, not
+  PR #262's `claude/wizardly-fermat-x86twn`, so the implementation commit was cherry-picked
+  byte-identical onto current `main` (same precedent as PR #264 superseding PR #257 for FTF-0508)
+  rather than pushed to someone else's branch.
+- **Fix:** `apps/api/pyproject.toml` — `fastapi` constraint `>=0.115.0,<0.116` →
+  `>=0.130.0,<0.142` (moves its own transitive `starlette` floor past the fixed versions);
+  `authlib` constraint `>=1.3.2,<1.4` → `>=1.8.0,<1.9` (latest on PyPI at bump time). A bare
+  `uv lock` alone kept the previously-locked `starlette==0.46.2` (still technically satisfies the
+  widened range) — confirmed that behavior first, then forced re-resolution with
+  `uv lock --upgrade-package starlette --upgrade-package authlib`. Resolved:
+  `starlette==1.7.0`, `fastapi==0.141.1`, `authlib==1.8.0`.
+- **Local verification (full gate reproduction, not a partial spot-check):** `uv run ruff check .`
+  / `ruff format --check .` / `mypy .` clean repo-wide; `pnpm run lint` / `format:check` /
+  `typecheck` clean; every `gate`-job task suite re-run clean, with every FastAPI/starlette-
+  touching one explicitly re-verified individually (FTF-0101/0103/0105/H003/0106/0201/0301/0401/
+  0402/0305/0404/0405/0406/0407/0403/1001/0500/H006/0203-0209/04A01/0506-0508/04A06/04A07/R002 —
+  all "all checks passed", zero regressions); `validate_spec.py --strict` clean (after
+  `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact, same disclosed
+  precedent as prior shifts); `product_truth_check.py --fail-on-unwired` and `scripts/status.py`
+  unchanged at `19/19`/`64/300` — no certified evidence touched.
+- **Disclosed limit:** whether `authlib==1.8.0` actually clears OSV's `PYSEC-2026-287` cannot be
+  confirmed locally — this sandbox's own outbound proxy blocks `api.osv.dev` directly (confirmed:
+  `curl` to it fails the CONNECT tunnel with a 403 from the proxy itself, before ever reaching
+  OSV.dev). The real `dependency-scanning-integration` job on PR #268's actual head is the only
+  genuine proof; if it still flags `authlib` with no available fix, the correct next step is a
+  dated, justified `tests/security/dependency_scan_policy.yaml` exception naming that exact
+  `(pypi, authlib, PYSEC-2026-287)` tuple, not added preemptively here.
+- **State:** `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` left unchanged — this
+  relay fix does not self-certify (Law 4). **Not self-certified. Submitted PROVISIONAL.**
+- **PR:** https://github.com/SJZLab/Sovra/pull/268 (`claude/wizardly-fermat-btkdtw` → `main`).
+  Subscribed to PR activity; will watch the real `dependency-scanning-integration` + `gate` CI
+  results on this head to completion and push a policy-exception follow-up if the authlib finding
+  still blocks. PR #262 left open, to be closed as superseded once #268's CI is confirmed.

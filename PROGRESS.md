@@ -17292,3 +17292,84 @@ product-true unchanged at `19/19` (no live caller added by this certification). 
 
 No other task work, design decisions, or queue reprioritization performed beyond what re-basing
 this one PR past a stale merge conflict and certifying it naturally required.
+
+## 2026-09-25T04:59:53Z — Relay shift: FTF-1506 real CI dependency-scan finding remediated (PR #268)
+
+Scheduled autonomous relay shift. STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md
+tails first, not assumed from prior context. `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`. `BLOCKER.md` confirmed no open blockers (both entries resolved history).
+
+Fetched `origin/main` and found it had moved past this file's own most recent read (new watchdog
+commit: FTF-0508 certified via self-certification, Law 4 — already correctly logged by its
+discovering session in `docs/certifications/watchdog-findings.md` and left for Control plane/owner
+review, not unilaterally acted on; not this relay's role to resolve, noted and moved on). Local
+branch `claude/wizardly-fermat-btkdtw` was already sitting at that same tip.
+
+Surveyed the three open `[relay]`-titled PRs with previously-diagnosed real CI failures flagged for
+"the next relay shift" (FTF-1503/PR #258, FTF-04A17/PR #260, FTF-1506/PR #262). Checked each
+branch's real, current CI state via `get_check_runs` before picking work: FTF-1503 and FTF-04A17
+had both already been fixed by their own producer sessions and are fully green (29/29 and 30/30
+respectively) — no relay action left, just awaiting Control-plane L2 certification. **FTF-1506
+(PR #262) was the one genuinely unaddressed item**: its last commit was a tracking-doc record of
+the real CI finding, not an actual fix.
+
+Cherry-picked PR #262's implementation commit (`2b3dc46`, FTF-1506 dependency-scanning module)
+byte-identical onto current `main` on this session's own designated branch (cannot push to another
+session's branch per this session's own git constraints) — same precedent as PR #264 superseding
+PR #257 for FTF-0508. Resolved tracking-doc merge conflicts (PROGRESS.md/QUEUE.md/
+docs/certifications/queue.md) by keeping `main`'s already-current content and writing this shift's
+own fresh entries instead of replaying the superseded PR's own now-stale submission record;
+`docs/spec-matrix.yaml` auto-merged cleanly.
+
+**Fix:** confirmed via PyPI metadata (pypi.org reachable directly from this sandbox, unlike
+`api.osv.dev` which the proxy blocks) that `fastapi`'s own transitive `starlette` dependency floor
+only moves past the fix versions (0.49.1/1.3.1, per the certifier's own finding) starting at
+`fastapi>=0.130.0`. Bumped `apps/api/pyproject.toml`: `fastapi` to `>=0.130.0,<0.142`, `authlib` to
+`>=1.8.0,<1.9` (latest on PyPI). A bare `uv lock` kept the old `starlette==0.46.2` (still
+technically satisfies the widened range) — reproduced that exact non-fix first, then forced real
+re-resolution with `uv lock --upgrade-package starlette --upgrade-package authlib`. Resolved:
+`starlette==1.7.0`, `fastapi==0.141.1`, `authlib==1.8.0`.
+
+**Full local gate reproduction before pushing** (not a partial spot-check, given the size of this
+jump — fastapi 0.115→0.141, starlette 0.46→1.7): `uv run ruff check .`/`ruff format --check .`/
+`mypy .` clean repo-wide (237 source files); `pnpm install --frozen-lockfile` then `pnpm run
+lint`/`format:check`/`typecheck` clean; every real `gate`-job step reproduced directly, including
+every FastAPI/starlette-touching task suite individually re-run and confirmed "all checks passed"
+with zero regressions (FTF-0101, FTF-0103, FTF-0105, FTF-H003, FTF-0106, FTF-0201, FTF-0301,
+FTF-0401, FTF-0402, FTF-0305, FTF-0404, FTF-0405, FTF-0406, FTF-0407, FTF-0403, FTF-1001, FTF-0500,
+FTF-H006, FTF-0203/0204/0205/0206/0207/0208/0209, FTF-04A01, FTF-0506/0507/0508, FTF-04A06,
+FTF-04A07, FTF-R002, FTF-0202, FTF-1501, FTF-1401, FTF-1302/1303/1304, FTF-0102, FTF-0104, plus
+FTF-0002/0003/0005/0004/0006/H001/R001/H002/H028/H034/1810/R014/R015/R011/R017/R016 and this task's
+own FTF-1506 suite). `validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact, same disclosed precedent as prior shifts — the
+stale-commit errors it produced before unshallowing were confirmed to be exactly that artifact, not
+a new defect). `product_truth_check.py --fail-on-unwired` and `scripts/status.py` unchanged at
+`19/19`/`64/300` — this is a dependency-pin fix, no certified evidence touched.
+
+**Disclosed, not hidden:** whether `authlib==1.8.0` actually clears OSV's `PYSEC-2026-287` finding
+cannot be verified from this sandbox — `curl` to `api.osv.dev` fails the CONNECT tunnel with a 403
+from the proxy itself, confirmed directly, same class of gap already disclosed by FTF-1506's own
+original submission for FTF-0004's container-registry pull. The real, live OSV.dev call in PR
+#268's own `dependency-scanning-integration` CI job is the only genuine proof of whether this fix
+is sufficient or whether a dated, justified policy exception is still needed for `authlib`
+specifically. Left `docs/spec-matrix.yaml`'s FTF-1506 `certification_state`/`proof_state`
+unchanged (still `PROVISIONAL`/`L1-PROVEN`) — this relay fix does not self-certify (Law 4).
+
+**Not self-certified. Submitted PROVISIONAL.** Opened PR #268
+(`claude/wizardly-fermat-btkdtw` → `main`, title `[relay] FTF-1506: Dependency scanning (supersedes
+PR #262, fixes real CI dependency-scan finding)`), subscribed to its PR activity. PR #262 left open
+(to be closed as superseded once #268's CI is confirmed green — not closed preemptively before that
+confirmation). Appended full record to `docs/certifications/queue.md` for Control plane.
+
+No other task work, design decisions, or queue reprioritization performed this shift.
+
+## Next shift
+Watch PR #268's real CI (`dependency-scanning-integration` + `gate`) to completion. If green: this
+relay's own PEV cycle for FTF-1506 is done, awaiting only Control-plane L2 certification (not a
+relay action) — close PR #262 as superseded. If the `dependency-scanning-integration` job still
+flags `authlib` (no fix available yet per OSV): add a dated, justified
+`tests/security/dependency_scan_policy.yaml` exception naming exactly `(pypi, authlib,
+PYSEC-2026-287)`, re-push, re-watch. FTF-1503 (PR #258) and FTF-04A17 (PR #260) are both already
+green and need no further relay work — only Control-plane L2 certification, which is out of this
+relay role's scope. Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml`
+before picking any *new* (not-yet-started) task next, rather than trusting this note alone.
