@@ -15667,3 +15667,81 @@ naturally required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — cur
 empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Relay: submit FTF-04A08 (Source-analysis worker foundation), PR (branch claude/wizardly-fermat-f056tn)
+
+Scheduled autonomous relay shift. **FTF-04A08 (Source-analysis worker foundation) submitted
+PROVISIONAL.**
+
+STEP 0: CLAUDE.md hash verified clean; `BLOCKER.md` confirmed no open blockers. Read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh; re-fetched `origin/main` and
+confirmed the local branch was already exactly `origin/main`'s tip (`b399da0`, FTF-0514's own
+certification). Checked GitHub directly: 4 open PRs -- the long-standing #231 (FTF-0212)/#195+
+#194 (FTF-0304) plus a brand-new **PR #288 ("[relay] FTF-0509: Tool argument validator")**
+opened by a concurrent session minutes before this shift started. Excluded FTF-0509 from this
+shift's own candidate set to avoid duplicating an already-claimed item.
+
+Recomputed the dependency-ready frontier from `docs/spec-matrix.yaml`: 18 ready tasks (one
+fewer than the immediately preceding shift's own 19, since FTF-0514 is now certified). Applied
+the same standing exclusions every recent shift has applied (FTF-0212/FTF-0304 open PRs;
+FTF-0302/FTF-0303/FTF-1201/FTF-H004 real network egress; FTF-1703 needs >=1000 real curated
+traces; FTF-04A02 keyed external credential; UI-heavy FTF-0214/0215/0408/0500A/0500D;
+FTF-0902 `shared_lock_required`). **FTF-0513** ("Near-duplicate detector") remains deferred for
+the same embedding-dependency ask-first reason the immediately preceding shift recorded.
+**FTF-04A19** ("AgentManifest schema/versioning/hash") was considered and set aside: its own
+`shared_lock_required` is non-empty (`["contracts:04A", "migration:application"]`) -- the same
+exclusion class already applied to FTF-0902.
+
+Picked **FTF-04A08** -- dependency-ready (FTF-04A01/FTF-04A07/FTF-04A17 all CERTIFIED,
+confirmed before relying on them), `shared_lock_required: []`, `database_changes: "No
+independent schema change. Consume frozen contract."` -- the same tractable pure-computation/
+no-DB/no-shared-lock/no-new-dependency shape as the already-CERTIFIED FTF-0506/FTF-0507/
+FTF-0508/FTF-0511/FTF-0512/FTF-0514 siblings.
+
+**PEV, not mixed.** P: read `target_source_snapshot_schema.py`, `discovered_agent_candidate_schema.py`,
+`local_repository_connector.py`, and `FINE_TUNING_FACTORY_RELEASE_1.md` Section 7A.4 in full.
+This task's own real scope is exactly Section 7A.4's steps 1-2 (language/package-manager/
+framework-marker detection; ignore generated/vendor/secret paths by explicit rule) -- steps
+3-11 (entrypoint/model/prompt/tool/test/trace-hook/deployment detection) are later, separate,
+not-yet-built tasks this task does not claim.
+
+E: wrote `apps/api/app/target_connectors/source_analysis_worker.py::run_source_analysis` --
+connector-agnostic (accepts an already-enumerated `SourceFileRef` sequence: relative path, real
+size known up front, lazy content reader). Closed, explicit ignore-rule set (checked per real
+path segment). Closed extension/marker-basename maps for language/package-manager detection.
+Closed, named dependency-string set for framework-marker detection, read only from a real,
+successfully-parsed manifest (`json.loads`/stdlib `tomllib.loads`/line-parsing) -- Section
+7A.4's own "Unknown/custom frameworks are not guessed" honored by construction. Three
+independent resource bounds (`max_total_entries`, `max_files`, `max_total_bytes`) each disclose
+`truncated=True` rather than silently reporting a complete scan when they stop the run early.
+
+`tests/tasks/test_ftf_04a08.py`: 20 no-DB test functions, all pass against the unmodified code.
+Two independent fault injections against the final, formatted committed content:
+1. Bypassed the oversized-file skip guard -- **2 genuine FAIL lines** (a poisoned oversized
+   `package.json` had its own `read_content` actually invoked; its poisoned marker leaked into
+   the evidence).
+2. Removed the manifest-parse exception guard -- **a genuine unhandled `RecursionError`**
+   propagated out of `run_source_analysis` when fed a deeply-nested `package.json`, reproducing
+   exactly the "malicious parser input escapes the worker" failure this guard exists to
+   prevent.
+Both reverted from an untouched backup; `diff` confirmed byte-identical after each revert;
+re-ran clean both times.
+
+V: `uv sync --all-packages`; `ruff check .`/`ruff format --check .` clean repo-wide; `mypy .`
+clean repo-wide (254 source files; one test-file `func-returns-value` finding fixed by using a
+real helper function instead of an `append(...) or ...` idiom); `validate_spec.py --strict`
+clean (after `git fetch --unshallow`); `product_truth_check.py --fail-on-unwired` unchanged at
+`20/20` (no live source-analysis-pipeline dispatcher exists yet, same disclosed "no live caller
+yet" precedent as every dedup/validator/connector sibling); `status.py` unchanged at `70/300`
+certified (Law 2). Regression swept `test_ftf_04a01.py`, `test_ftf_04a06.py`,
+`test_ftf_04a07.py`, `test_ftf_04a17.py`, `test_ftf_0405.py` -- zero regressions.
+`verify_task.py --task FTF-04A08 --stage task` reports `BLOCKED` pre-merge, expected.
+
+Added the `.github/workflows/ci.yml` `gate`-job step for `tests/tasks/test_ftf_04a08.py`.
+`docs/spec-matrix.yaml` FTF-04A08 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank pending the real merge commit. **Not
+self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+Diff scope confirmed exactly the files this task needs plus this shift's own tracking-file
+updates -- no scope creep, `FTF-0509` (PR #288) left entirely alone. No open owner ask.
