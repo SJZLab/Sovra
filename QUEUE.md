@@ -1,4 +1,99 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_01HkpHGfs6aTsVNzWCRNoBNU, triggered by the
+  `pull_request.opened` webhook for PR #284) — **FTF-0512 (Normalized
+  duplicate detector) independently reviewed and CERTIFIED.** Entire task
+  per this certifier's standing prompt: check `docs/certifications/queue.md`
+  for every PROVISIONAL item; FTF-0512 was the only one pending (the relay
+  shift immediately below).
+
+  Session-ID check: PR #284's single commit (`cb31ffd7a6717c4a5a2f9f3e068da28f81642c9d`)
+  carries `session_01KURX1i2Vya6YPyZLXCAg7N` — no overlap with this
+  reviewing session (`session_01HkpHGfs6aTsVNzWCRNoBNU`). Independent, not
+  self-certification (Law 4).
+
+  Diff read directly against the PR's merge base: exactly the 8 files the
+  relay shift below claims — `workers/data/normalized_duplicate_detector.py`
+  (new), `tests/tasks/test_ftf_0512.py` (new), a 2-line `.github/workflows/
+  ci.yml` gate-job wiring addition, `docs/implementation/task-packets/
+  FTF-0512.md` (new), `docs/spec-matrix.yaml`, and this shift's own
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tracking updates.
+  No other production file touched.
+
+  Own local reproduction: `python3 tests/tasks/test_ftf_0512.py` — 20/20
+  pass. `python3 scripts/product_truth_check.py --fail-on-unwired` —
+  `20/20`, unchanged; this task's `proving_symbol` is blank (no
+  dataset-import pipeline route exists yet in this repository to call
+  `detect_normalized_duplicates`, same disclosed precedent as FTF-0506/
+  FTF-0507/FTF-0508/FTF-0511), confirmed legitimate by reading
+  `scripts/product_truth_check.py`'s own `SOURCE_ROOTS` list directly
+  (`workers/data` is a real, listed root — not a filled `proving_symbol`
+  with zero callers). `python3 scripts/validate_spec.py --strict` —
+  clean, after `git fetch --unshallow` (this sandbox's own pre-existing
+  shallow-clone artifact). `ruff check`/`ruff format --check`/`mypy` clean
+  repo-wide (after `uv sync --all-packages`). Regression swept
+  `test_ftf_0500/0506/0507/0508/0511.py` — zero regressions.
+
+  `python3 tools/r1_handoff.py packet FTF-0512 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` — pulled the real task contract
+  directly rather than trusting the PR's restatement of it. `acceptance`:
+  "Canonicalized hash matching preserves meaningful tool/ID semantics
+  while detecting formatting duplicates" — verified met by reading
+  `test_case_only_difference_is_a_duplicate`,
+  `test_generated_uuid_difference_is_a_duplicate`,
+  `test_generated_timestamp_difference_is_a_duplicate`, and
+  `test_tool_call_id_name_preserved_verbatim_still_matches_when_identical`
+  directly. `negative_acceptance`: "Normalization cannot collapse distinct
+  customer outcomes or strip relevant security constraints" — verified met
+  by `test_different_tool_call_arguments_is_not_a_duplicate`,
+  `test_different_json_content_value_is_not_a_duplicate`,
+  `test_different_security_word_is_not_a_duplicate`, and
+  `test_different_business_id_in_text_is_not_a_duplicate`. Dependencies
+  FTF-0500/FTF-0511 reconfirmed already `CERTIFIED` in `docs/spec-matrix.yaml`
+  before relying on their provenance-field contract.
+
+  Own fault injection (Law 1), independently reproduced rather than
+  trusting the producer's self-report, and a different vector than the
+  producer's own disclosed one (which dropped tool-call `arguments`):
+  replaced a `json` content part's `value` with a fixed placeholder in
+  `_normalize_content_part` — 1 genuine FAIL line reproduced
+  (`test_different_json_content_value_is_not_a_duplicate`), byte-identical
+  to the expected negative_acceptance failure mode. Restored from an
+  untouched backup; `diff`/`git status --short` both confirmed clean;
+  re-ran — all checks pass again.
+
+  Real CI watched to genuine completion on PR #284's real head
+  (`cb31ffd7a6717c4a5a2f9f3e068da28f81642c9d`, run `36126898147`): polled
+  the GitHub Actions check-runs/jobs API directly against the head SHA
+  rather than accepting a single green summary — all 31/31 check runs
+  completed `success`, including `gate` (job `108044991017`, completed
+  `2026-09-25T11:01:46Z`) and its own new `FTF-0512 negative-test proof
+  (Normalized duplicate detector, no DB required)` step. Three integration
+  jobs unrelated to this task (`secret-manager-integration`,
+  `dataset-source-connection-integration`,
+  `target-application-connection-integration`) were still `in_progress` at
+  first read — each building the same pinned OpenBao Go binary from
+  source, mirroring the identical pattern the immediately preceding
+  FTF-0511 certification also hit; step-level polling confirmed genuine,
+  still-advancing build progress (not a hung runner) before continuing to
+  wait, then polled each job individually until `completed`/`success` —
+  matching the ~7-8 minute baseline observed on that prior PR #282/FTF-0511
+  run for the same jobs — before merging.
+
+  **Result: CERTIFIED.** No blocking defect found. Merged PR #284 (merge
+  commit `bdd9c0e0a07da1ca5b18306277c50f841acc8ee7`). `docs/spec-matrix.yaml`'s
+  FTF-0512 entry set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  `sync_certified_status()` run (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`). `scripts/status.py`: `68/300` ->
+  `69/300` certified; product-true unchanged at `20/20` (no live caller
+  added by this certification, disclosed). Appended a matching entry to
+  `docs/certifications/ledger.md`; moved FTF-0512 out of "## Provisional"
+  into "## Done" in this file. No other task work, design decisions, or
+  queue reprioritization performed beyond what this certification
+  naturally required (Law 4). No open owner ask.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01KURX1i2Vya6YPyZLXCAg7N) — **FTF-0512
   (Normalized duplicate detector) submitted PROVISIONAL.** STEP 0: CLAUDE.md
@@ -4504,11 +4599,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0511 ("Exact duplicate detector") was the only item here; it was
-independently reviewed and **CERTIFIED 2026-09-25** via PR #282 (merge commit
-`4602ba7d7b06063085d91d8782b33d946ef644d5`) — see "## Done" for the certification
+None currently. FTF-0512 ("Normalized duplicate detector") was the only item here; it was
+independently reviewed and **CERTIFIED 2026-09-25** via PR #284 (merge commit
+`bdd9c0e0a07da1ca5b18306277c50f841acc8ee7`) — see "## Done" for the certification
 summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
-full evidence.
+full evidence. FTF-0511 ("Exact duplicate detector") was the item here before that; it was
+independently reviewed and **CERTIFIED 2026-09-25** via PR #282 (merge commit
+`4602ba7d7b06063085d91d8782b33d946ef644d5`) — see "## Done" for that certification
+summary too.
 
 (Note: the rest of this section is a historical snapshot, not kept current
 every shift — several items below, e.g. FTF-1503, have since moved to
@@ -6959,6 +7057,48 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   certified before, `68/300` after. Product-true unchanged at `20/20` (no
   live caller added by this certification). Full entry:
   docs/certifications/ledger.md.
+- FTF-0512 — Normalized duplicate detector. Independently reviewed and
+  **CERTIFIED 2026-09-25** via PR #284 (`claude/wizardly-fermat-8p4f3j` ->
+  `main`, single commit `cb31ffd`, producer session
+  `session_01KURX1i2Vya6YPyZLXCAg7N`, no overlap with this reviewing
+  session `session_01HkpHGfs6aTsVNzWCRNoBNU` — independent, Law 4). Diff
+  read directly: `workers/data/normalized_duplicate_detector.py` (new),
+  `tests/tasks/test_ftf_0512.py` (new, 20 no-DB tests), a 2-line
+  `.github/workflows/ci.yml` gate-job wiring addition, and tracking-doc
+  updates — scope matched the PR's own claims, no other production file
+  touched. Watched real CI to genuine completion on the PR's actual head
+  `cb31ffd7a6717c4a5a2f9f3e068da28f81642c9d` (run `36126898147`): all
+  31/31 check runs `success`, including `gate` (job `108044991017`) and
+  its own new `FTF-0512 negative-test proof` step — the same three
+  integration jobs FTF-0511's own entry above already flagged as slow
+  (`secret-manager-integration`/`dataset-source-connection-integration`/
+  `target-application-connection-integration`, each building the same
+  pinned OpenBao Go binary from source) were still `in_progress` at first
+  read; step-level polling confirmed genuine, still-advancing build
+  progress before continuing to wait, then each was polled individually
+  until `completed`/`success` before merging. Own fault injection,
+  a different vector than the producer's own disclosed one (which dropped
+  tool-call `arguments`): replaced a `json` content part's `value` with a
+  fixed placeholder — 1 genuine `FAIL` line
+  (`test_different_json_content_value_is_not_a_duplicate`), reverted
+  byte-identical, suite re-confirmed clean. `product_truth_check.py
+  --fail-on-unwired` confirmed legitimately `20/20` unchanged —
+  `proving_symbol` is blank for this task (disclosed, no dataset-import
+  pipeline route exists yet to call `detect_normalized_duplicates`, same
+  accepted class as FTF-0506/FTF-0507/FTF-0508/FTF-0511), confirmed by
+  reading `scripts/product_truth_check.py`'s own `SOURCE_ROOTS` list
+  directly (`workers/data` is a real, listed root). Both acceptance
+  ("Canonicalized hash matching preserves meaningful tool/ID semantics
+  while detecting formatting duplicates") and negative_acceptance
+  ("Normalization cannot collapse distinct customer outcomes or strip
+  relevant security constraints") reconfirmed against the real DoD via
+  `tools/r1_handoff.py packet FTF-0512`; dependencies FTF-0500/FTF-0511
+  confirmed already `CERTIFIED` before relying on them. `validate_spec.py
+  --strict` clean (after `git fetch --unshallow`, this sandbox's own
+  pre-existing shallow-clone artifact). Merged PR #284.
+  `scripts/status.py`: `68/300` certified before, `69/300` after.
+  Product-true unchanged at `20/20` (no live caller added by this
+  certification). Full entry: docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

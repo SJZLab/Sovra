@@ -3647,10 +3647,10 @@ FTF-0511:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Normalized duplicate detector
-  evidence_hash: ''
+  evidence_hash: bdd9c0e0a07da1ca5b18306277c50f841acc8ee7
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -3709,9 +3709,43 @@ FTF-0512:
     Regression swept `test_ftf_0500.py` (needed `uv sync --all-packages`
     for `uvicorn`, same disclosed precedent), `test_ftf_0506.py`,
     `test_ftf_0507.py`, `test_ftf_0508.py`, `test_ftf_0511.py` -- zero
-    regressions. Not self-certified (Law 4) -- awaiting independent
-    Control-plane L2 review and a real CI run on the opened PR.
-  proof_state: L1-PROVEN
+    regressions.
+
+    Independent Control-plane L2 certification (session
+    session_01HkpHGfs6aTsVNzWCRNoBNU, no overlap with the producer session
+    session_01KURX1i2Vya6YPyZLXCAg7N -- Law 4): diff re-read directly
+    against PR #284 (exactly the 8 claimed files); own local reproduction
+    (20/20); own independent fault injection, a different vector than the
+    producer's own (replaced a `json` content part's `value` with a fixed
+    placeholder rather than dropping tool-call `arguments`) -- 1 genuine
+    FAIL line reproduced (`test_different_json_content_value_is_not_a_duplicate`),
+    reverted byte-identical (`diff`/`git status --short` both confirmed);
+    `ruff`/`ruff format`/`mypy` reconfirmed clean; `validate_spec.py
+    --strict` reconfirmed clean; `product_truth_check.py --fail-on-unwired`
+    reconfirmed 20/20 unchanged, and the disclosed 0/0 confirmed legitimate
+    by reading `scripts/product_truth_check.py`'s own `SOURCE_ROOTS` list
+    directly (`workers/data` is real, `proving_symbol` is genuinely blank,
+    not a filled symbol with zero callers); `status.py` reconfirmed
+    68/300 unchanged pre-certification; regression suite reconfirmed
+    clean. Real task contract re-pulled via `tools/r1_handoff.py packet
+    FTF-0512 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and both acceptance
+    and negative_acceptance clauses reconfirmed genuinely met by reading
+    the corresponding tests directly, not accepted on the PR's own word.
+    Dependencies FTF-0500/FTF-0511 reconfirmed CERTIFIED in this file
+    before relying on their provenance-field contract. Real CI watched to
+    genuine completion on PR #284's actual head
+    (`cb31ffd7a6717c4a5a2f9f3e068da28f81642c9d`, run `36126898147`) --
+    31/31 check runs `success`, including `gate` (completed clean in
+    ~2.5 minutes) and the three slower `secret-manager-integration`/
+    `dataset-source-connection-integration`/
+    `target-application-connection-integration` jobs, which each build the
+    same pinned OpenBao Go binary from source and took ~7 minutes this run
+    (matching the ~7.5-minute baseline observed on the immediately
+    preceding PR #282/FTF-0511 run for the same jobs) -- confirmed
+    genuinely still progressing via per-job step polling before treating
+    the wait as normal rather than a hang. No blocking defect found.
+    Merged PR #284 (`bdd9c0e0a07da1ca5b18306277c50f841acc8ee7`).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:
