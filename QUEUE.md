@@ -5014,8 +5014,8 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0215 ("Periodic sync workflow") — submitted 2026-09-25 via branch
-`relay/ftf-0215-periodic-sync-workflow`, session
+FTF-0215 ("Periodic sync workflow") — submitted 2026-09-25 via PR #296 (branch
+`relay/ftf-0215-periodic-sync-workflow` → main), session
 `https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk`. Full submission record: this file's own
 top dated entry, `docs/certifications/queue.md`'s matching 2026-09-25 entry, `PROGRESS.md`. Awaiting
 Control-plane L2 certification and a real CI run on the opened PR — not this relay's role.

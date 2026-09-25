@@ -16174,6 +16174,7 @@ required (Law 4). No open owner ask.
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
 
 ## 2026-09-25 — FTF-0215 — Periodic sync workflow
+- **PR:** https://github.com/SJZLab/Sovra/pull/296 (relay/ftf-0215-periodic-sync-workflow → main)
 - **Branch:** relay/ftf-0215-periodic-sync-workflow (session
   https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk)
 - **Test:** tests/tasks/test_ftf_0215.py -- 38 checks across 7 test functions
