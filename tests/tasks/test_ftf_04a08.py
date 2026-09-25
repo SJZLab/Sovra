@@ -27,7 +27,7 @@ This task's own negative_acceptance ("Do not import or execute target
 code/hooks/build scripts; malicious parser input cannot escape worker")
 is covered by `test_module_never_imports_or_executes_scanned_content`,
 `test_malformed_package_json_does_not_raise`,
-`test_deeply_nested_package_json_does_not_raise`,
+`test_deeply_nested_manifest_recursion_error_does_not_raise`,
 `test_duplicate_relative_path_is_rejected`,
 `test_path_traversal_relative_path_is_rejected`,
 `test_absolute_relative_path_is_rejected`, and
@@ -41,12 +41,14 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
+import app.target_connectors.source_analysis_worker as source_analysis_worker_module  # noqa: E402
 from app.target_connectors.source_analysis_worker import (  # noqa: E402
     ResourceLimits,
     SourceAnalysisWorkerError,
@@ -312,26 +314,26 @@ def test_malformed_package_json_does_not_raise() -> None:
     )
 
 
-def test_deeply_nested_package_json_does_not_raise() -> None:
-    # A fixed nesting depth is not portable: CPython interpreters differ in
-    # how many C-stack frames one `json.loads` recursion level consumes (an
-    # earlier version of this test used a fixed depth that reliably raised
-    # `RecursionError` on Python 3.11 but not on Python 3.12's own CI
-    # runner). Deterministically lower the recursion limit first, then nest
-    # far deeper than that lowered limit -- guaranteed to overflow on any
-    # interpreter, restored afterward so this test cannot affect any other.
-    original_limit = sys.getrecursionlimit()
-    sys.setrecursionlimit(100)
-    try:
-        nested = ("[" * 5000) + ("]" * 5000)
-        content = ('{"dependencies": {}, "x": ' + nested + "}").encode("utf-8")
-        evidence = run_source_analysis([_ref("package.json", content)])
-    finally:
-        sys.setrecursionlimit(original_limit)
+def test_deeply_nested_manifest_recursion_error_does_not_raise() -> None:
+    # Real adversarially-deep JSON nesting is not a portable way to trigger
+    # this: whether/when it actually raises `RecursionError` depends on how
+    # many C-stack frames one `json.loads` recursion level consumes, which
+    # is not stable across CPython builds/versions (two earlier versions of
+    # this test -- a fixed nesting depth, then a fixed nesting depth under a
+    # deterministically lowered `sys.setrecursionlimit` -- each reliably
+    # raised locally but silently failed to raise on CI's own Python 3.12
+    # runner). This directly forces the exact exception
+    # `_MANIFEST_PARSE_EXCEPTIONS` names instead, proving the guard itself
+    # rather than one interpreter build's incidental recursion behavior.
+    def _raise_recursion_error(*_args: object, **_kwargs: object) -> object:
+        raise RecursionError("simulated maximum recursion depth exceeded")
+
+    with mock.patch.object(source_analysis_worker_module.json, "loads", _raise_recursion_error):
+        evidence = run_source_analysis([_ref("package.json", b'{"dependencies": {}}')])
     check(
         "FTF-04A08",
-        "adversarially deep JSON nesting (RecursionError-shaped input) does "
-        "not raise out of this worker",
+        "a genuine RecursionError raised while parsing a manifest does not "
+        "raise out of this worker -- caught and counted",
         evidence.manifest_parse_errors == 1,
     )
 
