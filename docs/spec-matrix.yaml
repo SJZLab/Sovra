@@ -5043,10 +5043,10 @@ FTF-1505:
   proving_symbol: ''
   proving_test: ''
 FTF-1506:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dependency scanning
-  evidence_hash: ''
+  evidence_hash: c805cd03e1c3cb03dfeced0888c373e00a547859
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-14; scenarios=Q24, Q25, Q26;
@@ -5163,7 +5163,58 @@ FTF-1506:
     unchanged by this relay fix (still PROVISIONAL/L1-PROVEN,
     self-certification is Law 4) -- Control plane still needs to run its
     own independent CERTIFY procedure.
-  proof_state: L1-PROVEN
+
+    2026-09-25 Control-plane certification (PR #268, merge commit
+    c805cd03e1c3cb03dfeced0888c373e00a547859): independent CERTIFY
+    procedure run by this reviewing session (session-ID check clean --
+    producer commits carry session_01QLGmt5BoGWrutFsFSHjZGz and
+    session_01ENwUzgKyzCgRiwm6HLPaKm, no overlap with this reviewing
+    session). Diff read directly against PR #268's real final head
+    (`3a60159`, three commits: the original implementation, the
+    fastapi/starlette/authlib bump, and a docs-only tracking-record
+    follow-up) -- confirmed the code change is exactly the claimed
+    dependency bump plus one new CI job wiring, nothing else; the
+    committed `tests/security/dependency_scan_policy.yaml` stayed
+    genuinely empty (no exception added -- the bump alone cleared the
+    finding). Own local reproduction in a separate git worktree at the
+    real head (`uv sync --all-packages` resolved `authlib==1.8.0`/
+    `starlette==1.7.0`/`fastapi==0.141.1`, matching CI): `tests/tasks/
+    test_ftf_1506.py` 19/19 pass; `ruff check`/`ruff format --check`/
+    `mypy` clean; `validate_spec.py --strict` clean; `product_truth_check.py
+    --fail-on-unwired` unchanged 19/19; `status.py` unchanged 64/300 (this
+    task adds no live caller). Dependencies FTF-0002/FTF-0004/FTF-1501
+    reconfirmed CERTIFIED before relying on them. Own fault injection,
+    distinct from the producer's own two vectors (dropping UNKNOWN from
+    `BLOCKING_SEVERITIES`; disabling the expired-exception check): forced
+    `excepted = True` in `evaluate()`'s per-finding exception-matching
+    line, bypassing all exception-coverage checks -- 5 genuine FAILs (the
+    unpatched-CRITICAL, UNKNOWN-severity, expired-exception,
+    blank-justification, and mismatched-exception-coverage
+    negative_acceptance/acceptance cases all caught it for real); reverted
+    byte-identical (`diff` against the pre-fault copy empty); suite re-ran
+    clean immediately after. Task contract re-pulled via `tools/
+    r1_handoff.py packet FTF-1506 --plan FINE_TUNING_FACTORY_RELEASE_1.md`:
+    both `acceptance` clauses ("Scan pinned runtime/development
+    dependencies under recorded vulnerability/patch policy"; "Independent
+    review, exact merged commit, real relevant integration and
+    negative-test evidence recorded") and the `negative_acceptance` clause
+    ("Unknown/unpatched critical/high finding cannot be silently ignored to
+    satisfy cost or schedule") confirmed genuinely met by the shipped code,
+    not merely "tests pass". `shared_lock_required` reconfirmed empty in
+    the same packet. Real CI watched to genuine completion on the PR's
+    actual final head (`3a60159`): 30/30 checks `success`, `gate` included
+    (its own step log pulled directly -- confirmed `test_ftf_1506.py`
+    genuinely ran and printed "all checks passed", followed by real
+    `product_truth_check.py`/`status.py` runs printing `19/19`/`64/300`),
+    and `dependency-scanning-integration` `success` with its own job log
+    pulled directly showing a real live OSV.dev call against 295 pinned
+    dependencies returning 0 findings, 0 blocking -- the genuine proof the
+    bump actually cleared the prior CI-found vulnerabilities, not a
+    self-reported or stale claim. No blocking defect found. Merged PR #268
+    (merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859`). PR #262
+    (the original, CI-blocked submission this PR fixed) closed as
+    superseded.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1506.py
 FTF-1507:

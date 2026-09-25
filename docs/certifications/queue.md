@@ -14656,3 +14656,104 @@ to "## Done", top status note recorded) and `PROGRESS.md`.
   Subscribed to PR activity; will watch the real `dependency-scanning-integration` + `gate` CI
   results on this head to completion and push a policy-exception follow-up if the authlib finding
   still blocks. PR #262 left open, to be closed as superseded once #268's CI is confirmed.
+
+## 2026-09-25 — Control plane: certify FTF-1506 (Dependency scanning), PR #268
+Triggered by the `pull_request.opened` webhook for PR #268. This same certifying
+session's own prior review (above) had left FTF-1506 NOT CERTIFIED on PR #262 because
+the real `dependency-scanning-integration` CI job found 16 genuine, currently-unpatched
+CRITICAL/HIGH/UNKNOWN OSV findings against `authlib==1.3.2`/`starlette==0.46.2`, both
+already pinned on `main` before that task touched anything. PR #268 is the relay's own
+remediation of exactly that finding.
+
+**Session-ID check:** PR #268's three commits carry `session_01QLGmt5BoGWrutFsFSHjZGz`
+(original module) and `session_01ENwUzgKyzCgRiwm6HLPaKm` (the version bump and the
+docs-only follow-up). Neither overlaps this reviewing session
+(`session_01VDSvao4KMAGwSqasd9Q9sN`) -- independent, not self-certification (Law 4).
+
+**Stale webhook SHA caught before review:** the webhook's own `pull_request.opened`
+payload named head SHA `d4c7e630`, but a fresh `pull_request_read get` showed the PR's
+real head had already advanced one commit further, to `3a60159` (a docs-only tracking
+update recording the relay shift in `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`) -- same class of webhook-vs-real-head drift already
+disclosed on prior PRs (#260, #262). This review diffed and watched CI against the real
+final head, `3a60159`, not the stale webhook SHA.
+
+**Diff read directly** against `3a60159`: the only production-code change versus
+`main` is `apps/api/pyproject.toml`'s `fastapi` constraint (`>=0.115.0,<0.116` ->
+`>=0.130.0,<0.142`) and `authlib` constraint (`>=1.3.2,<1.4` -> `>=1.8.0,<1.9`), the
+resulting `uv.lock` re-resolution (`starlette==0.46.2` -> `1.7.0` transitively,
+`fastapi==0.115.14` -> `0.141.1`, `authlib==1.3.2` -> `1.8.0`, plus two new transitive
+deps `annotated-doc`/`joserfc`/`typing-inspection`), and one new
+`dependency-scanning-integration` CI job with a matching `gate`-job step -- exactly
+what the PR body claims, nothing more. `tests/security/dependency_scan_policy.yaml`
+confirmed still genuinely empty (comment-only scaffold, `exceptions: []`) -- the
+version bump alone cleared the prior finding, no exception was added to silently
+suppress anything.
+
+**Own local reproduction** in a separate git worktree checked out at the real final
+head (`3a60159`, kept isolated from this session's own working tree):
+- `uv sync --all-packages` resolved the same versions CI resolved
+  (`authlib==1.8.0`/`starlette==1.7.0`/`fastapi==0.141.1`).
+- `uv run python3 tests/tasks/test_ftf_1506.py` -- 19/19 no-network checks pass.
+- `uv run ruff check .` / `uv run ruff format --check .` -- clean repo-wide.
+- `uv run mypy tests/security/dependency_scanning.py` -- clean.
+- `python3 scripts/validate_spec.py --strict` -- clean (after unshallowing).
+- `python3 scripts/product_truth_check.py --fail-on-unwired` -- unchanged at 19/19
+  (FTF-1506's `proving_symbol` still legitimately empty).
+- Dependencies FTF-0002/FTF-0004/FTF-1501 reconfirmed `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+
+**Own fault injection (Law 1), distinct from the producer's own two already on record**
+(dropping `UNKNOWN` from `BLOCKING_SEVERITIES`; disabling the expired-exception check):
+in `evaluate()`, replaced `excepted = any(exc.covers(dep.ecosystem, dep.name, vuln_id)
+for exc in valid_exceptions)` with `excepted = True`, so every finding was treated as
+exception-covered regardless of the actual recorded policy. Ran the real suite against
+the faulted code: 5 genuine `FAIL [FTF-1506]` lines -- the unpatched-CRITICAL-blocks,
+UNKNOWN-severity-blocks-by-default, expired-exception-still-blocks,
+blank-justification-exception-still-blocks, and mismatched-exception-never-covers
+cases all caught it for real. Reverted byte-identical (`diff` against the pre-fault
+copy empty); re-ran the real suite immediately after -- all 19 checks passed again.
+
+**Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-1506
+--plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Scan pinned
+runtime/development dependencies under recorded vulnerability/patch policy" -- proven
+by the real lockfile parsing plus `evaluate()`, now genuinely returning a clean scan
+against the bumped pins; "Independent review, exact merged commit, real relevant
+integration and negative-test evidence recorded" -- this review, plus the real, now
+green `dependency-scanning-integration` job) and `negative_acceptance` ("Unknown/
+unpatched critical/high finding cannot be silently ignored to satisfy cost or
+schedule" -- proven both by the shipped suite's own fail-closed cases and, concretely,
+by this exact finding never having been suppressed: it was fixed, not excepted) both
+genuinely met. `shared_lock_required` confirmed empty in the same packet.
+
+**Real CI watched to genuine completion on the real final head** (`3a60159`, GitHub
+Actions run `36096759389`, polled via `gh api .../check-runs` every 15s until every job
+left `in_progress`): 30/30 checks `success`, `gate` included. Pulled `gate`'s own job
+log directly (`get_job_logs`, job `107950529121`, `return_content: true`): confirmed
+`uv run python3 tests/tasks/test_ftf_1506.py` genuinely ran in CI and printed "FTF-1506
+dependency scanning (no-network) tests: all checks passed", immediately followed by
+`python3 scripts/product_truth_check.py --fail-on-unwired` printing "Product-truth:
+19/19 product-true" and `python3 scripts/status.py` printing "Status: 64/300 certified
+19 product-true" (pre-certification count, as expected) in the same real job --  not a
+self-reported or stale claim. Separately pulled `dependency-scanning-integration`'s own
+job log directly (job `107950529479`): the real, live OSV.dev call
+(`uv run python3 tests/security/dependency_scanning.py`) printed `"dependencies_scanned":
+295, "findings_total": 0, "findings_blocking": 0, "content_free": true` and exited
+`DEPENDENCY SCAN: 295 dependencies, 0 finding(s), 0 blocking -- clean` -- genuine,
+first-hand proof that the version bump actually cleared the 16 real findings PR #262's
+own CI run had found against the un-bumped pins, not merely a claim that it should.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #268 (merge commit
+`c805cd03e1c3cb03dfeced0888c373e00a547859`). Closed PR #262 (the original, CI-blocked
+submission this PR fixed) as superseded, with an explanatory comment on the PR itself.
+`docs/spec-matrix.yaml`'s FTF-1506 entry set to `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit. Ran
+`scripts.task_claim.sync_certified_status()` -- `['FTF-1506']` updated. `scripts/
+status.py`: `64/300` -> `65/300` certified; product-true unchanged at `19/19` (no live
+caller added). Appended a matching entry to `docs/certifications/ledger.md`; updated
+`QUEUE.md` (new top status note, moved FTF-1506 into "## Done") and `PROGRESS.md`. No
+other task work, design decisions, or queue reprioritization performed beyond what this
+certification naturally required (Law 4). No open owner ask (`QUEUE.md` "Owner actions
+— current" unchanged, empty).
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.

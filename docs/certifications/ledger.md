@@ -7139,3 +7139,86 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-1506 — Dependency scanning
+- Criterion ID: FTF-1506
+- PR: https://github.com/SJZLab/Sovra/pull/268 (`claude/wizardly-fermat-btkdtw`
+  → `main`), remediation of the real CI dependency-scan finding this
+  session's own prior review (`docs/certifications/queue.md`'s 2026-09-25
+  FTF-1506/PR #262 entry) left NOT CERTIFIED. Merged by this review as
+  merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859`.
+- Merge commit (evidence): c805cd03e1c3cb03dfeced0888c373e00a547859
+- Implementation commits: `91eb1788` (original module, producer session
+  `session_01QLGmt5BoGWrutFsFSHjZGz`), `d4c7e630` (fastapi/authlib/starlette
+  bump, producer session `session_01ENwUzgKyzCgRiwm6HLPaKm`), `3a601596`
+  (docs-only tracking-record follow-up, same session as the bump).
+- Session-ID check: neither producer session overlaps this reviewing
+  session (`session_01VDSvao4KMAGwSqasd9Q9sN`) — independent (Law 4).
+- Diff read directly against the PR's real final head (`3a60159`, not the
+  webhook's stale `pull_request.opened` SHA `d4c7e630`, which by the time
+  this review ran had already been superseded by the docs-only follow-up —
+  confirmed via a fresh `pull_request_read get`): the code change is
+  exactly `apps/api/pyproject.toml`'s `fastapi` constraint (`>=0.130.0,
+  <0.142`) and `authlib` constraint (`>=1.8.0,<1.9`), the resulting
+  `uv.lock` re-resolution (`starlette==1.7.0`, `fastapi==0.141.1`,
+  `authlib==1.8.0`), and the new `dependency-scanning-integration` CI job
+  plus its `gate`-job step — nothing else. `tests/security/
+  dependency_scan_policy.yaml` confirmed still genuinely empty (comments +
+  `exceptions: []`) — the version bump alone cleared the prior CI finding,
+  no exception was added.
+- Own local reproduction, in a separate git worktree checked out at the
+  real final head (`3a60159`): `uv sync --all-packages` resolved the same
+  versions CI resolved; `uv run python3 tests/tasks/test_ftf_1506.py` —
+  19/19 pass; `ruff check .` / `ruff format --check .` clean; `uv run mypy
+  tests/security/dependency_scanning.py` clean; `python3 scripts/
+  validate_spec.py --strict` clean (after `git fetch --unshallow`);
+  `python3 scripts/product_truth_check.py --fail-on-unwired` unchanged at
+  19/19; `python3 scripts/status.py` unchanged at 64/300 (before this
+  certification's own `sync_certified_status()` run).
+- Dependencies FTF-0002/FTF-0004/FTF-1501 reconfirmed `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+- Own fault injection (Law 1), distinct from the producer's own two
+  vectors (dropping `UNKNOWN` from `BLOCKING_SEVERITIES`; disabling the
+  expired-exception check): in `evaluate()`, replaced `excepted = any(
+  exc.covers(dep.ecosystem, dep.name, vuln_id) for exc in
+  valid_exceptions)` with `excepted = True`, so every finding was treated
+  as exception-covered regardless of the actual policy. Ran the real suite
+  against the faulted code: 5 genuine `FAIL [FTF-1506]` lines (the
+  unpatched-CRITICAL-blocks, UNKNOWN-severity-blocks-by-default,
+  expired-exception-still-blocks, blank-justification-exception-still-
+  blocks, and mismatched-exception-never-covers cases). Reverted
+  byte-identical (`diff` against the pre-fault copy empty); re-ran the
+  real suite immediately after — all 19 checks passed again.
+- Task contract pulled directly via `python3 tools/r1_handoff.py packet
+  FTF-1506 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Scan
+  pinned runtime/development dependencies under recorded vulnerability/
+  patch policy"; "Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded") and
+  `negative_acceptance` ("Unknown/unpatched critical/high finding cannot
+  be silently ignored to satisfy cost or schedule") both confirmed
+  genuinely met by the shipped code and this review, not merely "tests
+  pass". `shared_lock_required` confirmed empty in the same packet.
+- Real CI watched to genuine completion on the PR's actual final head
+  (`3a60159`, GitHub Actions run `36096759389`): 30/30 checks `success`,
+  `gate` included. `gate`'s own job log pulled directly (`get_job_logs`,
+  job `107950529121`) confirmed `tests/tasks/test_ftf_1506.py` genuinely
+  ran and printed "all checks passed", immediately followed by real
+  `product_truth_check.py`/`status.py` runs printing `19/19`/`64/300` in
+  the same job. `dependency-scanning-integration`'s own job log pulled
+  directly (job `107950529479`) showed the real, live OSV.dev call: `295`
+  dependencies scanned, `0` findings, `0` blocking — genuine proof the
+  version bump actually cleared the 16 findings the prior PR (#262) had
+  for real, not a self-reported or stale claim.
+- No blocking defect found. Merged PR #268 (merge commit
+  `c805cd03e1c3cb03dfeced0888c373e00a547859`). Closed PR #262 (the
+  original, CI-blocked submission this PR fixed) as superseded.
+  `docs/spec-matrix.yaml`'s FTF-1506 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. Ran `sync_certified_status()` — `['FTF-1506']` updated.
+  `scripts/status.py`: `64/300` → `65/300` certified. Product-true
+  unchanged at `19/19` (no live caller added by this certification).
+- Validated-by: session https://claude.ai/code/session_01VDSvao4KMAGwSqasd9Q9sN
+  (independent — see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.

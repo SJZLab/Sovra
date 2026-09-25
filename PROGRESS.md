@@ -17373,3 +17373,47 @@ PYSEC-2026-287)`, re-push, re-watch. FTF-1503 (PR #258) and FTF-04A17 (PR #260) 
 green and need no further relay work — only Control-plane L2 certification, which is out of this
 relay role's scope. Recompute the dependency-ready frontier fresh from `docs/spec-matrix.yaml`
 before picking any *new* (not-yet-started) task next, rather than trusting this note alone.
+
+## 2026-09-25 — Control plane certifier shift: FTF-1506 (PR #268) independently reviewed, CERTIFIED
+
+Triggered by the `pull_request.opened` webhook for PR #268 — this session's own prior shift had
+left FTF-1506 NOT CERTIFIED on PR #262 because of a real `dependency-scanning-integration` CI
+failure (16 unpatched CRITICAL/HIGH/UNKNOWN OSV findings against `authlib==1.3.2`/
+`starlette==0.46.2`, both already pinned on `main`). PR #268 is the relay's own remediation:
+bumped `fastapi`/`authlib` in `apps/api/pyproject.toml`, forcing `starlette` to re-resolve
+transitively to a fixed version.
+
+Session-ID check clean (producer commits carry `session_01QLGmt5BoGWrutFsFSHjZGz`/
+`session_01ENwUzgKyzCgRiwm6HLPaKm`, no overlap with this session). Caught that the triggering
+webhook's own SHA (`d4c7e630`) was already one commit stale — the PR's real head had advanced to
+`3a60159` (a docs-only tracking follow-up) by the time this review started; reviewed against the
+real head throughout. Diff read in full: exactly the claimed dependency-version bump plus one new
+CI job, nothing else; the policy-exception file stayed genuinely empty (no exception added — the
+fix is a real upgrade, not a suppression). Own local reproduction in an isolated git worktree at
+the real head: 19/19 no-network checks pass; lint/format/mypy clean; `validate_spec.py --strict`
+clean; `product_truth_check.py` unchanged 19/19. Own fault injection distinct from the producer's
+own two (forced `excepted = True` in the exception-matching line) — 5 genuine FAILs, reverted
+byte-identical, suite re-confirmed clean. Task contract re-pulled via `tools/r1_handoff.py packet
+FTF-1506` — both acceptance clauses and the negative_acceptance clause confirmed genuinely met.
+
+Real CI polled to genuine completion on the real final head (GitHub Actions run `36096759389`,
+polled every 15s until nothing was left `in_progress`): 30/30 green, `gate` included. Pulled
+`gate`'s own job log directly — confirmed `test_ftf_1506.py` genuinely executed in CI and printed
+"all checks passed". Pulled `dependency-scanning-integration`'s own job log directly — confirmed
+a real, live OSV.dev call against this repo's actual 295 pinned dependencies returned 0 findings,
+0 blocking, genuinely proving the version bump cleared the 16 findings PR #262's own run had found
+for real (not inferred from a green checkmark alone).
+
+**Result: CERTIFIED.** Merged PR #268 (merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859`).
+Closed PR #262 as superseded, with an explanatory comment. `docs/spec-matrix.yaml`'s FTF-1506 set
+to `CERTIFIED`/`L2-CERTIFIED`, `evidence_hash` set to the merge commit. Ran
+`sync_certified_status()` — `['FTF-1506']` updated. `scripts/status.py`: `64/300` → `65/300`
+certified; product-true unchanged at `19/19` (no live caller added by this certification). Full
+detail: `docs/certifications/queue.md`, `docs/certifications/ledger.md`, `QUEUE.md`.
+
+No other task work, design decisions, or queue reprioritization performed beyond what this
+certification naturally required (Law 4). No open owner ask. Noted in passing, not acted on
+(outside this shift's certification scope): `main`'s tip already carries the 2026-09-25 watchdog
+finding on FTF-0508's own certification-process integrity (self-certification masked by a
+cherry-pick, technically-sound-on-the-merits per its own independent re-verification) — logged for
+Control plane/owner review, unresolved, not this shift's item to act on.

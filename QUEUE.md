@@ -1,4 +1,43 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #268, session
+  https://claude.ai/code/session_01VDSvao4KMAGwSqasd9Q9sN) — independent
+  CERTIFY procedure run on **FTF-1506 (Dependency scanning), PR #268:
+  CERTIFIED.** This PR was the relay's own remediation of the real CI
+  dependency-scan finding this session's own prior review (see the
+  "Previous shift" entry below) had left NOT CERTIFIED on PR #262.
+  Session-ID check clean (producer commits carry
+  `session_01QLGmt5BoGWrutFsFSHjZGz`/`session_01ENwUzgKyzCgRiwm6HLPaKm`, no
+  overlap with this reviewing session). Diff read against the PR's real
+  final head (`3a60159`, one commit newer than the webhook's stale
+  `pull_request.opened` SHA) — confirmed it is exactly the claimed
+  `fastapi`/`authlib` bump (`starlette` moves transitively to `1.7.0`) plus
+  one new CI job, nothing else; the committed `dependency_scan_policy.yaml`
+  stayed genuinely empty. Own local reproduction in a separate git
+  worktree at the real head: 19/19 no-network checks pass;
+  `ruff`/`mypy`/`validate_spec.py --strict` clean; `product_truth_check.py`
+  unchanged 19/19. Own fault injection distinct from the producer's own two
+  vectors (forced `excepted = True` in `evaluate()`'s exception-matching
+  line) — 5 genuine FAILs, reverted byte-identical. Task contract re-pulled
+  via `tools/r1_handoff.py packet FTF-1506` — acceptance/negative_acceptance
+  clauses both confirmed genuinely met. Real CI watched to completion on
+  the real final head — 30/30 green including `gate` (its own job log
+  confirmed `test_ftf_1506.py` genuinely ran) and
+  `dependency-scanning-integration` (its own job log confirmed a real live
+  OSV.dev call: 295 dependencies scanned, 0 findings, 0 blocking — genuine
+  proof the bump cleared the 16 findings PR #262 had found for real).
+  **Merged PR #268** (merge commit
+  `c805cd03e1c3cb03dfeced0888c373e00a547859`); closed PR #262 as
+  superseded. `docs/spec-matrix.yaml`'s FTF-1506 set to
+  `CERTIFIED`/`L2-CERTIFIED`; `sync_certified_status()` ran (`['FTF-1506']`
+  updated). `scripts/status.py`: `64/300` → `65/300` certified,
+  product-true unchanged at `19/19`. Full detail:
+  `docs/certifications/queue.md`, `docs/certifications/ledger.md`. No open
+  owner ask (`QUEUE.md` "Owner actions — current" is empty, unchanged); no
+  new task work, design decisions, or queue reprioritization performed
+  beyond what this certification naturally required (Law 4).
+
+## Previous shift
 Updated: 2026-09-25 (scheduled relay shift, session
   https://claude.ai/code/session_01ENwUzgKyzCgRiwm6HLPaKm) — **FTF-1506's real CI
   dependency-scan finding remediated, PR #268 (supersedes PR #262).** Surveyed the three
@@ -5809,6 +5848,35 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   updates were pushed on a branch and opened as a PR against `main`
   rather than pushed directly, per `BRANCH_PROTECTION`. Full entry:
   docs/certifications/ledger.md.
+- FTF-1506 — Dependency scanning. CERTIFIED 2026-09-25, PR #268 (merge
+  commit `c805cd03e1c3cb03dfeced0888c373e00a547859`) — remediation of the
+  real CI finding this same session's own prior review (PR #262) left NOT
+  CERTIFIED. Independently re-verified: session-ID check clean (producer
+  commits carry `session_01QLGmt5BoGWrutFsFSHjZGz`/
+  `session_01ENwUzgKyzCgRiwm6HLPaKm`, no overlap with this reviewing
+  session `session_01VDSvao4KMAGwSqasd9Q9sN`); diff read against the real
+  final head (`3a60159`, one commit newer than the triggering webhook's
+  stale SHA) confirming it is exactly the claimed `fastapi`/`authlib`
+  version bump (`starlette` moves transitively to `1.7.0`) plus one new CI
+  job, with `tests/security/dependency_scan_policy.yaml` staying genuinely
+  empty; own local reproduction in a separate git worktree (19/19
+  no-network checks, `ruff`/`mypy`/`validate_spec.py --strict` clean,
+  `product_truth_check.py` unchanged 19/19); own fault injection distinct
+  from the producer's own two vectors (forced `excepted = True` in
+  `evaluate()`'s exception-matching line — 5 genuine FAILs, reverted
+  byte-identical); task contract re-pulled via `tools/r1_handoff.py packet
+  FTF-1506` confirming both acceptance clauses and the negative_acceptance
+  clause genuinely met; real CI watched to completion on the real final
+  head — 30/30 green including `gate` (job log confirmed
+  `test_ftf_1506.py` genuinely ran) and `dependency-scanning-integration`
+  (job log confirmed a real live OSV.dev call: 295 dependencies scanned, 0
+  findings, 0 blocking — genuine proof the bump cleared the 16 findings PR
+  #262 had found for real). No blocking defect found. Closed PR #262 as
+  superseded. `docs/spec-matrix.yaml` set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. Ran `sync_certified_status()`. `scripts/status.py`:
+  `64/300` certified before, `65/300` after; product-true unchanged at
+  `19/19`. Full entry: docs/certifications/ledger.md.
 - FTF-1702 — Tool environment. CERTIFIED 2026-09-22, PR #167 (merge
   commit `099a0753710ac6f2bb4cba68c209e99d3845e5d9`). Independently
   re-verified: session-ID clean (PR #167's commits carry
