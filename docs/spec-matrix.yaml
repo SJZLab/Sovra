@@ -3759,16 +3759,47 @@ FTF-0513:
   proving_symbol: ''
   proving_test: ''
 FTF-0514:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: PII/secrets detector
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500,
-    FTF-0508
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31;
+    deps=FTF-0402, FTF-0500, FTF-0508 (all CERTIFIED, confirmed before
+    relying on them). Path refinement recorded before READY (Section
+    84.3), same precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512:
+    the packet names `services/training-worker/data/pii_secrets_detector.py`,
+    but this repo's real `SOURCE_ROOTS` (FTF-0001, PR #10) name
+    `workers/data` as the real data/review worker root -- no `services/`
+    tree exists in this repository. Placed at
+    `workers/data/pii_secrets_detector.py` alongside FTF-0506's/FTF-0507's/
+    FTF-0508's/FTF-0511's/FTF-0512's own modules instead.
+
+    Built for real: `detect_pii_and_secrets` scans every text content
+    part, every json content part's nested string leaves, and every tool
+    call's arguments for a closed set of named PII/secret shapes (email,
+    phone number, Luhn-checked credit card, US SSN, AWS access key ID,
+    Bearer token, PEM private-key block) plus a generic high-entropy
+    fallback for unnamed secret-shaped tokens. `pii_status_for()` reuses
+    FTF-0508's own already-CERTIFIED `PII_STATUS_VALUES` vocabulary
+    directly, returning only `clean`/`detected` -- never manufacturing the
+    human-resolved `quarantined` state. No finding ever carries the raw or
+    partial matched value, only category/length/location (this repo's own
+    `_redact` house convention, length-only). `RESIDUAL_RISK_DISCLOSURE` is
+    a real non-empty field disclosing that a clean report is not proof of
+    no PII. 20 no-DB tests in `tests/tasks/test_ftf_0514.py`; two
+    independent fault injections (bypassed the Luhn check; leaked raw
+    matched text into a finding's own `content_path`) each reproduced
+    exactly the expected negative_acceptance failure, reverted
+    byte-identical. `ruff`/`mypy`/`validate_spec.py --strict` clean;
+    `product_truth_check.py` unchanged at 20/20 (no live import-pipeline
+    caller yet, same disclosed precedent as every dedup/validator sibling).
+    Not self-certified (Law 4) -- awaiting independent Control-plane L2
+    review and a real CI run on the opened PR.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0514.py
 FTF-0515:
   certification_state: NONE
   criticality: MUST
