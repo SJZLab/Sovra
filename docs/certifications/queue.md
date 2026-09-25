@@ -15668,7 +15668,7 @@ empty).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
 
-## 2026-09-25 — Relay: submit FTF-04A08 (Source-analysis worker foundation), PR (branch claude/wizardly-fermat-f056tn)
+## 2026-09-25 — Relay: submit FTF-04A08 (Source-analysis worker foundation), PR #289
 
 Scheduled autonomous relay shift. **FTF-04A08 (Source-analysis worker foundation) submitted
 PROVISIONAL.**

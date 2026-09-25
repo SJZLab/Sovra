@@ -4733,10 +4733,10 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A08** ("Source-analysis worker foundation") — submitted PROVISIONAL 2026-09-25 via a
-new PR from branch `claude/wizardly-fermat-f056tn` (see this file's own top-of-file PR link once
-opened, and `docs/certifications/queue.md` for the full entry). Not self-certified (Law 4);
-awaiting independent Control-plane L2 review. (Note: PR #288, "[relay] FTF-0509: Tool argument
+**FTF-04A08** ("Source-analysis worker foundation") — submitted PROVISIONAL 2026-09-25 via
+[PR #289](https://github.com/SJZLab/Sovra/pull/289) (branch `claude/wizardly-fermat-f056tn`) —
+see `docs/certifications/queue.md` for the full entry. Not self-certified (Law 4); awaiting
+independent Control-plane L2 review. (Note: PR #288, "[relay] FTF-0509: Tool argument
 validator," was opened by a concurrent session shortly before this shift started and is a
 separate, unrelated PROVISIONAL item this shift did not touch — see `docs/certifications/queue.md`
 for it once reviewed.)

@@ -18266,7 +18266,7 @@ disclosed). Appended a matching entry to `docs/certifications/ledger.md`; update
 design decisions, or queue reprioritization performed beyond what this certification naturally
 required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
 
-## 2026-09-25T16:57:01Z — Relay: FTF-04A08 (Source-analysis worker foundation) submitted PROVISIONAL
+## 2026-09-25T16:57:01Z — Relay: FTF-04A08 (Source-analysis worker foundation) submitted PROVISIONAL, PR #289
 
 STEP 0: CLAUDE.md hash verified clean (`sha256sum` matches committed `CLAUDE.md.sha256`).
 `BLOCKER.md` confirmed no open blockers. Read `PROGRESS.md`/`QUEUE.md`/
