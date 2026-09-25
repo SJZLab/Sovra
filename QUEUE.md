@@ -1,5 +1,41 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
+  opened` webhook for PR #264) — checked `docs/certifications/queue.md` for
+  pending PROVISIONAL items per the certifier's standing duty; cross-checked
+  `docs/spec-matrix.yaml` directly and found exactly one genuinely
+  PROVISIONAL entry, **FTF-0508 (PR #264)**, this shift's only pending item
+  (PR #264 itself supersedes a stale/dirty PR #257 — same production code
+  cherry-picked byte-identical onto current `main`). Ran the complete
+  independent CERTIFY procedure: session-ID check clean (producer
+  `session_01CdCmbVsLB4MZNgVpyVMy52`, no overlap with this reviewing
+  session `session_018kJcp1g16ua88Ef237z7PV`; a third session,
+  `session_01C1FfcUWN7E5S5aeiNFRmgb`, performed the PR #257→#264
+  rebase/re-submission but correctly left `certification_state` at
+  `PROVISIONAL` rather than self-certifying); full diff read
+  (`workers/data/record_schema_validator.py`, `tests/tasks/
+  test_ftf_0508.py`); task contract pulled via `tools/r1_handoff.py packet
+  FTF-0508` and its acceptance/negative_acceptance clauses reconfirmed
+  genuinely met; dependencies FTF-0500/FTF-0506/FTF-0507 reconfirmed
+  `CERTIFIED`; own local reproduction (`ruff`/`mypy`/`validate_spec.py
+  --strict` clean, suite 20/20 passing); an own fault injection distinct
+  from the vector the PR's own body already claimed (disabled the
+  duplicate `record_index` guard across the whole batch — caught for real,
+  reverted byte-identical); `product_truth_check.py` 19/19 legitimacy
+  confirmed (no `proving_symbol` claimed); and a real CI run watched to
+  completion on the PR's actual final head (GitHub Actions run
+  `36089980073`, 29/29 jobs green, `gate` job's own step log pulled
+  directly confirming genuine execution of `test_ftf_0508.py`). **Merged
+  PR #264 and CERTIFIED FTF-0508** — merge commit
+  `37c6abb19a6eff941273df6484162c2c1903410d`. `docs/spec-matrix.yaml` set
+  to CERTIFIED/L2-CERTIFIED; `sync_certified_status()` updated;
+  `status.py`: 63/300 → 64/300 certified, product-true unchanged at
+  19/19. Full record: "## Done" below and `docs/certifications/ledger.md`.
+  (This certification review is independent of, and does not touch,
+  the concurrent FTF-1506/FTF-04A17 review entries recorded in the
+  previous shifts below.)
+
+## Previous shift
+Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #262) — independent review of **FTF-1506
   (Dependency scanning), PR #262: NOT CERTIFIED, real CI failure — and it's
   a genuine security finding, not a bug in the PR.** Session-ID check clean
@@ -4166,6 +4202,17 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 None currently.
 
+FTF-0508 was never explicitly listed in this section (it went straight
+from relay submission, PR #257/#264, to this shift's independent review);
+it was independently reviewed and **CERTIFIED 2026-09-25** via PR #264
+(merge commit `37c6abb19a6eff941273df6484162c2c1903410d`) — see "## Done"
+for the certification summary and `docs/certifications/ledger.md`/
+`docs/certifications/queue.md` for the full evidence, including the
+independent session-ID check, own local reproduction, an own fault
+injection (distinct vector from the one already claimed in the PR's own
+body: the duplicate `record_index` guard), and the real CI step-level log
+confirmation on the PR's actual final head.
+
 FTF-0507 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #253 (merge commit
 `c7d33a3ac5a25bd9237422b8dd16d36c27a62fb4`) — see "## Done" for the
@@ -6153,6 +6200,33 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   FTF-0500/FTF-0506 confirmed genuinely `CERTIFIED`. Ran
   `sync_certified_status()`. `scripts/status.py`: `62/300` certified
   before, `63/300` after. Product-true unchanged at 19. Full entry:
+  docs/certifications/ledger.md.
+- FTF-0508 — Record schema validator. CERTIFIED 2026-09-25, merge commit
+  `37c6abb19a6eff941273df6484162c2c1903410d` (PR #264). Independently
+  re-verified: session-ID check clean (producer
+  `session_01CdCmbVsLB4MZNgVpyVMy52`, no overlap with this reviewing
+  session; a prior rebase/re-submission step by a third session,
+  `session_01C1FfcUWN7E5S5aeiNFRmgb`, correctly left `certification_state`
+  at `PROVISIONAL` rather than self-certifying); `workers/data/
+  record_schema_validator.py` and `tests/tasks/test_ftf_0508.py` read in
+  full, confirming `validate_record_batch` is a pure no-I/O batch
+  validator reusing FTF-0506's already-CERTIFIED `SCHEMA_VERSION` and
+  Section 6.8F's own frozen `DatasetSourceConnection.source_type` enum
+  rather than inventing new vocabularies; a fault injection distinct from
+  the vector already claimed in the PR's own body (required-provenance
+  guard) — disabled the duplicate `record_index` guard across the whole
+  batch, caught for real (1 genuine FAIL), reverted byte-identical;
+  `ruff`/`mypy`/`validate_spec.py --strict` clean; CI watched to
+  completion on the real final head (GitHub Actions run `36089980073`,
+  29/29 jobs green, `gate` job's own step log confirmed genuine execution
+  of `test_ftf_0508.py`); `product_truth_check.py` 19/19 confirmed
+  legitimately unchanged (no `proving_symbol` yet, same disclosed "no live
+  caller" precedent as FTF-0506/FTF-0507/FTF-0202/FTF-0205/FTF-0207).
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-0508` —
+  acceptance and negative_acceptance clauses both confirmed genuinely met.
+  Dependencies FTF-0500/FTF-0506/FTF-0507 confirmed genuinely `CERTIFIED`.
+  Ran `sync_certified_status()`. `scripts/status.py`: `63/300` certified
+  before, `64/300` after. Product-true unchanged at 19. Full entry:
   docs/certifications/ledger.md.
 - FTF-0206 — `/model_group/info` optional enrichment. First reviewed and
   found NOT CERTIFIED (CI's `gate` job never ran `tests/tasks/

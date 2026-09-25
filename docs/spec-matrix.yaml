@@ -3360,10 +3360,10 @@ FTF-0507:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0507.py
 FTF-0508:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Record schema validator
-  evidence_hash: ''
+  evidence_hash: 37c6abb19a6eff941273df6484162c2c1903410d
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0506,
@@ -3381,9 +3381,20 @@ FTF-0508:
     not the packet's suggested non-existent `services/training-worker/...` tree, same precedent as
     FTF-0506/FTF-0507. `proving_symbol` left blank -- no dataset-import route exists yet in this
     repository to call it (disclosed "no live caller yet" precedent, same class as
-    FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304). Submitted PROVISIONAL by the relay, not
-    self-certified (Law 4) -- awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    FTF-0506/FTF-0507/FTF-1302/FTF-1303/FTF-1304). Independently reviewed and CERTIFIED by Control
+    plane (PR #264, merge commit `37c6abb19a6eff941273df6484162c2c1903410d`) -- session-ID check
+    (producer `session_01CdCmbVsLB4MZNgVpyVMy52`, no match against this reviewing session), direct
+    diff read of the module and its test suite, a real CI run watched to completion on the real
+    final head (GitHub Actions run `36089980073`, 29/29 checks green including `gate`, whose own
+    step log was pulled directly and confirmed to have genuinely executed
+    `tests/tasks/test_ftf_0508.py` and printed "all checks passed"), an independent fault injection
+    distinct from the producer's own two vectors (disabled the trace-level duplicate `record_index`
+    guard across the whole batch -- 1 genuine FAIL, reverted byte-identical, suite re-confirmed
+    clean), `product_truth_check.py` 19/19 reconfirmed legitimate (no `proving_symbol` claimed,
+    entry skipped rather than counted as a false 0/0 pass), and the task contract's
+    acceptance/negative_acceptance clauses and FTF-0500/FTF-0506/FTF-0507 dependencies reconfirmed
+    via `tools/r1_handoff.py packet FTF-0508`.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0508.py
 FTF-0509:

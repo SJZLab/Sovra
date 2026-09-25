@@ -1,4 +1,94 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-0508 — Control plane: CERTIFIED
+Triggered by the `pull_request.opened` webhook for PR #264 (FTF-0508,
+"Record schema validator"). Per this session's standing certifier duty,
+checked `docs/certifications/queue.md` for pending PROVISIONAL items.
+Cross-checked `docs/spec-matrix.yaml` directly and confirmed FTF-0508 was
+the only genuinely PROVISIONAL entry. PR #264 itself supersedes a stale,
+`mergeable_state: dirty` PR #257 — the same production commit
+(`38f6a5b`) cherry-picked byte-identical onto current `main` by a third
+session performing a rebase/re-submission; that session correctly left
+`certification_state` at `PROVISIONAL` rather than self-certifying,
+deferring to this independent review.
+
+Session-ID check: PR #264's only commit carries `Claude-Session` trailer
+`session_01CdCmbVsLB4MZNgVpyVMy52` (producer) — no match against this
+session's own ID (`session_018kJcp1g16ua88Ef237z7PV`); the rebasing
+session (`session_01C1FfcUWN7E5S5aeiNFRmgb`) also does not match.
+Independent per Law 4.
+
+Read the full diff directly: `workers/data/record_schema_validator.py`
+(378 lines) and `tests/tasks/test_ftf_0508.py` (358 lines, 18 test
+functions). Pulled the real task contract via `tools/r1_handoff.py packet
+FTF-0508 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both
+`acceptance` ("Validate schema/dialect/content size and required
+provenance/quality fields per canonical version") and `negative_acceptance`
+("Unknown content or schema version and invalid sequence produces
+blocking issues with row evidence") clauses are genuinely met, not
+merely "tests pass" — proven by the shipped suite's five independently-
+testable positive checks and its `unknown_content`/
+`unknown_schema_version`/`invalid_sequence` negative cases (each carrying
+`batch_position`/`record_index` row evidence), plus this review's own
+fault injection below. Confirmed `validate_record_batch` genuinely reuses
+FTF-0506's already-CERTIFIED `SCHEMA_VERSION` constant and Section 6.8F's
+own frozen `DatasetSourceConnection.source_type` enum rather than
+inventing new vocabularies. Dependencies FTF-0500/FTF-0506/FTF-0507
+confirmed already `CERTIFIED` in `docs/spec-matrix.yaml` before relying
+on them.
+
+Checked out the real PR head locally and re-ran
+`tests/tasks/test_ftf_0508.py` directly — 20/20 clean. `ruff check`/
+`ruff format --check` clean; `uv run mypy
+workers/data/record_schema_validator.py tests/tasks/test_ftf_0508.py`
+clean; `python3 scripts/validate_spec.py --strict` clean (after `git
+fetch --unshallow`, this sandbox's own pre-existing shallow-clone
+artifact, same precedent as prior shifts). Ran an own fault injection
+distinct from the vector the PR's own body already claimed
+(required-provenance-field guard): disabled the duplicate `record_index`
+guard across the whole batch (`if record_index in seen_record_indices:`
+→ `if False and ...`) — 1 genuine `FAIL [FTF-0508]` line
+(`negative_acceptance: a record_index duplicating another row in the same
+batch is 'invalid sequence', ordering is ambiguous`). Reverted
+byte-identical (`diff` against the pre-fault copy empty, `git diff
+--stat` confirmed no changes); re-ran the real suite immediately after —
+all 20 checks passed again.
+
+`product_truth_check.py --fail-on-unwired` confirmed legitimately `19/19`
+unchanged: this task's `proving_symbol` is the empty string — no
+dataset-import pipeline route exists yet in this repository to call
+`validate_record_batch` (Section 67.1's actual import pipeline routes
+are separate, later, dependency-gated tasks), the same disclosed "no live
+caller yet" precedent already established for
+FTF-0506/FTF-0507/FTF-0202/FTF-0205/FTF-0207/FTF-1302/FTF-1303/FTF-1304.
+Read `scripts/product_truth_check.py`'s own logic directly: an entry with
+no `proving_symbol` is skipped entirely, never counted as a false 0/0
+pass.
+
+CI independently watched to completion on the real final head, not taken
+on faith: GitHub Actions run `36089980073` on head
+`38f6a5bb426d5a2b6a45ded8f61f8f927836cdf6` polled to completion — all 29
+checks, `gate` included, `status: completed` / `conclusion: success`,
+`mergeable_state: clean`. Pulled the `gate` job's own step-level log text
+directly (`get_job_logs`, job id `107930148730`): the step "Run uv run
+python3 tests/tasks/test_ftf_0508.py" genuinely executed and printed
+"FTF-0508 record schema validator: all checks passed" — real execution,
+not a self-reported claim.
+
+**No blocking defect found. Merged PR #264** (merge commit
+`37c6abb19a6eff941273df6484162c2c1903410d`) into `main`.
+`docs/spec-matrix.yaml`'s FTF-0508 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (no live caller, confirmed
+legitimate above). Ran `scripts.task_claim.sync_certified_status()` —
+`['FTF-0508']` updated. `scripts/status.py`: `63/300` -> `64/300`
+certified; product-true unchanged at `19/19` (no live caller added).
+Appended a matching entry to `docs/certifications/ledger.md`; updated
+`QUEUE.md` (moved FTF-0508 to "## Done", updated "## Provisional" to
+note it is no longer pending) and this file.
+
+- **Validated-by:** session https://claude.ai/code/session_018kJcp1g16ua88Ef237z7PV
+  (independent -- see session-ID check above), 2026-09-25.
+
 ## 2026-09-24 — FTF-0507 — Control plane: CERTIFIED
 Triggered by the `pull_request.opened` webhook for PR #253 (FTF-0507,
 "Tool-trace normalizer"). Per this session's standing certifier duty,

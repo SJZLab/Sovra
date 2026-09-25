@@ -14532,3 +14532,94 @@ real, currently-live security condition on `main` (not merely a PR defect), it h
 flagged directly to the owner outside this tracking file.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — FTF-0508 — Control plane: independent CERTIFY review, CERTIFIED
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+PR #264 (FTF-0508, "Record schema validator"). Checked `docs/certifications/queue.md` for every
+item PROVISIONAL and not yet certified, per this session's standing duty. Cross-checked
+`docs/spec-matrix.yaml` directly and found exactly one genuinely PROVISIONAL entry: FTF-0508.
+
+PR #264 itself supersedes a stale, `mergeable_state: dirty` PR #257: the same production
+implementation commit (`38f6a5b`) was cherry-picked byte-identical onto current `main` by a
+third session (`session_01C1FfcUWN7E5S5aeiNFRmgb`) performing a rebase/re-submission, per its
+own PR body. That session correctly did not self-certify -- it left `docs/spec-matrix.yaml`'s
+FTF-0508 entry at `PROVISIONAL`, deferring the actual independent L2 review to this shift.
+
+**Independently verified, not taken on the producer's or the rebasing session's word alone:**
+- **Session-ID check:** PR #264's only commit (`38f6a5b`) carries `Claude-Session` trailer
+  `session_01CdCmbVsLB4MZNgVpyVMy52` (producer) -- no match against this reviewing session's own
+  ID (`session_018kJcp1g16ua88Ef237z7PV`); the rebasing session
+  (`session_01C1FfcUWN7E5S5aeiNFRmgb`) also does not match. Independent, not self-certification
+  (Law 4).
+- **Diff read directly:** `workers/data/record_schema_validator.py` (378 lines) and
+  `tests/tasks/test_ftf_0508.py` (358 lines, 18 test functions) read in full. `validate_record_batch`
+  is a pure, synchronous, no-I/O batch validator, matching this task's own `database_changes`
+  clause ("No independent schema change. Consume frozen contract."). It genuinely reuses
+  FTF-0506's already-CERTIFIED `SCHEMA_VERSION` constant directly rather than declaring a second
+  one, and Section 6.8F's own frozen `DatasetSourceConnection.source_type` enum for dialect
+  rather than inventing a new vocabulary. Five real, independently testable checks per candidate
+  record (schema version, dialect, content size against Section 67.3's 2MiB canonical max, the
+  two required provenance fields, the three required quality-status enums) never raise on a
+  per-row violation -- the module returns a `RecordSchemaValidationReport` with
+  `batch_position`/`record_index` row evidence, raising `RecordSchemaValidationError` only when
+  the batch itself is not a real sequence of records. Path refinement (`workers/data/` over the
+  packet's suggested non-existent `services/training-worker/...` tree) confirmed consistent with
+  the already-certified FTF-0506/FTF-0507 precedent.
+- **Own local reproduction:** ran `python3 tests/tasks/test_ftf_0508.py` directly against the
+  checked-out head -- all 20 checks passed. `uv run ruff check .` / `uv run ruff format --check .`
+  clean repo-wide; `uv run mypy workers/data/record_schema_validator.py tests/tasks/test_ftf_0508.py`
+  clean. `python3 scripts/validate_spec.py --strict` clean, after `git fetch --unshallow` (this
+  sandbox's own pre-existing shallow-clone artifact, same precedent already documented by prior
+  shifts -- confirmed a pre-existing sandbox artifact, not a defect in this diff).
+- **CI independently watched to completion on the real final head, not taken on faith:** GitHub
+  Actions run `36089980073` on head `38f6a5bb426d5a2b6a45ded8f61f8f927836cdf6` polled to
+  completion -- all 29 checks, `gate` included, `status: completed` / `conclusion: success`,
+  PR `mergeable_state: clean`. Pulled the `gate` job's own step-level log text directly
+  (`get_job_logs`, job id `107930148730`): the step "Run uv run python3
+  tests/tasks/test_ftf_0508.py" genuinely executed and printed "FTF-0508 record schema validator:
+  all checks passed" -- real execution, not a self-reported claim. (Two unrelated integration
+  jobs on this same run, `target-application-connection-integration` and
+  `dataset-source-connection-integration`, ran unusually long on their "Build the real OpenBao
+  binary" step -- ~7 minutes versus a typical ~1 minute for that step on prior runs -- but both
+  ultimately completed `success`; not this task's own code path, and not treated as a defect.)
+- **Own fault injection (Law 1), distinct from the vector the PR's own body already claimed**
+  (disabling the required-provenance-field guard): disabled the trace-level duplicate
+  `record_index` guard across the whole batch (`if record_index in seen_record_indices:` →
+  `if False and record_index in seen_record_indices:` in `validate_record_batch`), so a repeated
+  `record_index` on two different rows in one batch was silently accepted instead of refused. Ran
+  the real suite against the faulted code: 1 genuine `FAIL [FTF-0508]` line
+  (`negative_acceptance: a record_index duplicating another row in the same batch is 'invalid
+  sequence', ordering is ambiguous`). Reverted byte-identical (`diff` against the pre-fault copy
+  empty, confirmed via `git diff --stat` showing no changes); re-ran the real suite immediately
+  after -- all 20 checks passed again.
+- **`product_truth_check.py --fail-on-unwired` confirmed `19/19` unchanged, and confirmed
+  legitimate rather than an evasion:** this task's `proving_symbol` is the empty string -- no
+  dataset-import pipeline route exists in this repository yet to call `validate_record_batch`
+  (Section 67.1's actual import pipeline routes are separate, later, dependency-gated tasks), the
+  same accepted scope-narrowing precedent as FTF-0506/FTF-0507/FTF-0202/FTF-0205/FTF-0207/
+  FTF-1302/FTF-1303/FTF-1304 before each one's own first live caller existed. Read
+  `scripts/product_truth_check.py`'s own logic directly: an entry with no `proving_symbol` is
+  skipped entirely, never counted as a false 0/0 pass against a claimed symbol.
+- **Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-0508 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Validate schema/dialect/content size and
+  required provenance/quality fields per canonical version" -- proven by the shipped suite's five
+  independently-testable positive checks; "Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded" -- this review) and `negative_acceptance`
+  ("Unknown content or schema version and invalid sequence produces blocking issues with row
+  evidence" -- proven by the shipped suite's own `unknown_content`/`unknown_schema_version`/
+  `invalid_sequence` cases, each carrying `batch_position`/`record_index` row evidence, plus this
+  review's own fault injection above) both genuinely met, not merely "tests pass".
+  `dependencies` FTF-0500/FTF-0506/FTF-0507 confirmed already `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them.
+
+**No blocking defect found. Merged PR #264** (merge commit
+`37c6abb19a6eff941273df6484162c2c1903410d`) into `main`. `docs/spec-matrix.yaml`'s FTF-0508 entry
+set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit; `proving_symbol` stays `''` (no live caller, confirmed legitimate above). Ran
+`scripts.task_claim.sync_certified_status()` -- `['FTF-0508']` updated. `scripts/status.py`:
+`63/300` -> `64/300` certified; product-true unchanged at `19/19` (no live caller added).
+Appended a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved FTF-0508
+to "## Done", updated "## Provisional" to note it is no longer pending) and `PROGRESS.md`.
+
+- **Validated-by:** session https://claude.ai/code/session_018kJcp1g16ua88Ef237z7PV
+  (independent -- see session-ID check above), 2026-09-25.
