@@ -15745,3 +15745,106 @@ PR are required before certification.
 
 Diff scope confirmed exactly the files this task needs plus this shift's own tracking-file
 updates -- no scope creep, `FTF-0509` (PR #288) left entirely alone. No open owner ask.
+
+## 2026-09-25 — Control plane review — FTF-04A08 (PR #289) — CERTIFIED (after a real CI failure was found and fixed mid-review)
+
+Triggered by the `pull_request.opened` webhook for PR #289 -- the relay shift immediately
+above. Entire session task per this certifier's standing prompt: check for every PROVISIONAL
+item; FTF-04A08 was the only one pending (FTF-0509/PR #288 is a separate, concurrent item this
+session did not touch).
+
+**Session-ID check:** all 5 of PR #289's eventual commits (`17b7f6a`, `f5adc59`, `7156396`,
+`b4a1cb1`, `ba02d3e`) carry `Claude-Session: .../session_01C41XHoxqK9mFcxPoaVCbYB`; this
+reviewing session's own ID (`https://claude.ai/code/session_011YeU25q3weEVzow9D8C1jz`) does not
+match -- independent, not self-certification (Law 4).
+
+**Diff read directly** against the PR's merge base (`b399da0`): `apps/api/app/target_connectors/
+source_analysis_worker.py` (new, 480 lines, unchanged across the whole review including both fix
+commits), `tests/tasks/test_ftf_04a08.py` (new, later amended by the fix commits), a 2-line
+`.github/workflows/ci.yml` gate-job wiring addition, `docs/implementation/task-packets/
+FTF-04A08.md` (new), `docs/spec-matrix.yaml`, and tracking-doc updates -- matches the PR's own
+claimed scope exactly, no scope creep.
+
+**Own local reproduction (first pass):** `python3 tests/tasks/test_ftf_04a08.py` -- 20/20 pass
+in this sandbox's own default Python (3.11.15). Own fault injection, a third vector distinct
+from the producer's own two disclosed ones: relaxed `_validate_relative_path`'s segment check
+from `segment in ("", ".", "..")` to `segment in ("",)` --
+`test_path_traversal_relative_path_is_rejected` failed for real (1 FAIL); reverted from an
+untouched backup, `diff` confirmed byte-identical, re-ran clean.
+
+**Real CI failure found, not self-reported:** `pull_request_read get_check_runs` on the PR's
+first head (`7156396`, run `36164278202`), polled to genuine completion (30/31 jobs `success`)
+-- **`gate` job: `completed`/`failure`.** `get_job_logs` on the `gate` job (id `108168115516`)
+read directly: `test_deeply_nested_package_json_does_not_raise` failed
+(`FAIL [FTF-04A08] adversarially deep JSON nesting (RecursionError-shaped input) does not raise
+out of this worker`). Root-caused independently: CI pins `python-version: '3.12'`
+(`.github/workflows/ci.yml` lines 41/710); reproduced directly via `/usr/bin/python3.12` (3.12.3)
+that `json.loads` on the test's own 5000-level bracket-nesting payload returns normally on 3.12
+instead of raising `RecursionError` (unlike 3.11, where it does) -- a genuine, deterministic,
+Python-version-dependent test defect, not a flake. Not a security defect in the shipped worker
+itself: `run_source_analysis` never let an exception escape in either environment, so the
+module's own negative_acceptance guarantee held either way -- only the test's own trigger for
+proving it was non-portable. This finding was written up as a NOT CERTIFIED draft (queued for
+push to the PR branch) before the next step below overtook it.
+
+**Fixed by the producer's own session before the draft finding was pushed:** the producer's own
+session (`session_01C41XHoxqK9mFcxPoaVCbYB`), still watching its own PR per this repo's
+PR-babysitting convention, independently found and fixed the identical failure via the real CI
+event on its own PR -- confirmed by fetching the branch and finding two new commits already
+pushed: `b4a1cb1` ("Fix FTF-04A08 CI: deep-nesting test not portable across Python 3.11/3.12" --
+a first attempt deterministically lowering `sys.setrecursionlimit` before nesting past it, which
+its own commit message discloses also failed on CI's real Python 3.12 runner, confirmed via that
+commit's own job log, check_run `108169599233`) and `ba02d3e` ("Fix FTF-04A08 CI (round 2): force
+RecursionError deterministically" -- replacing the real-recursion trigger entirely with a direct
+`unittest.mock.patch.object` on `json.loads` to force `RecursionError`, proving the worker's own
+catch/count behavior deterministically rather than depending on one interpreter build's
+incidental stack-depth behavior). Read directly, `ba02d3e`'s diff is exactly the fix approach
+this review's own findings had already converged on independently.
+
+**Own re-verification of the final head (`ba02d3e`), not the producer's fix claims alone:**
+confirmed `source_analysis_worker.py` byte-for-byte unchanged from the original review copy
+(`diff` clean) -- only `tests/tasks/test_ftf_04a08.py` was rewritten. Re-ran
+`tests/tasks/test_ftf_04a08.py` directly under both this sandbox's default Python 3.11 and
+`/usr/bin/python3.12` -- all 20 checks pass under both. Re-ran this review's own path-traversal
+fault injection against the final head -- still fails for real (1 FAIL) and reverts
+byte-identical. `uv sync --all-packages`; `ruff check .`/`ruff format --check .`/`mypy .` clean
+repo-wide (254 source files). `validate_spec.py --strict` clean. `product_truth_check.py
+--fail-on-unwired` unchanged `20/20` (this task's `proving_symbol` is blank, a legitimate
+disclosed "no live caller yet" case). `status.py` unchanged `70/300` pre-certification (Law 2).
+Regression swept `test_ftf_04a01.py`, `test_ftf_04a06.py`, `test_ftf_04a07.py`,
+`test_ftf_04a17.py`, `test_ftf_0405.py` -- zero regressions.
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-04A08 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Run resource-limited static analyzer with
+read-only snapshot and evidence output schema") verified by `ResourceLimits`'s three independent
+bounds and the `SourceAnalysisEvidence` dataclass, proven by
+`test_total_byte_budget_truncates_run`, `test_max_files_budget_truncates_run`,
+`test_max_total_entries_bounds_raw_iteration`. `negative_acceptance` ("Do not import or execute
+target code/hooks/build scripts; malicious parser input cannot escape worker") reconfirmed
+genuinely met against the corrected tests (`test_module_never_imports_or_executes_scanned_
+content`, `test_malformed_package_json_does_not_raise`,
+`test_deeply_nested_manifest_recursion_error_does_not_raise` post-fix) plus this review's own
+path-traversal fault injection -- not merely "tests pass". Dependencies FTF-04A01/FTF-04A07/
+FTF-04A17 reconfirmed CERTIFIED before relying on them.
+
+**Real CI watched to genuine completion on the actual final head** (`ba02d3e`, run
+`36165310622`): 31/31 checks green, `gate` included (job `108171499679`, completed
+`2026-09-25T17:13:14Z`) -- confirmed directly via the GitHub check-runs/jobs API against this
+exact head SHA, not a self-reported claim -- including the three OpenBao-from-source integration
+jobs (`secret-manager-integration`, `dataset-source-connection-integration`,
+`target-application-connection-integration`) polled individually to `completed`/`success` before
+merging. `mergeable_state: clean`; no open reviews or comments (`get_reviews`/`get_comments` both
+empty).
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #289 (merge commit
+`2b128ec8b38dc647e6dd68f395e332be48c77e7e`). `docs/spec-matrix.yaml`'s FTF-04A08 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json` for FTF-04A08). `scripts/status.py`: `70/300` -> `71/300`
+certified; product-true unchanged at `20/20` (no live caller added by this certification,
+disclosed). Appended a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md`
+(moved FTF-04A08 out of "## Provisional" into "## Done") and `PROGRESS.md`. No other task work,
+design decisions, or queue reprioritization performed beyond what this certification naturally
+required (Law 4). No open owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
