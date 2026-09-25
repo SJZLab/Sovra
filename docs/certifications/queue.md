@@ -14433,3 +14433,102 @@ review only, no new task work, no design decisions, no queue reprioritization be
 rejection naturally requires (Law 4).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — Control plane: review FTF-1506 (PR #262) — NOT CERTIFIED, real dependency-scan CI failure
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+PR #262. STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`; `BLOCKER.md`
+read in full (no live blocker). Checked `docs/spec-matrix.yaml` directly on `origin/main` and
+confirmed zero genuinely `certification_state: PROVISIONAL` entries there (FTF-1506 is
+`PROVISIONAL` only on the unmerged PR #262 branch).
+
+**Session-ID check:** the PR's real head (fetched fresh; the webhook context's own SHA,
+`2b3dc46`, was already one commit stale by the time this review started -- same class of
+mid-review drift already seen on PR #260) carries two commits, `2b3dc46` (implementation) and
+`45f4cce` (docs-only PR-number-recording follow-up), both with `Claude-Session:
+https://claude.ai/code/session_01QLGmt5BoGWrutFsFSHjZGz` -- no overlap with this reviewing
+session. Independent, not self-certification (Law 4).
+
+**Diff read directly** against the real head `45f4cce`: two new production/test files
+(`tests/security/dependency_scanning.py`, 456 lines; `tests/tasks/test_ftf_1506.py`, 453 lines),
+a policy file (`tests/security/dependency_scan_policy.yaml`, committed empty), and two
+`.github/workflows/ci.yml` additions (a `gate`-job no-network step, and a new
+`dependency-scanning-integration` job on a GitHub-hosted runner). Read `dependency_scanning.py`
+in full: `parse_uv_lock`/`parse_pnpm_lock` read this repo's real lockfiles; `cvss_v3_base_score`
+implements the actual published CVSS v3.1 formula (not a lookup table); `severity_from_vuln`
+prefers `database_specific.severity` (GHSA's own enum) and falls back to a real CVSS vector,
+`UNKNOWN` only when neither is present; `evaluate()` is the real blocking decision --
+CRITICAL/HIGH/UNKNOWN blocks unless a matching, non-expired, non-blank-justification policy
+exception names the exact (ecosystem, package, vuln id) tuple; `query_osv` raises
+`DependencyScanError` on any network/parse failure rather than returning an empty result (Law 17).
+
+**Own local reproduction (own worktree, dependency install, `git fetch --unshallow` -- this
+sandbox's own pre-existing shallow-clone artifact, same fix as PR #260's review needed):**
+- `uv run python3 tests/tasks/test_ftf_1506.py` -- 19/19 no-network checks genuinely pass,
+  including the real CVSS v3.1 reference-score reproduction (Log4Shell, CVE-2021-44228, exactly
+  10.0/CRITICAL against NVD's own published score).
+- `uv run ruff check .` / `uv run ruff format --check .` -- clean repo-wide (matches the PR's
+  own claim, unlike PR #260's false claim on this same point).
+- `uv run mypy tests/security/dependency_scanning.py` -- clean.
+- `python3 scripts/validate_spec.py --strict` -- clean after unshallowing.
+- `python3 scripts/product_truth_check.py --fail-on-unwired` -- unchanged at 19/19.
+  `docs/spec-matrix.yaml`'s `FTF-1506.proving_symbol` is genuinely empty (a CI security tool has
+  no product-route caller) -- legitimate, same disclosed precedent already accepted for
+  FTF-0506/FTF-0507/FTF-04A17, read directly in `scripts/product_truth_check.py`'s own logic
+  (an entry with no `proving_symbol` is skipped entirely, never counted as a false 0/0 pass).
+- Dependencies `FTF-0002`/`FTF-0004`/`FTF-1501` reconfirmed `CERTIFIED` in `docs/spec-matrix.yaml`
+  on `main` before relying on them.
+
+**Task contract pulled directly** via `python3 tools/r1_handoff.py packet FTF-1506 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Scan pinned runtime/development dependencies
+under recorded vulnerability/patch policy" -- proven by the real lockfile parsing plus
+`evaluate()`; "Independent review, exact merged commit, real relevant integration and
+negative-test evidence recorded" -- this review, plus the real (if currently failing, see below)
+`dependency-scanning-integration` job) and `negative_acceptance` ("Unknown/unpatched critical/high
+finding cannot be silently ignored to satisfy cost or schedule" -- proven by the shipped suite's
+own UNKNOWN-blocks-by-default, expired/unjustified-exception-still-blocks, and
+mismatched-exception-never-covers cases) are genuinely met by the code itself.
+`shared_lock_required` confirmed empty in the same packet -- correctly not touching
+`packages/contracts/openapi/15-interface.yaml`/`.../jsonschema/15-domain.schema.json`.
+
+**Real CI checked to its actual state, not taken on faith -- and it is genuinely red, for a
+reason distinct from every prior rejection recorded in this file.** Pulled the PR's live check
+runs (`pull_request_read get_check_runs`): 25/30 jobs `success`, 4 still `in_progress`
+(including `gate` itself, whose own no-network FTF-1506 step this review already reproduced
+locally), and exactly one job `completed`/`conclusion: failure`: the new
+`dependency-scanning-integration` job itself (workflow run `36089089775`, job `107927361832`).
+Pulled that job's real log directly (`get_job_logs`, `return_content: true`): the scanner made
+its real live call to OSV.dev (this sandbox's own outbound proxy blocks that call directly, so
+this is exactly the evidence this task's own design says can only come from this CI job) and
+found **16 real, currently-unpatched CRITICAL/HIGH/UNKNOWN-severity findings against dependency
+versions already pinned on `main` today** -- `authlib==1.3.2` (`PYSEC-2026-287`, CRITICAL) and
+`starlette==0.46.2` (`GHSA-wqp7-x3pw-xc5r`, `PYSEC-2026-1942`, `PYSEC-2026-2281`, `PYSEC-2026-249`,
+all HIGH; `PYSEC-2026-161`, UNKNOWN) among others, zero matching policy exceptions recorded
+(the committed policy file is genuinely empty) -- confirmed via a direct `git diff` that this
+PR's own `uv.lock`/`pnpm-lock.yaml` changes zero pinned versions, so this is not a regression this
+PR introduced, it is a pre-existing condition on `main` that no scanner previously existed to
+catch. This is the negative_acceptance clause functioning exactly as designed ("cannot be silently
+ignored to satisfy cost or schedule") -- the tool is not broken, the dependency set it is
+scanning genuinely fails the recorded policy. That still means CI cannot reach green on this PR's
+real head, so per this task's own DoD ("real relevant integration ... evidence recorded" requires
+that job to actually pass, not merely exist and run for real) this cannot be certified yet.
+
+**Result: NOT CERTIFIED.** PR #262 was not merged -- CI is genuinely red on one job, for a real,
+reproducible, non-flaky reason (confirmed: every other job in the same run reached
+`success`/`in_progress` on schedule; this is the one and only failed job, and it failed on its
+own real external call, not a runner-provisioning outage). `main` never carried an FTF-1506
+entry to downgrade; the `certification_state: PROVISIONAL` claim stays on the PR #262 branch
+only, untouched by this review. `QUEUE.md`'s top status note and `PROGRESS.md` record the exact
+remediation the next relay shift needs: bump `authlib`/`starlette` to a version that resolves
+each blocking finding where an upstream fix exists (`starlette`'s HIGH findings each name a
+`fixed_versions` entry in the scan's own output: `1.1.0`/`0.49.1`/`1.3.1`; `authlib`'s CRITICAL
+finding did not list a fixed version in this run's own output, so that one needs an upstream
+check, not an assumed bump), re-run the suite to confirm the app still passes against the bumped
+pins, and re-run CI -- or, for any finding with no compatible fix yet, add a real, dated,
+individually-justified `tests/security/dependency_scan_policy.yaml` exception naming the exact
+(ecosystem, package, vuln id) tuple, never a blanket exception. No production code touched by
+this review -- certification review only, no new task work, no design decisions, no queue
+reprioritization beyond what this rejection naturally requires (Law 4). Because this surfaces a
+real, currently-live security condition on `main` (not merely a PR defect), it has also been
+flagged directly to the owner outside this tracking file.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.

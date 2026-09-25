@@ -17232,3 +17232,33 @@ not touch production code. The exact one-line fixes needed are recorded in `QUEU
 `docs/certifications/queue.md` for the next relay shift.
 
 No other task work, design decisions, or queue reprioritization performed this shift.
+
+## 2026-09-25 — Control plane certifier shift: FTF-1506 (PR #262) reviewed, NOT CERTIFIED
+
+Scheduled certifier shift, `pull_request.opened` webhook for PR #262. Full independent CERTIFY
+procedure run per `docs/CONTROL_PLANE_MODES.md` (session-ID check, diff read, own local
+reproduction, task contract re-pulled via `tools/r1_handoff.py`, real CI check-run/job-log pull)
+— full detail in `docs/certifications/queue.md`'s matching entry and `QUEUE.md`'s top status note.
+
+Short version: the implementation itself is sound — a real CVSS v3.1 base-score calculator (own
+run reproduced the published NVD Log4Shell reference score exactly), real lockfile parsing, and
+a blocking decision that fails closed on UNKNOWN severity and voids expired/unjustified/
+mismatched policy exceptions. 19/19 no-network tests pass, lint/mypy/`validate_spec.py --strict`
+all clean, task contract's acceptance/negative_acceptance clauses genuinely met. But the new
+`dependency-scanning-integration` CI job — the one job that makes this task's real, live OSV.dev
+call — genuinely fails on the PR's real head (run `36089089775`, job `107927361832`): it found
+16 real, currently-unpatched CRITICAL/HIGH/UNKNOWN findings against dependency versions already
+pinned on `main` (`authlib==1.3.2` CRITICAL, `starlette==0.46.2` multiple HIGH), with zero
+recorded policy exceptions. Confirmed this PR's own lockfile diff is empty — the vulnerable pins
+predate this PR; the scanner correctly found a real, pre-existing condition, not a bug in the
+scanner. That still means CI cannot go green until the pins are bumped or justified exceptions
+are recorded, so this cannot be certified yet.
+
+PR #262 was not merged; `main` carries no FTF-1506 entry to downgrade. Left
+`certification_state: PROVISIONAL` on the PR branch untouched. The exact remediation path (bump
+`authlib`/`starlette`, or record dated per-vuln policy exceptions where no fix exists yet) is
+recorded in `QUEUE.md`/`docs/certifications/queue.md` for the next relay shift. Because this is a
+real, live security condition on `main` today — not merely a PR defect — it was also flagged
+directly to the owner outside this tracking file.
+
+No other task work, design decisions, or queue reprioritization performed this shift.
