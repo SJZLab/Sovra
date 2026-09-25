@@ -239,6 +239,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r002.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
+      - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a17.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1458,3 +1460,53 @@ jobs:
         run: uv sync --all-packages
       - name: Real OSV.dev dependency scan (uv.lock + pnpm-lock.yaml)
         run: uv run python3 tests/security/dependency_scanning.py
+
+  discovered-agent-candidate-integration:
+    # FTF-04A17: real Postgres DiscoveredAgentCandidate evidence (Section
+    # 6.8C/7A.4/9/45/65-67/77/81) -- two real organizations (org1 with two
+    # real TargetSourceSnapshot rows, org2 with one), a real uvicorn
+    # server proving create/get/list(paginated), the organization_admin-
+    # only RBAC boundary, the cross-tenant IDOR case, this task's own real
+    # deduplication identity (a second candidate with the same
+    # candidate_key on the SAME snapshot refused 409; the same key on a
+    # genuinely different snapshot is not a duplicate), an out-of-range
+    # confidence_score refused (400), cross-snapshot reassignment refused
+    # identically to missing, the real
+    # uq_discovered_agent_candidates_snapshot_id_candidate_key and
+    # ck_discovered_agent_candidates_confidence_score_range constraints
+    # both catching a raw INSERT that bypasses the ORM entirely, and
+    # sovra_app can neither UPDATE nor DELETE a row directly (immutable by
+    # construction, the same discipline FTF-04A07's own
+    # target_source_snapshots already established). No OpenBao needed --
+    # this resource carries no credential. Same real `services: postgres`
+    # container pattern as target-source-snapshot-integration (this
+    # repo's interactive dev sandbox has no container-registry egress for
+    # a Docker Postgres image; that evidence was instead produced locally
+    # against a directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a17
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a17"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a17
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real DiscoveredAgentCandidate evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a17_discovered_agent_candidate.py
