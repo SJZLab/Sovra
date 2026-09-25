@@ -211,7 +211,7 @@ def validate_evidence_json_or_none(value: object, *, field_name: str) -> dict[st
 
 
 def validate_confidence_score(value: object) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise DiscoveredAgentCandidateValidationError(
             f"confidence_score must be a real number: {value!r}"
         )

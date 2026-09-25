@@ -123,7 +123,7 @@ class Page:
     """A bounded page of candidates plus the real total row count for
     this snapshot, so a caller can tell "this page is short because the
     collection ended" apart from "this page is short because the limit
-    was small.\""""
+    was small"."""
 
     items: list[DiscoveredAgentCandidate]
     limit: int
