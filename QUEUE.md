@@ -1,4 +1,55 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_015egHQyUmbCT14fMFfJCU2p, triggered by the
+  `pull_request.opened` webhook for PR #286) — **FTF-0514 (PII/secrets
+  detector) independently reviewed and CERTIFIED.** Entire task per this
+  certifier's standing prompt: checked `docs/certifications/queue.md` and
+  `docs/spec-matrix.yaml` for every PROVISIONAL item; FTF-0514 was the only
+  one pending. Session-ID check: producer session
+  `session_015bL6zptzbAoWaYKBhFKooj` does not overlap this reviewing
+  session — independent, Law 4.
+
+  Diff read directly against the PR's merge base: `workers/data/pii_secrets_detector.py`
+  (new, 507 lines), `tests/tasks/test_ftf_0514.py` (new, 439 lines), a 2-line
+  `.github/workflows/ci.yml` gate-job wiring addition, `docs/implementation/task-packets/FTF-0514.md`
+  (new), `docs/spec-matrix.yaml`, and tracking-doc updates — matching the PR's own claimed
+  scope exactly. A mid-review push added a disclosed tracking-only second commit
+  (`657e8d7`, touching only `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`) —
+  reconfirmed by diffing the two commits directly before relying on the earlier code read.
+
+  Own local reproduction: `tests/tasks/test_ftf_0514.py` 20/20 pass;
+  `product_truth_check.py --fail-on-unwired` unchanged `20/20` (legitimate disclosed 0/0,
+  blank `proving_symbol`, confirmed via `SOURCE_ROOTS`); `validate_spec.py --strict` clean
+  (after `git fetch --unshallow`); `ruff`/`mypy` clean repo-wide; regression swept
+  `test_ftf_0402/0500/0508/0511/0512.py` — zero regressions. Real task contract re-pulled via
+  `tools/r1_handoff.py packet FTF-0514` — acceptance ("Run secrets/PII detectors inside
+  private boundary and quarantine required findings with human resolution") and
+  negative_acceptance ("Detection absence is not proof of no PII; false negatives/residual
+  risks recorded and real secrets not logged") both reconfirmed genuinely met by reading the
+  corresponding tests directly. Dependencies FTF-0402/FTF-0500/FTF-0508 reconfirmed CERTIFIED
+  before relying on them.
+
+  Own fault injection (Law 1), a different vector than either of the producer's own two
+  disclosed ones: removed the US SSN pattern from the named-pattern scan loop — 1 genuine FAIL
+  line (`test_us_ssn_detected`), reverted byte-identical, suite re-ran clean.
+
+  Real CI watched to genuine completion on the PR's actual final head
+  `657e8d7162a31579520c70a4c70055ea01f578e5` (run `36138246061`, confirmed via `actions_get`
+  to be the final head after the mid-review push) — 31/31 check runs `success`, including
+  `gate` and its own new `FTF-0514 negative-test proof` step (confirmed directly from the job
+  log), plus the three OpenBao-build-dependent integration jobs polled individually to
+  completion before merging.
+
+  **Result: CERTIFIED.** No blocking defect found. Merged PR #286 (merge commit
+  `1f859be5e520e114eeff08222230337a8a9acd0b`). `docs/spec-matrix.yaml`'s FTF-0514 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit. `sync_certified_status()` run directly. `scripts/status.py`: `69/300` ->
+  `70/300` certified; product-true unchanged at `20/20`. Appended a matching entry to
+  `docs/certifications/ledger.md`; moved FTF-0514 out of "## Provisional" into "## Done" below
+  and updated `PROGRESS.md`. No other task work, design decisions, or queue reprioritization
+  performed beyond what this certification naturally required (Law 4). No open owner ask.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_015bL6zptzbAoWaYKBhFKooj) — **FTF-0514
   (PII/secrets detector) submitted PROVISIONAL.** STEP 0: CLAUDE.md hash
@@ -4667,10 +4718,10 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0514 ("PII/secrets detector") — submitted 2026-09-25 via PR #286 (branch
-`claude/wizardly-fermat-w9he1w`) from the relay shift documented at the top of this file.
-Awaiting Control-plane L2 certification and a real CI run on the opened PR — not this
-relay's role.
+None currently. FTF-0514 ("PII/secrets detector") was the item here; it was independently
+reviewed and **CERTIFIED 2026-09-25** via PR #286 (merge commit
+`1f859be5e520e114eeff08222230337a8a9acd0b`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full evidence.
 
 FTF-0512 ("Normalized duplicate detector") was the item here before that; it was
 independently reviewed and **CERTIFIED 2026-09-25** via PR #284 (merge commit
@@ -7170,6 +7221,45 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   --strict` clean (after `git fetch --unshallow`, this sandbox's own
   pre-existing shallow-clone artifact). Merged PR #284.
   `scripts/status.py`: `68/300` certified before, `69/300` after.
+- FTF-0514 — PII/secrets detector. Independently reviewed and **CERTIFIED
+  2026-09-25** via PR #286 (`claude/wizardly-fermat-w9he1w` -> `main`,
+  implementation commit `5d0c1dd` plus a disclosed tracking-only follow-up
+  `657e8d7` pushed mid-review, producer session
+  `session_015bL6zptzbAoWaYKBhFKooj`, no overlap with this reviewing
+  session `session_015egHQyUmbCT14fMFfJCU2p` — independent, Law 4). Diff
+  read directly: `workers/data/pii_secrets_detector.py` (new),
+  `tests/tasks/test_ftf_0514.py` (new, 20 no-DB tests), a 2-line
+  `.github/workflows/ci.yml` gate-job wiring addition, and tracking-doc
+  updates — scope matched the PR's own claims, no other production file
+  touched. Watched real CI to genuine completion on the PR's actual final
+  head `657e8d7162a31579520c70a4c70055ea01f578e5` (run `36138246061`,
+  confirmed via `actions_get` to be the final head after the mid-review
+  push): all 31/31 check runs `success`, including `gate` (job
+  `108081454114`) and its own new `FTF-0514 negative-test proof` step —
+  the same three OpenBao-build-dependent integration jobs FTF-0511's/
+  FTF-0512's own entries above already flagged as slow were polled
+  individually until `completed`/`success` before merging. Own fault
+  injection, a different vector than either of the producer's own two
+  disclosed ones (a Luhn bypass; a raw-value leak into `content_path`):
+  removed the US SSN pattern from the named-pattern scan loop — 1 genuine
+  `FAIL` line (`test_us_ssn_detected`), reverted byte-identical, suite
+  re-confirmed clean. `product_truth_check.py --fail-on-unwired` confirmed
+  legitimately `20/20` unchanged — `proving_symbol` is blank for this task
+  (disclosed, no dataset-import pipeline route exists yet to call
+  `detect_pii_and_secrets`, same accepted class as
+  FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512), confirmed by reading
+  `scripts/product_truth_check.py`'s own `SOURCE_ROOTS` list directly
+  (`workers/data` is a real, listed root). Both acceptance ("Run
+  secrets/PII detectors inside private boundary and quarantine required
+  findings with human resolution") and negative_acceptance ("Detection
+  absence is not proof of no PII; false negatives/residual risks recorded
+  and real secrets not logged") reconfirmed against the real DoD via
+  `tools/r1_handoff.py packet FTF-0514`; dependencies
+  FTF-0402/FTF-0500/FTF-0508 confirmed already `CERTIFIED` before relying
+  on them. `validate_spec.py --strict` clean (after `git fetch
+  --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+  Merged PR #286. `scripts/status.py`: `69/300` certified before, `70/300`
+  after.
   Product-true unchanged at `20/20` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
 

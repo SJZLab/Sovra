@@ -777,9 +777,11 @@
       "blockers": []
     },
     "FTF-0514": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "1f859be5e520e114eeff08222230337a8a9acd0b"
+      ],
       "independent_review": null,
       "blockers": []
     },
