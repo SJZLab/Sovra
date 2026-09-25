@@ -89,7 +89,10 @@ Updated: 2026-09-25 (scheduled autonomous relay shift, dynamic queue-check
   **No blocking defect found. Submitted PROVISIONAL, not self-certified
   (Law 4)** -- independent Control-plane L2 review and a real CI run on
   the opened PR are needed before certification. Appended to
-  `docs/certifications/queue.md` for Control plane.
+  `docs/certifications/queue.md` for Control plane. Commit `acc56a8` on
+  branch `claude/wizardly-fermat-g1d5lc`. **PR:**
+  https://github.com/SJZLab/Sovra/pull/260, title `[relay] FTF-04A17:
+  DiscoveredAgentCandidate schema/API`.
 
 ## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, `pull_request.

@@ -17332,11 +17332,12 @@ commit hash is known (same precedent as every sibling PROVISIONAL submission).
 
 **No blocking defect found. Submitted PROVISIONAL, not self-certified (Law 4)** — independent
 Control-plane L2 review and a real CI run on the opened PR are needed before certification.
-Appended to `docs/certifications/queue.md` for Control plane.
+Appended to `docs/certifications/queue.md` for Control plane. Commit `acc56a8` on branch
+`claude/wizardly-fermat-g1d5lc`. **PR:** https://github.com/SJZLab/Sovra/pull/260, title
+`[relay] FTF-04A17: DiscoveredAgentCandidate schema/API`.
 
 ## Next shift
-FTF-04A17's own PR (opened this shift — see this file's own top entry and `QUEUE.md` for the exact
-PR number once recorded) is open, awaiting CI plus an independent Control-plane L2 certifier shift
+PR #260 (FTF-04A17) is open, awaiting CI plus an independent Control-plane L2 certifier shift
 — do not re-implement. FTF-04A19 (AgentManifest schema/versioning/hash) shares the `contracts:04A`
 lock with FTF-04A17 and is now the next candidate on that same lock once FTF-04A17 either merges or
 is confirmed not to be holding it — this shift's own discovery that a real local Postgres cluster is

@@ -14463,9 +14463,9 @@ convention exactly.
 L1-PROVEN`; `evidence_hash` left blank, to be recorded as a follow-up commit once the real merge
 commit hash is known, same precedent as every sibling PROVISIONAL submission.
 
-**Not self-certified (Law 4).** Independent Control-plane L2 review and a real CI run on the opened
-PR are required before certification.
+**Not self-certified (Law 4).** Opened as PR #260 (`claude/wizardly-fermat-g1d5lc` -> `main`),
+title `[relay] FTF-04A17: DiscoveredAgentCandidate schema/API`. Independent Control-plane L2 review
+and a real CI run on the opened PR are required before certification.
 
-- **Submitted-by:** this relay session (producer -- independent Control-plane L2 certification
-  still required, Law 4; PR number/branch to be recorded as a follow-up tracking commit once the PR
-  is opened).
+- **Submitted-by:** session https://claude.ai/code/session_01PCVobExxtV38uMfPkv6R1m (producer --
+  independent Control-plane L2 certification still required, Law 4).
