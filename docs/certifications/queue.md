@@ -14357,3 +14357,79 @@ a matching entry to `docs/certifications/ledger.md`; updated `QUEUE.md` (moved F
 
 - **Validated-by:** session https://claude.ai/code/session_01DfzHGRTG4C3bo11N4fu9N4
   (independent -- see session-ID check above), 2026-09-24.
+
+## 2026-09-25 — Control plane: review FTF-04A17 (PR #260) — NOT CERTIFIED, real CI failure
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+PR #260. STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`
+(`0912712359288e77ae58687510b39138557ae683a3f9441690c4a5db0b52dbf6`); `BLOCKER.md` read in full
+(no live blocker). Checked `docs/spec-matrix.yaml` directly (not the append-only log) and
+confirmed exactly one genuinely `certification_state: PROVISIONAL` entry exists anywhere in this
+repository's tree right now: FTF-04A17, and only on the PR #260 branch itself -- `origin/main`
+does not carry it (PR #260 is unmerged).
+
+**Session-ID check:** both commits on PR #260's real head (`acc56a8` implementation,
+`61c1dc9` docs-only PR-number follow-up) carry `Claude-Session:
+https://claude.ai/code/session_01PCVobExxtV38uMfPkv6R1m` -- no overlap with this reviewing
+session. Independent, not self-certification (Law 4).
+
+**Diff read directly** against the PR's real current head (fetched `refs/pull/260/head`,
+confirmed `61c1dc9` -- the PR listing API had briefly shown a stale `acc56a8` in the surrounding
+webhook context; re-verified via a fresh `pull_request_read`): four new production files
+(`discovered_agent_candidate_{schema,crud,routes}.py`, Alembic migration `0014`) plus two new
+test files. Read every production file in full. Design reuses FTF-04A01/FTF-04A07's own
+already-CERTIFIED parent-chain IDOR check (`get_target_source_snapshot`), tenant-scoped RLS,
+restricted `sovra_app` SELECT/INSERT-only grant, and composite FK/UNIQUE constraints -- the same
+pattern precedent as every certified sibling in this chain, correctly applied.
+
+**Task contract re-pulled fresh** via `tools/r1_handoff.py packet FTF-04A17 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`. Acceptance clause 1 ("Store every candidate with traceable
+evidence and unresolved fields; expose paginated project-scoped API") is genuinely met: seven
+independently-nullable `*_evidence_json` columns, real limit/offset-paginated list endpoint.
+`negative_acceptance` ("Candidate priority/confidence is not calibrated probability or automatic
+in-scope selection") is genuinely met: `confidence_score` is a real bounded-`[0,1]` DB `CHECK`,
+never read anywhere in this chain to sort/filter/select; `discovery_status` is a closed
+one-value set with no PATCH/edit route at all.
+
+**Own local reproduction found the PR's own test-plan checklist false.** The PR claims "`ruff
+check` / `ruff format --check` / `mypy` clean on all four new files." Running the exact CI
+commands (`uv run ruff check .`, `uv run ruff format --check .`, matching this repo's pinned
+`ruff==0.6.9` and `pyproject.toml`'s `select = ["E", "F", "I", "UP", "B"]`) genuinely fails:
+- `discovered_agent_candidate_schema.py:214` and `discovered_agent_candidate_routes.py:177`:
+  real `UP038` violations (`isinstance(value, (int, float))` should be `isinstance(value, int |
+  float)`) -- in two of the four production files themselves, not just the tests.
+- `tests/integration/test_ftf_04a17_discovered_agent_candidate.py`: 4 real `E501` line-length
+  violations (lines 384/534/539/559, all 101+ characters against this repo's pinned
+  `line-length = 100`).
+- `ruff format --check .` would also reformat `discovered_agent_candidate_crud.py` (a stray
+  docstring-escape space, `\""""`  vs `\" """`) and the same integration test file.
+
+**Confirmed this is not a local-sandbox artifact.** Pulled the real CI `gate` job log for this
+PR's actual head directly (`get_job_logs`, workflow run `36080641128`, job `107901594816`,
+polled to genuine completion, ~5 min, not inferred): `conclusion: failure`, and the log shows
+the *exact same* 6 errors, same files, same line numbers, same rule codes as this session's own
+independent local run -- a real, reproducible CI-gate failure, not a flake (every other job in
+the same run reached `completed`/`success` on schedule; this is the one and only failing job,
+isolated to the lint step, not a runner-provisioning outage).
+
+**No other defect found.** No-DB suite (`tests/tasks/test_ftf_04a17.py`) genuinely passes (34/34,
+own run). Own fault injection (disabled the `confidence_score >= 0.0`/`<= 1.0` range check in
+the schema module) reproduced the producer's own claimed 3 genuine `FAIL [FTF-04A17]` lines for
+real, reverted byte-identical (`diff` confirmed empty), suite re-confirmed clean immediately
+after. `mypy` clean on all four production files and both test files (own run, matches the
+PR's claim). `product_truth_check.py` legitimacy confirmed: FTF-04A17's `proving_symbol` is
+genuinely empty (`''`) in `docs/spec-matrix.yaml`, so the disclosed "no live caller yet" gap is
+not masking a 0/0 pass -- same precedent already independently accepted for FTF-04A07/FTF-0506/
+FTF-0507.
+
+**Result: NOT CERTIFIED.** PR #260 was not merged (CI is genuinely red, so the relay's own
+"merge on green + L1 doc" convention correctly did not fire) -- `main` never carried an
+FTF-04A17 `docs/spec-matrix.yaml` entry to downgrade; the `certification_state: PROVISIONAL`
+claim stays on the PR #260 branch only, untouched by this review. This entry, `QUEUE.md`'s top
+status note, and `PROGRESS.md` record the exact fix needed for the next relay shift: rewrite the
+two `isinstance(value, (int, float))` calls as `isinstance(value, int | float)`, and
+wrap/shorten the four long lines in the integration test file, then confirm a fresh, genuinely
+green CI run before resubmitting. No production code touched by this review -- certification
+review only, no new task work, no design decisions, no queue reprioritization beyond what this
+rejection naturally requires (Law 4).
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.

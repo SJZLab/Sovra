@@ -17207,3 +17207,28 @@ FTF-04A17/04A19 (share the `contracts:04A` lock, need a live Postgres migration)
 FTF-1201/FTF-H004 (need a real reachable LiteLLM gateway/credential), FTF-1503, FTF-1506 (dependency
 scanning — likely needs a CVE/advisory feed reachable only via network egress, verify before
 claiming), and FTF-1703 (needs >=1000 real curated/reviewed traces, a data-curation task).
+
+## 2026-09-25 — Control plane certifier shift: FTF-04A17 (PR #260) reviewed, NOT CERTIFIED
+
+Scheduled certifier shift, `pull_request.opened` webhook for PR #260. Full independent CERTIFY
+procedure run per `docs/CONTROL_PLANE_MODES.md` (session-ID check, diff read, task contract
+re-pulled via `tools/r1_handoff.py`, own fault injection, `product_truth_check.py` legitimacy
+check) — full detail in `docs/certifications/queue.md`'s matching entry and `QUEUE.md`'s top
+status note.
+
+Short version: the implementation itself is sound (parent-chain IDOR reuse, RLS, immutable
+SELECT/INSERT-only grant, `confidence_score`/`discovery_status` correctly kept advisory-only,
+acceptance/negative_acceptance clauses genuinely met), but the PR's own test-plan claim that
+`ruff check`/`ruff format --check` are clean is false: 2 real `UP038` violations in the
+production `schema.py`/`routes.py` files themselves, plus 4 real `E501` violations and a stray
+docstring-escape formatting diff in the new integration test file. Confirmed against the real CI
+`gate` job log on this PR's actual head (run `36080641128`, job `107901594816`) — genuinely
+`conclusion: failure`, same 6 errors, not a local artifact or a flake.
+
+PR #260 was not merged (red CI, so the relay's own "merge on green" convention correctly held);
+`main` carries no FTF-04A17 entry to downgrade. Left `certification_state: PROVISIONAL` on the
+PR branch untouched — this review does not certify further, does not downgrade further, and does
+not touch production code. The exact one-line fixes needed are recorded in `QUEUE.md`/
+`docs/certifications/queue.md` for the next relay shift.
+
+No other task work, design decisions, or queue reprioritization performed this shift.
