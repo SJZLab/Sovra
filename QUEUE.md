@@ -1,4 +1,49 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_019bmUswhdEXyBFy5F9JxppB) — **FTF-0511
+  (Exact duplicate detector) submitted PROVISIONAL.** Before picking task
+  work, swept seven open PRs (#281, #279, #250, #246, #243, #241, #229)
+  that were stale duplicates left over from concurrent sessions racing the
+  FTF-04A17/FTF-1304/FTF-1303/FTF-04A06/FTF-0211 certifications, each
+  already resolved on `main` by a different PR than the one still open;
+  closed all seven with an explanatory comment naming the real certifying
+  commit — no production code involved, no re-certification, no tracker
+  field touched. `docs/spec-matrix.yaml` had zero `PROVISIONAL` entries at
+  shift start (FTF-04A17 already CERTIFIED via PR #280).
+
+  Recomputed the dependency-ready frontier directly from
+  `docs/spec-matrix.yaml` (19 ready tasks); picked **FTF-0511** — same
+  tractable pure-computation/no-DB/no-shared-lock shape as the
+  already-CERTIFIED FTF-0506/FTF-0507/FTF-0508 siblings, both deps
+  (FTF-0500, FTF-0508) CERTIFIED. Implemented
+  `workers/data/exact_duplicate_detector.py::detect_exact_duplicates`
+  (Section 10 methods 1/2 — exact raw SHA-256 and canonical normalized
+  hash — grouped into deterministic `DuplicateGroup`s tracing
+  `batch_position`/`record_index`; Section 10's own literal severity
+  table applied exactly: raw-hash groups block when cross-purpose,
+  normalized-hash groups always block). negative_acceptance ("cannot be
+  disabled") is structural — the function takes exactly one parameter,
+  proven via `inspect.signature` in the test suite, not merely asserted.
+  `tests/tasks/test_ftf_0511.py`: 20 no-DB tests; own fault injection
+  (forced `is_blocking` to always return `False`) reproduced 2 genuine
+  FAIL lines, reverted byte-identical, suite re-confirmed clean. Full
+  verification: `ruff`/`ruff format`/`mypy` clean repo-wide (after `uv
+  sync --all-packages`); `validate_spec.py --strict` clean;
+  `product_truth_check.py` unchanged 20/20 (no live caller yet, same
+  disclosed precedent as FTF-0506/FTF-0507/FTF-0508); `status.py`
+  unchanged 67/300; regression swept `test_ftf_0500/0506/0507/0508.py`,
+  zero regressions. Wired the new test into `.github/workflows/ci.yml`'s
+  `gate` job directly in this submission. `docs/spec-matrix.yaml`'s
+  FTF-0511 set to `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN`. Not self-certified (Law 4). Opened a PR
+  against `main` from `claude/wizardly-fermat-crhigs` (title `[relay]
+  FTF-0511: Exact duplicate detector`), appended to
+  `docs/certifications/queue.md`. Full detail: `PROGRESS.md`,
+  `docs/certifications/queue.md`. No open owner ask. No other task work,
+  design decisions, or queue reprioritization performed this shift beyond
+  the disclosed PR hygiene sweep above.
+
+## Previous shift
 Updated: 2026-09-25 (scheduled Control-plane certifier shift, `pull_request.
   opened` webhook for PR #278, session
   https://claude.ai/code/session_01DkbaexyroHG2XnmvqXTC7C) — **FTF-04A17
@@ -4396,6 +4441,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+FTF-0511 ("Exact duplicate detector") — submitted 2026-09-25 via a PR from branch
+`claude/wizardly-fermat-crhigs` against `main`, title `[relay] FTF-0511: Exact
+duplicate detector`. Full record: `docs/certifications/queue.md`'s matching
+2026-09-25 entry, `PROGRESS.md`. Awaiting Control-plane L2 certification and a
+real CI run on the opened PR — not this relay's role.
+
+(Note: the rest of this section is a historical snapshot, not kept current
+every shift — several items below, e.g. FTF-1503, have since moved to
+CERTIFIED; see this file's own top dated log and `docs/certifications/queue.md`
+for the real current state of any specific item.)
+
 FTF-1503 ("CSRF suite") — submitted 2026-09-24 via a PR from branch
 `claude/wizardly-fermat-gae8i9` against `main`, title `[relay] FTF-1503:
 CSRF suite`. New, real, reusable CSRF-protection dependency
