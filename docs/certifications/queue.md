@@ -15170,3 +15170,81 @@ commit hash. **Not self-certified (Law 4).**
 **PR:** opened against `main` from branch `claude/wizardly-fermat-crhigs`, title
 `[relay] FTF-0511: Exact duplicate detector`. Awaiting Control-plane L2 certification and a
 real CI run on the opened PR -- not this relay's role. No open owner ask.
+
+## 2026-09-25 — Control plane: certify FTF-0511 (Exact duplicate detector), PR #282
+
+Triggered by the `pull_request.opened` webhook for PR #282 -- the relay shift immediately
+above. Entire session task per this certifier's standing prompt: check for every PROVISIONAL
+item; FTF-0511 was the only one pending.
+
+**Session-ID check:** the PR's single commit (`5f2ee31ee698b035443e7811ed4de55ec305acd8`)
+carries `session_019bmUswhdEXyBFy5F9JxppB` -- no overlap with this reviewing session
+(`session_01PC5xR1bubjGorKuwzrtYXa`). Independent, not self-certification (Law 4).
+
+**Diff read directly** (`git diff --stat` against the PR's merge base `4ad050c`): exactly 8
+files -- `workers/data/exact_duplicate_detector.py` (new, 311 lines), `tests/tasks/
+test_ftf_0511.py` (new, 339 lines), a 2-line `.github/workflows/ci.yml` gate-job wiring
+addition, `docs/implementation/task-packets/FTF-0511.md` (new), `docs/spec-matrix.yaml`, and
+this shift's own `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tracking updates. No
+other production file touched -- matches the PR's own claimed scope exactly.
+
+**Own local reproduction:**
+- `python3 tests/tasks/test_ftf_0511.py` -- 20/20 pass, "all checks passed".
+- `python3 scripts/product_truth_check.py --fail-on-unwired` -- `20/20`, unchanged. This
+  task's `proving_symbol` is blank (no dataset-import pipeline route exists yet in this
+  repository to call `detect_exact_duplicates`, same disclosed precedent as FTF-0506/
+  FTF-0507/FTF-0508) -- confirmed by reading `docs/spec-matrix.yaml`'s FTF-0511 entry
+  directly, not merely accepted on the producer's word. This is a legitimate disclosed 0/0,
+  not the "0/0 once proving_symbol is filled in" case this procedure's own step 4 warns
+  against.
+- `python3 scripts/validate_spec.py --strict` -- initially showed 32 `stale_commit` defects
+  across unrelated pre-existing tasks; confirmed this was this sandbox's own shallow-clone
+  artifact (`git rev-parse --is-shallow-repository` -> `true`) rather than assumed: ran `git
+  fetch --unshallow`, re-ran -- clean ("task graph and verification-map are clean").
+- `python3 tools/r1_handoff.py packet FTF-0511 --plan FINE_TUNING_FACTORY_RELEASE_1.md` --
+  pulled the real task contract directly rather than trusting the PR's restatement of it.
+  `acceptance`: "Raw hash duplicate groups remain deterministic and trace original record
+  identity" -- verified met by reading `test_groups_trace_original_record_identity` and
+  `test_deterministic_group_ordering` directly (batch_position/record_index preserved,
+  digest-sorted group ordering identical across repeated calls on the same input).
+  `negative_acceptance`: "Cross-purpose duplicate detection cannot be disabled to fill sample
+  minimum; hash collisions/errors surfaced" -- verified met by `test_cannot_disable_cross_
+  purpose_detection` (a real `inspect.signature` check confirming `detect_exact_duplicates`
+  takes exactly one parameter, not a prose assertion) plus the missing/invalid-hash and
+  invalid-purpose issue-surfacing tests, which confirm a per-row problem is reported, never
+  silently dropped. Dependencies FTF-0500/FTF-0508 reconfirmed already `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on their provenance-field contract.
+
+**Own fault injection (Law 1), independently reproduced rather than trusting the producer's
+self-report:** copied `workers/data/exact_duplicate_detector.py` aside, patched
+`DuplicateGroup.is_blocking` to unconditionally `return False` (the same fault vector the PR's
+own commit message claims to have used), re-ran `tests/tasks/test_ftf_0511.py` directly -- **2
+genuine FAIL lines**, byte-identical in wording to the PR's own disclosed before-fix failure
+(`FAIL [FTF-0511] negative_acceptance: Section 10 'exact match: always block across train vs
+held-out' -- the cross-purpose raw group is blocking` and the matching normalized-match line).
+Restored from the untouched backup; `git status --short`/`git diff --stat` both empty; re-ran
+-- all checks pass again.
+
+**Real CI watched to genuine completion on PR #282's real head**
+(`5f2ee31ee698b035443e7811ed4de55ec305acd8`, run `36115955286`): polled the GitHub Actions
+check-runs/jobs API directly against the head SHA rather than accepting a single green summary
+-- all 31/31 check runs completed `success`, including `gate` (job `108010006784`, completed
+`2026-09-25T09:03:14Z`) and its own new `FTF-0511 negative-test proof (Exact duplicate
+detector, no DB required)` step, plus `Python lint + format + type check (FTF-0002)`/`Python
+unit tests (FTF-0003)`. Three integration jobs unrelated to this task
+(`target-application-connection-integration`, `dataset-source-connection-integration`,
+`secret-manager-integration`) were still `in_progress` at first read (the PR's own
+`mergeable_state` read `unstable` at that point); polled each job individually until
+`completed`/`success` before merging.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #282 (merge commit
+`4602ba7d7b06063085d91d8782b33d946ef644d5`). `docs/spec-matrix.yaml`'s FTF-0511 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+merge commit. `scripts/status.py`: `67/300` -> `68/300` certified; product-true unchanged at
+`20/20` (no live caller added by this certification, disclosed). Appended a matching entry to
+`docs/certifications/ledger.md`; updated `QUEUE.md` (moved FTF-0511 out of "## Provisional"
+into "## Done") and `PROGRESS.md`. No other task work, design decisions, or queue
+reprioritization performed beyond what this certification naturally required (Law 4). No open
+owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.

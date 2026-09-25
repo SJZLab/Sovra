@@ -3546,10 +3546,10 @@ FTF-0510:
   proving_symbol: ''
   proving_test: ''
 FTF-0511:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Exact duplicate detector
-  evidence_hash: ''
+  evidence_hash: 4602ba7d7b06063085d91d8782b33d946ef644d5
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -3624,7 +3624,26 @@ FTF-0511:
 
     Not self-certified (Law 4) -- independent Control-plane L2 review and
     a real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+
+    CERTIFIED 2026-09-25 (session_01PC5xR1bubjGorKuwzrtYXa, independent --
+    no overlap with producer session_019bmUswhdEXyBFy5F9JxppB). Diff read
+    directly (8 files, scope matched claims exactly). CI gate job (run
+    36115955286) confirmed completed/success on head 5f2ee31 before merge;
+    all 31 check runs on the PR completed success. Re-ran the fault
+    injection independently (forced `DuplicateGroup.is_blocking` to always
+    return `False`) and reproduced the same 2 genuine FAIL lines, reverted
+    byte-identical. `product_truth_check.py` 20/20 unchanged accepted as
+    legitimate: `proving_symbol` is blank for this task (no live caller
+    yet, same disclosed precedent as FTF-0506/0507/0508), so this is not
+    the "0/0 once proving_symbol is filled in" case the CERTIFY procedure
+    warns against. Pulled the real contract via `tools/r1_handoff.py
+    packet FTF-0511 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed
+    both acceptance ("Raw hash duplicate groups remain deterministic and
+    trace original record identity") and negative_acceptance ("Cross-
+    purpose duplicate detection cannot be disabled to fill sample minimum;
+    hash collisions/errors surfaced") are actually met by the test suite,
+    not merely asserted. Merged PR #282 as `4602ba7d7b06063085d91d8782b33d946ef644d5`.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:

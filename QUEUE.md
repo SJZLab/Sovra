@@ -4441,11 +4441,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-FTF-0511 ("Exact duplicate detector") — submitted 2026-09-25 via a PR from branch
-`claude/wizardly-fermat-crhigs` against `main`, title `[relay] FTF-0511: Exact
-duplicate detector`. Full record: `docs/certifications/queue.md`'s matching
-2026-09-25 entry, `PROGRESS.md`. Awaiting Control-plane L2 certification and a
-real CI run on the opened PR — not this relay's role.
+None currently. FTF-0511 ("Exact duplicate detector") was the only item here; it was
+independently reviewed and **CERTIFIED 2026-09-25** via PR #282 (merge commit
+`4602ba7d7b06063085d91d8782b33d946ef644d5`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full evidence.
 
 (Note: the rest of this section is a historical snapshot, not kept current
 every shift — several items below, e.g. FTF-1503, have since moved to
@@ -6862,6 +6862,40 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   `scripts/status.py`: `61/300` certified before, `62/300` after.
   Product-true unchanged at `19/19` (no live caller added by this
   certification). Full entry: docs/certifications/ledger.md.
+- FTF-0511 — Exact duplicate detector. Independently reviewed and
+  **CERTIFIED 2026-09-25** via PR #282 (`claude/wizardly-fermat-crhigs` ->
+  `main`, single commit `5f2ee31`, producer session
+  `session_019bmUswhdEXyBFy5F9JxppB`, no overlap with this reviewing
+  session `session_01PC5xR1bubjGorKuwzrtYXa` — independent, Law 4). Diff
+  read directly: `workers/data/exact_duplicate_detector.py` (new),
+  `tests/tasks/test_ftf_0511.py` (new, 20 no-DB tests), a 2-line
+  `.github/workflows/ci.yml` gate-job wiring addition, and tracking-doc
+  updates — scope matched the PR's own claims, no other production file
+  touched. Watched real CI to genuine completion on the PR's actual head
+  `5f2ee31ee698b035443e7811ed4de55ec305acd8` (run `36115955286`): all
+  31/31 check runs `success`, including `gate` (job `108010006784`) and
+  its own new `FTF-0511 negative-test proof` step — three integration
+  jobs still `in_progress` at first read were polled until each completed
+  `success` before merging. Own fault injection, distinct reproduction of
+  the producer's own claimed vector: forced `DuplicateGroup.is_blocking`
+  to unconditionally `return False` — 2 genuine `FAIL` lines (cross-
+  purpose-raw-blocking, normalized-always-blocking), reverted
+  byte-identical, suite re-confirmed clean. `product_truth_check.py
+  --fail-on-unwired` confirmed legitimately `20/20` unchanged —
+  `proving_symbol` is blank for this task (disclosed, no dataset-import
+  pipeline route exists yet to call `detect_exact_duplicates`, same
+  accepted class as FTF-0506/FTF-0507/FTF-0508). Both acceptance ("Raw
+  hash duplicate groups remain deterministic and trace original record
+  identity") and negative_acceptance ("Cross-purpose duplicate detection
+  cannot be disabled to fill sample minimum; hash collisions/errors
+  surfaced") reconfirmed against the real DoD via `tools/r1_handoff.py
+  packet FTF-0511`; dependencies FTF-0500/FTF-0508 confirmed already
+  `CERTIFIED` before relying on them. `validate_spec.py --strict` clean
+  (after `git fetch --unshallow`, this sandbox's own pre-existing
+  shallow-clone artifact). Merged PR #282. `scripts/status.py`: `67/300`
+  certified before, `68/300` after. Product-true unchanged at `20/20` (no
+  live caller added by this certification). Full entry:
+  docs/certifications/ledger.md.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

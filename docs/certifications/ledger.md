@@ -7348,3 +7348,59 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0511 — Exact duplicate detector
+- Criterion ID: FTF-0511
+- PR: https://github.com/SJZLab/Sovra/pull/282 (`claude/wizardly-fermat-crhigs` -> `main`)
+- Merge commit (evidence): 4602ba7d7b06063085d91d8782b33d946ef644d5
+- Implementation commit: 5f2ee31ee698b035443e7811ed4de55ec305acd8 (single commit,
+  producer session `session_019bmUswhdEXyBFy5F9JxppB`).
+- Session-ID check: producer session does not overlap this reviewing session
+  (`session_01PC5xR1bubjGorKuwzrtYXa`) -- independent (Law 4). Only one commit on the PR.
+- Diff read directly: `workers/data/exact_duplicate_detector.py` (new,
+  `detect_exact_duplicates` grouping raw/normalized hash duplicates per Section 10 methods
+  1-2), `tests/tasks/test_ftf_0511.py` (new, 20 no-DB test functions),
+  `.github/workflows/ci.yml` (+2 lines wiring the new test into the `gate` job),
+  `docs/spec-matrix.yaml`/`docs/implementation/task-packets/FTF-0511.md`/tracking-doc
+  updates. Scope matched the PR's own claims exactly -- no other production file touched.
+- Real CI watched to genuine completion on PR #282's real head
+  (`5f2ee31ee698b035443e7811ed4de55ec305acd8`): all 31 check runs `success`, including the
+  `gate` job (run 36115955286, job 108010006784, completed 2026-09-25T09:03:14Z) and its own
+  `FTF-0511 negative-test proof (Exact duplicate detector, no DB required)` step -- confirmed
+  via the GitHub Actions/check-runs API directly against the head SHA, not a self-reported
+  claim. Three integration jobs (`target-application-connection-integration`,
+  `dataset-source-connection-integration`, `secret-manager-integration`) were still
+  `in_progress` at first read; polled until each completed `success` before merging.
+- Own fault injection (Law 1), independently reproduced rather than trusting the producer's
+  self-report: forced `DuplicateGroup.is_blocking` to unconditionally `return False` in a
+  local copy, re-ran `tests/tasks/test_ftf_0511.py` directly -- 2 genuine FAIL lines (the
+  cross-purpose-raw-blocking and normalized-always-blocking checks), matching the PR's own
+  disclosed before-fix failure exactly. Reverted from an untouched backup; `git status
+  --short` confirmed clean; re-ran -- all checks pass again.
+- `product_truth_check.py --fail-on-unwired`: 20/20, unchanged from pre-merge. This
+  criterion's `proving_symbol` is blank (no dataset-import pipeline route exists yet in this
+  repository to call `detect_exact_duplicates` -- same disclosed precedent as FTF-0506/
+  FTF-0507/FTF-0508), so an unchanged 20/20 is a legitimate disclosed 0/0 for this task, not
+  the "0/0 once proving_symbol is filled in" case the CERTIFY procedure warns against.
+- Task contract re-pulled via `tools/r1_handoff.py packet FTF-0511 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance ("Raw hash duplicate groups remain
+  deterministic and trace original record identity") verified by
+  `test_groups_trace_original_record_identity`/`test_deterministic_group_ordering`;
+  negative_acceptance ("Cross-purpose duplicate detection cannot be disabled to fill sample
+  minimum; hash collisions/errors surfaced") verified by
+  `test_cannot_disable_cross_purpose_detection` (real `inspect.signature` check, not prose)
+  plus the missing/invalid-hash and invalid-purpose issue-surfacing tests. Dependencies
+  FTF-0500/FTF-0508 reconfirmed already `CERTIFIED` before relying on their fields.
+- `validate_spec.py --strict`: clean after `git fetch --unshallow` (this sandbox's own
+  pre-existing shallow-clone artifact, same disclosed precedent as every prior shift) --
+  confirmed independently, not accepted on the producer's word alone.
+- No blocking defect found. Merged PR #282 (merge commit
+  `4602ba7d7b06063085d91d8782b33d946ef644d5`). `docs/spec-matrix.yaml`'s FTF-0511 entry set
+  to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to
+  the merge commit. `scripts/status.py`: `67/300` -> `68/300` certified, product-true
+  unchanged at `20` (no live caller yet, disclosed).
+- Validated-by: session https://claude.ai/code/session_01PC5xR1bubjGorKuwzrtYXa
+  (independent -- see session-ID check above), 2026-09-25
+- Date: 2026-09-25
+
+**Conclusion:** Certified L2-CERTIFIED.
