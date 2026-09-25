@@ -1399,16 +1399,60 @@ FTF-0214:
   proving_symbol: ''
   proving_test: ''
 FTF-0215:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Periodic sync workflow
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0004, FTF-0201, FTF-0207,
-    FTF-0208, FTF-0209
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0004, FTF-0201, FTF-0207,
+    FTF-0208, FTF-0209 (all CERTIFIED). Built for real in a new packages/litellm_client/periodic_sync_workflow.py::PeriodicSyncWorkflow
+    -- both packages/litellm_client/last_known_good_catalog.py (FTF-0208) and packages/litellm_client/catalog_anomaly_detector.py
+    (FTF-0209) explicitly flag in their own module docstrings that wiring themselves into a periodic
+    polling loop is this exact task, so this module composes both rather than reimplementing either.
+    This task''s own acceptance clause ("Periodic workflow records sync snapshots, bounded retries
+    and alerts without duplicate schedules") is two separate guards: register() is a one-shot idempotency
+    latch (a repeated real-scheduler registration attempt for the same connection is refused, never
+    creating a second recurring job); complete_cycle() tracks consecutive transient discovery failures
+    against Section 3.3''s own reused three-attempt ceiling, surfacing RETRY_SCHEDULED then RETRY_CEILING_REACHED
+    rather than retrying silently forever, while CatalogAnomalyDetector''s own already-CERTIFIED alerting
+    passes straight through. This task''s own negative_acceptance ("Revoked key, concurrent sync and
+    out-of-order response cannot reinstate obsolete authorization") is complete_cycle()''s own strict
+    ordering gate: every dispatched cycle carries a monotonically increasing sequence from begin_cycle(),
+    and a completed cycle is applied to the wrapped catalog/detector only if its sequence is strictly
+    newer than the last one actually applied -- checked and enforced before any catalog mutation, so
+    a slow/duplicate/out-of-order response (including one that is itself a superficially successful
+    DISCOVERED result) can never resurrect an id, or an access state, a fresher already-applied cycle
+    already changed. acknowledge_anomaly()/retry_anomaly()/is_call_authorized() are real, thin passthroughs
+    to the wrapped detector/catalog, closing the one open observation FTF-0209''s own certification
+    record flagged for this task (a future real API route needs one coherent per-connection object
+    to call against). Scope decision, disclosed (same precedent FTF-0202/FTF-0205/FTF-0207/FTF-0208/FTF-0209
+    already established): no route, real Temporal registration, or cron trigger exists in this repository
+    yet for a periodic job to be registered against -- this task''s own files list names only this
+    module and its test, not a live scheduler; proving_symbol stays blank and product_truth_check.py''s
+    product-true count is deliberately unchanged (still 20/20). tests/tasks/test_ftf_0215.py: 38 real
+    checks across 7 test functions. Shown able to fail first: with the module absent, the suite failed
+    with a genuine ModuleNotFoundError bound to this task''s own import; restored and re-run clean.
+    Two own fault injections, both reverted byte-identical (diff-confirmed) and the suite re-run clean
+    immediately after each: (1) disabled the sequence-ordering guard entirely (`if sequence <= self._last_applied_sequence`
+    replaced with `if False`) -- 8 genuine FAIL lines across the out-of-order/concurrent/revocation
+    tests, reproducing exactly this task''s own negative_acceptance risk; (2) disabled the retry-ceiling
+    comparison (`if self._consecutive_transient_failures >= self._retry_ceiling` replaced with `if
+    False`) -- 1 genuine FAIL line on the "reaches the configured ceiling instead of retrying silently
+    forever" assertion. CI gate step added in the same commit as the implementation. ruff check/ruff
+    format --check/mypy clean repo-wide (258 source files). validate_spec.py --strict clean after `git
+    fetch --unshallow` (this sandbox''s own pre-existing shallow-clone artifact, same disclosed precedent
+    as prior shifts -- the one `stale_commit` defect seen before unshallowing was confirmed pre-existing
+    on main via git stash -u, unrelated to this task). product_truth_check.py --fail-on-unwired: 20/20
+    unchanged (disclosed blank proving_symbol). status.py: 73/300 certified, unchanged (Law 2). Regression
+    swept test_ftf_0004.py/test_ftf_0201.py/test_ftf_0207.py/test_ftf_0208.py/test_ftf_0209.py -- all
+    "all checks passed," zero regressions. verify_task.py --task FTF-0215 --stage task reports BLOCKED
+    pre-merge ("has no merged verification evidence yet"), expected per precedent. Task contract re-pulled
+    via tools/r1_handoff.py packet FTF-0215 before claiming; acceptance/negative_acceptance clauses
+    cross-checked against the implementation above. Not self-certified (Law 4) -- independent Control-plane
+    L2 review and a real CI run on the opened PR are required before certification.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0215.py
 FTF-0301:
   certification_state: CERTIFIED
   criticality: MUST
