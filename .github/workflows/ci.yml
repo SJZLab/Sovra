@@ -243,6 +243,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a17.py
       - name: FTF-1503 negative-test proof (CSRF suite, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1503.py
+      - name: FTF-0511 negative-test proof (Exact duplicate detector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0511.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

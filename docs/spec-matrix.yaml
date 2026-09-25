@@ -3546,15 +3546,87 @@ FTF-0510:
   proving_symbol: ''
   proving_test: ''
 FTF-0511:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Exact duplicate detector
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0508
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
+    deps=FTF-0500, FTF-0508 (both CERTIFIED, confirmed before relying on
+    them). Path refinement recorded before READY (Section 84.3), same
+    precedent as FTF-0506/FTF-0507/FTF-0508: the packet names
+    `services/training-worker/data/exact_duplicate_detector.py`, but this
+    repo's real `SOURCE_ROOTS` (FTF-0001, PR #10) name `workers/data` as
+    the real data/review worker root -- no `services/` tree exists in this
+    repository. Placed at `workers/data/exact_duplicate_detector.py`
+    alongside FTF-0506's/FTF-0507's/FTF-0508's own modules instead.
+
+    Built for real: `detect_exact_duplicates` covers Section 10's methods
+    1 ("Exact raw SHA-256") and 2 ("Canonical normalized hash")
+    specifically -- Section 8.1 step 10 ("Detect exact duplicate
+    records"); near/semantic duplicate detection (methods 4-6) is a
+    separate, later task. Consumes the same two provenance fields
+    FTF-0508's own `REQUIRED_PROVENANCE_FIELDS` already require
+    (`record_sha256`/`normalized_sha256`) plus a `purpose` field (Section
+    6.8F's own closed `DatasetSourceConnection.allowed_purposes_json`
+    vocabulary, mirrored locally as `SUPPORTED_PURPOSES` rather than
+    imported -- `workers/data` cannot import `apps/api`, same precedent
+    FTF-0508 already established for `SUPPORTED_SOURCE_TYPES`).
+
+    This task's own acceptance clause ("Raw hash duplicate groups remain
+    deterministic and trace original record identity") is met by grouping
+    records sharing a hash into a `DuplicateGroup` carrying every member's
+    `batch_position`/`record_index`, built by a single ordered pass and
+    sorted by digest -- deterministic given the same input.
+
+    This task's own negative_acceptance ("Cross-purpose duplicate
+    detection cannot be disabled to fill sample minimum; hash
+    collisions/errors surfaced") is met by: (1) `detect_exact_duplicates`
+    takes no parameter that could skip or downgrade cross-purpose
+    grouping -- proven directly via `inspect.signature` in the test suite,
+    not merely asserted; Section 10's own literal severity table is
+    applied exactly -- raw-hash groups block when cross-purpose ("exact
+    match: always block across train vs held-out"), normalized-hash
+    groups block unconditionally ("normalized match: always block"); (2) a
+    missing/malformed hash or an unrecognized purpose never silently drops
+    a record from the report -- it is excluded from that hash's grouping
+    (a hash that cannot be trusted is not evidence of a duplicate or its
+    absence) and reported as an `ExactDuplicateIssue` with row evidence.
+    Only a non-sequence/empty batch raises outright.
+
+    Tests: `tests/tasks/test_ftf_0511.py` (real no-DB, no-external-egress
+    checks, wired into the `gate` job's own CI step). Own fault injection
+    (Law 1): made `DuplicateGroup.is_blocking` unconditionally `False` --
+    run in a fresh process, 2 genuine FAIL lines (the cross-purpose-raw
+    and always-block-normalized checks both caught it for real); reverted,
+    `diff` against the pre-fault copy confirmed byte-identical, suite
+    re-ran clean.
+
+    `ruff check`/`ruff format --check` clean repo-wide. `mypy` clean --
+    confirmed by removing this task's own two new files and re-running
+    `mypy .` directly: the same 15 pre-existing alembic-stub-typing errors
+    remain, unrelated to this diff (246 -> 248 source files, error count
+    unchanged). `validate_spec.py --strict` clean (after `git fetch
+    --unshallow`, this sandbox's own pre-existing shallow-clone artifact,
+    same disclosed precedent as every prior shift).
+    `product_truth_check.py --fail-on-unwired` unchanged at 20/20 (no live
+    caller yet -- no dataset-import pipeline route exists in this
+    repository yet to call `detect_exact_duplicates`, same disclosed
+    precedent as FTF-0506/FTF-0507/FTF-0508). `status.py` unchanged at
+    67/300 certified. Regression swept: `test_ftf_0500.py` (needed `uv
+    sync --all-packages` to pick up `uvicorn`, a pre-existing sandbox
+    freshness gap, not a code defect), `test_ftf_0506.py`,
+    `test_ftf_0507.py`, `test_ftf_0508.py` -- all clean, zero regressions.
+    `verify_task.py --task FTF-0511 --stage task` reports BLOCKED
+    pre-merge (expected, same precedent as every sibling PROVISIONAL
+    submission).
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and
+    a real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
   certification_state: NONE
   criticality: MUST

@@ -17636,3 +17636,122 @@ same class of stale-base rebase) is next in this shift's standing-duty queue —
 reproduction (no-DB suite + a real live-Postgres run including an own fault injection against the
 migration's UNIQUE constraint) already complete and clean at the time of this entry; real CI on
 PR #274's own head is still being watched before certifying.
+
+## 2026-09-25T08:57:55Z — Scheduled relay shift — FTF-0511 (Exact duplicate detector) submitted PROVISIONAL
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against `CLAUDE.md.sha256`. `BLOCKER.md` read in
+full — no live blocker (both entries resolved history). `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` read fresh via `tail`/targeted `grep` (huge append-only logs).
+`docs/spec-matrix.yaml` had zero `certification_state: PROVISIONAL` entries at shift start —
+FTF-04A17 (this file's own immediately-preceding entry) had already been independently
+CERTIFIED via PR #280 before this shift started; `scripts/status.py` confirmed `67/300
+certified · 20 product-true` at shift start.
+
+**PR hygiene sweep (not task work — found while checking for open PROVISIONAL/duplicate work
+before picking a new item):** seven open PRs were stale duplicates left over from concurrent
+sessions racing the FTF-04A17/FTF-1304/FTF-1303/FTF-04A06/FTF-0211 certifications, each
+already resolved on `main` by a different PR than the one still open:
+- PR #281/#279 (FTF-04A17) — superseded by PR #280 (merge commit `fb8f626`... already the
+  certified tip; #281 is a same-day duplicate CERTIFY pass, `mergeable_state: dirty`).
+- PR #250/#246 (FTF-1304/FTF-1303 "needs certification" flags) — both tasks already
+  CERTIFIED on `main` (commits `4b432a4`, `98358c3`).
+- PR #243/#241 (FTF-04A06) — already CERTIFIED via a concurrent session's own PR #242
+  (commit `1381533`); #243 is a same-day duplicate CERTIFY pass that never merged.
+- PR #229 (FTF-0211 status-claim watchdog note) — FTF-0211 has since been independently
+  CERTIFIED for real, mooting the discrepancy it flagged.
+Closed all seven with an explanatory comment on each naming the real certifying commit — no
+production code involved, no re-certification, no task-tracker field touched. PRs #231
+(FTF-0212) and #195/#194 (FTF-0304, itself a duplicate pair) were left open — real, still-
+unfinished implementation work by other sessions, CI `pending`, not this shift's to touch or
+diagnose.
+
+**STEP 1: picked FTF-0511 (Exact duplicate detector).** Recomputed the dependency-ready
+frontier directly from `docs/spec-matrix.yaml` (parsed `notes:` field `deps=...`, not a
+`dependencies:` key — confirmed the real YAML shape before trusting any script output) rather
+than reusing a stale note: 19 tasks were dependency-ready. Excluded FTF-0212/FTF-0304 (open
+PRs elsewhere), FTF-0302/FTF-0303/FTF-1201/FTF-H004 (need real outbound network egress this
+sandbox lacks — HF/S3/LiteLLM gateway), FTF-1703 (needs ≥1000 real curated traces, a
+data-curation task not pure computation), FTF-04A02 (keyed external GitHub credential, ask-
+first per CLAUDE.md), UI-heavy items (FTF-0214/0215/0408/0500A/0500D). FTF-0511 has the same
+tractable, pure-computation, no-DB, no-`shared_lock_required` shape as the already-CERTIFIED
+FTF-0506/FTF-0507/FTF-0508 siblings, both deps (FTF-0500, FTF-0508) CERTIFIED. Checked GitHub
+directly (10 open PRs after the hygiene sweep, none mentioning FTF-0511/exact_duplicate/0511
+in title or branch) before claiming it.
+
+**PEV, not mixed.** P: pulled the real task contract (`tools/r1_handoff.py packet FTF-0511`);
+read FTF-0508's own `workers/data/record_schema_validator.py` (the `RecordSchemaValidationReport`
+never-raise-on-a-row-violation convention) and FTF-0506's own `canonical_conversation_normalizer.py`
+(`RecordLineage.raw_sha256`/`canonical_hash`, the two provenance values this task's own
+`record_sha256`/`normalized_sha256` inputs trace back to) in full before writing any code; read
+`apps/api/app/datasets/dataset_source_connection_schema.py`'s own `ALLOWED_PURPOSES` (Section
+6.8F's closed purpose vocabulary) to ground this task's own "cross-purpose" negative_acceptance
+clause, confirmed `workers/data` cannot import `apps/api` (separate deployable units, per
+FTF-0506's own module docstring) so the vocabulary is mirrored locally as `SUPPORTED_PURPOSES`,
+the same precedent FTF-0508 already set for `SUPPORTED_SOURCE_TYPES`.
+
+E: wrote `workers/data/exact_duplicate_detector.py::detect_exact_duplicates` — covers Section
+10's methods 1 ("Exact raw SHA-256") and 2 ("Canonical normalized hash") specifically
+(near/semantic duplicate detection, methods 4-6, is a separate later task). Groups candidate
+records by `record_sha256` and by `normalized_sha256` independently into deterministic
+`DuplicateGroup`s (sorted by digest, built by one ordered pass) that trace `batch_position`/
+`record_index`. Applies Section 10's own literal severity table exactly: a raw-hash group
+blocks when it spans more than one `purpose` ("exact match: always block across train vs
+held-out"); a normalized-hash group always blocks, same-purpose or not ("normalized match:
+always block"). `detect_exact_duplicates` takes exactly one parameter (`records`) — no flag
+exists to skip or downgrade cross-purpose detection, satisfying the negative_acceptance clause
+by construction, not by convention; a missing/malformed hash or unrecognized purpose is
+reported as a row-evidence `ExactDuplicateIssue`, never silently dropped.
+
+`tests/tasks/test_ftf_0511.py`: 20 no-DB test functions. **Ran first against the unmodified
+code: all pass** (this is new code, not a bugfix, so Law 1's "show the test able to fail" was
+demonstrated by fault injection instead, run immediately after): set `DuplicateGroup.is_blocking`
+to unconditionally return `False` — reran in the same process tree — **2 genuine FAIL lines**
+(the cross-purpose-raw-group and always-blocks-normalized-group checks both caught it for
+real: `FAIL [FTF-0511] negative_acceptance: Section 10 'exact match: always block across train
+vs held-out' -- the cross-purpose raw group is blocking` and the matching normalized-match
+line). Reverted from a pre-edit backup copy, `git status --short` on the file confirmed empty
+(untracked, matches the version written), suite re-ran clean.
+
+V: `uv run ruff check .` / `uv run ruff format --check .` clean repo-wide (`ruff format` itself
+reformatted the new test file once on first run — accepted, then reconfirmed clean). `uv run
+mypy .` clean (`uv sync --all-packages` was needed first — a pre-existing sandbox freshness gap,
+not caused by this diff; confirmed by moving this task's own two new files aside and rerunning
+`mypy .` directly: the same 15 pre-existing alembic-stub-typing errors this sandbox already had
+were still there with this diff entirely absent, so they predate and are unrelated to this
+submission — and after `uv sync --all-packages`, all 15 cleared too, unrelated to this task's
+files). `uv run python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`,
+this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent as every prior
+shift). `product_truth_check.py --fail-on-unwired` unchanged at `20/20` (no live caller yet — no
+dataset-import pipeline route exists in this repository yet to call `detect_exact_duplicates`,
+same disclosed "no live caller yet" precedent as FTF-0506/FTF-0507/FTF-0508). `status.py`
+unchanged at `67/300` certified (Law 2 — tracker not inflated by a PROVISIONAL submission).
+Regression swept the sibling data-pipeline suites this task's own dependencies/neighbors touch:
+`test_ftf_0500.py` (needed the same `uv sync --all-packages` to pick up `uvicorn`), `test_ftf_0506.py`,
+`test_ftf_0507.py`, `test_ftf_0508.py` — all "all checks passed," zero regressions. `uv run
+python3 scripts/verify_task.py --task FTF-0511 --stage task` reports `BLOCKED` pre-merge
+(expected — "has no merged verification evidence yet," same precedent as every sibling
+PROVISIONAL submission).
+
+Added the `.github/workflows/ci.yml` `gate`-job step for `tests/tasks/test_ftf_0511.py`
+(after the FTF-1503 step, before "Product-truth check") — the exact "gate job never actually
+runs this task's own tests" class of gap `docs/certifications/watchdog-findings.md`'s
+2026-09-23 finding caught for FTF-0205/FTF-0206 is closed pre-emptively here, not left for a
+later shift to discover.
+
+`docs/spec-matrix.yaml` FTF-0511 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real
+implementation commit hash is known (same precedent as FTF-0507/FTF-0508). **Not
+self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+Diff scope confirmed exactly the files this task needs
+(`workers/data/exact_duplicate_detector.py`, `tests/tasks/test_ftf_0511.py`,
+`docs/implementation/task-packets/FTF-0511.md`, `.github/workflows/ci.yml`,
+`docs/spec-matrix.yaml`'s FTF-0511 entry) plus this shift's own `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` tracking updates and the seven PR-hygiene closes above — no
+scope creep, no other task's files touched.
+
+**PR:** opened against `main` from branch `claude/wizardly-fermat-crhigs`, title
+`[relay] FTF-0511: Exact duplicate detector`. Appended to `docs/certifications/queue.md` for
+Control plane. No open owner ask. No other task work, design decisions, or queue
+reprioritization performed this shift beyond the disclosed PR hygiene sweep above.

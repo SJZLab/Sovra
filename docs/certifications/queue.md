@@ -15117,3 +15117,56 @@ production code touched by this review -- certification review only, no new task
 decisions, no queue reprioritization beyond what this certification naturally required (Law 4).
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-25 — FTF-0511 (Exact duplicate detector) — Relay: submitted PROVISIONAL
+
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`. `BLOCKER.md` confirmed no open blockers. `docs/spec-matrix.yaml` had zero
+`certification_state: PROVISIONAL` entries at shift start (FTF-04A17, this file's own
+immediately-preceding entry, was already independently CERTIFIED via PR #280).
+
+Before picking new task work, swept the open-PR list for stale/duplicate tracking work left
+over from concurrent sessions racing the FTF-04A17/FTF-1304/FTF-1303/FTF-04A06/FTF-0211
+certifications: PRs #281, #279, #250, #246, #243, #241, #229 were each superseded by a
+different PR already merged to `main` (named individually in `PROGRESS.md`'s matching entry).
+Closed all seven with an explanatory comment on each. No production code involved, no
+re-certification performed, no task-tracker field touched by this cleanup.
+
+**Picked FTF-0511 (Exact duplicate detector)** -- dependency-ready (FTF-0500, FTF-0508 both
+CERTIFIED), same tractable pure-computation/no-DB/no-shared-lock shape as the already-CERTIFIED
+FTF-0506/FTF-0507/FTF-0508 siblings. Full PEV detail, own fault injection, and verification
+evidence recorded in `PROGRESS.md`'s matching 2026-09-25 entry; summary here for Control plane:
+
+- `workers/data/exact_duplicate_detector.py::detect_exact_duplicates` covers Section 10 methods
+  1 ("Exact raw SHA-256") and 2 ("Canonical normalized hash") -- groups candidates by
+  `record_sha256`/`normalized_sha256` independently into deterministic `DuplicateGroup`s tracing
+  `batch_position`/`record_index`. Applies Section 10's literal severity table: raw-hash groups
+  block when cross-purpose; normalized-hash groups always block. Purpose vocabulary
+  (`SUPPORTED_PURPOSES`) mirrors `apps/api/app/datasets/dataset_source_connection_schema.py`'s
+  own `ALLOWED_PURPOSES` verbatim (not imported -- `workers/data` cannot import `apps/api`).
+- negative_acceptance ("cannot be disabled") is structural: `detect_exact_duplicates` takes
+  exactly one parameter, `records` -- proven via `inspect.signature` in the test suite, not
+  merely asserted in prose.
+- `tests/tasks/test_ftf_0511.py`: 20 no-DB test functions. Own fault injection (Law 1): forced
+  `DuplicateGroup.is_blocking` to always return `False` -- 2 genuine FAIL lines reproduced,
+  reverted byte-identical (`git status --short` empty), suite re-confirmed clean.
+- `ruff check`/`ruff format --check`/`mypy` clean repo-wide (`uv sync --all-packages` needed
+  first for `mypy` to resolve `alembic`/`uvicorn` -- a pre-existing sandbox freshness gap,
+  confirmed unrelated to this diff by removing this task's own two new files and rerunning
+  `mypy .` directly). `validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+  sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py --fail-on-unwired`
+  unchanged at `20/20` (no live caller yet, same disclosed precedent as FTF-0506/FTF-0507/
+  FTF-0508 -- no dataset-import pipeline route exists yet in this repository).
+  `status.py` unchanged at `67/300` certified (Law 2). Regression swept `test_ftf_0500.py`/
+  `test_ftf_0506.py`/`test_ftf_0507.py`/`test_ftf_0508.py` -- zero regressions.
+- Added the `.github/workflows/ci.yml` `gate`-job step for `tests/tasks/test_ftf_0511.py`
+  directly in this submission, pre-empting the class of "gate never wires this task's own
+  test" gap `docs/certifications/watchdog-findings.md`'s 2026-09-23 finding caught elsewhere.
+
+`docs/spec-matrix.yaml` FTF-0511 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank pending the real merge/implementation
+commit hash. **Not self-certified (Law 4).**
+
+**PR:** opened against `main` from branch `claude/wizardly-fermat-crhigs`, title
+`[relay] FTF-0511: Exact duplicate detector`. Awaiting Control-plane L2 certification and a
+real CI run on the opened PR -- not this relay's role. No open owner ask.
