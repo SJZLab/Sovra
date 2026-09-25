@@ -1,0 +1,439 @@
+"""Normalized duplicate detector (FTF-0512, Section 8.1 step 11/10/67/77/81).
+
+Section 8.1's import pipeline step 11 ("Detect normalized duplicates") is
+distinct from step 10 ("Detect exact duplicate records", FTF-0511's own
+`detect_exact_duplicates`, covering Section 10 methods 1-2: raw SHA-256 and
+canonical-JSON hash). This module covers Section 10 method 3 ("Text
+normalization match": lowercase, whitespace normalization, punctuation
+normalization, remove generated IDs/timestamps using schema-aware rules) --
+catching records that are the same conversation with only cosmetic
+formatting differences that FTF-0511's byte-exact/canonical-JSON hashes
+would never collide on (different case, extra whitespace, different
+punctuation, or a different generated trace ID/timestamp embedded in the
+text). Method 3's own severity, Section 10's literal table, has no
+cross-purpose carve-out ("normalized match: always block", unlike the raw
+hash row's "always block across train vs held-out"), so every group this
+module finds is unconditionally blocking -- see `DuplicateGroup.is_blocking`.
+
+This task's own `database_changes` clause ("No independent schema change.
+Consume frozen contract.") fixes this module's shape, the same as
+FTF-0506/FTF-0507/FTF-0508/FTF-0511: a pure, synchronous, no-I/O, no-DB
+function operating on FTF-0506's own canonical `content` body shape
+(`{"messages": [...], "metadata": {...}}`, the same shape FTF-0508's own
+`validate_record_batch` already validates on every Section 6.11
+`DatasetRecord` candidate).
+
+This task's own acceptance clause ("Canonicalized hash matching preserves
+meaningful tool/ID semantics while detecting formatting duplicates") is met
+by `compute_normalized_text_hash`'s own asymmetric treatment of message
+content, applied uniformly by `_normalize_message`:
+
+  - **detecting formatting duplicates**: only `{"type": "text", ...}`
+    content parts are normalized -- lowercased, generated-ID/timestamp
+    patterns redacted, punctuation stripped, whitespace collapsed
+    (`_normalize_text`). Two records whose text differs only in case,
+    punctuation, whitespace, or an embedded generated trace ID/timestamp
+    hash identically.
+  - **preserves meaningful tool/ID semantics**: `{"type": "json", ...}`
+    content parts (a tool result's structured outcome) and every
+    `tool_calls` entry's `id`/`name`/`arguments` are copied into the
+    hashed document byte-for-byte, never passed through `_normalize_text`.
+    A tool call or a JSON tool result carries real business data (a
+    refund amount, an order status, a lookup result) that Section 10
+    method 3's own "text normalization" scope was never meant to touch --
+    this module reads that scope literally.
+
+This task's own negative_acceptance ("Normalization cannot collapse
+distinct customer outcomes or strip relevant security constraints") is a
+direct consequence of the same design, made independently testable:
+
+  - **cannot collapse distinct customer outcomes**: since `json` content
+    parts and every tool call's `arguments` are preserved verbatim, two
+    records whose only difference is a tool argument or a JSON tool
+    result's value (a different order ID, a different refund amount, a
+    different approval outcome) never hash the same, however identical
+    their surrounding prose is after normalization.
+  - **cannot strip relevant security constraints**: `_normalize_text`'s
+    generated-ID/timestamp redaction is deliberately narrow -- only
+    syntactically self-identifying generated shapes (an RFC 4122 UUID, an
+    ISO-8601 timestamp) are recognized and replaced with a fixed
+    placeholder. It never touches ordinary words, so two records whose
+    text differs by a real word (for example "refunds are forbidden" vs.
+    "refunds are allowed") never collide; and it never touches a
+    business-meaningful identifier that does not carry a generated
+    shape (for example a plain order number embedded in prose), so two
+    records naming different customers/orders in otherwise-identical
+    prose never collide either.
+
+Every candidate's own `content` shape is validated before hashing
+(`compute_normalized_text_hash`, reusing the same "valid role ordering" /
+"no unsupported content type" / "no null role/content ambiguity"
+vocabulary FTF-0506's own `normalize_conversation` already established, on
+the *already-normalized* Section 7 shape rather than a raw import).
+Never raises on a per-row violation -- `detect_normalized_duplicates`
+reports a malformed `content`, a missing/unrecognized `purpose`, or a
+non-object candidate as an `NormalizedDuplicateIssue` with row evidence,
+the same "never raise on a per-row violation, always report" discipline
+FTF-0508's/FTF-0511's own reports already established. Only a batch that
+is not a real sequence of records at all (not a sequence, or empty) raises
+`NormalizedDuplicateDetectionError` outright -- there is no row to attach
+that failure's evidence to.
+
+Scope decision, same disclosed precedent as FTF-0506/FTF-0507/FTF-0508/
+FTF-0511 ("no live caller yet"): this task's own packet `files` list names
+only this module and its test, not an importer/route. No dataset-import
+pipeline route exists yet in this repository to call
+`detect_normalized_duplicates` (Section 67.1's actual import pipeline
+routes are separate, later, dependency-gated tasks). `proving_symbol`
+stays blank; `product_truth_check.py`'s product-true count is deliberately
+unchanged.
+
+Path refinement recorded before READY (Section 84.3), same precedent as
+FTF-0506/FTF-0507/FTF-0508/FTF-0511: the packet names
+`services/training-worker/data/normalized_duplicate_detector.py`, but this
+repo's real `SOURCE_ROOTS` (FTF-0001, PR #10) name `workers/data` as the
+real data/review worker root -- there is no `services/` tree in this
+repository. Placed alongside FTF-0506's/FTF-0507's/FTF-0508's/FTF-0511's
+own modules instead of creating a second, non-existent tree.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+__all__ = [
+    "SUPPORTED_PURPOSES",
+    "DuplicateGroup",
+    "NormalizedDuplicateDetectionError",
+    "NormalizedDuplicateIssue",
+    "NormalizedDuplicateReport",
+    "compute_normalized_text_hash",
+    "detect_normalized_duplicates",
+]
+
+# Section 6.8F's own frozen `DatasetSourceConnection.allowed_purposes_json`
+# vocabulary (`apps/api/app/datasets/dataset_source_connection_schema.py`'s
+# own `ALLOWED_PURPOSES`), mirrored here rather than imported -- same
+# cross-boundary precedent FTF-0511 already established (`workers/data`
+# cannot import `apps/api`).
+SUPPORTED_PURPOSES = frozenset(
+    {"training", "validation", "held_out_evaluation", "candidate_development", "baseline_only"}
+)
+
+_ALLOWED_ROLES = frozenset({"system", "user", "assistant", "tool"})
+_ALLOWED_CONTENT_TYPES = frozenset({"text", "json"})
+_REQUIRED_CONTENT_KEYS = frozenset({"messages", "metadata"})
+
+# Section 10 method 3: "remove generated IDs/timestamps using schema-aware
+# rules". Deliberately narrow -- only syntactically self-identifying
+# generated shapes are recognized (an RFC 4122 UUID; an ISO-8601
+# timestamp), never a generic numeric-looking business identifier (an
+# order number, an account ID) a real customer outcome might depend on.
+# See this module's own negative_acceptance discussion above.
+_UUID_PATTERN = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
+_ISO_TIMESTAMP_PATTERN = re.compile(
+    r"\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})?\b"
+)
+_PUNCTUATION_PATTERN = re.compile(r"[^\w\s]")
+_WHITESPACE_PATTERN = re.compile(r"\s+")
+
+
+class NormalizedDuplicateDetectionError(ValueError):
+    """The candidate record batch itself is not a real sequence of
+    records -- not a sequence at all, or empty. There is no row to attach
+    this failure's evidence to, so it is raised, not reported as a row
+    issue. Also raised internally by `compute_normalized_text_hash` on a
+    malformed `content` document -- `detect_normalized_duplicates` catches
+    that case per-row and reports it as an issue instead of propagating it."""
+
+
+@dataclass(frozen=True)
+class NormalizedDuplicateIssue:
+    batch_position: int
+    record_index: int | None
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class DuplicateGroup:
+    digest: str
+    batch_positions: tuple[int, ...]
+    record_indices: tuple[int | None, ...]
+    purposes: frozenset[str]
+    is_cross_purpose: bool
+
+    @property
+    def is_blocking(self) -> bool:
+        # Section 10's own literal severity table: "normalized match:
+        # always block" -- no cross-purpose carve-out, unlike the raw-hash
+        # row FTF-0511 already applies its own conditional rule to.
+        return True
+
+
+@dataclass(frozen=True)
+class NormalizedDuplicateReport:
+    duplicate_groups: tuple[DuplicateGroup, ...]
+    issues: tuple[NormalizedDuplicateIssue, ...]
+
+    @property
+    def blocking_groups(self) -> tuple[DuplicateGroup, ...]:
+        return tuple(group for group in self.duplicate_groups if group.is_blocking)
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.issues and not self.blocking_groups
+
+
+def _normalize_text(text: str) -> str:
+    lowered = text.lower()
+    redacted = _ISO_TIMESTAMP_PATTERN.sub("<generated_timestamp>", lowered)
+    redacted = _UUID_PATTERN.sub("<generated_id>", redacted)
+    no_punctuation = _PUNCTUATION_PATTERN.sub(" ", redacted)
+    return _WHITESPACE_PATTERN.sub(" ", no_punctuation).strip()
+
+
+def _normalize_content_part(part: object, *, field: str) -> dict[str, object]:
+    if not isinstance(part, Mapping):
+        raise NormalizedDuplicateDetectionError(f"{field}: content part must be an object")
+    part_type = part.get("type")
+    if part_type not in _ALLOWED_CONTENT_TYPES:
+        raise NormalizedDuplicateDetectionError(f"{field}: unsupported content type {part_type!r}")
+
+    if part_type == "text":
+        text = part.get("text")
+        if not isinstance(text, str):
+            raise NormalizedDuplicateDetectionError(
+                f"{field}: text content part must carry a string 'text'"
+            )
+        # Only the text surface form is normalized here -- this is where
+        # "detecting formatting duplicates" comes from.
+        return {"type": "text", "text": _normalize_text(text)}
+
+    # part_type == "json": preserved byte-for-byte. A json content part
+    # carries a structured business outcome (a tool result's status, an
+    # evaluation grade, ...); Section 10 method 3 normalizes *text*
+    # formatting, not business data. negative_acceptance ("cannot collapse
+    # distinct customer outcomes") is met by never touching this value.
+    if "value" not in part:
+        raise NormalizedDuplicateDetectionError(f"{field}: json content part missing 'value'")
+    try:
+        json.dumps(part["value"])
+    except (TypeError, ValueError) as exc:
+        raise NormalizedDuplicateDetectionError(
+            f"{field}: json content part value is not JSON-serializable: {exc}"
+        ) from exc
+    return {"type": "json", "value": part["value"]}
+
+
+def _normalize_tool_call(call: object, *, field: str) -> dict[str, object]:
+    if not isinstance(call, Mapping):
+        raise NormalizedDuplicateDetectionError(f"{field}: tool call must be an object")
+    call_id = call.get("id")
+    name = call.get("name")
+    arguments = call.get("arguments")
+    if not isinstance(call_id, str) or not call_id:
+        raise NormalizedDuplicateDetectionError(f"{field}: tool call id must be a non-empty string")
+    if not isinstance(name, str) or not name:
+        raise NormalizedDuplicateDetectionError(
+            f"{field}: tool call name must be a non-empty string"
+        )
+    if not isinstance(arguments, Mapping):
+        raise NormalizedDuplicateDetectionError(f"{field}: tool call arguments must be an object")
+    try:
+        json.dumps(dict(arguments))
+    except (TypeError, ValueError) as exc:
+        raise NormalizedDuplicateDetectionError(
+            f"{field}: tool call arguments are not JSON-serializable: {exc}"
+        ) from exc
+    # id/name/arguments preserved byte-for-byte -- the "preserves
+    # meaningful tool/ID semantics" half of this task's own acceptance
+    # clause. A tool call names a real business action (a refund amount,
+    # an order ID); text-formatting normalization never touches it.
+    return {"id": call_id, "name": name, "arguments": dict(arguments)}
+
+
+def _normalize_message(message: object, *, field: str) -> dict[str, object]:
+    if not isinstance(message, Mapping):
+        raise NormalizedDuplicateDetectionError(f"{field}: message must be an object")
+
+    role = message.get("role")
+    if role not in _ALLOWED_ROLES:
+        raise NormalizedDuplicateDetectionError(f"{field}: unmapped role {role!r}")
+
+    raw_content = message.get("content")
+    if not isinstance(raw_content, list):
+        raise NormalizedDuplicateDetectionError(f"{field}: content must be a list")
+
+    normalized: dict[str, object] = {
+        "role": role,
+        "content": [
+            _normalize_content_part(part, field=f"{field}.content[{index}]")
+            for index, part in enumerate(raw_content)
+        ],
+    }
+
+    raw_tool_calls = message.get("tool_calls")
+    if raw_tool_calls is not None:
+        if not isinstance(raw_tool_calls, list):
+            raise NormalizedDuplicateDetectionError(f"{field}: tool_calls must be a list")
+        normalized["tool_calls"] = [
+            _normalize_tool_call(call, field=f"{field}.tool_calls[{index}]")
+            for index, call in enumerate(raw_tool_calls)
+        ]
+
+    tool_call_id = message.get("tool_call_id")
+    if tool_call_id is not None:
+        if not isinstance(tool_call_id, str) or not tool_call_id:
+            raise NormalizedDuplicateDetectionError(
+                f"{field}: tool_call_id must be a non-empty string"
+            )
+        normalized["tool_call_id"] = tool_call_id
+
+    name = message.get("name")
+    if name is not None:
+        if not isinstance(name, str) or not name:
+            raise NormalizedDuplicateDetectionError(f"{field}: name must be a non-empty string")
+        normalized["name"] = name
+
+    return normalized
+
+
+def compute_normalized_text_hash(content: object) -> str:
+    """Computes Section 10 method 3's own "text normalization match" hash
+    over one already-canonical `content` document (`{"messages": [...],
+    "metadata": {...}}`, FTF-0506's own canonical body shape). Message
+    `role` structure, `json` content parts and every tool call's
+    `id`/`name`/`arguments` are preserved byte-for-byte; only `text`
+    content parts are lowercased, whitespace-normalized,
+    punctuation-normalized and generated-ID/timestamp-redacted. `metadata`
+    is deliberately excluded -- it describes the import, not the
+    conversation content two records are being compared for. Raises
+    `NormalizedDuplicateDetectionError` on any shape this function cannot
+    trust; never guesses a lossy reading of a document it does not
+    recognize."""
+    if not isinstance(content, Mapping) or set(content) != _REQUIRED_CONTENT_KEYS:
+        raise NormalizedDuplicateDetectionError(
+            "content must be an object with exactly the canonical 'messages'/'metadata' keys"
+        )
+
+    messages = content.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise NormalizedDuplicateDetectionError("content.messages must be a non-empty list")
+
+    normalized_messages = [
+        _normalize_message(message, field=f"messages[{index}]")
+        for index, message in enumerate(messages)
+    ]
+
+    document = {"messages": normalized_messages}
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class _ValidCandidate:
+    batch_position: int
+    record_index: int | None
+    purpose: str
+    digest: str
+
+
+def detect_normalized_duplicates(
+    records: Sequence[Mapping[str, object]],
+) -> NormalizedDuplicateReport:
+    """Detects Section 10 method 3 ("text normalization match") duplicate
+    records in an already-normalized candidate batch. Every candidate must
+    carry `content` (FTF-0506's own canonical body shape) and `purpose`
+    (Section 6.8F's own closed vocabulary). Never raises on a per-row
+    violation -- returns a `NormalizedDuplicateReport` whose `issues` carry
+    row evidence. Raises `NormalizedDuplicateDetectionError` only when the
+    batch itself is not a real sequence of records (not a sequence, or
+    empty)."""
+    if not isinstance(records, Sequence) or isinstance(records, str | bytes):
+        raise NormalizedDuplicateDetectionError("records must be a sequence of candidate records")
+    if not records:
+        raise NormalizedDuplicateDetectionError("records must be a non-empty sequence")
+
+    issues: list[NormalizedDuplicateIssue] = []
+    valid: list[_ValidCandidate] = []
+
+    for batch_position, candidate in enumerate(records):
+        if not isinstance(candidate, Mapping):
+            issues.append(
+                NormalizedDuplicateIssue(
+                    batch_position=batch_position,
+                    record_index=None,
+                    code="invalid_candidate",
+                    message="candidate record must be an object",
+                )
+            )
+            continue
+
+        raw_record_index = candidate.get("record_index")
+        record_index: int | None
+        if isinstance(raw_record_index, int) and not isinstance(raw_record_index, bool):
+            record_index = raw_record_index
+        else:
+            record_index = None
+
+        purpose = candidate.get("purpose")
+        if purpose not in SUPPORTED_PURPOSES:
+            issues.append(
+                NormalizedDuplicateIssue(
+                    batch_position=batch_position,
+                    record_index=record_index,
+                    code="invalid_purpose",
+                    message=f"purpose {purpose!r} is not a recognized value",
+                )
+            )
+            continue
+
+        try:
+            digest = compute_normalized_text_hash(candidate.get("content"))
+        except NormalizedDuplicateDetectionError as exc:
+            issues.append(
+                NormalizedDuplicateIssue(
+                    batch_position=batch_position,
+                    record_index=record_index,
+                    code="unknown_content",
+                    message=str(exc),
+                )
+            )
+            continue
+
+        assert isinstance(purpose, str)
+        valid.append(
+            _ValidCandidate(
+                batch_position=batch_position,
+                record_index=record_index,
+                purpose=purpose,
+                digest=digest,
+            )
+        )
+
+    by_digest: dict[str, list[_ValidCandidate]] = {}
+    for valid_candidate in valid:
+        by_digest.setdefault(valid_candidate.digest, []).append(valid_candidate)
+
+    groups: list[DuplicateGroup] = []
+    for digest in sorted(by_digest):
+        members = by_digest[digest]
+        if len(members) < 2:
+            continue
+        purposes = frozenset(member.purpose for member in members)
+        groups.append(
+            DuplicateGroup(
+                digest=digest,
+                batch_positions=tuple(member.batch_position for member in members),
+                record_indices=tuple(member.record_index for member in members),
+                purposes=purposes,
+                is_cross_purpose=len(purposes) > 1,
+            )
+        )
+
+    return NormalizedDuplicateReport(duplicate_groups=tuple(groups), issues=tuple(issues))

@@ -1,5 +1,68 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-25 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01KURX1i2Vya6YPyZLXCAg7N) — **FTF-0512
+  (Normalized duplicate detector) submitted PROVISIONAL.** STEP 0: CLAUDE.md
+  hash verified clean; `BLOCKER.md` confirmed no open blockers. Read
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh:
+  `docs/spec-matrix.yaml` had zero live `certification_state: PROVISIONAL`
+  entries at shift start (the immediately preceding certifier shift already
+  merged and CERTIFIED FTF-0511 via PR #282 — `scripts/status.py`: `68/300`
+  certified, `20` product-true, confirmed directly rather than assumed).
+  Checked GitHub directly: 3 open PRs (#231 FTF-0212, #195/#194 FTF-0304),
+  none touching this shift's own eventual pick.
+
+  Recomputed the dependency-ready frontier directly from
+  `docs/spec-matrix.yaml` (19 ready tasks, same parsing discipline as the
+  immediately preceding shift); excluded FTF-0212/FTF-0304 (open PRs
+  above), FTF-0302/FTF-0303/FTF-1201/FTF-H004 (real network egress this
+  sandbox lacks), FTF-1703 (needs ≥1000 real curated traces), FTF-04A02
+  (keyed external credential, ask-first), UI-heavy items
+  (FTF-0214/0215/0408/0500A/0500D), FTF-0902 (`shared_lock_required`).
+  Pulled full task-packet contracts for the remaining candidates
+  (FTF-0509/FTF-0512/FTF-0514/FTF-04A08/FTF-04A19) before choosing; picked
+  **FTF-0512** — dependency-ready (FTF-0500, FTF-0511 both CERTIFIED), same
+  tractable pure-computation/no-DB/no-shared-lock shape as the
+  already-CERTIFIED FTF-0506/FTF-0507/FTF-0508/FTF-0511 siblings, and a
+  direct continuation of FTF-0511's own Section 10 dedup work (method 3,
+  "text normalization match", distinct from FTF-0511's own methods 1-2).
+
+  Implemented `workers/data/normalized_duplicate_detector.py::
+  detect_normalized_duplicates`/`compute_normalized_text_hash`: `{"type":
+  "text", ...}` content parts are normalized (lowercase, a narrow
+  schema-aware UUID/ISO-8601-timestamp redaction, punctuation stripped,
+  whitespace collapsed) while `{"type": "json", ...}` content parts and
+  every tool call's `id`/`name`/`arguments` are hashed byte-for-byte,
+  never normalized — directly answering both acceptance ("preserves
+  meaningful tool/ID semantics while detecting formatting duplicates") and
+  negative_acceptance ("cannot collapse distinct customer outcomes or
+  strip relevant security constraints") at once. Every method-3 duplicate
+  group is unconditionally blocking (Section 10: "normalized match: always
+  block", no cross-purpose carve-out). `tests/tasks/test_ftf_0512.py`: 20
+  no-DB tests; own fault injection (dropped tool call `arguments` from the
+  hashed document) reproduced 1 genuine FAIL line
+  (`test_different_tool_call_arguments_is_not_a_duplicate`), reverted
+  byte-identical, suite re-confirmed clean. Full verification:
+  `ruff`/`ruff format`/`mypy` clean repo-wide (after `uv sync
+  --all-packages`; two mypy fixes needed — a loop-variable name collision
+  and a `dict`-invariance parameter-type fix, both pre-existing project
+  typing conventions); `validate_spec.py --strict` clean (after `git fetch
+  --unshallow`); `product_truth_check.py` unchanged `20/20` (no live
+  caller yet, same disclosed precedent as FTF-0506/FTF-0507/FTF-0508/
+  FTF-0511); `status.py` unchanged `68/300`; regression swept
+  `test_ftf_0500/0506/0507/0508/0511.py`, zero regressions. Wired the new
+  test into `.github/workflows/ci.yml`'s `gate` job directly in this
+  submission. `docs/spec-matrix.yaml`'s FTF-0512 set to
+  `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`. Not
+  self-certified (Law 4). Opened a PR against `main` from
+  `claude/wizardly-fermat-8p4f3j` (title `[relay] FTF-0512: Normalized
+  duplicate detector`), appended to `docs/certifications/queue.md`. Full
+  detail: `PROGRESS.md`, `docs/certifications/queue.md`. No open owner
+  ask. No other task work, design decisions, or queue reprioritization
+  performed this shift beyond the disclosed candidate-comparison packets
+  (generated, then removed before committing).
+
+## Previous shift
+Updated: 2026-09-25 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_019bmUswhdEXyBFy5F9JxppB) — **FTF-0511
   (Exact duplicate detector) submitted PROVISIONAL.** Before picking task
   work, swept seven open PRs (#281, #279, #250, #246, #243, #241, #229)

@@ -3647,15 +3647,73 @@ FTF-0511:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0511.py
 FTF-0512:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Normalized duplicate detector
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0511
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
+    deps=FTF-0500, FTF-0511 (both CERTIFIED, confirmed before relying on
+    them). Path refinement recorded before READY (Section 84.3), same
+    precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511: the packet names
+    `services/training-worker/data/normalized_duplicate_detector.py`, but
+    this repo's real `SOURCE_ROOTS` (FTF-0001, PR #10) name `workers/data`
+    as the real data/review worker root -- no `services/` tree exists in
+    this repository. Placed at
+    `workers/data/normalized_duplicate_detector.py` alongside
+    FTF-0506's/FTF-0507's/FTF-0508's/FTF-0511's own modules instead.
+
+    Built for real: `detect_normalized_duplicates` covers Section 10
+    method 3 ("Text normalization match": lowercase, whitespace
+    normalization, punctuation normalization, remove generated
+    IDs/timestamps using schema-aware rules) -- Section 8.1 step 11
+    ("Detect normalized duplicates"), distinct from FTF-0511's own step 10
+    (methods 1-2, raw/canonical-JSON hash). `compute_normalized_text_hash`
+    normalizes only `{"type": "text", ...}` content parts (lowercase, a
+    narrow schema-aware UUID/ISO-8601-timestamp redaction, punctuation
+    stripped, whitespace collapsed); `{"type": "json", ...}` content parts
+    and every tool call's `id`/`name`/`arguments` are hashed byte-for-byte,
+    never normalized. Every method-3 duplicate group is unconditionally
+    blocking (Section 10's own literal table: "normalized match: always
+    block", no cross-purpose carve-out).
+
+    acceptance ("Canonicalized hash matching preserves meaningful tool/ID
+    semantics while detecting formatting duplicates") met by the asymmetric
+    text-vs-json/tool-call treatment above, proven by
+    `tests/tasks/test_ftf_0512.py`'s own case/whitespace/punctuation/
+    generated-UUID/generated-timestamp formatting-duplicate tests plus
+    `test_tool_call_id_name_preserved_verbatim_still_matches_when_identical`.
+
+    negative_acceptance ("Normalization cannot collapse distinct customer
+    outcomes or strip relevant security constraints") met by never
+    normalizing `json` content parts or tool call arguments (proven by
+    `test_different_tool_call_arguments_is_not_a_duplicate` and
+    `test_different_json_content_value_is_not_a_duplicate`) and by the
+    UUID/timestamp redaction's own narrow scope, which never touches an
+    ordinary word or a non-generated-shaped business identifier (proven by
+    `test_different_security_word_is_not_a_duplicate` and
+    `test_different_business_id_in_text_is_not_a_duplicate`). Own fault
+    injection (Law 1): dropped tool call `arguments` from the hashed
+    document -- 1 genuine FAIL line reproduced
+    (`test_different_tool_call_arguments_is_not_a_duplicate`), reverted
+    byte-identical, suite re-confirmed clean.
+
+    Scope decision, same disclosed precedent as FTF-0506/FTF-0507/FTF-0508/
+    FTF-0511 ("no live caller yet"): no dataset-import pipeline route
+    exists yet in this repository to call `detect_normalized_duplicates`.
+    `proving_symbol` left blank; `product_truth_check.py --fail-on-unwired`
+    unchanged at 20/20. `ruff check`/`ruff format --check`/`mypy` clean
+    repo-wide. `validate_spec.py --strict` clean (after `git fetch
+    --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+    Regression swept `test_ftf_0500.py` (needed `uv sync --all-packages`
+    for `uvicorn`, same disclosed precedent), `test_ftf_0506.py`,
+    `test_ftf_0507.py`, `test_ftf_0508.py`, `test_ftf_0511.py` -- zero
+    regressions. Not self-certified (Law 4) -- awaiting independent
+    Control-plane L2 review and a real CI run on the opened PR.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:
   certification_state: NONE
   criticality: MUST
