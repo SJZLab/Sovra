@@ -3759,10 +3759,10 @@ FTF-0513:
   proving_symbol: ''
   proving_test: ''
 FTF-0514:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: PII/secrets detector
-  evidence_hash: ''
+  evidence_hash: 1f859be5e520e114eeff08222230337a8a9acd0b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31;
@@ -3795,9 +3795,46 @@ FTF-0514:
     byte-identical. `ruff`/`mypy`/`validate_spec.py --strict` clean;
     `product_truth_check.py` unchanged at 20/20 (no live import-pipeline
     caller yet, same disclosed precedent as every dedup/validator sibling).
-    Not self-certified (Law 4) -- awaiting independent Control-plane L2
-    review and a real CI run on the opened PR.
-  proof_state: L1-PROVEN
+
+    Independently certified 2026-09-25: session-ID check clean (no overlap
+    with the producing session); diff read directly (5 files, matches PR's
+    claimed scope exactly, plus a disclosed tracking-only follow-up commit
+    touching only PROGRESS.md/QUEUE.md/docs/certifications/queue.md);
+    own local reproduction (`test_ftf_0514.py` 20/20,
+    `product_truth_check.py --fail-on-unwired` unchanged 20/20 -- a
+    legitimate disclosed 0/0 per this task's own blank `proving_symbol`,
+    not the "0/0 once filled in" case Section 84's own procedure warns
+    against; `validate_spec.py --strict` clean; `ruff`/`mypy` clean
+    repo-wide; regression swept `test_ftf_0402.py`/`test_ftf_0500.py`/
+    `test_ftf_0508.py`/`test_ftf_0511.py`/`test_ftf_0512.py`, zero
+    regressions). Real task contract re-pulled via `tools/r1_handoff.py
+    packet FTF-0514 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and both
+    acceptance ("Run secrets/PII detectors inside private boundary and
+    quarantine required findings with human resolution") and
+    negative_acceptance ("Detection absence is not proof of no PII; false
+    negatives/residual risks recorded and real secrets not logged")
+    clauses reconfirmed genuinely met by reading the corresponding tests
+    directly, not accepted on the PR's own word. Dependencies
+    FTF-0402/FTF-0500/FTF-0508 reconfirmed CERTIFIED in this file before
+    relying on their provenance-field contract. Own fault injection (Law
+    1), a different vector than either of the producer's own disclosed
+    ones (Luhn bypass; raw-value leak): removed the US SSN pattern from
+    `_scan_text`'s own scan loop -- 1 genuine FAIL line reproduced
+    (`test_us_ssn_detected`), reverted byte-identical (`diff` against a
+    pre-edit backup confirmed, `git status --short` showed no diff), suite
+    re-ran clean. Real CI watched to genuine completion on PR #286's
+    actual final head (`657e8d7162a31579520c70a4c70055ea01f578e5`, run
+    `36138246061`, after a mid-review push added a disclosed
+    tracking-only commit) -- 31/31 check runs `success`, including `gate`
+    (its own `FTF-0514 negative-test proof` step confirmed passing
+    directly from the job log) and the three OpenBao-build-dependent
+    integration jobs (`secret-manager-integration`/
+    `dataset-source-connection-integration`/
+    `target-application-connection-integration`), each confirmed genuinely
+    still progressing via job-log polling before the wait was treated as
+    normal rather than a hang. No blocking defect found. Merged PR #286
+    (`1f859be5e520e114eeff08222230337a8a9acd0b`).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0514.py
 FTF-0515:
