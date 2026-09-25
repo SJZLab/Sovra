@@ -1,0 +1,16 @@
+# FTF-1506 dependency-scan policy exceptions.
+#
+# An exception silences exactly one (ecosystem, package name, OSV/GHSA
+# vuln id) tuple, and only while `expires_on` has not yet passed and
+# `justification` is non-empty -- an expired or unjustified entry is
+# void, and the finding it named blocks again the moment it expires
+# (negative_acceptance: "Unknown/unpatched critical/high finding cannot
+# be silently ignored to satisfy cost or schedule").
+#
+# exceptions:
+#   - vuln_id: "GHSA-xxxx-xxxx-xxxx"
+#     ecosystem: "PyPI"
+#     name: "example-package"
+#     justification: "Upgrade path blocked by <real reason>; tracked in <issue>."
+#     expires_on: "2026-12-31"
+exceptions: []
