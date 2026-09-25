@@ -17804,3 +17804,132 @@ certification, disclosed). Full detail: `docs/certifications/queue.md`,
 
 No other task work, design decisions, or queue reprioritization performed beyond what this
 certification naturally required (Law 4). No open owner ask.
+
+
+## 2026-09-25 — Relay shift: FTF-0512 (Normalized duplicate detector) submitted PROVISIONAL
+
+Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` verified clean against
+`CLAUDE.md.sha256`. `BLOCKER.md` confirmed no open blockers (both entries resolved history).
+Read `PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` fresh rather than assuming
+state from prior context: `docs/spec-matrix.yaml` had zero `certification_state: PROVISIONAL`
+entries at shift start (the one `grep` hit for the literal string "PROVISIONAL" was inside
+FTF-0207's own historical `notes` prose, not its live `certification_state` field -- confirmed
+by reading the real top-level field directly). `scripts/status.py`: `68/300` certified, `20`
+product-true, matching the immediately preceding certifier shift's own result for PR #282
+(FTF-0511). Checked GitHub directly: 3 open PRs (#231 FTF-0212, #195/#194 FTF-0304, a
+duplicate pair) -- none touching this shift's own eventual pick.
+
+**STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`**
+(parsed the real `notes:` field `deps=...` convention, not a `dependencies:` key -- same
+verification discipline the immediately preceding shift used): 19 tasks dependency-ready.
+Excluded FTF-0212/FTF-0304 (open PRs above), FTF-0302/FTF-0303/FTF-1201/FTF-H004 (need real
+outbound network egress this sandbox lacks), FTF-1703 (needs ≥1000 real curated traces),
+FTF-04A02 (keyed external GitHub credential, ask-first), UI-heavy items
+(FTF-0214/0215/0408/0500A/0500D), FTF-0902 (`shared_lock_required` -- contract/migration lock
+coordination, not a solo-shift-safe pick). Pulled full task-packet contracts for the remaining
+candidates (FTF-0509, FTF-0512, FTF-0514, FTF-04A08, FTF-04A19) via `tools/r1_handoff.py
+packet <id> --plan FINE_TUNING_FACTORY_RELEASE_1.md` before choosing.
+
+**Picked FTF-0512 (Normalized duplicate detector)** -- dependency-ready (FTF-0500, FTF-0511
+both CERTIFIED), same tractable pure-computation/no-DB/no-shared-lock shape as the
+already-CERTIFIED FTF-0506/FTF-0507/FTF-0508/FTF-0511 siblings, and a direct, natural
+continuation of FTF-0511's own Section 10 dedup work (method 3, "text normalization match",
+distinct from FTF-0511's own methods 1-2).
+
+**PEV, not mixed.** P: read FTF-0511's own `workers/data/exact_duplicate_detector.py` in full
+(the candidate-batch/purpose/`DuplicateGroup`/never-raise-on-a-row-violation conventions this
+task reuses), FTF-0506's own `canonical_conversation_normalizer.py` (the canonical `content`
+body shape -- `{"messages": [...], "metadata": {...}}` -- and its own `role`/`content`/
+`tool_calls` schema this task's own text-normalization walk must recognize), and FTF-0508's
+own `record_schema_validator.py` (the `content` field's own canonical-shape validation
+precedent, `unknown_content` issue code convention). Pulled FTF-0512's real task contract:
+acceptance ("Canonicalized hash matching preserves meaningful tool/ID semantics while
+detecting formatting duplicates"), negative_acceptance ("Normalization cannot collapse
+distinct customer outcomes or strip relevant security constraints").
+
+E: wrote `workers/data/normalized_duplicate_detector.py::detect_normalized_duplicates` /
+`compute_normalized_text_hash` -- covers Section 10 method 3 ("Text normalization match":
+lowercase, whitespace normalization, punctuation normalization, remove generated
+IDs/timestamps using schema-aware rules), Section 8.1 step 11 ("Detect normalized
+duplicates"). Core design decision, directly answering both the acceptance and
+negative_acceptance clauses at once: `{"type": "text", ...}` content parts are normalized
+(lowercased, a narrow schema-aware RFC-4122-UUID/ISO-8601-timestamp redaction, punctuation
+stripped, whitespace collapsed); `{"type": "json", ...}` content parts and every tool call's
+`id`/`name`/`arguments` are hashed byte-for-byte, never normalized -- a tool result or tool
+call carries real business data (a refund amount, an order status), not text formatting.
+The generated-ID/timestamp redaction is deliberately narrow: only syntactically
+self-identifying generated shapes are recognized, never a generic numeric business
+identifier (an order number) a real customer outcome might depend on. Every method-3
+duplicate group is unconditionally blocking (`DuplicateGroup.is_blocking` returns `True`
+always -- Section 10's own literal table: "normalized match: always block", no cross-purpose
+carve-out, unlike FTF-0511's own raw-hash row). `metadata` is deliberately excluded from the
+hash (it describes the import, not the conversation content two records are compared for).
+Malformed `content`/unrecognized `purpose`/a non-object candidate never raises on a per-row
+basis -- reported as a `NormalizedDuplicateIssue` with row evidence, same discipline as
+FTF-0508/FTF-0511. Only a batch that is not a real sequence at all raises
+`NormalizedDuplicateDetectionError` outright.
+
+`tests/tasks/test_ftf_0512.py`: 20 no-DB test functions. **Ran first against the unmodified
+code: all pass** (new code, not a bugfix -- Law 1's "show the test able to fail" demonstrated
+by fault injection immediately after): dropped a tool call's `arguments` from the hashed
+document in `_normalize_tool_call` -- reran in the same process tree -- **1 genuine FAIL
+line** (`test_different_tool_call_arguments_is_not_a_duplicate`: two records differing only
+in a refund amount collapsed into one duplicate group once arguments were dropped --
+exactly the negative_acceptance clause this task exists to satisfy). Reverted from a pre-edit
+backup copy, `diff` against the backup confirmed byte-identical, `git status --short` showed
+only the expected untracked new file, suite re-ran clean.
+
+Test coverage for both clauses concretely: formatting-only differences (case, whitespace,
+punctuation, an embedded generated UUID, an embedded generated ISO-8601 timestamp) are
+detected as duplicates (acceptance); a different tool-call argument, a different `json`
+content-part value, a different real word ("forbidden" vs. "allowed"), or a different plain
+business identifier embedded in text are each never collapsed (negative_acceptance) --
+proving the redaction's narrow scope holds, not merely asserting it.
+
+V: `uv run ruff check .` / `uv run ruff format --check .` clean repo-wide (two mypy-driven
+fixes needed first: a loop-variable name collision with an earlier-bound `Mapping[str,
+object]`-typed loop variable in the same function, and a `dict`-invariance mismatch on a test
+helper's parameter type, fixed by typing it `Mapping[str, object]` -- both are pre-existing
+project typing conventions, not new patterns). `uv run mypy .` clean (`uv sync --all-packages`
+re-run first for the sandbox's own pre-existing `uvicorn`/`alembic` freshness gap, same
+disclosed precedent as every prior shift). `uv run python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact,
+same disclosed precedent). `product_truth_check.py --fail-on-unwired` unchanged at `20/20` (no
+live caller yet -- no dataset-import pipeline route exists yet in this repository to call
+`detect_normalized_duplicates`, same disclosed "no live caller yet" precedent as
+FTF-0506/FTF-0507/FTF-0508/FTF-0511). `status.py` unchanged at `68/300` certified (Law 2 --
+tracker not inflated by a PROVISIONAL submission). Regression swept the sibling data-pipeline
+suites this task's own dependencies/neighbors touch: `test_ftf_0500.py` (needed the same `uv
+sync --all-packages` to pick up `uvicorn`), `test_ftf_0506.py`, `test_ftf_0507.py`,
+`test_ftf_0508.py`, `test_ftf_0511.py` -- all "all checks passed," zero regressions. `uv run
+python3 scripts/verify_task.py --task FTF-0512 --stage task` reports `BLOCKED` pre-merge
+(expected -- "has no merged verification evidence yet," same precedent as every sibling
+PROVISIONAL submission).
+
+Added the `.github/workflows/ci.yml` `gate`-job step for `tests/tasks/test_ftf_0512.py`
+(directly after the FTF-0511 step) -- pre-empting the class of "gate never wires this task's
+own test" gap `docs/certifications/watchdog-findings.md`'s 2026-09-23 finding caught
+elsewhere, rather than leaving it for a later shift to discover.
+
+`docs/spec-matrix.yaml` FTF-0512 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge
+commit hash is known (same precedent as FTF-0507/FTF-0508/FTF-0511). **Not self-certified (Law
+4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
+before certification.
+
+Generated, then removed before committing, five other candidate task packets
+(`docs/implementation/task-packets/{FTF-04A08,FTF-04A19,FTF-0509,FTF-0514,FTF-H004}.md`) pulled
+during STEP 1's own comparison of dependency-ready candidates -- not this shift's own pick,
+not left in the diff as scope creep.
+
+Diff scope confirmed exactly the files this task needs
+(`workers/data/normalized_duplicate_detector.py`, `tests/tasks/test_ftf_0512.py`,
+`docs/implementation/task-packets/FTF-0512.md`, `.github/workflows/ci.yml`,
+`docs/spec-matrix.yaml`'s FTF-0512 entry) plus this shift's own `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` tracking updates -- no scope creep, no other task's files
+touched.
+
+**PR:** opened against `main` from branch `claude/wizardly-fermat-8p4f3j`, title
+`[relay] FTF-0512: Normalized duplicate detector`. Appended to `docs/certifications/queue.md`
+for Control plane. No open owner ask. No other task work, design decisions, or queue
+reprioritization performed this shift beyond the disclosed candidate-comparison packets above.
