@@ -1,4 +1,31 @@
 # PROGRESS — Sovra
+## 2026-09-25 — FTF-04A17 — PR #278 merged by owner directly, recorded, still PROVISIONAL
+
+Tracking-doc-only follow-up, same relay shift as the entry immediately below. PR #278
+(FTF-04A17's wiring fix) went CI-green for real (31/31, `gate` and
+`discovered-agent-candidate-integration` both `success`, confirmed via `get_check_runs` on the
+real head `2986e78`) and was then **merged into `main` directly by the repo owner**
+(`merged_by: samerzakaria`, merge commit `fb8f626bfd7b9c4a38a19db7d824f51f28e7ffde`), not by a
+Control-plane certifier session -- confirmed via a fresh `git fetch origin main` and reading
+`pull_request_read`'s own `merged_by` field directly, not inferred.
+
+Confirmed this does not itself certify the task -- Law 4 applies regardless of who performs the
+merge: `docs/spec-matrix.yaml` on the new `main` still reads FTF-04A17
+`certification_state: PROVISIONAL` (checked directly via `git show origin/main:docs/spec-matrix.yaml`);
+`scripts/status.py` on the fresh tip still reads `66/300 certified`, unchanged; no
+`sync_certified_status()` call has run for FTF-04A17. This relay session will not self-certify.
+
+Restarted this session's own designated branch (`claude/wizardly-fermat-66cdlv`) from the new
+`main` tip per this session's own "already-merged branch" instruction (the branch's prior content
+was exactly PR #278, now merged). Recorded the merge in `QUEUE.md`/this file so the next
+Control-plane certifier shift finds the real state without re-discovering it from scratch: the
+wiring fix's code is on `main`, CI was already confirmed green on the exact merged head, and only
+the real Control-plane CERTIFY procedure against commit `fb8f626`/`2986e78` remains. Same
+precedent as PR #246 (FTF-1303) and PR #241/#243 (FTF-04A06).
+
+No production code touched by this follow-up -- tracking docs only. No other task work, design
+decisions, or queue reprioritization performed.
+
 ## 2026-09-25T00:00:00Z — Relay shift: FTF-04A17 "designed is not wired" gap fixed (PR pending)
 
 Scheduled autonomous relay shift. STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md

@@ -1,4 +1,22 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-25 (same relay shift, tracking-doc follow-up) — **PR #278
+  (FTF-04A17's wiring fix, below) was merged into `main` directly by the
+  repo owner** (`merged_by: samerzakaria`, merge commit `fb8f626`), not by
+  a Control-plane certifier session. Confirmed this does not itself
+  certify the task — Law 4 ("Producer never certifies own work. Merge =
+  PROVISIONAL only.") applies regardless of who performs the merge:
+  `docs/spec-matrix.yaml` on the new `main` still reads FTF-04A17
+  `certification_state: PROVISIONAL`; `scripts/status.py` still reads
+  `66/300 certified`, unchanged; no `sync_certified_status()` call has run
+  for FTF-04A17. This relay session will not self-certify — this is a
+  tracking-doc-only note so the next Control-plane certifier shift finds
+  the real state without re-discovering it from scratch: the wiring
+  fix's code is on `main`, CI was already confirmed 31/31 green on the
+  exact merged head, and only the real Control-plane CERTIFY procedure
+  against commit `fb8f626` (or, more precisely, `2986e78`, PR #278's own
+  head) remains. Same precedent as PR #246 (FTF-1303) and PR #241/#243
+  (FTF-04A06). No open owner ask. No other task work performed.
+
 Updated: 2026-09-25 (scheduled autonomous relay shift) — **FTF-04A17's real
   "designed is not wired" gap (Law 7), flagged by this file's own
   immediately-preceding certifier note, is fixed.** `build_discovered_
