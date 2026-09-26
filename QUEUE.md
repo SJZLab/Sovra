@@ -1,5 +1,63 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01GMDn1KqkzPZwd6WMgpZ4SZ) — **FTF-04A11 ("JSON/YAML/TOML
+  configuration discovery") submitted PROVISIONAL.** STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh; CLAUDE.md hash self-check clean. No open BLOCKER.md entry.
+  `QUEUE.md`'s own "## Active"/"## Provisional"/"## Owner actions — current" sections all read
+  empty/none at shift start; independently confirmed against `docs/spec-matrix.yaml` that
+  FTF-04A09 (the item those sections' stale prose still named) had already been certified earlier
+  the same day by a Control-plane certifier session (`session_01PdswKsS7sgPHSE9e125d2D`, PR #298),
+  ahead of this shift starting — no new work was blocked by it.
+
+  Checked all 5 open PRs directly via the GitHub API before picking new work: #295 (FTF-0214, a
+  standing blocker escalation, unmerged since 2026-09-25, left as-is), #290 (FTF-04A08 tracking,
+  doc-only), #231 (FTF-0212), #194/#195 (FTF-0304 duplicate pair) — none overlap with any task
+  picked this shift. Surveyed `docs/spec-matrix.yaml` directly for every task whose listed
+  dependencies are all `CERTIFIED`/`PROMOTED` and not already claimed by an open PR: 16 candidates
+  found. FTF-0212/0214/0304 already claimed; FTF-0500A/FTF-0500D independently re-confirmed to hit
+  the same no-`Dataset`-entity/no-composed-route blocker class PR #295 already found for FTF-0214;
+  FTF-04A02/FTF-0902 remain the same `BLOCKED_EXTERNAL`/`shared_lock_required` class prior shifts
+  already found.
+
+  Pulled FTF-04A10's real task packet first and found a genuine architectural gap — its own
+  acceptance clause needs a real JS/TS AST parser, a dependency class nowhere in this pure-Python
+  `apps/api` backend and not named by any architecture doc. Left unclaimed (task packet generated
+  and kept, not implemented) rather than force a fresh library choice or a non-AST substitute that
+  would fail the clause's own explicit requirement — see "## Provisional" below and `PROGRESS.md`
+  for the full reasoning.
+
+  Picked **FTF-04A11** instead — dependency-ready (FTF-04A01/FTF-04A08 both `CERTIFIED`), no
+  external prerequisite. Implemented `apps/api/app/target_connectors/
+  json_yaml_toml_configuration_discovery.py`: only `json.loads`/`tomllib.loads` (stdlib) and
+  `yaml.safe_load` (never an unsafe/full YAML loader) ever parse scanned content; a `.env`-style
+  file is read as literal `KEY=VALUE` lines, never shell-expanded/executed; a disclosed key-name
+  heuristic redacts secret-shaped values to a length-only marker before they ever reach returned
+  evidence, reusing `apps/api/app/config/configuration_system.py`'s own `_redact` shape. Promoted
+  `pyyaml>=6.0.1,<6.1` (already pinned at this exact version as a workspace dev dependency) into
+  `apps/api/pyproject.toml`'s own real dependency list — resolved via CLAUDE.md's own "Default
+  resolution rule" (no architecture doc names an alternative; reusing the already-decided version
+  is the most-consistent choice) rather than an owner ask, reasoning recorded in `PROGRESS.md`/
+  `docs/spec-matrix.yaml`.
+
+  `tests/tasks/test_ftf_04a11.py`: 22 tests, all pass against the unmodified code. Two independent
+  fault injections, both reverted byte-identical and re-run clean: (1) swapped `yaml.safe_load`
+  for `yaml.load(..., Loader=yaml.UnsafeLoader)` — a genuine FAIL, the injected
+  `!!python/object/apply:os.system(...)` tag actually created its own marker file for real; (2)
+  skipped the secret-redaction branch entirely — two genuine FAILs, a raw dotenv secret and a raw
+  `database_password` value both leaked directly into returned evidence. `uv sync --all-packages`
+  (minimal 2-line `uv.lock` diff for the new `pyyaml` dependency on `sovra-api`); `ruff`/`mypy`
+  clean repo-wide (262 files); `validate_spec.py --strict` clean after `git fetch --unshallow`
+  (this sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py
+  --fail-on-unwired` unchanged 20/20 (`proving_symbol` left blank — no live dispatcher exists yet,
+  disclosed, same precedent as FTF-04A08/FTF-04A09); `status.py` unchanged 75/300 (Law 2).
+  Regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py` plus
+  `pytest tests/unit` — zero regressions. `docs/spec-matrix.yaml` set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`. CI gate step added. **Not self-certified (Law 4)** —
+  independent Control-plane L2 review and a real CI run on the opened PR are required before
+  certification. STEP 4 stop condition (a): 1/1 in-flight item is L1-PROVEN, CI-green-pending,
+  awaiting that certifier session and the L4 gate. Stopping here. No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D, triggered by the `pull_request.opened`
   webhook for PR #299) — **FTF-04A09 (Python deterministic agent/config/tool discovery)
   independently reviewed and CERTIFIED.** Entire session task per this certifier's standing
@@ -5163,20 +5221,44 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A09** ("Python deterministic agent/config/tool discovery") is the item here; submitted
-2026-09-26 via PR #298 (branch `claude/wizardly-fermat-rw976n` → main), producer session
-`https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z`. **PR #298 is already merged to `main`**
-(merge commit `690f497`) but `docs/spec-matrix.yaml` still genuinely reads PROVISIONAL — no
-certification has actually happened yet, the merge-commit's own title notwithstanding (flagged in
-this file's own top dated log, 2026-09-26). A later relay shift (session
-`https://claude.ai/code/session_01GiQiPXqDpqkZsHJUHWXMqh`) ran a full non-authoritative
-re-verification pass (own fault injection distinct from the producer's two, real CI reconfirmed
-31/31 green including `gate` on the actual merged head) and found no blocking defect, but
-deliberately did not flip this to CERTIFIED — that requires an independently-triggered
-Control-plane certifier session, not this relay (Law 4; see this file's own top dated log for the
-full reasoning). See this file's own top dated log for the full record (scope boundary, two
-distinct fault-injection vectors from two different sessions, two verification sweeps). Not
-self-certified (Law 4) — awaiting an independently-triggered Control-plane L2 certifier session.
+**FTF-04A09** ("Python deterministic agent/config/tool discovery") is **no longer here** — it was
+independently reviewed and **CERTIFIED 2026-09-26** by a Control-plane certifier session
+(`session_01PdswKsS7sgPHSE9e125d2D`, PR #298, merge commit `690f497`) before this shift began. See
+this file's own top dated log and `docs/certifications/queue.md`/`docs/certifications/ledger.md`
+for the full certification record.
+
+**FTF-04A11** ("JSON/YAML/TOML configuration discovery") is the item here now; submitted
+2026-09-26 by this shift (session `https://claude.ai/code/session_01GMDn1KqkzPZwd6WMgpZ4SZ`) via
+a PR from branch `claude/wizardly-fermat-lf2dqo` → main. Dependency-ready (FTF-04A01/FTF-04A08
+both `CERTIFIED`, reconfirmed before relying on them); no external prerequisite, pure static
+parsing with no DB/network of its own. `apps/api/app/target_connectors/
+json_yaml_toml_configuration_discovery.py` reads bounded JSON/YAML/TOML/`.env`-style config from
+an already-captured snapshot and produces normalized, secret-redacted per-file/per-key evidence;
+only `json.loads`/`tomllib.loads` (stdlib) and `yaml.safe_load` (never an unsafe/full YAML
+loader) ever parse content. `tests/tasks/test_ftf_04a11.py`: 22 tests, two independent fault
+injections (an unsafe-YAML-loader regression that genuinely created a file for real via the
+injected tag before being reverted; a skipped-redaction regression that genuinely leaked a raw
+secret value before being reverted) both reproduced the exact risk their matching
+negative_acceptance clause exists to prevent, both reverted byte-identical. Real CI pending on
+the opened PR. **New production runtime dependency, resolved without an owner ask, not silently
+added:** promoted `pyyaml>=6.0.1,<6.1` from a workspace dev-only dependency (already pinned at
+this exact version at the repo root) into `apps/api/pyproject.toml`'s own real dependency list —
+CLAUDE.md's own "Default resolution rule" applies (no architecture doc names an alternative YAML
+library; this version is already decided elsewhere in the repo, so reusing it is the most-
+consistent choice, recorded here and in `docs/spec-matrix.yaml`'s own FTF-04A11 notes, rather than
+a fresh unbounded choice or a hard stop). `docs/spec-matrix.yaml` set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`. Not self-certified (Law 4) — awaiting an independently-
+triggered Control-plane L2 certifier session and a real CI run on the opened PR.
+
+**Also flagged, not claimed or forced through:** this shift first pulled **FTF-04A10**'s
+("TypeScript/JavaScript deterministic agent/config/tool discovery") own real task packet and
+found its acceptance clause needs a real JS/TS AST parser — a dependency class this repository's
+pure-Python `apps/api` backend has none of anywhere, and no architecture doc names one. Left
+unclaimed (task packet generated and kept, `docs/implementation/task-packets/FTF-04A10.md`,
+not implemented) rather than force a fresh library/subprocess-bridge choice or invent a non-AST
+substitute that would fail the acceptance clause's own explicit requirement. See this file's own
+top dated log and `PROGRESS.md`'s matching entry for the full reasoning. Not written up as a
+"## Blocked" stop, since dependency-ready work (FTF-04A11) continued immediately.
 
 FTF-0215 ("Periodic sync workflow") was the item here before that; submitted 2026-09-25 via
 PR #296 (branch `relay/ftf-0215-periodic-sync-workflow` → main), producer session

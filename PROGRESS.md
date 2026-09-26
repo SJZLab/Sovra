@@ -1,4 +1,139 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-04A11 — relay shift, submitted PROVISIONAL
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01GMDn1KqkzPZwd6WMgpZ4SZ`.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. CLAUDE.md hash
+self-check clean (`sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`). No open
+BLOCKER.md entry (both existing entries are resolved history). `QUEUE.md`'s own "## Active"/
+"## Provisional"/"## Owner actions — current" sections all read empty/none at shift start;
+confirmed directly against `docs/spec-matrix.yaml` that FTF-04A09 (the item those sections'
+stale prose still referenced) is genuinely `certification_state: CERTIFIED` already — a
+Control-plane certifier session (`session_01PdswKsS7sgPHSE9e125d2D`) certified it earlier the
+same day, ahead of this shift starting. No new work was blocked by it.
+
+Checked all 5 open PRs directly via the GitHub API before picking new work: #295 (FTF-0214, a
+standing blocker escalation — no live backend surface, unmerged since 2026-09-25, left as-is —
+merging a `BLOCKER.md`-only PR is not this shift's own claimed task), #290 (FTF-04A08 tracking,
+doc-only), #231 (FTF-0212), #194/#195 (FTF-0304 duplicate pair) — none overlap with any task
+picked this shift.
+
+Surveyed `docs/spec-matrix.yaml` directly for tasks whose every listed dependency is
+`CERTIFIED`/`PROMOTED` and which are not already claimed by an open PR: 16 candidates found
+(FTF-0212/FTF-0214/FTF-0302/FTF-0303/FTF-0304/FTF-04A02/FTF-04A10/FTF-04A11/FTF-04A19/
+FTF-0500A/FTF-0500D/FTF-0513/FTF-0902/FTF-1201/FTF-1703/FTF-H004). FTF-0212/0214/0304 already
+claimed by open PRs above; FTF-0500A/FTF-0500D independently re-confirmed to hit the same
+no-`Dataset`-entity/no-composed-route blocker class PR #295 already found for FTF-0214 (not
+re-escalated separately — same accepted class, prior shifts' own precedent); FTF-04A02/FTF-0902
+remain the same `BLOCKED_EXTERNAL`/`shared_lock_required` class prior shifts already found.
+
+Pulled the real task packet for **FTF-04A10** ("TypeScript/JavaScript deterministic agent/
+config/tool discovery") first via `tools/r1_handoff.py packet FTF-04A10`. Found a genuine
+architectural gap before writing any code: its own acceptance clause ("Parse tested JS/TS AST
+patterns... using isolated approved parser") needs a real JS/TS parser, and this repository has
+no such dependency anywhere — `apps/api` is a pure-Python FastAPI service with no Node
+subprocess bridge, and no architecture doc (`docs/architecture/REFERENCE_REPOSITORIES.md`,
+`SPEC.md`, `FINE_TUNING_FACTORY_RELEASE_1.md`) names a JS/TS-parsing library or a cross-runtime
+execution pattern for this repo's Python backend. This is a genuine "new runtime dependency"
+class decision, not one already fixed elsewhere (CLAUDE.md "Ask owner first"). Rather than force
+a choice, or invent a regex-based non-AST substitute (would fail the acceptance clause's own
+explicit "AST" requirement and risk being an undisclosed placeholder, Law 11), this shift left
+FTF-04A10 unclaimed for a future shift/owner decision and picked the next tractable, dependency-
+ready candidate instead — the same "claim only dependency-ready, lock-safe work" discipline
+prior shifts already applied to FTF-0214 vs FTF-04A09. FTF-04A10's own task packet was kept
+(`docs/implementation/task-packets/FTF-04A10.md`), generated but not claimed, per this repo's
+own "generate task packets for frontier candidates" precedent (commit `09a6cf5`). Not written up
+as a separate BLOCKER.md/QUEUE.md "## Blocked" entry, since dependency-ready work continued
+immediately rather than the shift stopping (the same treatment FTF-0202's own secret-backend ask
+received while FTF-0404/0405/0406 continued) — flagged here instead for visibility.
+
+Picked **FTF-04A11** ("JSON/YAML/TOML configuration discovery") — dependency-ready
+(FTF-04A01/FTF-04A08 both `CERTIFIED`, reconfirmed directly), no external prerequisite, pure
+static parsing with no DB/network of its own, same tractable shape as FTF-04A08/FTF-04A09.
+State: `Working: FTF-04A11.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A11.md` in full, Section 7A.4's own baseline
+discovery bullet ("JSON/YAML/TOML/env-template configuration discovery"),
+`apps/api/app/target_connectors/source_analysis_worker.py` (FTF-04A08, reused `SourceFileRef`
+input shape) and `python_agent_config_tool_discovery.py` (FTF-04A09, matching module-docstring/
+dataclass/`ResourceLimits` style precedent) and `apps/api/app/config/configuration_system.py`
+(reused `_redact` length-only redaction shape). Confirmed FTF-04A01/FTF-04A08 genuinely
+`CERTIFIED` before relying on them.
+
+Genuine new-dependency question found and resolved without an owner ask: reading bounded YAML
+for real needs a real YAML library, and `apps/api` (unlike the workspace root's dev-tooling
+dependency group) had none. PyYAML is not a fresh choice, though — it is already pinned at
+`>=6.0.1,<6.1` as a workspace dev dependency (used by `scripts/validate_spec.py` and siblings),
+and no architecture doc names an alternative. Per CLAUDE.md's own "Default resolution rule" (no
+architecture doc fixes the exact answer → pick whichever option is most consistent with what is
+already decided elsewhere, record the reasoning, don't default to a hard stop over a novel
+point), promoted `pyyaml>=6.0.1,<6.1` — the identical, already-decided version — into
+`apps/api/pyproject.toml`'s own real dependency list rather than the dev-only group, or an
+unbounded/fresh version choice, or a hard stop. Reasoning recorded here, in `QUEUE.md`, and in
+`docs/spec-matrix.yaml`'s own FTF-04A11 notes.
+
+**E:** `apps/api/app/target_connectors/json_yaml_toml_configuration_discovery.py`. Only
+`json.loads` (stdlib), `tomllib.loads` (stdlib) and `yaml.safe_load` (PyYAML's own restricted-
+constructor entry point — never `yaml.load` with an unsafe/full loader) ever parse scanned
+content; a `.env`/`.env.*`-named file is read as literal `KEY=VALUE` lines only, never shell-
+expanded or executed (no variable substitution, no subprocess, no `eval`). A disclosed,
+non-exhaustive key-name heuristic (`SECRET`/`PASSWORD`/`PASSWD`/`TOKEN`/`APIKEY`/`PRIVATEKEY`/
+`ACCESSKEY`/`CREDENTIAL`/`CLIENTSECRET`/`PASSPHRASE`, matched against the key's own alphanumeric-
+only, upper-cased form so `api_key`/`API-Key`/`apiKey` all match while an unrelated key like
+`author` never does) redacts a matching key's real value to a length-only `<redacted:N chars>`/
+`<empty>` marker before it is ever placed into returned evidence — reusing
+`configuration_system.py`'s own `_redact` shape rather than inventing a second one. Malformed
+JSON/TOML/YAML and adversarially deep nesting (caught `RecursionError` during parsing, or this
+module's own `ResourceLimits.max_depth`/`max_keys_per_document` bound during the post-parse
+flatten walk) are disclosed `resolved=False`/`keys_truncated=True`, never raised out of the
+worker. Resource limits (`max_files`/`max_file_bytes`/`max_total_bytes`) mirror FTF-04A08's/
+FTF-04A09's own three-bound shape. Reuses FTF-04A08's own connector-agnostic `SourceFileRef`
+input shape. Explicitly out of scope, disclosed: resolving model/tool evidence from the values
+read (Section 7A.4 steps 4/6, FTF-04A09's/a later task's own job) and `DiscoveredAgentCandidate`
+row assembly (step 12) — the same boundary FTF-04A08/FTF-04A09 already drew one layer down.
+
+`tests/tasks/test_ftf_04a11.py`: 22 tests, all pass against the unmodified code. **Two
+independent fault injections, re-run against the final, formatted committed content:**
+1. Replaced `yaml.safe_load(text)` with `yaml.load(text, Loader=yaml.UnsafeLoader)` — **a
+   genuine FAIL**: the injected `!!python/object/apply:os.system(...)` tag actually created its
+   own marker file for real, reproducing exactly the risk this task's own negative_acceptance
+   exists to prevent. Reverted from an untouched backup; `diff` confirmed byte-identical; re-ran
+   clean.
+2. Skipped the secret-redaction branch entirely (unconditional `_normalize_leaf_value(value)` in
+   place of `_redact(...)`) — **two genuine FAILs**: the raw dotenv secret value and the
+   `database_password` key's raw value both leaked directly into the returned evidence. Reverted
+   from an untouched backup; `diff` confirmed byte-identical; re-ran clean.
+
+**V:** `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same
+disclosed precedent as every recent shift) resolved a `stale_commit` batch `validate_spec.py
+--strict` otherwise reports; clean after unshallowing. `uv sync --all-packages` (regenerated
+`uv.lock`'s own minimal 2-line diff for the new `pyyaml` dependency on `sovra-api`, nothing else
+changed); `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (262 source
+files, up from 260). `python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py
+--fail-on-unwired` unchanged at `20/20` (this task's `proving_symbol` is genuinely blank — no
+live source-analysis-pipeline dispatcher exists anywhere in this repository yet to call this
+worker, disclosed, same precedent as FTF-04A08/FTF-04A09/FTF-0511/FTF-0512/FTF-0514).
+`status.py` unchanged at `75/300` certified (Law 2 — not self-inflated). Regression swept
+`test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py` — all "all checks passed" — plus
+`uv run pytest tests/unit` (3/3) — zero regressions. `uv run python3 scripts/verify_task.py
+--task FTF-04A11 --stage task` reports `BLOCKED` pre-merge ("has no merged verification evidence
+yet"), expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-04A11 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge commit hash is
+known (same precedent as every recent sibling). CI gate step (`FTF-04A11 negative-test proof`)
+added to `.github/workflows/ci.yml` in this same commit.
+
+Submitted PROVISIONAL via PR (branch `claude/wizardly-fermat-lf2dqo` -> `main`).
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.
+- STEP 4 stop condition (a): 1/1 in-flight item is L1-PROVEN and CI-green-pending, awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No
+  open owner ask (the FTF-04A10 new-JS/TS-parser-dependency question is disclosed above, not
+  claimed as a hard "## Owner actions — current" stop, since dependency-ready work continued;
+  flagged for the next shift/Control plane to pick up if a JS/TS parser choice is wanted sooner).
+
 ## 2026-09-25 — FTF-0215 — Control plane: CERTIFIED (PR #296 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #296, session

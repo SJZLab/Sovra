@@ -11,6 +11,16 @@ dependencies = [
     "uvicorn>=0.31.0,<0.32",
     "authlib>=1.8.0,<1.9",
     "itsdangerous>=2.2.0,<2.3",
+    # FTF-04A11: real production YAML parsing for JSON/YAML/TOML/env-template
+    # configuration discovery (Section 7A.4/66.1) via yaml.safe_load only --
+    # never yaml.load with an unsafe/full loader. Not a fresh choice: this
+    # exact version range is already pinned as a workspace dev dependency
+    # (root pyproject.toml, used by scripts/validate_spec.py and friends);
+    # promoted here to a real apps/api runtime dependency because this task's
+    # own acceptance clause requires parsing real YAML documents, and no
+    # architecture doc names an alternative YAML library (CLAUDE.md "Default
+    # resolution rule" -- match what is already decided elsewhere).
+    "pyyaml>=6.0.1,<6.1",
 ]
 
 [tool.uv]

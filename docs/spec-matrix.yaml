@@ -3022,15 +3022,96 @@ FTF-04A10:
   proving_symbol: ''
   proving_test: ''
 FTF-04A11:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: JSON/YAML/TOML configuration discovery
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A08
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A08 (both CERTIFIED, confirmed before relying on
+    them). Path: `apps/api/app/target_connectors/
+    json_yaml_toml_configuration_discovery.py`, matching FTF-04A08's/
+    FTF-04A09's own real `apps/api/app/target_connectors/*.py` layout
+    precedent (refined from the task packet's own generic
+    `packages/target-connectors/json_yaml_toml_configuration_discovery.py`
+    suggestion).
+
+    Scope read narrowly and disclosed: this task's own acceptance clause
+    ("Read bounded JSON/YAML/TOML/env-template config and normalize
+    evidence without secrets") is read as reading and flattening already-
+    captured config documents into per-key evidence with disclosed
+    secret-name redaction -- it does not itself resolve "model
+    configuration and LiteLLM aliases" (Section 7A.4 step 4) or "tool/
+    function schemas" (step 6) from the values read, and does not assemble
+    a `DiscoveredAgentCandidate` row (step 12, FTF-04A17's own already-
+    CERTIFIED schema) -- the same "detection is not the same act as
+    storage/selection" boundary FTF-04A08/FTF-04A09 already drew one layer
+    down.
+
+    negative_acceptance ("Unsafe YAML tags, malformed TOML/JSON, huge
+    nesting and dotenv secrets cannot execute/leak") met by: only
+    `json.loads`/`tomllib.loads` (stdlib) and `yaml.safe_load` (PyYAML's
+    own restricted-constructor entry point, never `yaml.load` with an
+    unsafe/full loader) ever parse scanned content; a `.env`/`.env.*` file
+    is read as literal `KEY=VALUE` lines, never shell-expanded/executed;
+    malformed content and adversarially deep nesting are caught
+    (`RecursionError` included) and disclosed `resolved=False`, never
+    raised out of the worker; a disclosed, non-exhaustive key-name
+    heuristic (`SECRET`/`PASSWORD`/`TOKEN`/`APIKEY`/`PRIVATEKEY`/
+    `ACCESSKEY`/`CREDENTIAL`/`CLIENTSECRET`/`PASSPHRASE`, matched against
+    the key's own alphanumeric-only upper-cased form) redacts a matching
+    key's real value to a length-only marker, reusing `apps/api/app/
+    config/configuration_system.py`'s own `_redact` shape, before it is
+    ever placed into returned evidence.
+
+    New production runtime dependency: promoted `pyyaml>=6.0.1,<6.1` from
+    a workspace dev-only dependency (root `pyproject.toml`, already pinned
+    at this exact version for `scripts/validate_spec.py` and similar
+    tooling) to a real `apps/api` production dependency -- resolved via
+    CLAUDE.md's own "Default resolution rule" (no architecture doc names
+    an alternative YAML library; this exact version is already decided
+    elsewhere in the repo, so reusing it rather than pinning a fresh
+    version is the most-consistent choice) rather than a fresh, unbounded
+    dependency choice or an owner ask. Recorded here and in `QUEUE.md`/
+    `PROGRESS.md` per that rule's own "record that reasoning" requirement.
+
+    `tests/tasks/test_ftf_04a11.py`: 22 tests, all pass against the
+    unmodified code. Two independent fault injections, both reverted
+    byte-identical and re-run clean: (1) `yaml.load(text,
+    Loader=yaml.UnsafeLoader)` in place of `yaml.safe_load(text)` -- a
+    genuine FAIL, the injected `!!python/object/apply:os.system(...)` tag
+    actually created its own marker file, reproducing exactly the risk
+    this task's own negative_acceptance exists to prevent; (2) skipped the
+    secret-redaction branch entirely (`_normalize_leaf_value(value)` used
+    unconditionally instead of `_redact(...)`) -- two genuine FAILs, the
+    raw dotenv secret value leaked directly into the returned evidence.
+
+    `uv sync --all-packages`; `ruff check`/`ruff format --check`/`mypy`
+    clean repo-wide (262 source files, up from 260 -- new module + new
+    test file). `git fetch --unshallow` (this sandbox's own pre-existing
+    shallow-clone artifact, same disclosed precedent as every recent
+    shift) resolved a `stale_commit` batch `validate_spec.py --strict`
+    otherwise reports; clean after unshallowing.
+    `product_truth_check.py --fail-on-unwired` unchanged at `20/20` (this
+    task's `proving_symbol` is genuinely blank -- no live source-analysis-
+    pipeline dispatcher exists anywhere in this repository yet to call
+    this worker, disclosed, same precedent as FTF-04A08/FTF-04A09/
+    FTF-0511/FTF-0512/FTF-0514). `status.py` unchanged at `75/300`
+    certified (Law 2 -- not self-inflated). Regression swept
+    `test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py` plus
+    `uv run pytest tests/unit` (3/3) -- all "all checks passed"/passed,
+    zero regressions.
+
+    CI gate step (`FTF-04A11 negative-test proof`) added to
+    `.github/workflows/ci.yml` in this same commit.
+
+    Submitted PROVISIONAL. **Not self-certified (Law 4)** -- independent
+    Control-plane L2 review and a real CI run on the opened PR are
+    required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a11.py
 FTF-04A12:
   certification_state: NONE
   criticality: MUST
