@@ -1,5 +1,43 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled autonomous relay shift, session
+Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk, triggered by the `pull_request.opened`
+  webhook for PR #322) — independently certified **FTF-04A12 (LiteLLM/current-model binding
+  discovery)**. Session-ID check: no overlap with PR #322's sole producer session
+  (`session_01BLLkR3xZpY7qxsRG6ppTbT`) — independent per Law 4.
+
+  Diff read directly against the PR's own base commit (`24383aa`): 7 files changed, matching the
+  PR's own stated scope exactly. Read both new files in full: the module's own scope-narrowing
+  disclosure (role confirmation deferred; `ReconciledModel.fields` never read; `resolved=False`
+  unconditionally forces `model_alias=None`) matches the actual code exactly. Own reproduction:
+  `uv sync --all-packages`; `test_ftf_04a12.py` — "all checks passed" (16 `test_*` functions).
+  **Own fault injection, two independent mutations reproducing the PR's exact claimed failure
+  counts:** (1) `_confirm_against_gateway` forced to always `CONFIRMED` — 4 genuine failures; (2)
+  the `resolved=False` branch's `model_alias=None` override removed — 1 genuine failure. Both
+  reverted byte-identical (md5sum `5f6c2745273ed3eabab3b3c4be60ce8f` before/after each), both
+  re-ran clean. Real CI confirmed on the exact merged head (run `36278406138`): 30/30 jobs
+  `success` including `gate`; fetched the `gate` job's own raw log directly and confirmed it
+  printed "FTF-04A12 LiteLLM/current-model binding discovery: all checks passed" immediately
+  before `product_truth_check.py --fail-on-unwired` (`20/20`) and `status.py` (`80/300`) — waited
+  for the full run (three slower unrelated Docker-backed integration jobs) before treating CI as
+  green. `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide (272 files, after `uv sync
+  --all-packages` resolved a same-session `mypy` false start caused by a partial sync — confirmed
+  the 15 spurious `alembic`-stub errors were pre-existing on the PR's own base commit too, via a
+  throwaway `git worktree`, unrelated to this PR). Regression swept `test_ftf_04a09.py`/
+  `test_ftf_04a11.py`/`test_ftf_0207.py` plus `pytest tests/unit` (3/3) — unaffected; the
+  pre-existing, unrelated `test_ftf_04a10.py` `IndexError` reproduced again, confirmed unrelated to
+  FTF-04A12's own files. Task contract re-pulled; acceptance clauses 1/2 and the full
+  `negative_acceptance` clause are genuinely met — see `docs/certifications/ledger.md`'s matching
+  entry for the complete breakdown.
+
+  **Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A12 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `5b4ba43dbee0e86ace097ecd7a52bb8855448340`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). Appended a matching entry to
+  `docs/certifications/ledger.md`; `PROGRESS.md` updated; this file's own "## Provisional" section
+  corrected below. `scripts/status.py`: `80/300` -> `81/300` certified; product-true unchanged at
+  `20/20` (no live caller added by this certification, disclosed).
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01BLLkR3xZpY7qxsRG6ppTbT) — **submitted FTF-04A12 ("LiteLLM/
   current-model binding discovery") PROVISIONAL.** Found this file's own "## Provisional" section
   stale (still naming already-`CERTIFIED` FTF-04A11 as current) and corrected it; found FTF-04A11's
@@ -5769,19 +5807,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A12** ("LiteLLM/current-model binding discovery") is the current item here, submitted
-2026-09-26 (see this file's own top dated log and `PROGRESS.md`'s matching entry). `docs/
-spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`.
+No item is currently pending here — the queue is empty as of the correction below.
 
-Correction (2026-09-26, same shift that submitted FTF-04A12 above): this paragraph previously
-still named **FTF-04A11** as the current pending item, dated from its own merge-conflict-fix
-resubmission. That was stale — FTF-04A11 was independently certified by a Control-plane session
-shortly afterward (PR #319, merged via PR #321; `docs/spec-matrix.yaml`: `certification_state:
-CERTIFIED` / `proof_state: L2-CERTIFIED`, confirmed directly) and this paragraph was never updated
-to reflect it, leaving a resolved item looking open. Corrected here rather than left for a future
-session to rediscover. Everything below this paragraph is prior history, kept for the record
-(FTF-0302/FTF-0303/FTF-0513/FTF-04A11/FTF-04A10/FTF-04A09 are all already `CERTIFIED` — see this
-file's own top dated log and `docs/certifications/ledger.md`).
+Correction (2026-09-26, Control-plane certifier shift, session
+`https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk`): this paragraph previously still named
+**FTF-04A12** ("LiteLLM/current-model binding discovery") as the current pending item, dated from
+its own submission. That is now stale — FTF-04A12 was independently certified by this same shift
+(PR #322; `docs/spec-matrix.yaml`: `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED`, confirmed directly). Corrected here rather than left for a future session to
+rediscover, per this file's own established precedent (the same class of staleness this paragraph
+itself corrected for FTF-04A11 one shift ago). Everything below this paragraph is prior history,
+kept for the record (FTF-0302/FTF-0303/FTF-0513/FTF-04A11/FTF-04A10/FTF-04A09/FTF-04A12 are all
+already `CERTIFIED` — see this file's own top dated log and `docs/certifications/ledger.md`).
 
 **FTF-0302** ("Hugging Face artifact resolver") was the item here before that; submitted 2026-09-26 via **PR
 #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`,
