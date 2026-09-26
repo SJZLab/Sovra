@@ -20402,3 +20402,109 @@ compaction. STEP 4 stop condition (a): 2/2 in-flight items (FTF-04A10, FTF-04A11
 no blocking defect found by this session's own review — awaiting independently-triggered
 Control-plane certifier sessions and the L4 gate. Stopping here. No open owner ask (`QUEUE.md`
 "Owner actions — current" unchanged, empty).
+
+## 2026-09-26T21:30:00Z — Relay shift: FTF-04A12 submitted PROVISIONAL
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01BLLkR3xZpY7qxsRG6ppTbT`.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state.
+CLAUDE.md hash self-check clean (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly).
+
+**Stale-tracker finding (Law 2 — corrected, not silently left):** `QUEUE.md`'s own "## Provisional"
+section still read FTF-04A11 as the current pending item awaiting Control-plane L2 certification.
+Checking `docs/spec-matrix.yaml` directly showed FTF-04A11 already `certification_state: CERTIFIED`
+/ `proof_state: L2-CERTIFIED` (`evidence_hash` = merge commit `7b60f7852b7f9c3935f00674e1d3a6ba7ad52527`,
+matching `scripts/status.py`'s own `80/300` count) — the certification (PR #319, merged via PR #321)
+happened after that Provisional-section paragraph was written and the section itself was never
+updated afterward. Corrected `QUEUE.md`'s own "## Provisional" section to reflect this and record
+the new pick below, rather than leave a resolved item looking open to a future session.
+
+Checked all 10 open PRs directly via the GitHub API before picking new work: #315/#314 (FTF-0303,
+already `CERTIFIED` on `main` — these two are stale/superseded, same left-open-but-superseded
+pattern this repo's own history already established for PR #301), #313/#311/#308 (FTF-0513,
+already `CERTIFIED` on `main` — same pattern), #295 (FTF-0214, a genuine, already-disclosed
+blocker escalation — no live backend surface for its own stated acceptance), #290 (FTF-04A08
+tracking, doc-only), #231 (FTF-0212, already claimed by an earlier session's own open PR), #195/#194
+(FTF-0304, an already-duplicated pair from two earlier sessions) — none of these overlap with this
+shift's own eventual pick.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (every
+`certification_state: NONE` task whose every listed dependency is genuinely `CERTIFIED`, parsed
+from each entry's own `notes` field, not trusted from any prior shift's claim alone): 16 items came
+back. FTF-04A11's own fresh certification this shift found (see above) newly unblocked five of
+them for the first time — **FTF-04A12/FTF-04A13/FTF-04A14/FTF-04A15/FTF-04A16** — none ready in any
+prior shift's own frontier computation before this one. FTF-0212/FTF-0304 excluded (other sessions'
+own open PRs, long-standing precedent); FTF-0214 excluded (disclosed blocker); FTF-04A02 excluded
+(keyed external credential, ask-first); FTF-0500A/FTF-0500D re-confirmed still blocked on the same
+no-`Dataset`-entity/no-composed-route class FTF-0214 already established; FTF-1201/FTF-H004
+excluded (real network egress this sandbox lacks); FTF-1703 excluded (needs ≥1000 real curated
+traces). Picked **FTF-04A12** ("LiteLLM/current-model binding discovery") — lowest task ID among
+the genuinely ready and unclaimed candidates, and the first task in this plan to combine
+FTF-04A09's/FTF-04A10's/FTF-04A11's own already-CERTIFIED evidence with FTF-0207's own
+already-CERTIFIED alias reconciliation.
+
+Task contract pulled fresh (`python tools/r1_handoff.py packet FTF-04A12 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) rather than trusted from the title alone. Acceptance clause
+("Identify literal/config-derived model binding with actual gateway role confirmation later") read
+literally: "role" (Non-Negotiable Product Contract item 12 — `current_production`/`baseline`/
+`candidate`/`teacher`/`judge`) is out of this task's own scope, deferred to a later task; this task
+identifies the literal/config-derived alias and, when a caller supplies an already-computed
+FTF-0207 `AliasReconciliationResult`, confirms whether that exact alias is currently authorized on
+the gateway.
+
+Implemented `apps/api/app/target_connectors/litellm_current_model_binding_discovery.py` (path
+refined from the packet's own generic `packages/target-connectors/...` suggestion to this repo's
+own real `apps/api/app/target_connectors/*.py` layout, same refinement FTF-04A09/FTF-04A10/
+FTF-04A11 each already disclosed). `discover_current_model_bindings` is a pure, synchronous, no-I/O
+function: it aggregates FTF-04A09's/FTF-04A10's own per-entrypoint `ModelBindingEvidence` (literal
+Python/TS-JS bindings) and a new, disclosed, closed-vocabulary (exact-match only — `MODEL`/
+`MODELNAME`/`MODELID`/`MODELALIAS`/`DEFAULTMODEL`/`LITELLMMODEL`/`LITELLMALIAS`) config-key
+heuristic over FTF-04A11's own per-document `ConfigKeyEvidence` (config-derived bindings), then
+optionally reconciles each resolved literal alias against a caller-supplied FTF-0207
+`AliasReconciliationResult`. This task's own negative_acceptance ("Alias does not reveal weights or
+enforceable access; unresolved dynamic model selection remains explicit") is met structurally:
+`_confirm_against_gateway` only ever reads `ReconciledModel.metadata_status.value` (a bare
+`enriched`/`limited` string) — no code path in this module reads `ReconciledModel.fields` (the raw
+provider/cost/capability metadata dict) at all; and `_candidate_from_binding` unconditionally forces
+`model_alias=None`/`gateway_confirmation_status=NOT_APPLICABLE` for every `resolved=False` upstream
+binding, overriding whatever the upstream evidence object's own field held, rather than trusting it
+was well-formed. This module introduces no `ResourceLimits` of its own — every input sequence it
+iterates is already bounded by its own already-CERTIFIED producer's own limits.
+
+`tests/tasks/test_ftf_04a12.py`: 16 tests, all pass against the unmodified code. Two independent
+fault injections, both reverted byte-identical (md5sum `8dd2eaaf4f7a75539d2b83904305a588` before and
+after each, confirmed via direct `md5sum` comparison), re-run clean: (1) `_confirm_against_gateway`
+forced to always return `CONFIRMED` regardless of match — 4 genuine FAILs (not-attempted, not-found,
+TS/JS-confirmed and summary-count assertions); (2) the `resolved=False` branch of
+`_candidate_from_binding` changed to pass through the upstream `model_alias` instead of forcing
+`None` — 1 genuine FAIL (the defensive-override assertion, `test_unresolved_binding_forces_
+model_alias_none_even_if_upstream_disagrees`).
+
+`git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (disclosed
+precedent, same as every prior FTF-04A0x/FTF-04A1x shift) — `validate_spec.py --strict` clean after
+that. `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (272
+files); `uv run mypy .` clean repo-wide (272 files, zero errors — confirmed directly, not assumed;
+the previously-disclosed 15 `alembic`-stub errors are themselves no longer present on this branch's
+own base). `product_truth_check.py --fail-on-unwired` unchanged `20/20` (`proving_symbol` left
+blank, same disclosed "no live route yet" precedent FTF-04A09/FTF-04A10/FTF-04A11 already
+established). `status.py` unchanged `80/300` (Law 2). Regression swept `test_ftf_04a09.py`/
+`test_ftf_04a11.py`/`test_ftf_0207.py` (all "all checks passed") plus `uv run pytest tests/unit`
+(3/3) — zero regressions. `test_ftf_04a10.py`'s own already-disclosed pre-existing
+`test_entrypoint_function_name_captured_for_nested_arrow_function` `IndexError` reproduced again
+here; confirmed unrelated to this task by re-running it against an unmodified checkout (this task's
+own new files are untracked, so removing them from the working tree reproduces the identical
+failure) — already flagged by multiple prior shifts, not this task's own scope to fix.
+`verify_task.py --task FTF-04A12 --stage task` reports `BLOCKED` pre-merge, expected per precedent
+(no merged verification evidence yet).
+
+`docs/spec-matrix.yaml` FTF-04A12 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A12 negative-test proof`) added to `.github/workflows/ci.yml`.
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A12) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).

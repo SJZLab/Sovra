@@ -1,5 +1,31 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01BLLkR3xZpY7qxsRG6ppTbT) — **submitted FTF-04A12 ("LiteLLM/
+  current-model binding discovery") PROVISIONAL.** Found this file's own "## Provisional" section
+  stale (still naming already-`CERTIFIED` FTF-04A11 as current) and corrected it; found FTF-04A11's
+  own fresh certification newly unblocked FTF-04A12/FTF-04A13/FTF-04A14/FTF-04A15/FTF-04A16 for the
+  first time. Implemented `apps/api/app/target_connectors/
+  litellm_current_model_binding_discovery.py`, aggregating FTF-04A09's/FTF-04A10's own literal
+  model-binding evidence and a new, disclosed, closed-vocabulary config-key heuristic over
+  FTF-04A11's own config evidence, optionally reconciled against a caller-supplied FTF-0207
+  `AliasReconciliationResult` — never reading `ReconciledModel.fields` (negative_acceptance: "does
+  not reveal weights or enforceable access"), and forcing `model_alias=None` for every unresolved
+  binding regardless of what the upstream evidence object held (negative_acceptance: "unresolved
+  dynamic model selection remains explicit"). `tests/tasks/test_ftf_04a12.py`: 16 tests, all pass;
+  two independent fault injections (gateway confirmation forced always-true; the unresolved-binding
+  override removed) produced 4 and 1 genuine failures respectively, both reverted byte-identical
+  (md5sum `8dd2eaaf4f7a75539d2b83904305a588`). `ruff`/`mypy`/`validate_spec.py --strict` clean
+  repo-wide (272 files, after `git fetch --unshallow` resolved this sandbox's own pre-existing
+  shallow-clone artifact). `product_truth_check.py --fail-on-unwired` unchanged `20/20`;
+  `status.py` unchanged `80/300` (Law 2 — this is a submission, not a certification). Regression
+  swept `test_ftf_04a09.py`/`test_ftf_04a11.py`/`test_ftf_0207.py` plus `pytest tests/unit` (3/3) —
+  zero regressions; `test_ftf_04a10.py`'s own already-disclosed pre-existing `IndexError`
+  reproduced again, confirmed unrelated. `docs/spec-matrix.yaml` FTF-04A12 set to
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. CI gate step added. **Not
+  self-certified (Law 4)** — awaiting an independently-triggered Control-plane L2 certifier session
+  and the L4 gate. Full record: `docs/certifications/queue.md`, `PROGRESS.md`.
+
+Previously updated: 2026-09-26 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01B8eL73ozkraSEce8tjEMXh, triggered by the `pull_request.opened`
   webhook for PR #320) — independently certified **FTF-04A11 (JSON/YAML/TOML configuration
   discovery)**. PR #319 (already merged to `main` as `7b60f78`) contained no code or test change
@@ -5743,13 +5769,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A11** ("JSON/YAML/TOML configuration discovery") is the current item here, resubmitted
-2026-09-26 via a new PR superseding **PR #301** after this shift's own merge-conflict fix (see
-this file's own top dated log and `PROGRESS.md`'s matching entry) — same code/test content PR
-#301 already had independently reviewed sound by a Control-plane certifier (PR #318), only the
-tracking-doc merge conflict was resolved. `docs/spec-matrix.yaml`: `certification_state:
-PROVISIONAL` / `proof_state: L1-PROVEN`, unchanged. Everything below this paragraph is prior
-history, kept for the record (FTF-0302/FTF-04A10/FTF-04A09 are all already `CERTIFIED` — see this
+**FTF-04A12** ("LiteLLM/current-model binding discovery") is the current item here, submitted
+2026-09-26 (see this file's own top dated log and `PROGRESS.md`'s matching entry). `docs/
+spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`.
+
+Correction (2026-09-26, same shift that submitted FTF-04A12 above): this paragraph previously
+still named **FTF-04A11** as the current pending item, dated from its own merge-conflict-fix
+resubmission. That was stale — FTF-04A11 was independently certified by a Control-plane session
+shortly afterward (PR #319, merged via PR #321; `docs/spec-matrix.yaml`: `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, confirmed directly) and this paragraph was never updated
+to reflect it, leaving a resolved item looking open. Corrected here rather than left for a future
+session to rediscover. Everything below this paragraph is prior history, kept for the record
+(FTF-0302/FTF-0303/FTF-0513/FTF-04A11/FTF-04A10/FTF-04A09 are all already `CERTIFIED` — see this
 file's own top dated log and `docs/certifications/ledger.md`).
 
 **FTF-0302** ("Hugging Face artifact resolver") was the item here before that; submitted 2026-09-26 via **PR
