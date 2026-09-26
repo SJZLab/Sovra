@@ -8416,3 +8416,91 @@ reasons given above.
   session-ID check above), 2026-09-26
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A12 — LiteLLM/current-model binding discovery
+
+- Criterion ID: FTF-04A12
+- PR: https://github.com/SJZLab/Sovra/pull/322 (`[relay] FTF-04A12: LiteLLM/current-model binding
+  discovery`)
+- Merge commit: `5b4ba43dbee0e86ace097ecd7a52bb8855448340`
+- Head commit reviewed: `6da72c31902784eefe6ecc6e277317981613b386`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36278406138 — 30/30 jobs `completed`/
+  `success`, `gate` included (job `108505468781`)
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk`. PR #322's sole commit carries
+  `Claude-Session: .../session_01BLLkR3xZpY7qxsRG6ppTbT`. No overlap, independent per Law 4.
+- **Diff read directly** (`git diff` against the PR's own base commit
+  `24383aa15a25b3f4e113ba0a7187166c24217bed`): 7 files changed, matching the PR's own stated scope
+  exactly (new module `apps/api/app/target_connectors/litellm_current_model_binding_discovery.py`,
+  new test file `tests/tasks/test_ftf_04a12.py`, `.github/workflows/ci.yml` gate step, tracking-doc
+  appends). Read both new files in full: the module's own scope-narrowing disclosure (role
+  confirmation deferred to a later task; `ReconciledModel.fields` never read anywhere in the file;
+  the `resolved=False` branch unconditionally forces `model_alias=None`/
+  `gateway_confirmation_status=NOT_APPLICABLE`) matches the actual code exactly.
+- **Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a12.py` —
+  "all checks passed" (16 `test_*` functions).
+- **Own fault injection (Law 1) #1, reproducing the gateway-confirmation-discipline
+  negative_acceptance half:** forced `_confirm_against_gateway` to unconditionally
+  `return GatewayConfirmationStatus.CONFIRMED, "enriched"`. Mutation confirmed real (md5sum
+  `5f6c2745273ed3eabab3b3c4be60ce8f` before and after). Re-ran the suite: 4 genuine failures
+  (not-attempted, not-found, TS/JS-confirmed, summary-count assertions), matching the PR's own
+  claimed count exactly. Reverted byte-identical (same md5sum), re-ran clean.
+- **Own fault injection (Law 1) #2, reproducing the unresolved-binding defensive-override
+  negative_acceptance half:** changed the `resolved=False` branch of `_candidate_from_binding` to
+  pass through the upstream `model_alias` instead of forcing `None`. Mutation confirmed real (same
+  md5sum baseline). Re-ran the suite: 1 genuine failure
+  (`test_unresolved_binding_forces_model_alias_none_even_if_upstream_disagrees`), matching the PR's
+  own claimed count exactly. Reverted byte-identical, re-ran clean.
+- Directly inspected `test_gateway_metadata_fields_are_never_exposed_in_output`: independently
+  confirms the other negative_acceptance half structurally — plants
+  `weights_path`/`provider`/`input_cost_per_token` in a `ReconciledModel.fields` dict and confirms
+  none of it appears in the module's own JSON output.
+- **Real CI confirmed on the exact merged head, not a self-report:** fetched PR #322's own workflow
+  run directly on head SHA `6da72c31902784eefe6ecc6e277317981613b386` — 30/30 jobs
+  `completed`/`success`, `gate` included; fetched that job's own raw log directly and confirmed it
+  printed "FTF-04A12 LiteLLM/current-model binding discovery: all checks passed" immediately before
+  the `product_truth_check.py --fail-on-unwired` step, which itself printed "Product-truth: 20/20
+  product-true" then "Status: 80/300 certified · 20 product-true" — matching the PR's own claims
+  exactly. Waited for the full run (three slower Docker-backed integration jobs unrelated to this
+  task finished after `gate`) before treating CI as green.
+- `ruff check .` / `ruff format --check .` / `mypy .` all clean (272 files) after `uv sync
+  --all-packages`. **Disclosed:** an initial `uv run mypy .` in this fresh sandbox, run before
+  syncing all packages, produced 15 spurious `alembic`-stub errors; confirmed (via a throwaway `git
+  worktree` at the PR's own base commit) these are a pre-existing sandbox-environment artifact
+  present on `main` already, unrelated to this PR's own files — resolved by running the PR's own
+  documented `uv sync --all-packages` step first, after which `mypy` was genuinely clean.
+  `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`: `20/20` unchanged
+  — confirmed `proving_symbol` is genuinely blank (no live route yet, same disclosed precedent as
+  FTF-04A09/FTF-04A10/FTF-04A11), not a 0/0-accepted-as-pass case. `status.py`: `80/300` certified
+  pre-certification (confirmed not self-inflated), `81/300` after this certification's own
+  `spec-matrix.yaml` update and `sync_certified_status()` run (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`). Regression swept `test_ftf_04a09.py`/`test_ftf_04a11.py`/
+  `test_ftf_0207.py` (all "all checks passed") plus `uv run pytest tests/unit` (3/3) — all
+  unaffected. Confirmed dependencies FTF-0207/FTF-04A01/FTF-04A09/FTF-04A10/FTF-04A11 genuinely
+  `CERTIFIED` (matching ledger entries) before relying on them.
+- **Disclosed, not silently passed over:** `test_ftf_04a10.py`'s own
+  `test_entrypoint_function_name_captured_for_nested_arrow_function` still fails with a genuine
+  `IndexError` on this branch — already flagged by multiple prior shifts as pre-existing and
+  unrelated to FTF-04A12 (confirmed independently here too: FTF-04A12's own two new files are
+  untouched by that failure's module).
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A12 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Identify literal/config-derived model
+  binding with actual gateway role confirmation later") genuinely met per the disclosed, literal
+  scope-narrowing recorded in `docs/spec-matrix.yaml` (role confirmation is a later task's own
+  separately-claimed scope); acceptance clause 2 ("Independent review, exact merged commit, real
+  relevant integration and negative-test evidence recorded") met by this review; `negative_
+  acceptance` ("Alias does not reveal weights or enforceable access; unresolved dynamic model
+  selection remains explicit") reconfirmed genuinely met — both sub-clauses independently
+  re-verified via fresh fault injection/inspection above.
+- No open review threads or comments on PR #322 (already merged, `merged_at:
+  2026-09-26T23:15:01Z`).
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A12 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `5b4ba43dbee0e86ace097ecd7a52bb8855448340`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `80/300` ->
+  `81/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk (independent — see
+  session-ID check above), 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.

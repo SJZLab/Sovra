@@ -17527,3 +17527,88 @@ commit. CI gate step (`FTF-04A12 negative-test proof`) added to `.github/workflo
 Submitted PROVISIONAL. **Not self-certified (Law 4)** — independent Control-plane L2 review and a
 real CI run on the opened PR are required before certification. `QUEUE.md`/`PROGRESS.md` updated
 this shift. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
+## 2026-09-26 — Control plane: certify FTF-04A12 (LiteLLM/current-model binding discovery), PR #322
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk`, triggered by the `pull_request.opened`
+webhook for PR #322. FTF-04A12 was the sole pending PROVISIONAL item.
+
+**Session-ID check:** PR #322's sole commit carries `Claude-Session:
+.../session_01BLLkR3xZpY7qxsRG6ppTbT`. No overlap with this session's own ID
+(`session_014Hxe7oodTekLv7ufMf6WDk`) — independent per Law 4.
+
+**Diff read directly** against the PR's own base commit `24383aa15a25b3f4e113ba0a7187166c24217bed`:
+7 files changed, matching the PR's own stated scope exactly (new module
+`apps/api/app/target_connectors/litellm_current_model_binding_discovery.py`, new test file
+`tests/tasks/test_ftf_04a12.py`, `.github/workflows/ci.yml` gate step, tracking-doc appends). Read
+both new files in full: the module's own scope-narrowing disclosure (role confirmation deferred to
+a later task; `ReconciledModel.fields` never read anywhere in the file; the `resolved=False` branch
+unconditionally forces `model_alias=None`/`gateway_confirmation_status=NOT_APPLICABLE`) matches the
+actual code exactly.
+
+**Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a12.py` —
+"all checks passed" (16 `test_*` functions).
+
+**Own fault injection (Law 1), two independent mutations, both reproducing the PR's exact claimed
+failure counts:**
+1. `_confirm_against_gateway` forced to unconditionally `return
+   GatewayConfirmationStatus.CONFIRMED, "enriched"` — 4 genuine failures (not-attempted, not-found,
+   TS/JS-confirmed and summary-count assertions), matching the PR's own claimed count exactly.
+   Reverted byte-identical (md5sum `5f6c2745273ed3eabab3b3c4be60ce8f` before and after), re-ran
+   clean.
+2. The `resolved=False` branch of `_candidate_from_binding` changed to pass through the upstream
+   `model_alias` instead of forcing `None` — 1 genuine failure
+   (`test_unresolved_binding_forces_model_alias_none_even_if_upstream_disagrees`), matching the
+   PR's own claimed count exactly. Reverted byte-identical (same md5sum), re-ran clean.
+
+Directly inspected `test_gateway_metadata_fields_are_never_exposed_in_output`: independently
+confirms the other `negative_acceptance` half structurally — plants
+`weights_path`/`provider`/`input_cost_per_token` in a `ReconciledModel.fields` dict and confirms
+none of it appears in the module's own JSON output.
+
+**Real CI confirmed on the exact merged head, not a self-report:** PR #322's own workflow run
+(`36278406138`) on head SHA `6da72c31902784eefe6ecc6e277317981613b386` — 30/30 jobs
+`completed`/`success`, `gate` included (job `108505468781`); fetched the `gate` job's raw log
+directly and confirmed it printed "FTF-04A12 LiteLLM/current-model binding discovery: all checks
+passed" immediately before `product_truth_check.py --fail-on-unwired`'s own "Product-truth: 20/20
+product-true" and `status.py`'s own "Status: 80/300 certified · 20 product-true" — matching the
+PR's own claims exactly. Waited for the full run (three slower Docker-backed integration jobs
+unrelated to this task finished after `gate`) before treating CI as green; final run conclusion:
+`completed`/`success`.
+
+`uv run ruff check .`/`ruff format --check .` clean (272 files). `uv run mypy .` clean (272 files,
+zero errors) — disclosing a same-session false start: an initial `mypy` run without a prior `uv
+sync --all-packages` in this fresh sandbox produced 15 spurious `alembic`-stub errors; confirmed
+via a throwaway `git worktree` at the PR's own base commit that these are pre-existing on `main`
+already, unrelated to this PR's own files. `validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired`: `20/20` unchanged — confirmed `proving_symbol` is
+genuinely blank (no live route yet, same disclosed precedent as FTF-04A09/FTF-04A10/FTF-04A11), not
+a 0/0-accepted-as-pass case. `status.py`: `80/300` pre-certification. Regression swept
+`test_ftf_04a09.py`/`test_ftf_04a11.py`/`test_ftf_0207.py` (all "all checks passed") plus `uv run
+pytest tests/unit` (3/3) — all unaffected. Confirmed dependencies FTF-0207/FTF-04A01/FTF-04A09/
+FTF-04A10/FTF-04A11 genuinely `CERTIFIED` before relying on them.
+
+**Disclosed, not silently passed over:** `test_ftf_04a10.py`'s own
+`test_entrypoint_function_name_captured_for_nested_arrow_function` still fails with the same
+`IndexError` already flagged by multiple prior shifts as pre-existing and unrelated — confirmed
+independently here too, unrelated to FTF-04A12's own files.
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-04A12 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 ("Identify literal/config-derived model
+binding with actual gateway role confirmation later") genuinely met per the disclosed, literal
+scope-narrowing (role confirmation is a later task's own separately-claimed scope); acceptance
+clause 2 ("Independent review, exact merged commit, real relevant integration and negative-test
+evidence recorded") met by this review; the full `negative_acceptance` clause ("Alias does not
+reveal weights or enforceable access; unresolved dynamic model selection remains explicit") is
+genuinely met — both sub-clauses independently re-verified via fresh fault injection/inspection
+above. No open review threads or comments on PR #322 (already merged).
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A12 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to PR #322's
+merge commit `5b4ba43dbee0e86ace097ecd7a52bb8855448340`. `sync_certified_status()` run directly
+(updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). Appended
+`docs/certifications/ledger.md`; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `80/300` ->
+`81/300` certified; product-true unchanged at `20/20`. No open owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
