@@ -1,4 +1,80 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-04A11 — Control plane: certify (PR #319)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_01B8eL73ozkraSEce8tjEMXh`, triggered by the `pull_request.opened`
+webhook for PR #320 (a doc-only follow-up that itself changed nothing certifiable — see the entry
+below). Checked `docs/certifications/queue.md` per this session's own scope and found FTF-04A11
+the sole pending PROVISIONAL item: PR #319 (already merged to `main` as `7b60f78`) contained no
+code or test change versus PR #301's own original submission, which a prior Control-plane review
+(PR #318) had already found sound but blocked on a real merge conflict.
+
+**Session-ID check:** PR #319's commits carry `Claude-Session:
+.../session_019cqCAMUSbtungLhvndTXaP`; PR #301's original commit carries
+`.../session_01GMDn1KqkzPZwd6WMgpZ4SZ`; the PR #318 reviewer was
+`.../session_01NZXedm3XU2KWjsrTpj99bW`. No overlap with this session's own ID, independent per
+Law 4.
+
+**Diff read directly** in a fresh `git worktree` at `origin/main`'s tip: confirmed
+`apps/api/app/target_connectors/json_yaml_toml_configuration_discovery.py` and
+`tests/tasks/test_ftf_04a11.py` byte-identical to PR #301's own original head (`7fc2a0c`) — empty
+`git diff`, md5sum `22c9aea5c5938506e8da3415b0d05243` matches PR #318's own prior review exactly.
+
+**Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a11.py` —
+"all checks passed" (own count: 19 `test_*` functions, 20 `check(` sites).
+
+**Own fault injection (Law 1), two independent mutations, both reproducing the exact md5sums PR
+#318 recorded:**
+1. `_is_secret_like_key` forced to `return False` unconditionally: md5sum
+   `22c9aea5c5938506e8da3415b0d05243` → `7f8248fe7bbd7e720acefba84c4f018c`. Re-ran: 2 genuine
+   failures (`database_password` no longer secret-shaped; a real secret leaked into evidence).
+   Reverted byte-identical, re-ran clean.
+2. `yaml.safe_load(text)` → `yaml.unsafe_load(text)`: md5sum → `6da87b15df6e835ef7759bca8f0eb09d`.
+   Re-ran: 1 genuine failure (`test_unsafe_yaml_tag_is_never_constructed` — marker-file check
+   proves `os.system` would have run). Reverted byte-identical, re-ran clean.
+
+Directly inspected the test file and confirmed each remaining `negative_acceptance` sub-clause has
+its own isolating test (malformed JSON/TOML/YAML, deep nesting, dotenv never shell-expanded)
+rather than trusting the prior review's own characterization alone.
+
+**Real CI confirmed on the exact merged head, not a self-report:** PR #319's check-runs — 31/31
+`success`, `gate` included (run `36271663968`, job `108486664407`); fetched the `gate` job's raw
+log directly and confirmed it printed "FTF-04A11 JSON/YAML/TOML configuration discovery: all
+checks passed" at `2026-09-26T21:08:38Z`.
+
+`ruff check .`/`ruff format --check .`/`mypy .` clean (270 files). `git fetch --unshallow`
+resolved this sandbox's own pre-existing shallow-clone artifact; `validate_spec.py --strict`
+clean. `product_truth_check.py --fail-on-unwired`: `20/20` unchanged — read
+`scripts/product_truth_check.py`'s own logic directly and confirmed a blank `proving_symbol` entry
+is `continue`d past entirely (never counted in numerator or denominator), genuinely not a
+0/0-accepted-as-pass case. `status.py`: `79/300` pre-certification. Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_0302.py`/`test_ftf_0303.py`/
+`test_ftf_0513.py` (all "all checks passed") plus `uv run pytest tests/unit` (3/3) — all
+unaffected. Confirmed dependencies FTF-04A01/FTF-04A08 genuinely `CERTIFIED` before relying on
+them.
+
+**Disclosed, not silently passed over:** `test_ftf_04a10.py`'s own
+`test_entrypoint_function_name_captured_for_nested_arrow_function` still fails with the same
+`IndexError` already flagged by the PR #319 relay shift as pre-existing and unrelated — confirmed
+independently here too, unrelated to FTF-04A11's own files. `python3 scripts/verify_task.py
+--task FTF-04A11 --stage task` reports `BLOCKED` ("no merged verification evidence yet") —
+disclosed: `spec/verification-map.json` carries no entry for FTF-04A11, but also carries none for
+any of the other currently `CERTIFIED` tasks checked (FTF-0302/FTF-0303/FTF-04A09/FTF-04A10/
+FTF-0513) — a pre-existing, repo-wide gap, not specific to this criterion and outside this queue's
+own certify-procedure checklist. Neither issue is this review's own scope to fix.
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-04A11 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clauses 1 and 2 and the full `negative_acceptance`
+clause are genuinely met — full breakdown in `docs/certifications/ledger.md`'s matching entry. No
+open review threads or comments on PR #319 (already merged).
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A11 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to PR #319's
+merge commit `7b60f7852b7f9c3935f00674e1d3a6ba7ad52527`. `sync_certified_status()` run directly.
+Appended `docs/certifications/ledger.md`; `QUEUE.md` updated. `scripts/status.py`: `79/300` ->
+`80/300` certified; product-true unchanged at `20/20`. PR #301 stays open/unmerged, already marked
+superseded by PR #319 — not this session's action to close. No open owner ask.
+
 ## 2026-09-26T21:12:00Z — FTF-04A11 — PR #319 merged; disclosing merge-commit-title inaccuracy
 
 Same relay shift, session `https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP`. PR #319 (the
