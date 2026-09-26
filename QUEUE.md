@@ -1,5 +1,16 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled autonomous relay shift, session
+Updated: 2026-09-26 (same scheduled autonomous relay shift, session
+  https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP) — **PR #319 (FTF-04A11 merge-conflict
+  fix) merged to `main`** as commit `7b60f78`, 31/31 CI green including `gate`. Disclosed, not
+  silently passed over: the merge commit's own title claims "(Control-plane certified)" but
+  `docs/spec-matrix.yaml` genuinely still reads `certification_state: PROVISIONAL` on `origin/main`
+  and `status.py` is unchanged at `79/300` — no certification has actually happened, the same
+  pre-existing merge-commit-title artifact already flagged repeatedly for FTF-0302/FTF-04A09/
+  FTF-04A10/FTF-0513. FTF-04A11 remains PROVISIONAL, awaiting an independently-triggered
+  Control-plane L2 certifier session (Law 4 — this shift's own fix did not certify anything). No
+  open owner ask.
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP) — **rebased PR #301 (FTF-04A11) onto
   current `main`, resolving the merge conflict Control plane flagged in PR #318.** Merged PR #318
   first (commit `c11c6de`, doc-only, CI-green) to land that finding, then created a new branch
