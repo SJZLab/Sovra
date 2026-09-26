@@ -1,4 +1,47 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-26T14:59:04Z (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn, branch
+  `claude/wizardly-fermat-iqpz0c`) — picked up this queue's own top item: the Control-plane
+  certifier's 2026-09-26 NOT CERTIFIED review of PR #308 (FTF-0513) named a concrete, sliced fix
+  ("add a scenario to `tests/tasks/test_ftf_0513.py` that isolates `character_ngram_similarity`
+  crossing its own threshold as the sole reason a pair is flagged... then re-submit"). No open
+  owner ask, no live blocker (`BLOCKER.md` unchanged, resolved history only).
+
+  Brought PR #308's real head (`15cf282`) code/test/CI/spec-matrix changes onto this branch (no
+  code changed on `main` since PR #308's base besides the certifier's own doc-only review commit),
+  then added `test_character_ngram_similarity_crossing_its_own_threshold_flags_alone`: 100 distinct
+  5-character tokens with the trailing character of the first 6 changed, giving
+  `character_ngram_similarity` ~0.905 (crosses the 0.9 default) while `token_jaccard_similarity`
+  (~0.887) and `embedding_cosine_similarity` (~0.937) both stay below their own defaults and
+  `structural_match` is `False` — confirmed `flagged_methods` equals exactly
+  `frozenset({"character_ngram"})` for this pair, isolating it as the certifier asked.
+
+  **Own fault injection reproducing the certifier's exact mutation** (disabling
+  `character_ngram`'s own threshold-crossing check): the new test fails with a genuine
+  `AssertionError`, confirming it is real Law-1 coverage, not another blind assertion. Reverted
+  byte-identical (`md5sum` before/after both `c3f2ae170fee47761bdbde5041add7e3`), re-ran clean —
+  41 original checks (own instrumented count; the certifier's review said 42, an immaterial prior
+  miscount, disclosed not corrected) + 6 new = 47, all pass.
+
+  `ruff check`/`ruff format --check` clean (266 files); `mypy` unaffected (same 15 pre-existing
+  `alembic`-stub errors confirmed identical on plain `origin/main` via `git stash`);
+  `validate_spec.py --strict` clean (after `git fetch --unshallow`); `product_truth_check.py
+  --fail-on-unwired` unchanged at 20/20; `status.py` unchanged at 77/300 (Law 2). Regression swept
+  `test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0500.py`/`pytest tests/unit` — unaffected.
+
+  No implementation change to `workers/data/near_duplicate_detector.py` — only the test-coverage
+  gap closed, exactly as specified. `docs/spec-matrix.yaml`'s FTF-0513 entry stays
+  `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (a relay fix never self-certifies),
+  dated follow-up paragraph appended after PR #308's own original notes. Opening a new PR (`[relay]
+  FTF-0513: close the Control-plane-flagged test-coverage gap`) rather than pushing to PR #308's
+  own branch (a different session's branch) or reusing PR #308 itself (left open/unmerged,
+  superseded per the certifier's own "then re-submit" instruction — will be noted as superseded,
+  not closed silently). Full record: `PROGRESS.md`'s matching entry,
+  `docs/certifications/queue.md`'s matching entry. Certified: unchanged at 77/300. Product-true:
+  unchanged at 20/20.
+
+## Previous shift
+
 Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_015ZJ4NhUe1TG96MJH6uJQvR, triggered by the `pull_request.opened`
   webhook for PR #308) — independently reviewed **FTF-0513 (Near-duplicate detector)**. `main`'s

@@ -1,4 +1,89 @@
 # PROGRESS — Sovra
+## 2026-09-26T14:59:04Z — FTF-0513 — relay: fixed the Control-plane-flagged test-coverage gap (new PR)
+
+Scheduled autonomous relay shift, session
+`https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn`, on the designated branch
+`claude/wizardly-fermat-iqpz0c`.
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — clean. `BLOCKER.md`
+holds only resolved history (no live blocker). Read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh per STEP 0.1. Noted, verified, and discarded as a false
+alarm: this session's own `git fetch origin main` first returned a stale cached tip (`4657881`,
+dated 2026-09-23); a second explicit `git fetch origin main` force-updated to the real current
+tip (`c80adb9`, dated 2026-09-26) and confirmed via `mcp__github__list_pull_requests` against the
+real GitHub API — no actual divergence, just a stale local cache from before this session's first
+fetch.
+
+STEP 1: `QUEUE.md`'s own top entry (the Control-plane certifier's 2026-09-26 review of PR #308)
+named the exact next action for this relay shift: "Fix needed for the next relay shift: add a
+scenario to `tests/tasks/test_ftf_0513.py` that isolates `character_ngram_similarity` crossing
+its own threshold as the sole reason a pair is flagged... then re-submit." Picked this as the
+highest-priority unblocked item — already sliced with a concrete DoD, no need to survey for new
+work.
+
+STEP 2 (PEV). **P:** read `workers/data/near_duplicate_detector.py` and
+`tests/tasks/test_ftf_0513.py` (both from PR #308's real head `15cf282`, fetched via
+`refs/pull/308/head`) directly; confirmed the certifier's root cause: of Section 10's four
+required methods (`character_ngram`/`token_jaccard`/`embedding_cosine`/`agent_trace_structural`),
+only `character_ngram` had no scenario where crossing its own threshold was the pair's sole
+flagged method. Brought PR #308's code/test/CI/spec-matrix changes onto this designated branch
+(checked out from the current `origin/main`, `c80adb9`) via `git checkout pr-308-review --
+<files>` rather than merging the branch wholesale, to avoid entangling this fix with PR #308's own
+now-superseded `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` log entries (verified via
+`git log 03866ee..origin/main` that the only commit on `main` since PR #308's base is the
+certifier's own doc-only NOT-CERTIFIED-review commit — no code overlap).
+
+**E:** designed a new isolating scenario numerically before writing it as a test, using the
+module's own real functions (`_char_ngrams`/`_jaccard`/`_tokenize_words`/`_hashing_embedding`/
+`_cosine_similarity`) in a throwaway script: 100 distinct 5-character tokens
+(`"wa" + letter + letter + "x"`), with the trailing character of the first 6 tokens changed. This
+keeps character-shingle overlap at ~0.905 (crosses the 0.9 default) while token-set overlap drops
+to ~0.887 and hashed-embedding cosine to ~0.937 (both stay below their own defaults), with
+`structural_match` false by construction (single user-only messages, differing text, so
+`user_goal` differs). Directly confirmed via `detect_near_duplicates` that this pair's
+`flagged_methods` equals exactly `frozenset({"character_ngram"})` — isolating it, not just
+computing it. Added
+`test_character_ngram_similarity_crossing_its_own_threshold_flags_alone` to
+`tests/tasks/test_ftf_0513.py`, mirroring the existing `token_jaccard`/`embedding_cosine`
+positive-assertion pattern.
+
+**Own fault injection, reproducing the certifier's own exact mutation** (`character_ngram_similarity
+>= thresholds.character_ngram_similarity` → `character_ngram_similarity <= 0.0`): confirmed the
+mutation changed the file (`md5sum` before `c3f2ae170fee47761bdbde5041add7e3`, after
+`72fa623a30a955af7130ba8296e728d4`); re-ran the suite with it in place — the new test fails with a
+genuine `AssertionError` (`candidate is not None`), since with `character_ngram`'s flag path
+disabled and no other method crossing its threshold for this pair, the mutated pair never becomes
+a candidate at all. This is the "shown able to fail" evidence Law 1 requires for the new test
+itself. Reverted byte-identical (`md5sum` back to `c3f2ae170fee47761bdbde5041add7e3`, confirmed;
+`git diff --stat` on the file empty afterward), re-ran clean.
+
+**V:** own count of `check()` invocations by instrumenting the test module directly (not trusting
+either this session's or the prior certifier's stated numbers): the original suite (PR #308's real
+head) runs 41 checks, not the 42 the certifier's review stated — an immaterial prior miscount, not
+corrected elsewhere, disclosed here rather than silently reconciled. With the new test added: 47
+checks, all pass. `uv sync --all-packages`; `uv run ruff check .` / `ruff format --check .` clean
+(266 files). `uv run mypy .`: same 15 pre-existing `alembic`-stub `attr-defined` errors present
+identically on plain `origin/main` (confirmed via `git stash` and re-run) — not introduced by this
+change, unrelated to `workers/data`/`tests/tasks`. `git fetch --unshallow` (same disclosed
+shallow-clone precedent every recent shift has hit) then `uv run python3 scripts/validate_spec.py
+--strict`: clean. `uv run python3 scripts/product_truth_check.py --fail-on-unwired`: `20/20`,
+unchanged (no live caller added — same disclosed precedent as the original PR #308 submission).
+`uv run python3 scripts/status.py`: `77/300` certified, unchanged (Law 2 — a PROVISIONAL
+resubmission never inflates the certified count). Regression swept `test_ftf_0511.py`/
+`test_ftf_0512.py`/`test_ftf_0500.py` (`uv sync --all-packages` first for the latter's `uvicorn`
+dependency) plus `pytest tests/unit` (3/3) — all unaffected.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0513 entry (still `certification_state: PROVISIONAL`,
+`proof_state: L1-PROVEN` — a relay fix never self-certifies) with a dated follow-up paragraph
+recording this fix in full, appended after PR #308's own original notes rather than rewriting
+them. No implementation change to `workers/data/near_duplicate_detector.py` itself — only the
+test-coverage gap closed, exactly as the certifier's own review specified. Committed on this
+shift's designated branch `claude/wizardly-fermat-iqpz0c`; opening a new PR (titled `[relay]
+FTF-0513: close the Control-plane-flagged test-coverage gap`) rather than pushing to PR #308's own
+branch (a different session's branch, out of scope to push to without explicit permission) or
+reusing PR #308 itself (left open/unmerged, superseded by this new PR per the certifier's own "then
+re-submit" instruction). Certified: unchanged at 77/300. Product-true: unchanged at 20/20.
+
 ## 2026-09-26 — FTF-0513 — Control plane: independent CERTIFY review, NOT CERTIFIED
 
 Scheduled Control-plane certifier shift, session
