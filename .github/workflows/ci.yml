@@ -152,6 +152,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0305.py
       - name: FTF-0302 negative-test proof (Hugging Face artifact resolver catches real defects, real local HTTPS sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0302.py
+      - name: FTF-0303 negative-test proof (Private S3 artifact resolver catches real defects, real local signed sockets, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0303.py
       - name: FTF-0404 negative-test proof (Tool schema CRUD catches real defects, real local sockets, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0404.py
       - name: FTF-0405 negative-test proof (JSON Schema tool validation catches real defects, no DB required)

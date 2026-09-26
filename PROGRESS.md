@@ -19850,3 +19850,134 @@ compaction. STEP 4 stop condition (a): 2/2 in-flight items (FTF-04A10, FTF-04A11
 no blocking defect found by this session's own review — awaiting independently-triggered
 Control-plane certifier sessions and the L4 gate. Stopping here. No open owner ask (`QUEUE.md`
 "Owner actions — current" unchanged, empty).
+
+## 2026-09-26T17:15:00Z — Relay shift: FTF-0303 ("Private S3 artifact resolver") submitted PROVISIONAL
+
+STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh, no assumed state.
+CLAUDE.md hash self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly. This sandbox's own local checkout had a stale `origin/main` tracking ref (fetched
+before this shift's own `git fetch origin main`) -- resolved directly via a fresh
+`git fetch origin main`; confirmed the resulting tip (`c456813`) matched the designated branch's
+own HEAD exactly (already a descendant), no divergence, nothing to reconcile. Repo was also a
+shallow clone; `git fetch --unshallow origin` resolved it before running `validate_spec.py
+--strict` (same disclosed precedent as every prior shift hitting this class of sandbox
+artifact).
+
+STEP 1: checked all open PRs directly via the GitHub API rather than trusting this file's own
+prose history (which turned out, on inspection, to already be several shifts stale relative to
+the real GitHub state): #313/#311/#308 (FTF-0513 certification-record PRs, already redundant --
+FTF-0513 is genuinely `CERTIFIED` on `main` per `docs/spec-matrix.yaml`, not this shift's action
+to close), #301 (FTF-04A11, still genuinely open/unmerged, 31/31 CI green per its own check-runs,
+no action needed -- an already-Provisional item awaiting Control-plane certification, matching
+this repo's own established "does not duplicate" pattern), #295 (FTF-0214, blocked), #290
+(FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304 duplicate pair, stale).
+Surveyed `docs/spec-matrix.yaml` programmatically for every `certification_state: NONE` task
+whose full dependency set is already `CERTIFIED`: 13 found. Excluded ones already claimed by an
+open PR (FTF-0212, FTF-0214, FTF-04A11, FTF-0304) and ones already flagged `BLOCKED_EXTERNAL` or
+blocked on a missing `Dataset` entity by prior shifts (FTF-04A02, FTF-0902, FTF-0500A, FTF-0500D).
+Picked **FTF-0303** ("Private S3 artifact resolver") -- dependency-ready (FTF-0202/FTF-0301/
+FTF-H006 all CERTIFIED), the direct `private_s3` sibling of FTF-0302 (Hugging Face resolver,
+CERTIFIED earlier the same day), with a real, already-certified SigV4 signer (FTF-R017's
+`sign_request`) to reuse rather than re-derive. State: 'Working: FTF-0303.'
+
+**PEV, not mixed.** P: read `docs/implementation/task-packets/FTF-0303.md` in full, FTF-0301's
+own `artifact_schema.py` (`validate_source_uri`'s `private_s3` shape: `s3://bucket/key`, no
+revision concept of its own), FTF-0302's own `hugging_face_artifact_resolver.py` (the direct
+structural precedent), `packages/security/outbound_guard.py`/`url_policy.py` (FTF-H006 -- its own
+module docstring already names FTF-0303 as an intended future caller), and
+`apps/api/app/services/storage_semantics_client.py` (FTF-R017's own real, stdlib-only AWS SigV4
+signer, `sign_request`). Confirmed all three listed dependencies (`FTF-0202`, `FTF-0301`,
+`FTF-H006`) and FTF-R017 genuinely `CERTIFIED` before relying on them.
+
+Design decisions, disclosed rather than improvised: (1) no S3-connection entity exists in
+Section 6.7's frozen schema, and adding one would be the "independent schema change" this task's
+own contract forbids -- the bucket/tenant-prefix trust boundary this task's own negative_
+acceptance requires is therefore an explicit, caller-supplied `PrivateS3ConnectionConfig`
+dataclass, never a new database field. (2) Empirically verified (a small throwaway script, not
+assumed from documentation) that `http.client.HTTPResponse.read()` already raises
+`http.client.IncompleteRead` -- not an `OSError` -- on a genuine mid-transfer truncation, and that
+`guarded_fetch`'s own `except OSError` does not catch it, so it propagates uncaught rather than
+being silently swallowed into a truncated "success". This made an originally-planned
+`Content-Length`-vs-actual-bytes check provably dead code (unreachable given `http.client`'s own
+read-exactly-declared-bytes-or-raise behavior) -- dropped before ever committing it, rather than
+shipping a check that could never fire. "Partial upload" is instead enforced via an optional,
+independently-sourced `expected_size_bytes` parameter (the only source that can catch a
+self-consistent-but-incomplete object, since nothing in the response itself distinguishes one
+from a genuinely complete object). (3) `base_model_revision` is read as the required S3
+`versionId`; FTF-0301's own `is_pinned_revision` mutable-alias check is deliberately not
+re-applied here (its VCS-ref vocabulary has no real S3 equivalent), and FTF-0305's license
+workflow is deliberately not gated on either -- neither is in this task's own `dependencies` list.
+
+E: wrote `apps/api/app/artifacts/private_s3_artifact_resolver.py`. Signing reuses FTF-R017's own
+`sign_request`/`S3Endpoint`/`S3Credentials` (never re-deriving SigV4 math a second time); every
+real socket goes through FTF-H006's `guarded_fetch`, never `storage_semantics_client.py`'s own
+raw-`urllib` transport (which predates the shared-guard requirement and is scoped to FTF-R017's
+own qualification, not this task's write set). `sha256_hex` is always computed from the real
+downloaded bytes; the response's own `ETag` is surfaced only as disclosed, informational metadata
+(`etag_looks_like_content_hash`, true only for a plain 32-hex-character ETag) that this module's
+own verification path never consults.
+
+`tests/tasks/test_ftf_0303.py`: 32 real checks, all pass against the unmodified code. Built a real
+local, plain-HTTP, path-style S3-shaped fixture server (matching this repo's own established
+SeaweedFS-over-plain-HTTP precedent for a *private* endpoint, FTF-R017) that independently
+re-derives the expected SigV4 `Authorization` header from its own knowledge of the secret key
+using the same `sign_request` helper under test -- a wrong-secret request is genuinely rejected
+(`test_wrong_credentials_are_rejected`), proving this is a real signed round trip, not an
+unauthenticated fetch. Also covers: bucket mismatch and cross-tenant prefix both refused before
+any network request (confirmed via a shared request log); an unknown object version as a real
+HTTP 404; a real destination-denied policy check; a real mid-transfer truncation
+(server declares the true `Content-Length` but only ever sends a 5-byte prefix before closing)
+proving `IncompleteRead` is never silently swallowed; and the wrong-source-type / approved-
+artifact-entry-point cases mirroring FTF-0302's own shape.
+
+**Two independent, disclosed fault injections, both reverted byte-identical (Law 1):**
+1. Disabled the `expected_size_bytes` comparison (`if False and expected_size_bytes is not
+   None...`) -- a genuine FAIL: an object 1 byte short of the caller's own independently-known
+   expected size was silently accepted as complete.
+2. Replaced the real `hashlib.sha256(response.body)` digest computation with
+   `hashlib.sha256(etag_raw.encode())` -- a genuine FAIL against a real multipart-shaped
+   (`"<hex>-3"`) `ETag` fixture: the returned "digest" no longer matched the real object bytes'
+   own sha256, exactly the silent-wrong-verification this task's own negative_acceptance names.
+
+**Real, previously-undiscovered gap found and fixed while building this task (not by design, by
+running the happy-path test and getting a genuine failure first):** `GuardedResponse.headers`
+(FTF-H006's own `guarded_fetch`) preserves a server's own header-name casing rather than
+lowercasing it -- confirmed directly with a throwaway `http.server`/`http.client` script, not
+assumed. A real S3-compatible server sending the canonical "ETag" spelling therefore silently
+missed this module's own first-draft `.get("etag")` lookup (case-sensitive dict). Fixed by
+lowercasing `response.headers` once before any lookup in this module -- the same defensive
+precedent `storage_semantics_client.py` (FTF-R017) had already independently established for the
+identical reason in its own code, confirming this is a real, recurring class of gap rather than a
+one-off. `FTF-H006` itself was not touched (out of this task's own write set) -- disclosed in
+`docs/certifications/queue.md` for a future task relying on header-name lookups through
+`guarded_fetch` to watch for the same thing.
+
+V: `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+repo-wide (264 source files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch
+--unshallow`). `product_truth_check.py --fail-on-unwired` unchanged at `20/20` (`proving_symbol`
+left blank -- no live caller yet, same disclosed precedent as FTF-04A08/FTF-0302). `status.py`
+unchanged at `78/300` certified (Law 2 -- not self-inflated). Regression swept
+`test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_h006.py`/`test_ftf_r017.py` (all "all checks
+passed") plus `uv run pytest tests/unit` (3/3) -- zero regressions. `uv run python3
+scripts/verify_task.py --task FTF-0303 --stage task` reports `BLOCKED` pre-merge ("has no merged
+verification evidence yet"), expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-0303 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank, a follow-up commit
+once the real merge commit hash is known (same precedent as every recent sibling). CI gate step
+("FTF-0303 negative-test proof") added to `.github/workflows/ci.yml` directly after FTF-0302's
+own step. **Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run
+on the opened PR are required before certification.
+
+Diff scope confirmed exactly the files this task needs
+(`apps/api/app/artifacts/private_s3_artifact_resolver.py`, `tests/tasks/test_ftf_0303.py`,
+`.github/workflows/ci.yml`, `docs/spec-matrix.yaml`'s FTF-0303 entry) plus this shift's own
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tracking updates and the generated task
+packet -- no scope creep, no other task's files touched.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): this item is now L1-PROVEN, PR to be opened and queued for
+Control-plane L2 certification and the L4 gate -- awaiting Control plane, stop. No open owner ask.
+
+- **Reviewed-by:** not yet -- awaiting independent Control-plane L2 certification (Law 4:
+  producer never certifies own work).

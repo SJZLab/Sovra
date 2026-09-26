@@ -16967,3 +16967,79 @@ product-true unchanged at `20/20`. PR #308 stays open/unmerged, already marked s
 relay's own PR #310 comment — not this session's action to close.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
+
+## 2026-09-26 — FTF-0303 — Private S3 artifact resolver
+- **PR:** (to be opened this shift — see PROGRESS.md/QUEUE.md for the branch)
+- **Producer session:** this relay shift's own session.
+- **Delivered:** `apps/api/app/artifacts/private_s3_artifact_resolver.py` — the
+  real caller FTF-0301's own module docstring names for a `private_s3`
+  `TrainableArtifact` (a bare, unresolved `s3://bucket/key` identifier).
+  Fetches the exact pinned object version (`base_model_revision` read as the
+  S3 `versionId`) from a real, AWS SigV4-signed, S3-compatible endpoint.
+  Signing reuses `sign_request` from
+  `apps/api/app/services/storage_semantics_client.py` (FTF-R017, CERTIFIED)
+  rather than re-deriving SigV4 math a second time; every real socket goes
+  through `packages/security/outbound_guard.py`'s `guarded_fetch` (FTF-H006)
+  — `url_policy.py`'s own module docstring already names this task as an
+  intended future caller.
+- **negative_acceptance** ("Bucket mismatch, cross-tenant prefix, partial
+  upload or ETag-as-hash assumption fails load") enforced as four disclosed
+  checks: (1) bucket mismatch and (2) cross-tenant prefix checked against a
+  caller-supplied `PrivateS3ConnectionConfig` before any network request —
+  Section 6.7's frozen schema has no S3-connection entity, so this trust
+  boundary is an explicit caller parameter, never a new database
+  field/entity (`database_changes: "No independent schema change"`); (3)
+  partial upload caught two ways — a genuine mid-transfer truncation
+  propagates as a real, uncaught `http.client.IncompleteRead` (confirmed
+  directly against a real short-lived connection, not assumed from
+  documentation), and a self-consistent-but-incomplete object is caught by
+  an optional, independently-sourced `expected_size_bytes` parameter; (4)
+  ETag-as-hash assumption — `sha256_hex` is always computed from the real
+  downloaded bytes, never from the response's own `ETag` header (not a valid
+  content hash for a multipart upload).
+- **Scope, disclosed:** this task's own `dependencies` list (`FTF-0202`,
+  `FTF-0301`, `FTF-H006`) does not include `FTF-0305`'s license workflow, so
+  this module deliberately does not gate on license acceptance (stays
+  FTF-0302's own concern), and does not re-apply FTF-0301's
+  `is_pinned_revision` mutable-alias check (its VCS-ref vocabulary has no
+  real S3 `versionId` equivalent).
+- **Test:** `tests/tasks/test_ftf_0303.py` — 32 checks, all pass against the
+  unmodified code. A real local, plain-HTTP, path-style S3-shaped fixture
+  server independently re-derives the expected SigV4 `Authorization` header
+  from its own knowledge of the secret key and genuinely rejects a
+  wrong-credentials request (proving a real signed round trip, not an
+  unauthenticated fetch); a real destination-denied policy check; a real
+  mid-transfer truncation proving `IncompleteRead` is never silently
+  swallowed. Two independent, disclosed fault injections (Law 1), both
+  reverted byte-identical: (1) disabling the `expected_size_bytes` check
+  lets an incomplete-looking object through as a fabricated success — a
+  genuine FAIL; (2) assuming `ETag` is a content hash produces a genuinely
+  wrong digest against a real multipart-shaped `ETag` — a genuine FAIL.
+- **Real gap found and fixed while building this task:**
+  `GuardedResponse.headers` (FTF-H006) preserves a server's own
+  header-name casing rather than lowercasing it, so a plain `.get("etag")`
+  lookup against a real "ETag"-cased response silently missed it in this
+  module's own first draft (caught by this task's own happy-path test, not
+  assumed). Fixed by lowercasing response headers once before any lookup —
+  the same defensive precedent `storage_semantics_client.py` (FTF-R017)
+  already established for the identical reason. `FTF-H006` itself was not
+  touched (out of this task's own write set) — flagged here in case a
+  future task relying on header-name lookups through `guarded_fetch` hits
+  the same gap.
+- **Evidence:** `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+  repo-wide (264 source files). `python3 scripts/validate_spec.py --strict`
+  clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+  shallow-clone artifact). `product_truth_check.py --fail-on-unwired`
+  unchanged at `20/20` (`proving_symbol` left blank — no live caller yet,
+  same disclosed precedent as FTF-04A08/FTF-0302). `status.py` unchanged at
+  `78/300` certified (Law 2). Regression swept
+  `test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_h006.py`/`test_ftf_r017.py`
+  (all "all checks passed") plus `uv run pytest tests/unit` (3/3) — zero
+  regressions. CI gate step ("FTF-0303 negative-test proof") added to
+  `.github/workflows/ci.yml`, directly after FTF-0302's own step.
+  `uv run python3 scripts/verify_task.py --task FTF-0303 --stage task`
+  reports `BLOCKED` pre-merge ("has no merged verification evidence yet"),
+  expected per precedent.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
+  self-certified (Law 4) — awaiting an independently-triggered Control-plane
+  L2 certifier session and the L4 gate.

@@ -5492,7 +5492,47 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0302** ("Hugging Face artifact resolver") is the item here; submitted 2026-09-26 via **PR
+**FTF-0303** ("Private S3 artifact resolver") is the item here; submitted 2026-09-26 by this
+relay shift. Real caller of FTF-0301's own deliberately-unresolved `private_s3` `source_uri`:
+fetches the exact pinned object version (`base_model_revision` read as the S3 `versionId`) from
+a real, SigV4-signed S3-compatible endpoint, reusing FTF-R017's own `sign_request` for signing and
+FTF-H006's own `guarded_fetch` for the real socket (`url_policy.py`'s own module docstring already
+names this task as an intended future caller). negative_acceptance ("Bucket mismatch, cross-tenant
+prefix, partial upload or ETag-as-hash assumption fails load") enforced as four disclosed checks:
+bucket/prefix mismatch refused before any network request via an explicit, caller-supplied
+`PrivateS3ConnectionConfig` (Section 6.7's frozen schema has no S3-connection entity, so this is
+never a new database field); a genuine mid-transfer truncation propagates as a real, uncaught
+`http.client.IncompleteRead` (empirically confirmed, not assumed) rather than a Content-Length
+check that turned out to be provably dead code and was dropped before committing; a
+self-consistent-but-incomplete object is caught by an optional, independently-sourced
+`expected_size_bytes` parameter; `sha256_hex` is always computed from the real downloaded bytes,
+never from the response's own `ETag` (not a valid content hash for a multipart upload). 32
+checks, all real, including a real local fixture server that independently re-derives the
+expected SigV4 signature from its own knowledge of the secret key (a wrong-secret request is
+genuinely rejected) and a real mid-transfer truncation, plus two disclosed fault injections (Law
+1), both reverted byte-identical. A real, previously-undiscovered case-sensitivity gap
+(`GuardedResponse.headers` preserves a server's own header casing rather than lowercasing it) was
+found by this task's own happy-path test and fixed in this module (not in FTF-H006 itself, out of
+this task's own write set) — disclosed in `docs/certifications/queue.md` for a future task to
+watch for the same thing. `uv run ruff check .`/`ruff format --check .`/`mypy .` clean;
+`validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged `20/20`
+(`proving_symbol` left blank); `status.py` unchanged `78/300` (Law 2). Not self-certified (Law 4)
+-- awaiting an independently-triggered Control-plane L2 certifier session. Full record:
+`docs/certifications/queue.md`'s matching 2026-09-26 entry, `docs/spec-matrix.yaml`'s FTF-0303
+notes, `PROGRESS.md`.
+
+**Disclosed tracker gap, not silently carried forward:** this same shift's own live GitHub check
+(STEP 0.1) found that **FTF-04A11** ("JSON/YAML/TOML/env-template configuration discovery", PR
+#301) is *also* still genuinely open/unmerged -- 31/31 real CI green on its own head, `docs/
+spec-matrix.yaml` on that branch reads `PROVISIONAL`/`L1-PROVEN` -- but this section had already
+moved on to list FTF-0302 (since certified/merged) as its own top entry without ever recording
+FTF-04A11 here, a bookkeeping gap from an earlier shift this session did not introduce and is not
+in a position to silently paper over by rewriting this section's own history. PR #301 remains the
+real, currently-open Provisional item for FTF-04A11 on GitHub regardless of what this file says;
+Control plane reviewing this section should check GitHub's own open-PR list directly rather than
+assume this section is exhaustive.
+
+**FTF-0302** ("Hugging Face artifact resolver") was the item here before that; submitted 2026-09-26 via **PR
 #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`,
 `https://github.com/SJZLab/Sovra/pull/305`), title `[relay] FTF-0302: Hugging Face artifact
 resolver`, producer session `https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr`. Real caller
