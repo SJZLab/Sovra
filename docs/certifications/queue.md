@@ -16546,6 +16546,120 @@ build on or re-verify from scratch.
   independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No open
   owner ask.
 
+## 2026-09-26 — FTF-04A11 ("JSON/YAML/TOML configuration discovery") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift (session `https://claude.ai/code/session_01GMDn1KqkzPZwd6WMgpZ4SZ`).
+STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/this file fresh; CLAUDE.md hash self-check clean. No open
+`BLOCKER.md` entry. `QUEUE.md`'s own "## Active"/"## Provisional"/"## Owner actions — current"
+sections all read empty/none at shift start; independently confirmed against
+`docs/spec-matrix.yaml` that FTF-04A09 was already genuinely `CERTIFIED` (a Control-plane
+certifier session, `session_01PdswKsS7sgPHSE9e125d2D`, certified it earlier the same day, ahead
+of this shift starting — see this file's own entries above and `docs/certifications/ledger.md`).
+
+Checked all 5 open PRs directly via the GitHub API: #295 (FTF-0214, standing blocker escalation,
+unmerged since 2026-09-25), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #194/#195
+(FTF-0304 duplicate pair) — none overlap. Surveyed `docs/spec-matrix.yaml` directly for every
+task whose listed dependencies are all `CERTIFIED`/`PROMOTED` and not already claimed by an open
+PR: 16 candidates found (FTF-0212/FTF-0214/FTF-0302/FTF-0303/FTF-0304/FTF-04A02/FTF-04A10/
+FTF-04A11/FTF-04A19/FTF-0500A/FTF-0500D/FTF-0513/FTF-0902/FTF-1201/FTF-1703/FTF-H004).
+FTF-0212/0214/0304 already claimed; FTF-0500A/FTF-0500D independently re-confirmed to hit the
+same no-`Dataset`-entity/no-composed-route blocker class PR #295 already found for FTF-0214;
+FTF-04A02/FTF-0902 remain the same `BLOCKED_EXTERNAL`/`shared_lock_required` class prior shifts
+already found.
+
+Pulled `docs/implementation/task-packets/FTF-04A10.md` first (`tools/r1_handoff.py packet
+FTF-04A10`). Found a genuine architectural gap before writing any code: its own acceptance clause
+("Parse tested JS/TS AST patterns... using isolated approved parser") needs a real JS/TS AST
+parser; this repository's `apps/api` is a pure-Python FastAPI service with no such dependency
+anywhere, and no architecture doc (`docs/architecture/REFERENCE_REPOSITORIES.md`, `SPEC.md`,
+`FINE_TUNING_FACTORY_RELEASE_1.md`) names one or a cross-runtime execution pattern for it. Rather
+than force a fresh library/subprocess-bridge choice, or substitute a non-AST (e.g. regex) parser
+that would fail the clause's own explicit requirement and risk an undisclosed placeholder (Law
+11), left FTF-04A10 unclaimed — task packet generated and kept
+(`docs/implementation/task-packets/FTF-04A10.md`) per this repo's own "generate task packets for
+frontier candidates" precedent, `docs/spec-matrix.yaml`'s own FTF-04A10 entry untouched
+(`certification_state: NONE`). Picked **FTF-04A11** instead — dependency-ready
+(FTF-04A01/FTF-04A08 both `CERTIFIED`, reconfirmed), no external prerequisite, pure static
+parsing with no DB/network of its own, same tractable shape as FTF-04A08/FTF-04A09. State:
+`Working: FTF-04A11.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A11.md` in full, Section 7A.4's own baseline
+"Supported deterministic discovery must include at minimum... JSON/YAML/TOML/env-template
+configuration discovery" bullet, `apps/api/app/target_connectors/source_analysis_worker.py`
+(FTF-04A08's own reused `SourceFileRef`/`ResourceLimits` shape) and
+`python_agent_config_tool_discovery.py` (FTF-04A09's own module-docstring/dataclass style
+precedent), and `apps/api/app/config/configuration_system.py` (reused `_redact` length-only
+redaction shape). Confirmed FTF-04A01/FTF-04A08 genuinely `CERTIFIED` before relying on them.
+
+Genuine new-runtime-dependency question found and resolved without an owner ask: reading real
+YAML needs a real YAML library, and `apps/api` (unlike the workspace root's dev-tooling
+dependency group) had none. Not a fresh choice, though: PyYAML is already pinned at
+`>=6.0.1,<6.1` as a workspace dev dependency (`scripts/validate_spec.py` and siblings already
+import it), and no architecture doc names an alternative. Per CLAUDE.md's own "Default
+resolution rule," promoted the identical, already-decided `pyyaml>=6.0.1,<6.1` into
+`apps/api/pyproject.toml`'s own real dependency list rather than a fresh/unbounded version or a
+hard stop — reasoning recorded in `docs/spec-matrix.yaml`'s own FTF-04A11 notes, `QUEUE.md`, and
+`PROGRESS.md`.
+
+**E:** `apps/api/app/target_connectors/json_yaml_toml_configuration_discovery.py`. Only
+`json.loads`/`tomllib.loads` (stdlib) and `yaml.safe_load` (PyYAML's own restricted-constructor
+entry point, never `yaml.load` with an unsafe/full loader) ever parse scanned content; a
+`.env`/`.env.*`-named file is read as literal `KEY=VALUE` lines only, never shell-expanded or
+executed. A disclosed, non-exhaustive key-name heuristic (`SECRET`/`PASSWORD`/`PASSWD`/`TOKEN`/
+`APIKEY`/`PRIVATEKEY`/`ACCESSKEY`/`CREDENTIAL`/`CLIENTSECRET`/`PASSPHRASE`, matched against the
+key's own alphanumeric-only, upper-cased form) redacts a matching key's real value to a
+length-only `<redacted:N chars>`/`<empty>` marker before it is ever placed into returned
+evidence — reusing `configuration_system.py`'s own `_redact` shape. Malformed JSON/TOML/YAML and
+adversarially deep nesting (caught `RecursionError` during parsing, or this module's own
+`ResourceLimits.max_depth`/`max_keys_per_document` bound during the post-parse flatten walk) are
+disclosed `resolved=False`/`keys_truncated=True`, never raised out of the worker. Resource limits
+mirror FTF-04A08's/FTF-04A09's own three-bound shape (`max_files`/`max_file_bytes`/
+`max_total_bytes`). Reuses FTF-04A08's own connector-agnostic `SourceFileRef` input shape.
+Explicitly out of scope, disclosed: resolving model/tool evidence from the values read (Section
+7A.4 steps 4/6) and `DiscoveredAgentCandidate` row assembly (step 12, FTF-04A17's own already-
+CERTIFIED schema) — the same "detection is not the same act as storage/selection" boundary
+FTF-04A08/FTF-04A09 already drew one layer down.
+
+`tests/tasks/test_ftf_04a11.py`: 22 real test functions, all pass against the unmodified code.
+**Two independent fault injections, re-run against the final, formatted committed content:**
+1. Replaced `yaml.safe_load(text)` with `yaml.load(text, Loader=yaml.UnsafeLoader)` — **a
+   genuine FAIL**: the injected `!!python/object/apply:os.system(...)` tag actually created its
+   own marker file for real, reproducing exactly the risk this task's own negative_acceptance
+   ("Unsafe YAML tags... cannot execute/leak") exists to prevent.
+2. Skipped the secret-redaction branch entirely (unconditional `_normalize_leaf_value(value)` in
+   place of `_redact(...)`) — **two genuine FAILs**: a raw dotenv secret value and a raw
+   `database_password` value both leaked directly into the returned evidence, reproducing exactly
+   the risk this task's own negative_acceptance ("dotenv secrets cannot... leak") exists to
+   prevent.
+Both reverted from an untouched backup; `diff` confirmed byte-identical after each revert;
+re-ran clean both times.
+
+**V:** `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same
+disclosed precedent as every recent shift) resolved a `stale_commit` batch `validate_spec.py
+--strict` otherwise reports; clean after unshallowing. `uv sync --all-packages` (`uv.lock`'s own
+minimal 2-line diff, the new `pyyaml` dependency declared on `sovra-api`, nothing else changed);
+`uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (262 source files, up from
+260). `python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py
+--fail-on-unwired` unchanged at `20/20` (this task's `proving_symbol` is genuinely blank — no
+live source-analysis-pipeline dispatcher exists anywhere in this repository yet to call this
+worker, disclosed, same precedent as FTF-04A08/FTF-04A09/FTF-0511/FTF-0512/FTF-0514). `status.py`
+unchanged at `75/300` certified (Law 2 — not self-inflated). Regression swept
+`test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py` — all "all checks passed" — plus `uv
+run pytest tests/unit` (3/3) — zero regressions. `uv run python3 scripts/verify_task.py --task
+FTF-04A11 --stage task` reports `BLOCKED` pre-merge ("has no merged verification evidence yet"),
+expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-04A11 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge commit hash is
+known (same precedent as every recent sibling). CI gate step (`FTF-04A11 negative-test proof`)
+added to `.github/workflows/ci.yml` in this same commit.
+
+Submitted PROVISIONAL via PR (branch `claude/wizardly-fermat-lf2dqo` -> `main`).
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.
+
 ## 2026-09-26 — FTF-04A10 ("TypeScript/JavaScript deterministic agent/config/tool discovery") — submitted PROVISIONAL
 
 Scheduled autonomous relay shift (session `https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh`).
@@ -17192,3 +17306,49 @@ and CI will need to re-run on the new head before the next certifier session can
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26. Result:
   BLOCKED on a real merge conflict, not rejected on substance.
+
+## 2026-09-26 — FTF-04A11 — relay: rebased PR #301 onto current `main`, resolved merge conflict (no code change)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP`.
+Picked up PR #318's own recorded remediation directly (Control plane found PR #301 sound on
+substance — own reproduction, own PyYAML resource-limit probe, two independent fault injections
+both genuinely caught, real CI 31/31 including `gate` — but blocked on a real merge conflict with
+`main` in `.github/workflows/ci.yml`/`PROGRESS.md`/`QUEUE.md`/this file, confined to tracking-doc/
+CI-gate-step appends from rounds that landed after PR #301 branched; `docs/spec-matrix.yaml`
+merged cleanly). Merged PR #318 first (commit `c11c6de`, doc-only, CI-green) to land the finding.
+
+Created a new branch from PR #301's own real head (`7fc2a0c`) and merged current `origin/main`
+into it (`git merge origin/main --no-ff`) — a forward merge on a new branch, not a rebase/
+force-push of the original session's own branch. Resolved the four conflicting files by keeping
+both sides' append-only content exactly as PR #318 specified: `.github/workflows/ci.yml` keeps
+both the FTF-04A10 and FTF-04A11 gate steps in dependency order; `PROGRESS.md`/`QUEUE.md` (both
+newest-first) keep `main`'s own newer chain ahead of PR #301's older submission entry; this file
+(oldest-first) keeps PR #301's own original entry ahead of `main`'s newer entries. No change to
+`json_yaml_toml_configuration_discovery.py`/`test_ftf_04a11.py` — both already independently
+verified sound by PR #318's own review.
+
+`git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (disclosed
+precedent); `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a11.py` — "all checks
+passed" (22 checks, unmodified); `ruff check .`/`ruff format --check .` clean (270 files); `mypy .`
+— 15 pre-existing, unrelated `alembic`-stub errors only (confirmed against a fresh `origin/main`
+checkout, predate this branch). `validate_spec.py --strict` clean after unshallowing.
+`product_truth_check.py --fail-on-unwired` unchanged `20/20`; `status.py` unchanged `79/300`
+(Law 2). Regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py`/
+`test_ftf_0302.py`/`test_ftf_0303.py`/`test_ftf_0513.py` (all "all checks passed") plus `uv run
+pytest tests/unit` (3/3) — zero regressions from this merge.
+
+**Disclosed, not silently worked around:** `test_ftf_04a10.py`'s own
+`test_entrypoint_function_name_captured_for_nested_arrow_function` fails with a genuine
+`IndexError` (`evidence.entrypoints` empty) on this branch. Reproduced this is pre-existing on
+`origin/main` itself, unrelated to this merge — confirmed identically in a clean `git worktree`
+checked out at `origin/main`'s own tip (commit `c11c6de`) before this shift made any change,
+byte-identical traceback. Out of this shift's own scope (a merge-conflict fix, not FTF-04A10
+rework) to fix here; flagged for the next shift/Control plane.
+
+Pushed the merged branch and opened a new PR superseding PR #301 (identical implementation/test
+content, unchanged); commented on PR #301 marking it superseded, not closed silently.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL (unchanged — this shift fixed
+  the merge conflict blocking certification; made no code or evidence change). **Not
+  self-certified (Law 4)** — awaiting an independently-triggered Control-plane L2 certifier session
+  and a real CI run on the new PR. Certified: unchanged at 79/300.
