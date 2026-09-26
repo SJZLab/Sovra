@@ -1,5 +1,25 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh) — STEP 0.1 read `PROGRESS.md`/
+  `QUEUE.md`/`docs/certifications/queue.md` fresh. CLAUDE.md hash self-check clean. This sandbox's
+  own local checkout started on a shallow clone whose `origin/main` tracking ref read stale
+  (`4657881`); `git fetch --unshallow origin main` resolved it to the real tip (`4c0371f`), which
+  this session's own designated branch's starting `HEAD` already equalled exactly — confirmed via
+  `git merge-base --is-ancestor` both directions, no divergence, nothing lost.
+
+  **Picked FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") and
+  **submitted PROVISIONAL** via a PR from branch `claude/wizardly-fermat-gg9rje` -> `main` — see
+  "## Provisional" below and `docs/certifications/queue.md`'s matching 2026-09-26 entry for the
+  full record (scope, fault injections, verification sweep). FTF-04A11 (PR #301) remains open,
+  CI-green, `PROVISIONAL` — reconfirmed unchanged (31/31 checks, `gate` included, on head
+  `7fc2a0c`) and not duplicated, per this repo's own established pattern. Other open PRs surveyed
+  for overlap: #295 (FTF-0214, blocked), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212),
+  #194/#195 (FTF-0304 duplicate pair) — none conflict with FTF-04A10. STEP 4 stop condition (a):
+  2/2 in-flight items (FTF-04A10, FTF-04A11) are `L1-PROVEN`, no blocking defect found by this
+  session's own review — awaiting independently-triggered Control-plane certifier sessions and the
+  L4 gate. No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01DqPZtaFxbc5XQMVaZNQ8i4) — STEP 0.1 read `PROGRESS.md`/
   `QUEUE.md`/`docs/certifications/queue.md` fresh from this session's own local `main`-based
   checkout; CLAUDE.md hash self-check clean (`sha256sum CLAUDE.md` matches the committed
@@ -5192,7 +5212,28 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A09** ("Python deterministic agent/config/tool discovery") is the item here; submitted
+**FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") is the item
+here; submitted 2026-09-26 via a PR from branch `claude/wizardly-fermat-gg9rje` -> `main`, title
+`[relay] FTF-04A10: TypeScript/JavaScript deterministic agent/config/tool discovery`, producer
+session `https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh`. Direct JS/TS sibling of
+FTF-04A09's own Python worker: traces a real `client.chat.completions.create(...)` call (the JS/TS
+ecosystem's real client for an OpenAI-compatible endpoint) back to a real, statically-traced
+`openai` npm import/require, using this repo's own already-declared root `typescript`
+devDependency (never a new runtime dependency — both this and the model-binding-shape choice are
+resolved in full in `docs/certifications/queue.md`'s own matching entry and this task's own module
+docstring, per CLAUDE.md's default-resolution rule, without an owner ask). Two independent,
+disclosed fault injections, both genuine FAILs, both reverted byte-identical
+(`094127317a984868347126be15300fb2`). 21/21 tests pass; `ruff`/`mypy`/`eslint`/`prettier --check`/
+`tsc --build` all clean (one narrowly-scoped `**/*.cjs` eslint override added for the new Node.js
+helper script's own CommonJS globals); `pytest tests/unit` (3/3) and `pnpm exec vitest run` (27/27)
+unaffected; `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged
+20/20 (`proving_symbol` left blank — no live dispatcher calls this worker yet, same disclosed
+precedent as FTF-04A08/FTF-04A09); `status.py` unchanged 75/300 (Law 2). Not self-certified (Law
+4) — independent Control-plane L2 review and a real CI run on the opened PR are required before
+certification. Full record: `docs/certifications/queue.md`'s matching 2026-09-26 entry,
+`docs/spec-matrix.yaml`'s FTF-04A10 notes, `PROGRESS.md`.
+
+**FTF-04A09** ("Python deterministic agent/config/tool discovery") was the item here before that; submitted
 2026-09-26 via PR #298 (branch `claude/wizardly-fermat-rw976n` → main), producer session
 `https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z`. **PR #298 is already merged to `main`**
 (merge commit `690f497`) but `docs/spec-matrix.yaml` still genuinely reads PROVISIONAL — no
