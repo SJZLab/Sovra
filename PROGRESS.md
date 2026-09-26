@@ -19007,3 +19007,102 @@ L2 certification and the L4 gate — awaiting Control plane, stop. No open owner
 
 - **Reviewed-by:** not yet — awaiting independent Control-plane L2 certification (Law 4: producer
   never certifies own work).
+
+## 2026-09-26T00:00:00Z — Relay shift: FTF-04A09 ("Python deterministic agent/config/tool discovery") submitted PROVISIONAL (PR #298)
+
+STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh, no assumed state.
+CLAUDE.md hash self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly.
+No Cognee CLI available in this sandbox; used the disclosed text-search fallback throughout,
+declared here per STEP 0.2.
+
+STEP 1: no Active or Provisional item and no open owner ask at shift start (FTF-0215/FTF-0408
+both already independently certified before this shift began, per this file's own prior entries).
+Checked all 5 open PRs directly on GitHub: #295 (FTF-0214, a genuine blocker escalation from a
+concurrent session -- no live backend surface for its own stated acceptance), #290 (FTF-04A08
+tracking, doc-only), #231 (FTF-0212), #194/#195 (a duplicate pair, FTF-0304) -- none overlap.
+Surveyed `docs/spec-matrix.yaml` programmatically for every task whose full dependency set is
+already `CERTIFIED` (17 found, wider than only the 5 tasks with an already-generated task packet
+that prior shifts had been checking). FTF-0214 already claimed via PR #295. Independently
+re-derived, going one step further than the prior shift's own unconfirmed spot-check, that
+**FTF-0500A and FTF-0500D hit the identical blocker class PR #295 found for FTF-0214**: both
+packets' own `api_contract` names `preview`/`mapping`/`import`/`grants` routes;
+`dataset_source_connection_routes.py`'s own module docstring (FTF-0500, CERTIFIED) discloses in
+full that it deliberately does not implement a `/preview` or `/import` route because no `Dataset`
+entity exists anywhere in this repository yet -- confirmed by direct grep that FTF-0501/FTF-0502/
+FTF-0503 (the tasks that would build that entity/pipeline) are all `certification_state: NONE`.
+FTF-04A02/FTF-0902 reconfirmed `BLOCKED_EXTERNAL` in this sandbox, consistent with the prior
+shift's own findings. Picked **FTF-04A09** -- dependency-ready (FTF-04A01/FTF-04A08 both
+CERTIFIED), no external prerequisite, pure static analysis with no DB/network of its own. State:
+'Working: FTF-04A09.'
+
+**PEV, not mixed.** P: read `docs/implementation/task-packets/FTF-04A09.md` in full, Section
+7A.4's own 12-step "Analysis order", `source_analysis_worker.py` (FTF-04A08, CERTIFIED -- its own
+module docstring names this exact task, "FTF-04A09 onward", as the real next layer to build on
+its `SourceFileRef` input shape), and `discovered_agent_candidate_schema.py` (FTF-04A17,
+CERTIFIED) to keep this task's own output shape storage-compatible with its independently-nullable
+`entrypoint_evidence_json`/`model_evidence_json`/`tool_evidence_json` columns without building
+that later composition step here. Confirmed FTF-04A01/FTF-04A08/FTF-04A17 all genuinely CERTIFIED
+in `docs/spec-matrix.yaml` before relying on them.
+
+Scope refined and disclosed, not improvised: this task's own acceptance clause ("Parse tested
+Python AST/config patterns for agent entrypoints, tools and model bindings with evidence") is read
+as the intersection of Section 7A.4 steps 3 (entrypoints), 4 (model/LiteLLM aliases) and 6 (tool
+schemas) for Python only, tied together by one real, non-guessed AST pattern instead of three
+separate guessed heuristics: a call anywhere in a file to a name statically traced, in that same
+file, to a genuine `litellm` import. Steps 5/7-11 and step 12 (`DiscoveredAgentCandidate` row
+assembly, a separate later task) are explicitly out of scope, the same "claim only dependency-
+ready, lock-safe work" discipline FTF-04A08 itself already applied one level down.
+
+E: wrote `apps/api/app/target_connectors/python_agent_config_tool_discovery.py`. `import
+litellm[ as X]` / `from litellm import completion`/`acompletion[ as X]` traced via a real,
+file-local namespace scan; only a call whose callee resolves through that real trace is ever
+treated as a LiteLLM completion call -- a relative or wildcard import, or an unrelated same-named
+local function, is never matched ("unknown/custom is not guessed"). `model=`/`tools=` keyword
+arguments resolve only via `ast.literal_eval` (a pure, non-executing literal-AST evaluator, never
+`eval`) when they are real literals; any dynamic shape, or one non-conforming entry inside a
+`tools=` list, is disclosed `unresolved_dynamic_expression` rather than guessed or silently
+partial (this task's own negative_acceptance: "Dynamic/unresolved constructs remain unknown"). The
+enclosing function (or `"<module>"`) of a qualifying call is the real "agent entrypoint" this
+task's own acceptance clause names. Reuses FTF-04A08's own connector-agnostic `SourceFileRef`
+input shape rather than inventing a second one.
+
+`tests/tasks/test_ftf_04a09.py`: 20 real test functions, all pass against the unmodified code.
+**Two independent fault injections, re-run against the final, formatted committed content:**
+1. Let a non-conforming `tools=` list entry be silently skipped instead of marking the whole
+   extraction unresolved -- **a genuine FAIL** on the "partial extraction never reported as
+   complete" assertion.
+2. Removed the module-alias trace guard so any `X.completion(...)` call matched regardless of a
+   real litellm import -- **a genuine FAIL** on the "relative import is never matched" assertion.
+Both reverted from an untouched backup; `diff` confirmed byte-identical after each revert; re-ran
+clean both times.
+
+V: `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent as every prior shift) -- confirmed this branch's own HEAD already equalled
+`origin/main`'s real tip (`d94bb71`, PR #297 merged) before starting, so no dependency evidence
+relied on here was stale. `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`/
+`mypy .` clean repo-wide (260 source files). `python3 scripts/validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired` unchanged at `20/20` (this task's own `proving_symbol`
+is genuinely blank -- no live source-analysis-pipeline dispatcher exists yet to call this worker,
+disclosed, same precedent as FTF-04A08/FTF-0511/FTF-0512/FTF-0514). `status.py` unchanged at
+`74/300` certified (Law 2 -- not self-inflated). Regression swept `test_ftf_04a01.py`/
+`test_ftf_04a06.py`/`test_ftf_04a07.py`/`test_ftf_04a08.py`/`test_ftf_04a17.py` (all "all checks
+passed") plus `uv run pytest tests/unit` (3/3) -- zero regressions. `uv run python3
+scripts/verify_task.py --task FTF-04A09 --stage task` reports `BLOCKED` pre-merge ("has no merged
+verification evidence yet"), expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-04A09 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge commit hash is
+known (same precedent as every recent sibling). CI gate step (`FTF-04A09 negative-test proof`)
+added to `.github/workflows/ci.yml` in this same commit. **Not self-certified (Law 4)** --
+independent Control-plane L2 review and a real CI run on the opened PR are required before
+certification.
+
+Also generated (via `tools/r1_handoff.py packet`, not claimed or implemented)
+`docs/implementation/task-packets/FTF-0513.md` while surveying dependency-ready candidates this
+shift -- kept per this repo's own "Generate task packets for dependency-ready frontier candidates"
+precedent (commit `09a6cf5`), not discarded.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): submitted PROVISIONAL, awaiting Control-plane certification
+and the L4 gate -- stopping here. No open owner ask (`QUEUE.md` "Owner actions -- current"
+unchanged, empty).
