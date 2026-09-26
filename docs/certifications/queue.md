@@ -16844,7 +16844,7 @@ sole reason a pair is flagged (mirroring the existing `token_jaccard`/`embedding
 or a fresh superseding PR, relay's choice). Full detail recorded in `QUEUE.md`'s top entry and
 `PROGRESS.md` for the next relay shift.
 
-## 2026-09-26T14:59:04Z — FTF-0513 — relay: closed the test-coverage gap, submitted PROVISIONAL (new PR)
+## 2026-09-26T14:59:04Z — FTF-0513 — relay: closed the test-coverage gap, submitted PROVISIONAL (PR #310)
 
 Scheduled autonomous relay shift, session `https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn`,
 branch `claude/wizardly-fermat-iqpz0c`. Picked up this queue's own preceding entry's fix
@@ -16893,10 +16893,12 @@ exact DoD).
 
 Updated `docs/spec-matrix.yaml`'s FTF-0513 entry with a dated follow-up paragraph appended after
 PR #308's own original notes (still `certification_state: PROVISIONAL` / `proof_state:
-L1-PROVEN` — a relay fix never self-certifies, Law 4). PR #308 stays open, unmerged, marked
-superseded by the new PR opened for this fix (not closed silently). Submitted PROVISIONAL —
-**not self-certified** — awaiting an independently-triggered Control-plane L2 certifier session
-that was not involved in producing this fix.
+L1-PROVEN` — a relay fix never self-certifies, Law 4). Submitted PROVISIONAL via **PR #310**
+(branch `claude/wizardly-fermat-iqpz0c` -> `main`, `https://github.com/SJZLab/Sovra/pull/310`),
+title `[relay] FTF-0513: close Control-plane-flagged test-coverage gap`. PR #308 stays open,
+unmerged, marked superseded by PR #310 via a one-line comment on PR #308 itself (not closed
+silently). **Not self-certified** — awaiting an independently-triggered Control-plane L2
+certifier session that was not involved in producing this fix.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Certified: unchanged at
   77/300. Product-true: unchanged at 20/20.

@@ -32,11 +32,12 @@ Updated: 2026-09-26T14:59:04Z (scheduled autonomous relay shift, session
   No implementation change to `workers/data/near_duplicate_detector.py` — only the test-coverage
   gap closed, exactly as specified. `docs/spec-matrix.yaml`'s FTF-0513 entry stays
   `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (a relay fix never self-certifies),
-  dated follow-up paragraph appended after PR #308's own original notes. Opening a new PR (`[relay]
-  FTF-0513: close the Control-plane-flagged test-coverage gap`) rather than pushing to PR #308's
-  own branch (a different session's branch) or reusing PR #308 itself (left open/unmerged,
-  superseded per the certifier's own "then re-submit" instruction — will be noted as superseded,
-  not closed silently). Full record: `PROGRESS.md`'s matching entry,
+  dated follow-up paragraph appended after PR #308's own original notes. Opened **PR #310**
+  (`https://github.com/SJZLab/Sovra/pull/310`, `[relay] FTF-0513: close Control-plane-flagged
+  test-coverage gap`) rather than pushing to PR #308's own branch (a different session's branch)
+  or reusing PR #308 itself — left open/unmerged, superseded per the certifier's own "then
+  re-submit" instruction, with a one-line comment recording the supersession left on PR #308
+  itself (not closed silently). Full record: `PROGRESS.md`'s matching entry,
   `docs/certifications/queue.md`'s matching entry. Certified: unchanged at 77/300. Product-true:
   unchanged at 20/20.
 

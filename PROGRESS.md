@@ -1,5 +1,5 @@
 # PROGRESS — Sovra
-## 2026-09-26T14:59:04Z — FTF-0513 — relay: fixed the Control-plane-flagged test-coverage gap (new PR)
+## 2026-09-26T14:59:04Z — FTF-0513 — relay: fixed the Control-plane-flagged test-coverage gap (PR #310)
 
 Scheduled autonomous relay shift, session
 `https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn`, on the designated branch
@@ -78,11 +78,13 @@ Updated `docs/spec-matrix.yaml`'s FTF-0513 entry (still `certification_state: PR
 recording this fix in full, appended after PR #308's own original notes rather than rewriting
 them. No implementation change to `workers/data/near_duplicate_detector.py` itself — only the
 test-coverage gap closed, exactly as the certifier's own review specified. Committed on this
-shift's designated branch `claude/wizardly-fermat-iqpz0c`; opening a new PR (titled `[relay]
-FTF-0513: close the Control-plane-flagged test-coverage gap`) rather than pushing to PR #308's own
-branch (a different session's branch, out of scope to push to without explicit permission) or
-reusing PR #308 itself (left open/unmerged, superseded by this new PR per the certifier's own "then
-re-submit" instruction). Certified: unchanged at 77/300. Product-true: unchanged at 20/20.
+shift's designated branch `claude/wizardly-fermat-iqpz0c`; opened **PR #310**
+(`https://github.com/SJZLab/Sovra/pull/310`, `[relay] FTF-0513: close Control-plane-flagged
+test-coverage gap`) rather than pushing to PR #308's own branch (a different session's branch, out
+of scope to push to without explicit permission) or reusing PR #308 itself (left open/unmerged,
+superseded by PR #310 per the certifier's own "then re-submit" instruction; a one-line comment
+recording the supersession was left on PR #308 itself). Certified: unchanged at 77/300.
+Product-true: unchanged at 20/20.
 
 ## 2026-09-26 — FTF-0513 — Control plane: independent CERTIFY review, NOT CERTIFIED
 
