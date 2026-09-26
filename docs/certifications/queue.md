@@ -17306,3 +17306,49 @@ and CI will need to re-run on the new head before the next certifier session can
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26. Result:
   BLOCKED on a real merge conflict, not rejected on substance.
+
+## 2026-09-26 — FTF-04A11 — relay: rebased PR #301 onto current `main`, resolved merge conflict (no code change)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP`.
+Picked up PR #318's own recorded remediation directly (Control plane found PR #301 sound on
+substance — own reproduction, own PyYAML resource-limit probe, two independent fault injections
+both genuinely caught, real CI 31/31 including `gate` — but blocked on a real merge conflict with
+`main` in `.github/workflows/ci.yml`/`PROGRESS.md`/`QUEUE.md`/this file, confined to tracking-doc/
+CI-gate-step appends from rounds that landed after PR #301 branched; `docs/spec-matrix.yaml`
+merged cleanly). Merged PR #318 first (commit `c11c6de`, doc-only, CI-green) to land the finding.
+
+Created a new branch from PR #301's own real head (`7fc2a0c`) and merged current `origin/main`
+into it (`git merge origin/main --no-ff`) — a forward merge on a new branch, not a rebase/
+force-push of the original session's own branch. Resolved the four conflicting files by keeping
+both sides' append-only content exactly as PR #318 specified: `.github/workflows/ci.yml` keeps
+both the FTF-04A10 and FTF-04A11 gate steps in dependency order; `PROGRESS.md`/`QUEUE.md` (both
+newest-first) keep `main`'s own newer chain ahead of PR #301's older submission entry; this file
+(oldest-first) keeps PR #301's own original entry ahead of `main`'s newer entries. No change to
+`json_yaml_toml_configuration_discovery.py`/`test_ftf_04a11.py` — both already independently
+verified sound by PR #318's own review.
+
+`git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (disclosed
+precedent); `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a11.py` — "all checks
+passed" (22 checks, unmodified); `ruff check .`/`ruff format --check .` clean (270 files); `mypy .`
+— 15 pre-existing, unrelated `alembic`-stub errors only (confirmed against a fresh `origin/main`
+checkout, predate this branch). `validate_spec.py --strict` clean after unshallowing.
+`product_truth_check.py --fail-on-unwired` unchanged `20/20`; `status.py` unchanged `79/300`
+(Law 2). Regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py`/
+`test_ftf_0302.py`/`test_ftf_0303.py`/`test_ftf_0513.py` (all "all checks passed") plus `uv run
+pytest tests/unit` (3/3) — zero regressions from this merge.
+
+**Disclosed, not silently worked around:** `test_ftf_04a10.py`'s own
+`test_entrypoint_function_name_captured_for_nested_arrow_function` fails with a genuine
+`IndexError` (`evidence.entrypoints` empty) on this branch. Reproduced this is pre-existing on
+`origin/main` itself, unrelated to this merge — confirmed identically in a clean `git worktree`
+checked out at `origin/main`'s own tip (commit `c11c6de`) before this shift made any change,
+byte-identical traceback. Out of this shift's own scope (a merge-conflict fix, not FTF-04A10
+rework) to fix here; flagged for the next shift/Control plane.
+
+Pushed the merged branch and opened a new PR superseding PR #301 (identical implementation/test
+content, unchanged); commented on PR #301 marking it superseded, not closed silently.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL (unchanged — this shift fixed
+  the merge conflict blocking certification; made no code or evidence change). **Not
+  self-certified (Law 4)** — awaiting an independently-triggered Control-plane L2 certifier session
+  and a real CI run on the new PR. Certified: unchanged at 79/300.

@@ -1,4 +1,81 @@
 # PROGRESS — Sovra
+## 2026-09-26T20:05:00Z — FTF-04A11 — relay: rebased PR #301 onto current `main`, resolved the Control-plane-flagged merge conflict
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP`.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state.
+CLAUDE.md hash self-check clean (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly). `BLOCKER.md` contains only resolved history, no open blocker. `QUEUE.md`'s own "## Owner
+actions — current" empty.
+
+Checked all open PRs directly via the GitHub API: found **PR #318** (`Control plane: independent
+review of FTF-04A11 (PR #301), BLOCKED on merge conflict`) — a Control-plane certifier session had
+independently re-verified PR #301's own code (own reproduction, an own PyYAML anchor/alias resource-
+limit probe, two independent fault injections both genuinely caught, real CI reconfirmed 31/31
+green including `gate`) and found **no code-level defect**, but PR #301 had a real merge conflict
+with current `main` (verified by the certifier directly via a local test merge, not just the GitHub
+API's `mergeable_state`) — conflicts confined to `.github/workflows/ci.yml`, `PROGRESS.md`,
+`QUEUE.md`, `docs/certifications/queue.md` (tracking-doc/CI-gate-step appends from the
+FTF-04A10/FTF-0302/FTF-0303/FTF-0513 rounds that landed on `main` after PR #301 branched);
+`docs/spec-matrix.yaml` itself merged cleanly. The certifier recorded the exact remediation needed
+and correctly left it to a relay shift (fixing a merge conflict is outside a certifying session's
+own "never touch anything outside certification" scope). PR #318 was clean, CI-green (31/31
+including `gate`), doc-only — merged first (commit `c11c6de`) so the finding is on `main` before
+doing the rebase work it calls for.
+
+This shift's own designated branch (`claude/wizardly-fermat-vk8fi5`) was a stale ancestor of
+`origin/main` (2 commits behind, no unique work of its own) — reset onto `origin/main`'s real tip
+directly rather than reusing it. Per this repo's own established pattern for fixing another
+session's flagged PR without rewriting that session's branch (see the FTF-0303/PR #316 precedent
+below): created a new local branch from PR #301's own real head (`7fc2a0c`, branch
+`claude/wizardly-fermat-lf2dqo`) and merged current `origin/main` into it (`git merge origin/main
+--no-ff`) — a normal forward merge commit on a new branch, never a rebase/force-push of the
+original session's own branch.
+
+**Conflict resolution — kept both sides' append-only content, as the certifier's own remediation
+specified, no code change:**
+- `.github/workflows/ci.yml`: kept both the FTF-04A10 gate step (already on `main`) and the
+  FTF-04A11 gate step (PR #301's own), in dependency order (FTF-04A09 → FTF-04A10 → FTF-04A11).
+- `PROGRESS.md`/`QUEUE.md`: both files order newest-first — kept `origin/main`'s own newer chain
+  (the FTF-0302/FTF-04A10/FTF-0303/FTF-0513 rounds and the certifier's own BLOCKED finding) ahead
+  of PR #301's own original, now-older submission entry, preserving both verbatim.
+- `docs/certifications/queue.md` orders oldest-first (append-at-bottom) — the inverse: kept PR
+  #301's own original submission entry ahead of `origin/main`'s newer entries, preserving
+  chronological order and both sides' content verbatim.
+- `docs/spec-matrix.yaml` required no manual resolution — it merged cleanly via `git merge`, exactly
+  as the certifier's own local test merge had already found; FTF-04A11's entry read
+  `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` afterward, unchanged from PR #301's
+  own submission (this shift made no certification, code, or evidence change to it — only the
+  surrounding tracking-doc merge was this shift's own work).
+
+**Verification, no code touched by this shift:** `git fetch --unshallow` resolved this sandbox's
+own pre-existing shallow-clone artifact (same disclosed precedent as every recent shift) — the
+`stale_commit` batch `validate_spec.py --strict` reports before unshallowing is not a real defect,
+confirmed clean after. `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a11.py` —
+"all checks passed" (22 checks, unmodified since PR #301's own submission); `uv run ruff check
+.`/`ruff format --check .` clean (270 files); `uv run mypy .` — 15 pre-existing, unrelated
+`alembic`-stub errors only (confirmed via `git diff --stat` on a fresh `origin/main` checkout that
+they predate this branch). `python3 scripts/validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired` unchanged `20/20`; `status.py` unchanged `79/300`
+(Law 2 — this shift certified nothing and added no new implementation). Regression swept
+`test_ftf_04a08.py`/`test_ftf_04a09.py`/`test_ftf_04a17.py`/`test_ftf_0302.py`/`test_ftf_0303.py`/
+`test_ftf_0513.py` (all "all checks passed") plus `uv run pytest tests/unit` (3/3) — zero
+regressions from this merge. **Disclosed, not silently worked around:** `test_ftf_04a10.py`'s own
+`test_entrypoint_function_name_captured_for_nested_arrow_function` fails with a genuine
+`IndexError` (`evidence.entrypoints` empty) — reproduced this is pre-existing on `origin/main`
+itself, unrelated to this merge (confirmed directly in a clean `git worktree` checked out at
+`origin/main`'s own tip before this shift's changes, same failure, byte-identical traceback); out
+of this shift's own scope (a merge-conflict fix, not FTF-04A10 rework) to fix here, flagged for the
+next shift/Control plane instead.
+
+Pushed the merged branch and opened a new PR superseding PR #301 (same implementation and test
+content, unchanged); commented on PR #301 marking it superseded, not closed silently. **Not
+self-certified (Law 4)** — awaiting an independently-triggered Control-plane L2 certifier session
+and a real CI run on the new PR.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL (unchanged — this shift fixed
+  the merge conflict blocking certification, made no code or evidence change). Certified: unchanged
+  at 79/300. Product-true: unchanged at 20/20. No open owner ask.
+
 ## 2026-09-26 — FTF-04A11 — Control plane: independent CERTIFY review, BLOCKED on merge conflict (PR #301)
 
 Same Control-plane certifier shift as the FTF-0303 certification below, session

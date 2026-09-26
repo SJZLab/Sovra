@@ -1,5 +1,22 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (same scheduled Control-plane certifier shift as the FTF-0303 certification
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP) — **rebased PR #301 (FTF-04A11) onto
+  current `main`, resolving the merge conflict Control plane flagged in PR #318.** Merged PR #318
+  first (commit `c11c6de`, doc-only, CI-green) to land that finding, then created a new branch
+  from PR #301's own head and merged current `main` into it, resolving `.github/workflows/ci.yml`/
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` by keeping both sides' append-only
+  content exactly as the certifier's own remediation specified; `docs/spec-matrix.yaml` merged
+  cleanly, unchanged (`certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`, same as PR
+  #301's own submission). No code or test change to
+  `json_yaml_toml_configuration_discovery.py`/`test_ftf_04a11.py` — both already independently
+  verified sound by the certifier. Full verification sweep clean (`ruff`/`mypy`/
+  `validate_spec.py --strict`/`product_truth_check.py`/regression suite) — see `PROGRESS.md`'s
+  matching entry for the complete record, including the one disclosed, out-of-scope, pre-existing
+  `test_ftf_04a10.py` failure flagged for the next shift. Opened a new PR superseding #301 (same
+  implementation/test content); commented on #301 marking it superseded. Certified: unchanged at
+  79/300. Product-true: unchanged at 20/20. No open owner ask.
+
+Previously updated: 2026-09-26 (same scheduled Control-plane certifier shift as the FTF-0303 certification
   below, session https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW) — after certifying
   FTF-0303, checked the rest of the queue for other pending PROVISIONAL items (this session's own
   scope: "check for anything PROVISIONAL and not yet certified," not only the triggering PR).
@@ -5677,7 +5694,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0302** ("Hugging Face artifact resolver") is the item here; submitted 2026-09-26 via **PR
+**FTF-04A11** ("JSON/YAML/TOML configuration discovery") is the current item here, resubmitted
+2026-09-26 via a new PR superseding **PR #301** after this shift's own merge-conflict fix (see
+this file's own top dated log and `PROGRESS.md`'s matching entry) — same code/test content PR
+#301 already had independently reviewed sound by a Control-plane certifier (PR #318), only the
+tracking-doc merge conflict was resolved. `docs/spec-matrix.yaml`: `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, unchanged. Everything below this paragraph is prior
+history, kept for the record (FTF-0302/FTF-04A10/FTF-04A09 are all already `CERTIFIED` — see this
+file's own top dated log and `docs/certifications/ledger.md`).
+
+**FTF-0302** ("Hugging Face artifact resolver") was the item here before that; submitted 2026-09-26 via **PR
 #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`,
 `https://github.com/SJZLab/Sovra/pull/305`), title `[relay] FTF-0302: Hugging Face artifact
 resolver`, producer session `https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr`. Real caller
