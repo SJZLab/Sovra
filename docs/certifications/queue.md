@@ -16669,8 +16669,9 @@ once the real merge commit hash is known (same precedent as every recent sibling
 (`FTF-04A10 negative-test proof`) added to `.github/workflows/ci.yml` in this same commit,
 immediately after FTF-04A09's own step.
 
-Submitted PROVISIONAL via a PR from branch `claude/wizardly-fermat-gg9rje` -> `main`, title
-`[relay] FTF-04A10: TypeScript/JavaScript deterministic agent/config/tool discovery`.
+Submitted PROVISIONAL via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`), title
+`[relay] FTF-04A10: TypeScript/JavaScript deterministic agent/config/tool discovery`,
+`https://github.com/SJZLab/Sovra/pull/303`.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** — independent Control-plane L2 review and a real CI run on the opened PR are required

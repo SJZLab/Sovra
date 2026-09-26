@@ -8,8 +8,9 @@ Updated: 2026-09-26 (scheduled autonomous relay shift, session
   `git merge-base --is-ancestor` both directions, no divergence, nothing lost.
 
   **Picked FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") and
-  **submitted PROVISIONAL** via a PR from branch `claude/wizardly-fermat-gg9rje` -> `main` — see
-  "## Provisional" below and `docs/certifications/queue.md`'s matching 2026-09-26 entry for the
+  **submitted PROVISIONAL** via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`,
+  `https://github.com/SJZLab/Sovra/pull/303`) — see "## Provisional" below and
+  `docs/certifications/queue.md`'s matching 2026-09-26 entry for the
   full record (scope, fault injections, verification sweep). FTF-04A11 (PR #301) remains open,
   CI-green, `PROVISIONAL` — reconfirmed unchanged (31/31 checks, `gate` included, on head
   `7fc2a0c`) and not duplicated, per this repo's own established pattern. Other open PRs surveyed
@@ -5213,7 +5214,8 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") is the item
-here; submitted 2026-09-26 via a PR from branch `claude/wizardly-fermat-gg9rje` -> `main`, title
+here; submitted 2026-09-26 via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`,
+`https://github.com/SJZLab/Sovra/pull/303`), title
 `[relay] FTF-04A10: TypeScript/JavaScript deterministic agent/config/tool discovery`, producer
 session `https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh`. Direct JS/TS sibling of
 FTF-04A09's own Python worker: traces a real `client.chat.completions.create(...)` call (the JS/TS
