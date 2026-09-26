@@ -16843,3 +16843,62 @@ sole reason a pair is flagged (mirroring the existing `token_jaccard`/`embedding
 `agent_trace_structural` positive-assertion pattern), then re-submit (either as a push to PR #308
 or a fresh superseding PR, relay's choice). Full detail recorded in `QUEUE.md`'s top entry and
 `PROGRESS.md` for the next relay shift.
+
+## 2026-09-26T14:59:04Z — FTF-0513 — relay: closed the test-coverage gap, submitted PROVISIONAL (PR #310)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn`,
+branch `claude/wizardly-fermat-iqpz0c`. Picked up this queue's own preceding entry's fix
+instruction directly (no new task selection needed — the prior Control-plane review named the
+exact DoD).
+
+- **Base:** brought PR #308's real head (`15cf282`) — `workers/data/near_duplicate_detector.py`,
+  `tests/tasks/test_ftf_0513.py`, the `.github/workflows/ci.yml` gate step, and the
+  `docs/spec-matrix.yaml` FTF-0513 entry — onto this branch via `git checkout pr-308-review --
+  <files>` from a fresh `origin/main` (`c80adb9`), not a wholesale branch merge, to avoid
+  re-litigating PR #308's own now-superseded tracking-doc log entries. Verified first via `git log
+  03866ee..origin/main` that the only commit on `main` since PR #308's base is the prior
+  Control-plane review's own doc-only commit — no code drift to reconcile.
+- **Fix:** added `test_character_ngram_similarity_crossing_its_own_threshold_flags_alone` to
+  `tests/tasks/test_ftf_0513.py`. Scenario: 100 distinct 5-character tokens
+  (`"wa" + letter + letter + "x"`), trailing character of the first 6 changed. This keeps
+  `character_ngram_similarity` at ~0.905 (crosses the 0.9 default) while `token_jaccard_similarity`
+  (~0.887) and `embedding_cosine_similarity` (~0.937) both stay below their own defaults, and
+  `structural_match` is `False` by construction (single differing user-only messages). Directly
+  confirmed via `detect_near_duplicates` (not asserted blind) that this pair's `flagged_methods`
+  equals exactly `frozenset({"character_ngram"})` — the isolation the prior review asked for.
+- **Own fault injection reproducing the prior review's exact mutation**
+  (`character_ngram_similarity >= thresholds.character_ngram_similarity` →
+  `character_ngram_similarity <= 0.0`): confirmed the file actually changed (`md5sum` before
+  `c3f2ae170fee47761bdbde5041add7e3`, after `72fa623a30a955af7130ba8296e728d4`). Re-ran the suite
+  with the mutation in place: the new test fails with a genuine `AssertionError`
+  (`candidate is not None`) — with `character_ngram`'s flag path disabled and no other method
+  crossing its own threshold for this pair, the pair never becomes a candidate at all. This is the
+  "shown able to fail" evidence Law 1 requires for the new test. Reverted byte-identical (`md5sum`
+  back to `c3f2ae170fee47761bdbde5041add7e3`, `git diff --stat` on the file empty afterward),
+  re-ran clean.
+- **Own count, not trusted from either party's prior report:** instrumented `check()` directly —
+  PR #308's real head runs 41 checks (the prior review stated 42; an immaterial miscount, disclosed
+  here, not corrected elsewhere). With the new test: 47 checks, all pass.
+- **Full verification:** `uv sync --all-packages`; `uv run ruff check .` / `ruff format --check .`
+  clean (266 files); `uv run mypy .` — same 15 pre-existing `alembic`-stub `attr-defined` errors,
+  confirmed identical on plain `origin/main` via `git stash` and re-run (not introduced by this
+  change, unrelated to `workers/data`/`tests/tasks`); `git fetch --unshallow` (disclosed
+  shallow-clone precedent) then `uv run python3 scripts/validate_spec.py --strict` clean; `uv run
+  python3 scripts/product_truth_check.py --fail-on-unwired` — `20/20`, unchanged (no live caller
+  added); `uv run python3 scripts/status.py` — `77/300` certified, unchanged (Law 2). Regression
+  swept `test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0500.py` (`uv sync --all-packages` first
+  for the latter's `uvicorn` dependency) plus `pytest tests/unit` (3/3) — all unaffected.
+- **No implementation change** to `workers/data/near_duplicate_detector.py` — only the
+  test-coverage gap closed, exactly as the prior review specified.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0513 entry with a dated follow-up paragraph appended after
+PR #308's own original notes (still `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` — a relay fix never self-certifies, Law 4). Submitted PROVISIONAL via **PR #310**
+(branch `claude/wizardly-fermat-iqpz0c` -> `main`, `https://github.com/SJZLab/Sovra/pull/310`),
+title `[relay] FTF-0513: close Control-plane-flagged test-coverage gap`. PR #308 stays open,
+unmerged, marked superseded by PR #310 via a one-line comment on PR #308 itself (not closed
+silently). **Not self-certified** — awaiting an independently-triggered Control-plane L2
+certifier session that was not involved in producing this fix.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Certified: unchanged at
+  77/300. Product-true: unchanged at 20/20.
