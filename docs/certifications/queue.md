@@ -16365,3 +16365,112 @@ reprioritization performed beyond what this certification naturally required (La
 owner ask.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-25.
+
+## 2026-09-26 — FTF-04A09 ("Python deterministic agent/config/tool discovery") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift (session `https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z`).
+STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/this file fresh: no `## Active`/`## Provisional` item and no
+open owner ask at shift start. CLAUDE.md hash self-check clean (`sha256sum` matched the committed
+`CLAUDE.md.sha256`).
+
+Checked all 5 open PRs first: #295 (FTF-0214, a genuine blocker escalation from a concurrent
+session -- no live backend surface for its own stated acceptance, not resubmitted here), #290
+(FTF-04A08 tracking, doc-only), #231 (FTF-0212), #194/#195 (FTF-0304 duplicate pair) -- none
+overlap. Surveyed `docs/spec-matrix.yaml` programmatically for every task whose full dependency
+set is already `CERTIFIED` (17 found -- wider than only the 5 tasks with an already-generated
+task packet). FTF-0214 already claimed (PR #295, blocked). Independently re-derived, not merely
+assumed from the prior shift's own spot-check, that **FTF-0500A and FTF-0500D hit the identical
+blocker class PR #295 found for FTF-0214**: both packets' own `api_contract` line names
+`preview`/`mapping`/`import`/`grants` routes; `apps/api/app/datasets/dataset_source_connection_routes.py`'s
+own module docstring (FTF-0500, CERTIFIED) states in full that it "deliberately does not
+implement... a `/preview` or `/import` route (Section 8's dataset import pipeline -- no `Dataset`
+entity exists anywhere in this repository yet to import into)" -- confirmed by direct grep that
+FTF-0501/FTF-0502/FTF-0503 (the tasks that would build that entity/pipeline) are all
+`certification_state: NONE`. Both are therefore also genuinely blocked on the same missing backend
+surface, not merely "not investigated with the same depth" as the prior shift's own note left it.
+FTF-04A02 (real GitHub App/private-repo prerequisite) and FTF-0902 (real enforcing CNI/firewall
+cluster) remain `BLOCKED_EXTERNAL` in this relay sandbox, consistent with the prior shift's own
+findings -- re-confirmed, not re-litigated from scratch.
+
+Picked **FTF-04A09** ("Python deterministic agent/config/tool discovery") -- genuinely
+dependency-ready (FTF-04A01/FTF-04A08 both `CERTIFIED`, confirmed via direct `yaml.safe_load`
+before relying on them), no external prerequisite, and a pure static-analysis task with no DB/
+network of its own -- the same tractable shape as FTF-04A08/FTF-0511/FTF-0512/FTF-0514. State:
+`Working: FTF-04A09.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A09.md` in full, Section 7A.4's own 12-step
+"Analysis order", `apps/api/app/target_connectors/source_analysis_worker.py` (FTF-04A08 -- its own
+module docstring names this exact task, "FTF-04A09 onward", as the real next layer to build on its
+`SourceFileRef` input shape), and `discovered_agent_candidate_schema.py` (FTF-04A17) to keep this
+task's own output shape storage-compatible with its independently-nullable `entrypoint_evidence_json`/
+`model_evidence_json`/`tool_evidence_json` columns, without building that later composition step
+here. Confirmed FTF-04A01/FTF-04A08/FTF-04A17 all genuinely `CERTIFIED` before relying on them.
+
+Scope refined and disclosed, not improvised: this task's own acceptance clause ("Parse tested
+Python AST/config patterns for agent entrypoints, tools and model bindings with evidence") is read
+as the intersection of Section 7A.4 steps 3 (entrypoints), 4 (model/LiteLLM aliases) and 6 (tool
+schemas) for Python only, tied together by one real, non-guessed AST pattern rather than three
+separate guessed heuristics: a call anywhere in a file to a name statically traced, in that same
+file, to a genuine `litellm` import. Steps 5/7-11 and step 12 (`DiscoveredAgentCandidate` row
+assembly, a separate later task) are explicitly out of scope -- the same "claim only dependency-
+ready, lock-safe work" discipline FTF-04A08 itself already applied one level down.
+
+**E:** `apps/api/app/target_connectors/python_agent_config_tool_discovery.py`. `import litellm[ as
+X]` / `from litellm import completion`/`acompletion[ as X]` are traced via a real, file-local
+namespace scan; only a call whose callee resolves through that real trace is ever treated as a
+LiteLLM completion call -- a relative (`from . import litellm`) or wildcard import, or an unrelated
+same-named local function, is never matched ("unknown/custom is not guessed"). `model=`/`tools=`
+keyword arguments resolve only via `ast.literal_eval` (a pure, non-executing literal-AST evaluator,
+never `eval`) when they are real literals; any dynamic shape, or one non-conforming entry inside a
+`tools=` list, is disclosed `unresolved_dynamic_expression` rather than guessed or silently partial
+(this task's own negative_acceptance: "Dynamic/unresolved constructs remain unknown"). The
+enclosing function (or `"<module>"`) of a qualifying call is the real "agent entrypoint" this
+task's own acceptance clause names -- two qualifying calls in two different functions of one file
+yield two distinct candidates, never coalesced into one. Reuses FTF-04A08's own connector-agnostic
+`SourceFileRef` input shape rather than inventing a second one; resource limits (`max_files`/
+`max_file_bytes`/`max_total_bytes`) mirror FTF-04A08's own three-bound shape, disclosing
+`truncated=True` rather than silently reporting an incomplete scan as complete.
+
+`tests/tasks/test_ftf_04a09.py`: 20 real test functions, all pass against the unmodified code.
+**Two independent fault injections, re-run against the final, formatted committed content:**
+1. Let a non-conforming `tools=` list entry be silently skipped instead of marking the whole
+   extraction unresolved -- **a genuine FAIL** on the "partial extraction never reported as
+   complete" assertion, reproducing exactly the risk this task's own negative_acceptance exists to
+   prevent.
+2. Removed the module-alias trace guard so any `X.completion(...)`/`X.acompletion(...)` call
+   matched regardless of a real litellm import -- **a genuine FAIL** on the "relative `from . import
+   litellm` import is never matched" assertion (a relative import is a structurally different AST
+   node than the module-alias check the fix guards, so this is a real, independent probe of the
+   same import-provenance discipline, not a restatement of the first fault injection).
+Both reverted from an untouched backup; `diff` confirmed byte-identical after each revert; re-ran
+clean both times.
+
+**V:** `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same
+disclosed precedent as every recent shift) -- confirmed this branch's own HEAD already equalled
+`origin/main`'s real tip (`d94bb71`, PR #297 merged) before starting. `uv sync --all-packages`;
+`uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (260 source files).
+`python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`
+unchanged at `20/20` (this task's `proving_symbol` is genuinely blank -- no live source-analysis-
+pipeline dispatcher exists anywhere in this repository yet to call this worker, disclosed, same
+precedent as FTF-04A08/FTF-0511/FTF-0512/FTF-0514). `status.py` unchanged at `74/300` certified
+(Law 2 -- not self-inflated). Regression swept `test_ftf_04a01.py`/`test_ftf_04a06.py`/
+`test_ftf_04a07.py`/`test_ftf_04a08.py`/`test_ftf_04a17.py` -- all "all checks passed" -- plus
+`uv run pytest tests/unit` (3/3) -- zero regressions. `uv run python3 scripts/verify_task.py
+--task FTF-04A09 --stage task` reports `BLOCKED` pre-merge ("has no merged verification evidence
+yet"), expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-04A09 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN`; `evidence_hash` left blank, a follow-up commit once the real merge commit hash is
+known (same precedent as every recent sibling). CI gate step (`FTF-04A09 negative-test proof`)
+added to `.github/workflows/ci.yml` in this same commit.
+
+Also generated (via `tools/r1_handoff.py packet`, not claimed or implemented)
+`docs/implementation/task-packets/FTF-0513.md` while surveying dependency-ready candidates this
+shift -- kept per this repo's own "Generate task packets for dependency-ready frontier candidates"
+precedent (commit `09a6cf5`) rather than discarded.
+
+Submitted PROVISIONAL via PR #298 (branch `claude/wizardly-fermat-rw976n` -> `main`).
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.

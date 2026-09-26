@@ -255,6 +255,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0509.py
       - name: FTF-04A08 negative-test proof (Source-analysis worker foundation, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a08.py
+      - name: FTF-04A09 negative-test proof (Python deterministic agent/config/tool discovery, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a09.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

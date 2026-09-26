@@ -1,5 +1,53 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-25 (scheduled Control-plane certifier run, session
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z) — **FTF-04A09 ("Python deterministic
+  agent/config/tool discovery") submitted PROVISIONAL via PR #298.** STEP 0.1 read
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh: no `## Active`/`## Provisional`
+  item and no open owner ask at shift start (FTF-0215/FTF-0408 both already independently
+  certified before this shift began). CLAUDE.md hash self-check clean. 5 open PRs checked
+  directly: #295 (FTF-0214, a genuine blocker escalation — no live backend surface for its own
+  stated acceptance), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #194/#195 (FTF-0304
+  duplicate pair) — none overlap. Surveyed `docs/spec-matrix.yaml` for every task whose deps are
+  all `CERTIFIED` (17 found, wider than just the 5 with an already-generated packet). Independently
+  re-derived that FTF-0500A/FTF-0500D hit the *same* blocker class PR #295 found for FTF-0214:
+  their own `api_contract` names `preview`/`import` routes `dataset_source_connection_routes.py`'s
+  own module docstring discloses as deliberately not built (no `Dataset` entity exists anywhere in
+  this repository yet). FTF-04A02/FTF-0902 remain `BLOCKED_EXTERNAL` in this sandbox, consistent
+  with prior shifts' own findings. Picked **FTF-04A09** — dependency-ready (FTF-04A01/FTF-04A08
+  both `CERTIFIED`), no external prerequisite, pure static analysis with no DB/network of its own.
+
+  Implemented `apps/api/app/target_connectors/python_agent_config_tool_discovery.py`: traces a
+  real `litellm.completion`/`acompletion` call (via a genuine, statically-verified `litellm`
+  import in the same file — a relative/wildcard import or an unrelated same-named function is
+  never matched, "unknown/custom is not guessed") back to its enclosing function (the real "agent
+  entrypoint" this task's own acceptance clause names), then resolves the call's own `model=`/
+  `tools=` keyword arguments via `ast.literal_eval` only when they are real literals — any dynamic
+  shape, or one non-conforming entry in a `tools=` list, is disclosed `unresolved_dynamic_expression`
+  rather than guessed or silently partial (this task's own negative_acceptance: "Dynamic/unresolved
+  constructs remain unknown"). Explicitly out of scope, disclosed rather than hidden: prompt
+  sources, structured-output schemas, authorization boundaries, test/trace/deployment evidence
+  (Section 7A.4 steps 5/7-11) and `DiscoveredAgentCandidate` row assembly (step 12, FTF-04A17's own
+  later composition task) — the same discipline FTF-04A08 already applied one level down. Reuses
+  FTF-04A08's own connector-agnostic `SourceFileRef` input shape rather than inventing a second one.
+
+  `tests/tasks/test_ftf_04a09.py`: 20 tests, all pass against the unmodified code. Two independent
+  fault injections, both reverted byte-identical and re-run clean: (1) silently skipped a
+  non-conforming `tools=` list entry instead of marking the whole extraction unresolved — genuine
+  FAIL; (2) removed the import-provenance guard so any `X.completion(...)` call matched regardless
+  of a real litellm import — genuine FAIL on the "relative import is never matched" assertion.
+  `uv sync --all-packages`; `ruff check`/`ruff format --check`/`mypy` clean repo-wide (260 source
+  files); `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged
+  20/20 (`proving_symbol` left blank — no live dispatcher calls this worker yet, disclosed, same
+  precedent as FTF-04A08); `status.py` unchanged 74/300 (Law 2). Regression swept
+  `test_ftf_04a01/04a06/04a07/04a08/04a17.py` plus `pytest tests/unit` — zero regressions. CI gate
+  step added. `docs/spec-matrix.yaml` set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN`; `evidence_hash` left blank pending the real merge commit. **Not self-certified (Law
+  4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification. Also generated (not claimed) `docs/implementation/task-packets/
+  FTF-0513.md` while surveying candidates, kept per this repo's own precedent for disclosed
+  frontier-survey byproducts. No open owner ask.
+
+Previously updated: 2026-09-25 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy, triggered by the
   `pull_request.opened` webhook for PR #296) — **FTF-0215 (Periodic sync workflow) independently
   reviewed and CERTIFIED.** Entire session task per this certifier's standing prompt: checked
@@ -5042,7 +5090,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-0215 ("Periodic sync workflow") was the item here; submitted 2026-09-25 via
+**FTF-04A09** ("Python deterministic agent/config/tool discovery") is the item here; submitted
+2026-09-26 via PR #298 (branch `claude/wizardly-fermat-rw976n` → main), producer session
+`https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z`. See this file's own top dated log for
+the full record (scope boundary, own two fault injections, verification sweep). Not self-certified
+(Law 4) — awaiting independent Control-plane L2 review and a real CI run on the opened PR.
+
+FTF-0215 ("Periodic sync workflow") was the item here before that; submitted 2026-09-25 via
 PR #296 (branch `relay/ftf-0215-periodic-sync-workflow` → main), producer session
 `https://claude.ai/code/session_0176zkJJ7cjvKszEcgJm9DQk`. Independently reviewed this same shift
 (session `https://claude.ai/code/session_017o9VWhyaZNhhohoLbzdzpy`): diff re-read against the
