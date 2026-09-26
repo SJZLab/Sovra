@@ -1,4 +1,47 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW, triggered by the
+  `pull_request.opened` webhook for PR #316) — independently certified **FTF-0303 (Private S3
+  artifact resolver)**. PR #316 brought PR #314's real head onto a new branch and added exactly
+  the boundary-safe `_key_within_tenant_prefix` fix and the isolating test scenario
+  (`test_cross_tenant_prefix_rejects_sibling_tenant_string_collision`) this queue's own prior
+  entry (below) specified as the fix for the PR #315 review's blocking finding. Session-ID check:
+  PR #316's two commits both carry `Claude-Session: .../session_016ZtyeqbMrv9Uzee9ZM5f2u` — no
+  match to this session's own ID, and independent of the original PR #314 producer and the PR
+  #315 reviewer too (Law 4).
+
+  Diff read directly in a fresh worktree at PR #316's actual head (`8f2333f`): confirmed the only
+  implementation change versus PR #314's own head was the new `_key_within_tenant_prefix` helper
+  and its call site (no other change to `private_s3_artifact_resolver.py`; negative_acceptance
+  items 1/3/4 untouched). Own reproduction: `test_ftf_0303.py` — "all checks passed" (34 checks).
+  **Own fault injection reproducing PR #315's exact original defect** (reverted
+  `_key_within_tenant_prefix` to a bare `key.startswith(tenant_key_prefix)`): the new scenario
+  genuinely failed with 2 assertion failures (`CrossTenantPrefixError` never raised for the
+  org-4/org-42 collision; a real network request made), confirming the gap is closed; reverted
+  byte-identical (md5sum matched `1d6b80a6d7b973af40f3af12e1a92afd`), re-ran clean. Real CI
+  confirmed on the exact merged head (run `36264485321`): 31/31 check runs `success` including
+  `gate`; fetched the `gate` job's own raw log directly and confirmed it actually executed
+  `tests/tasks/test_ftf_0303.py`, printing "all checks passed". `ruff`/`mypy`/`validate_spec.py
+  --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged 20/20 (`proving_symbol`
+  genuinely blank, disclosed precedent). Regression swept `test_ftf_0301.py`/`test_ftf_h006.py`/
+  `pytest tests/unit` — unaffected. Task contract re-pulled; `negative_acceptance` ("Bucket
+  mismatch, cross-tenant prefix, partial upload or ETag-as-hash assumption fails load") now
+  genuinely met for the cross-tenant-prefix clause specifically (the one PR #315 found unmet); the
+  other three clauses were already sound per PR #315's own review and are unchanged by this diff.
+
+  **Result: CERTIFIED.** No blocking defect found. Merged PR #316 (merge commit
+  `dc1cdec81fcc49fc0fe977b9a097c9d321b2f4a2`). `docs/spec-matrix.yaml`'s FTF-0303 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`). Appended a matching entry to `docs/certifications/
+  ledger.md` and `docs/certifications/queue.md`. No open owner ask (`QUEUE.md` "Owner actions —
+  current" unchanged, empty). PR #314 and PR #315 stay open/unmerged, already marked superseded —
+  not this certifying session's action to close. Certified: 78/300 → 79/300. Product-true:
+  unchanged at 20/20. No other task work, design decisions, or queue reprioritization performed
+  beyond what this certification naturally required (Law 4).
+
+## Previous shift
+
 Updated: 2026-09-26T17:40:00Z (scheduled autonomous relay shift, session
   https://claude.ai/code/session_016ZtyeqbMrv9Uzee9ZM5f2u, branch
   `claude/wizardly-fermat-p8xpah`) — picked up this queue's own top item: the Control-plane

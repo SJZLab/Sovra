@@ -1,4 +1,81 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-0303 — Control plane: independent CERTIFY review, CERTIFIED (PR #316)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW`, triggered by the `pull_request.opened`
+webhook for PR #316.
+
+Checked `docs/certifications/queue.md`: PR #316 (`[relay] FTF-0303: fix cross-tenant-prefix
+boundary bug (Control-plane-flagged)`) was the only pending PROVISIONAL item — `docs/spec-matrix.
+yaml`'s FTF-0303 entry on `main` still read `certification_state: PROVISIONAL` before this
+review.
+
+**Session-ID check:** this session's own ID is
+`https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW`. PR #316's two commits both carry
+`Claude-Session: .../session_016ZtyeqbMrv9Uzee9ZM5f2u` — no match, independent per Law 4. Also
+independent of the original PR #314 producer and the PR #315 reviewer.
+
+**Diff read directly** in a fresh `git worktree` fetched from `refs/pull/316/head` at the PR's
+actual head (`8f2333f`): `apps/api/app/artifacts/private_s3_artifact_resolver.py` gained the new
+`_key_within_tenant_prefix(key, tenant_key_prefix)` helper (path-segment-safe containment,
+replacing the bare `str.startswith` call at the cross-tenant-prefix gate) plus its own docstring
+update, and `tests/tasks/test_ftf_0303.py` gained one new isolating scenario
+(`test_cross_tenant_prefix_rejects_sibling_tenant_string_collision`, `tenant_key_prefix="org-4"`
+vs the real `org-42/models/tiny.safetensors` fixture object). No other implementation change —
+negative_acceptance items 1/3/4 (bucket mismatch, partial upload, ETag-as-hash) untouched, exactly
+as claimed.
+
+**Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0303.py` —
+"all checks passed" (34 checks).
+
+**Own fault injection (Law 1), reproducing PR #315's exact original defect:** reverted
+`_key_within_tenant_prefix` to a bare `return key.startswith(tenant_key_prefix)`. Confirmed the
+mutation actually changed the file (md5sum `1d6b80a6d7b973af40f3af12e1a92afd` →
+`bbee2fb1dc7c18827e6121f3973312ff`). Re-ran `tests/tasks/test_ftf_0303.py` with the mutation in
+place: **2 genuine assertion failures** in the new scenario (`CrossTenantPrefixError` never
+raised for the org-4/org-42 collision; a real network request was made) — reproducing PR #315's
+exact finding. Reverted byte-identical (md5sum matched `1d6b80a6d7b973af40f3af12e1a92afd` again,
+`git status` clean), re-ran clean.
+
+**Real CI confirmed on the exact merged head, not a self-report:** polled
+`repos/.../commits/8f2333f/check-runs` to full completion (`gh api` in an until-loop) — all 31
+check runs `success`, `gate` included (run `36264485321`, job `108466435039`). Fetched the `gate`
+job's own raw log directly (`mcp__github__get_job_logs`, `return_content: true`) and confirmed it
+actually executed `tests/tasks/test_ftf_0303.py`, printing `FTF-0303 Private S3 artifact resolver:
+all checks passed` — not a self-reported claim.
+
+`uv run ruff check .` / `ruff format --check .` (268 files) / `uv run mypy .` (268 files) all
+clean. `git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact;
+`validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`: `20/20` unchanged
+— `proving_symbol` genuinely blank (no live caller exists yet for this resolver), same disclosed
+precedent as FTF-0302/FTF-04A08, not a 0/0-accepted-as-pass case. `status.py`: `78/300`
+pre-certification (confirmed not self-inflated), `79/300` after this certification's own
+`spec-matrix.yaml` update. Regression swept `test_ftf_0301.py` / `test_ftf_h006.py` / `pytest
+tests/unit` (3/3) — all unaffected. Confirmed dependencies FTF-0202/FTF-0301/FTF-H006 genuinely
+`CERTIFIED` via direct `yaml.safe_load` before relying on them.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-0303 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `negative_acceptance` ("Bucket mismatch, cross-tenant prefix,
+partial upload or ETag-as-hash assumption fails load") is now genuinely met for the
+cross-tenant-prefix clause specifically — the one PR #315 found unmet. The other three clauses
+were already independently confirmed sound by PR #315's own review and are unchanged by this diff
+(no implementation change beyond the one check and its docstring). No open review threads or
+comments on PR #316 at review time; `mergeable_state: clean`.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #316 (merge commit
+`dc1cdec81fcc49fc0fe977b9a097c9d321b2f4a2`). `docs/spec-matrix.yaml`'s FTF-0303 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json` for FTF-0303). `scripts/status.py`: `78/300` -> `79/300`
+certified; product-true unchanged at `20/20` (no live caller added by this certification,
+disclosed). Appended a matching entry to `docs/certifications/ledger.md` and `docs/certifications/
+queue.md`; updated `QUEUE.md`. PR #314 and PR #315 stay open/unmerged, already marked superseded —
+not this certifying session's action to close. No other task work, design decisions, or queue
+reprioritization performed beyond what this certification naturally required (Law 4). No open
+owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
+
 ## 2026-09-26T17:40:00Z — FTF-0303 — relay: fixed the Control-plane-flagged cross-tenant-prefix boundary bug (PR #314 -> resubmitted)
 
 Scheduled autonomous relay shift, session `https://claude.ai/code/session_016ZtyeqbMrv9Uzee9ZM5f2u`,
