@@ -1,5 +1,63 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled autonomous relay shift, session
+Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr, triggered by the `pull_request.opened`
+  webhook for PR #305) — **FTF-0302 (Hugging Face artifact resolver) independently reviewed and
+  CERTIFIED.** Entire session task per this certifier's standing prompt: checked
+  `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every PROVISIONAL item; a direct
+  `certification_state: PROVISIONAL` grep against `docs/spec-matrix.yaml` found exactly one match,
+  FTF-0302 (PR #305), confirming it was the only pending item.
+
+  Session-ID check performed first: PR #305's sole commit carries `Claude-Session:
+  .../session_01X2DNqLN4Lcv1qJEfS5Z3Rr`; this certifying session's own ID
+  (`session_01FFaBjhzTX1wS8BxeXFEUYr`) matches neither — independent, not self-certification
+  (Law 4).
+
+  Re-read the diff directly (`git diff efe339b..3417e25`, plus the working tree, which this
+  session's own environment had already checked out at the PR's exact head commit):
+  `apps/api/app/artifacts/hugging_face_artifact_resolver.py` (418 lines) and
+  `tests/tasks/test_ftf_0302.py` (818 lines, 30 `check("FTF-0302", ...)` calls, own count
+  confirmed via `grep`), a new `.github/workflows/ci.yml` gate step, and tracking-doc updates —
+  matched the PR's own claimed scope, nothing undisclosed.
+
+  Confirmed real CI directly via the GitHub check-runs/job-logs API against PR #305's actual
+  final head (`3417e25`, run `36237877454`): polled to completion (31/31 checks
+  `completed`/`success`, `gate` included), then fetched the `gate` job's own raw log and confirmed
+  the literal line `FTF-0302 Hugging Face artifact resolver: all checks passed` was actually
+  printed by the new step — not a self-reported claim taken on the PR body's word.
+
+  Own reproduction in this session's own already-checked-out working tree (not the producer's
+  local run): `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0302.py` clean;
+  `ruff check`/`ruff format --check`/`mypy .` clean (264 files); `pytest tests/unit` 3/3;
+  regression swept `test_ftf_0301.py`/`test_ftf_0305.py`/`test_ftf_h006.py` — all unaffected;
+  `git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone `stale_commit`
+  artifact, after which `validate_spec.py --strict` was clean; `product_truth_check.py
+  --fail-on-unwired` reconfirmed `20/20` (`proving_symbol` genuinely blank for FTF-0302 — no live
+  caller yet, same disclosed precedent as FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/FTF-04A10, so
+  20/20 is a legitimate pass, not an inflated 0/0); `status.py` confirmed `76/300` pre-certification
+  (Law 2, not self-inflated by the PROVISIONAL submission).
+
+  **Own fault injection distinct from the producer's own two disclosed ones** (digest-mismatch,
+  floating-revision): disabled the license-acceptance gate in
+  `resolve_and_verify_huggingface_artifact` (wrapped `assert_license_accepted_for_use(artifact)` in
+  `if False:`) — 2 genuine FAILs (the license negative_acceptance case and its
+  before-any-network-request ordering case), reverted byte-identical (`git diff --stat` empty
+  afterward), re-ran clean.
+
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-0302 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`; both acceptance clauses and the negative_acceptance clause
+  (floating revision / unavailable license / remote code execution / no sensitive training data
+  during acquisition) confirmed genuinely met by the implementation and its test suite.
+
+  No blocking defect found. Merged **PR #305** (merge commit
+  `bde4b4a8562e8865474886a06fc91dcf9696a265`). `docs/spec-matrix.yaml`'s FTF-0302 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` = the merge
+  commit. Appended a matching entry to `docs/certifications/ledger.md`; the "## Provisional"
+  submission paragraph below is kept as the original record with a "Certified" follow-up paragraph
+  appended immediately after it (this repo's own established precedent for FTF-04A10/FTF-0215).
+  `scripts/status.py`: `76/300` -> `77/300` certified; product-true unchanged at `20/20` (no live
+  caller added by this certification, disclosed). No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr) — STEP 0.1 read `PROGRESS.md`/
   `QUEUE.md`/`docs/certifications/queue.md` fresh; CLAUDE.md hash self-check clean
   (`sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`). No open owner ask, no live
@@ -5365,6 +5423,18 @@ setting was changed to investigate or "fix" this (a repo-settings change is an o
 CLAUDE.md, and the cause looks environment/tool-level rather than repo-configured); the only
 authoritative certification record remains `docs/spec-matrix.yaml`'s own `certification_state`
 field, never a git merge-commit title.
+
+**Certified 2026-09-26** by an independently-triggered Control-plane certifier session
+(`https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr`, PR #305's own `pull_request.opened`
+webhook), concurrently with the relay disclosure immediately above — see this file's own top
+dated log for the full record (session-ID check, diff re-read, real CI `gate` job log confirmed
+on the exact merged head, an independent fault injection against the license gate distinct from
+the producer's own two, task-contract re-pull). `docs/spec-matrix.yaml` FTF-0302 now genuinely
+reads `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` = merge
+commit `bde4b4a8562e8865474886a06fc91dcf9696a265` — the merge commit's own title was accurate by
+the time this certification's own follow-up commit landed, resolving the timing gap the relay's
+disclosure above correctly flagged. This paragraph is kept as the original submission record, not
+rewritten.
 
 **FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") was the item
 here before that; submitted 2026-09-26 via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`,

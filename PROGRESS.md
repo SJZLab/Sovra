@@ -1,4 +1,70 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-0302 — Control plane: CERTIFIED (PR #305 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #305, session
+`https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr`. Entire task per this certifier's
+standing prompt: checked `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every
+`PROVISIONAL` item — exactly one pending (FTF-0302, PR #305, this run's own triggering PR).
+
+Session-ID check: PR #305's sole commit (`3417e25`) carries producer session
+`session_01X2DNqLN4Lcv1qJEfS5Z3Rr` — no overlap with this reviewing session. Independent, Law 4.
+
+Diff read directly (`git diff efe339b..3417e25`, plus the working tree, which this session's own
+environment had already checked out at the PR's exact head commit):
+`apps/api/app/artifacts/hugging_face_artifact_resolver.py` (418 lines) — resolves
+`repo_id@revision` against a real Hugging Face Hub-shaped API, enforces (in order, before any
+avoidable network request) a floating-revision refusal reusing FTF-0301's own
+`is_pinned_revision`, a remote-code-required refusal unless `trust_remote_code_allowed`, a closed
+top-level model-artifact filename allowlist, and per-file sha256 verification against Hugging
+Face's own declared LFS hash; the approved-artifact entry point checks FTF-0305's own
+`assert_license_accepted_for_use` before any network request. Plus `tests/tasks/test_ftf_0302.py`
+(818 lines, 30 `check("FTF-0302", ...)` calls, own count confirmed via `grep`); one new
+`.github/workflows/ci.yml` gate step; `docs/spec-matrix.yaml`/tracking-doc updates — matches the
+PR's own claimed scope exactly, no scope creep.
+
+Dependencies FTF-0202/FTF-0301/FTF-H006 reconfirmed genuinely `CERTIFIED` in this exact
+`docs/spec-matrix.yaml` before relying on their contracts.
+
+**Own re-verification of the PR's real head, not the producer's claims alone:** `CLAUDE.md`
+integrity confirmed (`sha256sum` matches the committed `CLAUDE.md.sha256`). `uv sync
+--all-packages`; `uv run python3 tests/tasks/test_ftf_0302.py` — "all checks passed". `uv run
+ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (264 source files). `uv run pytest
+tests/unit` 3/3. Regression swept `test_ftf_0301.py`/`test_ftf_0305.py`/`test_ftf_h006.py` — all
+"all checks passed," zero regressions. `python3 scripts/validate_spec.py --strict` initially
+reported a `stale_commit` batch, traced to this sandbox's own pre-existing shallow-clone state;
+`git fetch --unshallow` resolved it cleanly, the same disclosed precedent every recent shift has
+hit. `product_truth_check.py --fail-on-unwired`: `20/20` unchanged (this task's `proving_symbol`
+is genuinely blank — no live caller exists yet, disclosed, same precedent as
+FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/FTF-04A10 — not a 0/0-accepted-as-pass case). `status.py`:
+`76/300` certified pre-certification (Law 2, confirmed not self-inflated).
+
+**Own fault injection, a vector distinct from the producer's own two disclosed ones** (digest
+mismatch, floating revision): disabled the license-acceptance gate in
+`resolve_and_verify_huggingface_artifact` (wrapped `assert_license_accepted_for_use(artifact)` in
+`if False:`). Re-ran `tests/tasks/test_ftf_0302.py`: 2 genuine FAILs — the license
+negative_acceptance case and its before-any-network-request ordering case. Reverted
+byte-identical (`git diff --stat` empty on the file afterward), re-ran clean.
+
+Real CI reconfirmed directly via the GitHub check-runs API against PR #305's actual final head
+(`3417e25`, run `36237877454`): polled to completion, 31/31 checks green, `gate` included; fetched
+the `gate` job's own raw log and confirmed the literal line `FTF-0302 Hugging Face artifact
+resolver: all checks passed` was actually printed by the new step.
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0302 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`; both acceptance clauses and the negative_acceptance clause
+(floating revision / unavailable license / remote code execution / no sensitive training data
+during acquisition) confirmed genuinely met.
+
+No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0302 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `scripts/status.py`: `76/300` -> `77/300` certified; product-true unchanged at `20/20`
+(no live caller added by this certification, disclosed). Merged **PR #305** (merge commit
+`bde4b4a8562e8865474886a06fc91dcf9696a265`). Appended `docs/certifications/ledger.md`; moved
+FTF-0302 out of "## Provisional" (kept as original record, "Certified" follow-up paragraph
+appended immediately after it, this repo's own established precedent for FTF-04A10/FTF-0215) in
+`QUEUE.md`. No other task work, design decisions, or queue reprioritization performed — certification
+only, per this session's standing mandate.
+
 ## 2026-09-26T00:00:00Z — FTF-0302 — relay: submitted PROVISIONAL (PR #305)
 
 Scheduled autonomous relay shift, session `https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr`.

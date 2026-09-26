@@ -1466,10 +1466,10 @@ FTF-0301:
   proving_symbol: build_trainable_artifact_router
   proving_test: tests/tasks/test_ftf_0301.py
 FTF-0302:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Hugging Face artifact resolver
-  evidence_hash: ''
+  evidence_hash: bde4b4a8562e8865474886a06fc91dcf9696a265
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301,
@@ -1535,8 +1535,27 @@ FTF-0302:
     tests/unit` (3/3) and regression sweeps of `test_ftf_0301.py`/`test_ftf_0305.py`/
     `test_ftf_h006.py` unaffected. `validate_spec.py --strict` clean after `git fetch --unshallow`
     resolved this sandbox's own pre-existing shallow-clone `stale_commit` artifact (FTF-0401's
-    evidence commit), same documented class of gap prior shifts already hit.
-  proof_state: L1-PROVEN
+    evidence commit), same documented class of gap prior shifts already hit. CERTIFIED
+    2026-09-26 by independent Control-plane review (PR #305, merge commit
+    bde4b4a8562e8865474886a06fc91dcf9696a265) -- session ID checked clean against the PR's sole
+    commit (session_01X2DNqLN4Lcv1qJEfS5Z3Rr, not this certifying session); real CI `gate` job
+    reconfirmed green on the exact merged head (all 31 checks, including the new "FTF-0302
+    negative-test proof" step logging "FTF-0302 Hugging Face artifact resolver: all checks
+    passed"); own independent fault injection (disabled `assert_license_accepted_for_use` in
+    `resolve_and_verify_huggingface_artifact` via `if False:`) reproduced 2 genuine FAILs (the
+    license-gate negative_acceptance case and its before-any-network-request ordering case),
+    reverted byte-identical, re-ran clean; own reproduction of ruff/format/mypy (264 files
+    clean), `uv run pytest tests/unit` (3/3), the FTF-0301/FTF-0305/FTF-H006 regression sweep (all
+    "all checks passed"), `validate_spec.py --strict` (clean after `git fetch --unshallow`),
+    `product_truth_check.py --fail-on-unwired` (20/20, `proving_symbol` genuinely blank -- no live
+    caller exists yet, same disclosed precedent as FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/FTF-04A10,
+    so 20/20 is a legitimate pass rather than an inflated 0/0), and `status.py` (76/300, unchanged --
+    Law 2). Task contract re-pulled via `tools/r1_handoff.py packet FTF-0302
+    --plan FINE_TUNING_FACTORY_RELEASE_1.md`; both acceptance clauses and the negative_acceptance
+    clause (floating revision / unavailable license / remote code execution / no sensitive training
+    data during acquisition) confirmed met by the implementation and its 30-check test suite. See
+    docs/certifications/ledger.md for the full independent-review entry.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0302.py
 FTF-0303:
