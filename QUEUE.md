@@ -1,5 +1,43 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (same scheduled autonomous relay shift, session
+Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01B8eL73ozkraSEce8tjEMXh, triggered by the `pull_request.opened`
+  webhook for PR #320) — independently certified **FTF-04A11 (JSON/YAML/TOML configuration
+  discovery)**. PR #319 (already merged to `main` as `7b60f78`) contained no code or test change
+  versus PR #301's own original submission, already reviewed sound but merge-conflict-blocked by
+  a prior Control-plane review (PR #318). Session-ID check: no overlap with PR #319's producer
+  (`session_019cqCAMUSbtungLhvndTXaP`), PR #301's original producer
+  (`session_01GMDn1KqkzPZwd6WMgpZ4SZ`), or the PR #318 reviewer
+  (`session_01NZXedm3XU2KWjsrTpj99bW`) — independent per Law 4.
+
+  Diff read directly in a fresh worktree at `origin/main`'s tip: confirmed both real files
+  byte-identical to PR #301's own original head (empty `git diff`, md5sum matches PR #318's own
+  prior review). Own reproduction: `test_ftf_04a11.py` — "all checks passed" (19 `test_*`
+  functions, 20 `check(` sites). **Own fault injection, two independent mutations reproducing PR
+  #318's exact recorded md5sums:** (1) `_is_secret_like_key` forced `return False` — 2 genuine
+  failures (a real secret leaked into evidence); (2) `yaml.safe_load` → `yaml.unsafe_load` — 1
+  genuine failure (marker-file check proves `os.system` would have run). Both reverted
+  byte-identical, both re-ran clean. Real CI confirmed on the exact merged head (run
+  `36271663968`): 31/31 check runs `success` including `gate`; fetched the `gate` job's own raw
+  log directly and confirmed it actually executed `tests/tasks/test_ftf_04a11.py`, printing "all
+  checks passed". `ruff`/`mypy`/`validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` unchanged `20/20` (confirmed via direct source read that a blank
+  `proving_symbol` is skipped entirely, not a 0/0-accepted-as-pass case). Regression swept six
+  dependency/sibling test files plus `pytest tests/unit` — unaffected; the pre-existing, unrelated
+  `test_ftf_04a10.py` `IndexError` already flagged by the PR #319 relay shift reproduced again,
+  confirmed unrelated to FTF-04A11's own files. Task contract re-pulled; acceptance clauses 1/2 and
+  the full `negative_acceptance` clause are genuinely met — see `docs/certifications/ledger.md`'s
+  matching entry for the complete breakdown.
+
+  **Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A11 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `7b60f7852b7f9c3935f00674e1d3a6ba7ad52527`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). Appended a matching entry to
+  `docs/certifications/ledger.md` and `docs/certifications/queue.md`. No open owner ask
+  (`QUEUE.md` "Owner actions — current" empty, confirmed). Certified: `79/300` -> `80/300`.
+  Product-true: unchanged at `20/20`. PR #301 stays open/unmerged, already marked superseded by
+  PR #319 — not this session's action to close.
+
+Previously updated: 2026-09-26 (same scheduled autonomous relay shift, session
   https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP) — **PR #319 (FTF-04A11 merge-conflict
   fix) merged to `main`** as commit `7b60f78`, 31/31 CI green including `gate`. Disclosed, not
   silently passed over: the merge commit's own title claims "(Control-plane certified)" but

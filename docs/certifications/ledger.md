@@ -8322,3 +8322,97 @@ reasons given above.
   session-ID check above), 2026-09-26
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A11 — JSON/YAML/TOML configuration discovery (merge-conflict rebase, PR #319)
+
+- Criterion ID: FTF-04A11
+- PR: https://github.com/SJZLab/Sovra/pull/319 (`[relay] FTF-04A11: rebase onto main, resolve
+  Control-plane-flagged merge conflict`) — no code or test change versus the original submission,
+  PR #301 (`[relay] FTF-04A11: JSON/YAML/TOML/env-template configuration discovery`, left open/
+  unmerged, marked superseded)
+- Merge commit: `7b60f7852b7f9c3935f00674e1d3a6ba7ad52527`
+- Head commit reviewed: `4a6010820af1995e5781fc1675600a08317e8d01`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36271663968 — 31/31 check runs `success`,
+  `gate` included (job `108486664407`)
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_01B8eL73ozkraSEce8tjEMXh`. PR #319's commits carry
+  `Claude-Session: .../session_019cqCAMUSbtungLhvndTXaP`; PR #301's original commit carries
+  `.../session_01GMDn1KqkzPZwd6WMgpZ4SZ`; the prior Control-plane review that found the code sound
+  but blocked on the merge conflict (PR #318) was `.../session_01NZXedm3XU2KWjsrTpj99bW`. No
+  overlap with any of them, independent per Law 4.
+- **Diff read directly** in a fresh `git worktree` at `origin/main`'s tip: confirmed
+  `apps/api/app/target_connectors/json_yaml_toml_configuration_discovery.py` and
+  `tests/tasks/test_ftf_04a11.py` are byte-identical to PR #301's own original head (`7fc2a0c`) —
+  `git diff 7fc2a0c HEAD -- <both paths>` empty, `md5sum` of the implementation file
+  (`22c9aea5c5938506e8da3415b0d05243`) matches the value recorded in PR #318's own prior review.
+  PR #319 changed only tracking-doc appends and CI gate-step ordering to resolve the merge
+  conflict with `main`; `docs/spec-matrix.yaml` merged cleanly with no conflict.
+- **Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a11.py`
+  — "all checks passed" (own count: 19 `test_*` functions, 20 `check(` call sites — disclosing
+  this differs from the entry's own earlier "22 tests" note; an immaterial miscount, same pattern
+  already disclosed for FTF-0513).
+- **Own fault injection (Law 1) #1, reproducing the secret-redaction negative_acceptance clause:**
+  forced `_is_secret_like_key` to `return False` unconditionally. Mutation confirmed real (md5sum
+  `22c9aea5c5938506e8da3415b0d05243` → `7f8248fe7bbd7e720acefba84c4f018c`, matching PR #318's own
+  prior finding exactly). Re-ran the suite: 2 genuine failures (`database_password` no longer
+  recognized as secret-shaped; a real secret value leaked directly into the returned evidence).
+  Reverted byte-identical (md5sum matched), re-ran clean.
+- **Own fault injection (Law 1) #2, reproducing the unsafe-YAML-tag negative_acceptance clause:**
+  replaced `yaml.safe_load(text)` with `yaml.unsafe_load(text)`. Mutation confirmed real (md5sum →
+  `6da87b15df6e835ef7759bca8f0eb09d`, matching). Re-ran the suite: 1 genuine failure
+  (`test_unsafe_yaml_tag_is_never_constructed` — the test's own marker-file check independently
+  proves `os.system` would actually have run). Reverted byte-identical, re-ran clean.
+- Directly inspected the test file and confirmed each remaining negative_acceptance sub-clause has
+  its own isolating test (`test_malformed_json_does_not_raise`, `test_malformed_toml_does_not_
+  raise`, `test_malformed_yaml_does_not_raise`,
+  `test_deeply_nested_document_does_not_raise_and_is_disclosed_truncated`,
+  `test_dotenv_value_is_never_shell_expanded`) rather than trusting the prior review's own
+  characterization alone.
+- **Real CI confirmed on the exact merged head, not a self-report:** fetched PR #319's own
+  check-runs directly — 31/31 `success`, `gate` included (run `36271663968`, job
+  `108486664407`); fetched that job's own raw log directly and confirmed it printed "FTF-04A11
+  JSON/YAML/TOML configuration discovery: all checks passed" at `2026-09-26T21:08:38Z`,
+  immediately before the `product_truth_check.py --fail-on-unwired` step.
+- `ruff check .` / `ruff format --check .` / `mypy .` all clean (270 files). `git fetch
+  --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (disclosed
+  precedent); `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`:
+  `20/20` unchanged — directly read `scripts/product_truth_check.py`'s own logic and confirmed a
+  blank `proving_symbol` entry is `continue`d past entirely (never counted in either the numerator
+  or denominator), so this is genuinely not a 0/0-accepted-as-pass case. `status.py`: `79/300`
+  certified pre-certification (confirmed not self-inflated), `80/300` after this certification's
+  own `spec-matrix.yaml` update and `sync_certified_status()` run (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`). Regression swept `test_ftf_04a01.py`/`test_ftf_04a08.py`/
+  `test_ftf_04a09.py`/`test_ftf_0302.py`/`test_ftf_0303.py`/`test_ftf_0513.py` (all "all checks
+  passed") plus `uv run pytest tests/unit` (3/3) — all unaffected. Confirmed dependencies
+  FTF-04A01/FTF-04A08 genuinely `CERTIFIED` via direct `yaml.safe_load` plus matching ledger
+  entries, before relying on them.
+- **Disclosed, not silently passed over:** `test_ftf_04a10.py`'s own
+  `test_entrypoint_function_name_captured_for_nested_arrow_function` still fails with a genuine
+  `IndexError` on this branch — already flagged by the PR #319 relay shift as pre-existing and
+  unrelated to FTF-04A11 (confirmed independently here too: FTF-04A11's own two files are
+  untouched by that failure's module). `python3 scripts/verify_task.py --task FTF-04A11 --stage
+  task` reports `BLOCKED` ("no merged verification evidence yet") — disclosed: `spec/verification-
+  map.json` carries no entry for FTF-04A11, but also carries none for any of the other currently
+  `CERTIFIED` tasks checked (FTF-0302/FTF-0303/FTF-04A09/FTF-04A10/FTF-0513) — a pre-existing,
+  repo-wide gap unrelated to this criterion specifically and outside this queue's own
+  certify-procedure checklist. Neither issue is this review's own scope to fix.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A11 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Read bounded JSON/YAML/TOML/env-template
+  config and normalize evidence without secrets") genuinely met per the disclosed narrowed scope
+  already recorded in `docs/spec-matrix.yaml`; acceptance clause 2 ("Independent review, exact
+  merged commit, real relevant integration and negative-test evidence recorded") met by this
+  review; `negative_acceptance` ("Unsafe YAML tags, malformed TOML/JSON, huge nesting and dotenv
+  secrets cannot execute/leak") reconfirmed genuinely met — each of the four sub-clauses has its
+  own isolating test, two independently re-verified via fresh fault injection above.
+- No open review threads or comments on PR #319 (already merged,
+  `merged_at: 2026-09-26T21:12:19Z`).
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A11 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `7b60f7852b7f9c3935f00674e1d3a6ba7ad52527`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `79/300` ->
+  `80/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_01B8eL73ozkraSEce8tjEMXh (independent — see
+  session-ID check above), 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.
