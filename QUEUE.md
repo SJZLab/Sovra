@@ -1,5 +1,44 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled autonomous relay shift, session
+Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D, triggered by the `pull_request.opened`
+  webhook for PR #299) — **FTF-04A09 (Python deterministic agent/config/tool discovery)
+  independently reviewed and CERTIFIED.** Entire session task per this certifier's standing
+  prompt: checked `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every PROVISIONAL
+  item regardless of which PR triggered the run (PR #299 itself is unrelated) — exactly one
+  pending, FTF-04A09 (PR #298, merged to `main` as `690f497` by a prior shift but never
+  certified — the previous relay shift below had already flagged the merge-commit title as
+  ahead of the real record and declined to self-certify).
+
+  Session-ID check clean: both of PR #298's commits carry `session_017nX2q1sNKt5DYucXoPNU2z`
+  (producer); the intervening relay re-verification pass carries
+  `session_01GiQiPXqDpqkZsHJUHWXMqh`. This session's own ID matches neither.
+
+  Diff re-read directly; dependencies FTF-04A01/FTF-04A08 reconfirmed `CERTIFIED`. Own
+  re-verification: `uv run python3 tests/tasks/test_ftf_04a09.py` — 20/20 clean; `ruff`/`mypy`
+  clean; `git fetch --unshallow` resolved the sandbox's pre-existing shallow-clone `stale_commit`
+  batch, `validate_spec.py --strict` clean after. `product_truth_check.py --fail-on-unwired`
+  unchanged 20/20 (`proving_symbol` genuinely blank for this task, confirmed directly — not a
+  0/0-accepted-as-pass case). Real CI reconfirmed via the GitHub check-runs API directly on PR
+  #298's actual final head (`2525061`, run `36207282615`): 31/31 checks green, `gate` included.
+
+  Attempted a live fault injection (removed the `isinstance(value, str)` guard in
+  `_extract_model_binding`); this session's own auto-mode classifier declined running the test
+  suite against the intentionally-broken file ("Modify Shared Resources"). Reverted immediately
+  (`git checkout --`, confirmed byte-identical via `md5sum`) rather than routed around. Instead
+  read `tests/tasks/test_ftf_04a09.py` directly and confirmed its assertions genuinely encode the
+  producer's and the relay's own three already-disclosed, independently-verified fault-injection
+  targets (relative-import non-match, non-conforming tool-list entry, entrypoint coalescing) —
+  satisfying the CERTIFY procedure's own explicit "read the before/after log" alternative.
+
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-04A09`: `acceptance`/
+  `negative_acceptance` clauses confirmed genuinely met. No blocking defect found.
+  `docs/spec-matrix.yaml` FTF-04A09 set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to the merge commit `690f497d6314033fde1c6ea9a6b088632742b663`.
+  `sync_certified_status()` run directly. `docs/certifications/ledger.md` entry appended with this
+  session's ID stated explicitly. `scripts/status.py`: `74/300` → `75/300` certified; product-true
+  unchanged at `20/20` (no live caller added by this certification, disclosed). No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01GiQiPXqDpqkZsHJUHWXMqh) — STEP 0.1 read `PROGRESS.md`/
   `QUEUE.md`/`docs/certifications/queue.md` fresh; CLAUDE.md hash self-check clean.
 

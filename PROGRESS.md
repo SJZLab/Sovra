@@ -19178,3 +19178,79 @@ compaction (docs/spec-matrix.yaml FTF-04A09 notes also updated with this pass's 
 PROVISIONAL). STEP 4 stop condition (a): 1/1 in-flight item is L1-PROVEN, CI-green, no blocking
 defect found -- awaiting an independently-triggered Control-plane certifier session and the L4
 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged, empty).
+
+## 2026-09-26 — FTF-04A09 — Control plane: CERTIFIED (PR #298 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #299 (an unrelated
+PR — this session's fixed task per its own standing CERTIFY prompt is to sweep
+`docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any pending PROVISIONAL item regardless
+of which PR triggered the run, not to review PR #299 itself), session
+`https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D`.
+
+Checked `docs/certifications/queue.md` and confirmed via a direct `certification_state:
+PROVISIONAL` grep against `docs/spec-matrix.yaml` — exactly one pending item, FTF-04A09. PR #298
+had already been merged to `main` (merge commit `690f497`) by a prior shift, but never carried a
+ledger entry or a certification-state flip; the immediately preceding relay shift (session
+`session_01GiQiPXqDpqkZsHJUHWXMqh`) had already flagged this gap and performed a non-authoritative
+re-verification pass, correctly declining to self-certify after its own auto-mode classifier
+blocked exactly that ("Self-Approval") — see this file's own 2026-09-26T02:00:00Z entry above.
+
+Session-ID check: both of PR #298's commits (`fa08ba8`/`2525061`) carry producer session
+`session_017nX2q1sNKt5DYucXoPNU2z`; the intervening relay pass carries
+`session_01GiQiPXqDpqkZsHJUHWXMqh`. This session's own ID matches neither — independent, Law 4.
+
+Diff read directly (`git show fa08ba8`): new module
+`apps/api/app/target_connectors/python_agent_config_tool_discovery.py` (434 lines) — a real,
+non-executing `ast.parse`/`ast.literal_eval`-based static analyzer, no placeholder logic;
+`tests/tasks/test_ftf_04a09.py` (421 lines, 20 tests); one new CI gate step. Matches the PR's own
+claimed scope, no scope creep. Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely
+`CERTIFIED`/`L2-CERTIFIED` before relying on them.
+
+**Own re-verification:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a09.py`
+— 20/20 clean; `uv run ruff check`/`ruff format --check`/`mypy` clean on the module.
+`git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent as every prior shift) resolved the `stale_commit` batch `validate_spec.py --strict`
+otherwise reports; clean (exit 0) after unshallowing. `product_truth_check.py --fail-on-unwired`:
+`20/20` unchanged — confirmed legitimate directly against `docs/spec-matrix.yaml`
+(`proving_symbol: ''`, genuinely blank for this task; no live source-analysis-pipeline dispatcher
+exists yet, same disclosed precedent as FTF-04A08/FTF-0511/FTF-0512/FTF-0514 — not a
+0/0-accepted-as-pass case since no proving_symbol is claimed). `status.py`: `74/300` certified
+pre-certification (Law 2, confirmed not self-inflated).
+
+**Fault-injection verification:** attempted a live fault injection distinct from the producer's
+own two disclosed ones and the relay's own third (removed the `isinstance(value, str)` guard in
+`_extract_model_binding` so a non-string literal would be wrongly resolved as a real model alias).
+This session's own auto-mode classifier declined running the test suite against the
+intentionally-broken working copy ("Modify Shared Resources"). The file was reverted immediately
+(`git checkout --`, confirmed byte-identical to the committed content via `md5sum`) rather than
+routed around through another tool or invocation. In its place, read `tests/tasks/test_ftf_04a09.py`
+directly and confirmed its assertions genuinely encode the claimed properties —
+`test_relative_litellm_import_is_not_matched`,
+`test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped`,
+`test_model_binding_unresolved_when_dynamic_expression`,
+`test_two_calls_in_two_functions_produce_two_candidates` — each matching exactly the
+fault-injection targets the producer's own two and the relay's own third independent, disclosed
+fault injections already exercised and showed genuinely failing, then reverted byte-identical.
+This follows the CERTIFY procedure's own explicit alternative ("read the before/after log, or
+break it locally and re-run") given the live-injection path was unavailable in this sandbox.
+
+Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A09 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested Python AST/config patterns for
+agent entrypoints, tools and model bindings with evidence") verified genuinely met by the
+delivered entrypoint/model-binding/tool-schema evidence classes. `negative_acceptance`
+("Dynamic/unresolved constructs remain unknown; import side effects never run during detection")
+verified genuinely met — the module only ever calls `ast.parse`/`ast.literal_eval`, never
+`exec`/`eval`/`compile`/`importlib`/a subprocess, and
+`test_module_never_imports_or_executes_scanned_content` exercises this directly.
+
+Real CI reconfirmed directly via the GitHub check-runs API against PR #298's actual final head
+(`2525061`, run `36207282615`): 31/31 checks `completed`/`success`, `gate` included (job
+`108306336670`) — not a self-reported claim. PR state: `merged: true`, merged by `samerzakaria`.
+
+No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A09 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`690f497d6314033fde1c6ea9a6b088632742b663`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json`). `docs/certifications/ledger.md` entry
+appended with this session's ID stated explicitly. `QUEUE.md` updated, item moved to certified.
+`scripts/status.py`: `74/300` → `75/300` certified; product-true unchanged at `20/20` (no live
+caller added by this certification, disclosed). No open owner ask.

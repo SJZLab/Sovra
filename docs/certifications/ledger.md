@@ -7924,3 +7924,85 @@ reasons given above.
 - Date: 2026-09-25
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A09 — Python deterministic agent/config/tool discovery
+- Criterion ID: FTF-04A09
+- PR: https://github.com/SJZLab/Sovra/pull/298 (`claude/wizardly-fermat-rw976n` -> `main`)
+- Merge commit (evidence): 690f497d6314033fde1c6ea9a6b088632742b663
+- Implementation commits: `fa08ba8a5cdae7c65b311f504adef146a2e01562` (implementation),
+  `2525061fbda8ddc53b02fd5d1067db39fb026eae` (tracking), both producer session
+  `session_017nX2q1sNKt5DYucXoPNU2z`.
+- Session-ID check: both of PR #298's commits carry `Claude-Session:
+  .../session_017nX2q1sNKt5DYucXoPNU2z`; an intervening non-authoritative relay
+  re-verification pass (recorded in `docs/certifications/queue.md`'s 2026-09-26 entry, not
+  certifying) carries `session_01GiQiPXqDpqkZsHJUHWXMqh`. This reviewing session's own ID
+  (`https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D`) matches neither -- independent, not
+  self-certification (Law 4).
+- Triggered by the `pull_request.opened` webhook for PR #299 (an unrelated PR); this session's
+  fixed CERTIFY mandate is to sweep `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any
+  pending PROVISIONAL item regardless of which PR triggered the run, not to review PR #299 itself.
+  A direct `certification_state: PROVISIONAL` check against `docs/spec-matrix.yaml` found exactly
+  one match, FTF-04A09 (PR #298, already merged to `main` by a prior shift but never certified),
+  confirming it was the only pending item.
+- Diff read directly (`git show fa08ba8`): new module
+  `apps/api/app/target_connectors/python_agent_config_tool_discovery.py` (434 lines) -- a real,
+  non-executing `ast.parse`/`ast.literal_eval`-based static analyzer tracing LiteLLM
+  `completion`/`acompletion` calls to a genuine same-file `litellm` import, resolving `model=`/
+  `tools=` keyword arguments only from real literals and disclosing any dynamic/unresolved shape
+  rather than guessing it; `tests/tasks/test_ftf_04a09.py` (421 lines, 20 test functions); one new
+  `.github/workflows/ci.yml` gate step; `docs/spec-matrix.yaml`; task-packet/tracking-doc updates
+  -- matches the PR's own claimed scope exactly, no scope creep.
+- Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in this exact
+  `docs/spec-matrix.yaml` (via direct `yaml.safe_load`) before relying on their contracts.
+- **Own re-verification:** CLAUDE.md integrity confirmed (`sha256sum` matches committed
+  `CLAUDE.md.sha256`). `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a09.py` --
+  20/20 clean. `uv run ruff check`/`ruff format --check`/`mypy` clean on the module.
+  `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+  precedent as every prior shift) resolved a `stale_commit` batch `validate_spec.py --strict`
+  otherwise reports; clean (exit 0) after unshallowing. `product_truth_check.py
+  --fail-on-unwired`: `20/20` unchanged -- confirmed legitimate directly against
+  `docs/spec-matrix.yaml` (`proving_symbol: ''`, genuinely blank for this task; no live
+  source-analysis-pipeline dispatcher exists yet to call this worker, same disclosed precedent as
+  FTF-04A08/FTF-0511/FTF-0512/FTF-0514 -- not a 0/0-accepted-as-pass case since no proving_symbol
+  is claimed). `status.py`: `74/300` certified pre-certification (Law 2, confirmed not
+  self-inflated).
+- **Fault-injection verification:** attempted a live fault injection distinct from the producer's
+  own two disclosed ones and the relay's own third (removing the `isinstance(value, str)` guard in
+  `_extract_model_binding` so a non-string literal would be wrongly resolved as a real model
+  alias); this session's own auto-mode classifier declined running the test suite against that
+  intentionally-broken working copy ("Modify Shared Resources"). The file was immediately reverted
+  (`git checkout --`, confirmed byte-identical to the committed content via `md5sum`) rather than
+  retried through another route. In place of the live run, read `tests/tasks/test_ftf_04a09.py`
+  directly and confirmed its assertions genuinely encode the claimed properties --
+  `test_relative_litellm_import_is_not_matched`,
+  `test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped`,
+  `test_model_binding_unresolved_when_dynamic_expression`,
+  `test_two_calls_in_two_functions_produce_two_candidates` -- each matching exactly the
+  fault-injection targets the producer's own two (PR #298 description) and the relay's own third
+  (`docs/certifications/queue.md`'s 2026-09-26 entry) independent, disclosed fault injections
+  already exercised and showed genuinely failing, then reverted byte-identical. This follows the
+  CERTIFY procedure's own explicit alternative ("read the before/after log, or break it locally
+  and re-run") given the live-injection path was unavailable in this sandbox.
+- Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A09 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested Python AST/config patterns for
+  agent entrypoints, tools and model bindings with evidence") verified genuinely met by the
+  delivered entrypoint/model-binding/tool-schema evidence classes and their JSON serialization for
+  FTF-04A17's storage columns. `negative_acceptance` ("Dynamic/unresolved constructs remain
+  unknown; import side effects never run during detection") verified genuinely met -- the module
+  only ever calls `ast.parse`/`ast.literal_eval`, never `exec`/`eval`/`compile`/`importlib`/a
+  subprocess, and `test_module_never_imports_or_executes_scanned_content` exercises this directly.
+- Real CI reconfirmed directly via the GitHub check-runs API against PR #298's actual final head
+  (`2525061`, run `36207282615`): 31/31 checks `completed`/`success`, `gate` included (job
+  `108306336670`) -- not a self-reported claim. PR state: `merged: true`, merged by
+  `samerzakaria`, no open reviews or comments blocking.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A09 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` for FTF-04A09). `scripts/status.py`: `74/300` -> `75/300`
+  certified; product-true unchanged at `20/20` (no live caller added by this certification,
+  disclosed).
+- Validated-by: session https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D (independent --
+  see session-ID check above), 2026-09-26
+- Date: 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.

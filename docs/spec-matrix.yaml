@@ -2843,10 +2843,10 @@ FTF-04A08:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a08.py
 FTF-04A09:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Python deterministic agent/config/tool discovery
-  evidence_hash: ''
+  evidence_hash: 690f497d6314033fde1c6ea9a6b088632742b663
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -2942,22 +2942,73 @@ FTF-04A09:
     `completed`/`success`, `gate` included; the `gate` job's own step-level log
     read directly confirms genuine execution. No blocking defect found.
 
-    **This session does NOT flip this entry to CERTIFIED.** This shift's own
-    scheduled prompt is the relay role (execute decided items, PEV, STEP 4 stop
-    conditions), not the separate Control-plane-certifier role that historically
-    runs as its own PR-triggered session elsewhere in this file's own history
-    (e.g. FTF-0215/FTF-0408's own certifying entries). A single session
-    performing its own verification and then also flipping the record to
-    CERTIFIED in the same breath is exactly the self-approval pattern Law 4
-    ("Producer never certifies own work") and this repo's own separation of
-    relay/certifier roles exists to prevent, even where the producer and this
-    session's own IDs differ -- so this remains PROVISIONAL, unflipped, pending
-    an actual independently-triggered Control-plane certifier session.
+    **2026-09-26 -- independently-triggered Control-plane certifier session
+    (session_01PdswKsS7sgPHSE9e125d2D, `pull_request.opened` webhook trigger, PR
+    #299 -- unrelated to this task; this session's fixed job per its own CERTIFY
+    mandate is to sweep `docs/certifications/queue.md` for any PROVISIONAL item,
+    not just review the triggering PR).** Session-ID check: neither of PR #298's
+    two commits (`fa08ba8`, `2525061`) carries this session's ID -- both carry
+    `session_017nX2q1sNKt5DYucXoPNU2z` (the producer); the intervening relay
+    re-verification pass above carries `session_01GiQiPXqDpqkZsHJUHWXMqh`. No
+    overlap with either -- independent per Law 4.
 
-    State: proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
-    self-certified (Law 4) -- an independently-triggered Control-plane L2
-    certifier session is required before this flips to CERTIFIED.
-  proof_state: L1-PROVEN
+    Re-read the diff directly (`git show fa08ba8`): a real, non-executing
+    `ast.parse`/`ast.literal_eval`-based module, no placeholder logic. Re-ran
+    `uv run python3 tests/tasks/test_ftf_04a09.py` myself -- 20/20 clean; `ruff
+    check`/`ruff format --check`/`mypy` clean on the module. Confirmed CI
+    directly via the GitHub check-runs API against PR #298's real final head
+    (`2525061`): 31/31 checks `completed`/`success`, `gate` included -- not a
+    self-reported claim. Attempted my own live fault injection (removing the
+    `isinstance(value, str)` guard in `_extract_model_binding` so a non-string
+    literal would be wrongly resolved as a model alias); the environment's own
+    auto-mode classifier declined running the test suite against that
+    intentionally-broken working copy ("Modify Shared Resources"), so the file
+    was immediately reverted (`git checkout --`, byte-identical to the
+    committed content, confirmed via `md5sum`) and this pass instead read
+    `tests/tasks/test_ftf_04a09.py` directly to confirm its assertions
+    genuinely encode the claimed properties --
+    `test_relative_litellm_import_is_not_matched`,
+    `test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped`,
+    `test_model_binding_unresolved_when_dynamic_expression`,
+    `test_two_calls_in_two_functions_produce_two_candidates` -- each matching
+    exactly the fault-injection targets the producer's own two and the relay's
+    own third, independent, disclosed fault injections already exercised and
+    showed genuinely failing, then reverted byte-identical. This satisfies the
+    CERTIFY procedure's own explicit alternative ("read the before/after log,
+    or break it locally and re-run") given the live-injection path was
+    unavailable in this sandbox.
+
+    `product_truth_check.py --fail-on-unwired` re-run: `20/20`, unchanged --
+    confirmed legitimate directly against `docs/spec-matrix.yaml` (`proving_symbol:
+    ''`, genuinely blank for this task; no live source-analysis-pipeline
+    dispatcher exists yet to call this worker, same disclosed precedent as
+    FTF-04A08/FTF-0511/FTF-0512/FTF-0514) -- this is not a 0/0-accepted-as-pass
+    case since the criterion carries no proving_symbol to begin with.
+
+    Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A09
+    --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested Python
+    AST/config patterns for agent entrypoints, tools and model bindings with
+    evidence") verified genuinely met by the delivered entrypoint/model-binding/
+    tool-schema evidence classes and their JSON serialization for FTF-04A17's
+    storage columns. `negative_acceptance` ("Dynamic/unresolved constructs
+    remain unknown; import side effects never run during detection") verified
+    genuinely met -- confirmed the module only ever calls `ast.parse`/
+    `ast.literal_eval`, never `exec`/`eval`/`compile`/`importlib`/a subprocess,
+    and `test_module_never_imports_or_executes_scanned_content` exercises this
+    directly. Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely `CERTIFIED`/
+    `L2-CERTIFIED` in this exact `docs/spec-matrix.yaml` before relying on them.
+
+    No blocking defect found. `certification_state` set to `CERTIFIED`,
+    `proof_state` to `L2-CERTIFIED`, `evidence_hash` set to the real merge
+    commit (`690f497d6314033fde1c6ea9a6b088632742b663`, PR #298, already merged
+    to `main` by a prior shift). Ledger entry appended to
+    `docs/certifications/ledger.md` with this session's ID stated explicitly.
+
+    State: proof_state=L2-CERTIFIED, certification_state=CERTIFIED.
+    Validated-by: Control plane, session
+    https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D (independent --
+    see session-ID check above), 2026-09-26.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a09.py
 FTF-04A10:
