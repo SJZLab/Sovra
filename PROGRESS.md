@@ -1,4 +1,53 @@
 # PROGRESS — Sovra
+## 2026-09-26T00:00:00Z — FTF-0302 — relay: submitted PROVISIONAL (PR #305)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr`.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. CLAUDE.md hash
+self-check clean (`sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`). No live blocker
+(`BLOCKER.md` holds only resolved history), no open owner ask.
+
+STEP 1: surveyed all six open PRs (#301 FTF-04A11 PROVISIONAL, #295 FTF-0214 disclosed blocker,
+#290 FTF-04A08 tracking doc, #231 FTF-0212, #194/#195 FTF-0304 an already-duplicated pair) to avoid
+duplicating in-flight work, then computed dependency-ready `NOT_STARTED` tasks directly from
+`docs/spec-matrix.yaml` (every dependency confirmed `CERTIFIED` before relying on it) — 15 items,
+of which FTF-0212/0214/0304 already had open PRs. **Picked FTF-0302** ("Hugging Face artifact
+resolver"), the lowest-numbered dependency-ready item with no PR already open. Pulled its real DoD
+via `python3 tools/r1_handoff.py packet FTF-0302 --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+
+STEP 2 (P): read FTF-0301's schema/CRUD and FTF-0305's license workflow (both CERTIFIED) directly
+— FTF-0301 deliberately never resolves `source_uri` against a real Hugging Face Hub, naming
+FTF-0302 as the task that does; FTF-0306 ("Base model revision/digest resolver") is a separate,
+later task that owns writing the combined `weights_digest` back through `apply_edits`, so this
+task's own scope is resolution/download/verification only, never a database write (Law 15). Read
+FTF-H006's `outbound_guard.py`/`url_policy.py` — its own docstring names FTF-0302 directly as an
+intended caller. Confirmed this sandbox has no route to the public internet (`curl` to
+`huggingface.co` fails at the outbound proxy, HTTP 403) and read `tests/tasks/test_ftf_0203.py`'s
+own real local-HTTPS-server-with-installed-CA fixture to reuse its exact recipe.
+
+STEP 2 (E): wrote `apps/api/app/artifacts/hugging_face_artifact_resolver.py` and
+`tests/tasks/test_ftf_0302.py` (30 real checks against a real local HTTPS server, never a mocked
+HTTP client — see `docs/certifications/queue.md`'s matching entry for the full breakdown). Two
+disclosed fault injections (Law 1: disabling the digest-mismatch check and the floating-revision
+check each produced a genuine, observed failure-to-refuse, reverted byte-identical, re-confirmed).
+
+STEP 2 (V): `git fetch --unshallow` resolved a pre-existing shallow-clone `stale_commit` artifact.
+`uv run ruff check .`/`ruff format --check .`/`mypy .` clean (264 files). `uv run pytest
+tests/unit` 3/3. Regression swept `test_ftf_0301.py`/`test_ftf_0305.py`/`test_ftf_h006.py` clean.
+`validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `20/20`
+(`proving_symbol` left blank, no live caller yet — disclosed, expected to be closed by FTF-0306).
+`status.py` unchanged `76/300` (Law 2). `verify_task.py --task FTF-0302 --stage task` reports
+`BLOCKED` pre-merge, expected per precedent. `docs/spec-matrix.yaml` set to
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. CI gate step added to
+`.github/workflows/ci.yml` immediately after FTF-0305's own step. Appended to
+`docs/certifications/queue.md` and `QUEUE.md`'s "## Provisional" section for Control plane.
+
+Submitted PROVISIONAL via **PR #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`).
+
+STEP 4 stop condition (a): 1/1 in-flight item is `L1-PROVEN`, no blocking defect found by this
+session's own review — awaiting an independently-triggered Control-plane certifier session and the
+L4 gate. Stopping this shift here. No open owner ask.
+
 ## 2026-09-26 — FTF-04A10 — Control plane: CERTIFIED (PR #303 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #303, session

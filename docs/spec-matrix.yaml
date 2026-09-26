@@ -1466,15 +1466,79 @@ FTF-0301:
   proving_symbol: build_trainable_artifact_router
   proving_test: tests/tasks/test_ftf_0301.py
 FTF-0302:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Hugging Face artifact resolver
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301, FTF-H006
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301,
+    FTF-H006 (all CERTIFIED, confirmed before relying on them). FTF-0301's own schema deliberately
+    stores a `huggingface` source_uri as a bare, unresolved 'org/repo' identifier and never dials a
+    real upstream; this task is the real caller that does. Files path refined from the packet's own
+    suggested packages/model-catalog/hugging_face_artifact_resolver.py to
+    apps/api/app/artifacts/hugging_face_artifact_resolver.py -- this repository has no
+    packages/model-catalog uv workspace member and, being hyphenated, it is not even a valid Python
+    import path; FTF-0301/FTF-0305 already established this exact refinement for the identical
+    reason and this task follows the same precedent. Negative_acceptance ("Floating revision,
+    unavailable license or remote code execution is blocked/explicitly reviewed; no sensitive
+    training data present during acquisition") is four independently-ordered real gates, every one
+    checked before any Hugging Face Hub network request wherever the check does not itself require
+    the API response: (1) floating revision -- reuses FTF-0301's own `is_pinned_revision` verbatim,
+    never re-implemented; (2) unavailable license -- reuses FTF-0305's own
+    `assert_license_accepted_for_use` verbatim, checked before any request; (3) remote code
+    execution -- a repository whose config declares `auto_map` or whose file listing includes a
+    `.py` file requires FTF-0301's own `trust_remote_code_allowed` field to be explicitly True (an
+    artifact owner's prior explicit review), and no `.py` file is ever downloaded regardless; (4) no
+    sensitive training data -- file acquisition is a closed allowlist of real model-artifact name
+    shapes (`.safetensors`/`.json`/`.txt`/`.md`/`.model`/`LICENSE`, top-level only, no nested path),
+    never a denylist of known dataset shapes, so an unanticipated dataset format can never slip
+    through the way a denylist could miss one. Every downloaded file whose Hugging Face Hub API
+    response declares an LFS sha256 is verified against its own real computed sha256
+    (ResolvedFileDigestMismatchError on a genuine mismatch); files with no declared hash (small
+    non-LFS config/tokenizer files) are still recorded with their own real computed digest, honestly
+    disclosed as unverified-against-upstream since Hugging Face's own API publishes no hash for
+    them. Every real HTTP request (revision resolution + each file download, including the real
+    redirect a genuine LFS-backed file issues to a CDN host) goes through FTF-H006's own
+    `guarded_fetch`/`ConnectionPolicy`, never a bespoke HTTP client. Scope, disclosed rather than
+    hidden: this module computes a real `combined_sha256_hex` over every verified file (a candidate
+    digest) but deliberately never calls `apply_edits`/writes `weights_digest` to the database --
+    `FTF-0306` ("Base model revision/digest resolver") is the separately dependency-gated task named
+    by FTF-0301's own docstring that combines this module's output (and its private_s3/
+    local_filesystem siblings, FTF-0303/FTF-0304) into that one column; doing so here would be
+    exactly the cross-task overreach Law 15 warns against. `database_changes: "No independent schema
+    change"` holds -- no migration, no new column. No live caller wires this module into a route yet
+    (the same disclosed "no live caller yet" class already accepted for FTF-0005/FTF-0006/FTF-0102/
+    FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-04A08/FTF-04A09/FTF-04A10 before each one's own first
+    live caller existed) -- `proving_symbol` left blank, matching that precedent; `FTF-0306` is
+    expected to be that first live caller. This sandbox has no route to the public internet at all
+    (confirmed directly: a plain `curl` to `huggingface.co` fails at the outbound proxy with HTTP
+    403), so `tests/tasks/test_ftf_0302.py` proves the real request/response/verification logic
+    against a real local HTTPS server implementing the exact Hugging Face Hub API subset this
+    resolver calls (a real self-signed CA generated and installed into the sandbox's own system
+    trust store for the run, removed in `atexit`) -- the same established precedent as FTF-0202's
+    real local OpenBao and FTF-0101's real local idpy-oidc instead of a live cloud secret manager or
+    live Google/Okta OIDC provider, for the identical reason (no real route to the live third-party
+    service, and this repository's own stated preference for a real, deterministic, self-hosted
+    double over a flaky dependency on a live external service inside an automated gate). The client
+    code makes no assumption beyond the documented public API shape (endpoint paths, JSON field
+    names) that would not hold against the real service. 30 checks (own count of every
+    `check("FTF-0302", ...)` call in the suite), all real (no mocked
+    `guarded_fetch`): real TLS/socket round trips including one real HTTP redirect, a real gated-403
+    denial, a real remote-code-required repository (both refused and, once explicitly reviewed,
+    allowed), a real digest match and a real digest mismatch, a real no-recognized-files repository,
+    a real destination-denied policy check (OutboundPolicyError propagates unwrapped, matching
+    FTF-H006's own convention), and two disclosed fault injections (Law 1) proving the digest-
+    mismatch and floating-revision checks are load-bearing (each: disable the check in the real
+    source file, confirm the specific negative case genuinely stops failing, restore byte-identical,
+    confirm it fires again). `uv run ruff check`/`ruff format --check`/`mypy .` clean; `uv run pytest
+    tests/unit` (3/3) and regression sweeps of `test_ftf_0301.py`/`test_ftf_0305.py`/
+    `test_ftf_h006.py` unaffected. `validate_spec.py --strict` clean after `git fetch --unshallow`
+    resolved this sandbox's own pre-existing shallow-clone `stale_commit` artifact (FTF-0401's
+    evidence commit), same documented class of gap prior shifts already hit.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0302.py
 FTF-0303:
   certification_state: NONE
   criticality: MUST

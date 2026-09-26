@@ -1,5 +1,59 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr) — STEP 0.1 read `PROGRESS.md`/
+  `QUEUE.md`/`docs/certifications/queue.md` fresh; CLAUDE.md hash self-check clean
+  (`sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`). No open owner ask, no live
+  blocker (`BLOCKER.md` is resolved history only). `scripts/status.py`: `76/300` certified, `20`
+  product-true, matching the FTF-04A10 certification already on record below, unchanged by this
+  shift's own submission (a PROVISIONAL item never moves the certified count, Law 2).
+
+  Surveyed open PRs before picking work (avoiding duplication, per this repo's own established
+  discipline): #301 (FTF-04A11, PROVISIONAL, awaiting Control-plane certification -- not a relay
+  action), #295 (FTF-0214, disclosed blocker doc), #290 (FTF-04A08 tracking, doc-only), #231
+  (FTF-0212, already claimed by an earlier shift), #194/#195 (FTF-0304, an already-duplicated pair
+  from two earlier shifts -- deliberately not adding a third). Computed dependency-ready
+  `NOT_STARTED` (`certification_state: NONE`) tasks directly from `docs/spec-matrix.yaml` (every
+  dependency `CERTIFIED`, confirmed before relying on any of them): FTF-0212/0214/0304 already
+  covered above; FTF-0302/0303/0304 (Hugging Face/S3/local artifact resolvers, deps FTF-0202/
+  FTF-0301/FTF-H006, all CERTIFIED), FTF-04A02/04A19, FTF-0500A/0500D/0513, FTF-0902, FTF-1201,
+  FTF-1703, FTF-H004.
+
+  **Picked FTF-0302** ("Hugging Face artifact resolver") -- the lowest-numbered dependency-ready
+  item with no PR already open against it. `python3 tools/r1_handoff.py packet FTF-0302 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` pulled the real DoD (`docs/implementation/task-packets/
+  FTF-0302.md`) before claiming it.
+
+  Read FTF-0301's own schema (`apps/api/app/artifacts/artifact_schema.py`) and FTF-0305's own
+  license workflow (`apps/api/app/artifacts/license_acceptance_workflow.py`) directly: FTF-0301
+  deliberately stores a `huggingface` `source_uri` as a bare, unresolved `org/repo` identifier and
+  never dials a real upstream, naming FTF-0302 as the task that does; `FTF-0306` ("Base model
+  revision/digest resolver") is a *separate*, later task (deps FTF-0301/0302/0303/0304/0305) that
+  owns writing the combined `weights_digest` column back through `artifact_crud.py`'s own
+  `apply_edits` -- confirmed by reading its own `docs/spec-matrix.yaml` entry directly, not assumed.
+  Scoped FTF-0302 accordingly: real resolution/download/per-file verification against a real
+  Hugging Face Hub-shaped API, computing a real candidate `combined_sha256_hex`, but never itself
+  writing to the database -- doing so would be exactly the cross-task overreach Law 15 warns
+  against. Confirmed this sandbox has no route to the public internet at all (`curl` to
+  `huggingface.co` fails at the outbound proxy, HTTP 403) before designing the test strategy, then
+  read this repository's own already-established real-local-server precedent for exactly this
+  situation (`tests/tasks/test_ftf_0203.py`'s real self-signed-CA-installed-into-the-system-trust-
+  store HTTPS fixture) and reused its exact recipe rather than inventing a new one.
+
+  **Submitted PROVISIONAL** via **PR #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`) --
+  see "## Provisional" below and `docs/certifications/queue.md`'s matching 2026-09-26 entry for the
+  full record (files, scope, negative_acceptance mapping, 30-check real-local-HTTPS test suite, two
+  disclosed fault injections). `uv run ruff check .`/`ruff format --check .`/`mypy .` all clean;
+  `uv run pytest tests/unit` (3/3) and regression sweeps of `test_ftf_0301.py`/`test_ftf_0305.py`/
+  `test_ftf_h006.py` unaffected; `validate_spec.py --strict` clean after `git fetch --unshallow`
+  resolved this sandbox's own pre-existing shallow-clone `stale_commit` artifact (FTF-0401's
+  evidence commit, the same documented class of gap prior shifts already hit);
+  `product_truth_check.py --fail-on-unwired` unchanged `20/20` (`proving_symbol` left blank -- no
+  live caller yet, same disclosed precedent as FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/FTF-04A10);
+  `status.py` unchanged `76/300` (Law 2). STEP 4 stop condition (a): `1/1` in-flight item is
+  `L1-PROVEN`, no blocking defect found by this session's own review -- awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47, triggered by the `pull_request.opened`
   webhook for PR #303) — **FTF-04A10 (TypeScript/JavaScript deterministic agent/config/tool
   discovery) independently reviewed and CERTIFIED.** Entire session task per this certifier's
@@ -5256,8 +5310,46 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") is the item
-here; submitted 2026-09-26 via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`,
+**FTF-0302** ("Hugging Face artifact resolver") is the item here; submitted 2026-09-26 via **PR
+#305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`,
+`https://github.com/SJZLab/Sovra/pull/305`), title `[relay] FTF-0302: Hugging Face artifact
+resolver`, producer session `https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr`. Real caller
+of FTF-0301's own deliberately-unresolved `huggingface` `source_uri`: resolves a pinned revision
+against a real Hugging Face Hub-shaped API, downloads only a closed allowlist of real
+model-artifact file shapes (never a dataset-shaped file, never a nested path), and verifies every
+file Hugging Face's own API declares an LFS sha256 for against its own real computed digest.
+Negative_acceptance ("Floating revision, unavailable license or remote code execution is
+blocked/explicitly reviewed; no sensitive training data present during acquisition") is four
+independently-ordered gates, two reused verbatim from already-CERTIFIED dependencies rather than
+re-implemented (FTF-0301's own `is_pinned_revision`, FTF-0305's own
+`assert_license_accepted_for_use`) and two new to this task (remote-code-requires-explicit-review
+via FTF-0301's own `trust_remote_code_allowed` field; acquisition file selection is a closed
+allowlist, never a denylist). Deliberately does NOT write `weights_digest` to the database --
+`FTF-0306` ("Base model revision/digest resolver") is the separately dependency-gated task named by
+FTF-0301's own docstring that owns combining this module's real `combined_sha256_hex` (and its
+`private_s3`/`local_filesystem` siblings, FTF-0303/FTF-0304) into that one column; doing so here
+would be the cross-task overreach Law 15 warns against. This sandbox has no route to the public
+internet (`curl` to `huggingface.co` fails at the outbound proxy, HTTP 403), so the real
+request/response/verification logic is proven against a real local HTTPS server implementing the
+exact Hugging Face Hub API subset this resolver calls, using this repository's own already-
+established real-self-signed-CA-in-the-system-trust-store precedent (`tests/tasks/
+test_ftf_0203.py`) rather than a mocked `guarded_fetch` -- the same reasoning already applied to
+FTF-0202's real local OpenBao and FTF-0101's real local idpy-oidc instead of a live cloud secret
+manager or live Google/Okta OIDC provider. 30 checks, all real, including one real HTTP redirect (a
+genuine LFS-backed file's real CDN redirect), a real gated-403 denial, a real digest match and a
+real digest mismatch, a real destination-denied policy check, and two disclosed fault injections
+(Law 1) proving the digest-mismatch and floating-revision checks are load-bearing, each reverted
+byte-identical. `uv run ruff check .`/`ruff format --check .`/`mypy .` clean; `uv run pytest
+tests/unit` (3/3) and regression sweeps of `test_ftf_0301.py`/`test_ftf_0305.py`/`test_ftf_h006.py`
+unaffected; `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged
+`20/20` (`proving_symbol` left blank -- no live caller yet, same disclosed precedent as
+FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/FTF-04A10, expected to be closed by FTF-0306); `status.py`
+unchanged `76/300` (Law 2). Not self-certified (Law 4) -- awaiting an independently-triggered
+Control-plane L2 certifier session. Full record: `docs/certifications/queue.md`'s matching
+2026-09-26 entry, `docs/spec-matrix.yaml`'s FTF-0302 notes, `PROGRESS.md`.
+
+**FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") was the item
+here before that; submitted 2026-09-26 via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`,
 `https://github.com/SJZLab/Sovra/pull/303`), title
 `[relay] FTF-04A10: TypeScript/JavaScript deterministic agent/config/tool discovery`, producer
 session `https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh`. Direct JS/TS sibling of
