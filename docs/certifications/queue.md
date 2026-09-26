@@ -16967,3 +16967,67 @@ product-true unchanged at `20/20`. PR #308 stays open/unmerged, already marked s
 relay's own PR #310 comment — not this session's action to close.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
+
+## 2026-09-26T17:40:00Z — FTF-0303 — relay: fixed the Control-plane-flagged cross-tenant-prefix boundary bug
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_016ZtyeqbMrv9Uzee9ZM5f2u`,
+branch `claude/wizardly-fermat-p8xpah`. Picked up this queue's own preceding entry's fix
+instruction directly (PR #315's NOT CERTIFIED review of PR #314) — no new task selection needed.
+
+- **Base:** brought PR #314's real head (`a4784bc`) — `apps/api/app/artifacts/
+  private_s3_artifact_resolver.py`, `tests/tasks/test_ftf_0303.py`, the `.github/workflows/
+  ci.yml` gate step, `docs/spec-matrix.yaml` FTF-0303 entry, and `docs/implementation/
+  task-packets/FTF-0303.md` — onto this branch via `git checkout a4784bc -- <files>` from a fresh
+  `origin/main` (`c456813`), not a wholesale branch merge, to avoid re-litigating PR #314's own
+  now-superseded tracking-doc log entries. Confirmed via `git diff c456813 a4784bc --stat` that
+  PR #314's own base was exactly `origin/main`'s current tip — no code drift to reconcile.
+- **Root cause, reproduced first against PR #314's own unmodified code (no mutation needed):**
+  `resolve_private_s3_object`'s cross-tenant-prefix check was `if not
+  key.startswith(connection.tenant_key_prefix):` — not path-segment-safe. A connection built with
+  `tenant_key_prefix="org-4"` let the real fixture object `s3://acme-bucket/
+  org-42/models/tiny.safetensors` (a genuinely different tenant's own key) pass silently, since
+  `"org-42/..."` is a real character-sequence prefix match on `"org-4"` even though `org-4` and
+  `org-42` are different tenant namespaces — exactly the finding in PR #315.
+- **Fix:** added `_key_within_tenant_prefix(key, tenant_key_prefix)` — `True` only when `key`
+  equals `tenant_key_prefix` exactly, or starts with `tenant_key_prefix` normalized to end with a
+  real `/` boundary. Replaced the bare `str.startswith` call with this helper in
+  `resolve_private_s3_object`; updated the module's own docstring (negative_acceptance item 2) to
+  document the guarantee and the exact org-4/org-42 collision it now rejects.
+- **Test:** added `test_cross_tenant_prefix_rejects_sibling_tenant_string_collision` to
+  `tests/tasks/test_ftf_0303.py` — `tenant_key_prefix="org-4"` against the real `org-42/...`
+  fixture object, asserting `CrossTenantPrefixError` is raised and that the check fires before any
+  network request (mirrors the suite's own existing cross-tenant-prefix test pattern).
+- **Own fault injection reproducing the reviewer's exact pre-fix code** (`_key_within_tenant_
+  prefix(key, connection.tenant_key_prefix)` → bare `key.startswith(connection.tenant_key_prefix)`):
+  confirmed the file actually changed (`md5sum` before `1d6b80a6d7b973af40f3af12e1a92afd`, after
+  `781b76e65ac31b892549ac559956a5eb`). Re-ran the suite with the mutation in place: the new test
+  fails with two genuine assertion failures — `CrossTenantPrefixError` is never raised for the
+  org-4/org-42 collision, and a real network request is made — reproducing the reviewer's exact
+  finding. Reverted byte-identical (`md5sum` back to `1d6b80a6d7b973af40f3af12e1a92afd`, confirmed;
+  `git diff --stat` on the file showed only the intended fix diff), re-ran clean.
+- **Own count, not trusted from the reviewer's report:** `grep -c 'check('` on the test file: 34
+  checks (32 original + 2 new), all pass.
+- **Full verification:** `uv sync --all-packages`; `uv run ruff check .` / `ruff format --check .`
+  clean (268 files); `uv run mypy .` clean (268 files, no pre-existing errors surfaced this run);
+  `git fetch --unshallow` (disclosed shallow-clone precedent) then `uv run python3
+  scripts/validate_spec.py --strict` clean (also confirmed the edited `docs/spec-matrix.yaml`
+  still parses via a direct `yaml.safe_load`); `uv run python3 scripts/product_truth_check.py
+  --fail-on-unwired` — `20/20`, unchanged (no live caller added); `uv run python3 scripts/
+  status.py` — `78/300` certified, unchanged (Law 2). Regression swept `test_ftf_0301.py`/
+  `test_ftf_0302.py`/`test_ftf_h006.py`/`test_ftf_r017.py` (all "all checks passed") plus `uv run
+  pytest tests/unit` (3/3) — all unaffected.
+- **No other implementation change** to `private_s3_artifact_resolver.py` — negative_acceptance
+  items 1/3/4 (bucket mismatch, partial upload, ETag-as-hash) untouched, exactly as the reviewer's
+  fix instruction specified.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0303 entry with a dated follow-up paragraph appended after
+PR #314's own original notes (still `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` — a relay fix never self-certifies, Law 4). Submitted PROVISIONAL via **PR #316**
+(branch `claude/wizardly-fermat-p8xpah` -> `main`, `https://github.com/SJZLab/Sovra/pull/316`),
+title `[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)`. PR #314
+stays open, unmerged, marked superseded by a one-line comment on PR #314 itself (not closed
+silently). **Not self-certified** — awaiting an independently-triggered Control-plane L2
+certifier session that was not involved in producing this fix.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Certified: unchanged at
+  78/300. Product-true: unchanged at 20/20.

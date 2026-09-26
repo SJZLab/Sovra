@@ -1,4 +1,51 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-26T17:40:00Z (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_016ZtyeqbMrv9Uzee9ZM5f2u, branch
+  `claude/wizardly-fermat-p8xpah`) — picked up this queue's own top item: the Control-plane
+  reviewer's PR #315 (NOT CERTIFIED review of PR #314, **FTF-0303**, "Private S3 artifact
+  resolver") named a concrete, sliced fix ("Make the prefix check boundary-safe ... then add a
+  test isolating a true string-prefix cross-tenant collision ... PR #314 stays open, unmerged").
+  No open owner ask, no live blocker (`BLOCKER.md` unchanged, resolved history only).
+
+  Brought PR #314's real head (`a4784bc`) code/test/CI/spec-matrix/task-packet changes onto this
+  branch (no code changed on `main` since PR #314's base besides the reviewer's own doc-only
+  review commit), then fixed the flagged bug: `resolve_private_s3_object`'s cross-tenant-prefix
+  check was a bare `key.startswith(connection.tenant_key_prefix)`, which is not
+  path-segment-safe — a connection configured with `tenant_key_prefix="org-4"` (the natural
+  result of a future caller building it as `f"org-{organization_id}"`) let a real, different
+  tenant's real object (`s3://acme-bucket/org-42/models/tiny.safetensors`, the suite's own fixture
+  object) pass silently, since `"org-42/..."` genuinely starts with the character sequence
+  `"org-4"`. Added `_key_within_tenant_prefix`, which requires the key to equal the prefix exactly
+  or start with the prefix followed by a real `/` path-segment boundary. Added
+  `test_cross_tenant_prefix_rejects_sibling_tenant_string_collision` to
+  `tests/tasks/test_ftf_0303.py`, isolating exactly this collision.
+
+  **Own fault injection reproducing the reviewer's exact pre-fix code** (bare `str.startswith`):
+  the new test fails with two genuine assertion failures (`CrossTenantPrefixError` never raised;
+  a real network request made), reproducing the reviewer's exact finding. Reverted byte-identical
+  (`md5sum` `1d6b80a6d7b973af40f3af12e1a92afd` before/after, confirmed), re-ran clean — 34 checks
+  (32 original + 2 new), all pass.
+
+  `ruff check`/`ruff format --check` clean (268 files); `mypy` clean (268 files);
+  `validate_spec.py --strict` clean (after `git fetch --unshallow`); `product_truth_check.py
+  --fail-on-unwired` unchanged at 20/20; `status.py` unchanged at 78/300 (Law 2). Regression swept
+  `test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_h006.py`/`test_ftf_r017.py`/`pytest tests/unit`
+  — unaffected.
+
+  No implementation change beyond the one boundary-safety check and its own docstring —
+  negative_acceptance items 1/3/4 (bucket mismatch, partial upload, ETag-as-hash) untouched.
+  `docs/spec-matrix.yaml`'s FTF-0303 entry stays `certification_state: PROVISIONAL`/`proof_state:
+  L1-PROVEN` (a relay fix never self-certifies), dated follow-up paragraph appended after PR
+  #314's own original notes. Opened **PR #316** (`https://github.com/SJZLab/Sovra/pull/316`,
+  `[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)`) rather than
+  pushing to PR #314's own branch (a different session's branch) or reusing PR #314 itself — left
+  open/unmerged, superseded, with a one-line comment recording the supersession left on PR #314
+  itself (not closed silently). Full record: `PROGRESS.md`'s matching entry,
+  `docs/certifications/queue.md`'s matching entry. Certified: unchanged at 78/300. Product-true:
+  unchanged at 20/20.
+
+## Previous shift
+
 Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS, triggered by the
   `pull_request.opened` webhook for PR #310) — independently certified **FTF-0513 (Near-duplicate
