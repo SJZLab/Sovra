@@ -1,4 +1,34 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-26 (Control plane certifier, session
+  https://claude.ai/code/session_017vZEitRYksZai1thEkeUbK, triggered by the `pull_request.opened`
+  webhook for PR #311) — CERTIFY sweep of `docs/certifications/queue.md`/`docs/spec-matrix.yaml`
+  found exactly one pending `certification_state: PROVISIONAL` item: **FTF-0513** (Near-duplicate
+  detector, PR #310, merge commit `2e6ee083df8bfa13bda78a2c5514c837793f8a35`).
+
+  Independently re-verified: session-ID check clear (PR #310's two commits both carry
+  `session_0194XSfuk8bYmcPjTU8K45kn`, not this session, Law 4); diff re-read directly (test-
+  coverage only, no change to `near_duplicate_detector.py` itself); real CI reconfirmed via the
+  GitHub API on PR #310's actual final head (31/31 `success`, `gate` included, run `36250545266`);
+  own fault injection reproducing the prior review's exact mutation
+  (`character_ngram_similarity <= 0.0`) — genuine `AssertionError`, reverted byte-identical
+  (`md5sum` `c3f2ae170fee47761bdbde5041add7e3` before and after); `ruff`/`mypy`/
+  `validate_spec.py --strict` (after `git fetch --unshallow`, same disclosed shallow-clone
+  precedent) all clean; `product_truth_check.py --fail-on-unwired` 20/20 unchanged, confirmed
+  legitimate by reading the script's own `if not sym: continue` skip logic directly, not trusted
+  on the producer's word; task contract re-pulled via `tools/r1_handoff.py packet FTF-0513
+  --plan FINE_TUNING_FACTORY_RELEASE_1.md`, both `acceptance`/`negative_acceptance` clauses
+  verified genuinely met by reading the module and test suite directly. No blocking defect found.
+
+  **Set `docs/spec-matrix.yaml` FTF-0513 to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` = the merge commit above. Appended
+  `docs/certifications/ledger.md` entry (session ID, evidence, date). `status.py`: `77/300` ->
+  `78/300` certified; product-true unchanged at `20/20` (no live caller added, disclosed).**
+
+  No open owner ask. Full detail in `docs/certifications/ledger.md`'s FTF-0513 entry and
+  `docs/certifications/queue.md`.
+
+## Previous shift
+
 Updated: 2026-09-26T14:59:04Z (scheduled autonomous relay shift, session
   https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn, branch
   `claude/wizardly-fermat-iqpz0c`) — picked up this queue's own top item: the Control-plane

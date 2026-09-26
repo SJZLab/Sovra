@@ -1,4 +1,49 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-0513 — Control plane: CERTIFIED (PR #310, independent re-verification)
+
+Scheduled autonomous CERTIFY routine, session `https://claude.ai/code/session_017vZEitRYksZai1thEkeUbK`,
+triggered by the `pull_request.opened` webhook for PR #311 (a doc-only tracking PR, unrelated to
+FTF-0513's own substance — this session's fixed mandate is to sweep for any pending PROVISIONAL
+item regardless of which PR woke it). A direct `certification_state: PROVISIONAL` grep against
+`docs/spec-matrix.yaml` found exactly one match, FTF-0513 (PR #310), confirming it was the only
+pending item.
+
+- **Session-ID check (Law 4):** PR #310's two commits (`70e7637`, `07bc503`) both carry
+  `Claude-Session: .../session_0194XSfuk8bYmcPjTU8K45kn` — matches neither this session's own ID
+  nor any commit trailer this session wrote. Independent.
+- **Diff re-read directly:** `near_duplicate_detector.py` unchanged by PR #310 (test-coverage
+  only); `test_ftf_0513.py` gains exactly the one new scenario the prior NOT-CERTIFIED review (PR
+  #309) specified. 47 `check(` calls total (own `grep -c` count).
+- **CI reconfirmed via GitHub API** on PR #310's actual final head
+  (`07bc5037cbfc2e34bedd35ac32c40d011cee2dec`, run `36250545266`): 31/31 `success`, `gate`
+  included.
+- **Own fault injection**, reproducing the prior review's exact mutation
+  (`character_ngram_similarity >= thresholds.character_ngram_similarity` →
+  `character_ngram_similarity <= 0.0`): genuine `AssertionError`. Reverted byte-identical
+  (`md5sum` `c3f2ae170fee47761bdbde5041add7e3` before and after, confirmed), re-ran clean.
+- `ruff`/`mypy` clean on the changed files; `validate_spec.py --strict` clean after
+  `git fetch --unshallow` (same disclosed pre-existing shallow-clone artifact every recent shift
+  has hit — reproduced the `stale_commit` batch on the shallow clone first, then confirmed it
+  clears, unrelated to this PR). `product_truth_check.py --fail-on-unwired`: 20/20 unchanged —
+  confirmed legitimate by reading `scripts/product_truth_check.py`'s own `if not sym: continue`
+  skip logic directly, not trusted on the producer's word. `status.py`: `77/300` →
+  `78/300` certified after this certification's own field update.
+- **Task contract re-pulled** via `tools/r1_handoff.py packet FTF-0513 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: both `acceptance` (bounded indexed candidates + reviewed
+  thresholds + privacy-safe embeddings) and `negative_acceptance` (no all-pairs blowup, no
+  automatic discard) clauses verified genuinely met by reading the module and test suite
+  directly, not accepted on the PR's own word. Dependencies FTF-0500/FTF-0512 reconfirmed
+  `certification_state: CERTIFIED` before relying on their provenance-field contract.
+- No blocking defect found. `docs/spec-matrix.yaml` FTF-0513 set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+  (`2e6ee083df8bfa13bda78a2c5514c837793f8a35`). Appended `docs/certifications/ledger.md` entry
+  with this session's ID, evidence, and date. `QUEUE.md` updated. Product-true unchanged at
+  `20/20` (no live caller added, disclosed — same precedent as every sibling near-duplicate-family
+  task).
+
+**Conclusion:** FTF-0513 is now L2-CERTIFIED. No open owner ask. Nothing else pending in
+`docs/certifications/queue.md` at this sweep.
+
 ## 2026-09-26T14:59:04Z — FTF-0513 — relay: fixed the Control-plane-flagged test-coverage gap (PR #310)
 
 Scheduled autonomous relay shift, session

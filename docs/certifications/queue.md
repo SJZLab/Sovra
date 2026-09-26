@@ -16902,3 +16902,78 @@ certifier session that was not involved in producing this fix.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Certified: unchanged at
   77/300. Product-true: unchanged at 20/20.
+
+## 2026-09-26 — FTF-0513 — Control plane: CERTIFIED (PR #310)
+
+Scheduled autonomous CERTIFY routine, session `https://claude.ai/code/session_017vZEitRYksZai1thEkeUbK`,
+triggered by the `pull_request.opened` webhook for PR #311 (unrelated doc-only tracking PR). Per
+this session's fixed mandate, swept for every `certification_state: PROVISIONAL` item rather than
+reacting to PR #311's own diff; a direct grep against `docs/spec-matrix.yaml` found exactly one
+match, FTF-0513, confirming it was the only pending item.
+
+- **Session-ID check (Law 4):** PR #310's two commits (`70e763711f28c3b302ee106445e8052195d920c5`,
+  `07bc5037cbfc2e34bedd35ac32c40d011cee2dec`) both carry `Claude-Session:
+  .../session_0194XSfuk8bYmcPjTU8K45kn`. This session's own ID
+  (`session_017vZEitRYksZai1thEkeUbK`) matches neither — independent, not self-certification.
+- **Diff re-read directly** (`git diff c80adb9..2e6ee08`): `workers/data/near_duplicate_detector.py`
+  unchanged by PR #310 (test-coverage only — the module's own LSH index, thresholds, and hashing
+  embedding were already in place from PR #308's original head). `tests/tasks/test_ftf_0513.py`
+  gains exactly the one scenario the prior NOT-CERTIFIED review (PR #309) specified
+  (`test_character_ngram_similarity_crossing_its_own_threshold_flags_alone`). 47 `check("FTF-0513",
+  ...)` calls total, own count via `grep -c '    check(' tests/tasks/test_ftf_0513.py`. CI gate
+  step confirmed wired: `.github/workflows/ci.yml` runs `uv run python3
+  tests/tasks/test_ftf_0513.py`.
+- **Real CI reconfirmed** via the GitHub check-runs API on PR #310's actual final head
+  (`07bc5037cbfc2e34bedd35ac32c40d011cee2dec`, run `36250545266`): 31/31 checks
+  `completed`/`success`, `gate` included — not a self-reported claim.
+- **Own reproduction:** checked out `origin/main`'s real files (`md5sum` of
+  `near_duplicate_detector.py` = `c3f2ae170fee47761bdbde5041add7e3`, matching every prior shift's
+  own disclosed hash). `uv run pytest tests/tasks/test_ftf_0513.py -q` — 27 passed. `uv run python3
+  tests/tasks/test_ftf_0513.py` (the CI gate's own direct invocation) — "all checks passed".
+- **Own fault injection**, reproducing the prior review's exact mutation
+  (`character_ngram_similarity >= thresholds.character_ngram_similarity` →
+  `character_ngram_similarity <= 0.0`): confirmed the file actually changed (`md5sum` after =
+  `72fa623a30a955af7130ba8296e728d4`); the new test fails with a genuine `AssertionError` (`assert
+  candidate is not None` → `assert None is not None`). Reverted byte-identical (`md5sum` back to
+  `c3f2ae170fee47761bdbde5041add7e3`, `git status --short`/`git diff --stat` both empty), re-ran
+  clean (27/27).
+- `uv run ruff check` / `ruff format --check` clean on the changed files; `uv run mypy
+  workers/data/near_duplicate_detector.py tests/tasks/test_ftf_0513.py` — "Success: no issues
+  found in 2 source files". `validate_spec.py --strict` initially reproduced the same disclosed
+  pre-existing `stale_commit` batch (this sandbox's own shallow clone, confirmed via `git
+  rev-parse --is-shallow-repository` = true); `git fetch --unshallow`, reconfirmed false, re-ran —
+  "validate_spec: task graph and verification-map are clean" (exit 0). `product_truth_check.py
+  --fail-on-unwired`: 20/20 unchanged — confirmed legitimate not by trusting the producer's claim
+  but by reading `scripts/product_truth_check.py`'s own logic directly (`if not sym: continue`
+  skips a blank `proving_symbol` from `results` entirely, never a hidden 0/0 pass). Same disclosed
+  precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512, each independently reconfirmed
+  `certification_state: CERTIFIED` in `docs/spec-matrix.yaml` before relying on that precedent.
+  `status.py`: `77/300` certified pre-certification (confirmed not self-inflated, Law 2);
+  `78/300` after this certification's own field update. Regression swept
+  `test_ftf_0511.py`/`test_ftf_0512.py` — 36 checks, unaffected.
+- **Task contract re-pulled** via `python tools/r1_handoff.py packet FTF-0513 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Use bounded indexed n-gram/semantic candidates
+  and reviewed thresholds with privacy-safe embeddings") verified genuinely met, read directly in
+  the module — the banded-MinHash LSH index (`_minhash_signature`/`_lsh_bucket_keys`) buckets
+  candidate pairs instead of an all-pairs scan; `NearDuplicateThresholds` is an explicit,
+  caller-overridable frozen dataclass; `_hashing_embedding` is a deterministic, zero-network,
+  no-pretrained-weight feature-hashing vector. `negative_acceptance` ("No all-pairs million-record
+  memory blowup or automatic discard based solely on a guessed similarity threshold") verified
+  genuinely met, read directly in both the module and the test suite:
+  `max_candidates_per_record` bounds a 60-identical-record worst case to far below the naive 1770
+  all-pairs count; an unrelated pair is excluded by indexing even at a threshold of 0.0; and
+  `NearDuplicateCandidate`/`NearDuplicateReport` carry no discard/remove field at all — every
+  flagged pair is `requires_review`, never auto-removed. Dependencies FTF-0500/FTF-0512
+  reconfirmed `certification_state: CERTIFIED` before relying on their provenance-field contract.
+- No blocking defect found.
+
+`docs/spec-matrix.yaml` FTF-0513 set to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED`, `evidence_hash` set to the merge commit `2e6ee083df8bfa13bda78a2c5514c837793f8a35`.
+Appended `docs/certifications/ledger.md` entry (session ID, evidence, date). `QUEUE.md`/
+`PROGRESS.md` updated.
+
+- **State:** proof_state=L2-CERTIFIED, certification_state=CERTIFIED. Certified: 77/300 →
+  78/300. Product-true: unchanged at 20/20.
+
+**Conclusion:** Certified L2-CERTIFIED. No open owner ask. No other pending PROVISIONAL item found
+in this sweep.
