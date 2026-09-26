@@ -1,4 +1,72 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-0513 — Control plane: independent CERTIFY review, NOT CERTIFIED
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_015ZJ4NhUe1TG96MJH6uJQvR`, triggered by the `pull_request.opened`
+webhook for PR #308.
+
+Entire session task per this certifier's standing prompt: checked `docs/certifications/queue.md`
+and `docs/spec-matrix.yaml` for pending PROVISIONAL work first. `main`'s `docs/spec-matrix.yaml`
+still shows FTF-0513 `certification_state: NONE` / `implementation_state: ABSENT` — that task's
+PROVISIONAL claim exists only inside PR #308's own unmerged diff. PR #308 was the sole pending
+item.
+
+**Session-ID check:** PR #308's two commits (`67a1d12`, `15cf282`) both carry `Claude-Session:
+.../session_011zMSkXgVhRYoNbbkut7vJC` — no overlap with this session's own ID, independent per
+Law 4.
+
+**Diff read directly** in a fresh `git worktree` checked out at PR #308's real head (`15cf282`,
+fetched via `refs/pull/308/head`, not taken from the PR body's own self-report):
+`workers/data/near_duplicate_detector.py` (new, 589 lines), `tests/tasks/test_ftf_0513.py` (new,
+624 lines), a `.github/workflows/ci.yml` gate step, and tracking-doc updates local to the PR
+branch. No scope creep beyond FTF-0513's own contract.
+
+**CI:** GitHub Actions run `36244266357` (real head `15cf282`) stayed `in_progress`/`queued`
+throughout this review, never reached a conclusion in the time available. Not treated as a pass;
+not the reason for the outcome below either, since the finding below is independently blocking.
+
+**Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0513.py` —
+"all checks passed" (42 checks), matching the PR's own claim.
+
+**Own fault injection (Law 1) — the blocking finding.** In the real, tracked module, changed
+`if character_ngram_similarity >= thresholds.character_ngram_similarity:` to
+`if character_ngram_similarity <= 0.0:`, disabling Section 10 method 4's ("character n-gram
+similarity", one of this task's four required methods 4-7) own threshold-crossing flag path for
+every realistic pair (two non-identical texts essentially never share exactly `0.0`
+character-shingle overlap). Confirmed the mutation actually changed the file (`md5sum`
+before/after differ). Re-ran `tests/tasks/test_ftf_0513.py` with the mutation in place: **all 42
+checks still passed, exit 0.** Reverted byte-identical (`md5sum`/`git diff` both confirm), re-ran
+clean.
+
+**Root cause, confirmed by direct reading of the test file:** `grep -n 'flagged_methods'
+tests/tasks/test_ftf_0513.py` shows `token_jaccard`, `embedding_cosine`, and
+`agent_trace_structural` each have at least one positive `"... in candidate.flagged_methods"`
+assertion somewhere in the suite; `character_ngram` has only a negative one
+(`test_character_ngram_similarity_is_computed_and_flagged` deliberately picks a pair where the
+*other* three methods already cross their own thresholds, so it only asserts the value is
+computed and that it is *not* the one flagging that particular pair). No scenario anywhere in the
+suite exercises a pair where crossing `character_ngram_similarity`'s own threshold is what causes
+`"character_ngram"` to land in `flagged_methods`. Pulled the real task contract
+(`tools/r1_handoff.py packet FTF-0513 --plan FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance
+clause 1 names character n-gram similarity as one of the methods this task must actually deliver
+and threshold — a delivered method whose own flag path is unproven-by-test does not meet "shown
+able to fail" (Law 1).
+
+**Everything else checked found sound** (LSH-banding/`max_candidates_per_record` bound and its
+own two positive assertions/fault injections; agent-trace structural match; `ruff`/`mypy` clean;
+no undisclosed scope) — disclosed for completeness, not the blocking issue.
+
+**Result: NOT CERTIFIED.** Blocking defect: a real Law-1 test-coverage gap on one of the task's
+four required methods, confirmed by an independent fault injection that left all 42 checks green.
+`main`'s `docs/spec-matrix.yaml` is unaffected by this review (FTF-0513 stays
+`certification_state: NONE` — nothing merged). PR #308 left open, unmerged. Fix needed: add a
+scenario to `tests/tasks/test_ftf_0513.py` that isolates `character_ngram_similarity` crossing
+its own threshold as the sole reason a pair is flagged, mirroring the existing
+`token_jaccard`/`embedding_cosine`/`agent_trace_structural` positive-assertion pattern, then
+re-submit. Certified: unchanged at 77/300. Product-true: unchanged at 20/20. Full record:
+`docs/certifications/queue.md`'s matching 2026-09-26 FTF-0513 NOT CERTIFIED entry, `QUEUE.md`'s
+top entry.
+
 ## 2026-09-26 — FTF-0302 — Control plane: CERTIFIED (PR #305 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #305, session

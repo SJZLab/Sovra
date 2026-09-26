@@ -16770,3 +16770,76 @@ Submitted PROVISIONAL via **PR #305** (branch `claude/wizardly-fermat-9ex5xy` ->
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
   before certification.
+
+## 2026-09-26 — FTF-0513 — Control plane: independent CERTIFY review, NOT CERTIFIED
+
+Triggered by the `pull_request.opened` webhook for PR #308 (`[relay] FTF-0513: Near-duplicate
+detector`, branch `claude/wizardly-fermat-rznyhh` → `main`). Checked `docs/spec-matrix.yaml` on
+`main` first: FTF-0513's own entry there is still `certification_state: NONE` /
+`implementation_state: ABSENT` — this task's PROVISIONAL claim exists only inside PR #308's own
+diff, not yet merged. PR #308 was the only open PROVISIONAL submission found.
+
+- **Session-ID check:** PR #308's two commits (`67a1d12`, `15cf282`) both carry `Claude-Session:
+  .../session_011zMSkXgVhRYoNbbkut7vJC`. This session's own ID is
+  `https://claude.ai/code/session_015ZJ4NhUe1TG96MJH6uJQvR` — no match, independent per Law 4.
+- **Diff read directly** in a fresh `git worktree` fetched from `refs/pull/308/head` at the PR's
+  actual final head (`15cf282`), not the PR body's own self-report:
+  `workers/data/near_duplicate_detector.py` (new, 589 lines), `tests/tasks/test_ftf_0513.py`
+  (new, 624 lines), a `.github/workflows/ci.yml` gate step, and tracking-doc updates
+  (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`, all still
+  local to the PR branch). No scope creep beyond FTF-0513's own contract.
+- **CI status at review time:** GitHub Actions run `36244266357` (the real head commit `15cf282`)
+  was still `in_progress`/`queued` throughout this review and never reached a conclusion in the
+  time available — not taken as a pass, not waited on further because the finding below is
+  independently blocking regardless of CI's eventual result.
+- **Own reproduction, fresh worktree at PR #308's actual head:** `uv sync --all-packages`; `uv run
+  python3 tests/tasks/test_ftf_0513.py` — "all checks passed" (42 checks), matching the PR's own
+  claim.
+- **Own fault injection (Law 1) — this is the blocking finding.** Read the real source, changed
+  one exact line in `workers/data/near_duplicate_detector.py`:
+  `if character_ngram_similarity >= thresholds.character_ngram_similarity:` →
+  `if character_ngram_similarity <= 0.0:` — this disables method 4's ("character n-gram
+  similarity", one of this task's four required Section 10 methods, 4-7) own threshold-crossing
+  flag path for every realistic pair (two non-identical texts essentially never have exactly
+  `0.0` character-shingle overlap). Confirmed the mutation actually changed the file (`md5sum`
+  before/after differ). Re-ran `tests/tasks/test_ftf_0513.py` with the mutation in place:
+  **all 42 checks still passed, exit 0** — the suite does not detect this method being silently
+  broken. Reverted byte-identical (`md5sum` before/after match, `git diff` empty), re-ran clean.
+- **Root cause of the gap, confirmed by direct reading of the test file, not inference:**
+  `grep -n 'flagged_methods' tests/tasks/test_ftf_0513.py` shows exactly five assertions against
+  `flagged_methods` membership — `token_jaccard`, `embedding_cosine`, and `agent_trace_structural`
+  each have a positive "`in candidate.flagged_methods`" assertion in some scenario, and
+  `agent_trace_structural` also has a negative one. `character_ngram` has **only** the negative
+  form (`"character_ngram" not in candidate.flagged_methods`, in
+  `test_character_ngram_similarity_is_computed_and_flagged`, deliberately chosen for a pair where
+  the *other* three methods already cross their own thresholds and carry `requires_review`). No
+  scenario anywhere in the 624-line suite exercises a pair where crossing the
+  `character_ngram_similarity` threshold is what causes `"character_ngram"` to land in
+  `flagged_methods`. This is a real, reproducible test-coverage gap on one of the task's own four
+  required methods, not a hypothetical: Section 10 method 4 could regress to never firing and
+  CI would stay green.
+- **Task contract re-pulled** (`python3 tools/r1_handoff.py packet FTF-0513 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 ("Use bounded indexed n-gram/semantic
+  candidates and reviewed thresholds with privacy-safe embeddings") names character n-gram
+  similarity as one of the methods this task must actually deliver and threshold — a delivered
+  method whose own flag path is unproven-by-test does not meet "shown able to fail" (Law 1),
+  which is this repository's own bar for "actual command, exit code" acceptance evidence, not
+  merely a passing suite count.
+- **Everything else checked found sound, disclosed for completeness, not the blocking issue:**
+  the LSH-banding/`max_candidates_per_record` bound (negative_acceptance's "no all-pairs blowup"
+  half) and the agent-trace structural-match definition are each covered by a real, positive
+  in-suite assertion and the producer's own two disclosed fault injections, independently
+  re-confirmed by re-reading (not re-run) the relevant test bodies; `ruff`/`mypy` clean; no
+  scope creep; no undisclosed dependency.
+
+**Blocking defect found: a real Law-1 test-coverage gap — the character-n-gram method's own
+threshold-crossing flag path has no test that would catch it silently breaking, confirmed by an
+independent fault injection that left all 42 checks green.** `docs/spec-matrix.yaml`'s FTF-0513
+entry on `main` is unaffected by this review (still `certification_state: NONE` — the
+PROVISIONAL claim lives only in PR #308's own unmerged diff, and this review does not merge it).
+PR #308 left open, unmerged. Fix needed: add a scenario to `tests/tasks/test_ftf_0513.py` that
+isolates `character_ngram_similarity` crossing `thresholds.character_ngram_similarity` as the
+sole reason a pair is flagged (mirroring the existing `token_jaccard`/`embedding_cosine`/
+`agent_trace_structural` positive-assertion pattern), then re-submit (either as a push to PR #308
+or a fresh superseding PR, relay's choice). Full detail recorded in `QUEUE.md`'s top entry and
+`PROGRESS.md` for the next relay shift.

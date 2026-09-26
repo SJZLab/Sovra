@@ -1,5 +1,46 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_015ZJ4NhUe1TG96MJH6uJQvR, triggered by the `pull_request.opened`
+  webhook for PR #308) — independently reviewed **FTF-0513 (Near-duplicate detector)**. `main`'s
+  `docs/spec-matrix.yaml` still shows FTF-0513 `certification_state: NONE` (the PROVISIONAL claim
+  lives only inside PR #308's own unmerged diff) — PR #308 was the sole pending item. Session-ID
+  check: PR #308's two commits (`67a1d12`, `15cf282`) both carry `Claude-Session:
+  .../session_011zMSkXgVhRYoNbbkut7vJC`, no match to this session's own ID (Law 4). Diff read
+  directly against the real head in a fresh worktree — no scope creep beyond FTF-0513's own
+  contract. CI (`gate`, run `36244266357`) was still `in_progress`/`queued` throughout this
+  review; not waited on further because the finding below is independently blocking regardless of
+  CI's eventual result.
+
+  **Own fault injection (Law 1) — the blocking finding:** changed one line in `workers/data/
+  near_duplicate_detector.py` (`if character_ngram_similarity >= thresholds.
+  character_ngram_similarity:` → `if character_ngram_similarity <= 0.0:`), disabling Section 10
+  method 4's ("character n-gram similarity", one of this task's four required methods) own
+  threshold-crossing flag path for every realistic pair. Confirmed the mutation actually changed
+  the file (`md5sum` before/after differ), re-ran `tests/tasks/test_ftf_0513.py` with it in
+  place: **all 42 checks still passed, exit 0** — the suite does not detect this method being
+  silently broken. Reverted byte-identical, re-ran clean. Root cause confirmed by direct reading:
+  `character_ngram` is the only one of the four methods (`token_jaccard`/`embedding_cosine`/
+  `agent_trace_structural` each have one) with no positive `"... in candidate.flagged_methods"`
+  assertion anywhere in the 624-line suite — its one dedicated test
+  (`test_character_ngram_similarity_is_computed_and_flagged`) deliberately picks a pair where the
+  *other* three methods already cross their own thresholds, so it only ever asserts the value is
+  computed and that it is *not* flagged, never that crossing its own threshold *does* flag it.
+  This is a real, reproducible acceptance-bound gap (acceptance clause 1 names character n-gram
+  similarity as a method this task must actually deliver and threshold), not a hypothetical.
+
+  Everything else checked found sound (LSH-banding/`max_candidates_per_record` bound, agent-trace
+  structural match, `ruff`/`mypy` clean, no undisclosed scope) — disclosed, not the blocking
+  issue. **NOT CERTIFIED solely because of the test-coverage gap above.** `main`'s
+  `docs/spec-matrix.yaml` is unaffected by this review (FTF-0513 stays `certification_state:
+  NONE` — nothing was merged). PR #308 left open, unmerged. Fix needed for the next relay shift:
+  add a scenario to `tests/tasks/test_ftf_0513.py` that isolates `character_ngram_similarity`
+  crossing its own threshold as the sole reason a pair is flagged, mirroring the existing
+  `token_jaccard`/`embedding_cosine`/`agent_trace_structural` positive-assertion pattern, then
+  re-submit. Full record: `docs/certifications/queue.md`'s matching 2026-09-26 FTF-0513 NOT
+  CERTIFIED entry. Certified: unchanged at 77/300. Product-true: unchanged at 20/20.
+
+## Previous shift
+Previously updated: 2026-09-26 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr, triggered by the `pull_request.opened`
   webhook for PR #305) — **FTF-0302 (Hugging Face artifact resolver) independently reviewed and
   CERTIFIED.** Entire session task per this certifier's standing prompt: checked
