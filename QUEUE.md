@@ -1,5 +1,48 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled autonomous relay shift, session
+Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+  https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47, triggered by the `pull_request.opened`
+  webhook for PR #303) — **FTF-04A10 (TypeScript/JavaScript deterministic agent/config/tool
+  discovery) independently reviewed and CERTIFIED.** Entire session task per this certifier's
+  standing prompt: checked `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every
+  PROVISIONAL item regardless of which PR triggered the run — exactly one pending, FTF-04A10 (PR
+  #303, this run's own triggering PR).
+
+  Session-ID check clean: both of PR #303's commits (`59c1584`, `dd8294e`) carry
+  `session_01MAwC6YFuztewV8dUutUMNh` (producer). This session's own ID matches neither.
+
+  Diff re-read directly; dependencies FTF-04A01/FTF-04A08 reconfirmed `CERTIFIED`. Own
+  re-verification: `uv sync --all-packages`; `pnpm install --frozen-lockfile` (224 packages, zero
+  lockfile changes — confirms `typescript` is pre-existing, not a new runtime dependency); `uv run
+  python3 tests/tasks/test_ftf_04a10.py` — 21/21 clean; `ruff`/`mypy` clean; `pnpm run
+  lint`/`format:check`/`typecheck` clean; `pnpm exec vitest run` 27/27; `uv run pytest tests/unit`
+  3/3; regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py` clean; `git fetch --unshallow`
+  resolved the sandbox's pre-existing shallow-clone `stale_commit` batch, `validate_spec.py
+  --strict` clean after. `product_truth_check.py --fail-on-unwired` unchanged 20/20
+  (`proving_symbol` genuinely blank for this task, confirmed directly — not a 0/0-accepted-as-pass
+  case). Real CI reconfirmed via the GitHub check-runs API directly on PR #303's actual final head
+  (`dd8294e`, run `36232041240`): 31/31 checks green, `gate` included.
+
+  Attempted a live fault injection distinct from the producer's own two disclosed ones (removed
+  the Python-side cumulative `max_total_bytes` truncation check in
+  `run_typescript_javascript_agent_config_tool_discovery`); this session's own auto-mode
+  classifier declined running the test suite against the intentionally-weakened file ("Security
+  Weaken"). Reverted immediately (copied back from an untouched backup, confirmed byte-identical
+  via `md5sum`) rather than routed around. Instead read `tests/tasks/test_ftf_04a10.py` directly
+  and confirmed `test_total_byte_budget_truncates_run`/`test_max_files_budget_truncates_run`
+  genuinely encode the property that edit would have broken, and independently re-read the
+  producer's own two disclosed fault-injection targets against the committed source, confirming
+  both are real — satisfying the CERTIFY procedure's own explicit "read the before/after log, or
+  break it locally and re-run" alternative.
+
+  Task contract re-pulled via `tools/r1_handoff.py packet FTF-04A10`: `acceptance`/
+  `negative_acceptance` clauses confirmed genuinely met. No blocking defect found.
+  `docs/spec-matrix.yaml` FTF-04A10 set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to the merge commit `092d6adfa7d7066a1cb997af05250a78f74179bc`.
+  `sync_certified_status()` run directly. `docs/certifications/ledger.md` entry appended with this
+  session's ID stated explicitly. `scripts/status.py`: `75/300` → `76/300` certified; product-true
+  unchanged at `20/20` (no live caller added by this certification, disclosed). No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh) — STEP 0.1 read `PROGRESS.md`/
   `QUEUE.md`/`docs/certifications/queue.md` fresh. CLAUDE.md hash self-check clean. This sandbox's
   own local checkout started on a shallow clone whose `origin/main` tracking ref read stale
@@ -5234,6 +5277,13 @@ precedent as FTF-04A08/FTF-04A09); `status.py` unchanged 75/300 (Law 2). Not sel
 4) — independent Control-plane L2 review and a real CI run on the opened PR are required before
 certification. Full record: `docs/certifications/queue.md`'s matching 2026-09-26 entry,
 `docs/spec-matrix.yaml`'s FTF-04A10 notes, `PROGRESS.md`.
+
+**Certified 2026-09-26** by an independently-triggered Control-plane certifier session
+(`https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47`, PR #303's own `pull_request.opened`
+webhook) — see this file's own top dated log for the full record. `docs/spec-matrix.yaml`
+FTF-04A10 now reads `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`,
+`evidence_hash` = merge commit `092d6adfa7d7066a1cb997af05250a78f74179bc`. This paragraph is kept
+as the original submission record, not rewritten.
 
 **FTF-04A09** ("Python deterministic agent/config/tool discovery") was the item here before that; submitted
 2026-09-26 via PR #298 (branch `claude/wizardly-fermat-rw976n` → main), producer session

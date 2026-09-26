@@ -8006,3 +8006,104 @@ reasons given above.
 - Date: 2026-09-26
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A10 — TypeScript/JavaScript deterministic agent/config/tool discovery
+
+- Criterion ID: FTF-04A10
+- PR: https://github.com/SJZLab/Sovra/pull/303 (`claude/wizardly-fermat-gg9rje` -> `main`)
+- Merge commit (evidence): 092d6adfa7d7066a1cb997af05250a78f74179bc
+- Implementation commits: `59c1584020fbff7b0bfafcdb481f6908631b5b88` (implementation),
+  `dd8294e9f8016f40725f21d1b080d12471daef6a` (PR-link tracking), both producer session
+  `session_01MAwC6YFuztewV8dUutUMNh`.
+- Session-ID check: both of PR #303's commits carry `Claude-Session:
+  .../session_01MAwC6YFuztewV8dUutUMNh`. This reviewing session's own ID
+  (`https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47`) matches neither -- independent, not
+  self-certification (Law 4).
+- Triggered by the `pull_request.opened` webhook for PR #303 itself; this session's fixed CERTIFY
+  mandate is to sweep `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any pending
+  PROVISIONAL item. A direct `certification_state: PROVISIONAL` check against
+  `docs/spec-matrix.yaml` found exactly one match, FTF-04A10 (PR #303), confirming it was the only
+  pending item (FTF-04A09 had already been certified by a prior session on the same date, ledger
+  entry above).
+- Diff read directly (`git show 59c1584`): new module
+  `apps/api/app/target_connectors/typescript_javascript_deterministic_agent_config_tool_discovery.py`
+  (386 lines) plus a small, fixed Node.js subprocess helper
+  `_typescript_javascript_ast_helper.cjs` (401 lines) invoked over stdin -- a real,
+  non-executing `ts.createSourceFile`/`ts.Program.getSyntacticDiagnostics`-based static analyzer
+  tracing `client.chat.completions.create(...)` calls to a genuine same-file `openai`
+  import/require (exactly three closed shapes: default import, named import with alias,
+  `require`), resolving `model=`/`tools=` object-literal properties only from real literals via a
+  hand-written, non-executing literal evaluator and disclosing any dynamic/unresolved shape rather
+  than guessing it; `tests/tasks/test_ftf_04a10.py` (548 lines, 21 test functions); one new
+  `.github/workflows/ci.yml` gate step; a narrowly-scoped `**/*.cjs` eslint override;
+  `docs/spec-matrix.yaml`; task-packet/tracking-doc updates -- matches the PR's own claimed scope
+  exactly, no scope creep.
+- Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in
+  `docs/spec-matrix.yaml` (via direct `yaml.safe_load`) before relying on their contracts.
+- **Own re-verification:** CLAUDE.md integrity confirmed (`sha256sum` matches committed
+  `CLAUDE.md.sha256`). `uv sync --all-packages`; `pnpm install --frozen-lockfile` (224 packages,
+  zero lockfile changes -- confirms `typescript` is a pre-existing devDependency, not a new
+  runtime dependency this task introduced). `uv run python3 tests/tasks/test_ftf_04a10.py` --
+  21/21 clean. `uv run ruff check`/`ruff format --check`/`mypy` clean repo-wide (262 source files;
+  the 15 pre-existing `alembic`-stub `mypy` errors predate this change, confirmed via `git diff
+  --stat` showing this PR never touches those files). `pnpm run lint`/`format:check`/`typecheck`
+  clean. `pnpm exec vitest run` 27/27. `uv run pytest tests/unit` 3/3. Regression swept
+  `tests/tasks/test_ftf_04a08.py`/`test_ftf_04a09.py` -- both "all checks passed". `git fetch
+  --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent
+  as every prior shift) resolved a `stale_commit` batch `validate_spec.py --strict` otherwise
+  reports; clean (exit 0) after unshallowing. `product_truth_check.py --fail-on-unwired`: `20/20`
+  unchanged -- confirmed legitimate directly against `docs/spec-matrix.yaml` (`proving_symbol:
+  ''`, genuinely blank for this task; no live source-analysis-pipeline dispatcher exists yet, same
+  disclosed precedent as FTF-04A08/FTF-04A09 -- not a 0/0-accepted-as-pass case since no
+  proving_symbol is claimed). `status.py`: `75/300` certified pre-certification (Law 2, confirmed
+  not self-inflated).
+- **Fault-injection verification:** attempted a live fault injection distinct from the producer's
+  own two disclosed ones (removing the Python-side cumulative `max_total_bytes` truncation check
+  in `run_typescript_javascript_agent_config_tool_discovery`, which would let the run silently
+  scan past its own declared byte budget without ever reporting `truncated=True`); this session's
+  own auto-mode classifier declined running the test suite against that intentionally-weakened
+  working copy ("Security Weaken"). The file was immediately reverted (copied back from an
+  untouched backup, never `git checkout` since the change was never staged) and confirmed
+  byte-identical via `md5sum` against the pre-edit content, with `git status`/`git diff --stat`
+  showing a clean tree throughout. In place of the live run, read `tests/tasks/test_ftf_04a10.py`
+  directly and confirmed `test_total_byte_budget_truncates_run`/
+  `test_max_files_budget_truncates_run` genuinely encode exactly the property that edit would have
+  broken (`evidence.truncated is True`, a bounded `total_bytes_scanned`/`files_scanned`). This
+  follows the CERTIFY procedure's own explicit alternative ("read the before/after log, or break
+  it locally and re-run") given the live-injection path was unavailable in this sandbox. Also
+  independently re-read the producer's own two disclosed fault-injection targets directly against
+  the committed module/helper source (the `tools` array non-conforming-entry check in
+  `extractToolSchema`; the `moduleAliases.has(...)` client-alias membership guard in
+  `collectClientAliases`) and confirmed both are real, load-bearing checks whose removal would
+  genuinely break `test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped` and
+  `test_unrelated_client_without_import_is_not_guessed`/`test_namespace_import_is_not_matched`
+  respectively.
+- Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A10 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested JS/TS AST patterns and
+  statically resolvable schemas using isolated approved parser") verified genuinely met -- the
+  isolated-approved-parser resolution (this repo's own already-declared root `typescript`
+  devDependency, never a new runtime dependency) and the model-binding call-shape resolution (the
+  `openai` npm package's `OpenAI` client, matching this repo's own `/v1/chat/completions`
+  LiteLLM-proxy contract) are both recorded in the module's own docstring and match architecture
+  already decided elsewhere (Section 7A.4/`api_contract`), per CLAUDE.md's own default-resolution
+  rule -- no owner ask needed, correctly resolved rather than escalated. `negative_acceptance`
+  ("eval/dynamic imports/config execution are not run; unresolved inferred contracts block auto
+  qualification") verified genuinely met -- the helper only ever calls
+  `ts.createSourceFile`/`getSyntacticDiagnostics`, never `eval`/`new Function`/
+  `vm.runInContext`/a scanned-file `require`, and
+  `test_module_never_imports_or_executes_scanned_content` exercises this both statically (a
+  forbidden-substring grep of the helper's own source) and behaviorally (a malicious scanned `.js`
+  file's own `require("fs").writeFileSync` call is proven to never fire).
+- Real CI reconfirmed directly via the GitHub check-runs API against PR #303's actual final head
+  (`dd8294e9f8016f40725f21d1b080d12471daef6a`, run `36232041240`): 31/31 checks
+  `completed`/`success`, `gate` included (job `108376890171`) -- not a self-reported claim. PR
+  state: merged by this session via the GitHub API as this CERTIFY pass's own merge action.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A10 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `scripts/status.py`: `75/300` -> `76/300` certified; product-true unchanged at `20/20`
+  (no live caller added by this certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47 (independent --
+  see session-ID check above), 2026-09-26
+- Date: 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.
