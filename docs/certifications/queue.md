@@ -16902,3 +16902,68 @@ certifier session that was not involved in producing this fix.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Certified: unchanged at
   77/300. Product-true: unchanged at 20/20.
+
+## 2026-09-26 — Control plane: certify FTF-0513 (Near-duplicate detector), PR #310
+
+Triggered by the `pull_request.opened` webhook for PR #310 (`[relay] FTF-0513: close
+Control-plane-flagged test-coverage gap`, branch `claude/wizardly-fermat-iqpz0c` → `main`). This
+was the sole pending PROVISIONAL item in the queue: the three other recent submissions visible
+above it (FTF-04A09, FTF-04A10, FTF-0302) were confirmed already independently CERTIFIED by prior
+Control-plane sessions via direct inspection of `docs/spec-matrix.yaml`/`docs/certifications/
+ledger.md` before relying on that state — those certify commits updated spec-matrix/ledger/
+QUEUE.md/PROGRESS.md but never appended a matching entry here, a minor record-keeping gap
+disclosed for visibility, not corrected in this certification-scoped session.
+
+**Session-ID check:** this session's own ID is
+`https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS`. PR #310's two commits (`70e7637`,
+`07bc503`) both carry `Claude-Session: .../session_0194XSfuk8bYmcPjTU8K45kn` — no match,
+independent per Law 4. Also independent of the original PR #308 reviewer
+(`session_015ZJ4NhUe1TG96MJH6uJQvR`).
+
+**Diff read directly** in a fresh `git worktree` fetched from `refs/pull/310/head` at the PR's
+actual head (`07bc503`): only `tests/tasks/test_ftf_0513.py` gained one new scenario
+(`test_character_ngram_similarity_crossing_its_own_threshold_flags_alone`) plus a docstring
+update. Confirmed `workers/data/near_duplicate_detector.py` byte-identical to PR #308's own head
+via a direct `git diff` between the two blobs (empty diff) — no implementation change, exactly as
+claimed.
+
+**Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0513.py` —
+"all checks passed" (47 `check()` calls, own count).
+
+**Own fault injection (Law 1), reproducing the exact mutation the prior PR #308 review used:**
+`if character_ngram_similarity >= thresholds.character_ngram_similarity:` → `if
+character_ngram_similarity <= 0.0:`. Mutation confirmed real (md5sum differs). Re-ran
+`tests/tasks/test_ftf_0513.py` with the mutation in place: genuine `AssertionError` at `assert
+candidate is not None` in the new scenario — the exact gap the prior review found is now closed.
+Reverted byte-identical (md5sum matched, `git status` clean), re-ran clean.
+
+**Real CI confirmed on the exact merged head, not a self-report:** polled the commit's check-runs
+to full completion — all 30 runs `success`, `gate` included (run `36250545266`, job
+`108427628429`). Fetched the `gate` job's own raw log directly and confirmed it actually executed
+`tests/tasks/test_ftf_0513.py`, printing `FTF-0513 near-duplicate detector: all checks passed`
+before proceeding to the next step.
+
+`ruff`/`ruff format --check`/`mypy` clean (266 files). `git fetch --unshallow` resolved this
+sandbox's own pre-existing shallow-clone artifact; `validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired`: `20/20` unchanged (`proving_symbol` genuinely blank,
+disclosed precedent, not a 0/0-accepted-as-pass case). `status.py`: `77/300` pre-certification,
+`78/300` after this certification's own `spec-matrix.yaml` update. Regression swept
+`test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0500.py`/`pytest tests/unit` — all unaffected.
+Confirmed dependencies FTF-0500/FTF-0511/FTF-0512 genuinely `CERTIFIED` before relying on them.
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-0513 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 is now genuinely met for all four Section
+10 methods (4-7), each with its own isolating positive test; acceptance clause 2 (independent
+review recorded) met by this review; `negative_acceptance` reconfirmed sound, unchanged from the
+prior review's own finding since the implementation file did not change. No open review threads
+or comments on PR #310; `mergeable_state: clean`.
+
+**Result: CERTIFIED.** No blocking defect found. Merged PR #310 (merge commit
+`2e6ee083df8bfa13bda78a2c5514c837793f8a35`). `docs/spec-matrix.yaml`'s FTF-0513 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+commit. `sync_certified_status()` run directly. Appended `docs/certifications/ledger.md`;
+`QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `77/300` -> `78/300` certified;
+product-true unchanged at `20/20`. PR #308 stays open/unmerged, already marked superseded by the
+relay's own PR #310 comment — not this session's action to close.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.

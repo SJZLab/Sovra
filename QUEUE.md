@@ -1,4 +1,43 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS, triggered by the
+  `pull_request.opened` webhook for PR #310) — independently certified **FTF-0513 (Near-duplicate
+  detector)**. PR #310 brought PR #308's real head onto a new branch and added exactly the
+  isolating test scenario (`test_character_ngram_similarity_crossing_its_own_threshold_flags_alone`)
+  this queue's own prior entry (below) specified as the fix for the PR #308 review's blocking
+  finding. Session-ID check: PR #310's two commits both carry `Claude-Session:
+  .../session_0194XSfuk8bYmcPjTU8K45kn` — no match to this session's own ID, and independent of
+  the original PR #308 reviewer (`session_015ZJ4NhUe1TG96MJH6uJQvR`) too (Law 4).
+
+  Diff read directly in a fresh worktree at PR #310's actual head (`07bc503`): confirmed
+  `workers/data/near_duplicate_detector.py` byte-identical to PR #308's own head (no
+  implementation change, test-coverage only). Own reproduction: `test_ftf_0513.py` — "all checks
+  passed" (47 checks). **Own fault injection reproducing the prior review's exact mutation**
+  (`character_ngram_similarity >= thresholds.character_ngram_similarity` →
+  `character_ngram_similarity <= 0.0`): the new scenario genuinely failed (`AssertionError`),
+  confirming the gap is closed; reverted byte-identical (md5sum matched), re-ran clean. Real CI
+  reconfirmed on the exact merged head (run `36250545266`): 30/30 check runs `success` including
+  `gate`; fetched the `gate` job's own raw log directly and confirmed it actually executed
+  `tests/tasks/test_ftf_0513.py`, printing "all checks passed". `ruff`/`mypy`/`validate_spec.py
+  --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged 20/20 (`proving_symbol`
+  genuinely blank, disclosed precedent). Regression swept `test_ftf_0511.py`/`test_ftf_0512.py`/
+  `test_ftf_0500.py`/`pytest tests/unit` — unaffected. Task contract re-pulled; acceptance clause 1
+  now genuinely met for all four Section 10 methods (4-7), each with its own isolating positive
+  test; negative_acceptance reconfirmed sound (implementation unchanged from the prior review).
+
+  **Result: CERTIFIED.** No blocking defect found. Merged PR #310 (merge commit
+  `2e6ee083df8bfa13bda78a2c5514c837793f8a35`). `docs/spec-matrix.yaml`'s FTF-0513 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`). Appended a matching entry to `docs/certifications/
+  ledger.md` and `docs/certifications/queue.md`. No open owner ask (`QUEUE.md` "Owner actions —
+  current" unchanged, empty). PR #308 stays open/unmerged, already marked superseded by the
+  relay's own PR #310 comment — not this certifying session's action to close. Certified: 77/300 →
+  78/300. Product-true: unchanged at 20/20. No other task work, design decisions, or queue
+  reprioritization performed beyond what this certification naturally required (Law 4).
+
+## Previous shift
+
 Updated: 2026-09-26T14:59:04Z (scheduled autonomous relay shift, session
   https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn, branch
   `claude/wizardly-fermat-iqpz0c`) — picked up this queue's own top item: the Control-plane

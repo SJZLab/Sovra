@@ -8187,3 +8187,70 @@ reasons given above.
 - Date: 2026-09-26
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0513 — Near-duplicate detector (test-coverage fix, PR #310)
+
+- Criterion ID: FTF-0513
+- PR: https://github.com/SJZLab/Sovra/pull/310 (`[relay] FTF-0513: close Control-plane-flagged
+  test-coverage gap`, supersedes PR #308, left open/unmerged with the gap it originally raised)
+- Merge commit: `2e6ee083df8bfa13bda78a2c5514c837793f8a35`
+- Head commit reviewed: `07bc5037cbfc2e34bedd35ac32c40d011cee2dec`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36250545266 — 30/30 check runs `success`,
+  `gate` included (job `108427628429`)
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS`. PR #310's two commits both carry
+  `Claude-Session: .../session_0194XSfuk8bYmcPjTU8K45kn` — no overlap, independent per Law 4. Also
+  independent of the prior PR #308 reviewer (`session_015ZJ4NhUe1TG96MJH6uJQvR`) and of the
+  original PR #308 producer.
+- **Diff read directly** in a fresh `git worktree` at PR #310's actual head: only
+  `tests/tasks/test_ftf_0513.py` gained one new scenario
+  (`test_character_ngram_similarity_crossing_its_own_threshold_flags_alone`) plus a docstring
+  update; `workers/data/near_duplicate_detector.py` confirmed **byte-identical** to PR #308's own
+  head via a direct `git diff` between the two blobs (empty diff) — no implementation change, as
+  claimed.
+- **Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0513.py` —
+  "all checks passed" (47 `check()` calls, own count via `grep -c`).
+- **Own fault injection (Law 1), reproducing the exact mutation the prior PR #308 review used:**
+  `workers/data/near_duplicate_detector.py`: `if character_ngram_similarity >=
+  thresholds.character_ngram_similarity:` → `if character_ngram_similarity <= 0.0:`. Confirmed the
+  mutation actually changed the file (md5sum before/after differ: `c3f2ae17...` →
+  `72fa623a...`). Re-ran `tests/tasks/test_ftf_0513.py` with the mutation in place: **genuine
+  `AssertionError`** at `assert candidate is not None` in the new scenario — the exact gap the
+  prior review found is now closed. Reverted byte-identical (md5sum matched `c3f2ae17...` again,
+  `git status` clean), re-ran clean.
+- **Real CI confirmed on the exact merged head, not a self-report:** fetched the `gate` job's raw
+  log directly (`get_job_logs`, `return_content: true`) and confirmed it actually executed
+  `tests/tasks/test_ftf_0513.py`, printing `FTF-0513 near-duplicate detector: all checks passed`
+  before proceeding to the next step (`test_ftf_0514.py`). All 30 check runs on commit `07bc503`
+  polled to `completed`/`success`, including the three slower OpenBao-backed integration jobs.
+- `ruff check .` / `ruff format --check .` (266 files) / `mypy .` (266 files) all clean. `git fetch
+  --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (same disclosed
+  precedent as every recent shift); `validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired`: `20/20` unchanged — `proving_symbol` genuinely blank in
+  `docs/spec-matrix.yaml` (no live dataset-import caller exists yet for `detect_near_duplicates`),
+  same disclosed precedent as this task's own dependency chain — not a 0/0-accepted-as-pass case.
+  `status.py`: `77/300` certified pre-certification (confirmed not self-inflated), `78/300` after
+  this certification's own `spec-matrix.yaml` update. Regression swept `test_ftf_0511.py` /
+  `test_ftf_0512.py` / `test_ftf_0500.py` / `pytest tests/unit` (3/3) — all unaffected. Confirmed
+  dependencies FTF-0500/FTF-0511/FTF-0512 genuinely `CERTIFIED` via direct `yaml.safe_load` before
+  relying on them.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-0513 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Use bounded indexed n-gram/semantic
+  candidates and reviewed thresholds with privacy-safe embeddings") is now genuinely met for all
+  four Section 10 methods (4-7) — each has its own isolating positive test proving that crossing
+  its own threshold, and no other method, is what flags a pair. Acceptance clause 2 (independent
+  review, exact merged commit, real integration/negative-test evidence recorded) met by this
+  review. `negative_acceptance` (no all-pairs blowup / no guessed-threshold auto-discard)
+  reconfirmed sound — unchanged from the prior review's own finding, since the implementation file
+  did not change.
+- No open review threads or comments on PR #310 at review time; `mergeable_state: clean`.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0513 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `2e6ee083df8bfa13bda78a2c5514c837793f8a35`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `77/300` ->
+  `78/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS (independent — see
+  session-ID check above), 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.

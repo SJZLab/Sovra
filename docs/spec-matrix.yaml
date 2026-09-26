@@ -4388,10 +4388,10 @@ FTF-0512:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Near-duplicate detector
-  evidence_hash: ''
+  evidence_hash: 2e6ee083df8bfa13bda78a2c5514c837793f8a35
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
@@ -4490,7 +4490,45 @@ FTF-0513:
     `status.py` unchanged at 77/300. Submitted PROVISIONAL, not
     self-certified (Law 4) -- awaiting
     an independently-triggered Control-plane L2 certifier session.
-  proof_state: L1-PROVEN
+    2026-09-26 CERTIFY (this session, `session_01MSzmK3qAT4x94JjehpJDuS`,
+    independent -- checked against both of PR #310's commit session IDs
+    (`session_0194XSfuk8bYmcPjTU8K45kn`), no match): re-read the PR #310
+    diff directly in a fresh worktree, confirmed
+    `workers/data/near_duplicate_detector.py` is byte-identical to PR
+    #308's own head (no implementation change). Ran the real, unmodified
+    `tests/tasks/test_ftf_0513.py` -- all checks passed. Independently
+    reproduced the certifier's exact fault injection from the PR #308
+    review (`character_ngram_similarity >= thresholds.
+    character_ngram_similarity` -> `character_ngram_similarity <= 0.0`):
+    the new `test_character_ngram_similarity_crossing_its_own_threshold_
+    flags_alone` genuinely failed (`AssertionError`, `candidate is not
+    None`), confirming the exact gap is closed; reverted byte-identical
+    (md5sum matched before/after), re-ran clean. Confirmed real CI on the
+    exact merged head (commit `07bc503`, run `36250545266`): all 30 check
+    runs completed `success` including `gate`; fetched the `gate` job's
+    own raw log directly (not a self-report) and confirmed it actually
+    executed `tests/tasks/test_ftf_0513.py`, printing "FTF-0513
+    near-duplicate detector: all checks passed" before proceeding to the
+    next step. `ruff`/`ruff format`/`mypy` clean; `validate_spec.py
+    --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged
+    20/20 (proving_symbol genuinely blank, not a 0/0-accepted-as-pass
+    case -- same disclosed precedent as this task's own dependency
+    chain); `status.py` unchanged 77/300 pre-merge. Regression swept
+    `test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0500.py`/`pytest
+    tests/unit` -- all unaffected. Confirmed dependencies FTF-0500/
+    FTF-0511/FTF-0512 genuinely `CERTIFIED` via direct `yaml.safe_load`
+    before relying on them. Task contract re-pulled (`python3
+    tools/r1_handoff.py packet FTF-0513 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 (bounded
+    indexed n-gram/semantic candidates, reviewed thresholds) is now met
+    for all four Section 10 methods (4-7), each with its own isolating
+    positive test; acceptance clause 2 (independent review, exact merged
+    commit, real integration/negative-test evidence recorded) met by this
+    review itself; negative_acceptance (no all-pairs blowup / no
+    guessed-threshold auto-discard) reconfirmed sound, unchanged from the
+    prior review's own finding. No open review threads or comments on PR
+    #310; `mergeable_state: clean`. No blocking defect found.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0513.py
 FTF-0514:
