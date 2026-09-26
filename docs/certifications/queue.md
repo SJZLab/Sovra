@@ -16967,3 +16967,112 @@ product-true unchanged at `20/20`. PR #308 stays open/unmerged, already marked s
 relay's own PR #310 comment — not this session's action to close.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
+
+## 2026-09-26 — Control plane: independent CERTIFY review — FTF-0303 (PR #314) — NOT CERTIFIED
+
+Triggered by the `pull_request.opened` webhook for PR #314 (`FTF-0303: Private S3 artifact
+resolver`, branch `claude/wizardly-fermat-41rqnl` → `main`). Checked `docs/spec-matrix.yaml` on
+`main` first: FTF-0303's own entry there is still `certification_state: NONE` /
+`implementation_state: ABSENT` — this task's PROVISIONAL claim exists only inside PR #314's own
+diff (two commits, `a4784bc`/`82cefbe`), not yet merged. PR #314 was the only open PROVISIONAL
+submission found; FTF-04A09/FTF-04A10/FTF-0302 (visible above in this file) were confirmed already
+independently CERTIFIED by prior Control-plane sessions via direct inspection of
+`docs/spec-matrix.yaml` before relying on that state.
+
+- **Session-ID check:** PR #314's two commits (`a4784bc`, `82cefbe`) both carry `Claude-Session:
+  .../session_01WPeKS5TPiW83vBftshye7T`. This session's own ID is
+  `https://claude.ai/code/session_01JcEBGu1LgtCxtbfhufaNpM` — no match, independent per Law 4.
+- **Diff read directly** in a fresh `git worktree` fetched from `refs/pull/314/head` at the PR's
+  actual head (`82cefbe`): `apps/api/app/artifacts/private_s3_artifact_resolver.py` (new, 342
+  lines), `tests/tasks/test_ftf_0303.py` (new, 624 lines), a `.github/workflows/ci.yml` gate step,
+  `docs/implementation/task-packets/FTF-0303.md`, and tracking-doc updates. No scope creep beyond
+  the four disclosed negative_acceptance checks (bucket mismatch, cross-tenant prefix, partial
+  upload, ETag-as-hash).
+- **CI status at review time:** GitHub Actions run `36257993241` (the real head commit `82cefbe`)
+  was still partially `in_progress` throughout this review (`gate` job itself in progress; every
+  job that had completed was `success`, 27/31) and never reached a full conclusion in the time
+  available — not taken as a pass, not waited on further because the finding below is
+  independently blocking regardless of CI's eventual result.
+- **Own reproduction, fresh worktree at PR #314's actual head:** `uv sync --all-packages`; `uv run
+  python3 tests/tasks/test_ftf_0303.py` — "all checks passed" (32 checks, matching the PR's own
+  claim). Read `packages/security/outbound_guard.py` (FTF-H006, CERTIFIED) directly to confirm
+  `guarded_fetch`'s `response.read()` really does let a genuine `http.client.IncompleteRead`
+  propagate uncaught (only `OSError` is caught around it) — the partial-upload/truncation claim is
+  real, not merely asserted.
+- **Own probe (Law 1) — this is the blocking finding, not a code mutation but a realistic
+  configuration of the real, unmodified code.** `resolve_private_s3_object`'s cross-tenant-prefix
+  gate is `if not key.startswith(connection.tenant_key_prefix): raise CrossTenantPrefixError(...)`
+  — a bare `str.startswith`, with no boundary/separator check and no validation anywhere that
+  `PrivateS3ConnectionConfig.tenant_key_prefix` itself ends with `/`. Constructed a connection with
+  `tenant_key_prefix="org-4"` (the direct, natural result of a future caller building it as
+  `f"org-{organization_id}"` — a one-character omission, not a contrived edge case) and called
+  `resolve_private_s3_object` with the real, unmodified module against
+  `s3://acme-bucket/org-42/models/tiny.safetensors` — a key genuinely belonging to a *different*
+  tenant (`org-42`, not `org-4`). **`CrossTenantPrefixError` was never raised**; execution proceeded
+  straight past the check to the real SigV4-signing/network-request path (it only stopped there
+  because the probe's own deliberately-invalid test policy/port made the outbound guard itself
+  refuse the destination — with a real target this would have gone out as a real, correctly-signed
+  request for another tenant's object). Full reproduction (run against the PR's own unmodified
+  `private_s3_artifact_resolver.py`):
+  ```python
+  conn = PrivateS3ConnectionConfig(
+      endpoint=S3Endpoint(scheme="http", host="127.0.0.1", port=1, region="us-east-1"),
+      credentials=S3Credentials(access_key="x", secret_key="y"),
+      expected_bucket="acme-bucket",
+      tenant_key_prefix="org-4",  # no trailing slash
+  )
+  resolve_private_s3_object(
+      "s3://acme-bucket/org-42/models/tiny.safetensors", "v1",
+      connection=conn, policy=ConnectionPolicy(name="t", allowed_schemes=frozenset({"http"})),
+  )
+  # -> proceeds past CrossTenantPrefixError, fails later only on the probe's own bogus port
+  #    (OutboundPolicyError: port 1 is not in policy 't's allowed_ports), never on the
+  #    cross-tenant check itself.
+  ```
+- **Root cause, confirmed by direct reading, not inference:** `"org-42/models/tiny.safetensors".
+  startswith("org-4")` is `True` in plain Python — `startswith` matches on raw characters, not path
+  segments. This is the textbook prefix-confusion class of cross-tenant/IDOR bug (the same class
+  Section 65.1/Section 6.7 tenant-isolation language this task's own `negative_acceptance` clause
+  ("cross-tenant prefix... fails load") exists to rule out), and it sits in the one check this
+  task's own contract makes it responsible for enforcing — this is not deferred to the "future
+  connection-management task" the module's own docstring assigns `PrivateS3ConnectionConfig`
+  construction to; that future caller cannot be relied on to always remember a trailing `/`, and
+  nothing in this module's own code, docstring, or dataclass validates/normalizes the prefix to
+  prevent exactly this.
+- **Test-coverage gap matching the code gap:** `tests/tasks/test_ftf_0303.py`'s own cross-tenant
+  test (`test_cross_tenant_prefix_fails_load_before_any_network_request`) only exercises a
+  prefix/key pair with **no overlapping characters at all** (`tenant_key_prefix="org-42/"` against
+  key `org-99/...`) — it never exercises a prefix that is a true string-prefix of a different
+  tenant's own key (e.g. `"org-4"` vs `"org-42/..."`, or `"org-1"` vs `"org-10/..."`), so this gap
+  was invisible to the suite exactly the way the prior FTF-0513/PR #308 review's character-n-gram
+  gap was invisible to that suite.
+- **Everything else checked found sound, disclosed for completeness, not the blocking issue:** the
+  SigV4 signature-verification round trip (real wrong-credentials rejection confirmed), the
+  bucket-mismatch check (bucket is taken from `urlsplit().hostname`, which cannot produce a
+  same-string-prefix collision the way a key path can), the two producer-disclosed fault
+  injections (expected-size check, ETag-as-hash) both independently reproduced with a genuine FAIL
+  each, `ruff`/`mypy` clean, no undisclosed dependency, `sign_request` reused rather than
+  re-derived (FTF-R017, CERTIFIED).
+- **Task contract re-pulled** (`python3 tools/r1_handoff.py packet FTF-0303 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`): `negative_acceptance` reads "Bucket mismatch, cross-tenant
+  prefix, partial upload or ETag-as-hash assumption fails load" — a cross-tenant prefix that is
+  merely a raw-character superstring of the caller's own configured prefix does **not** reliably
+  fail load with the code as submitted, so this clause is not genuinely met as written.
+
+**Blocking defect found: the cross-tenant-prefix negative_acceptance check is a bare
+`str.startswith` with no path-segment boundary, so a realistic (not contrived) tenant-prefix value
+missing a trailing separator lets a different tenant's key pass silently and proceed to a real
+signed network request.** `docs/spec-matrix.yaml`'s FTF-0303 entry on `main` is unaffected by this
+review (still `certification_state: NONE` — the PROVISIONAL claim lives only in PR #314's own
+unmerged diff, and this review does not merge it). PR #314 left open, unmerged.
+
+Fix needed (relay's choice of exact shape): make the prefix check boundary-safe — e.g. require and
+enforce (or caller-normalize) that `tenant_key_prefix` always ends with `/` and compare against
+that, or use `PurePosixPath`-style segment comparison instead of raw `str.startswith` — then add a
+test scenario that isolates a true string-prefix (not merely disjoint) cross-tenant collision, e.g.
+`tenant_key_prefix="org-4"` (or `"org-4/"`) against a real `org-42/...` key, asserting
+`CrossTenantPrefixError` is still raised. Re-submit (either as a push to PR #314 or a fresh
+superseding PR, relay's choice). Full detail recorded in `QUEUE.md`'s top entry and `PROGRESS.md`
+for the next relay shift.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.

@@ -1,5 +1,40 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01JcEBGu1LgtCxtbfhufaNpM, triggered by the
+  `pull_request.opened` webhook for PR #314) — independently reviewed **FTF-0303 (Private S3
+  artifact resolver)**, **NOT CERTIFIED**. `docs/spec-matrix.yaml`'s FTF-0303 entry on `main` is
+  unaffected (still `certification_state: NONE`) — the PROVISIONAL claim lives only in PR #314's
+  own unmerged diff. Session-ID check: PR #314's two commits both carry `Claude-Session:
+  .../session_01WPeKS5TPiW83vBftshye7T` — no match to this session's own ID (Law 4).
+
+  **Blocking finding:** the negative_acceptance cross-tenant-prefix check in
+  `apps/api/app/artifacts/private_s3_artifact_resolver.py` (`if not
+  key.startswith(connection.tenant_key_prefix): raise CrossTenantPrefixError(...)`) is a bare
+  `str.startswith` with no path-segment boundary and no validation that
+  `PrivateS3ConnectionConfig.tenant_key_prefix` ends with `/`. Reproduced directly against the
+  PR's own real, unmodified code (no mutation needed): `tenant_key_prefix="org-4"` (a one-character
+  omission a future caller building it as `f"org-{organization_id}"` would naturally produce) lets
+  a key genuinely belonging to a different tenant, `s3://acme-bucket/org-42/models/tiny.safetensors`,
+  pass the cross-tenant-prefix gate silently and proceed straight to a real signed network request
+  — `CrossTenantPrefixError` never fires. `tests/tasks/test_ftf_0303.py`'s own cross-tenant test
+  only exercises a fully disjoint prefix/key pair (`"org-42/"` vs `org-99/...`), never a true
+  string-prefix collision, so this gap is invisible to the suite (same class of gap as the prior
+  FTF-0513/PR #308 review's character-n-gram coverage hole). Everything else reviewed (SigV4
+  signature round trip, bucket-mismatch check, both producer-disclosed fault injections, CI so far
+  all-green on completed jobs) was found sound. Full detail:
+  `docs/certifications/queue.md`'s matching "NOT CERTIFIED" entry.
+
+  **Next relay shift:** fix the boundary bug (require/enforce or caller-normalize
+  `tenant_key_prefix` to always end with `/`, or compare with a path-segment-aware method instead
+  of raw `str.startswith`), add a test scenario isolating a true string-prefix cross-tenant
+  collision (e.g. `"org-4"`/`"org-4/"` vs a real `org-42/...` key) asserting
+  `CrossTenantPrefixError` still fires, then re-submit (push to PR #314 or a fresh superseding PR,
+  relay's choice). PR #314 left open, unmerged. No open owner ask — this is a code defect, not an
+  ask-first item.
+
+## Previous shift
+
+Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS, triggered by the
   `pull_request.opened` webhook for PR #310) — independently certified **FTF-0513 (Near-duplicate
   detector)**. PR #310 brought PR #308's real head onto a new branch and added exactly the

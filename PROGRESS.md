@@ -1,4 +1,89 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-0303 — Control plane: independent CERTIFY review, NOT CERTIFIED (PR #314)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_01JcEBGu1LgtCxtbfhufaNpM`, triggered by the `pull_request.opened`
+webhook for PR #314 (`FTF-0303: Private S3 artifact resolver`, branch
+`claude/wizardly-fermat-41rqnl` → `main`).
+
+Checked `docs/certifications/queue.md`: PR #314 was the only pending PROVISIONAL item —
+`docs/spec-matrix.yaml`'s FTF-0303 entry on `main` reads `certification_state: NONE` /
+`implementation_state: ABSENT`, unaffected by this review. Confirmed FTF-04A09/FTF-04A10/FTF-0302
+(visible in the tail of `docs/certifications/queue.md`) are already independently `CERTIFIED` via
+direct inspection of `docs/spec-matrix.yaml` before relying on that state.
+
+**Session-ID check:** this session's own ID is
+`https://claude.ai/code/session_01JcEBGu1LgtCxtbfhufaNpM`. PR #314's two commits (`a4784bc`,
+`82cefbe`) both carry `Claude-Session: .../session_01WPeKS5TPiW83vBftshye7T` — no match,
+independent per Law 4.
+
+**Diff read directly** in a fresh `git worktree` fetched from `refs/pull/314/head` at the PR's
+actual head (`82cefbe`): `apps/api/app/artifacts/private_s3_artifact_resolver.py` (new, 342
+lines), `tests/tasks/test_ftf_0303.py` (new, 624 lines), a `.github/workflows/ci.yml` gate step,
+the task packet, and tracking-doc updates. No scope creep beyond the four disclosed
+negative_acceptance checks.
+
+**Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0303.py` —
+"all checks passed" (32 `check()` calls, matching the PR's own claim). Read
+`packages/security/outbound_guard.py` (FTF-H006, CERTIFIED) directly to confirm `guarded_fetch`
+really lets a genuine `http.client.IncompleteRead` propagate uncaught (only `OSError` is caught
+around `response.read()`) — the partial-upload/truncation claim checked out.
+
+**CI at review time:** run `36257993241` on the real head `82cefbe` was still partially
+`in_progress` (the `gate` job itself in progress; 27/31 completed jobs all `success`) and never
+reached a full conclusion in the time available — not taken as a pass, not waited on further since
+the finding below is independently blocking regardless of CI's eventual result.
+
+**Own probe (Law 1) — the blocking finding, a realistic configuration of the real, unmodified
+code, not a code mutation.** `resolve_private_s3_object`'s cross-tenant-prefix gate is a bare
+`if not key.startswith(connection.tenant_key_prefix): raise CrossTenantPrefixError(...)` — no
+path-segment boundary, and nothing anywhere validates that
+`PrivateS3ConnectionConfig.tenant_key_prefix` ends with `/`. Constructed
+`tenant_key_prefix="org-4"` (the direct, natural result of a future caller building it as
+`f"org-{organization_id}"`, a one-character omission, not a contrived edge case) and called the
+real, unmodified `resolve_private_s3_object` against
+`s3://acme-bucket/org-42/models/tiny.safetensors` — a key genuinely belonging to a *different*
+tenant (`org-42`, not `org-4`). `CrossTenantPrefixError` was **never raised**; execution proceeded
+straight past the check into the real SigV4-signing/network-request path, stopping only because
+the probe's own deliberately-invalid test policy/port made the outbound guard itself refuse the
+destination (`OutboundPolicyError: port 1 is not in policy 't's allowed_ports`) — with a real
+target this would have gone out as a real, correctly-signed request for another tenant's object.
+Root cause confirmed by direct reading: `"org-42/...".startswith("org-4")` is `True` in plain
+Python — `startswith` matches raw characters, not path segments, the textbook prefix-confusion
+class of cross-tenant/IDOR bug, sitting in the one check this task's own `negative_acceptance`
+clause ("cross-tenant prefix... fails load") makes this task responsible for.
+
+**Test-coverage gap matching the code gap:**
+`test_cross_tenant_prefix_fails_load_before_any_network_request` only exercises a fully disjoint
+prefix/key pair (`tenant_key_prefix="org-42/"` vs key `org-99/...`) — never a true string-prefix
+collision (`"org-4"` vs `org-42/...`) — so this gap is invisible to the suite, the same class of
+hole the prior FTF-0513/PR #308 review found in that task's character-n-gram coverage.
+
+**Everything else checked found sound:** the SigV4 signature-verification round trip (a real
+wrong-credentials request genuinely rejected by the fixture's own independent re-derivation), the
+bucket-mismatch check (bucket comes from `urlsplit().hostname`, not subject to the same
+raw-string-prefix collision a key path is), both producer-disclosed fault injections
+(expected-size check, ETag-as-hash) independently reproduced with a genuine FAIL each,
+`ruff`/`mypy` clean, `sign_request` reused rather than re-derived (FTF-R017, CERTIFIED), no
+undisclosed dependency.
+
+**Task contract re-pulled** (`python3 tools/r1_handoff.py packet FTF-0303 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): `negative_acceptance` — "Bucket mismatch, cross-tenant prefix,
+partial upload or ETag-as-hash assumption fails load" — is not genuinely met as submitted: a
+cross-tenant prefix that is a raw-character superstring of the caller's own configured prefix does
+not reliably fail load.
+
+**Result: NOT CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-0303 entry on `main` is unaffected (still
+`certification_state: NONE` — the PROVISIONAL claim lives only in PR #314's own unmerged diff).
+PR #314 left open, unmerged. Fix needed: make the prefix check boundary-safe (enforce/normalize
+`tenant_key_prefix` to always end with `/`, or use a path-segment-aware comparison instead of raw
+`str.startswith`), add a test isolating a true string-prefix cross-tenant collision, then
+re-submit. Full detail: `docs/certifications/queue.md`'s matching entry, `QUEUE.md`'s top entry.
+Certified: unchanged at 78/300. Product-true: unchanged at 20/20. No other task work, design
+decisions, or queue reprioritization performed beyond what this certification review naturally
+required (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty) — this
+is a code defect, not an ask-first item.
+
 ## 2026-09-26 — FTF-0513 — Control plane: independent CERTIFY review, CERTIFIED (PR #310)
 
 Scheduled Control-plane certifier shift, session
