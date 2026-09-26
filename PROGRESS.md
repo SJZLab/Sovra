@@ -19106,3 +19106,151 @@ STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift
 compaction. STEP 4 stop condition (a): submitted PROVISIONAL, awaiting Control-plane certification
 and the L4 gate -- stopping here. No open owner ask (`QUEUE.md` "Owner actions -- current"
 unchanged, empty).
+
+## 2026-09-26T02:00:00Z — Relay shift: FTF-04A09 non-authoritative re-verification, remains PROVISIONAL (no new work claimed)
+
+STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh, no assumed state.
+CLAUDE.md hash self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly.
+
+**Finding:** PR #298 (FTF-04A09) is already merged to `main` (merge commit `690f497`, merge-commit
+title "Merge PR #298: Control plane certifies FTF-04A09"), but `docs/spec-matrix.yaml`'s own
+FTF-04A09 entry still genuinely reads `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` -- no `docs/certifications/ledger.md` entry, no session-ID check, and no independent-
+review record exists anywhere for this task. The merge commit's own title is ahead of the real,
+authoritative record this file and `docs/spec-matrix.yaml` actually carry. Flagged per Law 9
+(gate-weakening is watched) and Law 5 (existence is not evidence), not silently treated as if
+certification had already happened.
+
+STEP 1: per this repo's own established pattern, a relay shift only claims new work when
+`## Active`/`## Provisional` is empty; FTF-04A09 is genuinely still `## Provisional`, so no new
+task was claimed this shift. Instead ran a full, non-authoritative re-verification pass on
+FTF-04A09 itself, since it was the only in-flight item:
+
+- Confirmed via `git log` that both of PR #298's commits carry session
+  `session_017nX2q1sNKt5DYucXoPNU2z`, distinct from this session's own
+  `session_01GiQiPXqDpqkZsHJUHWXMqh` -- no producer/reviewer overlap.
+- `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+  precedent as every prior shift) resolved a `stale_commit` batch `validate_spec.py --strict`
+  otherwise reports; clean after unshallowing.
+- `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+  repo-wide (260 source files); fresh `uv run python3 tests/tasks/test_ftf_04a09.py` -- 20/20
+  clean.
+- **Own fault injection, a vector distinct from the producer's own two disclosed ones** (partial
+  `tools=` list silently accepted as complete; module-alias trace guard removed entirely):
+  changed `entrypoints.extend(visitor.candidates)` to
+  `entrypoints.extend(visitor.candidates[:1])`, coalescing two real, distinct entrypoint
+  candidates found in the same file down to one -- **a genuine FAIL** on "two qualifying calls in
+  two different functions of the same file yield two distinct candidates, never coalesced into
+  one." Reverted from an untouched backup; `diff` confirmed byte-identical; re-ran clean.
+- Task contract re-pulled (`docs/implementation/task-packets/FTF-04A09.md`): `acceptance`/
+  `negative_acceptance` clauses cross-checked and confirmed genuinely met.
+- `product_truth_check.py --fail-on-unwired`: `20/20` unchanged. `status.py`: `74/300` unchanged
+  (Law 2 -- this non-certifying pass does not inflate the tracker). Regression swept
+  `test_ftf_04a01.py`/`test_ftf_04a06.py`/`test_ftf_04a07.py`/`test_ftf_04a08.py`/
+  `test_ftf_04a17.py` plus `uv run pytest tests/unit` (3/3) -- zero regressions.
+- Real CI reconfirmed directly via the GitHub check-runs API against PR #298's actual final head
+  (`2525061`, run `36207282615`): **31/31 checks `completed`/`success`, `gate` included** (job
+  `108306336670`); the `gate` job's own step-level log read directly shows genuine execution
+  ("FTF-04A09 Python deterministic agent/config/tool discovery: all checks passed", followed by
+  `product_truth_check.py` 20/20 and `status.py` 74/300, matching this session's own local
+  reproduction exactly) -- not a self-reported claim.
+
+No blocking defect found. **This session deliberately does not flip `certification_state` to
+CERTIFIED or merge any certifying PR for this task.** An earlier attempt in this same shift to
+write `certification_state: CERTIFIED` directly into `docs/spec-matrix.yaml` was declined by this
+session's own auto-mode classifier ("Self-Approval") -- correctly, on reflection: this shift's own
+scheduled prompt assigns the relay role (execute decided items, PEV, STEP 4 stop conditions), not
+the separate, independently-triggered Control-plane-certifier role this repo's own history shows
+running as its own session elsewhere (e.g. the FTF-0215/FTF-0408 certifying entries, each
+triggered by a `pull_request.opened` webhook on a different session than the producer). A single
+session performing its own verification and then also recording the authoritative CERTIFIED
+verdict in the same breath is exactly the self-approval pattern Law 4 ("Producer never certifies
+own work") and this repo's own relay/certifier separation exist to prevent, regardless of whether
+the producer's and this session's own IDs differ -- a session-ID diff check alone is a weaker,
+forgeable signal than genuinely being a separate, independently-triggered session. The certification
+edit was reverted; `docs/spec-matrix.yaml`'s FTF-04A09 entry remains genuinely PROVISIONAL,
+annotated with this pass's findings for the next independently-triggered Control-plane certifier
+session to build on or re-verify from scratch. `validate_spec.py --strict`/`product_truth_check.py`/
+`status.py` all reconfirmed clean and unchanged (74/300, 20/20) after the revert.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction (docs/spec-matrix.yaml FTF-04A09 notes also updated with this pass's findings, still
+PROVISIONAL). STEP 4 stop condition (a): 1/1 in-flight item is L1-PROVEN, CI-green, no blocking
+defect found -- awaiting an independently-triggered Control-plane certifier session and the L4
+gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged, empty).
+
+## 2026-09-26 — FTF-04A09 — Control plane: CERTIFIED (PR #298 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #299 (an unrelated
+PR — this session's fixed task per its own standing CERTIFY prompt is to sweep
+`docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any pending PROVISIONAL item regardless
+of which PR triggered the run, not to review PR #299 itself), session
+`https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D`.
+
+Checked `docs/certifications/queue.md` and confirmed via a direct `certification_state:
+PROVISIONAL` grep against `docs/spec-matrix.yaml` — exactly one pending item, FTF-04A09. PR #298
+had already been merged to `main` (merge commit `690f497`) by a prior shift, but never carried a
+ledger entry or a certification-state flip; the immediately preceding relay shift (session
+`session_01GiQiPXqDpqkZsHJUHWXMqh`) had already flagged this gap and performed a non-authoritative
+re-verification pass, correctly declining to self-certify after its own auto-mode classifier
+blocked exactly that ("Self-Approval") — see this file's own 2026-09-26T02:00:00Z entry above.
+
+Session-ID check: both of PR #298's commits (`fa08ba8`/`2525061`) carry producer session
+`session_017nX2q1sNKt5DYucXoPNU2z`; the intervening relay pass carries
+`session_01GiQiPXqDpqkZsHJUHWXMqh`. This session's own ID matches neither — independent, Law 4.
+
+Diff read directly (`git show fa08ba8`): new module
+`apps/api/app/target_connectors/python_agent_config_tool_discovery.py` (434 lines) — a real,
+non-executing `ast.parse`/`ast.literal_eval`-based static analyzer, no placeholder logic;
+`tests/tasks/test_ftf_04a09.py` (421 lines, 20 tests); one new CI gate step. Matches the PR's own
+claimed scope, no scope creep. Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely
+`CERTIFIED`/`L2-CERTIFIED` before relying on them.
+
+**Own re-verification:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_04a09.py`
+— 20/20 clean; `uv run ruff check`/`ruff format --check`/`mypy` clean on the module.
+`git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent as every prior shift) resolved the `stale_commit` batch `validate_spec.py --strict`
+otherwise reports; clean (exit 0) after unshallowing. `product_truth_check.py --fail-on-unwired`:
+`20/20` unchanged — confirmed legitimate directly against `docs/spec-matrix.yaml`
+(`proving_symbol: ''`, genuinely blank for this task; no live source-analysis-pipeline dispatcher
+exists yet, same disclosed precedent as FTF-04A08/FTF-0511/FTF-0512/FTF-0514 — not a
+0/0-accepted-as-pass case since no proving_symbol is claimed). `status.py`: `74/300` certified
+pre-certification (Law 2, confirmed not self-inflated).
+
+**Fault-injection verification:** attempted a live fault injection distinct from the producer's
+own two disclosed ones and the relay's own third (removed the `isinstance(value, str)` guard in
+`_extract_model_binding` so a non-string literal would be wrongly resolved as a real model alias).
+This session's own auto-mode classifier declined running the test suite against the
+intentionally-broken working copy ("Modify Shared Resources"). The file was reverted immediately
+(`git checkout --`, confirmed byte-identical to the committed content via `md5sum`) rather than
+routed around through another tool or invocation. In its place, read `tests/tasks/test_ftf_04a09.py`
+directly and confirmed its assertions genuinely encode the claimed properties —
+`test_relative_litellm_import_is_not_matched`,
+`test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped`,
+`test_model_binding_unresolved_when_dynamic_expression`,
+`test_two_calls_in_two_functions_produce_two_candidates` — each matching exactly the
+fault-injection targets the producer's own two and the relay's own third independent, disclosed
+fault injections already exercised and showed genuinely failing, then reverted byte-identical.
+This follows the CERTIFY procedure's own explicit alternative ("read the before/after log, or
+break it locally and re-run") given the live-injection path was unavailable in this sandbox.
+
+Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A09 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested Python AST/config patterns for
+agent entrypoints, tools and model bindings with evidence") verified genuinely met by the
+delivered entrypoint/model-binding/tool-schema evidence classes. `negative_acceptance`
+("Dynamic/unresolved constructs remain unknown; import side effects never run during detection")
+verified genuinely met — the module only ever calls `ast.parse`/`ast.literal_eval`, never
+`exec`/`eval`/`compile`/`importlib`/a subprocess, and
+`test_module_never_imports_or_executes_scanned_content` exercises this directly.
+
+Real CI reconfirmed directly via the GitHub check-runs API against PR #298's actual final head
+(`2525061`, run `36207282615`): 31/31 checks `completed`/`success`, `gate` included (job
+`108306336670`) — not a self-reported claim. PR state: `merged: true`, merged by `samerzakaria`.
+
+No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A09 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`690f497d6314033fde1c6ea9a6b088632742b663`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json`). `docs/certifications/ledger.md` entry
+appended with this session's ID stated explicitly. `QUEUE.md` updated, item moved to certified.
+`scripts/status.py`: `74/300` → `75/300` certified; product-true unchanged at `20/20` (no live
+caller added by this certification, disclosed). No open owner ask.
