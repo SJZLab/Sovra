@@ -1,4 +1,33 @@
 # PROGRESS — Sovra
+## 2026-09-26T15:11:04Z — FTF-0513 — PR #310 merged (by repo owner, not this session); disclosing merge-commit-title inaccuracy
+
+Woken by a real `pull_request.closed` GitHub event (`outcome: merged`) on PR #310, this shift's own
+subscribed PR. Verified directly rather than trusting the event alone: `pull_request_read get` shows
+`merged: true`, `merged_by: samerzakaria` (the repo owner — **not** this session; this session never
+called a merge tool), `merged_at: 2026-09-26T15:11:04Z`, on top of the 31/31-green, `mergeable_state:
+clean`, zero-review state already confirmed at the prior check-in. `git fetch origin main`: `main`
+now at `2e6ee08`, containing both of this shift's commits (`70e7637`/`07bc503`) cleanly.
+
+**Disclosed, not silently passed over** — same precedent as FTF-0302/PR #305, FTF-04A10/PR #303,
+FTF-04A09/PR #298, all previously flagged: the merge commit's own title reads "Merge PR #310:
+Control plane certifies FTF-0513 (Near-duplicate detector, test-coverage fix)" — **not accurate**.
+No certification has occurred; `origin/main`'s own `docs/spec-matrix.yaml` genuinely still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` for FTF-0513, confirmed by reading it
+directly off `origin/main` after the fetch above, not inferred from the title. This is the same
+disclosed, pre-existing, systemic merge-tooling artifact prior shifts already root-caused (not
+reinvestigated here) — the merge commit's templated title, not `docs/spec-matrix.yaml`'s own
+`certification_state` field, which remains the only authoritative certification record.
+
+Merging itself was permitted either way (CLAUDE.md "do without asking: ... merge on green + L1 doc
+(PROVISIONAL)"); the owner reached it first. Law 4 stands undisturbed: certification_state is still
+PROVISIONAL, and this relay session is not, and does not claim to be, Control plane.
+
+STEP 4 stop condition (a), restated: FTF-0513 is `L1-PROVEN`, now merged to `main` (still
+PROVISIONAL, not certified) — awaiting an independently-triggered Control-plane certifier session
+and the L4 gate. This shift's own subscription to PR #310 ended automatically on merge (per the
+event's own notice) — nothing further to watch on this PR. No open owner ask. Certified: unchanged
+at 77/300. Product-true: unchanged at 20/20.
+
 ## 2026-09-26T14:59:04Z — FTF-0513 — relay: fixed the Control-plane-flagged test-coverage gap (PR #310)
 
 Scheduled autonomous relay shift, session

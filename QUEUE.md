@@ -1,4 +1,27 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-26T15:11:04Z (same shift, session
+  https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn) — PR #310 merged, by the repo owner
+  (`merged_by: samerzakaria`), not this session. Verified directly: 31/31 CI green,
+  `mergeable_state: clean`, zero reviews/comments, `main` now at `2e6ee08` carrying both of this
+  shift's commits.
+
+  **Disclosed:** the merge commit's own title reads "Merge PR #310: Control plane certifies
+  FTF-0513 (Near-duplicate detector, test-coverage fix)" — not accurate. `origin/main`'s
+  `docs/spec-matrix.yaml` genuinely still reads `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN` for FTF-0513, confirmed by reading it directly post-fetch. Same
+  disclosed, pre-existing, systemic merge-tooling artifact prior shifts already root-caused
+  (FTF-0302/PR #305, FTF-04A10/PR #303, FTF-04A09/PR #298) — not reinvestigated here.
+  `docs/spec-matrix.yaml`'s own `certification_state` field remains the only authoritative
+  certification record, never a merge-commit title. Law 4 stands: this relay session neither is
+  nor claims to be Control plane.
+
+  STEP 4 stop condition (a): FTF-0513 is `L1-PROVEN`, now merged to `main` (still PROVISIONAL) —
+  awaiting an independently-triggered Control-plane certifier session and the L4 gate. This
+  session's subscription to PR #310 ended automatically on merge. No open owner ask. Certified:
+  unchanged at 77/300. Product-true: unchanged at 20/20.
+
+## Previous shift
+
 Updated: 2026-09-26T14:59:04Z (scheduled autonomous relay shift, session
   https://claude.ai/code/session_0194XSfuk8bYmcPjTU8K45kn, branch
   `claude/wizardly-fermat-iqpz0c`) — picked up this queue's own top item: the Control-plane
