@@ -8006,3 +8006,319 @@ reasons given above.
 - Date: 2026-09-26
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A10 — TypeScript/JavaScript deterministic agent/config/tool discovery
+
+- Criterion ID: FTF-04A10
+- PR: https://github.com/SJZLab/Sovra/pull/303 (`claude/wizardly-fermat-gg9rje` -> `main`)
+- Merge commit (evidence): 092d6adfa7d7066a1cb997af05250a78f74179bc
+- Implementation commits: `59c1584020fbff7b0bfafcdb481f6908631b5b88` (implementation),
+  `dd8294e9f8016f40725f21d1b080d12471daef6a` (PR-link tracking), both producer session
+  `session_01MAwC6YFuztewV8dUutUMNh`.
+- Session-ID check: both of PR #303's commits carry `Claude-Session:
+  .../session_01MAwC6YFuztewV8dUutUMNh`. This reviewing session's own ID
+  (`https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47`) matches neither -- independent, not
+  self-certification (Law 4).
+- Triggered by the `pull_request.opened` webhook for PR #303 itself; this session's fixed CERTIFY
+  mandate is to sweep `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any pending
+  PROVISIONAL item. A direct `certification_state: PROVISIONAL` check against
+  `docs/spec-matrix.yaml` found exactly one match, FTF-04A10 (PR #303), confirming it was the only
+  pending item (FTF-04A09 had already been certified by a prior session on the same date, ledger
+  entry above).
+- Diff read directly (`git show 59c1584`): new module
+  `apps/api/app/target_connectors/typescript_javascript_deterministic_agent_config_tool_discovery.py`
+  (386 lines) plus a small, fixed Node.js subprocess helper
+  `_typescript_javascript_ast_helper.cjs` (401 lines) invoked over stdin -- a real,
+  non-executing `ts.createSourceFile`/`ts.Program.getSyntacticDiagnostics`-based static analyzer
+  tracing `client.chat.completions.create(...)` calls to a genuine same-file `openai`
+  import/require (exactly three closed shapes: default import, named import with alias,
+  `require`), resolving `model=`/`tools=` object-literal properties only from real literals via a
+  hand-written, non-executing literal evaluator and disclosing any dynamic/unresolved shape rather
+  than guessing it; `tests/tasks/test_ftf_04a10.py` (548 lines, 21 test functions); one new
+  `.github/workflows/ci.yml` gate step; a narrowly-scoped `**/*.cjs` eslint override;
+  `docs/spec-matrix.yaml`; task-packet/tracking-doc updates -- matches the PR's own claimed scope
+  exactly, no scope creep.
+- Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in
+  `docs/spec-matrix.yaml` (via direct `yaml.safe_load`) before relying on their contracts.
+- **Own re-verification:** CLAUDE.md integrity confirmed (`sha256sum` matches committed
+  `CLAUDE.md.sha256`). `uv sync --all-packages`; `pnpm install --frozen-lockfile` (224 packages,
+  zero lockfile changes -- confirms `typescript` is a pre-existing devDependency, not a new
+  runtime dependency this task introduced). `uv run python3 tests/tasks/test_ftf_04a10.py` --
+  21/21 clean. `uv run ruff check`/`ruff format --check`/`mypy` clean repo-wide (262 source files;
+  the 15 pre-existing `alembic`-stub `mypy` errors predate this change, confirmed via `git diff
+  --stat` showing this PR never touches those files). `pnpm run lint`/`format:check`/`typecheck`
+  clean. `pnpm exec vitest run` 27/27. `uv run pytest tests/unit` 3/3. Regression swept
+  `tests/tasks/test_ftf_04a08.py`/`test_ftf_04a09.py` -- both "all checks passed". `git fetch
+  --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent
+  as every prior shift) resolved a `stale_commit` batch `validate_spec.py --strict` otherwise
+  reports; clean (exit 0) after unshallowing. `product_truth_check.py --fail-on-unwired`: `20/20`
+  unchanged -- confirmed legitimate directly against `docs/spec-matrix.yaml` (`proving_symbol:
+  ''`, genuinely blank for this task; no live source-analysis-pipeline dispatcher exists yet, same
+  disclosed precedent as FTF-04A08/FTF-04A09 -- not a 0/0-accepted-as-pass case since no
+  proving_symbol is claimed). `status.py`: `75/300` certified pre-certification (Law 2, confirmed
+  not self-inflated).
+- **Fault-injection verification:** attempted a live fault injection distinct from the producer's
+  own two disclosed ones (removing the Python-side cumulative `max_total_bytes` truncation check
+  in `run_typescript_javascript_agent_config_tool_discovery`, which would let the run silently
+  scan past its own declared byte budget without ever reporting `truncated=True`); this session's
+  own auto-mode classifier declined running the test suite against that intentionally-weakened
+  working copy ("Security Weaken"). The file was immediately reverted (copied back from an
+  untouched backup, never `git checkout` since the change was never staged) and confirmed
+  byte-identical via `md5sum` against the pre-edit content, with `git status`/`git diff --stat`
+  showing a clean tree throughout. In place of the live run, read `tests/tasks/test_ftf_04a10.py`
+  directly and confirmed `test_total_byte_budget_truncates_run`/
+  `test_max_files_budget_truncates_run` genuinely encode exactly the property that edit would have
+  broken (`evidence.truncated is True`, a bounded `total_bytes_scanned`/`files_scanned`). This
+  follows the CERTIFY procedure's own explicit alternative ("read the before/after log, or break
+  it locally and re-run") given the live-injection path was unavailable in this sandbox. Also
+  independently re-read the producer's own two disclosed fault-injection targets directly against
+  the committed module/helper source (the `tools` array non-conforming-entry check in
+  `extractToolSchema`; the `moduleAliases.has(...)` client-alias membership guard in
+  `collectClientAliases`) and confirmed both are real, load-bearing checks whose removal would
+  genuinely break `test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped` and
+  `test_unrelated_client_without_import_is_not_guessed`/`test_namespace_import_is_not_matched`
+  respectively.
+- Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A10 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested JS/TS AST patterns and
+  statically resolvable schemas using isolated approved parser") verified genuinely met -- the
+  isolated-approved-parser resolution (this repo's own already-declared root `typescript`
+  devDependency, never a new runtime dependency) and the model-binding call-shape resolution (the
+  `openai` npm package's `OpenAI` client, matching this repo's own `/v1/chat/completions`
+  LiteLLM-proxy contract) are both recorded in the module's own docstring and match architecture
+  already decided elsewhere (Section 7A.4/`api_contract`), per CLAUDE.md's own default-resolution
+  rule -- no owner ask needed, correctly resolved rather than escalated. `negative_acceptance`
+  ("eval/dynamic imports/config execution are not run; unresolved inferred contracts block auto
+  qualification") verified genuinely met -- the helper only ever calls
+  `ts.createSourceFile`/`getSyntacticDiagnostics`, never `eval`/`new Function`/
+  `vm.runInContext`/a scanned-file `require`, and
+  `test_module_never_imports_or_executes_scanned_content` exercises this both statically (a
+  forbidden-substring grep of the helper's own source) and behaviorally (a malicious scanned `.js`
+  file's own `require("fs").writeFileSync` call is proven to never fire).
+- Real CI reconfirmed directly via the GitHub check-runs API against PR #303's actual final head
+  (`dd8294e9f8016f40725f21d1b080d12471daef6a`, run `36232041240`): 31/31 checks
+  `completed`/`success`, `gate` included (job `108376890171`) -- not a self-reported claim. PR
+  state: merged by this session via the GitHub API as this CERTIFY pass's own merge action.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A10 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `scripts/status.py`: `75/300` -> `76/300` certified; product-true unchanged at `20/20`
+  (no live caller added by this certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47 (independent --
+  see session-ID check above), 2026-09-26
+- Date: 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0302 — Hugging Face artifact resolver
+
+- Criterion ID: FTF-0302
+- PR: https://github.com/SJZLab/Sovra/pull/305 (`claude/wizardly-fermat-9ex5xy` -> `main`)
+- Merge commit (evidence): bde4b4a8562e8865474886a06fc91dcf9696a265
+- Implementation commit: `3417e25e2612701d8b42616dd1ffc9a679dcf4c7` (PR #305's sole commit),
+  producer session `session_01X2DNqLN4Lcv1qJEfS5Z3Rr`.
+- Session-ID check: PR #305's sole commit carries `Claude-Session:
+  .../session_01X2DNqLN4Lcv1qJEfS5Z3Rr`. This reviewing session's own ID
+  (`https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr`) matches neither -- independent, not
+  self-certification (Law 4).
+- Triggered by the `pull_request.opened` webhook for PR #305 itself; this session's fixed CERTIFY
+  mandate is to sweep `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any pending
+  PROVISIONAL item. A direct `certification_state: PROVISIONAL` check against
+  `docs/spec-matrix.yaml` found exactly one match, FTF-0302 (PR #305), confirming it was the only
+  pending item.
+- Diff read directly (`git diff efe339b..3417e25`, and the working tree, which this session's
+  environment had already checked out at the PR's exact head): new module
+  `apps/api/app/artifacts/hugging_face_artifact_resolver.py` (418 lines) --
+  `resolve_huggingface_snapshot` resolves `repo_id@revision` against a real Hugging Face Hub-shaped
+  `/api/models/{repo}/revision/{revision}` response, enforces (in order, before any avoidable
+  network request) a floating-revision refusal reusing FTF-0301's own `is_pinned_revision`, a
+  remote-code-required refusal unless `trust_remote_code_allowed`, a closed top-level
+  model-artifact filename allowlist (never a dataset-shape denylist), and per-file sha256
+  verification against Hugging Face's own declared LFS hash where one exists, downloading through
+  FTF-H006's own `guarded_fetch`/`ConnectionPolicy` (redirects allowed and revalidated);
+  `resolve_and_verify_huggingface_artifact` is the approved-artifact entry point, checking
+  FTF-0305's own `assert_license_accepted_for_use` before any network request. Plus
+  `tests/tasks/test_ftf_0302.py` (818 lines, 30 `check("FTF-0302", ...)` calls -- own count
+  confirmed via `grep`); one new `.github/workflows/ci.yml` gate step (`FTF-0302 negative-test
+  proof`, placed immediately after FTF-0305's own step); `docs/spec-matrix.yaml`; task-packet/
+  tracking-doc updates. Matches the PR's own claimed scope; no undisclosed change found.
+- Real CI reconfirmed directly via the GitHub check-runs API against PR #305's actual final head
+  (`3417e25e2612701d8b42616dd1ffc9a679dcf4c7`, run `36237877454`): 31/31 checks
+  `completed`/`success`, `gate` included (job `108392873421`) -- not a self-reported claim. Fetched
+  the `gate` job's own raw log directly (`get_job_logs`) and confirmed the literal line
+  `FTF-0302 Hugging Face artifact resolver: all checks passed` was actually printed by the new
+  step, not merely that the job as a whole reported green.
+- Own reproduction, not taken on the producer's word: this session's environment was already
+  checked out at PR #305's exact head commit. `uv sync --all-packages`;
+  `uv run python3 tests/tasks/test_ftf_0302.py` -- "all checks passed". `uv run ruff check .` /
+  `ruff format --check .` (264 files) / `uv run mypy .` clean. `uv run pytest tests/unit` -- 3/3.
+  Regression swept `test_ftf_0301.py`/`test_ftf_0305.py`/`test_ftf_h006.py` -- all "all checks
+  passed", unaffected. `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone
+  artifact, same disclosed precedent as every prior shift) resolved the `stale_commit` batch
+  `validate_spec.py --strict` otherwise reports; clean (exit 0) after unshallowing.
+  `product_truth_check.py --fail-on-unwired`: `20/20` unchanged -- confirmed legitimate directly
+  against `docs/spec-matrix.yaml` (`proving_symbol: ''`, genuinely blank; no live caller wires this
+  module into a route yet, same disclosed precedent as FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/
+  FTF-04A10 -- not a 0/0-accepted-as-pass case since no proving_symbol is claimed). `status.py`:
+  `76/300` certified pre-certification (Law 2, confirmed not self-inflated), `77/300` after this
+  certification's own `spec-matrix.yaml` update.
+- **Fault-injection verification:** performed a live fault injection distinct from the producer's
+  own two disclosed ones (disabling the digest-mismatch and floating-revision checks). Wrapped the
+  `assert_license_accepted_for_use(artifact)` call in `resolve_and_verify_huggingface_artifact`
+  with `if False:` (an unaccepted-license artifact would then reach the network layer instead of
+  being refused). Re-ran `tests/tasks/test_ftf_0302.py`: 2 genuine FAILs --
+  "negative_acceptance: unavailable (unaccepted) license blocks acquisition, reusing FTF-0305's own
+  assert_license_accepted_for_use" and "the license gate is checked before any network request is
+  made". Reverted byte-identical (`git diff --stat` empty on the file afterward); re-ran clean
+  ("all checks passed").
+- Task contract re-pulled via `python tools/r1_handoff.py packet FTF-0302 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Resolve approved Hugging Face revision and
+  download verified files through permitted acquisition stage"; "Independent review, exact merged
+  commit, real relevant integration and negative-test evidence recorded") verified genuinely met.
+  `negative_acceptance` ("Floating revision, unavailable license or remote code execution is
+  blocked/explicitly reviewed; no sensitive training data present during acquisition") verified
+  genuinely met by the four ordered gates in the module (floating revision, license, remote code,
+  closed model-artifact allowlist) and exercised for real by the test suite plus this session's own
+  additional license-gate fault injection above.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0302 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `scripts/status.py`: `76/300` -> `77/300` certified; product-true unchanged at `20/20`
+  (no live caller added by this certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr (independent --
+  see session-ID check above), 2026-09-26
+- Date: 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0513 — Near-duplicate detector (test-coverage fix, PR #310)
+
+- Criterion ID: FTF-0513
+- PR: https://github.com/SJZLab/Sovra/pull/310 (`[relay] FTF-0513: close Control-plane-flagged
+  test-coverage gap`, supersedes PR #308, left open/unmerged with the gap it originally raised)
+- Merge commit: `2e6ee083df8bfa13bda78a2c5514c837793f8a35`
+- Head commit reviewed: `07bc5037cbfc2e34bedd35ac32c40d011cee2dec`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36250545266 — 30/30 check runs `success`,
+  `gate` included (job `108427628429`)
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS`. PR #310's two commits both carry
+  `Claude-Session: .../session_0194XSfuk8bYmcPjTU8K45kn` — no overlap, independent per Law 4. Also
+  independent of the prior PR #308 reviewer (`session_015ZJ4NhUe1TG96MJH6uJQvR`) and of the
+  original PR #308 producer.
+- **Diff read directly** in a fresh `git worktree` at PR #310's actual head: only
+  `tests/tasks/test_ftf_0513.py` gained one new scenario
+  (`test_character_ngram_similarity_crossing_its_own_threshold_flags_alone`) plus a docstring
+  update; `workers/data/near_duplicate_detector.py` confirmed **byte-identical** to PR #308's own
+  head via a direct `git diff` between the two blobs (empty diff) — no implementation change, as
+  claimed.
+- **Own reproduction:** `uv sync --all-packages`; `uv run python3 tests/tasks/test_ftf_0513.py` —
+  "all checks passed" (47 `check()` calls, own count via `grep -c`).
+- **Own fault injection (Law 1), reproducing the exact mutation the prior PR #308 review used:**
+  `workers/data/near_duplicate_detector.py`: `if character_ngram_similarity >=
+  thresholds.character_ngram_similarity:` → `if character_ngram_similarity <= 0.0:`. Confirmed the
+  mutation actually changed the file (md5sum before/after differ: `c3f2ae17...` →
+  `72fa623a...`). Re-ran `tests/tasks/test_ftf_0513.py` with the mutation in place: **genuine
+  `AssertionError`** at `assert candidate is not None` in the new scenario — the exact gap the
+  prior review found is now closed. Reverted byte-identical (md5sum matched `c3f2ae17...` again,
+  `git status` clean), re-ran clean.
+- **Real CI confirmed on the exact merged head, not a self-report:** fetched the `gate` job's raw
+  log directly (`get_job_logs`, `return_content: true`) and confirmed it actually executed
+  `tests/tasks/test_ftf_0513.py`, printing `FTF-0513 near-duplicate detector: all checks passed`
+  before proceeding to the next step (`test_ftf_0514.py`). All 30 check runs on commit `07bc503`
+  polled to `completed`/`success`, including the three slower OpenBao-backed integration jobs.
+- `ruff check .` / `ruff format --check .` (266 files) / `mypy .` (266 files) all clean. `git fetch
+  --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (same disclosed
+  precedent as every recent shift); `validate_spec.py --strict` clean. `product_truth_check.py
+  --fail-on-unwired`: `20/20` unchanged — `proving_symbol` genuinely blank in
+  `docs/spec-matrix.yaml` (no live dataset-import caller exists yet for `detect_near_duplicates`),
+  same disclosed precedent as this task's own dependency chain — not a 0/0-accepted-as-pass case.
+  `status.py`: `77/300` certified pre-certification (confirmed not self-inflated), `78/300` after
+  this certification's own `spec-matrix.yaml` update. Regression swept `test_ftf_0511.py` /
+  `test_ftf_0512.py` / `test_ftf_0500.py` / `pytest tests/unit` (3/3) — all unaffected. Confirmed
+  dependencies FTF-0500/FTF-0511/FTF-0512 genuinely `CERTIFIED` via direct `yaml.safe_load` before
+  relying on them.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-0513 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Use bounded indexed n-gram/semantic
+  candidates and reviewed thresholds with privacy-safe embeddings") is now genuinely met for all
+  four Section 10 methods (4-7) — each has its own isolating positive test proving that crossing
+  its own threshold, and no other method, is what flags a pair. Acceptance clause 2 (independent
+  review, exact merged commit, real integration/negative-test evidence recorded) met by this
+  review. `negative_acceptance` (no all-pairs blowup / no guessed-threshold auto-discard)
+  reconfirmed sound — unchanged from the prior review's own finding, since the implementation file
+  did not change.
+- No open review threads or comments on PR #310 at review time; `mergeable_state: clean`.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0513 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `2e6ee083df8bfa13bda78a2c5514c837793f8a35`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `77/300` ->
+  `78/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_01MSzmK3qAT4x94JjehpJDuS (independent — see
+  session-ID check above), 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-0303 — Private S3 artifact resolver (cross-tenant-prefix boundary fix, PR #316)
+
+- Criterion ID: FTF-0303
+- PR: https://github.com/SJZLab/Sovra/pull/316 (`[relay] FTF-0303: fix cross-tenant-prefix
+  boundary bug (Control-plane-flagged)`, fixes the blocking finding from PR #315's NOT CERTIFIED
+  review of PR #314; PR #314 and PR #315 left open/unmerged, both already marked superseded)
+- Merge commit: `dc1cdec81fcc49fc0fe977b9a097c9d321b2f4a2`
+- Head commit reviewed: `8f2333f4a712e47021fac5baf6f53b2d31b8f1c2`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36264485321 — 31/31 check runs `success`,
+  `gate` included (job `108466435039`)
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW`. PR #316's two commits both carry
+  `Claude-Session: .../session_016ZtyeqbMrv9Uzee9ZM5f2u` — no overlap, independent per Law 4. Also
+  independent of the original PR #314 producer and the PR #315 reviewer.
+- **Diff read directly** in a fresh `git worktree` at PR #316's actual head: only
+  `apps/api/app/artifacts/private_s3_artifact_resolver.py` gained the new
+  `_key_within_tenant_prefix(key, tenant_key_prefix)` helper (path-segment-safe containment,
+  replacing the bare `str.startswith` call at the cross-tenant-prefix gate) plus its own docstring
+  update, and `tests/tasks/test_ftf_0303.py` gained one new isolating scenario
+  (`test_cross_tenant_prefix_rejects_sibling_tenant_string_collision`, `tenant_key_prefix="org-4"`
+  vs the real `org-42/models/tiny.safetensors` fixture object) — no other implementation change,
+  as claimed; negative_acceptance items 1/3/4 (bucket mismatch, partial upload, ETag-as-hash)
+  untouched.
+- **Own reproduction, fresh worktree at PR #316's actual head:** `uv sync --all-packages`; `uv run
+  python3 tests/tasks/test_ftf_0303.py` — "all checks passed" (34 checks, matching the PR's own
+  count).
+- **Own fault injection (Law 1), reproducing PR #315's exact original defect:** reverted
+  `_key_within_tenant_prefix` to a bare `return key.startswith(tenant_key_prefix)`. Mutation
+  confirmed real (md5sum `1d6b80a6d7b973af40f3af12e1a92afd` → `bbee2fb1dc7c18827e6121f3973312ff`).
+  Re-ran `tests/tasks/test_ftf_0303.py` with the mutation in place: **2 genuine assertion
+  failures** in the new scenario (`CrossTenantPrefixError` never raised for the org-4/org-42
+  collision, and a real network request is made) — reproducing PR #315's exact finding. Reverted
+  byte-identical (md5sum matched `1d6b80a6d7b973af40f3af12e1a92afd` again, `git status` clean),
+  re-ran clean.
+- **Real CI confirmed on the exact merged head, not a self-report:** polled all 31 check-runs to
+  full completion — 31/31 `success`, `gate` included. Fetched the `gate` job's own raw log
+  directly (`get_job_logs`, `return_content: true`) and confirmed it actually executed
+  `tests/tasks/test_ftf_0303.py`, printing `FTF-0303 Private S3 artifact resolver: all checks
+  passed`.
+- `ruff check .` / `ruff format --check .` / `mypy .` all clean (268 files). `git fetch
+  --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (disclosed
+  precedent); `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`:
+  `20/20` unchanged — `proving_symbol` genuinely blank in `docs/spec-matrix.yaml` (no live caller
+  exists yet for this resolver, same disclosed precedent as FTF-0302/FTF-04A08), not a
+  0/0-accepted-as-pass case. `status.py`: `78/300` certified pre-certification (confirmed not
+  self-inflated), `79/300` after this certification's own `spec-matrix.yaml` update and
+  `sync_certified_status()` run (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`).
+  Regression swept `test_ftf_0301.py` / `test_ftf_h006.py` / `pytest tests/unit` (3/3) — all
+  unaffected. Confirmed dependencies FTF-0202/FTF-0301/FTF-H006 genuinely `CERTIFIED` via direct
+  `yaml.safe_load` before relying on them.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-0303 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: `negative_acceptance` ("Bucket mismatch, cross-tenant
+  prefix, partial upload or ETag-as-hash assumption fails load") is now genuinely met for the
+  cross-tenant-prefix clause specifically — the one PR #315 found unmet. The other three clauses
+  were already independently confirmed sound by PR #315's own review and are unchanged by this
+  diff (no implementation change beyond the one check and its docstring).
+- No open review threads or comments on PR #316 at review time; `mergeable_state: clean`.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-0303 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `dc1cdec81fcc49fc0fe977b9a097c9d321b2f4a2`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `78/300` ->
+  `79/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW (independent — see
+  session-ID check above), 2026-09-26
+
+**Conclusion:** Certified L2-CERTIFIED.
