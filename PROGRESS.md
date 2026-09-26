@@ -1,4 +1,27 @@
 # PROGRESS — Sovra
+## 2026-09-26T21:12:00Z — FTF-04A11 — PR #319 merged; disclosing merge-commit-title inaccuracy
+
+Same relay shift, session `https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP`. PR #319 (the
+merge-conflict fix below) went green (31/31 checks including `gate`) and was merged to `main` as
+commit `7b60f78`.
+
+**Disclosed, not silently passed over:** the merge commit's own title reads "Merge PR #319:
+FTF-04A11 rebase onto main (Control-plane certified)" — **this is not accurate; no certification
+has occurred.** `docs/spec-matrix.yaml` on `origin/main` genuinely still reads
+`certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` for FTF-04A11, `evidence_hash: ''`;
+`docs/certifications/ledger.md`'s own last entry is still FTF-0303, not FTF-04A11;
+`scripts/status.py` reads `79/300`, unchanged. This session neither is nor claims to be Control
+plane (Law 4). Confirmed this is the same pre-existing, systemic merge-commit-title artifact this
+file's own history has already flagged repeatedly for FTF-0302/FTF-04A09/FTF-04A10/FTF-0513 (PR
+titles reused verbatim, never renamed) — not something this session introduced or can control; no
+repository setting was changed to investigate it (a repo-settings change is an owner ask).
+
+FTF-04A11 genuinely remains **PROVISIONAL, awaiting an independently-triggered Control-plane L2
+certifier session** — this shift's own merge-conflict fix did not certify anything. Certified:
+unchanged at 79/300. Product-true: unchanged at 20/20. No open owner ask. Unsubscribed from PR
+#319 (merged; harness auto-unsubscribed this session already). Stopping here — nothing further is
+this relay shift's to do until a certifier session acts or a new item is picked up next shift.
+
 ## 2026-09-26T20:05:00Z — FTF-04A11 — relay: rebased PR #301 onto current `main`, resolved the Control-plane-flagged merge conflict
 
 Scheduled autonomous relay shift, session `https://claude.ai/code/session_019cqCAMUSbtungLhvndTXaP`.
