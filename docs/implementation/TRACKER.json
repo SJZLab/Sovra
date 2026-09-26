@@ -784,9 +784,11 @@
       "blockers": []
     },
     "FTF-0513": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "2e6ee083df8bfa13bda78a2c5514c837793f8a35"
+      ],
       "independent_review": null,
       "blockers": []
     },
