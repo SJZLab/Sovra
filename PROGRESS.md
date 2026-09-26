@@ -19975,8 +19975,12 @@ Diff scope confirmed exactly the files this task needs
 `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` tracking updates and the generated task
 packet -- no scope creep, no other task's files touched.
 
+Opened as **PR #314** (`https://github.com/SJZLab/Sovra/pull/314`,
+`claude/wizardly-fermat-41rqnl` -> `main`), title `[relay] FTF-0303: Private S3 artifact
+resolver`.
+
 STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
-compaction. STEP 4 stop condition (a): this item is now L1-PROVEN, PR to be opened and queued for
+compaction. STEP 4 stop condition (a): this item is now L1-PROVEN, PR #314 opened and queued for
 Control-plane L2 certification and the L4 gate -- awaiting Control plane, stop. No open owner ask.
 
 - **Reviewed-by:** not yet -- awaiting independent Control-plane L2 certification (Law 4:

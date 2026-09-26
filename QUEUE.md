@@ -5492,8 +5492,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0303** ("Private S3 artifact resolver") is the item here; submitted 2026-09-26 by this
-relay shift. Real caller of FTF-0301's own deliberately-unresolved `private_s3` `source_uri`:
+**FTF-0303** ("Private S3 artifact resolver") is the item here; submitted 2026-09-26 via **PR
+#314** (branch `claude/wizardly-fermat-41rqnl` -> `main`,
+`https://github.com/SJZLab/Sovra/pull/314`), title `[relay] FTF-0303: Private S3 artifact
+resolver`, this relay shift's own session. Real caller of FTF-0301's own deliberately-unresolved
+`private_s3` `source_uri`:
 fetches the exact pinned object version (`base_model_revision` read as the S3 `versionId`) from
 a real, SigV4-signed S3-compatible endpoint, reusing FTF-R017's own `sign_request` for signing and
 FTF-H006's own `guarded_fetch` for the real socket (`url_policy.py`'s own module docstring already

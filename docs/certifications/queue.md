@@ -16969,7 +16969,7 @@ relay's own PR #310 comment — not this session's action to close.
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
 
 ## 2026-09-26 — FTF-0303 — Private S3 artifact resolver
-- **PR:** (to be opened this shift — see PROGRESS.md/QUEUE.md for the branch)
+- **PR:** https://github.com/SJZLab/Sovra/pull/314 (`claude/wizardly-fermat-41rqnl` → `main`)
 - **Producer session:** this relay shift's own session.
 - **Delivered:** `apps/api/app/artifacts/private_s3_artifact_resolver.py` — the
   real caller FTF-0301's own module docstring names for a `private_s3`
