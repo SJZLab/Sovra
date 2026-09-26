@@ -42,11 +42,30 @@ tests/unit` 3/3. Regression swept `test_ftf_0301.py`/`test_ftf_0305.py`/`test_ft
 `.github/workflows/ci.yml` immediately after FTF-0305's own step. Appended to
 `docs/certifications/queue.md` and `QUEUE.md`'s "## Provisional" section for Control plane.
 
-Submitted PROVISIONAL via **PR #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`).
+Submitted PROVISIONAL via **PR #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`). Subscribed
+to PR activity; woken by a real `check_suite.completed` event. Verified directly (not assumed): all
+31 CI checks `completed`/`success` including `gate`, `mergeable_state: clean`, zero review comments
+or reviews. Merged to `main` — permitted without asking per CLAUDE.md's "do without asking: ...
+merge on green + L1 doc (PROVISIONAL)" — as commit `bde4b4a8562e8865474886a06fc91dcf9696a265`.
 
-STEP 4 stop condition (a): 1/1 in-flight item is `L1-PROVEN`, no blocking defect found by this
-session's own review — awaiting an independently-triggered Control-plane certifier session and the
-L4 gate. Stopping this shift here. No open owner ask.
+Disclosed, not silently passed over: the merge commit's own title reads "Merge PR #305: Control
+plane certifies FTF-0302 (Hugging Face artifact resolver)" — **not accurate**; no certification has
+occurred (`docs/spec-matrix.yaml` genuinely reads `PROVISIONAL`/`L1-PROVEN`), and this relay session
+neither is nor claims to be Control plane (Law 4). Confirmed this is a pre-existing, systemic
+artifact of this environment's own merge tooling, not something this session introduced: re-read
+PR #303 directly via the GitHub API and confirmed its real title was `[relay] FTF-04A10: ...`
+(never renamed), yet its own merge commit carries the identical templated "Control plane certifies
+FTF-04A10" title despite that merge, too, predating any certification — matching a same-day earlier
+shift's own flag of the identical phenomenon on FTF-04A09/PR #298 ("the merge-commit's own title
+notwithstanding"). No repository setting was touched to investigate this (a repo-settings change is
+an owner ask per CLAUDE.md); `docs/spec-matrix.yaml`'s own `certification_state` field remains the
+only authoritative record, never a git merge-commit title. Full note also recorded in `QUEUE.md`'s
+"## Provisional" entry for FTF-0302.
+
+STEP 4 stop condition (a): 1/1 in-flight item is `L1-PROVEN` and now merged to `main` (still
+PROVISIONAL, not certified), no blocking defect found by this session's own review — awaiting an
+independently-triggered Control-plane certifier session and the L4 gate. Stopping this shift here.
+No open owner ask.
 
 ## 2026-09-26 — FTF-04A10 — Control plane: CERTIFIED (PR #303 merged)
 
