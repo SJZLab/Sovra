@@ -16676,3 +16676,97 @@ Submitted PROVISIONAL via **PR #303** (branch `claude/wizardly-fermat-gg9rje` ->
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
   before certification.
+
+## 2026-09-26 — FTF-0302 — Hugging Face artifact resolver
+
+**P:** Read `docs/implementation/task-packets/FTF-0302.md` (pulled via `python3
+tools/r1_handoff.py packet FTF-0302 --plan FINE_TUNING_FACTORY_RELEASE_1.md`). Read FTF-0301's
+own `apps/api/app/artifacts/artifact_schema.py`/`artifact_crud.py` and FTF-0305's own
+`license_acceptance_workflow.py` directly (both CERTIFIED): FTF-0301 deliberately stores a
+`huggingface` `source_uri` as a bare, unresolved `org/repo` identifier and never dials a real
+upstream, naming FTF-0302 as the task that does; FTF-0306 ("Base model revision/digest resolver")
+is a *separate*, later task (deps FTF-0301/0302/0303/0304/0305, confirmed by reading its own
+`docs/spec-matrix.yaml` entry) that owns combining this task's own output into the one
+`weights_digest` column via `apply_edits`. Scoped FTF-0302 accordingly: real resolution/
+download/per-file verification, never a database write. Read `packages/security/
+outbound_guard.py`/`url_policy.py` (FTF-H006, CERTIFIED) — its own module docstring names
+FTF-0302/FTF-0303 directly as intended future callers. Confirmed this sandbox has no route to the
+public internet (`curl -m 10 https://huggingface.co/api/...` fails at the outbound proxy with HTTP
+403) before designing the test strategy; read `tests/tasks/test_ftf_0203.py`'s own real
+local-HTTPS-server-with-installed-self-signed-CA fixture in full and reused its exact recipe.
+
+**E:** Wrote `apps/api/app/artifacts/hugging_face_artifact_resolver.py` (files path refined from
+the packet's own suggested `packages/model-catalog/hugging_face_artifact_resolver.py` to this one
+— `packages/model-catalog` is not a `uv` workspace member and is not a valid Python import path;
+FTF-0301/FTF-0305 already established this exact refinement for the identical reason).
+`resolve_huggingface_snapshot(repo_id, revision, ...)` resolves a real Hugging Face Hub-shaped
+`/api/models/{repo}/revision/{revision}` response, enforces the four negative_acceptance gates in
+order (floating revision via FTF-0301's own reused `is_pinned_revision`; remote-code-requires-
+explicit-review via FTF-0301's own `trust_remote_code_allowed`; a closed allowlist of real
+model-artifact file-name shapes, top-level only, never a denylist; per-file sha256 verification
+against Hugging Face's own declared LFS hash where one exists), downloads through FTF-H006's own
+`guarded_fetch`/`ConnectionPolicy` (redirects allowed and revalidated, matching a real LFS-backed
+file's real CDN redirect), and returns a real `combined_sha256_hex` over every verified file.
+`resolve_and_verify_huggingface_artifact(artifact, ...)` is the approved-artifact entry point,
+reusing FTF-0305's own `assert_license_accepted_for_use` (checked first, before any network
+request) rather than re-implementing a license check.
+
+Wrote `tests/tasks/test_ftf_0302.py`: a real local HTTPS server (self-signed CA generated via
+`openssl`, installed into this sandbox's own system trust store via `sudo update-ca-certificates`,
+removed in `atexit` — identical mechanism to `test_ftf_0203.py`) implementing the exact Hugging
+Face Hub API subset this resolver calls, including a real HTTP 302 redirect for the one LFS-backed
+file (proving the real redirect-then-revalidate path, not merely asserting `allow_redirects=True`
+is set). 30 checks (own count of every `check("FTF-0302", ...)` call), all against the real,
+unmodified `guarded_fetch`/`ssl.create_default_context()` path — never a mocked HTTP client:
+happy-path resolution + verification, nested/dataset-shaped files never requested, a floating
+revision refused before any network call, a real 403 gated-repository denial, remote code refused
+without review and allowed once `trust_remote_code_allowed=True` (with the `.py` file itself still
+never downloaded either way), a real digest match and a real digest mismatch, a repository with no
+recognized files refused, the license gate refused before any network call and reused end-to-end
+through the artifact entry point, a wrong-`source_type` refusal, and a real destination-denied
+policy check (`OutboundPolicyError` propagates unwrapped, matching FTF-H006's own convention).
+
+**Two disclosed fault injections (Law 1), each: read the real source, replace one exact byte
+snippet, confirm the mutation actually changed the file, re-run the specific scenario, restore
+byte-identical, confirm the check fires again:**
+1. Disabled the digest-mismatch comparison (`if declared is not None and declared != digest:` →
+   `if False and ...`) — the `acme/bad-digest-model` scenario's corrupted file **genuinely stopped
+   being refused** (a fabricated success), reverted byte-identical, re-ran clean.
+2. Disabled the floating-revision check (`if not is_pinned_revision(revision):` → `if False and
+   ...`) — a `revision="main"` request against `acme/tiny-model` **genuinely proceeded to a real
+   network request** instead of being refused up front, reverted byte-identical, re-ran clean.
+
+Both fault injections used `importlib.reload` (never a subprocess) — this module holds no
+SQLAlchemy model registration or other cross-import mutable state, unlike `artifact_schema.py`, so
+reloading it in-process is safe (confirmed by inspection, matching the reasoning
+`tests/tasks/test_ftf_1810.py` already applies to its own reload-based fault injection).
+
+**V:** `uv sync --all-packages`; `git fetch --unshallow` resolved this sandbox's own pre-existing
+shallow-clone `stale_commit` artifact (FTF-0401's evidence commit — same documented class of gap
+prior shifts already hit). `uv run ruff check .` / `uv run ruff format --check .` / `uv run mypy .`
+all clean (264 source files). `uv run python3 tests/tasks/test_ftf_0302.py` — "all checks passed"
+(re-run 3x for TLS/threading-timing stability, clean every time). Regression swept `uv run python3
+tests/tasks/test_ftf_0301.py` / `test_ftf_0305.py` / `test_ftf_h006.py` — all "all checks passed",
+unaffected. `uv run pytest tests/unit` — 3/3. `python3 scripts/validate_spec.py --strict` — clean.
+`python3 scripts/product_truth_check.py --fail-on-unwired` — unchanged `20/20` (`proving_symbol`
+genuinely left blank in `docs/spec-matrix.yaml` — no live caller exists yet anywhere in this
+repository for this worker; disclosed, same precedent as FTF-0005/FTF-0006/FTF-04A08/FTF-04A09/
+FTF-04A10, expected to be closed by FTF-0306's own future work). `python3 scripts/status.py` —
+unchanged `76/300` certified (Law 2 — a PROVISIONAL submission never inflates the certified
+count). `python3 scripts/verify_task.py --task FTF-0302 --stage task` reports `BLOCKED` ("no
+merged verification evidence yet") pre-merge — expected per this repo's own established precedent
+(e.g. FTF-04A06/FTF-04A10's identical pre-merge state).
+
+`docs/spec-matrix.yaml` FTF-0302 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank, a follow-up commit
+once the real merge commit hash is known (same precedent as every recent sibling). CI gate step
+(`FTF-0302 negative-test proof`) added to `.github/workflows/ci.yml`, immediately after FTF-0305's
+own step (its nearest already-CERTIFIED dependency in the file).
+
+Submitted PROVISIONAL via **PR #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`), title
+`[relay] FTF-0302: Hugging Face artifact resolver`,
+`https://github.com/SJZLab/Sovra/pull/305`.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.
