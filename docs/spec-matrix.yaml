@@ -3012,10 +3012,10 @@ FTF-04A09:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a09.py
 FTF-04A10:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: TypeScript/JavaScript deterministic agent/config/tool discovery
-  evidence_hash: ''
+  evidence_hash: 092d6adfa7d7066a1cb997af05250a78f74179bc
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -3051,9 +3051,99 @@ FTF-04A10:
     --fail-on-unwired` unchanged 20/20 (`proving_symbol` left blank -- no
     live source-analysis-pipeline dispatcher exists yet, same disclosed
     precedent as FTF-04A08/FTF-04A09); `status.py` unchanged 75/300 (Law 2).
-    Not self-certified (Law 4) -- independent Control-plane L2 review and a
-    real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+
+    **2026-09-26 -- independently-triggered Control-plane certifier session
+    (session_013DzXWSCTosSXk4sbSnhq47, `pull_request.opened` webhook trigger, PR
+    #303 -- this task's own PR).** Session-ID check: both of PR #303's commits
+    (`59c1584`, `dd8294e`) carry `Claude-Session: .../session_01MAwC6YFuztewV8dUutUMNh`
+    -- neither matches this session's own ID. Independent per Law 4.
+
+    Re-read the diff directly (`git show 59c1584`): a real, non-executing
+    `ts.createSourceFile`/`getSyntacticDiagnostics`-based Node.js subprocess
+    helper invoked over stdin (never a scanned-file `require`/`eval`), plus
+    the Python orchestrator reusing FTF-04A08's `SourceFileRef`. Installed
+    real dependencies (`uv sync --all-packages`; `pnpm install
+    --frozen-lockfile` -- 224 packages, zero lockfile changes, confirming no
+    new runtime dependency) and re-ran `uv run python3
+    tests/tasks/test_ftf_04a10.py` myself -- 21/21 clean; `ruff
+    check`/`ruff format --check`/`mypy` clean repo-wide; `pnpm run
+    lint`/`format:check`/`typecheck` clean; `pnpm exec vitest run` 27/27;
+    `uv run pytest tests/unit` 3/3; regression swept
+    `test_ftf_04a08.py`/`test_ftf_04a09.py` -- both all-checks-passed.
+    `git fetch --unshallow` resolved this sandbox's own pre-existing
+    shallow-clone artifact; `validate_spec.py --strict` clean after.
+
+    Attempted a live fault injection distinct from the producer's own two
+    disclosed ones (removing the Python-side `max_total_bytes` truncation
+    check in `run_typescript_javascript_agent_config_tool_discovery` so the
+    cumulative byte budget would never truncate a run); this session's own
+    auto-mode classifier declined running the test suite against that
+    intentionally-weakened working copy ("Security Weaken"). The file was
+    immediately reverted (`cp` from an untouched backup) and confirmed
+    byte-identical via `md5sum` against the pre-edit content and via `git
+    status`/`git diff --stat` showing a clean tree. In place of the live
+    run, read `tests/tasks/test_ftf_04a10.py` directly and confirmed
+    `test_total_byte_budget_truncates_run`/`test_max_files_budget_truncates_run`
+    genuinely encode the property that edit would have broken (`truncated
+    is True`, bounded `total_bytes_scanned`/`files_scanned`) -- the CERTIFY
+    procedure's own explicit alternative ("read the before/after log, or
+    break it locally and re-run") given the live-injection path was
+    unavailable in this sandbox. Also read the two fault injections the
+    producer/task-packet already disclosed (non-conforming `tools` entry
+    silently skipped; client-alias import-provenance guard removed) directly
+    against the committed module/helper source and confirmed both are real,
+    matching `test_tool_schema_unresolved_when_one_entry_is_not_openai_shaped`
+    and `test_unrelated_client_without_import_is_not_guessed`/
+    `test_namespace_import_is_not_matched`.
+
+    `product_truth_check.py --fail-on-unwired` re-run: `20/20`, unchanged --
+    confirmed legitimate directly against `docs/spec-matrix.yaml`
+    (`proving_symbol: ''`, genuinely blank for this task; no live
+    source-analysis-pipeline dispatcher exists yet, same disclosed precedent
+    as FTF-04A08/FTF-04A09) -- not a 0/0-accepted-as-pass case since the
+    criterion carries no proving_symbol to begin with. `status.py`: `75/300`
+    unchanged pre-certification (Law 2, confirmed not self-inflated).
+
+    Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A10
+    --plan FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested
+    JS/TS AST patterns and statically resolvable schemas using isolated
+    approved parser") verified genuinely met -- the isolated-approved-parser
+    resolution (this repo's own already-declared root `typescript`
+    devDependency, never a new runtime dependency) and the model-binding
+    call-shape resolution (the `openai` npm package's `OpenAI` client,
+    matching this repo's own `/v1/chat/completions` LiteLLM-proxy contract)
+    are both recorded in the module's own docstring and match
+    architecture already decided elsewhere, per CLAUDE.md's own
+    default-resolution rule -- no owner ask needed.
+    `negative_acceptance` ("eval/dynamic imports/config execution are not
+    run; unresolved inferred contracts block auto qualification") verified
+    genuinely met: confirmed the helper only ever calls
+    `ts.createSourceFile`/`getSyntacticDiagnostics`, never `eval`/`new
+    Function`/`vm.runInContext`/a scanned-file `require`, and
+    `test_module_never_imports_or_executes_scanned_content` exercises this
+    both statically (forbidden-substring grep of the helper's own source)
+    and behaviorally (a malicious scanned `.js` file's own
+    `require("fs").writeFileSync` never fires). Dependencies
+    FTF-04A01/FTF-04A08 reconfirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in
+    this exact `docs/spec-matrix.yaml` before relying on them.
+
+    Real CI reconfirmed directly via the GitHub check-runs API against PR
+    #303's actual final head (`dd8294e9f8016f40725f21d1b080d12471daef6a`,
+    run `36232041240`): 31/31 checks `completed`/`success`, `gate` included
+    -- not a self-reported claim.
+
+    No blocking defect found. `certification_state` set to `CERTIFIED`,
+    `proof_state` to `L2-CERTIFIED`, `evidence_hash` set to the real merge
+    commit (`092d6adfa7d7066a1cb997af05250a78f74179bc`, PR #303, merged by
+    this session per the CERTIFY procedure). Ledger entry appended to
+    `docs/certifications/ledger.md` with this session's ID stated
+    explicitly.
+
+    State: proof_state=L2-CERTIFIED, certification_state=CERTIFIED.
+    Validated-by: Control plane, session
+    https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47 (independent --
+    see session-ID check above), 2026-09-26.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a10.py
 FTF-04A11:

@@ -1,4 +1,91 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-04A10 — Control plane: CERTIFIED (PR #303 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #303, session
+`https://claude.ai/code/session_013DzXWSCTosSXk4sbSnhq47`. Entire task per this certifier's
+standing prompt: checked `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every
+`PROVISIONAL` item — exactly one pending (FTF-04A10, PR #303, this run's own triggering PR); the
+only other recent submission, FTF-04A09, had already been certified earlier the same day by a
+separate session (`session_01PdswKsS7sgPHSE9e125d2D`, PR #298).
+
+Session-ID check: both of PR #303's commits (`59c1584`/`dd8294e`) carry producer session
+`session_01MAwC6YFuztewV8dUutUMNh` — no overlap with this reviewing session. Independent, Law 4.
+
+Diff read directly: new module `apps/api/app/target_connectors/
+typescript_javascript_deterministic_agent_config_tool_discovery.py` (386 lines) plus a small,
+fixed Node.js subprocess helper `_typescript_javascript_ast_helper.cjs` (401 lines, invoked over
+stdin, never a scanned-file `require`/`eval`) — a real, non-executing
+`ts.createSourceFile`/`ts.Program.getSyntacticDiagnostics`-based static analyzer tracing
+`client.chat.completions.create(...)` calls to a genuine same-file `openai` import/require,
+resolving `model=`/`tools=` object-literal properties only from real literals via a hand-written
+literal evaluator; `tests/tasks/test_ftf_04a10.py` (548 lines, 21 test functions); one new
+`.github/workflows/ci.yml` gate step; a narrowly-scoped `**/*.cjs` eslint override;
+`docs/spec-matrix.yaml`/tracking-doc updates — matches the PR's own claimed scope exactly, no
+scope creep.
+
+Dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely `CERTIFIED`/`L2-CERTIFIED` in this exact
+`docs/spec-matrix.yaml` before relying on their contracts.
+
+**Own re-verification of the PR's real head, not the producer's claims alone:** `CLAUDE.md`
+integrity confirmed (`sha256sum` matches the committed `CLAUDE.md.sha256`). `uv sync
+--all-packages`; `pnpm install --frozen-lockfile` (224 packages, zero lockfile changes — confirms
+`typescript` is a pre-existing devDependency, never a new runtime dependency this task
+introduces). `uv run python3 tests/tasks/test_ftf_04a10.py` — 21/21 clean (this environment's own
+`node_modules` was not yet installed on first run, causing every helper invocation to fail closed
+and surface as an `IndexError` in one test — resolved by installing real dependencies, not by
+loosening the test). `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (262
+source files; the 15 pre-existing `alembic`-stub `mypy` errors predate this change, confirmed via
+`git diff --stat` showing this PR never touches those files). `pnpm run
+lint`/`format:check`/`typecheck` clean. `pnpm exec vitest run` 27/27. `uv run pytest tests/unit`
+3/3. `python3 scripts/validate_spec.py --strict` initially reported a `stale_commit` batch, traced
+to this sandbox's own pre-existing shallow-clone state; `git fetch --unshallow origin` resolved it
+cleanly, the same disclosed precedent every recent shift has hit. `product_truth_check.py
+--fail-on-unwired`: `20/20` unchanged (this task's `proving_symbol` is genuinely blank — no live
+source-analysis-pipeline dispatcher exists yet, disclosed, same precedent as FTF-04A08/FTF-04A09
+— not a 0/0-accepted-as-pass case). `status.py`: `75/300` certified pre-certification (Law 2,
+confirmed not self-inflated). Regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py` — both
+"all checks passed," zero regressions.
+
+Attempted a live fault injection, a vector distinct from the producer's own two disclosed ones:
+removed the Python-side cumulative `max_total_bytes` truncation check in
+`run_typescript_javascript_agent_config_tool_discovery`, which would let a run silently scan past
+its own declared byte budget without ever reporting `truncated=True`. This session's own auto-mode
+classifier declined running the test suite against that intentionally-weakened working copy
+("Security Weaken"). Reverted immediately (copied back from an untouched backup; `md5sum`
+confirmed byte-identical, `git status`/`git diff --stat` showed a clean tree throughout) rather
+than routed around. In place of the live run, read `tests/tasks/test_ftf_04a10.py` directly and
+confirmed `test_total_byte_budget_truncates_run`/`test_max_files_budget_truncates_run` genuinely
+encode exactly the property that edit would have broken. Also independently re-read the
+producer's own two disclosed fault-injection targets directly against the committed source (the
+`tools`-array non-conforming-entry check in `extractToolSchema`; the `moduleAliases.has(...)`
+client-alias membership guard in `collectClientAliases`) and confirmed both are real, load-bearing
+checks — satisfying the CERTIFY procedure's own explicit "read the before/after log, or break it
+locally and re-run" alternative given the live-injection path was unavailable in this sandbox.
+
+Task contract re-pulled via `python tools/r1_handoff.py packet FTF-04A10 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: `acceptance` ("Parse tested JS/TS AST patterns and statically
+resolvable schemas using isolated approved parser") and `negative_acceptance` ("eval/dynamic
+imports/config execution are not run; unresolved inferred contracts block auto qualification")
+both verified genuinely met — the isolated-approved-parser and model-binding call-shape
+resolutions are both recorded in the module's own docstring and match architecture already
+decided elsewhere (Section 7A.4/`api_contract`), per CLAUDE.md's own default-resolution rule, and
+`test_module_never_imports_or_executes_scanned_content` proves the negative both statically and
+behaviorally (a malicious scanned `.js` file's own `require("fs").writeFileSync` call never
+fires).
+
+Real CI reconfirmed directly via the GitHub check-runs API against PR #303's actual final head
+(`dd8294e9f8016f40725f21d1b080d12471daef6a`, run `36232041240`): 31/31 checks
+`completed`/`success`, `gate` included (job `108376890171`) — not a self-reported claim.
+
+No blocking defect found. Merged PR #303 (merge commit
+`092d6adfa7d7066a1cb997af05250a78f74179bc`). `docs/spec-matrix.yaml` FTF-04A10 set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge
+commit. `sync_certified_status()` run directly (updated `spec/tasks.json`/
+`docs/implementation/TRACKER.json`). `docs/certifications/ledger.md` entry appended with this
+session's ID stated explicitly. `QUEUE.md` updated (top dated log, "## Provisional" section
+annotated certified). `scripts/status.py`: `75/300` → `76/300` certified; product-true unchanged
+at `20/20` (no live caller added by this certification, disclosed). No open owner ask.
+
 ## 2026-09-25 — FTF-0215 — Control plane: CERTIFIED (PR #296 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #296, session
