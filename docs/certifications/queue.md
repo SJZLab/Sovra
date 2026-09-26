@@ -17022,13 +17022,12 @@ instruction directly (PR #315's NOT CERTIFIED review of PR #314) — no new task
 
 Updated `docs/spec-matrix.yaml`'s FTF-0303 entry with a dated follow-up paragraph appended after
 PR #314's own original notes (still `certification_state: PROVISIONAL` / `proof_state:
-L1-PROVEN` — a relay fix never self-certifies, Law 4). Submitted PROVISIONAL via a PR titled
-`[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)` (branch
-`claude/wizardly-fermat-p8xpah` -> `main`; real link recorded in this queue's own matching
-follow-up entry once opened, same two-commit pattern as PR #310/#311). PR #314 stays open,
-unmerged, marked superseded by a one-line comment on PR #314 itself (not closed silently). **Not
-self-certified** — awaiting an independently-triggered Control-plane L2 certifier session that was
-not involved in producing this fix.
+L1-PROVEN` — a relay fix never self-certifies, Law 4). Submitted PROVISIONAL via **PR #316**
+(branch `claude/wizardly-fermat-p8xpah` -> `main`, `https://github.com/SJZLab/Sovra/pull/316`),
+title `[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)`. PR #314
+stays open, unmerged, marked superseded by a one-line comment on PR #314 itself (not closed
+silently). **Not self-certified** — awaiting an independently-triggered Control-plane L2
+certifier session that was not involved in producing this fix.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Certified: unchanged at
   78/300. Product-true: unchanged at 20/20.

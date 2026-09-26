@@ -77,13 +77,12 @@ Updated `docs/spec-matrix.yaml`'s FTF-0303 entry (still `certification_state: PR
 recording this fix in full, appended after PR #314's own original notes rather than rewriting
 them. No implementation change beyond the one boundary-safety check and its own docstring --
 negative_acceptance items 1/3/4 untouched, exactly as the reviewer's own fix instruction specified.
-Committed on this shift's designated branch `claude/wizardly-fermat-p8xpah`; opened a PR titled
-`[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)` rather than
-pushing to PR #314's own branch (a different session's branch, out of scope to push to without
-explicit permission) or reusing PR #314 itself -- left open/unmerged, superseded per the
-reviewer's own "then re-submit"-equivalent instruction, with a one-line comment recording the
-supersession left on PR #314 itself (its real number recorded in this file's own matching
-follow-up entry once opened, the same two-commit pattern PR #310/#311 already established).
+Committed on this shift's designated branch `claude/wizardly-fermat-p8xpah`; opened **PR #316**
+(`https://github.com/SJZLab/Sovra/pull/316`, `[relay] FTF-0303: fix cross-tenant-prefix boundary
+bug (Control-plane-flagged)`) rather than pushing to PR #314's own branch (a different session's
+branch, out of scope to push to without explicit permission) or reusing PR #314 itself -- left
+open/unmerged, superseded per the reviewer's own "then re-submit"-equivalent instruction, with a
+one-line comment recording the supersession left on PR #314 itself (not closed silently).
 Certified: unchanged at 78/300. Product-true: unchanged at 20/20.
 
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before

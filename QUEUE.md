@@ -36,12 +36,13 @@ Updated: 2026-09-26T17:40:00Z (scheduled autonomous relay shift, session
   negative_acceptance items 1/3/4 (bucket mismatch, partial upload, ETag-as-hash) untouched.
   `docs/spec-matrix.yaml`'s FTF-0303 entry stays `certification_state: PROVISIONAL`/`proof_state:
   L1-PROVEN` (a relay fix never self-certifies), dated follow-up paragraph appended after PR
-  #314's own original notes. Opened a PR (real number recorded in this file's own matching
-  follow-up entry once opened, same two-commit pattern as PR #310/#311) rather than pushing to PR
-  #314's own branch (a different session's branch) or reusing PR #314 itself — left open/unmerged,
-  superseded, with a one-line comment recording the supersession left on PR #314 itself. Full
-  record: `PROGRESS.md`'s matching entry, `docs/certifications/queue.md`'s matching entry.
-  Certified: unchanged at 78/300. Product-true: unchanged at 20/20.
+  #314's own original notes. Opened **PR #316** (`https://github.com/SJZLab/Sovra/pull/316`,
+  `[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)`) rather than
+  pushing to PR #314's own branch (a different session's branch) or reusing PR #314 itself — left
+  open/unmerged, superseded, with a one-line comment recording the supersession left on PR #314
+  itself (not closed silently). Full record: `PROGRESS.md`'s matching entry,
+  `docs/certifications/queue.md`'s matching entry. Certified: unchanged at 78/300. Product-true:
+  unchanged at 20/20.
 
 ## Previous shift
 
