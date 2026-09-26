@@ -3554,16 +3554,101 @@ FTF-04A11:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a11.py
 FTF-04A12:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: LiteLLM/current-model binding discovery
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0207, FTF-04A01,
-    FTF-04A09, FTF-04A10, FTF-04A11
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-0207, FTF-04A01, FTF-04A09, FTF-04A10, FTF-04A11 (all
+    CERTIFIED, confirmed before relying on them). Path: `apps/api/app/
+    target_connectors/litellm_current_model_binding_discovery.py`, matching
+    FTF-04A08's/FTF-04A09's/FTF-04A10's/FTF-04A11's own real `apps/api/app/
+    target_connectors/*.py` layout precedent (refined from the task
+    packet's own generic `packages/target-connectors/
+    litellm_current_model_binding_discovery.py` suggestion).
+
+
+    This task's own acceptance clause ("Identify literal/config-derived
+    model binding with actual gateway role confirmation later") is read
+    literally: "role" (Non-Negotiable Product Contract item 12 --
+    current_production/baseline/candidate/teacher/judge) is out of scope,
+    deferred to a later task. `discover_current_model_bindings` combines
+    FTF-04A09's/FTF-04A10's own per-entrypoint `ModelBindingEvidence`
+    (literal Python/TS-JS `model=`/`model` keyword bindings) and a new,
+    disclosed, closed-vocabulary (`MODEL`/`MODELNAME`/`MODELID`/
+    `MODELALIAS`/`DEFAULTMODEL`/`LITELLMMODEL`/`LITELLMALIAS`, exact match
+    only) config-key heuristic over FTF-04A11's own per-document
+    `ConfigKeyEvidence` (config-derived bindings), then optionally
+    reconciles a resolved literal alias against a real, caller-supplied
+    FTF-0207 `AliasReconciliationResult` -- only ever reading
+    `ReconciledModel.metadata_status.value` (a bare `enriched`/`limited`
+    string), never `ReconciledModel.fields` (the raw provider/cost/
+    capability metadata dict) -- reported as `not_attempted` when no
+    reconciliation data is supplied yet, never guessed into `confirmed`.
+
+
+    This task's own negative_acceptance ("Alias does not reveal weights or
+    enforceable access; unresolved dynamic model selection remains
+    explicit") is met structurally: no code path in this module ever reads
+    `ReconciledModel.fields` at all (proven by
+    `test_gateway_metadata_fields_are_never_exposed_in_output`, which
+    plants a `weights_path`/`provider`/`input_cost_per_token` fields dict
+    and confirms none of it reaches the output); and
+    `_candidate_from_binding` unconditionally forces `model_alias=None`/
+    `gateway_confirmation_status=NOT_APPLICABLE` for every `resolved=False`
+    upstream binding, overriding whatever the upstream evidence object's
+    own field held, rather than trusting it was well-formed (proven by
+    `test_unresolved_binding_forces_model_alias_none_even_if_upstream_
+    disagrees`, which hands a deliberately malformed upstream candidate).
+
+
+    `tests/tasks/test_ftf_04a12.py`: 16 tests, all pass against the
+    unmodified code. Two independent fault injections, both reverted
+    byte-identical (md5sum `8dd2eaaf4f7a75539d2b83904305a588` before and
+    after each), re-run clean: (1) `_confirm_against_gateway` forced to
+    always return `CONFIRMED` regardless of match -- 4 genuine FAILs
+    (not-attempted, not-found, TS/JS-confirmed and summary-count
+    assertions all broke for real); (2) the `resolved=False` branch of
+    `_candidate_from_binding` changed to pass through the upstream
+    `model_alias` instead of forcing `None` -- 1 genuine FAIL (the
+    defensive-override assertion).
+
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`
+    clean repo-wide (272 files); `uv run mypy .` clean repo-wide (272
+    files, zero errors -- the pre-existing 15 `alembic`-stub errors other
+    entries in this file disclose are themselves already resolved on this
+    branch's own base). `git fetch --unshallow` resolved this sandbox's own
+    pre-existing shallow-clone artifact (disclosed precedent, same as every
+    prior FTF-04A0x/FTF-04A1x shift); `validate_spec.py --strict` clean
+    after that. `product_truth_check.py --fail-on-unwired` unchanged
+    20/20 (`proving_symbol` left blank, same disclosed "no live route yet"
+    precedent FTF-04A09/FTF-04A10/FTF-04A11 already established -- this
+    task's own detection/reconciliation-composition scope has no route to
+    wire into either). `status.py` unchanged 80/300 (Law 2 -- certification
+    is a separate, later, independent act). Regression swept
+    `test_ftf_04a09.py`/`test_ftf_04a11.py`/`test_ftf_0207.py` (all "all
+    checks passed") plus `uv run pytest tests/unit` (3/3) -- zero
+    regressions. `test_ftf_04a10.py`'s own already-disclosed pre-existing
+    `test_entrypoint_function_name_captured_for_nested_arrow_function`
+    `IndexError` reproduced again here, confirmed unrelated to this task
+    (identical failure on an unmodified checkout with none of this task's
+    own new/untracked files present) and already flagged by multiple prior
+    shifts -- not this task's own scope to fix.
+
+
+    CI gate step (`FTF-04A12 negative-test proof`) added to
+    `.github/workflows/ci.yml` in this same commit.
+
+
+    Submitted PROVISIONAL. **Not self-certified (Law 4)** -- independent
+    Control-plane L2 review and a real CI run on the opened PR are required
+    before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a12.py
 FTF-04A13:
   certification_state: NONE
   criticality: MUST
