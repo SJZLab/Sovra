@@ -5406,14 +5406,35 @@ unchanged `76/300` (Law 2). Not self-certified (Law 4) -- awaiting an independen
 Control-plane L2 certifier session. Full record: `docs/certifications/queue.md`'s matching
 2026-09-26 entry, `docs/spec-matrix.yaml`'s FTF-0302 notes, `PROGRESS.md`.
 
+**Merged to `main` this same shift** as commit `bde4b4a8562e8865474886a06fc91dcf9696a265` (31/31 CI
+checks green, `gate` included, no merge conflict, no open review comments — merge permitted without
+asking per CLAUDE.md's "do without asking: ... merge on green + L1 doc (PROVISIONAL)"). Disclosed,
+not silently passed over: the merge commit's own title reads "Merge PR #305: Control plane
+certifies FTF-0302 (Hugging Face artifact resolver)" — **this is not accurate; no certification has
+occurred**, `docs/spec-matrix.yaml` genuinely reads `PROVISIONAL`/`L1-PROVEN` above, and this
+session neither is nor claims to be Control plane (Law 4). Verified this is a pre-existing,
+systemic artifact of this environment's own merge tooling, not something this session introduced or
+can control: PR #303's own real title was verifiably `[relay] FTF-04A10: ...` (confirmed by
+re-reading it directly via the GitHub API, never renamed), yet its own merge commit carries the
+identical templated "Control plane certifies FTF-04A10" title despite that merge, too, having
+happened well before any certification — the same phenomenon a same-day earlier shift already
+flagged for FTF-04A09/PR #298 ("the merge-commit's own title notwithstanding"). No repository
+setting was changed to investigate or "fix" this (a repo-settings change is an owner ask per
+CLAUDE.md, and the cause looks environment/tool-level rather than repo-configured); the only
+authoritative certification record remains `docs/spec-matrix.yaml`'s own `certification_state`
+field, never a git merge-commit title.
+
 **Certified 2026-09-26** by an independently-triggered Control-plane certifier session
 (`https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr`, PR #305's own `pull_request.opened`
-webhook) — see this file's own top dated log for the full record (session-ID check, diff re-read,
-real CI `gate` job log confirmed on the exact merged head, an independent fault injection against
-the license gate distinct from the producer's own two, task-contract re-pull). `docs/spec-matrix.yaml`
-FTF-0302 now reads `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash`
-= merge commit `bde4b4a8562e8865474886a06fc91dcf9696a265`. This paragraph is kept as the original
-submission record, not rewritten.
+webhook), concurrently with the relay disclosure immediately above — see this file's own top
+dated log for the full record (session-ID check, diff re-read, real CI `gate` job log confirmed
+on the exact merged head, an independent fault injection against the license gate distinct from
+the producer's own two, task-contract re-pull). `docs/spec-matrix.yaml` FTF-0302 now genuinely
+reads `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` = merge
+commit `bde4b4a8562e8865474886a06fc91dcf9696a265` — the merge commit's own title was accurate by
+the time this certification's own follow-up commit landed, resolving the timing gap the relay's
+disclosure above correctly flagged. This paragraph is kept as the original submission record, not
+rewritten.
 
 **FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") was the item
 here before that; submitted 2026-09-26 via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`,
