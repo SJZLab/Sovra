@@ -19296,3 +19296,92 @@ queue.md` change — this shift opened no PROVISIONAL PR of its own). STEP 4 sto
 own review of the producer's disclosed record — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-26T09:09:25Z — Relay shift: FTF-04A10 submitted PROVISIONAL
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh`.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state.
+CLAUDE.md hash self-check clean (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly).
+
+**Repo-sync check (before any other step):** this sandbox's own local checkout started on a
+shallow clone whose `origin/main` tracking ref read stale (`4657881`, several merges behind, with
+no common ancestor against the local branch tip under a shallow comparison — a shallow-clone
+truncation artifact, not real history divergence). `git fetch --unshallow origin main` resolved it
+to the real tip (`4c0371f`); `git merge-base --is-ancestor` confirmed both directions that this
+session's own designated branch (`claude/wizardly-fermat-gg9rje`, not yet pushed to origin) already
+equalled `origin/main`'s real tip exactly — no divergence, no unpushed prior-session work at risk,
+nothing to reconcile.
+
+Checked all 6 open PRs: #301 (FTF-04A11, already `PROVISIONAL`/CI-green — 31/31 real checks
+including `gate` reconfirmed unchanged via the check-runs API on head `7fc2a0c`; not duplicated,
+per this repo's own established "one relay does not re-verify an already CI-green Provisional
+item" pattern), #295 (FTF-0214, blocked), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212),
+#194/#195 (FTF-0304 duplicate pair) — none overlap with this shift's own candidate.
+
+Surveyed `docs/spec-matrix.yaml` programmatically for dependency-ready (`certification_state: NONE`,
+every dep `CERTIFIED`) candidates not already claimed by an open PR: 16 found. FTF-04A12 depends
+on FTF-04A11, itself not yet `CERTIFIED` — genuinely not ready. FTF-0500A/FTF-0500D re-confirmed
+blocked on the same missing-`Dataset`-entity surface as FTF-0214. FTF-04A02/FTF-0902 remain
+`BLOCKED_EXTERNAL`. Picked **FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool
+discovery") — dependency-ready (FTF-04A01/FTF-04A08 both `CERTIFIED`), no external prerequisite,
+the direct JS/TS sibling of the same static-analysis shape FTF-04A09 already established.
+
+**"Isolated approved parser"/model-binding-shape resolution (CLAUDE.md's own "new runtime deps"
+ask-first gate, resolved without asking per its own default-resolution rule):** this repo's root
+`package.json` already declares `typescript` (`^5.6.2`) as a real, already-installed devDependency
+of the whole monorepo — not a new dependency (`pnpm install --frozen-lockfile`: 224 packages, zero
+lockfile changes, confirmed directly). Section 7A.4's own required-capability list names "OpenAI-
+compatible/LiteLLM model references"; the JS/TS ecosystem's own standard client for that shape is
+the `openai` npm package's `OpenAI` class, so `client.chat.completions.create(...)` is the direct
+analog of Python's `litellm.completion(...)` FTF-04A09 already traced. Both resolutions are
+recorded in full in this task's own module docstring.
+
+Implemented `apps/api/app/target_connectors/typescript_javascript_deterministic_agent_config_tool_discovery.py`
+(Python orchestrator, reusing FTF-04A08's `SourceFileRef`) plus a small, fixed, repo-owned Node.js
+subprocess helper, `_typescript_javascript_ast_helper.cjs`, that only ever calls
+`ts.createSourceFile` (pure, non-executing syntax-tree builder) and a minimal in-memory
+`ts.Program`'s own `getSyntacticDiagnostics` — never `eval`/`new Function`/`vm.runInContext`/a
+scanned-file `require`. Exactly three closed, non-guessed import/instantiation shapes recognized
+(default import, named import with alias, CommonJS `require`, each followed by `new <alias>(...)`)
+— mirroring FTF-04A09's own three Python shapes in count and structure; a namespace import or a
+dynamically-computed `require(expr)` is never guessed. Model/tool-schema extraction uses a
+hand-written, non-executing literal evaluator (the JS/TS analog of `ast.literal_eval`); one
+non-conforming `tools` array entry marks the entire list unresolved, never silently dropped.
+`ResourceLimits` mirrors FTF-04A08's/FTF-04A09's three-bound shape plus a new
+`subprocess_timeout_seconds` bound this task's own subprocess design requires. Node.js being
+unavailable is raised immediately as `TypeScriptJavaScriptDiscoveryError` (Law 17), never
+laundered into a per-file parse-error count.
+
+`tests/tasks/test_ftf_04a10.py`: 21 tests, all pass against the unmodified code. Two independent
+fault injections, both reverted byte-identical (confirmed via `diff` + `md5sum`
+`094127317a984868347126be15300fb2` before and after), re-run clean: (1) silently skipped a
+non-conforming `tools` array entry instead of marking the whole extraction unresolved — genuine
+FAIL; (2) removed the client-alias membership guard so any identifier-named client matched
+regardless of a real `openai` import — two genuine FAILs (namespace-import and unimported-local-
+class assertions).
+
+`uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (262 source files; 15
+pre-existing, unrelated `alembic`-stub `mypy` errors confirmed via `git status`/`git diff --stat`
+to predate this change). `pnpm run lint` initially failed on the new `.cjs` helper (`no-undef`/
+`no-require-imports` — the shared `eslint.config.mjs` had no Node.js-environment override for a
+real CommonJS script); added a narrowly-scoped `**/*.cjs` override block (Node globals,
+`@typescript-eslint/no-require-imports: off`) rather than a repo-wide rule change, then clean.
+`pnpm run format:check`/`pnpm run typecheck` clean after one `prettier --write` pass on the helper.
+`validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged 20/20
+(`proving_symbol` left blank, same disclosed precedent as FTF-04A08/FTF-04A09). `status.py`
+unchanged 75/300 (Law 2). Regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py` (both clean)
+plus `uv run pytest tests/unit` (3/3) and `pnpm exec vitest run` (27/27) — zero regressions.
+`verify_task.py --task FTF-04A10 --stage task` reports `BLOCKED` pre-merge, expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-04A10 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real
+merge commit. CI gate step (`FTF-04A10 negative-test proof`) added to `.github/workflows/ci.yml`.
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 2/2 in-flight items (FTF-04A10, FTF-04A11) are `L1-PROVEN`,
+no blocking defect found by this session's own review — awaiting independently-triggered
+Control-plane certifier sessions and the L4 gate. Stopping here. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged, empty).

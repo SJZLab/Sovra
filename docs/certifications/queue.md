@@ -16545,3 +16545,134 @@ build on or re-verify from scratch.
 - STEP 4 stop condition (a): 1/1 in-flight item is L1-PROVEN and CI-green, awaiting an
   independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No open
   owner ask.
+
+## 2026-09-26 — FTF-04A10 ("TypeScript/JavaScript deterministic agent/config/tool discovery") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift (session `https://claude.ai/code/session_01MAwC6YFuztewV8dUutUMNh`).
+STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/this file fresh, before assuming any prior-session state.
+CLAUDE.md hash self-check clean (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`
+exactly). This sandbox's own local checkout started on a shallow clone whose `origin/main` tracking
+ref read stale (`4657881`, several merges behind); `git fetch --unshallow origin main` resolved it
+to the real tip (`4c0371f`), which this session's own designated branch's starting `HEAD` already
+equalled exactly — no divergence, no lost work, confirmed via `git merge-base --is-ancestor` both
+directions before proceeding.
+
+Checked all 6 open PRs first: #301 (FTF-04A11, already `PROVISIONAL`/CI-green — 31/31 real checks
+including `gate` reconfirmed directly via the check-runs API on this shift's own head `7fc2a0c`,
+unchanged since the prior relay shift's own finding; not resubmitted or re-verified here per this
+repo's own established "one relay does not duplicate an already CI-green Provisional item" pattern),
+#295 (FTF-0214, blocked — no live backend surface), #290 (FTF-04A08 tracking, doc-only), #231
+(FTF-0212), #194/#195 (FTF-0304 duplicate pair) — none overlap with this shift's own candidate.
+
+Surveyed `docs/spec-matrix.yaml` programmatically for every task whose full dependency set is
+already `CERTIFIED` (16 found, `certification_state: NONE`). FTF-0212/FTF-0304/FTF-0214 already
+claimed by the open PRs above. FTF-0500A/FTF-0500D re-confirmed genuinely blocked on the same
+missing-`Dataset`-entity backend surface PR #295 already found for FTF-0214 (re-derived directly
+via grep against `dataset_source_connection_routes.py`'s own module docstring and FTF-0501/0502/0503's
+own `certification_state: NONE`, not merely assumed from a prior shift's note). FTF-04A02/FTF-0902
+remain `BLOCKED_EXTERNAL` in this relay sandbox (real GitHub App / enforcing CNI prerequisite),
+consistent with every prior shift's own findings, re-confirmed not re-litigated. FTF-04A12 depends
+on FTF-04A11, itself not yet `CERTIFIED` (still on open PR #301) — genuinely not dependency-ready
+yet, confirmed via direct `yaml.safe_load` before considering it.
+
+Picked **FTF-04A10** ("TypeScript/JavaScript deterministic agent/config/tool discovery") —
+genuinely dependency-ready (FTF-04A01/FTF-04A08 both `CERTIFIED`, confirmed before relying on
+them), no external prerequisite or open PR already claiming it, and the direct JS/TS sibling of
+the same tractable static-analysis shape FTF-04A09 already established one task earlier. State:
+`Working: FTF-04A10.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A10.md` in full, Section 7A.4's own 12-step
+"Analysis order", `apps/api/app/target_connectors/source_analysis_worker.py` (FTF-04A08, reused
+`SourceFileRef` input shape) and `python_agent_config_tool_discovery.py` (FTF-04A09, the direct
+Python-side template for scope/discipline). Confirmed FTF-04A01/FTF-04A08 genuinely `CERTIFIED`
+before relying on them.
+
+**"Isolated approved parser" and model-binding-shape resolution (CLAUDE.md's own "new runtime
+deps" ask-first gate, resolved without asking per its own default-resolution rule):** no native
+`litellm` npm package exists for this repo to trace the way FTF-04A09 traced Python's own
+`litellm` import; this repo's root `package.json` already declares `typescript` (`^5.6.2`) as a
+real, already-installed devDependency of the whole monorepo (used today for `apps/web`'s own
+build/typecheck, confirmed via `pnpm install --frozen-lockfile` — 224 packages, zero lockfile
+changes) — not a new dependency. Section 7A.4's own required-capability list names "OpenAI-
+compatible/LiteLLM model references" and this plan's own `/v1/chat/completions` REST contract is
+the real shape this repo's LiteLLM gateway serves; the JS/TS ecosystem's own standard client for
+that shape is the `openai` npm package's `OpenAI` class, so `client.chat.completions.create(...)`
+is the direct, statically-traceable JS/TS analog of Python's `litellm.completion(...)`. Both
+resolutions are recorded in this task's own module docstring, not merely asserted here.
+
+**E:** `apps/api/app/target_connectors/typescript_javascript_deterministic_agent_config_tool_discovery.py`
+(Python orchestrator, reusing FTF-04A08's `SourceFileRef`) plus
+`_typescript_javascript_ast_helper.cjs` (a small, fixed, repo-owned Node.js subprocess helper —
+never derived from scanned content). The helper only ever calls `ts.createSourceFile` (a pure,
+non-executing syntax-tree builder) and a minimal in-memory `ts.Program`'s own
+`getSyntacticDiagnostics` (the documented, public way to learn whether that error-tolerant parser
+actually produced a genuinely broken tree, since `createSourceFile` alone never throws on
+malformed input) — never `eval`/`new Function`/`vm.runInContext`/a scanned-file `require`, matching
+Section 7A.4's own "without importing Python modules... executing JavaScript... build[s]" sentence
+exactly. Exactly three closed, non-guessed import/instantiation shapes are recognized (`import
+OpenAI from "openai"`, `import { OpenAI [as X] } from "openai"`, `const X = require("openai")`,
+each followed by `const <client> = new <alias>(...)`) — the same "bare/aliased/destructured" count
+and structure FTF-04A09's own three Python shapes already established; a namespace import or a
+dynamically-computed `require(expr)` is a genuinely different, unresolved shape, never guessed.
+Model binding (`model` property) and tool schema (`tools` property, an OpenAI-function-shaped
+array) resolve only via a hand-written, non-executing literal evaluator — the direct JS/TS analog
+of `ast.literal_eval` — never a variable, spread, computed key, or non-string/non-conforming
+literal, each honestly `unresolved_dynamic_expression` rather than guessed; one non-conforming
+`tools` array entry marks the *entire* list unresolved, never silently dropped. The enclosing
+function (a declaration, expression, arrow function, or method; `"<module>"` at module scope) of a
+qualifying call is the real entrypoint — two qualifying calls in two different functions of one
+file yield two distinct candidates, never coalesced. `ResourceLimits` mirrors FTF-04A08's/FTF-04A09's
+own three-bound shape (`max_files`/`max_file_bytes`/`max_total_bytes`) plus a genuinely new
+`subprocess_timeout_seconds` bound this task's own subprocess-based design requires, so a
+pathological input cannot hang the worker; a timeout is counted as a real parse error, not a
+budget truncation. The Node.js runtime being entirely unavailable is raised immediately as
+`TypeScriptJavaScriptDiscoveryError` (Law 17 — an environment precondition failure, never
+laundered into a per-file parse-error count that would misrepresent it as ordinary adversarial
+content).
+
+`tests/tasks/test_ftf_04a10.py`: 21 real test functions, all pass against the unmodified code.
+**Two independent fault injections, re-run against the final, formatted committed content, each
+reverted from an untouched backup and confirmed byte-identical via `diff`+`md5sum`
+(`094127317a984868347126be15300fb2` before and after):**
+1. Let a non-conforming `tools` array entry be silently skipped instead of marking the whole
+   extraction unresolved — **a genuine FAIL** on the "partial extraction never reported as
+   complete" assertion, reproducing exactly the risk this task's own negative_acceptance exists to
+   prevent.
+2. Removed the client-alias membership guard in `matchCompletionCall` so any identifier-named
+   client's `.chat.completions.create(...)` matched regardless of a real `openai` import/require —
+   **two genuine FAILs**, on both the "namespace import is never matched" and the "a locally-
+   defined class merely named 'OpenAI' with no real import is never matched" assertions — a real,
+   independent probe of the same import-provenance discipline the first fault injection does not
+   cover.
+
+**V:** `pnpm install --frozen-lockfile` (224 packages, zero lockfile changes — confirms no new
+runtime dependency was introduced). `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+repo-wide (262 source files; 15 pre-existing, unrelated `alembic`-stub `mypy` errors confirmed via
+`git status`/`git diff --stat` to predate this change, not touched by it). `pnpm run lint` initially
+failed on the new `.cjs` helper (`no-undef`/`no-require-imports` — the shared `eslint.config.mjs`
+had no Node.js-environment override for a real CommonJS script); added a narrowly-scoped `**/*.cjs`
+override block (Node globals, `@typescript-eslint/no-require-imports: off`) rather than disabling
+any rule repo-wide, then clean. `pnpm run format:check`/`pnpm run typecheck` clean after one
+`prettier --write` pass on the helper. `python3 scripts/validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired` unchanged at `20/20` (this task's `proving_symbol` is
+genuinely blank — no live source-analysis-pipeline dispatcher exists anywhere in this repository
+yet to call this worker, disclosed, same precedent as FTF-04A08/FTF-04A09). `status.py` unchanged
+at `75/300` certified (Law 2 — not self-inflated). Regression swept `test_ftf_04a08.py`/
+`test_ftf_04a09.py` (both "all checks passed") plus `uv run pytest tests/unit` (3/3) and `pnpm exec
+vitest run` (27/27, 6 test files) — zero regressions. `uv run python3 scripts/verify_task.py --task
+FTF-04A10 --stage task` reports `BLOCKED` pre-merge ("has no merged verification evidence yet"),
+expected per precedent.
+
+`docs/spec-matrix.yaml` FTF-04A10 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank, a follow-up commit
+once the real merge commit hash is known (same precedent as every recent sibling). CI gate step
+(`FTF-04A10 negative-test proof`) added to `.github/workflows/ci.yml` in this same commit,
+immediately after FTF-04A09's own step.
+
+Submitted PROVISIONAL via **PR #303** (branch `claude/wizardly-fermat-gg9rje` -> `main`), title
+`[relay] FTF-04A10: TypeScript/JavaScript deterministic agent/config/tool discovery`,
+`https://github.com/SJZLab/Sovra/pull/303`.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.

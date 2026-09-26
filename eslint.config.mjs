@@ -19,4 +19,27 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "error",
     },
   },
+  {
+    // `.cjs`: a real Node.js CommonJS script by construction (the
+    // extension itself fixes `sourceType`/module system, e.g. FTF-04A10's
+    // own `_typescript_javascript_ast_helper.cjs`, a subprocess helper
+    // invoked from Python -- never part of `apps/web`'s browser/ESM build).
+    files: ["**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: {
+        require: "readonly",
+        module: "readonly",
+        exports: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+        console: "readonly",
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 );
