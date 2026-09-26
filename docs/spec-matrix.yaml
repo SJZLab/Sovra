@@ -1559,10 +1559,10 @@ FTF-0302:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0302.py
 FTF-0303:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Private S3 artifact resolver
-  evidence_hash: ''
+  evidence_hash: dc1cdec81fcc49fc0fe977b9a097c9d321b2f4a2
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301,
@@ -1649,7 +1649,38 @@ FTF-0303:
     pytest tests/unit` (3/3) -- zero regressions. No other change to this module or its own
     negative_acceptance checks 1/3/4. Still not self-certified (Law 4) -- independent Control-plane
     L2 review and a real CI run on the resubmitted PR are required before certification.
-  proof_state: L1-PROVEN
+
+
+    2026-09-26 Control plane: independent CERTIFY review of PR #316 (fix for the PR #315 finding).
+    Session-ID check: PR #316's commits carry Claude-Session .../session_016ZtyeqbMrv9Uzee9ZM5f2u;
+    this certifying session is .../session_01NZXedm3XU2KWjsrTpj99bW -- no match, independent per
+    Law 4. Read the diff directly (git diff against main): only the new
+    _key_within_tenant_prefix helper, its call site, docstring updates, and one new isolating test
+    scenario (test_cross_tenant_prefix_rejects_sibling_tenant_string_collision) changed versus PR
+    #314's own head -- no other implementation change, as claimed. Own reproduction in a fresh git
+    worktree at PR #316's actual head (8f2333f): `uv run python3 tests/tasks/test_ftf_0303.py` --
+    all checks passed. Own fault injection reproducing PR #315's exact original bug (reverted
+    _key_within_tenant_prefix to a bare `key.startswith(tenant_key_prefix)`): file confirmed
+    changed (md5sum differs), re-ran the suite -- the new org-4/org-42 test genuinely failed with
+    2 assertion failures (CrossTenantPrefixError never raised; a request was made), reproducing
+    the exact defect PR #315 found; reverted byte-identical (md5sum matched), re-ran clean. `ruff
+    check`/`ruff format --check`/`mypy` clean (268 files). Regression swept test_ftf_0301.py/
+    test_ftf_h006.py plus `pytest tests/unit` (3/3) -- unaffected. `validate_spec.py --strict`
+    clean. `product_truth_check.py --fail-on-unwired`: 20/20 unchanged (proving_symbol genuinely
+    left blank, disclosed precedent, not a 0/0-accepted-as-pass case). `status.py`: 78/300
+    pre-certification, 79/300 after this certification's own spec-matrix.yaml update. Real CI
+    confirmed on the exact merged head (8f2333f), not a self-report: polled all 31 check-runs to
+    full completion -- 31/31 success, `gate` included (run 36264485321, job 108466435039); fetched
+    the gate job's own raw log directly and confirmed it actually executed
+    tests/tasks/test_ftf_0303.py, printing "FTF-0303 Private S3 artifact resolver: all checks
+    passed". Task contract re-pulled (tools/r1_handoff.py packet FTF-0303): negative_acceptance
+    ("Bucket mismatch, cross-tenant prefix, partial upload or ETag-as-hash assumption fails load")
+    is now genuinely met for the cross-tenant-prefix clause specifically (the PR #315 gap); the
+    other three clauses were already sound per PR #315's own disclosed findings and are unchanged
+    by this diff. No open review threads on PR #316; mergeable_state clean. Result: CERTIFIED.
+    Merged PR #316 (merge commit dc1cdec81fcc49fc0fe977b9a097c9d321b2f4a2). PR #314 and PR #315
+    stay open/unmerged, already marked superseded -- not this session's action to close.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0303.py
 FTF-0304:
