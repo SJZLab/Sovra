@@ -1,4 +1,76 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-04A11 — Control plane: independent CERTIFY review, BLOCKED on merge conflict (PR #301)
+
+Same Control-plane certifier shift as the FTF-0303 certification below, session
+`https://claude.ai/code/session_01NZXedm3XU2KWjsrTpj99bW`. After certifying FTF-0303, checked the
+rest of the queue for other pending PROVISIONAL items rather than stopping at the triggering PR.
+Found **PR #301** (`[relay] FTF-04A11: JSON/YAML/TOML/env-template configuration discovery`),
+open since before the FTF-04A10/FTF-0302/FTF-0303/FTF-0513 rounds — `docs/spec-matrix.yaml`'s
+FTF-04A11 entry on `main` still `certification_state: NONE`.
+
+**Session-ID check:** PR #301's commit carries `Claude-Session: .../session_01GMDn1KqkzPZwd6WMgpZ4SZ`
+— no match, independent per Law 4.
+
+**Diff read directly** in a fresh worktree at PR #301's actual head (`7fc2a0c`), diffed against
+its own merge-base with `main` (`3efb767`): `apps/api/app/target_connectors/
+json_yaml_toml_configuration_discovery.py` (450 lines) and `tests/tasks/test_ftf_04a11.py` (378
+lines), a CI gate step, and tracking-doc updates.
+
+**Own reproduction:** `uv run python3 tests/tasks/test_ftf_04a11.py` — "all checks passed".
+
+**Own probe beyond the disclosed tests:** investigated whether PyYAML's anchor/alias sharing
+(`&a`/`*a`) could defeat `ResourceLimits.max_keys_per_document`/`max_depth` via multiplicative
+expansion (a "billion laughs"-shaped DoS concern not in the disclosed test list). Confirmed
+empirically that PyYAML shares the same Python object by reference across aliases rather than
+deep-copying it, and that `_flatten`'s `keys` accumulator is a single list threaded through the
+entire recursive walk with its cap check at the top of every call — so total work stays bounded
+near the 500-key cap regardless of branching/alias depth. Verified with a 15-level/8-way and a
+10-level/50-way alias-chain payload (each under 3.2 KB): both flattened in under 2ms, correctly
+`truncated=True` at exactly 500 keys. Not a defect.
+
+**Two fault injections (Law 1):**
+1. Replaced `_is_secret_like_key` with `return False`. File confirmed changed (md5sum
+   `22c9aea5c5938506e8da3415b0d05243` → `7f8248fe7bbd7e720acefba84c4f018c`). Re-ran the suite: 2
+   genuine failures (a real secret value leaked into the returned evidence). Reverted
+   byte-identical, re-ran clean.
+2. Replaced `yaml.safe_load(text)` with `yaml.unsafe_load(text)`. File confirmed changed (md5sum
+   `22c9aea5...` → `6da87b15df6e835ef7759bca8f0eb09d`). Re-ran the suite: 1 genuine failure
+   (`test_unsafe_yaml_tag_is_never_constructed` — its own real `os.system` marker-file check
+   catches it). Reverted byte-identical, re-ran clean.
+
+`ruff check .` / `ruff format --check .` / `mypy .` clean (262 files, this PR's own older base).
+`product_truth_check.py --fail-on-unwired`: `20/20` unchanged. `status.py`: `75/300` on this PR's
+own older base (not comparable to current `main`'s `79/300` — expected, predates
+FTF-04A10/0302/0303/0513). Regression swept `test_ftf_04a08.py`/`test_ftf_04a01.py`/`pytest
+tests/unit` (3/3) — unaffected. Confirmed dependencies FTF-04A01/FTF-04A08 genuinely `CERTIFIED`.
+
+**Real CI confirmed on PR #301's exact head, not a self-report:** all 31 check-runs `success`
+(`gate` included, run `36219633534`, job `108342310846`); fetched the `gate` job's own raw log
+directly and confirmed it actually executed `tests/tasks/test_ftf_04a11.py`, printing "all checks
+passed".
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-04A11`): `acceptance` and all
+four `negative_acceptance` sub-clauses (unsafe YAML tags, malformed TOML/JSON, huge nesting,
+dotenv secrets) are each backed by their own isolating, real-execution test.
+
+**No code-level blocking defect found.** However: verified directly (`git merge origin/main
+--no-commit --no-ff` against PR #301's own head in a fresh worktree, not merely trusting the
+GitHub API) that **PR #301 has a real merge conflict with current `main`** — in
+`.github/workflows/ci.yml`, `PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` (tracking-doc/
+CI-gate-step appends from the FTF-04A10/0302/0303/0513 rounds landing after PR #301's own branch
+point); `docs/spec-matrix.yaml` itself merged cleanly. This is relay/producer rebase work, out of
+this certifying session's own scope — aborted the test merge without pushing anything to PR #301.
+
+**Result: BLOCKED, not certified and not rejected on substance.** `docs/spec-matrix.yaml`'s
+FTF-04A11 entry on `main` unaffected (still `certification_state: NONE`). Appended the full finding
+to `docs/certifications/queue.md` and `QUEUE.md` with the exact action needed (rebase PR #301 onto
+current `main`, resolve the four files by keeping both sides' append-only content, re-place the CI
+gate step, push, let CI re-run) so the next relay shift can act without re-deriving any of this.
+No other task work, design decisions, or queue reprioritization performed beyond what this review
+naturally required (Law 4). No open owner ask. Certified: unchanged at 79/300.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-26.
+
 ## 2026-09-26 — FTF-0303 — Control plane: independent CERTIFY review, CERTIFIED (PR #316)
 
 Scheduled Control-plane certifier shift, session
