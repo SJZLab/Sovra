@@ -1,4 +1,97 @@
 # PROGRESS — Sovra
+## 2026-09-26T17:40:00Z — FTF-0303 — relay: fixed the Control-plane-flagged cross-tenant-prefix boundary bug (PR #314 -> resubmitted)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_016ZtyeqbMrv9Uzee9ZM5f2u`,
+branch `claude/wizardly-fermat-p8xpah`.
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` -- clean. `BLOCKER.md` holds
+only resolved history (no live blocker). Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh per STEP 0.1 (both files are newest-entry-first, not append-at-EOF -- confirmed by
+reading the actual head, not the tail, after an earlier tail-only read of this same shift
+momentarily suggested stale state before the head was checked). Confirmed via `git log`/
+`git merge-base` that this session's designated branch already equalled `origin/main`'s real tip
+(`c456813`) exactly -- no divergence, nothing to reconcile.
+
+STEP 1: this queue's own PR #315 (Control-plane CERTIFY review of PR #314, FTF-0303 "Private S3
+artifact resolver") named the exact next action: "Make the prefix check boundary-safe ... then add
+a test isolating a true string-prefix cross-tenant collision ... PR #314 stays open, unmerged."
+Picked this as the highest-priority unblocked item -- already sliced with a concrete DoD from an
+independent review, no need to survey for new work.
+
+STEP 2 (PEV). **P:** read `apps/api/app/artifacts/private_s3_artifact_resolver.py` and
+`tests/tasks/test_ftf_0303.py` (both from PR #314's real head `a4784bc`, fetched via
+`refs/pull/314/head`) directly; confirmed the reviewer's root cause: `resolve_private_s3_object`'s
+cross-tenant-prefix check was a bare `if not key.startswith(connection.tenant_key_prefix):`, which
+is not path-segment-safe -- a connection configured with `tenant_key_prefix="org-4"` (the natural
+result of a future caller building it as `f"org-{organization_id}"`, a one-character omission, not
+a contrived edge case) lets a real, different tenant's real object
+(`s3://acme-bucket/org-42/models/tiny.safetensors`, the suite's own fixture object) pass the gate
+silently, since `"org-42/..."` genuinely starts with the character sequence `"org-4"` even though
+`org-4`/`org-42` are two different tenant namespaces. Reproduced this directly against PR #314's
+own unmodified code first (no mutation needed) to confirm the reviewer's finding before writing
+any fix. Brought PR #314's code/test/CI/spec-matrix/task-packet changes onto this branch (checked
+out from the current `origin/main`, `c456813`) via `git checkout <sha> -- <files>` rather than
+merging the branch wholesale, to avoid entangling this fix with PR #314's own now-superseded
+`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` log entries (confirmed via `git diff
+c456813 a4784bc --stat` that PR #314's base was exactly `origin/main`'s current tip -- no code
+drift to reconcile).
+
+**E:** added `_key_within_tenant_prefix(key, tenant_key_prefix)`: returns `True` only when the key
+equals the prefix exactly, or starts with the prefix followed by a real `/` path-segment boundary
+(the prefix is normalized to end with `/` first if it does not already). Replaced the bare
+`str.startswith` call in `resolve_private_s3_object` with this helper; updated the module's own
+docstring (negative_acceptance item 2) to document the boundary-safety guarantee and the exact
+`org-4`/`org-42` collision it now rejects. Added
+`test_cross_tenant_prefix_rejects_sibling_tenant_string_collision` to
+`tests/tasks/test_ftf_0303.py`, isolating exactly this collision: `tenant_key_prefix="org-4"`
+against the real `org-42/...` fixture object, asserting `CrossTenantPrefixError` is raised and
+that the check fires before any network request (mirroring the suite's own existing
+`test_cross_tenant_prefix_fails_load_before_any_network_request` pattern).
+
+**Own fault injection reproducing the reviewer's exact pre-fix code** (reverted
+`_key_within_tenant_prefix(key, connection.tenant_key_prefix)` back to the bare
+`key.startswith(connection.tenant_key_prefix)`): confirmed the mutation actually changed the file
+(`md5sum` before `1d6b80a6d7b973af40f3af12e1a92afd`, after `781b76e65ac31b892549ac559956a5eb`);
+re-ran `tests/tasks/test_ftf_0303.py` with the mutation in place -- the new test genuinely fails
+with **two** assertion failures (`CrossTenantPrefixError` is never raised for the org-4/org-42
+collision, and a real network request is made) -- exactly the gap the reviewer's own finding
+described. Reverted byte-identical (`md5sum` back to `1d6b80a6d7b973af40f3af12e1a92afd`, confirmed;
+`git diff --stat` on the file showed the intended fix diff only), re-ran clean.
+
+**V:** `grep -c 'check('` on the test file: 34 checks (32 original + 2 new), all pass.
+`uv sync --all-packages`; `uv run ruff check .` / `ruff format --check .` clean (268 files);
+`uv run mypy .` clean (268 files, no pre-existing errors surfaced this run). `git fetch
+--unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent
+every recent shift has hit) then `uv run python3 scripts/validate_spec.py --strict`: clean (also
+confirmed the edited `docs/spec-matrix.yaml` still parses via a direct `yaml.safe_load`).
+`uv run python3 scripts/product_truth_check.py --fail-on-unwired`: `20/20`, unchanged (no live
+caller added -- same disclosed precedent as the original PR #314 submission). `uv run python3
+scripts/status.py`: `78/300` certified, unchanged (Law 2 -- a relay fix never inflates the
+certified count). Regression swept `test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_h006.py`/
+`test_ftf_r017.py` (all "all checks passed") plus `uv run pytest tests/unit` (3/3) -- zero
+regressions. No change to this module's other three negative_acceptance checks (bucket mismatch,
+partial upload, ETag-as-hash).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0303 entry (still `certification_state: PROVISIONAL`,
+`proof_state: L1-PROVEN` -- a relay fix never self-certifies) with a dated follow-up paragraph
+recording this fix in full, appended after PR #314's own original notes rather than rewriting
+them. No implementation change beyond the one boundary-safety check and its own docstring --
+negative_acceptance items 1/3/4 untouched, exactly as the reviewer's own fix instruction specified.
+Committed on this shift's designated branch `claude/wizardly-fermat-p8xpah`; opened a PR titled
+`[relay] FTF-0303: fix cross-tenant-prefix boundary bug (Control-plane-flagged)` rather than
+pushing to PR #314's own branch (a different session's branch, out of scope to push to without
+explicit permission) or reusing PR #314 itself -- left open/unmerged, superseded per the
+reviewer's own "then re-submit"-equivalent instruction, with a one-line comment recording the
+supersession left on PR #314 itself (its real number recorded in this file's own matching
+follow-up entry once opened, the same two-commit pattern PR #310/#311 already established).
+Certified: unchanged at 78/300. Product-true: unchanged at 20/20.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0303) is `L1-PROVEN`, no blocking
+defect found by this session's own review -- awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions --
+current" unchanged, empty).
+
 ## 2026-09-26 — FTF-0513 — Control plane: independent CERTIFY review, CERTIFIED (PR #310)
 
 Scheduled Control-plane certifier shift, session
