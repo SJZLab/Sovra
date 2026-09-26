@@ -5397,9 +5397,9 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0513** ("Near-duplicate detector") is the item here; submitted 2026-09-26 via a PR from
-branch `claude/wizardly-fermat-rznyhh` -> `main`, title `[relay] FTF-0513: Near-duplicate
-detector`, producer session `https://claude.ai/code/session_011zMSkXgVhRYoNbbkut7vJC`. Covers
+**FTF-0513** ("Near-duplicate detector") is the item here; submitted 2026-09-26 via **PR #308**
+(branch `claude/wizardly-fermat-rznyhh` -> `main`, `https://github.com/SJZLab/Sovra/pull/308`),
+title `[relay] FTF-0513: Near-duplicate detector`, producer session `https://claude.ai/code/session_011zMSkXgVhRYoNbbkut7vJC`. Covers
 Section 10 methods 4-7 (character n-gram similarity, token Jaccard similarity, embedding
 similarity, agent-trace structural similarity) — the direct algorithmic sibling of the
 already-certified FTF-0511 (methods 1-2)/FTF-0512 (method 3). Candidate pairs are formed only

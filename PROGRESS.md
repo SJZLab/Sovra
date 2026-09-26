@@ -137,8 +137,8 @@ once the real merge commit hash is known (same precedent as every recent sibling
 own step (its nearest already-certified dependency's own step, same insertion convention as every
 recent sibling).
 
-Submitted PROVISIONAL via a PR from branch `claude/wizardly-fermat-rznyhh` -> `main`, title
-`[relay] FTF-0513: Near-duplicate detector`.
+Submitted PROVISIONAL via **PR #308** (branch `claude/wizardly-fermat-rznyhh` -> `main`,
+`https://github.com/SJZLab/Sovra/pull/308`), title `[relay] FTF-0513: Near-duplicate detector`.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** — independent Control-plane L2 review and a real CI run on the opened PR are required

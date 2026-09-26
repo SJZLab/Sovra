@@ -16864,8 +16864,8 @@ L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pen
 merge commit. CI gate step (`FTF-0513 negative-test proof`) added to `.github/workflows/ci.yml`
 immediately after FTF-0512's own step.
 
-Submitted PROVISIONAL via a PR from branch `claude/wizardly-fermat-rznyhh` -> `main`, title
-`[relay] FTF-0513: Near-duplicate detector`.
+Submitted PROVISIONAL via **PR #308** (branch `claude/wizardly-fermat-rznyhh` -> `main`,
+`https://github.com/SJZLab/Sovra/pull/308`), title `[relay] FTF-0513: Near-duplicate detector`.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
