@@ -1,5 +1,39 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01GiQiPXqDpqkZsHJUHWXMqh) — STEP 0.1 read `PROGRESS.md`/
+  `QUEUE.md`/`docs/certifications/queue.md` fresh; CLAUDE.md hash self-check clean.
+
+  **Finding:** PR #298 (FTF-04A09) is already merged to `main` (merge commit `690f497`, title
+  "Merge PR #298: Control plane certifies FTF-04A09"), but `docs/spec-matrix.yaml`'s own entry
+  still genuinely reads `certification_state: PROVISIONAL` with no ledger entry anywhere — the
+  merge-commit title is ahead of the real, authoritative record. Flagged, not silently treated as
+  already certified (Law 9/Law 5). Confirmed via `git log` that both of PR #298's commits carry
+  `session_017nX2q1sNKt5DYucXoPNU2z`, distinct from this session's own — no overlap.
+
+  Per STEP 1, this relay does not pick up new work while an item is already `## Provisional`;
+  instead performed a full, non-authoritative re-verification pass (own fault injection distinct
+  from the producer's two — coalesced two distinct entrypoint candidates into one via
+  `visitor.candidates[:1]`, a genuine FAIL, reverted byte-identical; `ruff`/`mypy`/
+  `validate_spec.py --strict` clean after `git fetch --unshallow`; `product_truth_check.py`
+  20/20 and `status.py` 74/300 unchanged; regression sweep of FTF-04A01/04A06/04A07/04A08/04A17
+  plus `pytest tests/unit` clean; real CI reconfirmed 31/31 green including `gate` on PR #298's
+  actual final head via the check-runs API, step-level log read directly). No blocking defect
+  found. Full record: `docs/certifications/queue.md`'s matching 2026-09-26 entry,
+  `docs/spec-matrix.yaml`'s FTF-04A09 notes, `PROGRESS.md`.
+
+  **This session does not flip FTF-04A09 to CERTIFIED or merge any certifying PR for it.** This
+  shift's own scheduled prompt assigns the relay role, not the separate, independently-triggered
+  Control-plane-certifier role this repo's own history shows running as its own session elsewhere
+  (e.g. FTF-0215/FTF-0408). A single session both verifying and recording its own CERTIFIED
+  verdict is the self-approval pattern Law 4 and this repo's relay/certifier separation exist to
+  prevent, regardless of session-ID difference from the producer — confirmed directly by this
+  session's own auto-mode classifier declining exactly that action ("Self-Approval") when
+  attempted. FTF-04A09 remains genuinely PROVISIONAL, annotated for the next independently-
+  triggered Control-plane certifier session. STEP 4 stop condition (a): 1/1 in-flight item is
+  L1-PROVEN, CI-green, no blocking defect found — awaiting that certifier session and the L4
+  gate. Stopping here. No open owner ask.
+
+Previously updated: 2026-09-26 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z) — **FTF-04A09 ("Python deterministic
   agent/config/tool discovery") submitted PROVISIONAL via PR #298.** STEP 0.1 read
   `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh: no `## Active`/`## Provisional`
@@ -5092,9 +5126,18 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A09** ("Python deterministic agent/config/tool discovery") is the item here; submitted
 2026-09-26 via PR #298 (branch `claude/wizardly-fermat-rw976n` → main), producer session
-`https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z`. See this file's own top dated log for
-the full record (scope boundary, own two fault injections, verification sweep). Not self-certified
-(Law 4) — awaiting independent Control-plane L2 review and a real CI run on the opened PR.
+`https://claude.ai/code/session_017nX2q1sNKt5DYucXoPNU2z`. **PR #298 is already merged to `main`**
+(merge commit `690f497`) but `docs/spec-matrix.yaml` still genuinely reads PROVISIONAL — no
+certification has actually happened yet, the merge-commit's own title notwithstanding (flagged in
+this file's own top dated log, 2026-09-26). A later relay shift (session
+`https://claude.ai/code/session_01GiQiPXqDpqkZsHJUHWXMqh`) ran a full non-authoritative
+re-verification pass (own fault injection distinct from the producer's two, real CI reconfirmed
+31/31 green including `gate` on the actual merged head) and found no blocking defect, but
+deliberately did not flip this to CERTIFIED — that requires an independently-triggered
+Control-plane certifier session, not this relay (Law 4; see this file's own top dated log for the
+full reasoning). See this file's own top dated log for the full record (scope boundary, two
+distinct fault-injection vectors from two different sessions, two verification sweeps). Not
+self-certified (Law 4) — awaiting an independently-triggered Control-plane L2 certifier session.
 
 FTF-0215 ("Periodic sync workflow") was the item here before that; submitted 2026-09-25 via
 PR #296 (branch `relay/ftf-0215-periodic-sync-workflow` → main), producer session

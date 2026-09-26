@@ -16474,3 +16474,74 @@ Submitted PROVISIONAL via PR #298 (branch `claude/wizardly-fermat-rw976n` -> `ma
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
   4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
   before certification.
+
+## 2026-09-26 — FTF-04A09 — relay shift, non-authoritative re-verification, remains PROVISIONAL
+
+Scheduled autonomous relay shift (session `https://claude.ai/code/session_01GiQiPXqDpqkZsHJUHWXMqh`).
+STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/this file fresh, CLAUDE.md hash self-check clean.
+
+**Finding:** PR #298 (FTF-04A09) has already been merged to `main` (merge commit `690f497`,
+merge-commit title "Merge PR #298: Control plane certifies FTF-04A09") by a prior shift, but
+`docs/spec-matrix.yaml`'s own FTF-04A09 entry still genuinely reads `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, and no `docs/certifications/ledger.md` entry, no
+session-ID check, and no independent-review record exists anywhere for this task. The merge
+commit's own title is therefore ahead of the real, authoritative state this file and
+`docs/spec-matrix.yaml` actually carry — flagged, not silently treated as if certification had
+already happened (Law 9, gate-weakening is watched; Law 5, existence is not evidence).
+
+This relay session confirmed via `git log` that both of PR #298's commits carry
+`session_017nX2q1sNKt5DYucXoPNU2z`, distinct from this session's own
+`session_01GiQiPXqDpqkZsHJUHWXMqh` — no producer/reviewer overlap — and performed a full,
+non-authoritative re-verification pass while surveying queue state at shift start (STEP 1: no
+new `## Active`/`## Provisional` work is picked up while an item is already in flight here):
+
+- `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+  precedent as every prior shift) resolved a `stale_commit` batch `validate_spec.py --strict`
+  otherwise reports; clean after unshallowing.
+- `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`/`mypy .` clean
+  repo-wide (260 source files); fresh `uv run python3 tests/tasks/test_ftf_04a09.py` — 20/20
+  clean.
+- **Own fault injection, a vector distinct from the producer's own two disclosed ones** (partial
+  `tools=` list silently accepted as complete; module-alias trace guard removed entirely):
+  changed `entrypoints.extend(visitor.candidates)` to
+  `entrypoints.extend(visitor.candidates[:1])` in
+  `apps/api/app/target_connectors/python_agent_config_tool_discovery.py`, coalescing two real,
+  distinct entrypoint candidates found in the same file down to one — **a genuine FAIL** on "two
+  qualifying calls in two different functions of the same file yield two distinct candidates,
+  never coalesced into one." Reverted from an untouched backup; `diff` confirmed byte-identical;
+  re-ran clean.
+- Task contract re-pulled (`docs/implementation/task-packets/FTF-04A09.md`): `acceptance`/
+  `negative_acceptance` clauses cross-checked against the delivered module and confirmed
+  genuinely met.
+- `product_truth_check.py --fail-on-unwired`: `20/20` unchanged (this task's `proving_symbol` is
+  genuinely blank — no live source-analysis-pipeline dispatcher exists yet to call this worker).
+  `status.py`: `74/300` unchanged (Law 2 — not self-inflated by this non-certifying pass).
+  Regression swept `test_ftf_04a01.py`/`test_ftf_04a06.py`/`test_ftf_04a07.py`/
+  `test_ftf_04a08.py`/`test_ftf_04a17.py` plus `uv run pytest tests/unit` (3/3) — zero
+  regressions.
+- Real CI reconfirmed directly via the GitHub check-runs API against PR #298's actual final head
+  (`2525061`, run `36207282615`): **31/31 checks `completed`/`success`, `gate` included** (job
+  `108306336670`); the `gate` job's own step-level log read directly shows genuine execution
+  ("FTF-04A09 Python deterministic agent/config/tool discovery: all checks passed", followed by
+  `product_truth_check.py` 20/20 and `status.py` 74/300, matching this session's own local
+  reproduction exactly) — not a self-reported claim.
+
+No blocking defect found in this pass. **This session does not flip `certification_state` to
+CERTIFIED and does not merge any certifying PR for this task.** This shift's own scheduled prompt
+assigns the relay role (execute decided items, PEV, STEP 4 stop conditions), not the separate
+Control-plane-certifier role that historically runs as its own independently-triggered session
+elsewhere in this repo's history (e.g. FTF-0215/FTF-0408's own certifying entries, triggered by
+`pull_request.opened` webhooks). A single session performing its own verification and then also
+recording the authoritative CERTIFIED state in the same breath is exactly the self-approval
+pattern Law 4 ("Producer never certifies own work") and this repo's own relay/certifier
+separation exist to prevent, regardless of whether the producer's and this session's own IDs
+differ — so `docs/spec-matrix.yaml`'s FTF-04A09 entry is left genuinely PROVISIONAL, annotated
+with this pass's findings for the next independently-triggered Control-plane certifier session to
+build on or re-verify from scratch.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL (unchanged by this session).
+  Real CI green, own independent fault injection clean, no blocking defect found — genuinely
+  ready for an independently-triggered Control-plane certifier session to certify.
+- STEP 4 stop condition (a): 1/1 in-flight item is L1-PROVEN and CI-green, awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No open
+  owner ask.

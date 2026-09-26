@@ -2913,9 +2913,50 @@ FTF-04A09:
     task` reports `BLOCKED` pre-merge ("has no merged verification evidence
     yet"), expected per precedent.
 
+    This shift's own relay session (session_01GiQiPXqDpqkZsHJUHWXMqh) performed
+    an independent, non-authoritative re-verification pass while surveying queue
+    state (session-ID compared against both of PR #298's commits'
+    session_017nX2q1sNKt5DYucXoPNU2z, no overlap): diff re-read against the real
+    merge base; dependencies FTF-04A01/FTF-04A08 reconfirmed genuinely CERTIFIED.
+    After `git fetch --unshallow` (resolved this sandbox's own pre-existing
+    shallow-clone `stale_commit` artifact): `uv sync --all-packages`; `uv run
+    ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (260 files);
+    `python3 scripts/validate_spec.py --strict` clean; fresh run of
+    `tests/tasks/test_ftf_04a09.py` -- 20/20 clean. A fault injection distinct
+    from the producer's own two disclosed ones (partial tools= list silently
+    accepted; module-alias trace guard removed): changed
+    `entrypoints.extend(visitor.candidates)` to
+    `entrypoints.extend(visitor.candidates[:1])`, coalescing two real, distinct
+    entrypoint candidates in the same file into one -- a genuine FAIL on "two
+    qualifying calls in two different functions... yield two distinct
+    candidates, never coalesced into one." Reverted from an untouched backup;
+    `diff` confirmed byte-identical; re-ran clean. Task contract re-pulled
+    (`docs/implementation/task-packets/FTF-04A09.md`): `acceptance`/
+    `negative_acceptance` clauses cross-checked and confirmed genuinely met.
+    `product_truth_check.py --fail-on-unwired`: 20/20 unchanged. `status.py`:
+    74/300 unchanged (Law 2). Regression swept
+    `test_ftf_04a01.py`/`test_ftf_04a06.py`/`test_ftf_04a07.py`/
+    `test_ftf_04a08.py`/`test_ftf_04a17.py` plus `pytest tests/unit` -- zero
+    regressions. Real CI reconfirmed via the GitHub check-runs API directly on
+    the PR's actual final head (`2525061`, run `36207282615`): 31/31 checks
+    `completed`/`success`, `gate` included; the `gate` job's own step-level log
+    read directly confirms genuine execution. No blocking defect found.
+
+    **This session does NOT flip this entry to CERTIFIED.** This shift's own
+    scheduled prompt is the relay role (execute decided items, PEV, STEP 4 stop
+    conditions), not the separate Control-plane-certifier role that historically
+    runs as its own PR-triggered session elsewhere in this file's own history
+    (e.g. FTF-0215/FTF-0408's own certifying entries). A single session
+    performing its own verification and then also flipping the record to
+    CERTIFIED in the same breath is exactly the self-approval pattern Law 4
+    ("Producer never certifies own work") and this repo's own separation of
+    relay/certifier roles exists to prevent, even where the producer and this
+    session's own IDs differ -- so this remains PROVISIONAL, unflipped, pending
+    an actual independently-triggered Control-plane certifier session.
+
     State: proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not
-    self-certified (Law 4) -- independent Control-plane L2 review and a real CI
-    run on the opened PR are required before certification.
+    self-certified (Law 4) -- an independently-triggered Control-plane L2
+    certifier session is required before this flips to CERTIFIED.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a09.py
