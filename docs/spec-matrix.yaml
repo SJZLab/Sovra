@@ -4388,15 +4388,78 @@ FTF-0512:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0512.py
 FTF-0513:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Near-duplicate detector
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0512
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31;
+    deps=FTF-0500, FTF-0512 (both CERTIFIED, confirmed before relying on
+    them). Path refinement recorded before READY (Section 84.3), same
+    precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512: the packet
+    names `services/training-worker/data/near_duplicate_detector.py`, but
+    this repo's real `SOURCE_ROOTS` (FTF-0001, PR #10) name `workers/data`
+    as the real data/review worker root. Placed at
+    `workers/data/near_duplicate_detector.py` alongside FTF-0511's/
+    FTF-0512's own modules instead.
+    Built for real: `detect_near_duplicates` covers Section 10 methods
+    4-7 (character n-gram similarity, token Jaccard similarity, embedding
+    similarity, agent-trace structural similarity) -- Section 8.1 step 12
+    ("Detect near duplicates"), distinct from FTF-0511's step 10 and
+    FTF-0512's step 11. Candidate pairs are formed only through a real
+    banded-MinHash LSH index over character shingles (`_minhash_signature`/
+    `_lsh_bucket_keys`), never an all-pairs scan; `max_candidates_per_record`
+    additionally bounds how many candidate partners any one record can
+    accumulate. Method 6's own "local/private embedding model" names no
+    concrete package anywhere in this repository's architecture docs (not
+    one of the seven reused components) and this sandbox has no route to
+    the public internet to fetch a pretrained one; resolved per CLAUDE.md's
+    default-resolution rule as a deterministic local feature-hashing
+    vectorizer (`_hashing_embedding`, the "hashing trick" -- no pretrained
+    weights, no network call, no new runtime dependency), disclosed in
+    full in the module's own docstring rather than silently narrowed.
+    acceptance ("Use bounded indexed n-gram/semantic candidates and
+    reviewed thresholds with privacy-safe embeddings") is met by the LSH
+    index above plus `NearDuplicateThresholds`, an explicit,
+    caller-overridable dataclass (Section 10's own literal 0.95 default
+    reused for embedding_cosine_similarity; the character_ngram/
+    token_jaccard defaults are this task's own disclosed, reviewable
+    starting point, not a second invented spec authority).
+    negative_acceptance ("No all-pairs million-record memory blowup or
+    automatic discard based solely on a guessed similarity threshold") is
+    met by construction: `NearDuplicateCandidate`/`NearDuplicateReport`
+    carry no discard/remove-style field at all (every flagged pair is
+    `requires_review`, never auto-removed), and the LSH+cap bound above is
+    proven directly by `tests/tasks/test_ftf_0513.py`'s own
+    `test_max_candidates_per_record_bounds_pair_count_far_below_all_pairs`
+    (60 identical records: 1770 possible all-pairs comparisons vs. a real,
+    observed, far smaller bounded count) and
+    `test_dissimilar_records_form_no_candidate_pair_via_indexing`.
+    Two independent, disclosed fault injections (Law 1), each confirmed to
+    genuinely fail then reverted byte-identical (`md5sum` before/after):
+    (1) removed the `max_candidates_per_record` bound during LSH-bucket
+    pair formation -- 2 genuine FAILs on the bounded-pair-count checks;
+    (2) dropped the tool-sequence comparison from Section 10 method 7's
+    own three-part structural-match definition -- 2 genuine FAILs on the
+    structural-mismatch checks. 42 checks total in
+    `tests/tasks/test_ftf_0513.py`, all pass against the unmodified code.
+    Scope decision, same disclosed precedent as FTF-0506/FTF-0507/FTF-0508/
+    FTF-0511/FTF-0512 ("no live caller yet"): no dataset-import pipeline
+    route exists yet in this repository to call `detect_near_duplicates`.
+    `proving_symbol` left blank; `product_truth_check.py --fail-on-unwired`
+    unchanged at 20/20 (confirmed by reading `scripts/product_truth_check.py`'s
+    own `SOURCE_ROOTS` list directly -- `workers/data` is a real, listed
+    root). `ruff check`/`ruff format --check`/`mypy` clean repo-wide (266
+    files). `validate_spec.py --strict` clean. Regression swept
+    `test_ftf_0500.py`/`test_ftf_0511.py`/`test_ftf_0512.py` (all
+    unaffected) plus `pytest tests/unit` (3/3). `status.py` unchanged at
+    77/300 (Law 2 -- a PROVISIONAL submission never inflates the certified
+    count). Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting
+    an independently-triggered Control-plane L2 certifier session.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0513.py
 FTF-0514:
   certification_state: CERTIFIED
   criticality: MUST

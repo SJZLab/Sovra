@@ -1,4 +1,155 @@
 # PROGRESS — Sovra
+## 2026-09-26 — FTF-0513 — Near-duplicate detector (relay shift, submitted PROVISIONAL)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_011zMSkXgVhRYoNbbkut7vJC`.
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh this shift, not
+trusted from prior context. `BLOCKER.md` holds only resolved history, no live blocker.
+`scripts/status.py`: `77/300` certified, `20` product-true, matching FTF-0302's own certification
+already on record (PR #305/#307, merge commit `bde4b4a`).
+
+This session's own designated branch (`claude/wizardly-fermat-rznyhh`) matched `origin/main`'s real
+tip (`03866ee`) exactly after `git fetch --unshallow origin main` resolved this sandbox's own
+pre-existing shallow-clone tracking-ref artifact (the same documented class of gap every prior
+shift has hit) — confirmed via `git merge-base --is-ancestor` both directions, no divergence, no
+unpushed prior work on this branch to preserve.
+
+Checked all 6 open PRs via `list_pull_requests` before picking work: #301 (FTF-04A11, still
+genuinely `PROVISIONAL` on `docs/spec-matrix.yaml`'s live `main` state — awaiting an
+independently-triggered Control-plane certifier, not a relay action), #295 (FTF-0214, disclosed
+blocker doc — no live backend surface), #290 (FTF-04A08 tracking, doc-only, stale since FTF-04A08
+is already `CERTIFIED`), #231 (FTF-0212, an earlier shift's own claim), #194/#195 (FTF-0304, an
+already-duplicated pair from two earlier shifts) — none picked, to avoid duplicating in-flight
+work or pushing to a branch this session does not own.
+
+Computed the dependency-ready `certification_state: NONE` frontier directly from
+`docs/spec-matrix.yaml`'s live `main` state (joining each entry's own `deps=` note against every
+dependency's real `certification_state`, not trusted from any prior shift's claim alone): 10 items
+came back — FTF-0303 (Private S3 artifact resolver), FTF-04A02, FTF-04A19, FTF-0500A, FTF-0500D,
+FTF-0513, FTF-0902, FTF-1201, FTF-1703, FTF-H004. Excluded per this repository's own repeatedly
+re-confirmed precedent (not re-litigated without new evidence): FTF-0303 (this sandbox has no
+route to the public internet and this task's own prior escalation named an owner-approved new
+keyed AWS credential as a further prerequisite — a future shift with real CI Actions egress and
+that credential is better placed to pick it up), FTF-04A02/FTF-0902 (`BLOCKED_EXTERNAL` — a real
+GitHub App / enforcing-CNI prerequisite this sandbox cannot provide), FTF-1201/FTF-H004 (need real
+outbound LiteLLM/GitHub network egress this sandbox lacks), FTF-0500A/FTF-0500D (the same
+missing-live-backend-surface blocker class PR #295 already found for FTF-0214), FTF-1703 (needs
+>=1000 real curated training records, a data-acquisition prerequisite, not a code task).
+
+**Picked FTF-0513** ("Near-duplicate detector") — the direct algorithmic sibling of the
+already-certified FTF-0511/FTF-0512 (Section 10 methods 4-7, vs. their own methods 1-2/3), fully
+dependency-ready (FTF-0500/FTF-0512 both `CERTIFIED`, confirmed before relying on them), no
+external/keyed-credential prerequisite. `python3 tools/r1_handoff.py packet FTF-0513 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` pulled the real DoD (`docs/implementation/task-packets/
+FTF-0513.md`) before claiming it. Read FTF-0511's/FTF-0512's own modules
+(`workers/data/exact_duplicate_detector.py`/`normalized_duplicate_detector.py`) directly for style
+and validation-discipline precedent before writing any code.
+
+**P:** Section 10's own literal severity table draws a hard line this task must respect: only
+"exact match"/"normalized match" (FTF-0511's/FTF-0512's own scope) are "always block"; a near
+duplicate is "flag for review" — never an automatic discard. This directly shapes this task's own
+negative_acceptance ("No all-pairs million-record memory blowup or automatic discard based solely
+on a guessed similarity threshold"), read as two independent halves: no code path may remove a
+record from consideration merely because a threshold was crossed, and no comparison strategy may
+scale as all-pairs on a large corpus.
+
+**Architecture-gap resolution, without an owner ask (CLAUDE.md's own default-resolution rule):**
+method 6's own "local/private embedding model" names no concrete package anywhere in
+`FINE_TUNING_FACTORY_RELEASE_1.md`, `docs/architecture/REFERENCE_REPOSITORIES.md`, or Section 77's
+seven-reused-component list (a pretrained embedding model is not one of the seven), and this
+sandbox has no outbound network egress to fetch a real pretrained one even if one were named — the
+same disclosed constraint every prior shift needing real external network access has already hit.
+Resolved as a deterministic, local, feature-hashing vectorizer (the classic "hashing trick", e.g.
+scikit-learn's own `HashingVectorizer`): no pretrained weights, no network call, and no new runtime
+dependency (`workers/data`'s own `pyproject.toml` currently declares zero dependencies; Python's
+own `hashlib` is sufficient) — consistent with this repository's own repeated preference for the
+dependency-light, zero-egress-compatible resolution (e.g. FTF-04A10's reuse of the already-installed
+`typescript` compiler rather than a new parser dependency). Disclosed in full in the module's own
+docstring, not silently narrowed.
+
+**E:** Wrote `workers/data/near_duplicate_detector.py`. `detect_near_duplicates` covers Section 10
+methods 4-7: character n-gram similarity and token Jaccard similarity (both real set-Jaccard
+computations over character shingles/word tokens), embedding similarity (the local hashing-trick
+vectorizer above, compared by real cosine similarity), and agent-trace structural similarity (same
+user goal, same tool-call-name sequence, same output template — digits/letters collapsed to `#`/`@`
+so a scripted reply with a different filled-in order number still matches its own template).
+Candidate *pairs* are formed only through a real banded-MinHash LSH index over each record's own
+character-shingle set (`_minhash_signature`/`_lsh_bucket_keys`) — records sharing no band bucket are
+never compared at all, regardless of threshold; `max_candidates_per_record` additionally caps how
+many candidate partners any single record can accumulate once bucketed, so a corpus where many
+records genuinely are near-identical still cannot blow up unbounded. Every threshold lives on
+`NearDuplicateThresholds`, an explicit, caller-overridable dataclass (Section 10's own literal 0.95
+default reused for `embedding_cosine_similarity`; the character-n-gram/token-Jaccard defaults, 0.9
+each, are this task's own disclosed starting point pending the same "reviewed thresholds" the
+acceptance clause names). `NearDuplicateCandidate`/`NearDuplicateReport` carry no discard/remove/
+drop-style field at all — the only disposition a flagged pair carries is `requires_review`, derived
+from `flagged_methods`; the function never mutates or removes anything from the caller's own
+`records` argument.
+
+`tests/tasks/test_ftf_0513.py`: 26 test functions, 42 `check("FTF-0513", ...)` calls, all pass
+against the unmodified code. Test texts' real similarity values were computed directly against the
+unmodified module before being hand-picked (not guessed): a one-word change out of 21 words yields
+character-ngram Jaccard ≈0.825 (below the 0.9 default — correctly not flagged via that method),
+token Jaccard ≈0.909 and embedding cosine ≈0.956 (both above their defaults — correctly flagged),
+proving each metric is thresholded independently rather than collapsed into one score. A two-word
+change (all three metrics below default) is correctly not reported at all under default thresholds,
+then correctly becomes flagged once the caller supplies explicitly lower thresholds — proving
+thresholds are a live, reachable input. Two completely unrelated texts share zero LSH bucket and are
+never even considered a candidate pair, even under a threshold of `0.0` — proving indexing excludes
+them before any threshold is applied, not merely because the default threshold was strict.
+
+**Two independent, disclosed fault injections (Law 1), each confirmed to genuinely fail then
+reverted byte-identical (`md5sum` verified before/after, `094127317a984868347126be15300fb2` is not
+reused — this task's own hash is `c8044772e666ca590eb8bd1399219619`):**
+1. Removed the `max_candidates_per_record` bound check during LSH-bucket pair formation (fell back
+   to comparing every pair within a shared bucket) — 2 genuine `FAIL` lines on
+   `test_max_candidates_per_record_bounds_pair_count_far_below_all_pairs`'s own two assertions (60
+   identical records now formed close to the full 1770-pair all-pairs count, and individual records
+   exceeded the configured cap).
+2. Dropped the tool-call-name-sequence comparison from Section 10 method 7's own three-part
+   structural-match definition (kept only user-goal/output-template equality) — 2 genuine `FAIL`
+   lines on `test_agent_trace_structural_mismatch_on_different_tool_sequence` (a pair with the same
+   user goal and template but a genuinely different tool sequence was wrongly reported as a
+   structural match).
+
+**V:** `uv sync --all-packages`. `uv run ruff check .`/`uv run ruff format --check .`/`uv run mypy .`
+all clean repo-wide (266 source files). `uv run python3 tests/tasks/test_ftf_0513.py` — "all checks
+passed". `uv run pytest tests/unit` — 3/3. Regression swept `test_ftf_0500.py` (prints one expected
+negative-test traceback for a deliberately malformed tenant context, exit code `0`, "all checks
+passed" — pre-existing, confirmed unaffected by this change), `test_ftf_0511.py`, `test_ftf_0512.py`
+— all "all checks passed", zero regressions. `python3 scripts/validate_spec.py --strict` clean (this
+sandbox's own tracking ref had already been unshallowed during STEP 0.1, so no `stale_commit` batch
+this time). `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `20/20`
+(`proving_symbol` genuinely left blank for FTF-0513 — no dataset-import pipeline route exists yet in
+this repository to call `detect_near_duplicates`, same disclosed precedent as
+FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512; confirmed by reading `scripts/product_truth_check.py`'s
+own `SOURCE_ROOTS` list directly — `workers/data` is a real, listed root). `python3 scripts/
+status.py`: unchanged `77/300` (Law 2 — a PROVISIONAL submission never inflates the certified
+count). `python3 scripts/verify_task.py --task FTF-0513 --stage task` reports `BLOCKED` ("no merged
+verification evidence yet") pre-merge — expected per this repository's own established precedent.
+
+`docs/spec-matrix.yaml` FTF-0513 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank, a follow-up commit
+once the real merge commit hash is known (same precedent as every recent sibling). CI gate step
+(`FTF-0513 negative-test proof`) added to `.github/workflows/ci.yml` immediately after FTF-0512's
+own step (its nearest already-certified dependency's own step, same insertion convention as every
+recent sibling).
+
+Submitted PROVISIONAL via a PR from branch `claude/wizardly-fermat-rznyhh` -> `main`, title
+`[relay] FTF-0513: Near-duplicate detector`.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. **Not self-certified (Law
+  4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+  before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): `2/2` in-flight items (FTF-04A11 on PR #301, FTF-0513 on
+this shift's own new PR) are `L1-PROVEN`/PROVISIONAL, no blocking defect found by this session's own
+review — awaiting independently-triggered Control-plane certifier sessions and the L4 gate.
+Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 ## 2026-09-26 — FTF-0302 — Control plane: CERTIFIED (PR #305 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #305, session

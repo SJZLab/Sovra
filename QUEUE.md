@@ -1,5 +1,34 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_011zMSkXgVhRYoNbbkut7vJC) — implemented **FTF-0513** (Near-duplicate
+  detector, Section 10 methods 4-7), submitted PROVISIONAL, not self-certified (Law 4). Direct
+  algorithmic sibling of the already-certified FTF-0511/FTF-0512. Method 6's own "local/private
+  embedding model" architecture gap resolved without an owner ask (CLAUDE.md default-resolution
+  rule): a deterministic local feature-hashing vectorizer, no pretrained weights, no network call,
+  no new runtime dependency — disclosed in full in the module's own docstring. Candidate pairs
+  formed only through a real banded-MinHash LSH index over character shingles, never an all-pairs
+  scan; `max_candidates_per_record` additionally bounds per-record fan-out. 42 checks in `tests/
+  tasks/test_ftf_0513.py`, all pass; two independent, disclosed fault injections (the LSH pair-count
+  bound; the agent-trace tool-sequence comparison), each a genuine FAIL, reverted byte-identical.
+  `ruff`/`mypy`/`validate_spec.py --strict` clean; `pytest tests/unit` (3/3) and regression sweeps of
+  `test_ftf_0500.py`/`test_ftf_0511.py`/`test_ftf_0512.py` unaffected; `product_truth_check.py
+  --fail-on-unwired` unchanged 20/20 (`proving_symbol` left blank — no live caller yet, same
+  disclosed precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512); `status.py` unchanged
+  77/300 (Law 2). Full record: `docs/certifications/queue.md`'s matching 2026-09-26 entry,
+  `docs/spec-matrix.yaml`'s FTF-0513 notes, `PROGRESS.md`.
+
+  Surveyed all 6 open PRs before picking work (avoiding duplication): #301 (FTF-04A11,
+  PROVISIONAL, awaiting Control-plane certification — not a relay action), #295 (FTF-0214,
+  disclosed blocker doc), #290 (FTF-04A08 tracking, doc-only, stale), #231 (FTF-0212), #194/#195
+  (FTF-0304, an already-duplicated pair). Computed the dependency-ready frontier fresh from
+  `docs/spec-matrix.yaml`'s live `main` state: 10 items, of which FTF-0303/FTF-04A02/FTF-0902/
+  FTF-1201/FTF-H004/FTF-0500A/FTF-0500D/FTF-1703 remain excluded on this repository's own
+  repeatedly-reconfirmed grounds (real network egress/keyed credential, `BLOCKED_EXTERNAL`, the
+  same missing-live-backend-surface class PR #295 found for FTF-0214, or a real-data-volume
+  prerequisite) — not re-litigated without new evidence. FTF-0513 was the one clean, unclaimed,
+  dependency-ready candidate.
+
+Previously updated: 2026-09-26 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_01FFaBjhzTX1wS8BxeXFEUYr, triggered by the `pull_request.opened`
   webhook for PR #305) — **FTF-0302 (Hugging Face artifact resolver) independently reviewed and
   CERTIFIED.** Entire session task per this certifier's standing prompt: checked
@@ -5368,7 +5397,34 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0302** ("Hugging Face artifact resolver") is the item here; submitted 2026-09-26 via **PR
+**FTF-0513** ("Near-duplicate detector") is the item here; submitted 2026-09-26 via a PR from
+branch `claude/wizardly-fermat-rznyhh` -> `main`, title `[relay] FTF-0513: Near-duplicate
+detector`, producer session `https://claude.ai/code/session_011zMSkXgVhRYoNbbkut7vJC`. Covers
+Section 10 methods 4-7 (character n-gram similarity, token Jaccard similarity, embedding
+similarity, agent-trace structural similarity) — the direct algorithmic sibling of the
+already-certified FTF-0511 (methods 1-2)/FTF-0512 (method 3). Candidate pairs are formed only
+through a real banded-MinHash LSH index over character shingles, never an all-pairs scan;
+`max_candidates_per_record` additionally bounds per-record fan-out — this task's own
+negative_acceptance ("No all-pairs million-record memory blowup or automatic discard based solely
+on a guessed similarity threshold") is met by construction: `NearDuplicateCandidate`/
+`NearDuplicateReport` carry no discard/remove-style field, only `requires_review`. Method 6's own
+"local/private embedding model" architecture gap (no concrete package named anywhere in this
+repository's architecture docs, and no outbound network egress in this sandbox to fetch a
+pretrained one) is resolved without an owner ask, per CLAUDE.md's default-resolution rule, as a
+deterministic local feature-hashing vectorizer — no pretrained weights, no network call, no new
+runtime dependency — disclosed in full in the module's own docstring. 42 checks in `tests/tasks/
+test_ftf_0513.py`, all real, including two independent, disclosed fault injections (the LSH
+pair-count bound; the agent-trace tool-sequence comparison), each a genuine FAIL, reverted
+byte-identical. `uv run ruff check .`/`ruff format --check .`/`mypy .` clean; `uv run pytest
+tests/unit` (3/3) and regression sweeps of `test_ftf_0500.py`/`test_ftf_0511.py`/`test_ftf_0512.py`
+unaffected; `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged
+20/20 (`proving_symbol` left blank — no live caller yet, same disclosed precedent as
+FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512); `status.py` unchanged 77/300 (Law 2). Not
+self-certified (Law 4) — awaiting an independently-triggered Control-plane L2 certifier session.
+Full record: `docs/certifications/queue.md`'s matching 2026-09-26 entry, `docs/spec-matrix.yaml`'s
+FTF-0513 notes, `PROGRESS.md`.
+
+**FTF-0302** ("Hugging Face artifact resolver") was the item here before that; submitted 2026-09-26 via **PR
 #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`,
 `https://github.com/SJZLab/Sovra/pull/305`), title `[relay] FTF-0302: Hugging Face artifact
 resolver`, producer session `https://claude.ai/code/session_01X2DNqLN4Lcv1qJEfS5Z3Rr`. Real caller
