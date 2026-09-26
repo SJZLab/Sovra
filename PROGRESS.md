@@ -19254,3 +19254,45 @@ CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commi
 appended with this session's ID stated explicitly. `QUEUE.md` updated, item moved to certified.
 `scripts/status.py`: `74/300` → `75/300` certified; product-true unchanged at `20/20` (no live
 caller added by this certification, disclosed). No open owner ask.
+
+## 2026-09-26T06:00:00Z — Relay shift: no new work claimed, FTF-04A11 already PROVISIONAL + CI-green (awaiting Control plane certification)
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01DqPZtaFxbc5XQMVaZNQ8i4`.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state.
+CLAUDE.md hash self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly.
+`scripts/status.py`: `75/300` certified, `20` product-true — matches the FTF-04A09 certification
+already on record above, unchanged by this shift.
+
+**Finding:** this session's own local checkout (fetched from `main`, before PR #301 merges) shows
+no `## Active`/`## Provisional` item — FTF-04A09 is already `CERTIFIED`. But a real, currently-open
+PR #301 (`[relay] FTF-04A11: JSON/YAML/TOML/env-template configuration discovery`, producer session
+`session_01GMDn1KqkzPZwd6WMgpZ4SZ`, opened 2026-09-26T05:02:53Z) already exists on GitHub,
+submitted concurrently with or immediately before this shift's own start and not yet reflected in
+this local checkout since it is unmerged. Confirmed directly via the GitHub API, not assumed:
+`docs/spec-matrix.yaml` on that PR's branch sets FTF-04A11 to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`; the PR's own commit message records a real implementation
+(`apps/api/app/target_connectors/json_yaml_toml_configuration_discovery.py`, 450 lines; `tests/
+tasks/test_ftf_04a11.py`, 22 tests) plus two independent, disclosed fault injections (an unsafe
+YAML loader; skipped secret redaction), both reverted byte-identical; **31/31 real CI checks
+`completed`/`success` on the PR's actual head (`7fc2a0c`), `gate` included, run `36219633534`** —
+confirmed via the check-runs API directly, not a self-reported claim.
+
+Per this repo's own established pattern (see this file's own 2026-09-26T02:00:00Z entry for the
+matching FTF-04A09 precedent), a relay shift does not claim new work while an item is already
+`## Provisional`. Since FTF-04A11 is already CI-green and its own producer session already
+recorded two independent fault injections, this shift does not duplicate a non-authoritative
+re-verification pass here — doing so would add no new signal beyond what real CI and the
+producer's own disclosed record already show, and would risk drifting into the separate,
+independently-triggered Control-plane certifier role this session does not hold (Law 4).
+
+Surveyed the other 4 open PRs for overlap or conflict with this shift's own candidate survey:
+#295 (FTF-0214, blocked — no live backend surface for its own stated acceptance), #290 (FTF-04A08
+tracking, doc-only), #231 (FTF-0212), #194/#195 (FTF-0304 duplicate pair) — none overlap, all
+previously surveyed by earlier shifts and unchanged since. No new task claimed this shift.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction (no `docs/certifications/
+queue.md` change — this shift opened no PROVISIONAL PR of its own). STEP 4 stop condition (a):
+1/1 in-flight item (FTF-04A11) is L1-PROVEN, CI-green, no blocking defect found by this session's
+own review of the producer's disclosed record — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).

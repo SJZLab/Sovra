@@ -1,5 +1,34 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier run, session
+Updated: 2026-09-26 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01DqPZtaFxbc5XQMVaZNQ8i4) — STEP 0.1 read `PROGRESS.md`/
+  `QUEUE.md`/`docs/certifications/queue.md` fresh from this session's own local `main`-based
+  checkout; CLAUDE.md hash self-check clean (`sha256sum CLAUDE.md` matches the committed
+  `CLAUDE.md.sha256`). `scripts/status.py`: `75/300` certified, `20` product-true — matches the
+  FTF-04A09 certification already on record below, unchanged by this shift.
+
+  **Finding:** this session's own local checkout (based on `main`, pre-PR-#301) shows no
+  `## Active`/`## Provisional` item, but a real, currently-open PR #301 (`[relay] FTF-04A11:
+  JSON/YAML/TOML/env-template configuration discovery`, producer session
+  `session_01GMDn1KqkzPZwd6WMgpZ4SZ`, opened 2026-09-26T05:02:53Z) already exists on GitHub,
+  submitted concurrently with or immediately before this shift's own start and not yet reflected
+  here since it is unmerged. Confirmed directly via the GitHub API (not assumed): `docs/
+  spec-matrix.yaml` set to `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` for
+  FTF-04A11 on that PR's branch; 31/31 real CI checks `completed`/`success` on the PR's actual
+  head (`7fc2a0c`), `gate` included, run `36219633534`.
+
+  Per this repo's own established pattern (see the 2026-09-26T02:00:00Z entry below for FTF-04A09),
+  a relay shift does not claim new work while an item is already `## Provisional`. FTF-04A11 is
+  already CI-green and the producer's own commit message records two independent, disclosed fault
+  injections (unsafe YAML loader; skipped secret redaction), so this shift does not duplicate a
+  non-authoritative re-verification pass — it would add no new signal beyond what real CI and the
+  producer's own disclosed record already show. Surveyed the other 4 open PRs for overlap: #295
+  (FTF-0214, blocked — no live backend surface), #290 (FTF-04A08 tracking, doc-only), #231
+  (FTF-0212), #194/#195 (FTF-0304 duplicate pair) — none conflict, all previously surveyed and
+  unchanged. No new task claimed. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A11) is
+  L1-PROVEN, CI-green — awaiting an independently-triggered Control-plane certifier session and
+  the L4 gate. No open owner ask (this section unchanged, empty).
+
+Previously updated: 2026-09-26 (scheduled Control-plane certifier run, session
   https://claude.ai/code/session_01PdswKsS7sgPHSE9e125d2D, triggered by the `pull_request.opened`
   webhook for PR #299) — **FTF-04A09 (Python deterministic agent/config/tool discovery)
   independently reviewed and CERTIFIED.** Entire session task per this certifier's standing
