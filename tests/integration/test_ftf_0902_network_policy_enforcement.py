@@ -225,6 +225,41 @@ def get_cluster_ip(cluster: str, namespace: str, service: str) -> str:
     return ip
 
 
+def wait_for_service_endpoints(cluster: str, namespace: str, service: str, timeout: float) -> None:
+    """A pod's own `condition=Ready` says nothing about whether kube-proxy has
+    yet programmed a real route for a Service that selects it -- the
+    endpoint controller and kube-proxy's iptables/ipvs sync both run
+    asynchronously after the pod becomes Ready. Probing a ClusterIP before
+    that propagation completes fails for a purely timing reason indistinguishable
+    from a real connection failure, which is exactly the false signal this
+    script's own baseline-vs-enforcing contrast must never produce. Polls the
+    real EndpointSlice (the modern replacement for the deprecated v1
+    Endpoints API) until it names at least one real ready address."""
+    deadline = time.monotonic() + timeout
+    last_output = ""
+    while time.monotonic() < deadline:
+        result = kubectl(
+            cluster,
+            "-n",
+            namespace,
+            "get",
+            "endpointslices.discovery.k8s.io",
+            "-l",
+            f"kubernetes.io/service-name={service}",
+            "-o",
+            "jsonpath={.items[*].endpoints[*].addresses[0]}",
+            check=False,
+        )
+        last_output = result.stdout.strip()
+        if last_output:
+            return
+        time.sleep(1)
+    raise ScenarioFailure(
+        f"service {service!r} in {namespace!r} never got a real endpoint address within "
+        f"{timeout}s (last query output: {last_output!r})"
+    )
+
+
 _LISTENER_SERVER_MANIFEST = """
 apiVersion: v1
 kind: Pod
@@ -371,6 +406,12 @@ def run_scenario(cluster: str, install_calico: bool) -> dict[str, bool | str]:
 
     allowed_ip = get_cluster_ip(cluster, NAMESPACE, "allowed")
     denied_ip = get_cluster_ip(cluster, NAMESPACE, "denied")
+    # See wait_for_service_endpoints's own docstring: a Service's ClusterIP
+    # existing is not the same real thing as kube-proxy having programmed a
+    # route to it yet -- wait for both before any policy is even applied, so
+    # a probe failure later can only mean what this script claims it means.
+    wait_for_service_endpoints(cluster, NAMESPACE, "allowed", timeout=60)
+    wait_for_service_endpoints(cluster, NAMESPACE, "denied", timeout=60)
 
     metadata_available = False
     try:
