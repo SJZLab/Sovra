@@ -1,0 +1,764 @@
+#!/usr/bin/env python3
+"""FTF-04A19 -- real Postgres AgentManifest schema/API proof.
+
+Proves this task's own acceptance clause 1 ("Implement versioned canonical
+manifest schema, hash and reviewed/locked/superseded transitions") and
+negative_acceptance ("Locked manifest mutation or missing critical
+evidence/model/runtime tuple blocks activation") against a real, live
+PostgreSQL server -- never a mocked connection or an in-memory SQLite
+stand-in (SQLite has no row-level security at all, so a passing test
+against it would prove nothing about this task's actual acceptance
+criterion).
+
+Two real organizations (org1/org2), each with a real workspace/project/
+target-connection/snapshot chain, are seeded as the migration-owner role
+(FTF-04A01/FTF-04A07, already-CERTIFIED). Every request below runs through
+a real uvicorn server, with the router's own database session bound to
+the real, distinct, least-privileged `sovra_app` role FTF-0102's migration
+creates (never the migration-owner role -- confirmed directly below),
+exactly like every prior integration test in this chain.
+
+Requires a real Postgres reachable at `SOVRA_DATABASE_URL` (the migration
+owner role) plus `SOVRA_APP_DB_PASSWORD`, matching every prior integration
+test's own environment contract exactly. This repo's interactive dev
+sandbox has no container-registry egress (same finding as every prior
+integration-tested task) -- this evidence was instead produced locally
+against a directly-installed PostgreSQL 16 cluster, and is wired into
+CI's own dedicated integration job (a GitHub Actions `services: postgres`
+container, real registry egress on the hosted runner).
+
+Run directly (against an already-migrated or unmigrated database; this
+script runs the migration itself):
+    SOVRA_DATABASE_URL=postgresql+psycopg://<migration-role>@host/db \\
+    SOVRA_APP_DB_PASSWORD=<app-role-password> \\
+    python3 tests/integration/test_ftf_04a19_agent_manifest.py
+"""
+
+from __future__ import annotations
+
+import contextlib
+import http.client
+import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import uuid
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+API_ROOT = ROOT / "apps" / "api"
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(API_ROOT))
+
+import uvicorn  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.exc import DBAPIError  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+
+from app.auth.organization_workspace_schema import (  # noqa: E402
+    APP_ROLE_NAME,
+    Organization,
+    Workspace,
+)
+from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
+from app.projects.project_schema import Project  # noqa: E402
+from app.target_connectors.agent_manifest_routes import build_agent_manifest_router  # noqa: E402
+from app.target_connectors.target_application_connection_schema import (  # noqa: E402
+    TargetApplicationConnection,
+)
+from app.target_connectors.target_source_snapshot_schema import TargetSourceSnapshot  # noqa: E402
+
+FAILURES: list[str] = []
+
+
+def check(criterion_id: str, description: str, condition: bool) -> None:
+    if not condition:
+        FAILURES.append(f"FAIL [{criterion_id}] {description}")
+
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        print(
+            f"BLOCKED_EXTERNAL: {name} is not set -- this task's real "
+            "schema/API evidence requires a live Postgres (migration owner "
+            "connection). Not silently skipped: see this file's own "
+            "docstring for how to run it locally or in CI.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return value
+
+
+def _app_role_url(migration_url: str, app_password: str) -> str:
+    parts = urlsplit(migration_url)
+    netloc = f"{APP_ROLE_NAME}:{app_password}@{parts.hostname}"
+    if parts.port:
+        netloc += f":{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+def _run_migration(database_url: str) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    env["SOVRA_DATABASE_URL"] = database_url
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=str(API_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def free_port() -> int:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+@contextlib.contextmanager
+def _running_app(app: FastAPI) -> Iterator[str]:
+    port = free_port()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.02)
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+class _Response:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self.body = body
+
+    def json(self) -> Any:
+        return json.loads(self.body)
+
+
+def _request(
+    base_url: str,
+    method: str,
+    path: str,
+    *,
+    principal: str | None = None,
+    payload: dict[str, object] | None = None,
+) -> _Response:
+    headers: dict[str, str] = {}
+    if principal is not None:
+        headers["X-Test-Principal"] = principal
+    body_bytes: bytes | None = None
+    if payload is not None:
+        body_bytes = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    parsed = urllib.parse.urlparse(base_url)
+    conn = http.client.HTTPConnection(parsed.hostname or "127.0.0.1", parsed.port or 80, timeout=10)
+    try:
+        conn.request(method, path, body=body_bytes, headers=headers)
+        response = conn.getresponse()
+        raw = response.read()
+        return _Response(status=response.status, body=raw)
+    finally:
+        conn.close()
+
+
+# -- Fixture: two organizations, one workspace_admin and one evaluator per
+# organization ---------------------------------------------------------
+
+_ISSUER = "https://issuer.example"
+
+
+class _Fixture:
+    def __init__(self, org_ids: dict[str, uuid.UUID]) -> None:
+        self.org_ids = org_ids
+        self.principals: dict[tuple[str, Role], AuthenticatedPrincipal] = {}
+        self.memberships: dict[tuple[str, str, uuid.UUID], Role] = {}
+        for label, org_id in org_ids.items():
+            for role in (Role.WORKSPACE_ADMIN, Role.EVALUATOR):
+                subject = f"user-{label}-{role.value}"
+                principal = AuthenticatedPrincipal(issuer=_ISSUER, subject=subject)
+                self.principals[(label, role)] = principal
+                self.memberships[(_ISSUER, subject, org_id)] = role
+
+    def header_for(self, label: str, role: Role) -> str:
+        return f"{label}:{role.value}"
+
+    def principal_resolver(self, request):
+        header = request.headers.get("x-test-principal")
+        if header is None:
+            return None
+        label, _, role_value = header.partition(":")
+        try:
+            role = Role(role_value)
+        except ValueError:
+            return None
+        return self.principals.get((label, role))
+
+    def role_lookup(self, issuer: str, subject: str, organization_id: uuid.UUID):
+        return self.memberships.get((issuer, subject, organization_id))
+
+
+def main() -> None:
+    migration_url = _required_env("SOVRA_DATABASE_URL")
+    app_password = _required_env("SOVRA_APP_DB_PASSWORD")
+
+    migration_result = _run_migration(migration_url)
+    check(
+        "FTF-04A19",
+        f"alembic upgrade head runs cleanly (exit {migration_result.returncode})\n"
+        f"stdout: {migration_result.stdout}\nstderr: {migration_result.stderr}",
+        migration_result.returncode == 0,
+    )
+    if FAILURES:
+        print(f"FTF-04A19 real AgentManifest schema/API proof: {len(FAILURES)} failed")
+        for failure in FAILURES:
+            print(f"  {failure}")
+        sys.exit(1)
+
+    owner_engine = create_engine(migration_url)
+    app_url = _app_role_url(migration_url, app_password)
+    app_engine = create_engine(app_url)
+
+    check(
+        "FTF-04A19",
+        "the router's own database session is built from the restricted "
+        "sovra_app role's connection URL, never the migration-owner role",
+        app_engine.url.username == APP_ROLE_NAME
+        and app_engine.url.username != owner_engine.url.username,
+    )
+
+    # -- Seed two real, distinct tenants, each with one workspace/project/
+    # connection/snapshot, plus a SECOND project (and its own connection/
+    # snapshot) under org1 -- to prove a snapshot belonging to a different
+    # project is refused (migration-owner role, seeding only) --
+    now = datetime.now(UTC)
+    with Session(owner_engine) as session:
+        org1 = Organization(name="Acme 04A19", slug=f"acme-04a19-{uuid.uuid4().hex[:8]}")
+        org2 = Organization(name="Globex 04A19", slug=f"globex-04a19-{uuid.uuid4().hex[:8]}")
+        session.add_all([org1, org2])
+        session.flush()
+        ws1 = Workspace(organization_id=org1.id, name="Acme Main", slug="main")
+        ws2 = Workspace(organization_id=org2.id, name="Globex Main", slug="main")
+        session.add_all([ws1, ws2])
+        session.flush()
+        project1 = Project(
+            organization_id=org1.id,
+            workspace_id=ws1.id,
+            name="acme-project",
+            project_type="agentic_product",
+            status="active",
+            security_profile="standard",
+            row_version=1,
+            created_by="seed",
+        )
+        project1b = Project(
+            organization_id=org1.id,
+            workspace_id=ws1.id,
+            name="acme-project-b",
+            project_type="agentic_product",
+            status="active",
+            security_profile="standard",
+            row_version=1,
+            created_by="seed",
+        )
+        project2 = Project(
+            organization_id=org2.id,
+            workspace_id=ws2.id,
+            name="globex-project",
+            project_type="agentic_product",
+            status="active",
+            security_profile="standard",
+            row_version=1,
+            created_by="seed",
+        )
+        session.add_all([project1, project1b, project2])
+        session.flush()
+
+        connection1 = TargetApplicationConnection(
+            organization_id=org1.id,
+            project_id=project1.id,
+            connector_type="local_repository",
+            display_name="acme-primary-repo",
+            repository_identity="acme/primary",
+            access_mode="read_only",
+            connection_status="active",
+            last_validated_at=now,
+            created_by="seed",
+        )
+        connection1b = TargetApplicationConnection(
+            organization_id=org1.id,
+            project_id=project1b.id,
+            connector_type="local_repository",
+            display_name="acme-secondary-repo",
+            repository_identity="acme/secondary",
+            access_mode="read_only",
+            connection_status="active",
+            last_validated_at=now,
+            created_by="seed",
+        )
+        connection2 = TargetApplicationConnection(
+            organization_id=org2.id,
+            project_id=project2.id,
+            connector_type="local_repository",
+            display_name="globex-primary-repo",
+            repository_identity="globex/primary",
+            access_mode="read_only",
+            connection_status="active",
+            last_validated_at=now,
+            created_by="seed",
+        )
+        session.add_all([connection1, connection1b, connection2])
+        session.flush()
+
+        snapshot1 = TargetSourceSnapshot(
+            organization_id=org1.id,
+            target_application_connection_id=connection1.id,
+            commit_sha="1" * 40,
+            tree_hash="2" * 40,
+            capture_method="github_resolved_commit",
+        )
+        # Belongs to project1b's own connection -- used to prove a manifest
+        # cannot be created under project1's path with a snapshot that is
+        # not really project1's own (cross-project mismatch).
+        snapshot_wrong_project = TargetSourceSnapshot(
+            organization_id=org1.id,
+            target_application_connection_id=connection1b.id,
+            commit_sha="3" * 40,
+            tree_hash="4" * 40,
+            capture_method="github_resolved_commit",
+        )
+        snapshot2 = TargetSourceSnapshot(
+            organization_id=org2.id,
+            target_application_connection_id=connection2.id,
+            commit_sha="5" * 40,
+            tree_hash="6" * 40,
+            capture_method="github_resolved_commit",
+        )
+        session.add_all([snapshot1, snapshot_wrong_project, snapshot2])
+        session.commit()
+
+        org1_id, org2_id = org1.id, org2.id
+        project1_id, project2_id = project1.id, project2.id
+        snapshot1_id = snapshot1.id
+        snapshot_wrong_project_id = snapshot_wrong_project.id
+
+    fixture = _Fixture({"org1": org1_id, "org2": org2_id})
+    session_factory = sessionmaker(bind=app_engine)
+    app = FastAPI()
+    app.include_router(
+        build_agent_manifest_router(
+            session_factory,
+            principal_resolver=fixture.principal_resolver,
+            role_lookup=fixture.role_lookup,
+        )
+    )
+
+    org1_admin = fixture.header_for("org1", Role.WORKSPACE_ADMIN)
+    org1_evaluator = fixture.header_for("org1", Role.EVALUATOR)
+    org2_admin = fixture.header_for("org2", Role.WORKSPACE_ADMIN)
+
+    def collection_path(org_id: uuid.UUID, project_id: uuid.UUID) -> str:
+        return f"/api/v1/organizations/{org_id}/projects/{project_id}/manifests"
+
+    def item_path(org_id: uuid.UUID, project_id: uuid.UUID, manifest_id: object) -> str:
+        return f"{collection_path(org_id, project_id)}/{manifest_id}"
+
+    manifest1_id: str | None = None
+    manifest2_id: str | None = None
+
+    with _running_app(app) as base_url:
+        # -- Unauthenticated / role-boundary denial --
+        r = _request(base_url, "GET", collection_path(org1_id, project1_id))
+        check("FTF-04A19", "an unauthenticated list request is denied (401)", r.status == 401)
+
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_evaluator,
+            payload={"target_source_snapshot_id": str(snapshot1_id)},
+        )
+        check(
+            "FTF-04A19",
+            "an evaluator (Section 45's widest read baseline, but not "
+            "{workspace_admin, organization_admin}) is denied create (403)",
+            r.status == 403,
+        )
+
+        r = _request(
+            base_url, "GET", collection_path(org1_id, project1_id), principal=org1_evaluator
+        )
+        check(
+            "FTF-04A19",
+            "an evaluator IS allowed read -- this task's own wide read baseline",
+            r.status == 200,
+        )
+
+        # -- cross-tenant project ownership: project1_id requested under
+        # org2's own path is refused identically to missing --
+        r = _request(base_url, "GET", collection_path(org2_id, project1_id), principal=org2_admin)
+        check(
+            "FTF-04A19",
+            "the core IDOR case: org1's own real project_id, requested "
+            "under org2's own path by a real org2 workspace_admin, is "
+            "denied (404) identically to missing",
+            r.status == 404,
+        )
+
+        # -- negative_acceptance: cross-project snapshot mismatch --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_admin,
+            payload={"target_source_snapshot_id": str(snapshot_wrong_project_id)},
+        )
+        check(
+            "FTF-04A19",
+            "negative_acceptance-adjacent: a real snapshot belonging (via "
+            "its own connection) to a DIFFERENT project in the SAME "
+            "organization is refused (409), not silently accepted",
+            r.status == 409,
+        )
+
+        # -- acceptance: a real draft manifest is created --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_admin,
+            payload={
+                "target_source_snapshot_id": str(snapshot1_id),
+                "agent_name": "CustomerSupportAgent",
+            },
+        )
+        check("FTF-04A19", "a real, valid manifest create succeeds (201)", r.status == 201)
+        manifest1 = r.json() if r.status == 201 else {}
+        check(
+            "FTF-04A19",
+            "acceptance: the created manifest starts as draft, version 1, "
+            "with no hash/approval yet",
+            manifest1.get("status") == "draft"
+            and manifest1.get("version") == 1
+            and manifest1.get("manifest_sha256") is None
+            and manifest1.get("approved_by") is None,
+        )
+        manifest1_id = manifest1.get("id")
+
+        # -- submit_for_review: draft -> review_required --
+        r = _request(
+            base_url,
+            "POST",
+            f"{item_path(org1_id, project1_id, manifest1_id)}/submit-for-review",
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A19",
+            "draft -> review_required succeeds (200)",
+            r.status == 200 and r.json().get("status") == "review_required",
+        )
+
+        # -- negative_acceptance: lock without critical fields is refused --
+        r = _request(
+            base_url,
+            "POST",
+            f"{item_path(org1_id, project1_id, manifest1_id)}/lock",
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A19",
+            "negative_acceptance: locking a manifest missing critical "
+            "evidence/model/runtime tuple fields is refused (409), never "
+            "silently activated",
+            r.status == 409,
+        )
+
+        # -- fill in the three critical fields via PATCH --
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, manifest1_id),
+            principal=org1_admin,
+            payload={
+                "agent_entrypoint_json": {"file": "src/agents/support.ts"},
+                "current_model_binding_json": {"litellm_alias": "support-agent-prod"},
+                "runtime_dependencies_json": {"runtime": "node"},
+            },
+        )
+        check(
+            "FTF-04A19",
+            "editing content on a review_required manifest succeeds (200)",
+            r.status == 200,
+        )
+
+        # -- acceptance: lock now succeeds -- hash/approval computed --
+        r = _request(
+            base_url,
+            "POST",
+            f"{item_path(org1_id, project1_id, manifest1_id)}/lock",
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A19",
+            "acceptance: locking a manifest with all critical fields "
+            "present succeeds (200), computes manifest_sha256, and sets "
+            "approved_by",
+            r.status == 200
+            and r.json().get("status") == "locked"
+            and r.json().get("manifest_sha256") is not None
+            and r.json().get("approved_by") is not None,
+        )
+
+        # -- negative_acceptance: a locked manifest cannot be mutated --
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, manifest1_id),
+            principal=org1_admin,
+            payload={"agent_name": "RenamedAgent"},
+        )
+        check(
+            "FTF-04A19",
+            "negative_acceptance: 'Locked manifest mutation ... blocks "
+            "[it]' -- editing a locked manifest is refused (409)",
+            r.status == 409,
+        )
+
+        r = _request(
+            base_url,
+            "POST",
+            f"{item_path(org1_id, project1_id, manifest1_id)}/lock",
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A19",
+            "re-locking an already-locked manifest is refused (409) -- "
+            "the transition graph has no locked -> locked edge",
+            r.status == 409,
+        )
+
+        # -- real supersession: locking a SECOND manifest for the SAME
+        # project transitions the first one to superseded --
+        r = _request(
+            base_url,
+            "POST",
+            collection_path(org1_id, project1_id),
+            principal=org1_admin,
+            payload={
+                "target_source_snapshot_id": str(snapshot1_id),
+                "agent_entrypoint_json": {"file": "src/agents/support.ts"},
+                "current_model_binding_json": {"litellm_alias": "support-agent-prod-v2"},
+                "runtime_dependencies_json": {"runtime": "node"},
+            },
+        )
+        check(
+            "FTF-04A19", "a real second manifest (version 2) create succeeds (201)", r.status == 201
+        )
+        manifest2 = r.json() if r.status == 201 else {}
+        check("FTF-04A19", "the second manifest is version 2", manifest2.get("version") == 2)
+        manifest2_id = manifest2.get("id")
+
+        r = _request(
+            base_url,
+            "POST",
+            f"{item_path(org1_id, project1_id, manifest2_id)}/submit-for-review",
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A19",
+            "the second manifest's own draft -> review_required succeeds",
+            r.status == 200,
+        )
+
+        r = _request(
+            base_url,
+            "POST",
+            f"{item_path(org1_id, project1_id, manifest2_id)}/lock",
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A19",
+            "the second manifest's own lock succeeds (200)",
+            r.status == 200 and r.json().get("status") == "locked",
+        )
+
+        r = _request(
+            base_url, "GET", item_path(org1_id, project1_id, manifest1_id), principal=org1_admin
+        )
+        check(
+            "FTF-04A19",
+            "acceptance: locking manifest2 transitions manifest1 (the "
+            "previously-locked manifest for the SAME project) to "
+            "superseded, in the same transaction -- the real supersession "
+            "mechanic this task's own schema module docstring describes",
+            r.status == 200 and r.json().get("status") == "superseded",
+        )
+
+        # -- IDOR: org2's own workspace_admin cannot see org1's manifest --
+        r = _request(
+            base_url, "GET", item_path(org2_id, project2_id, manifest1_id), principal=org2_admin
+        )
+        check(
+            "FTF-04A19",
+            "the core IDOR case: a real manifest belonging to org1, "
+            "requested under org2's own path by a real org2 "
+            "workspace_admin, is denied (404) identically to missing",
+            r.status == 404,
+        )
+
+        # -- list shows both manifests for project1, ordered by version --
+        r = _request(base_url, "GET", collection_path(org1_id, project1_id), principal=org1_admin)
+        listed = r.json() if r.status == 200 else []
+        check(
+            "FTF-04A19",
+            "listing shows both real manifests for project1, ordered by version",
+            isinstance(listed, list)
+            and len(listed) == 2
+            and [m.get("version") for m in listed] == [1, 2]
+            and [m.get("status") for m in listed] == ["superseded", "locked"],
+        )
+
+    # -- Real database-level defense-in-depth: the CHECK constraint
+    # catches a hash/status-inconsistent row even when the ORM-level
+    # check is bypassed entirely (a raw INSERT through sovra_app) --
+    with Session(app_engine) as session:
+        session.execute(
+            text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+            {"org_id": str(org1_id)},
+        )
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO agent_manifests "
+                    "(organization_id, project_id, target_source_snapshot_id, version, "
+                    "status, created_by) "
+                    "VALUES (:org_id, :project_id, :snapshot_id, 99, 'locked', 'raw-insert')"
+                ),
+                {
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "snapshot_id": str(snapshot1_id),
+                },
+            )
+            session.commit()
+            check(
+                "FTF-04A19",
+                "negative_acceptance/defense-in-depth: a raw INSERT claiming "
+                "status='locked' with NO manifest_sha256 is refused directly "
+                "by the real ck_agent_manifests_hash_iff_locked CHECK constraint",
+                False,
+            )
+        except DBAPIError:
+            session.rollback()
+            check(
+                "FTF-04A19",
+                "negative_acceptance/defense-in-depth: a raw INSERT claiming "
+                "status='locked' with NO manifest_sha256 is refused directly "
+                "by the real ck_agent_manifests_hash_iff_locked CHECK constraint",
+                True,
+            )
+
+    # -- Real database-level defense-in-depth: the partial unique index
+    # refuses a SECOND concurrently-locked row for the same project, even
+    # via a raw INSERT that bypasses the CRUD layer's own supersede-first
+    # logic entirely --
+    with Session(app_engine) as session:
+        session.execute(
+            text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+            {"org_id": str(org1_id)},
+        )
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO agent_manifests "
+                    "(organization_id, project_id, target_source_snapshot_id, version, "
+                    "status, manifest_sha256, approved_by, approved_at, created_by) "
+                    "VALUES (:org_id, :project_id, :snapshot_id, 100, 'locked', "
+                    "'" + ("a" * 64) + "', 'raw-insert', now(), 'raw-insert')"
+                ),
+                {
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "snapshot_id": str(snapshot1_id),
+                },
+            )
+            session.commit()
+            check(
+                "FTF-04A19",
+                "negative_acceptance/defense-in-depth: a raw INSERT of a "
+                "SECOND 'locked' row for a project that already has a real "
+                "locked manifest is refused directly by the real "
+                "ix_agent_manifests_project_id_locked partial unique index",
+                False,
+            )
+        except DBAPIError:
+            session.rollback()
+            check(
+                "FTF-04A19",
+                "negative_acceptance/defense-in-depth: a raw INSERT of a "
+                "SECOND 'locked' row for a project that already has a real "
+                "locked manifest is refused directly by the real "
+                "ix_agent_manifests_project_id_locked partial unique index",
+                True,
+            )
+
+    # -- Grant-surface proof: sovra_app genuinely cannot DELETE an
+    # agent_manifests row directly -- Section 6.8D's "a manifest is
+    # superseded, never removed" enforced at the database privilege level.
+    if manifest1_id:
+        with Session(app_engine) as session:
+            session.execute(
+                text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+                {"org_id": str(org1_id)},
+            )
+            try:
+                session.execute(
+                    text("DELETE FROM agent_manifests WHERE id = :id"),
+                    {"id": manifest1_id},
+                )
+                session.commit()
+                check(
+                    "FTF-04A19",
+                    "negative_acceptance/grant-surface: the restricted "
+                    "sovra_app role cannot DELETE an agent_manifests row directly",
+                    False,
+                )
+            except DBAPIError:
+                session.rollback()
+                check(
+                    "FTF-04A19",
+                    "negative_acceptance/grant-surface: the restricted "
+                    "sovra_app role cannot DELETE an agent_manifests row directly",
+                    True,
+                )
+
+    if FAILURES:
+        print(f"FTF-04A19 real AgentManifest schema/API proof: {len(FAILURES)} failed")
+        for failure in FAILURES:
+            print(f"  {failure}")
+        sys.exit(1)
+
+    print("FTF-04A19 real AgentManifest schema/API proof: all checks passed")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

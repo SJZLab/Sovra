@@ -18192,3 +18192,168 @@ left in the ledger entry for the next relay/producer shift: add a test covering
 `endpoint_reachability` for an `https://`-shaped value (fault injection #1 above) — not a blocker.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
+## 2026-09-27 — FTF-04A19 ("AgentManifest schema/versioning/hash") — submitted PROVISIONAL
+
+- **PR:** https://github.com/SJZLab/Sovra/pull/331 (`claude/wizardly-fermat-x7eynx` -> `main`)
+
+STEP 0.1: read PROGRESS.md/QUEUE.md/this file fresh (tail sections, given file size).
+CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly. This session's own designated
+branch (`claude/wizardly-fermat-x7eynx`) had already been merged into `main` before this shift
+started (FTF-04A16 independently certified via PR #329) — reset the branch to fresh `origin/main`
+per this session's own git instructions before picking new work. `git rev-parse
+--is-shallow-repository` was `true`; `git fetch --unshallow` resolved it (same disclosed
+precedent every prior FTF-04A0x/FTF-04A1x shift has hit).
+
+Checked all open PRs directly via the GitHub API before picking new work: #328 (FTF-04A15, a
+still-open relay submission from an earlier shift), #315/#314 (FTF-0303), #313/#311/#308
+(FTF-0513, already certified/recorded), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08
+tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304, duplicate PRs) — none overlap with
+this shift's own eventual pick. Recomputed the dependency-ready frontier directly from
+`docs/TASK_INDEX.md`'s own dependency column cross-checked against `docs/spec-matrix.yaml`'s real
+per-task `certification_state` (a one-off script, never trusted from a prior shift's own claim
+alone): 12 tasks came back dependency-ready. Excluded FTF-0212/FTF-0304 (open PRs above), FTF-0214
+(open PR #295), FTF-04A02/FTF-0902/FTF-1201/FTF-H004 (disclosed `BLOCKED_EXTERNAL`/real-network-
+egress precedents this sandbox already established), FTF-0500A/FTF-0500D (disclosed no-`Dataset`-
+entity/no-composed-route blocker, same class PR #295 already found for FTF-0214), FTF-1703 (needs
+>=1000 real curated traces this sandbox does not have). Picked **FTF-04A19** — its own shared
+`contracts:04A` lock partner, FTF-04A17, is now independently CERTIFIED (confirmed directly in
+`docs/spec-matrix.yaml`), so the lock is genuinely free; all four of its own real dependencies
+(FTF-0405/FTF-0407/FTF-04A01/FTF-04A07) confirmed `CERTIFIED`. State: `Working: FTF-04A19.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A19.md` in full (`python3 tools/r1_handoff.py
+packet FTF-04A19 --plan FINE_TUNING_FACTORY_RELEASE_1.md`, `source_sha256` confirmed against
+`sha256sum FINE_TUNING_FACTORY_RELEASE_1.md` directly), plus the real dependency modules this
+task's own scope builds on — `apps/api/app/target_connectors/target_application_connection_schema.py`
+(FTF-04A01), `target_source_snapshot_schema.py`/`target_source_snapshot_crud.py`/
+`target_source_snapshot_routes.py` (FTF-04A07, the closest structural precedent — a versioned,
+connection-scoped record with a real supersession mechanic), and
+`apps/api/app/model_versions/model_version_schema.py`/`model_version_crud.py`/
+`model_version_routes.py` (FTF-1001, the closest precedent for a real per-parent version-number
+sequence). Read Section 6.8D's own field list literally, and Section 7A.6/7A.7's own mandate-
+authoring/manifest-build rules to scope this task correctly against its own later, separately
+dependency-gated siblings (FTF-04A20 "ManifestEvidence schema/API", FTF-04A21 "Manifest
+review/edit UI", FTF-04A23 "Manifest validation engine", FTF-04A24 "Manifest lock/supersede
+workflow", FTF-04A27 "Repository sync + manifest drift detector") — none of those five is a
+dependency of FTF-04A19; FTF-04A20/04A21/04A23/04A24 each name FTF-04A19 as *their own*
+dependency instead. No changes made yet at this point.
+
+**E:** implemented `apps/api/app/target_connectors/agent_manifest_schema.py` (the `AgentManifest`
+ORM model — Section 6.8D's own field list, minus per-field evidence provenance which is
+FTF-04A20's own separate `ManifestEvidence` table; `ALLOWED_STATUS_TRANSITIONS` as a strict,
+one-directional `draft` -> `review_required` -> `locked` -> `superseded` graph; `CONTENT_FIELDS`/
+`compute_manifest_sha256` as a deterministic sha256 over exactly the manifest's own substantive
+content, excluding envelope/audit metadata; `CRITICAL_LOCK_FIELDS` as this task's own literal
+"evidence/model/runtime tuple" three-item mapping onto `agent_entrypoint_json`/
+`current_model_binding_json`/`runtime_dependencies_json`), `agent_manifest_crud.py`
+(create/get/list/update-content/submit-for-review/lock, reusing the exact same `TenantContext`/
+`authorize_resource_ownership`/`execute_tenant_scoped` composition every prior task in this chain
+already proved; a cross-project snapshot-mismatch check disclosed the same way FTF-04A07's own
+cross-connection reassignment check was — a real database fetch through the snapshot's own
+connection, since no `CHECK` constraint can compare across three tables), `agent_manifest_routes.py`
+(the live router at `/api/v1/organizations/{organization_id}/projects/{project_id}/manifests`,
+gated to `{workspace_admin, organization_admin}` write / every Section 45 role read — Section 45
+names no sentence for "manifest" specifically; `workspace_admin: project administration` is the
+closest real sentence, disclosed as such, distinct from FTF-04A01's own `organization_admin:
+connections` mapping for a credential-bearing resource), the real forward Alembic migration
+(`0015_agent_manifests` — `SELECT`/`INSERT`/`UPDATE` grant, genuinely needed here unlike
+FTF-04A07/FTF-1001's own insert-only tables, since this table has real, disclosed in-place
+mutation; a real partial unique index `ix_agent_manifests_project_id_locked` enforcing at most one
+`locked` manifest per project — the real database-level basis for the supersede-on-lock mechanic,
+since Section 6.8D lists no `supersedes_manifest_id` field at all; three real `CHECK` constraints
+pairing `manifest_sha256`/`approved_by`/`approved_at` with `status in ('locked','superseded')`),
+and extended `packages/contracts/openapi/04A-interface.yaml` under its own shared `contracts:04A`
+lock with the real `/manifests` paths and schemas this router actually implements (title/
+description updated to name FTF-04A19 alongside FTF-04A01/04A07/04A17; the file's own prior
+disclosure that no `/manifests` route existed is now corrected to reflect this task's own real,
+implemented surface, while continuing to disclose that `/evidence`/`/target-drift` still do not).
+
+**Real bug found and fixed before submission (disclosed, not hidden):** the initial
+`lock_agent_manifest` set the new row's `status='locked'` and the prior row's own
+`status='superseded'` inside a single flush with no explicit statement ordering. Postgres
+evaluates a partial unique index per-statement, not deferred to commit (a partial unique index
+cannot be declared `DEFERRABLE` in Postgres — only a plain, non-partial `UNIQUE CONSTRAINT` can),
+so depending on SQLAlchemy's own unit-of-work ordering the two real `UPDATE` statements this flush
+emits could momentarily both claim `status='locked'` for the same project and violate
+`ix_agent_manifests_project_id_locked`. Reproduced for real against a live Postgres 16 database
+(a genuine `IntegrityError: duplicate key value violates unique constraint
+"ix_agent_manifests_project_id_locked"`, not a hypothetical); fixed by adding an explicit
+intermediate `session.flush()` immediately after superseding the prior row and before locking the
+new one, forcing the old row to leave `'locked'` first; re-verified clean end-to-end against a
+fresh database afterward.
+
+negative_acceptance ("Locked manifest mutation or missing critical evidence/model/runtime tuple
+blocks activation") met by two real, distinct, disclosed paths: (1)
+`update_agent_manifest_content`/`submit_for_review`/`lock_agent_manifest` each re-fetch and check
+the row's *current* status before any write, never trusting a caller's own "it's still draft"
+claim — proven live: editing a locked manifest refused 409, re-locking an already-locked manifest
+refused 409 (the transition graph has no `locked` -> `locked` edge); (2) `lock_agent_manifest`
+refuses to transition to `locked` unless every one of `CRITICAL_LOCK_FIELDS` is non-null — proven
+live: locking a `review_required` manifest missing those three fields is refused 409, and
+succeeds once they are supplied.
+
+**V:** `tests/tasks/test_ftf_04a19.py` (no-DB unit/fault suite): 15 test functions — field
+validators, `compute_manifest_sha256` determinism/order-independence/content-sensitivity/
+content-field-only scoping, `AgentManifest.__init__` structural consistency (hash/approval pairing
+with `locked`/`superseded`, invalid JSON content field rejection), `CRITICAL_LOCK_FIELDS` mapping,
+and a real, locally-hosted `build_agent_manifest_router` (real uvicorn server, real local socket,
+the same pattern `test_ftf_1001.py`/`test_ftf_04a07.py` established) denying an unauthenticated
+request (401, session never opened) and an evaluator's write (403, session never opened) while an
+evaluator's read and a workspace_admin's write both reach the session layer — all pass. Two
+independent fault injections (Law 1), both reverted byte-identical (md5sum
+`26cdc73ebf65d2f0f153638218f1d215`/`54024be7959f4147df16d737dbed8e89` before/after each,
+re-confirmed immediately after): (1) `validate_status_transition`'s own graph check
+short-circuited to always accept (an early `return`) — 4 genuine FAILs, every illegal transition
+case (skip/reverse/self-loop/out-of-terminal-state); (2) `lock_agent_manifest`'s own
+`CRITICAL_LOCK_FIELDS` completeness check hardcoded to `missing = []` — confirmed via a fresh live
+Postgres run (see below) that the negative_acceptance check genuinely fails, then reverted.
+
+`tests/integration/test_ftf_04a19_agent_manifest.py`: real Postgres 16 evidence, produced locally
+against a directly-installed cluster (this sandbox's own real sudo/`service postgresql start`
+access; a fresh scratch `sovra_migrate` role and `sovra_ftf04a19` database created, used, and
+dropped for each run — never reused). Full Alembic chain `0001` through `0015_agent_manifests`
+upgrades clean from empty; `0015` alone round-trips `downgrade -1` -> `upgrade head` clean. Two
+real organizations (org1 with two real projects/connections/snapshots — the second used to prove
+a snapshot belonging to a *different* project in the *same* organization is refused, org2 for the
+cross-tenant IDOR case), a real uvicorn server bound to the real, distinct `sovra_app` role
+(`app_engine.url.username == APP_ROLE_NAME != owner_engine.url.username`, confirmed directly, not
+merely asserted): unauthenticated denial (401, confirmed), evaluator write-denied (403)/read-
+allowed (200), the core cross-tenant project IDOR case (404), the real cross-project snapshot
+mismatch (409), a real full lifecycle (draft create -> submit-for-review -> lock-refused-missing-
+fields (409) -> PATCH the three critical fields -> lock succeeds, hash/approval computed), locked-
+manifest mutation refused (409), re-lock refused (409), a real second manifest's own lock
+transitioning the first to `superseded` in the same transaction (confirmed via a direct GET
+immediately after), the cross-tenant manifest IDOR case (404), and listing ordered by version
+with the real superseded/locked status pair. Plus two real database-level defense-in-depth proofs
+(a raw INSERT bypassing the ORM's own `__init__` check still caught by
+`ck_agent_manifests_hash_iff_locked`; a second raw INSERT of a concurrently `locked` row for the
+same project still caught by `ix_agent_manifests_project_id_locked`) and a grant-surface proof
+(`sovra_app` cannot `DELETE` an `agent_manifests` row directly, confirmed via `\dp` showing
+exactly `arw` — `SELECT`/`INSERT`/`UPDATE`, no `DELETE`/`TRUNCATE`).
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (284 source files); `uv run mypy .`
+clean repo-wide (284 files, zero new errors — the previously-disclosed 15 `alembic`-stub errors
+are pre-existing and unrelated, confirmed absent from this run's own output). `pnpm install
+--frozen-lockfile`/`pnpm run lint`/`pnpm run format:check` clean repo-wide (no JS/TS files touched
+by this task). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`
+resolved the shallow-clone `stale_commit` false positives every prior shift's own history already
+disclosed). `product_truth_check.py --fail-on-unwired`: own run, **21/21** (up from 20/20) —
+`build_agent_manifest_router` (this task's own real `proving_symbol`) is a real, genuine live
+caller from `apps/api/app/main.py`, confirmed by direct inspection of the diff (the import and
+`app.include_router(...)` call are both real, not merely claimed). `status.py`: unchanged
+`84/300` certified, `20` product-true (Law 2 — this is a submission, not a certification).
+Regression swept `test_ftf_04a01.py`/`test_ftf_04a07.py`/`test_ftf_04a17.py`/`test_ftf_1001.py`/
+`test_ftf_0401.py`/`test_ftf_0404.py` — all "all checks passed", zero regressions.
+
+Dependencies FTF-0405/FTF-0407/FTF-04A01/FTF-04A07 confirmed genuinely `CERTIFIED` in
+`docs/spec-matrix.yaml` before relying on them; FTF-04A17 (this task's own `contracts:04A` shared-
+lock partner) confirmed genuinely `CERTIFIED` before treating the lock as free.
+
+`docs/spec-matrix.yaml` FTF-04A19 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: build_agent_manifest_router`
+/ `proving_test: tests/tasks/test_ftf_04a19.py`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A19 negative-test proof`) added to `.github/workflows/ci.yml`
+immediately after the FTF-04A16 step, plus a new dedicated `agent-manifest-integration` job (a
+real `services: postgres` container) mirroring `discovered-agent-candidate-integration`'s own
+pattern exactly. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real
+CI run on the opened PR are required before certification.

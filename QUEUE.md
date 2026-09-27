@@ -6211,16 +6211,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. **FTF-04A16** ("Runtime trace/deployment contract discovery") was the item here;
-independently reviewed and CERTIFIED via **[PR #329](https://github.com/SJZLab/Sovra/pull/329)**
-(merge commit `0c796be1bdbc70c085f5c8851300e84bb04aae6a`) — see this file's own top dated log for
-the certification summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
-the full history and evidence.
+**FTF-04A19** ("AgentManifest schema/versioning/hash") — submitted PROVISIONAL this shift
+(2026-09-27T09:18:55Z) via **[PR #331](https://github.com/SJZLab/Sovra/pull/331)**. Real live
+router (`build_agent_manifest_router`) wired into `apps/api/app/main.py`; real forward Alembic
+migration (`0015_agent_manifests`); real Postgres integration evidence in
+`tests/integration/test_ftf_04a19_agent_manifest.py`. Not self-certified (Law 4) — awaiting an
+independently-triggered Control-plane certifier session and a real CI run on the opened PR. See
+this file's own top dated log entry and `docs/certifications/queue.md` for the full submission
+record.
 
-Prior history, kept for the record: this paragraph previously named **FTF-04A14** ("Tool/schema/
-permission discovery + evidence capture") as the current pending item; it was independently reviewed
-and CERTIFIED via [PR #326](https://github.com/SJZLab/Sovra/pull/326) (merge commit
-`876e9937051f818c9049175e0b126c4cb85f1bd8`) — see "## Done" for the certification summary and
+Prior history, kept for the record: this paragraph previously named **FTF-04A16** ("Runtime
+trace/deployment contract discovery") as the current pending item; it was independently reviewed
+and CERTIFIED via **[PR #329](https://github.com/SJZLab/Sovra/pull/329)** (merge commit
+`0c796be1bdbc70c085f5c8851300e84bb04aae6a`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
 Prior history, kept for the record: this paragraph previously still named

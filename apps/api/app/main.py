@@ -114,6 +114,7 @@ from app.datasets.dataset_source_connection_routes import (
 from app.litellm.connection_routes import build_litellm_connection_router
 from app.model_versions.model_version_routes import build_model_version_router
 from app.projects.project_routes import build_project_router
+from app.target_connectors.agent_manifest_routes import build_agent_manifest_router
 from app.target_connectors.discovered_agent_candidate_routes import (
     build_discovered_agent_candidate_router,
 )
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
     app.include_router(build_target_source_snapshot_router(session_factory))
     app.include_router(build_discovered_agent_candidate_router(session_factory))
     app.include_router(build_component_binding_router(session_factory))
+    app.include_router(build_agent_manifest_router(session_factory))
     return app
 
 
