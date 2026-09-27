@@ -8904,3 +8904,78 @@ not a blocker, but a real gap in this task's own proof of its negative_acceptanc
 FTF-04A20/04A21/04A23/04A24/04A27's own already-documented, separately dependency-gated later
 scope (ManifestEvidence, review/edit UI, validation engine, lock/supersede workflow, repository
 drift detector — none of which this task claimed).
+
+## FTF-04A20 — ManifestEvidence schema/API
+- Criterion ID: FTF-04A20
+- PR: https://github.com/SJZLab/Sovra/pull/333
+- Merge commit: 7233538c45c604933799bdbc39492ac8c92d826f
+- Validated-by: session https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor (independent —
+  session-ID check performed and recorded before this entry: PR #333's sole commit carries
+  `Claude-Session: .../session_01DV6JW7DUe1YfrdLj4LHPNB`, no overlap with this certifying
+  session's own ID)
+- Date: 2026-09-27
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+  PR #333. `docs/certifications/queue.md`'s own FTF-04A20 submission entry was the sole
+  pending PROVISIONAL item. PR #333's CI run (Actions run 36314794620) was still
+  queued/in-progress at webhook-fire time; waited for it to reach `completed` before treating
+  anything as evidence (Law 1/Law 5): **30/30 jobs green**, including `gate`'s own new
+  "FTF-04A20 negative-test proof" step and the dedicated `manifest-evidence-integration` job.
+- Read the full diff (14 files, 4317/9 lines, matching the PR's own stated scope) and all four
+  new source files (`manifest_evidence_schema.py`/`manifest_evidence_crud.py`/
+  `manifest_evidence_routes.py`/`0016_manifest_evidence.py`) in full, directly, not taken on
+  the PR's own summary.
+- Independently reran `tests/tasks/test_ftf_04a20.py` directly (`uv run python3
+  tests/tasks/test_ftf_04a20.py`) — "all checks passed". Independently reran the real Postgres
+  16 integration suite (`tests/integration/test_ftf_04a20_manifest_evidence.py`) against this
+  session's own locally installed PostgreSQL 16 cluster (a fresh scratch `sovra_migrate`
+  role/`sovra_ftf04a20` database created for this review, dropped afterward) — "all checks
+  passed": full Alembic chain `0001`-`0016` upgraded clean, real `sovra_app`-role-bound
+  uvicorn server, unauthenticated/evaluator RBAC denial, cross-tenant IDOR (404), unknown
+  `field_path` refused (400), cross-snapshot `repository_commit_sha` refused (409), fabricated
+  line ref on a non-line-anchored type refused (400), real create/get/list, and the three
+  disclosed database-level defense-in-depth proofs (`CHECK` constraint, `UPDATE` refused,
+  `DELETE` refused).
+- **Own fault injection (Law 1), independent of the PR's own three disclosed DB-level
+  proofs:** against the live database, confirmed the baseline first — inserting a
+  `repo_symbol` row with `symbol=NULL` was genuinely rejected with
+  `ck_manifest_evidence_symbol_iff_repo_symbol` violated. Then dropped that `CHECK` constraint
+  directly (`ALTER TABLE manifest_evidence DROP CONSTRAINT
+  ck_manifest_evidence_symbol_iff_repo_symbol`) and re-ran the identical insert: it succeeded
+  — confirming the constraint is a real, live-enforced guard the schema actually depends on,
+  not a decorative or dead one. Scratch database dropped afterward (not reused for any other
+  evidence).
+- `uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean
+  repo-wide (290 source files, zero new errors). `git fetch --unshallow` resolved this
+  sandbox's own pre-existing shallow-clone artifact (same disclosed precedent every prior
+  FTF-04A0x/04A1x review already established) — `python3 scripts/validate_spec.py --strict`
+  clean after that. `product_truth_check.py --fail-on-unwired`: own run, **22/22** (up from
+  21/21) — confirmed `build_manifest_evidence_router` has a real live caller in
+  `apps/api/app/main.py` by direct inspection, not a 0/0-accepted-as-pass case. Confirmed
+  dependencies FTF-04A01/FTF-04A19 genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before
+  relying on them. Checked all other open PRs (#328/#315/#314/#313/#311/#308/#295/#290/#231/
+  #195/#194) for a conflicting claim on the `contracts:04A`/`migration:application` shared
+  locks — none found (PR #328/FTF-04A15 is a pure discovery module with no route/migration).
+- No open review threads or comments on PR #333.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A20 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Store per-field source
+  commit/path/symbol/hash or user override provenance and confidence method") genuinely met —
+  confirmed by direct code read of the schema/CRUD triad's per-`evidence_type` field-shape
+  design above; acceptance clause 2 ("Independent review, exact merged commit, real relevant
+  integration and negative-test evidence recorded") met by this review itself;
+  `negative_acceptance` ("Fabricated line refs, cross-snapshot evidence and unknown values
+  presented as detected are rejected") reconfirmed genuinely met by both the real Postgres
+  integration suite's own three negative cases (400/400/409) and this review's own independent
+  `CHECK`-constraint fault injection above.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A20 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit `7233538c45c604933799bdbc39492ac8c92d826f`. PR #333 merged directly by this
+  certification (it was open, green, and `mergeable_state: clean` with no relay session left
+  to merge it; CLAUDE.md's "Do without asking" permits "merge on green + L1 doc
+  (PROVISIONAL)"). `sync_certified_status()` run directly (updated
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `85/300` ->
+  `86/300` certified; product-true `21/21` -> `22/22`. No open owner ask.
+
+**Conclusion:** Certified L2-CERTIFIED. No open notes or gaps left for the next shift beyond
+this task's own already-documented, separately dependency-gated later scope (FTF-04A23's
+completeness/validation engine, FTF-04A27's repository-drift-driven re-evidencing workflow —
+neither of which this task claimed).

@@ -4249,10 +4249,10 @@ FTF-04A19:
   proving_symbol: build_agent_manifest_router
   proving_test: tests/tasks/test_ftf_04a19.py
 FTF-04A20:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: ManifestEvidence schema/API
-  evidence_hash: ''
+  evidence_hash: 7233538c45c604933799bdbc39492ac8c92d826f
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -4286,12 +4286,49 @@ FTF-04A20:
     -- validators, per-evidence_type __init__ structural consistency, and the real
     locally-hosted router denying an unauthenticated request and an evaluator's write (403)
     before session_factory is ever called, while an evaluator's read reaches the session
-    layer. uv run ruff check/format --check, uv run mypy . (290 source files) and python3
-    scripts/validate_spec.py --strict all clean; product_truth_check.py --fail-on-unwired
-    unchanged pending independent certification (Law 2 -- this is a submission, not a
-    certification). Not self-certified (Law 4) -- independent Control-plane L2 review and a
-    real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+    layer.
+
+    Control-plane L2 review (2026-09-27, PR #333): session-ID checked against PR #333's sole
+    commit (Claude-Session .../session_01DV6JW7DUe1YfrdLj4LHPNB) -- no overlap with this
+    certifying session's own ID, independent per Law 4. Waited for PR #333's real CI run
+    (Actions run 36314794620) to reach completed before treating anything as evidence (Law
+    1/Law 5): 30/30 jobs green, including gate's own new "FTF-04A20 negative-test proof" step
+    and the dedicated manifest-evidence-integration job. Read the full diff (14 files,
+    4317/9, matching the PR's own stated scope) and all four new source files in full.
+    Independently reran tests/tasks/test_ftf_04a20.py (clean) and the real Postgres 16
+    integration suite (tests/integration/test_ftf_04a20_manifest_evidence.py) against this
+    session's own locally installed Postgres 16 cluster (scratch sovra_migrate role / a fresh
+    sovra_ftf04a20 database) -- "all checks passed", full Alembic chain 0001-0016 clean. Ran
+    one independent fault injection distinct from the PR's own three disclosed DB-level
+    proofs: dropped ck_manifest_evidence_symbol_iff_repo_symbol directly against the live
+    database, confirmed the baseline insert of a repo_symbol row with symbol=NULL is
+    genuinely rejected by the constraint before the drop, then confirmed the identical insert
+    succeeds once the constraint is removed -- proving this CHECK constraint is a real,
+    live-enforced guard, not a decorative or dead one. Reran repo-wide uv run ruff
+    check/format --check (clean) and uv run mypy . (clean, 290 source files); ran python3
+    scripts/validate_spec.py --strict (git fetch --unshallow resolved this sandbox's own
+    disclosed shallow-clone artifact first) -- clean; product_truth_check.py
+    --fail-on-unwired reproduced directly at 22/22 (up from 21/21) -- build_manifest_
+    evidence_router confirmed a real, genuine live caller from apps/api/app/main.py by direct
+    inspection, not a 0/0 pass. Confirmed dependencies FTF-04A01/FTF-04A19 genuinely CERTIFIED
+    in docs/spec-matrix.yaml before relying on them; checked every other open PR
+    (#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) for a conflicting
+    contracts:04A/migration:application lock claim -- none found. Task contract re-pulled via
+    tools/r1_handoff.py packet FTF-04A20 --plan FINE_TUNING_FACTORY_RELEASE_1.md -- acceptance
+    clause 1 ("Store per-field source commit/path/symbol/hash or user override provenance and
+    confidence method") confirmed genuinely met by direct code read of the schema/CRUD triad
+    above; negative_acceptance ("Fabricated line refs, cross-snapshot evidence and unknown
+    values presented as detected are rejected") confirmed genuinely met by the real integration
+    suite's own three negative cases (400/400/409) plus this review's own independent CHECK-
+    constraint fault injection. No open review threads or comments on PR #333.
+
+    No blocking defect found. PR #333 merged directly by this certification (merge commit
+    7233538c45c604933799bdbc39492ac8c92d826f) -- it was open, green, and mergeable_state:
+    clean with no relay session left to merge it; CLAUDE.md's "Do without asking" permits
+    "merge on green + L1 doc (PROVISIONAL)". sync_certified_status() run directly.
+    scripts/status.py: 85/300 -> 86/300 certified; product-true 21/21 -> 22/22. No open owner
+    ask. Not self-certified (Law 4).
+  proof_state: L2-CERTIFIED
   proving_symbol: build_manifest_evidence_router
   proving_test: tests/tasks/test_ftf_04a20.py
 FTF-04A21:
