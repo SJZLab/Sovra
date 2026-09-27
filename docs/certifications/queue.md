@@ -17725,3 +17725,66 @@ STEP 3: `PROGRESS.md`/`QUEUE.md`/this file all updated this shift, before compac
 condition (a): 1/1 in-flight item (FTF-04A13) is `L1-PROVEN`, no blocking defect found by this
 session's own review — awaiting an independently-triggered Control-plane certifier session and the
 L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
+## 2026-09-27 — Control plane: certify FTF-04A13 (Prompt-source discovery + evidence capture), PR #324
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_01DXhyapeY1fzRBx287LkDzE`, triggered by the `pull_request.opened`
+webhook for PR #324. FTF-04A13 was the sole pending PROVISIONAL item.
+
+**Session-ID check:** PR #324's commits carry `Claude-Session:
+.../session_01Y6AZCE8N3RnkaZEXR1Bu8s`. No overlap with this session's own ID — independent per
+Law 4.
+
+**Diff read directly** against the PR's own base commit `315441bbdbdbbcadf3748fd34b773f616fc8a23b`:
+9 files changed, matching the PR's own stated scope exactly. Read both new source files
+(`prompt_source_discovery_evidence_capture.py`,
+`_typescript_javascript_prompt_source_ast_helper.cjs`) in full: the security boundary ("by
+hash/location" — no `PromptSourceCandidate` ever carries real prompt/template text) matches the
+actual code exactly, including the JS/TS helper's own Node `crypto.createHash("sha256")` call
+happening inside the helper itself so raw prompt text never crosses the subprocess stdout boundary.
+
+**Own reproduction:** `uv sync --all-packages`; `pnpm install`; `uv run python3
+tests/tasks/test_ftf_04a13.py` — "all checks passed" (20 tests, node available).
+
+**Own fault injection (Law 1), two independent mutations, deliberately different from the PR's own
+two disclosed injections:**
+1. Bypassed the secret-like config-key guard in `_config_derived_candidates` — 1 genuine failure
+   (`test_secret_like_config_key_is_never_treated_as_prompt_source`). Reverted byte-identical
+   (md5sum `f20dd04504597f67fb9fc4139d18f3b1` before/after), re-ran clean.
+2. Made the JS/TS helper's embedded-literal branch return the raw prompt string instead of its own
+   sha256 digest — 1 genuine failure
+   (`test_typescript_javascript_embedded_literal_system_prompt_is_hashed`). Reverted byte-identical
+   (md5sum `25fdfba42df20e273c80c1deb131dd69` before/after), re-ran clean — independently confirming
+   the "never leak raw text" boundary on the TS/JS side too, not only the Python side the PR's own
+   two disclosed injections exercised.
+
+**Real CI confirmed on the exact merged head, not a self-report:** PR #324's own workflow run
+(`36284539456`) — 31/31 jobs `completed`/`success`, `gate` included (job `108522674736`); fetched
+the `gate` job's raw log directly and confirmed it printed "FTF-04A13 Prompt-source discovery +
+evidence capture: all checks passed" immediately before `product_truth_check.py`'s own "Product-truth:
+20/20 product-true" and `status.py`'s own "Status: 81/300 certified". Three unrelated OpenBao-Go-build
+integration jobs briefly appeared to lag behind their own ~6.5-minute historical precedent during
+this review; re-polled at the job/step level and confirmed all three completed successfully once
+the check-runs API's own status-propagation caught up — not a genuine hang. Waited for the full run
+before treating CI as green.
+
+`ruff`/`ruff format --check`/`mypy` clean repo-wide (pre-existing, disclosed `alembic`-stub mypy
+errors unrelated). `git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone
+artifact; `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`: `20/20`
+unchanged — confirmed `proving_symbol` genuinely blank, not a 0/0-accepted-as-pass case.
+`status.py`: `81/300` pre-certification. Confirmed dependencies FTF-04A01/FTF-04A09/FTF-04A10/
+FTF-04A11 genuinely `CERTIFIED` before relying on them.
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-04A13 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clauses 1 and 2 and the full `negative_acceptance`
+clause are genuinely met — see this queue's own `docs/certifications/ledger.md` entry for the
+complete breakdown. No open review threads or comments on PR #324; already merged.
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A13 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to PR #324's
+merge commit `9d7294e60a0abe11edf987030afab0d13c72b783`. `sync_certified_status()` run directly.
+Appended `docs/certifications/ledger.md`; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`:
+`81/300` -> `82/300` certified; product-true unchanged at `20/20`. No open owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.

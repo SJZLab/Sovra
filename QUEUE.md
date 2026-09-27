@@ -1,5 +1,56 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled autonomous relay shift) — **submitted FTF-04A13 ("Prompt-source
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01DXhyapeY1fzRBx287LkDzE, triggered by the `pull_request.opened`
+  webhook for PR #324) — independently certified **FTF-04A13 (Prompt-source discovery + evidence
+  capture)**. Session-ID check: no overlap with PR #324's producer session
+  (`session_01Y6AZCE8N3RnkaZEXR1Bu8s`) — independent per Law 4.
+
+  Diff read directly against the PR's own base commit (`315441b`): 9 files changed, matching the
+  PR's own stated scope exactly (new module `prompt_source_discovery_evidence_capture.py`, new
+  subprocess helper `_typescript_javascript_prompt_source_ast_helper.cjs`, new test file
+  `tests/tasks/test_ftf_04a13.py`, CI gate step, tracking-doc appends, and a freshly-generated
+  `docs/implementation/task-packets/FTF-04A13.md`). Read both new source files in full: the
+  module's own security-boundary disclosure (no `PromptSourceCandidate` ever carries real
+  prompt/template text; a `referenced_path` resolved only by exact-match lookup, never opened)
+  matches the actual code exactly. Own reproduction: `uv sync --all-packages`; `pnpm install`;
+  `test_ftf_04a13.py` — "all checks passed" (20 `test_*` functions, `node` available so all 3
+  TS/JS-gated tests ran too).
+
+  **Own fault injection, two independent mutations (different from the PR's own two disclosed
+  injections):** (1) the secret-like config-key guard in `_config_derived_candidates` bypassed
+  (`if key.secret_like: continue` → `if False: continue`) — 1 genuine failure
+  (`test_secret_like_config_key_is_never_treated_as_prompt_source`); (2) the JS/TS helper's
+  embedded-literal branch made to return the raw prompt string instead of its own sha256 digest —
+  1 genuine failure (`test_typescript_javascript_embedded_literal_system_prompt_is_hashed`), newly
+  confirming the "never leak raw text" boundary holds independently on the TS/JS side too. Both
+  reverted byte-identical (md5sum `f20dd04504597f67fb9fc4139d18f3b1` .py /
+  `25fdfba42df20e273c80c1deb131dd69` .cjs before/after each), both re-ran clean.
+
+  Real CI confirmed on the exact merged head (run `36284539456`): 31/31 jobs `success` including
+  `gate`; fetched the `gate` job's own raw log directly and confirmed it printed "FTF-04A13
+  Prompt-source discovery + evidence capture: all checks passed" immediately before
+  `product_truth_check.py --fail-on-unwired` (`20/20`) and `status.py` (`81/300`) — waited for the
+  full run before treating CI as green. Three OpenBao-Go-build integration jobs (unrelated,
+  pre-existing already-CERTIFIED criteria) briefly appeared to lag behind their own ~6.5-minute
+  historical precedent during this review; re-polled at the job/step level and confirmed all three
+  completed successfully once the check-runs API's own status-propagation caught up — not a
+  genuine hang. `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide (`git fetch --unshallow`
+  resolved this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent as
+  every prior FTF-04A0x/FTF-04A1x shift). Confirmed dependencies FTF-04A01/FTF-04A09/FTF-04A10/
+  FTF-04A11 genuinely `CERTIFIED` before relying on them. Task contract re-pulled; acceptance
+  clauses 1/2 and the full `negative_acceptance` clause are genuinely met — see
+  `docs/certifications/ledger.md`'s matching entry for the complete breakdown.
+
+  **Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A13 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `9d7294e60a0abe11edf987030afab0d13c72b783`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). Appended a matching entry to
+  `docs/certifications/ledger.md`; `PROGRESS.md` updated below. `scripts/status.py`: `81/300` ->
+  `82/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged,
+  empty).
+
+Previously updated: 2026-09-27 (scheduled autonomous relay shift) — **submitted FTF-04A13 ("Prompt-source
   discovery + evidence capture") PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
   certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md`
   directly. Recomputed the dependency-ready frontier directly from `docs/TASK_INDEX.md`'s own

@@ -3757,10 +3757,10 @@ FTF-04A12:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a12.py
 FTF-04A13:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Prompt-source discovery + evidence capture
-  evidence_hash: ''
+  evidence_hash: 9d7294e60a0abe11edf987030afab0d13c72b783
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -3801,13 +3801,20 @@ FTF-04A13:
     clean repo-wide. `product_truth_check.py --fail-on-unwired` unchanged
     20/20 (proving_symbol left blank, same disclosed "no live route yet"
     precedent FTF-04A09/FTF-04A10/FTF-04A11/FTF-04A12 already established).
-    `status.py` unchanged 81/300 (Law 2 -- this is a submission, not a
-    certification). Regression swept test_ftf_04a09.py/test_ftf_04a10.py/
-    test_ftf_04a11.py/test_ftf_04a12.py plus `pytest tests/unit` (3/3) --
-    zero regressions. Not self-certified (Law 4) -- awaiting an
-    independently-triggered Control-plane L2 certifier session and the L4
-    gate.
-  proof_state: L1-PROVEN
+    Independently re-verified by Control plane, PR #324: own reproduction (20
+    tests pass, node available); two independent fault injections (secret-
+    like config-key guard bypassed -- 1 genuine FAIL; TS/JS helper made to
+    return raw prompt text instead of its sha256 digest -- 1 genuine FAIL),
+    both reverted byte-identical (md5sum `f20dd04504597f67fb9fc4139d18f3b1`
+    .py, `25fdfba42df20e273c80c1deb131dd69` .cjs). Real CI confirmed on the
+    exact merged head (run 36284539456): 31/31 jobs completed/success
+    including gate, whose raw log was fetched directly and confirmed
+    printing "FTF-04A13 Prompt-source discovery + evidence capture: all
+    checks passed", "Product-truth: 20/20 product-true", "Status: 81/300
+    certified". Session-ID check: no overlap with PR #324's producer session
+    (session_01Y6AZCE8N3RnkaZEXR1Bu8s) and this ledger's own certifier
+    session (session_01DXhyapeY1fzRBx287LkDzE) -- independent per Law 4.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a13.py
 FTF-04A14:
