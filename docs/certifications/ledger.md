@@ -8790,3 +8790,117 @@ reasons given above.
 covering `endpoint_reachability` for an `https://`-shaped value (see fault injection #1 above) —
 not a blocker, but a real gap in this task's own proof of its negative_acceptance clause's
 `https://` half.
+
+## FTF-04A19 — AgentManifest schema/versioning/hash
+
+- Criterion ID: FTF-04A19
+- PR: https://github.com/SJZLab/Sovra/pull/331 (`[relay] FTF-04A19: AgentManifest
+  schema/versioning/hash`)
+- Merge commit: `45d94f8d08bc82614fb5d3792d56df3255824299` (merged directly by this certification —
+  PR was open/green/`mergeable_state: clean` with no conflicting open PR touching the same
+  `migration:application`/`contracts:04A` locks; CLAUDE.md's "Do without asking" permits "merge on
+  green + L1 doc (PROVISIONAL)")
+- Head commit reviewed: `e4fc7f231c2d7b59b7996c2764c1887930ddeebb`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36309207865 — waited for the run to reach
+  `completed` from `queued` before treating anything as evidence (Law 1/Law 5); `conclusion:
+  success` on the exact PR head SHA, `gate` and `agent-manifest-integration` jobs both confirmed
+  `success` directly via the GitHub Actions API.
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_016L5ScEwaCus1Hfe1kDUk3V`. Both of PR #331's commits carry
+  `Claude-Session: .../session_01D5fLj4ojYwXHNBHyqQHPsV`. No overlap — independent per Law 4.
+- **Diff read directly** (`git diff origin/main origin/claude/wizardly-fermat-x7eynx --stat`): 14
+  files changed / 4885 insertions / 36 deletions, matching the PR's own stated scope exactly. Read
+  `agent_manifest_schema.py`, `agent_manifest_crud.py`, `agent_manifest_routes.py`, and the real
+  forward Alembic migration (`0015_agent_manifests.py`) in full:
+  - Confirmed `ALLOWED_STATUS_TRANSITIONS` is a strict, one-directional
+    `draft -> review_required -> locked -> superseded` graph with no skip/reverse/self-loop edge.
+  - Confirmed `compute_manifest_sha256` hashes exactly `CONTENT_FIELDS` (envelope/audit fields —
+    `id`/`version`/`status`/`created_by`/`approved_by`/`approved_at`/`created_at` — excluded) via a
+    deterministic `json.dumps(..., sort_keys=True, separators=(",", ":"))` encoding.
+  - Confirmed the database-level pairing invariants are real, not merely application-level:
+    `ck_agent_manifests_hash_iff_locked` and the two approval-pairing `CHECK` constraints in the
+    migration match `AgentManifest.__init__`'s own runtime checks exactly.
+  - Confirmed `ix_agent_manifests_project_id_locked` (a partial `UNIQUE` index on `project_id`
+    where `status = 'locked'`) is the real, database-level basis for "at most one locked manifest
+    per project" — the actual supersession mechanic, since Section 6.8D lists no
+    `supersedes_manifest_id` field.
+  - Confirmed `update_agent_manifest_content`/`submit_for_review`/`lock_agent_manifest` in
+    `agent_manifest_crud.py` each re-fetch and check the row's *current* `status` before any write
+    (never trusting a caller-supplied "still draft" claim), and `lock_agent_manifest` refuses to
+    transition to `locked` unless every one of `CRITICAL_LOCK_FIELDS`
+    (`agent_entrypoint_json`/`current_model_binding_json`/`runtime_dependencies_json`) is non-null.
+  - Confirmed the disclosed ordering-bug fix: `lock_agent_manifest` calls `session.flush()` after
+    superseding the prior `locked` row and before setting the new row to `locked`, which is the
+    real fix for the partial-unique-index race the PR itself disclosed (Postgres cannot declare a
+    partial unique index `DEFERRABLE`).
+  - Confirmed real live wiring: `apps/api/app/main.py` imports `build_agent_manifest_router` and
+    calls `app.include_router(build_agent_manifest_router(session_factory))` — a genuine live
+    caller, not merely an import.
+- **Own reproduction, no-DB suite:** `uv run python3 tests/tasks/test_ftf_04a19.py` — "all checks
+  passed" (matches the PR's own claim).
+- **Own reproduction, real Postgres 16 integration suite:** installed cluster already running on
+  this session's own sandbox (`service postgresql status` — `16/main (port 5432): online`); created
+  a fresh scratch `sovra_migrate` role/`sovra_ftf04a19` database matching the CI job's own
+  `agent-manifest-integration` environment exactly (`POSTGRES_USER=sovra_migrate`,
+  `SOVRA_APP_DB_PASSWORD=sovra_app_ci_only`). `SOVRA_DATABASE_URL=postgresql+psycopg://
+  sovra_migrate:sovra_migrate_ci_only@127.0.0.1:5432/sovra_ftf04a19 SOVRA_APP_DB_PASSWORD=
+  sovra_app_ci_only uv run python3 tests/integration/test_ftf_04a19_agent_manifest.py` — "all
+  checks passed": full Alembic chain `0001`-`0015` upgrades clean, real
+  `sovra_app`-role-bound uvicorn server, unauthenticated/evaluator RBAC denial, cross-tenant IDOR
+  (404), cross-project snapshot mismatch (409), full draft -> review_required -> lock lifecycle,
+  locked-mutation/re-lock refusal (409), real supersession on a second lock, and the two raw-INSERT
+  DB-level defense-in-depth proofs (`ck_agent_manifests_hash_iff_locked`,
+  `ix_agent_manifests_project_id_locked`), all reproduced directly, not merely trusted from the
+  PR's own report.
+- **Own fault injection (Law 1), independent of the PR's own two disclosed injections (the
+  `validate_status_transition` graph short-circuit and the hardcoded `missing = []` in
+  `lock_agent_manifest`):** removed the locked-status guard from
+  `update_agent_manifest_content` (`agent_manifest_crud.py`) — a manifest whose `status` is
+  `locked`/`superseded` would then accept a content edit unchecked. Re-ran the real Postgres
+  integration suite against a fresh database: **1 genuine, hard failure** —
+  `negative_acceptance: 'Locked manifest mutation ... blocks [it]' -- editing a locked manifest is
+  refused (409)` — confirming this negative_acceptance case is a real, live-enforced guard, not a
+  comment or an untested claim. Reverted from a pre-edit copy, `diff` confirmed byte-identical
+  (md5sum `54024be7959f4147df16d737dbed8e89`, matching the PR's own disclosed baseline), re-ran
+  clean (all checks pass again).
+- `uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean repo-wide
+  (284 source files, zero new errors). `git fetch --unshallow` resolved this sandbox's own
+  pre-existing shallow-clone artifact (same disclosed precedent every prior FTF-04A0x/04A1x
+  review already established) — `python3 scripts/validate_spec.py --strict` clean after that.
+  `product_truth_check.py --fail-on-unwired`: own run, **21/21** (up from 20/20) — confirmed
+  `build_agent_manifest_router` has a real live caller in `apps/api/app/main.py` by direct
+  inspection, not a 0/0-accepted-as-pass case. `uv run pytest tests/unit` — 3/3 passed. Regression
+  swept `test_ftf_04a01.py`/`test_ftf_04a07.py`/`test_ftf_04a17.py`/`test_ftf_1001.py`/
+  `test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0407.py` — all "all checks
+  passed", zero regressions, independently reproduced. Confirmed dependencies
+  FTF-0405/FTF-0407/FTF-04A01/FTF-04A07 and this task's own shared `contracts:04A` lock partner
+  FTF-04A17 all genuinely `CERTIFIED` directly in `docs/spec-matrix.yaml` before relying on them.
+  Checked all other open PRs (#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) for a
+  conflicting claim on the `migration:application` (alembic revision `0015`) or `contracts:04A`
+  locks — none found.
+- No open review threads or comments on PR #331 (merged directly by this certification, as above).
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A19 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` confirmed against `sha256sum
+  FINE_TUNING_FACTORY_RELEASE_1.md` directly): acceptance clause 1 ("Implement versioned canonical
+  manifest schema, hash and reviewed/locked/superseded transitions") genuinely met — confirmed by
+  direct code read above; acceptance clause 2 ("Independent review, exact merged commit, real
+  relevant integration and negative-test evidence recorded") met by this review itself;
+  `negative_acceptance` ("Locked manifest mutation or missing critical evidence/model/runtime
+  tuple blocks activation") reconfirmed genuinely met by both real Postgres integration evidence
+  and this review's own fault injection above (not merely trusted from the PR's own disclosed
+  claim). `scripts/verify_task.py --task FTF-04A19 --stage task` reports `BLOCKED` (`no merged
+  verification evidence yet`) because it reads `evidence_hash` from a pre-certification snapshot —
+  expected given this task had not yet been certified at the time it was run; not evidence of a
+  real defect.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A19 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `45d94f8d08bc82614fb5d3792d56df3255824299`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `84/300` ->
+  `85/300` certified; product-true `20/20` -> `21/21`.
+- Validated-by: session https://claude.ai/code/session_016L5ScEwaCus1Hfe1kDUk3V (independent — see
+  session-ID check above), 2026-09-27
+
+**Conclusion:** Certified L2-CERTIFIED. No open notes or gaps left for the next shift beyond
+FTF-04A20/04A21/04A23/04A24/04A27's own already-documented, separately dependency-gated later
+scope (ManifestEvidence, review/edit UI, validation engine, lock/supersede workflow, repository
+drift detector — none of which this task claimed).

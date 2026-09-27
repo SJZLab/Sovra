@@ -4209,10 +4209,10 @@ FTF-04A18:
   proving_symbol: ''
   proving_test: ''
 FTF-04A19:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: AgentManifest schema/versioning/hash
-  evidence_hash: ''
+  evidence_hash: 45d94f8d08bc82614fb5d3792d56df3255824299
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0405,
@@ -4245,7 +4245,7 @@ FTF-04A19:
     --fail-on-unwired unchanged 20/20 pending independent certification (Law 2 -- this is a
     submission, not a certification). Not self-certified (Law 4) -- independent Control-plane
     L2 review and a real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_agent_manifest_router
   proving_test: tests/tasks/test_ftf_04a19.py
 FTF-04A20:
