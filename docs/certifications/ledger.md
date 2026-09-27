@@ -9151,3 +9151,79 @@ instruction. No open notes or gaps left beyond this one narrow proof-coverage ga
 (unweakened) suite (`test_refusal_and_fatal_paths_are_never_reported_as_completed`); this is a
 disclosed, now twice-independently-confirmed sandbox restriction on adversarially proving that
 one guardrail, not an unproven claim that the guardrail itself works.
+
+## FTF-04A02 — GitHub App/token read-only secret integration
+- Criterion ID: FTF-04A02
+- PR: https://github.com/SJZLab/Sovra/pull/344
+- Merge commit: da340d39510e5d716808cb605ffff3122c1ed4c0
+- Validated-by: session https://claude.ai/code/session_01S2SmhwUGZzSEmyzHhJiTTg (independent —
+  session-ID check performed and recorded before this entry: both of PR #344's commits carry
+  `Claude-Session: .../session_01MMrD9wZQkh16CVn7ZHCp94`, no overlap with this certifying
+  session's own ID)
+- Date: 2026-09-27
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+  PR #344. Grepped `docs/spec-matrix.yaml` for `certification_state: PROVISIONAL` (the
+  authoritative source) and cross-checked `docs/certifications/queue.md`'s own most recent
+  entry — FTF-04A02 was the sole pending PROVISIONAL item.
+- PR #344's CI run (Actions run 36357793735) was still in progress at webhook-fire time; waited
+  for every one of its 33 jobs to reach a real `completed` state before treating anything as
+  evidence (Law 1/Law 5) — including three unrelated, pre-existing OpenBao-from-source
+  integration jobs (`secret-manager-integration`/`dataset-source-connection-integration`/
+  `target-application-connection-integration`, none touched by this diff) that stayed
+  `in_progress` for several minutes after every sibling job, the same disclosed precedent
+  FTF-04A26's own certification (PR #340) already documents. Polled until all 33 jobs reached a
+  real conclusion: 33/33 `success`, including `gate`'s own new "FTF-04A02 negative-test proof"
+  step.
+- Read the full diff (7 files, 1397/-11) and the new source file
+  (`apps/api/app/target_connectors/github_app_token_read_only_secret_integration.py`) in full,
+  directly — confirmed `validate_github_repository_access()` calls exactly one real, read-only
+  GitHub REST API v3 endpoint (`GET /repos/{owner}/{repo}`), with the HTTP verb held as a
+  module-level constant never exposed as a caller parameter, and that the single
+  `if response.status != 200:` gate is the one checkpoint denying both the revoked-token (401)
+  and outside-installation (404) negative_acceptance cases.
+- Independently reran `tests/tasks/test_ftf_04a02.py` directly (`uv sync --all-packages` first)
+  — "all checks passed" (14/14).
+- **Own fault injections (Law 1), not merely re-trusting the submission's disclosed ones:**
+  (1) replaced the shared `if response.status != 200: _raise_for_non_200_status(...)` gate with
+  a no-op — genuine failure reproduced (the `forbidden-repo` fixture's fabricated body no longer
+  carries a real `full_name`, so the response-integrity check downstream catches it with a
+  different but still-genuine error, proving the gate load-bearing); (2) hardcoded
+  `_HTTP_METHOD` to `"POST"` — genuine failure against the real local fixture server (HTTP 501,
+  the fixture only ever implements `do_GET`), proving the GET-only guarantee real and observable,
+  not decorative. Both reverted byte-identical (md5sum `f82d6a6c99c2556624fed39427839273`
+  confirmed matching before and after each), `git status`/`git diff` empty afterward, suite
+  re-ran clean immediately after each revert.
+- Reran `uv run ruff check .`/`uv run ruff format --check .` (clean, 296 files) and
+  `uv run mypy .` (clean, no errors). `git fetch --unshallow` run first (this sandbox's own
+  shallow clone) — `python3 scripts/validate_spec.py --strict` clean after that.
+  `python3 scripts/product_truth_check.py --fail-on-unwired`: own run, unchanged **22/22** —
+  confirmed this task's blank `proving_symbol` is legitimate (no live caller wires a
+  connection's `credential_secret_ref` through `resolve_secret_ref` into this module yet, same
+  disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26), not an inflated 0/0 pass.
+  Confirmed dependencies FTF-0202/FTF-04A01 genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+  before relying on them; regression swept `tests/tasks/test_ftf_0202.py` (clean) and
+  `tests/tasks/test_ftf_04a01.py` directly (exit 0, "all checks passed" — one printed traceback
+  mid-run is expected diagnostic output from a negative test case exercising
+  `TenantContextError`, not a real failure) — zero regressions.
+- No open review threads or comments on PR #344.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A02 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses ("Use real read-only GitHub
+  App/approved token stored by secret ref; validate installation/repository scope" and
+  "Independent review, exact merged commit, real relevant integration and negative-test evidence
+  recorded") and the `negative_acceptance` clause ("Private repo outside installation and
+  revoked token deny access; no write scopes requested for analysis") genuinely met — confirmed
+  by direct code read and by this review's own fault injections above, not taken on the PR's own
+  summary.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A02 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit `da340d39510e5d716808cb605ffff3122c1ed4c0`. PR #344 merged directly by this
+  certification (it was open, green — 33/33 — and `mergeable_state: clean` with no relay session
+  left to merge it; CLAUDE.md's "Do without asking" permits "merge on green + L1 doc
+  (PROVISIONAL)"). `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json` — `['FTF-04A02']` updated). `scripts/status.py`: `88/300` ->
+  `89/300` certified; product-true unchanged `22/22`. No open owner ask.
+
+**Conclusion:** Certified L2-CERTIFIED. No blocking defect found; both fault injections
+performed by this review independently confirmed the negative_acceptance gate and the
+structural GET-only guarantee are genuinely load-bearing, not decorative. No open notes or gaps
+left.

@@ -1,5 +1,35 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27T22:50:00Z (scheduled autonomous relay shift, branch `claude/wizardly-fermat-bpvsvl`)
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01S2SmhwUGZzSEmyzHhJiTTg, triggered by the `pull_request.opened`
+  webhook for PR #344) — reviewed **FTF-04A02 (GitHub App/token read-only secret integration)**,
+  **CERTIFIED**. Session-ID check: both of PR #344's commits carry `Claude-Session:
+  .../session_01MMrD9wZQkh16CVn7ZHCp94`, no overlap — Law 4 independence confirmed. Waited for
+  all 33 real CI checks to reach a genuine terminal state (three unrelated, pre-existing
+  OpenBao-from-source integration jobs stayed `in_progress` for several minutes after every
+  sibling job, same disclosed precedent PR #340's own certification documents) — 33/33 green,
+  including `gate`'s own new "FTF-04A02 negative-test proof" step. Read the full diff and the new
+  connector module in full; independently reran `tests/tasks/test_ftf_04a02.py` (14/14 clean).
+  Ran two real fault injections of my own (not merely re-trusting the submission's disclosed
+  ones): weakening the shared `if response.status != 200:` gate, and hardcoding `_HTTP_METHOD` to
+  `"POST"` — both genuinely failed against the real fixture server, both reverted byte-identical
+  (md5sum confirmed). Reran ruff/mypy/`validate_spec.py --strict`/`product_truth_check.py
+  --fail-on-unwired` (clean, unchanged 22/22, blank `proving_symbol` confirmed legitimate).
+  Confirmed dependencies FTF-0202/FTF-04A01 genuinely `CERTIFIED`; regression swept
+  `test_ftf_0202.py`/`test_ftf_04a01.py` — zero regressions. Task contract re-pulled via
+  `tools/r1_handoff.py` — both acceptance clauses and the negative_acceptance clause genuinely
+  met. No open review threads or comments on PR #344.
+
+  **Result: CERTIFIED.** PR #344 merged directly by this certification (merge commit
+  `da340d39510e5d716808cb605ffff3122c1ed4c0`) — it was open, green (33/33), and
+  `mergeable_state: clean` with no relay session left to merge it; CLAUDE.md's "Do without
+  asking" permits "merge on green + L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml`'s FTF-04A02
+  entry set to `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash`
+  set to that merge commit. `sync_certified_status()` run directly. Appended
+  `docs/certifications/ledger.md` with the full evidence breakdown; `QUEUE.md`/`PROGRESS.md`
+  updated. `scripts/status.py`: `88/300` -> `89/300` certified; product-true unchanged `22/22`.
+  No open owner ask.
+
+Previously updated: 2026-09-27T22:50:00Z (scheduled autonomous relay shift, branch `claude/wizardly-fermat-bpvsvl`)
   — submitted **FTF-04A02 (GitHub App/token read-only secret integration)** PROVISIONAL. FTF-0902
   (PR #342) remains blocked on the same disclosed, repo-wide GitHub Actions outage the immediately
   prior entry below found (no workflow run created for any branch since `2026-09-27T21:32:41Z`,
@@ -6526,6 +6556,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+None currently. FTF-04A02 ("GitHub App/token read-only secret integration") — the item named
+directly below as still "awaiting independent Control-plane L2 review" — was independently
+reviewed and CERTIFIED this shift via PR #344 (merge commit
+`da340d39510e5d716808cb605ffff3122c1ed4c0`) — see this file's own top dated log entry and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
+
+Superseded by the certification above, kept verbatim for the record:
+
 **FTF-04A02** ("GitHub App/token read-only secret integration") — submitted PROVISIONAL this shift
 via **[PR #344](https://github.com/SJZLab/Sovra/pull/344)** (branch `claude/wizardly-fermat-bpvsvl`
 → main). See this file's own top dated log entry and `docs/certifications/queue.md` for the full

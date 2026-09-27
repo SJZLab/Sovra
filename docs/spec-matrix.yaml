@@ -2731,10 +2731,10 @@ FTF-04A01:
   proving_symbol: build_target_application_connection_router
   proving_test: tests/tasks/test_ftf_04a01.py
 FTF-04A02:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: GitHub App/token read-only secret integration
-  evidence_hash: ''
+  evidence_hash: da340d39510e5d716808cb605ffff3122c1ed4c0
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0202,
     FTF-04A01 (both CERTIFIED, confirmed before relying on them). Path: `apps/api/app/target_connectors/github_app_token_read_only_secret_integration.py`
@@ -2801,9 +2801,47 @@ FTF-04A02:
     `resolve_secret_ref` into this module yet, same disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/
     FTF-04A09/FTF-04A10/FTF-04A25/FTF-04A26). `status.py` unchanged `88/300` certified, `22`
     product-true (Law 2 -- this is a submission, not a certification). Regression swept
-    `test_ftf_0202.py`/`test_ftf_04a01.py` -- zero regressions. Not self-certified (Law 4) -- awaiting
-    independent Control-plane L2 review and a real CI run on the opened PR.'
-  proof_state: L1-PROVEN
+    `test_ftf_0202.py`/`test_ftf_04a01.py` -- zero regressions.
+
+
+    Independently L2-reviewed and CERTIFIED 2026-09-27 (session `session_01S2SmhwUGZzSEmyzHhJiTTg`,
+    triggered by the `pull_request.opened` webhook for PR #344). Session-ID check: both of PR #344''s
+    commits carry `Claude-Session: .../session_01MMrD9wZQkh16CVn7ZHCp94` -- no overlap, independent per
+    Law 4. Waited for all 33 real CI checks to reach a genuine terminal state (three unrelated,
+    pre-existing OpenBao-from-source integration jobs -- `secret-manager-integration`/
+    `dataset-source-connection-integration`/`target-application-connection-integration` -- stayed
+    `in_progress` for several minutes after every sibling job, same disclosed precedent PR #340''s own
+    certification documents) -- 33/33 green, including `gate`''s own "FTF-04A02 negative-test proof"
+    step. Read the full diff (7 files, 1397/-11) and the new connector module in full. Independently
+    re-ran `tests/tasks/test_ftf_04a02.py` -- clean, 14/14. Ran two real fault injections of my own
+    (not merely re-trusting the submission''s disclosed ones): (1) disabling the shared
+    `if response.status != 200:` gate -- genuine failure reproduced (a forbidden-repo fixture''s
+    fabricated `full_name` no longer matched, proving the gate load-bearing); (2) hardcoding
+    `_HTTP_METHOD` to `"POST"` -- genuine failure against the real fixture server (HTTP 501, `do_GET`
+    only), proving the GET-only guarantee real and observable. Both reverted byte-identical (md5sum
+    `f82d6a6c99c2556624fed39427839273` confirmed before/after each), suite re-ran clean afterward.
+    Reran `ruff check .`/`ruff format --check .` (clean, 296 files) and `mypy .` (clean, no errors) and
+    `validate_spec.py --strict` (clean, after `git fetch --unshallow`) and
+    `product_truth_check.py --fail-on-unwired` (unchanged 22/22, blank `proving_symbol` confirmed
+    legitimate -- same precedent as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26). Confirmed
+    FTF-0202/FTF-04A01 both genuinely `CERTIFIED` on `main`. Regression swept `test_ftf_0202.py`
+    (clean) and `test_ftf_04a01.py` (clean, exit 0 -- one printed traceback mid-run is expected
+    diagnostic output from a negative test case, not a failure). Task contract re-pulled via
+    `tools/r1_handoff.py packet FTF-04A02 --plan FINE_TUNING_FACTORY_RELEASE_1.md` -- both acceptance
+    clauses ("real read-only GitHub App/approved token stored by secret ref; validate
+    installation/repository scope" and "independent review, exact merged commit, real integration and
+    negative-test evidence recorded") and the negative_acceptance clause ("private repo outside
+    installation and revoked token deny access; no write scopes requested for analysis") genuinely met.
+    No open review threads or comments on PR #344.
+
+
+    Result: CERTIFIED. PR #344 merged directly by this certification (merge commit
+    `da340d39510e5d716808cb605ffff3122c1ed4c0`) -- it was open, green (33/33), and
+    `mergeable_state: clean` with no relay session left to merge it; CLAUDE.md''s "Do without asking"
+    permits "merge on green + L1 doc (PROVISIONAL)". `sync_certified_status()` run directly.
+    `docs/certifications/ledger.md` appended with the full evidence breakdown; `QUEUE.md`/`PROGRESS.md`
+    updated. No open owner ask.'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a02.py
 FTF-04A03:
