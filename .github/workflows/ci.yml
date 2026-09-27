@@ -273,6 +273,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a13.py
       - name: FTF-04A14 negative-test proof (Tool/schema/permission discovery + evidence capture, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a14.py
+      - name: FTF-04A15 negative-test proof (Agent test/evaluation fixture discovery, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a15.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

@@ -3915,16 +3915,126 @@ FTF-04A14:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a14.py
 FTF-04A15:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Agent test/evaluation fixture discovery
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A09,
-    FTF-04A10, FTF-04A11
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A09, FTF-04A10, FTF-04A11 (all CERTIFIED, confirmed
+    before relying on them). Path:
+    `apps/api/app/target_connectors/agent_test_evaluation_fixture_discovery.py`
+    (refined from the task packet's own generic
+    `packages/target-connectors/...` suggestion to this repo's real
+    `apps/api/app/target_connectors/*.py` layout, matching every prior
+    04A-family task's own precedent). Section 7A.4 step 9 ("Detect agent
+    tests/evaluation fixtures") only -- never re-detects entrypoints/models/
+    prompts/tools/config (FTF-04A08/09/10/11/12/13/14's own already-CERTIFIED
+    jobs) and never assembles a `DiscoveredAgentCandidate` row (FTF-04A17's
+    own already-CERTIFIED storage schema).
+
+    `run_agent_test_evaluation_fixture_discovery` classifies each
+    caller-supplied `SourceFileRef` (FTF-04A08's own connector-agnostic input
+    shape, reused not reinvented) into one of `python_test` (pytest's own
+    `test_*.py`/`*_test.py`/`conftest.py` convention, or a generic
+    `tests`/`test` directory-segment catch-all), `js_ts_test`
+    (`*.test.{ts,tsx,js,jsx}`/`*.spec.{ts,tsx,js,jsx}`, or a `__tests__`
+    directory segment), `test_framework_config` (`pytest.ini`/`setup.cfg`/
+    `tox.ini`/`pyproject.toml`/`jest.config.*`/`vitest.config.*`/
+    `playwright.config.*`, by filename only -- content is never parsed, that
+    stays FTF-04A11's own already-CERTIFIED job), or `evaluation_fixture_data`
+    (both halves must hold: a `fixtures`/`fixture`/`evals`/`eval`/`golden`
+    directory segment AND a closed `.json`/`.yaml`/`.yml`/`.jsonl` extension
+    allowlist), evaluated in a fixed, disclosed precedence order (fixture-data
+    wins over the generic tests-directory catch-all for the common
+    `tests/fixtures/*.json` shape). Everything else is left unclassified, not
+    an error.
+
+    The acceptance clause's own "source version" half is deliberately not
+    fabricated: this pure function never receives a `TargetSourceSnapshot`
+    id/commit SHA (only a `SourceFileRef` sequence), so attaching a real
+    source-version value is a future composition task's job (FTF-04A17), not
+    this one's -- disclosed in the module docstring rather than papered over
+    with a fake value.
+
+    negative_acceptance ("Discovering tests never authorizes importing their
+    answers into training or certifies test correctness") is met by two
+    independent structural facts, each with a dedicated test: (1) this module
+    **never calls `SourceFileRef.read_content()` at all**, for any category,
+    for any reason -- every classification is decidable from
+    `relative_path`/`size` alone, proven behaviorally by
+    `test_classification_never_reads_content` (a `read_content` that raises
+    if ever invoked is never triggered across all four categories) and
+    structurally by `test_module_source_never_executes_imports_or_runs_a_subprocess`
+    (an AST assertion -- not a naive substring search, which would
+    false-positive on this module's own docstring prose naming these APIs --
+    confirming no `subprocess`/`importlib` import and no `exec(`/`eval(` call
+    anywhere); (2) this module has zero imports from any dataset/
+    database-schema module and its two evidence dataclasses declare no
+    `approved`/`imported`/`dataset_id`-shaped field anywhere, proven by
+    `test_module_has_no_dataset_or_database_schema_imports` and
+    `test_evidence_dataclasses_have_no_training_authorization_field` (both
+    assert directly over the module's own AST imports / `__dataclass_fields__`
+    -- the absence of such a field is itself the proof). This module does not
+    construct a `Dataset`/`DatasetRecord`/`DatasetSourceConnection` row --
+    Section 7A.10's "must not import [fixtures] until the user selects the
+    source and allowed purpose" applies directly; discovery recommends, it
+    never itself imports.
+
+    `ResourceLimits` deliberately keeps only `max_files` (default 5,000),
+    omitting sibling tasks' `max_file_bytes`/`max_total_bytes` -- there is no
+    content read in this module at all, so those fields would bound nothing
+    real; disclosed explicitly in the module docstring rather than kept for
+    false shape-parity with siblings.
+
+    `tests/tasks/test_ftf_04a15.py`: 24 tests, all pass against the
+    unmodified code. Two independent fault injections, both independently
+    reproduced and reverted byte-identical by this shift (md5sum
+    `93f19456ba68e6ae844a1b57bb507f26` before/after each): (1) added a
+    `read_content()` call on the `evaluation_fixture_data` branch -- genuine
+    `AssertionError: read_content must never be called for
+    'tests/fixtures/customer.json'`, uncaught, propagated out of `main()`;
+    (2) widened `_FIXTURE_DATA_EXTENSIONS` to include `.txt` -- genuine FAIL
+    ("a non-allowlisted extension (.txt) living under a fixtures/ directory
+    is never guessed as fixture data -- both halves of the heuristic must
+    hold").
+
+    Implementation delegated to a background subagent with a fully
+    self-contained brief (exact task contract, the five sibling files/tests
+    to mirror, the reuse-first `SourceFileRef` shape, and the literal
+    negative_acceptance clause with required dedicated tests); this session
+    independently re-verified before trusting it, not merely accepted on its
+    own report (Law 4's spirit applied within one shift): re-read the full
+    module and test file directly; re-ran `tests/tasks/test_ftf_04a15.py`
+    from a clean checkout and confirmed the identical "all checks passed (24
+    test functions run)" output; independently reproduced both fault
+    injections byte-for-byte, confirming the exact same md5sums and the exact
+    same named failures; confirmed via `git status --short` that only the two
+    new files were touched (no existing file modified).
+
+    `uv run ruff check`/`ruff format --check` clean on both new files. `uv
+    run mypy .` clean repo-wide (278 source files; the previously-disclosed
+    15 `alembic`-stub errors are the only ones present, confirmed
+    pre-existing and unrelated). `pnpm run lint`/`pnpm run format:check` clean
+    repo-wide. `validate_spec.py --strict` clean. `product_truth_check.py
+    --fail-on-unwired` unchanged 20/20 (`proving_symbol` left blank, same
+    disclosed "no live route yet" precedent every prior 04A-family task
+    already established). `status.py` unchanged 83/300 (Law 2 -- this is a
+    submission, not a certification). Regression swept
+    `test_ftf_04a09.py`-`test_ftf_04a14.py` (all "all checks passed" -- this
+    sandbox was itself missing `node_modules/typescript`; `pnpm install
+    --frozen-lockfile` materialized it, the same disclosed precedent every
+    prior 04A-family task already established) plus `uv run pytest
+    tests/unit` (3/3) -- zero regressions. `verify_task.py --task FTF-04A15
+    --stage task` reports `BLOCKED` pre-merge, expected per precedent (no
+    merged verification evidence yet).
+
+    **Not self-certified (Law 4)** -- independent Control-plane L2 review and
+    a real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a15.py
 FTF-04A16:
   certification_state: NONE
   criticality: MUST
