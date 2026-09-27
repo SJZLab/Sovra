@@ -18701,3 +18701,49 @@ proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A25 step
 integration job needed (no DB, no network). **Not self-certified (Law 4)** -- independent
 Control-plane L2 review and a real CI run on the opened PR are required before certification. No
 open owner ask.
+
+## 2026-09-27 — Control plane: certify FTF-04A26 (Isolated real tool-backend adapter contract tests), PR #340
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01Qddq3FfXKVseRjetWnYeCW`,
+triggered by the `pull_request.opened` webhook for PR #340. Grepped `docs/spec-matrix.yaml`
+directly for `certification_state: PROVISIONAL` (the authoritative source) and confirmed
+FTF-04A26 was the sole pending item. PR #340's CI run was still in progress at webhook-fire time
+-- waited for it to reach `completed` before treating anything as evidence (Law 1/Law 5),
+including three unrelated integration jobs that stayed `in_progress` for several minutes after
+every sibling job had already finished; polled until all 33 jobs reached a real conclusion.
+
+**Session-ID check:** both of PR #340's commits carry `Claude-Session: .../session_01ARtoEXRcbEw3RzytqNhTH4`.
+No overlap with this session's own ID -- independent per Law 4.
+
+Read the full diff (7 files, 1241/10) and the new source file in full -- CI's own 33/33 jobs
+green, including `gate`'s new "FTF-04A26 negative-test proof" step. Independently reran
+`tests/tasks/test_ftf_04a26.py` directly (`uv sync --all-packages` first) -- clean, 9/9.
+
+Ran a real fault injection myself: weakened `invoke()`'s own side-effect label to always report
+empty -- genuine FAIL, reproducing the submission's own first disclosed injection. Also attempted
+the submission's own third, disclosed-but-untested injection (fabricating a `status="completed"`
+result on a `ReferenceAuthorizationError` refusal); the edit was accepted but running the suite
+against it was denied by this session's own sandbox `[Security Weaken]` classifier -- the same
+restriction the producing session hit, now independently confirmed rather than merely repeated.
+Both edits reverted byte-identical (md5sum `4c7811ddc459d4c7516f24c142389ae2` confirmed each
+time), suite re-ran clean, `git status` clean on the file afterward.
+
+Reran ruff/mypy (clean, zero new errors) and `validate_spec.py --strict` (clean, same disclosed
+shallow-clone precedent) and `product_truth_check.py --fail-on-unwired` (unchanged 22/22, blank
+`proving_symbol` confirmed legitimate -- same precedent as FTF-04A08/09/10/11/16/25). Confirmed
+FTF-04A01/FTF-04A25/FTF-1702 all genuinely `CERTIFIED`. Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_04a25.py`/
+`tests/reference/test_ftf_1701.py`/`tests/reference/test_ftf_1702.py` -- zero regressions. Task
+contract re-pulled via `tools/r1_handoff.py` -- both the acceptance clause and the full
+`negative_acceptance` clause genuinely met. No open review threads or comments on PR #340.
+
+**Result: CERTIFIED.** PR #340 merged directly by this certification (merge commit
+`d25a555fad0960d8d016f8ab009279e5fe980255`) -- it was open, green, and `mergeable_state: clean`
+with no relay session left to merge it; CLAUDE.md's "Do without asking" permits "merge on green +
+L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml`'s FTF-04A26 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge commit.
+`sync_certified_status()` run directly. Appended `docs/certifications/ledger.md` with the full
+evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `87/300` -> `88/300`
+certified; product-true unchanged `22/22`. No open owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-27.
