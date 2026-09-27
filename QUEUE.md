@@ -6527,9 +6527,9 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A02** ("GitHub App/token read-only secret integration") — submitted PROVISIONAL this shift
-via a PR from branch `claude/wizardly-fermat-bpvsvl` → main. See this file's own top dated log entry
-and `docs/certifications/queue.md` for the full evidence record. Awaiting independent Control-plane
-L2 review and a real CI run on the opened PR.
+via **[PR #344](https://github.com/SJZLab/Sovra/pull/344)** (branch `claude/wizardly-fermat-bpvsvl`
+→ main). See this file's own top dated log entry and `docs/certifications/queue.md` for the full
+evidence record. Awaiting independent Control-plane L2 review and a real CI run on the opened PR.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A26** ("Isolated real
 tool-backend adapter contract tests") as the current pending item; it was independently reviewed
