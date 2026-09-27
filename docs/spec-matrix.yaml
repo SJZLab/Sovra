@@ -3818,16 +3818,88 @@ FTF-04A13:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a13.py
 FTF-04A14:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tool/schema/permission discovery + evidence capture
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0405, FTF-0406,
-    FTF-04A01, FTF-04A09, FTF-04A10, FTF-04A11
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-0405, FTF-0406, FTF-04A01, FTF-04A09, FTF-04A10, FTF-04A11 (all
+    CERTIFIED, confirmed before relying on them). Path:
+    `apps/api/app/target_connectors/
+    tool_schema_permission_discovery_evidence_capture.py`, matching every
+    prior 04A-family task's own real `apps/api/app/target_connectors/*.py`
+    layout precedent (refined from the task packet's own generic
+    `packages/target-connectors/...` suggestion). Section 7A.4 steps 6
+    (remainder)/7/8 over the same real completion-call sites FTF-04A09
+    (Python `litellm.completion`/`acompletion`)/FTF-04A10 (TS/JS
+    `<client>.chat.completions.create`) already detect, plus a new, disjoint
+    scope those two modules explicitly disclose as out of their own reach:
+    (1) standalone `@tool(...)`/`@function_tool(...)` (Python) and
+    `tool({...})`/`defineTool({...})` (TS/JS) tool-definition decorators/
+    calls -- a closed, disclosed vocabulary matching real, common
+    agent-tool-library conventions (LangChain/OpenAI Agents SDK/Vercel AI
+    SDK); (2) `response_format=` structured-output schemas (step 7,
+    entirely new); (3) `side_effect_class=`/`requires_confirmation=`
+    literal fields plus a disjoint config-key vocabulary over FTF-04A11's
+    own `ConfigDocumentEvidence` (step 8, entirely new). New, separate JS/TS
+    subprocess helper (`_typescript_javascript_tool_schema_permission_ast_helper.cjs`)
+    -- never an edit to FTF-04A10's or FTF-04A13's own already-CERTIFIED,
+    frozen helpers, per Section 75.1's own "shared module changes require
+    ownership transfer" rule. Reuses FTF-0405's own already-CERTIFIED
+    `validate_json_schema_document` for any discovered schema and FTF-0406's
+    own already-CERTIFIED `RISK_RANK` closed five-value enum for
+    `side_effect_class` membership -- neither reimplemented locally.
+    negative_acceptance ("Unknown authorization is not inferred from tool
+    description; desired deny policy must be enforced in runtime") is met by
+    two independent structural facts: (1) no code path in this module or its
+    own JS/TS helper ever reads a tool's own `description` value for any
+    purpose -- `side_effect_class`/`requires_confirmation` resolve only from
+    their own same-named literal keyword/property/config-key, never from
+    free-text inspection; a tool decorated with a reassuring `description`
+    and no structural declaration comes back `resolved=False,
+    reason="argument_not_present"`, never a fabricated permissive default
+    (dedicated test: `test_tool_with_reassuring_description_but_no_
+    structural_declaration_is_unresolved_never_permissive`, plus its TS/JS
+    analog); (2) the real deny-policy enforcement this clause's own second
+    half names is FTF-0406's already-CERTIFIED
+    `enforce_side_effect_classification`, already live-wired into
+    `ToolDefinition.__init__` independent of this task -- this module
+    produces proposal evidence only (Section 7A.5) and never constructs a
+    `ToolDefinition` row or reaches that boundary, so no code path here can
+    weaken or bypass it.
+
+    `tests/tasks/test_ftf_04a14.py`: 25 tests (all TS/JS-gated tests ran
+    since `node` was available in this sandbox), all pass against the
+    unmodified code. Two independent fault injections, both reverted
+    byte-identical (md5sum `6c150eaede1c14ccecc3682a6d3efef0` before/after
+    each, independently re-verified by the reviewing session): (1) the
+    closed-enum membership check in `_resolve_side_effect_class_literal`
+    removed, so a literal `side_effect_class` string outside FTF-0406's own
+    five-value enum is silently accepted instead of honestly unresolved --
+    1 genuine FAIL; (2) the `response_format=` presence guard in
+    `_extract_response_format_candidate` removed, so a completion call site
+    with no `response_format=` keyword at all fabricates a candidate anyway
+    -- 1 genuine FAIL. `ruff check`/`ruff format --check`/`mypy`/`pnpm run
+    lint`/`validate_spec.py --strict` clean repo-wide (the previously-
+    disclosed 15 `alembic`-stub mypy errors are the only ones present,
+    confirmed pre-existing and unrelated). `product_truth_check.py
+    --fail-on-unwired` unchanged 20/20 (`proving_symbol` left blank, same
+    disclosed "no live route yet" precedent every prior 04A-family task
+    already established). `status.py` unchanged 82/300 (Law 2 -- this is a
+    submission, not a certification). Regression swept
+    test_ftf_04a09.py/test_ftf_04a10.py/test_ftf_04a11.py/test_ftf_04a12.py/
+    test_ftf_04a13.py (all "all checks passed") plus `uv run pytest
+    tests/unit` (3/3) -- zero regressions, independently re-run by the
+    reviewing session, not merely trusted from the producing agent's own
+    report. `verify_task.py --task FTF-04A14 --stage task` reports BLOCKED
+    pre-merge, expected per precedent (no merged verification evidence yet).
+    Not self-certified (Law 4) -- awaiting an independently-triggered
+    Control-plane L2 certifier session and the L4 gate.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a14.py
 FTF-04A15:
   certification_state: NONE
   criticality: MUST

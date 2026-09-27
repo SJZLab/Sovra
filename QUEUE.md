@@ -1,5 +1,100 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift) — **submitted FTF-04A14 ("Tool/schema/
+  permission discovery + evidence capture") PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
+  certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly.
+  Fetched `origin/main` fresh rather than trusted from this branch's own local history: FTF-04A13
+  had already been independently certified since the prior logged shift (`e7691ca`,
+  `docs/spec-matrix.yaml` `certification_state: CERTIFIED`, `evidence_hash`
+  `9d7294e60a0abe11edf987030afab0d13c72b783`) — this file's own "## Provisional" pointer section
+  below was found stale (still named FTF-04A13 pending) and is corrected there. `git
+  rev-parse --is-shallow-repository` was `true`; `git fetch --unshallow` resolved it (same disclosed
+  precedent every prior FTF-04A0x/FTF-04A1x shift has hit) — `validate_spec.py --strict` clean
+  after that.
+
+  Checked all open PRs directly via the GitHub API before picking new work: #315/#314 (FTF-0303),
+  #313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only),
+  #231 (FTF-0212), #195/#194 (FTF-0304) — same set the prior shift already logged, none overlap with
+  this shift's own eventual pick. Recomputed the dependency-ready frontier directly from
+  `docs/TASK_INDEX.md`'s own dependency column cross-checked against `docs/spec-matrix.yaml`'s real
+  per-task `certification_state` (never trusted from a prior shift's own claim alone, since
+  FTF-04A13's own certification had just moved the frontier): 14 tasks came back dependency-ready
+  and `certification_state: NONE`. Excluded FTF-0212/FTF-0304 (other sessions' own open PRs),
+  FTF-0214 (disclosed blocker), FTF-04A02 (keyed external GitHub credential, ask-first per
+  CLAUDE.md), FTF-0500A/FTF-0500D (same no-`Dataset`-entity/no-composed-route class FTF-0214 already
+  established), FTF-1201/FTF-H004 (real network egress this sandbox lacks), FTF-1703 (needs ≥1000
+  real curated traces). Picked **FTF-04A14** -- lowest `docs/TASK_INDEX.md` file-order item among
+  the genuinely ready and unclaimed candidates, and the next task in the same Section 7A.4
+  discovery-pipeline family FTF-04A09–FTF-04A13 have been building sequentially.
+
+  Task contract pulled fresh (`python tools/r1_handoff.py packet FTF-04A14 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`) rather than trusted from the title alone. FTF-04A09's and
+  FTF-04A10's own module docstrings explicitly disclose their own step-6 coverage is narrow (only a
+  `tools=`/`tools:` keyword's own literal name list) and that step 7 ("structured output schemas")
+  and step 8 ("authorization/confirmation boundaries") are entirely out of their own scope -- this
+  task covers exactly that disjoint remainder rather than re-extracting or duplicating their own
+  already-CERTIFIED private tool-name extraction (Section 75.1's own "don't scatter domain logic
+  into one file per ticket" warning).
+
+  Implemented `apps/api/app/target_connectors/tool_schema_permission_discovery_evidence_capture.py`
+  (path refined from the packet's own generic `packages/target-connectors/...` suggestion to this
+  repo's own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior
+  04A-family task already disclosed) plus a new, separate JS/TS subprocess helper
+  (`_typescript_javascript_tool_schema_permission_ast_helper.cjs` -- never an edit to FTF-04A10's or
+  FTF-04A13's own already-CERTIFIED, frozen helpers, per Section 75.1's own "shared module changes
+  require ownership transfer" rule). Covers three disjoint slices: (1) standalone
+  `@tool(...)`/`@function_tool(...)` (Python) and `tool({...})`/`defineTool({...})` (TS/JS)
+  tool-definition decorators/calls, a closed vocabulary matching real, common agent-tool-library
+  conventions (LangChain, OpenAI Agents SDK, Vercel AI SDK); (2) `response_format=`
+  structured-output schemas on the same completion call sites FTF-04A09/FTF-04A10 already detect
+  (step 7, entirely new -- only produced when the keyword is actually present); (3)
+  `side_effect_class=`/`requires_confirmation=` literal fields plus a disjoint, closed config-key
+  vocabulary over FTF-04A11's own `ConfigDocumentEvidence` (step 8, entirely new), the same
+  three-source composition shape FTF-04A12/FTF-04A13 already established. Reuses FTF-0405's own
+  already-CERTIFIED `validate_json_schema_document` and FTF-0406's own already-CERTIFIED
+  `RISK_RANK` closed five-value enum -- neither reimplemented locally.
+
+  This task's own negative_acceptance ("Unknown authorization is not inferred from tool
+  description; desired deny policy must be enforced in runtime") is met by two independent
+  structural facts: (1) no code path in this module or its own JS/TS helper ever reads a tool's own
+  `description` value for any purpose -- `side_effect_class`/`requires_confirmation` resolve only
+  from their own same-named literal keyword/property/config-key; a tool decorated with a reassuring
+  `description` and no structural declaration comes back `resolved=False,
+  reason="argument_not_present"`, never a fabricated permissive default (dedicated test:
+  `test_tool_with_reassuring_description_but_no_structural_declaration_is_unresolved_never_
+  permissive`, plus its TS/JS analog); (2) the real deny-policy enforcement this clause's own
+  second half names is FTF-0406's already-CERTIFIED `enforce_side_effect_classification`, already
+  live-wired into `ToolDefinition.__init__` independent of this task -- this module produces
+  proposal evidence only (Section 7A.5) and never constructs a `ToolDefinition` row or reaches that
+  boundary.
+
+  `tests/tasks/test_ftf_04a14.py`: 25 tests (Node-gated TS/JS tests ran, `node` available in this
+  sandbox), all pass against the unmodified code. Two independent fault injections, both reverted
+  byte-identical (md5sum `6c150eaede1c14ccecc3682a6d3efef0` before and after each, independently
+  re-confirmed by this session, not merely trusted from the implementing subagent's own report --
+  see PROGRESS.md's matching entry for the full re-verification record): (1) the closed-enum
+  membership check in `_resolve_side_effect_class_literal` removed -- 1 genuine FAIL; (2) the
+  `response_format=` presence guard in `_extract_response_format_candidate` removed -- 1 genuine
+  FAIL.
+
+  `pnpm install --frozen-lockfile` materialized this sandbox's own missing
+  `node_modules/typescript` (same real, already-declared root devDependency FTF-04A10 already
+  relies on). `uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean
+  repo-wide (278 files; the previously-disclosed 15 `alembic`-stub errors are the only ones present,
+  confirmed pre-existing and unrelated). `pnpm run lint`/`pnpm run format:check` clean repo-wide.
+  `product_truth_check.py --fail-on-unwired` unchanged `20/20` (`proving_symbol` left blank, same
+  disclosed "no live route yet" precedent every prior 04A-family task already established).
+  `status.py` unchanged `82/300` (Law 2 -- this is a submission, not a certification). Regression
+  swept `test_ftf_04a09.py`/`test_ftf_04a10.py`/`test_ftf_04a11.py`/`test_ftf_04a12.py`/
+  `test_ftf_04a13.py` (all "all checks passed") plus `uv run pytest tests/unit` (3/3) -- zero
+  regressions.
+
+  `docs/spec-matrix.yaml` FTF-04A14 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real
+  merge commit. CI gate step (`FTF-04A14 negative-test proof`) added to `.github/workflows/ci.yml`.
+  **Not self-certified (Law 4)** -- awaiting an independently-triggered Control-plane L2 certifier
+  session and the L4 gate.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01DXhyapeY1fzRBx287LkDzE, triggered by the `pull_request.opened`
   webhook for PR #324) — independently certified **FTF-04A13 (Prompt-source discovery + evidence
   capture)**. Session-ID check: no overlap with PR #324's producer session
@@ -5940,11 +6035,20 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A13** ("Prompt-source discovery + evidence capture") — submitted 2026-09-27 via a scheduled
-autonomous relay shift, branch `claude/wizardly-fermat-vru1mn` -> `main`,
-[PR #324](https://github.com/SJZLab/Sovra/pull/324) (this file's own top dated entry has the full
-record). `docs/spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`.
-Awaiting an independently-triggered Control-plane L2 certifier session and the L4 gate.
+**FTF-04A14** ("Tool/schema/permission discovery + evidence capture") — submitted 2026-09-27 via a
+scheduled autonomous relay shift, branch `claude/wizardly-fermat-m34za8` -> `main` (this file's own
+top dated entry has the full record; PR link recorded here in a follow-up commit once opened).
+`docs/spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. Awaiting an
+independently-triggered Control-plane L2 certifier session and the L4 gate.
+
+Correction (2026-09-27, scheduled autonomous relay shift): this paragraph previously still named
+**FTF-04A13** ("Prompt-source discovery + evidence capture") as the current pending item, dated from
+its own submission (PR #324). That is now stale — FTF-04A13 was independently certified since (this
+file's own top dated log has the full certifier record; `docs/spec-matrix.yaml`:
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash`
+`9d7294e60a0abe11edf987030afab0d13c72b783`, confirmed directly). Corrected here rather than left for
+a future session to rediscover, per this file's own established precedent (the same class of
+staleness this paragraph itself corrected for FTF-04A12/FTF-04A11 one/two shifts ago).
 
 Correction (2026-09-26, Control-plane certifier shift, session
 `https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk`): this paragraph previously still named
@@ -5954,8 +6058,9 @@ its own submission. That is now stale — FTF-04A12 was independently certified 
 L2-CERTIFIED`, confirmed directly). Corrected here rather than left for a future session to
 rediscover, per this file's own established precedent (the same class of staleness this paragraph
 itself corrected for FTF-04A11 one shift ago). Everything below this paragraph is prior history,
-kept for the record (FTF-0302/FTF-0303/FTF-0513/FTF-04A11/FTF-04A10/FTF-04A09/FTF-04A12 are all
-already `CERTIFIED` — see this file's own top dated log and `docs/certifications/ledger.md`).
+kept for the record (FTF-0302/FTF-0303/FTF-0513/FTF-04A11/FTF-04A10/FTF-04A09/FTF-04A12/FTF-04A13
+are all already `CERTIFIED` — see this file's own top dated log and
+`docs/certifications/ledger.md`).
 
 **FTF-0302** ("Hugging Face artifact resolver") was the item here before that; submitted 2026-09-26 via **PR
 #305** (branch `claude/wizardly-fermat-9ex5xy` -> `main`,

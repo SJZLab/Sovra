@@ -20780,3 +20780,137 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A13) is `L1-PRO
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+---
+
+## 2026-09-27T00:00:00Z — Scheduled autonomous relay shift — FTF-04A14 submitted PROVISIONAL
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, never assumed state
+from prior context. STEP 0.2 (CLAUDE.md self-check): `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` exactly — no mismatch, shift proceeded.
+
+Fetched `origin/main` fresh rather than trusted from this branch's own local history: FTF-04A13 had
+already been independently certified since the prior logged shift (`e7691ca`, `docs/spec-matrix.yaml`
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash`
+`9d7294e60a0abe11edf987030afab0d13c72b783`) — confirmed directly against `docs/spec-matrix.yaml`
+rather than trusted from `QUEUE.md`'s own "## Provisional" pointer section, which was found stale
+(still named FTF-04A13 as pending; corrected below). `git rev-parse --is-shallow-repository` was
+`true`; `git fetch --unshallow` resolved it (same disclosed precedent every prior FTF-04A0x/FTF-04A1x
+shift has hit) — `validate_spec.py --strict` clean after that (before unshallowing it had reported 27
+`stale_commit` false positives against evidence commits genuinely present on the unshallowed
+history, not real defects).
+
+Checked all open PRs directly via the GitHub API before picking new work: #315/#314 (FTF-0303),
+#313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only),
+#231 (FTF-0212), #195/#194 (FTF-0304) — same set the prior shift already logged, none overlap with
+this shift's own eventual pick.
+
+Recomputed the dependency-ready frontier directly from `docs/TASK_INDEX.md`'s own dependency column
+cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state` (never trusted
+from a prior shift's own claim alone, since FTF-04A13's own certification had just moved the
+frontier): 14 tasks came back dependency-ready and `certification_state: NONE`. FTF-0212/FTF-0304
+excluded (other sessions' own open PRs); FTF-0214 excluded (disclosed blocker); FTF-04A02 excluded
+(keyed external GitHub credential, ask-first per CLAUDE.md); FTF-0500A/FTF-0500D excluded (same
+no-`Dataset`-entity/no-composed-route class FTF-0214 already established); FTF-1201/FTF-H004
+excluded (real network egress this sandbox lacks); FTF-1703 excluded (needs ≥1000 real curated
+traces). Picked **FTF-04A14** ("Tool/schema/permission discovery + evidence capture") — lowest
+`docs/TASK_INDEX.md` file-order item among the genuinely ready and unclaimed candidates, and the
+next task in the same Section 7A.4 discovery-pipeline family FTF-04A09–FTF-04A13 have been building
+sequentially.
+
+Task contract pulled fresh (`python tools/r1_handoff.py packet FTF-04A14 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) rather than trusted from the title alone. Read FTF-04A09's and
+FTF-04A10's own module docstrings directly: both explicitly disclose their own step-6 coverage is
+narrow (only a `tools=`/`tools:` keyword's own literal name list, on the same completion call site
+they already detect) and that step 7 ("structured output schemas") and step 8 ("authorization/
+confirmation boundaries") are entirely out of their own scope. This task covers exactly that
+disjoint remainder rather than re-extracting or duplicating FTF-04A09's/FTF-04A10's own already-
+CERTIFIED private tool-name extraction (Section 75.1's own "don't scatter domain logic into one file
+per ticket" warning).
+
+Delegated the actual engineering (module + test + fault-injection proof + verification run) to a
+background subagent with a fully self-contained brief (exact task contract, path-refinement
+precedent, the five sibling files to mirror, the two already-CERTIFIED services to reuse rather than
+reimplement, and the literal negative_acceptance clause with a required dedicated test). The
+subagent's finished work was then independently re-verified by this session before being trusted,
+not accepted on its own report alone (Law 4's spirit applied even within one shift): re-read the full
+912-line module directly; re-ran `tests/tasks/test_ftf_04a14.py` from a clean checkout state and
+confirmed the exact same "all checks passed" output; independently reproduced fault injection #1
+(removing the closed-enum membership check in `_resolve_side_effect_class_literal`) byte-for-byte,
+confirmed the exact same md5sum before (`6c150eaede1c14ccecc3682a6d3efef0`)/after-injection
+(`6a625e3038d4b3f02709cc94d0f3d2b5`)/after-revert (`6c150eaede1c14ccecc3682a6d3efef0`, byte-identical
+to baseline) and the exact same named test FAIL; independently re-ran `ruff check`/`ruff format
+--check`/`mypy`/`validate_spec.py --strict`/`pytest tests/unit`, the full `test_ftf_04a09.py`–
+`test_ftf_04a13.py` regression sweep, `product_truth_check.py --fail-on-unwired`, and `status.py` —
+every result matched the subagent's own report exactly, none of it merely re-stated from that report
+without a fresh run.
+
+Implemented `apps/api/app/target_connectors/tool_schema_permission_discovery_evidence_capture.py`
+(path refined from the packet's own generic `packages/target-connectors/...` suggestion to this
+repo's own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family
+task already disclosed) plus a new, separate JS/TS subprocess helper
+(`_typescript_javascript_tool_schema_permission_ast_helper.cjs` — never an edit to FTF-04A10's or
+FTF-04A13's own already-CERTIFIED, frozen helpers, per Section 75.1's own "shared module changes
+require ownership transfer" rule). Covers three disjoint slices of Section 7A.4's own analysis
+order: (1) standalone `@tool(...)`/`@function_tool(...)` (Python) and `tool({...})`/
+`defineTool({...})` (TS/JS) tool-definition decorators/calls, a closed vocabulary matching real,
+common agent-tool-library conventions (LangChain, OpenAI Agents SDK, Vercel AI SDK); (2)
+`response_format=` structured-output schemas on the same completion call sites FTF-04A09/FTF-04A10
+already detect (step 7, entirely new — only produced when the keyword is actually present, never for
+its mere absence); (3) `side_effect_class=`/`requires_confirmation=` literal fields plus a disjoint,
+closed config-key vocabulary (`SIDEEFFECTCLASS`/`TOOLSIDEEFFECTCLASS`,
+`REQUIRESCONFIRMATION`/`TOOLREQUIRESCONFIRMATION`) over FTF-04A11's own `ConfigDocumentEvidence`
+(step 8, entirely new), the same three-source composition shape FTF-04A12/FTF-04A13 already
+established. Reuses FTF-0405's own already-CERTIFIED `validate_json_schema_document` for any
+discovered `input_schema`/`output_schema` literal and FTF-0406's own already-CERTIFIED `RISK_RANK`
+closed five-value enum for `side_effect_class` membership — neither reimplemented locally.
+
+This task's own negative_acceptance ("Unknown authorization is not inferred from tool description;
+desired deny policy must be enforced in runtime") is met by two independent structural facts: (1) no
+code path in this module or its own JS/TS helper ever reads a tool's own `description` value for any
+purpose — `side_effect_class`/`requires_confirmation` resolve only from their own same-named literal
+keyword/property/config-key, never from free-text inspection; a tool decorated with a reassuring
+`description` and no structural declaration comes back `resolved=False,
+reason="argument_not_present"`, never a fabricated permissive default (dedicated test:
+`test_tool_with_reassuring_description_but_no_structural_declaration_is_unresolved_never_permissive`,
+plus its TS/JS analog); (2) the real deny-policy enforcement this clause's own second half names is
+FTF-0406's already-CERTIFIED `enforce_side_effect_classification`, already live-wired into
+`ToolDefinition.__init__` independent of this task — this module produces proposal evidence only
+(Section 7A.5: "Discovery is proposal, not governance") and never constructs a `ToolDefinition` row
+or reaches that boundary, so no code path here can weaken or bypass it.
+
+`tests/tasks/test_ftf_04a14.py`: 25 tests (Node-gated TS/JS tests ran, `node` available in this
+sandbox; `pnpm install --frozen-lockfile` materialized `node_modules/typescript`, the same real,
+already-declared root devDependency FTF-04A10 already relies on — no new dependency added), all pass
+against the unmodified code. Two independent fault injections, both reverted byte-identical (md5sum
+`6c150eaede1c14ccecc3682a6d3efef0` before and after each, independently re-confirmed by this session
+as described above): (1) the closed-enum membership check in `_resolve_side_effect_class_literal`
+removed — 1 genuine FAIL (`a literal side_effect_class string outside FTF-0406's own closed
+five-value enum is honestly unresolved, never coerced to the nearest valid value`); (2) the
+`response_format=` presence guard in `_extract_response_format_candidate` removed, so a completion
+call site with no `response_format=` keyword at all fabricates a candidate anyway — 1 genuine FAIL
+(`a completion call site with no response_format= keyword at all is not itself reported as a
+candidate -- absence is not a finding`).
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean repo-wide (278
+files; the previously-disclosed 15 `alembic`-stub errors are the only ones present, confirmed
+pre-existing and unrelated — zero new errors). `pnpm run lint`/`pnpm run format:check` clean
+repo-wide. `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged
+`20/20` (`proving_symbol` left blank, same disclosed "no live route yet" precedent every prior
+04A-family task already established). `status.py` unchanged `82/300` (Law 2 — this is a submission,
+not a certification). Regression swept `test_ftf_04a09.py`/`test_ftf_04a10.py`/`test_ftf_04a11.py`/
+`test_ftf_04a12.py`/`test_ftf_04a13.py` (all "all checks passed") plus `uv run pytest tests/unit`
+(3/3) — zero regressions. `verify_task.py --task FTF-04A14 --stage task` reports `BLOCKED` pre-merge,
+expected per precedent (no merged verification evidence yet).
+
+`docs/spec-matrix.yaml` FTF-04A14 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A14 negative-test proof`) added to `.github/workflows/ci.yml`.
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A14) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
