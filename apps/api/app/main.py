@@ -118,6 +118,7 @@ from app.target_connectors.agent_manifest_routes import build_agent_manifest_rou
 from app.target_connectors.discovered_agent_candidate_routes import (
     build_discovered_agent_candidate_router,
 )
+from app.target_connectors.manifest_evidence_routes import build_manifest_evidence_router
 from app.target_connectors.target_application_connection_routes import (
     build_target_application_connection_router,
 )
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(build_discovered_agent_candidate_router(session_factory))
     app.include_router(build_component_binding_router(session_factory))
     app.include_router(build_agent_manifest_router(session_factory))
+    app.include_router(build_manifest_evidence_router(session_factory))
     return app
 
 

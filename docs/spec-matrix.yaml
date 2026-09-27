@@ -4249,15 +4249,51 @@ FTF-04A19:
   proving_symbol: build_agent_manifest_router
   proving_test: tests/tasks/test_ftf_04a19.py
 FTF-04A20:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: ManifestEvidence schema/API
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A19
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A19 (both CERTIFIED). Real forward Alembic migration (0016_manifest_evidence) adds
+    a purely additive UNIQUE (organization_id, id) on the already-existing agent_manifests
+    table (matching 0006_tool_definitions.py's own uq_projects_organization_id_id precedent)
+    and creates the manifest_evidence table (Section 6.8E) with the same FORCE-RLS/composite-
+    tenant-FK discipline every prior migration in this chain already established, plus nine
+    real CHECK constraints enforcing this task's own per-evidence_type field-shape design
+    (see manifest_evidence_schema.py's own docstring for the full disclosed reading):
+    DETECTED_EVIDENCE_TYPES (every evidence_type except user_input) require
+    repository_commit_sha and confidence_score; REPO_CITED_EVIDENCE_TYPES (repo_file/
+    repo_symbol/config/test) additionally require file_path/content_hash;
+    LINE_REF_EVIDENCE_TYPES (repo_file/repo_symbol alone) additionally require line_start/
+    line_end (paired, line_start >= 1, line_end >= line_start) and forbid them for every other
+    type (this task's own negative_acceptance, "Fabricated line refs ... are rejected");
+    symbol is required iff evidence_type == repo_symbol; user_input carries no repo
+    provenance and no confidence at all (acceptance clause 1's own "or user override
+    provenance"). field_path (this task's own real "per-field source ... provenance" field)
+    is validated against AgentManifest's own already-CERTIFIED CONTENT_FIELDS (negative_
+    acceptance: "unknown values presented as detected are rejected"). manifest_evidence_crud.py's
+    own create_manifest_evidence performs the one real cross-table check no CHECK constraint
+    can express -- repository_commit_sha must equal the parent manifest's own
+    TargetSourceSnapshot.commit_sha exactly (negative_acceptance: "cross-snapshot evidence ...
+    rejected"), reusing FTF-04A19's own get_agent_manifest for the ownership fetch rather than
+    a second, hand-duplicated authorization check. Real live router
+    (build_manifest_evidence_router) wired into apps/api/app/main.py at
+    /api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}/
+    evidence (create/get/list only -- immutable once written, sovra_app is granted
+    SELECT/INSERT alone, never UPDATE/DELETE). tests/tasks/test_ftf_04a20.py: all checks pass
+    -- validators, per-evidence_type __init__ structural consistency, and the real
+    locally-hosted router denying an unauthenticated request and an evaluator's write (403)
+    before session_factory is ever called, while an evaluator's read reaches the session
+    layer. uv run ruff check/format --check, uv run mypy . (290 source files) and python3
+    scripts/validate_spec.py --strict all clean; product_truth_check.py --fail-on-unwired
+    unchanged pending independent certification (Law 2 -- this is a submission, not a
+    certification). Not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
+  proving_symbol: build_manifest_evidence_router
+  proving_test: tests/tasks/test_ftf_04a20.py
 FTF-04A21:
   certification_state: NONE
   criticality: MUST

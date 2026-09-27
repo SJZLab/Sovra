@@ -1,4 +1,145 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-04A20 — relay: submit PROVISIONAL
+
+Scheduled autonomous relay shift. STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh; `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md` directly (no mismatch,
+shift continued). Confirmed FTF-04A19 already independently `CERTIFIED` (PR #331, merge commit
+`45d94f8d08bc82614fb5d3792d56df3255824299`) before this shift started — this file's own top entry
+and `docs/spec-matrix.yaml` both already read `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED` for FTF-04A19; `QUEUE.md`'s own "## Active"/"## Provisional" sections
+both already read "None currently."
+
+Checked every open PR directly via the GitHub API before picking new work: #328 (FTF-04A15), #315/
+#314 (FTF-0303), #313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08
+tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304, duplicate PRs) — none overlap with this
+shift's own eventual pick; PR #328's own file list (`.github/workflows/ci.yml`, `PROGRESS.md`,
+`QUEUE.md`, `apps/api/app/target_connectors/agent_test_evaluation_fixture_discovery.py`,
+`docs/certifications/queue.md`, `docs/implementation/task-packets/FTF-04A15.md`,
+`docs/spec-matrix.yaml`, `tests/tasks/test_ftf_04a15.py`) confirmed directly — no migration, no
+`packages/contracts/openapi/04A-interface.yaml` touch, so no `contracts:04A`/`migration:
+application` shared-lock conflict with this task's own real work below. Recomputed the dependency-
+ready frontier directly from `docs/spec-matrix.yaml`: **FTF-04A20** ("ManifestEvidence schema/API")
+came back newly dependency-ready — both real dependencies, FTF-04A01 and FTF-04A19, are genuinely
+`CERTIFIED` (confirmed directly, not merely assumed), and no open PR claims it. Pulled the task
+contract via `python tools/r1_handoff.py packet FTF-04A20 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+(`docs/implementation/task-packets/FTF-04A20.md`, `source_sha256` confirmed matching every other
+task packet pulled this chain) and read Section 6.8E in full before writing any code.
+
+**P (plan):** Read `agent_manifest_schema.py`/`agent_manifest_crud.py`/`agent_manifest_routes.py`/
+`0015_agent_manifests.py` (FTF-04A19, this task's own direct dependency and the closest real
+structural precedent) in full, plus `discovered_agent_candidate_schema.py` (FTF-04A17, the closest
+precedent for a Section-unlisted-but-still-added `created_at` column on an evidence-shaped
+resource) and `0006_tool_definitions.py` (the exact precedent for adding a purely additive
+`UNIQUE (organization_id, id)` constraint on an already-existing parent table via a later
+migration, reused here for `agent_manifests` since FTF-04A19's own migration never added one).
+
+**E (execute):** Implemented `apps/api/app/target_connectors/manifest_evidence_schema.py` (domain
+schema), `manifest_evidence_crud.py` (create/get/list), `manifest_evidence_routes.py` (real FastAPI
+router), and `apps/api/alembic/versions/0016_manifest_evidence.py` (real forward migration). This
+task's own compressed acceptance/negative_acceptance sentences were split into an explicit,
+disclosed design (see `manifest_evidence_schema.py`'s own module docstring for the full reasoning,
+not repeated here in full):
+- `field_path` ("Store per-field source ... provenance") must name a real `AgentManifest` content
+  field — its own leading dot-segment must be a member of FTF-04A19's own already-`CERTIFIED`
+  `CONTENT_FIELDS` (Section 77.1 reuse-first, never a second, hand-duplicated field list). This is
+  this module's own real enforcement of "unknown values presented as detected are rejected."
+- `DETECTED_EVIDENCE_TYPES` (every `evidence_type` except `user_input`) require
+  `repository_commit_sha`/`confidence_score` non-null — `evidence_type` itself is this module's own
+  real "confidence method" (Section 6.8E lists no separate `confidence_method` field).
+  `REPO_CITED_EVIDENCE_TYPES` (`repo_file`/`repo_symbol`/`config`/`test`) additionally require
+  `file_path`/`content_hash`. `LINE_REF_EVIDENCE_TYPES` (`repo_file`/`repo_symbol` alone)
+  additionally require `line_start`/`line_end` (paired, `>= 1`, `line_end >= line_start`) and
+  forbid them for every other type — this module's own real, structural enforcement of "Fabricated
+  line refs ... are rejected." `symbol` is required iff `evidence_type == 'repo_symbol'`.
+- `evidence_type == 'user_input'` ("or user override provenance") carries NO repo provenance and NO
+  confidence at all — the human is the source of truth by definition, never blended with a
+  detection method.
+- `evidence_json` is required non-empty — an empty `{}` claiming to be evidence is vacuous,
+  fabricated-looking, refused in `__init__`.
+- Every rule above is enforced twice: once as a real database-level `CHECK` constraint (this task's
+  own migration — 9 real constraints, listed in `docs/spec-matrix.yaml`'s own FTF-04A20 entry) that
+  a bypassing raw `INSERT` still cannot evade, and again in `ManifestEvidence.__init__` for a real,
+  descriptive `ManifestEvidenceValidationError` before ever reaching the database.
+- `manifest_evidence_crud.py`'s own `create_manifest_evidence` performs the one real cross-table
+  check no `CHECK` constraint can express: the caller-supplied `repository_commit_sha` must equal
+  the exact `commit_sha` of the parent manifest's own `TargetSourceSnapshot` (fetched after
+  reusing FTF-04A19's own already-`CERTIFIED` `get_agent_manifest` for the ownership fetch, never a
+  second, hand-duplicated authorization check) — real enforcement of "cross-snapshot evidence ...
+  rejected." Refused with `CrossSnapshotEvidenceError` (409).
+- `manifest_evidence` is immutable once written (Section 6.8E lists no update path at all, and
+  unlike `agent_manifests` itself there is no legitimate content edit for an evidence row) — the
+  real forward migration grants `sovra_app` `SELECT`/`INSERT` only, never `UPDATE`/`DELETE`, the
+  same "no legitimate mutation, ever" precedent `TargetSourceSnapshot`/`ModelVersion` already
+  established. `manifest_evidence_routes.py` therefore implements create/get/list only — no
+  update/delete endpoint at all.
+- Real live router (`build_manifest_evidence_router`) wired into `apps/api/app/main.py` at
+  `/api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}/evidence`.
+  Role gating reused directly from `agent_manifest_routes.py`'s own `AGENT_MANIFEST_READ_ROLES`/
+  `AGENT_MANIFEST_WRITE_ROLES` — Section 45 names no separate sentence for "evidence," and it is
+  squarely part of the same manifest-curation surface FTF-04A19 already gated.
+- `packages/contracts/openapi/04A-interface.yaml` extended under its own shared `contracts:04A`
+  lock with the real `/evidence` and `/evidence/{evidence_id}` paths this router actually
+  implements, plus `ManifestEvidenceType`/`ManifestEvidenceCreateRequest`/`ManifestEvidence`
+  schemas — YAML-parse-validated directly (`python3 -c "import yaml; yaml.safe_load(...)"`).
+
+**V (verify):** `tests/tasks/test_ftf_04a20.py` (no-DB suite): field validators, 15+ real
+`ManifestEvidence.__init__` structural-consistency negative cases (fabricated line-ref range,
+unpaired line refs, line refs on a non-line-anchored type, missing symbol/commit/confidence,
+`user_input` carrying real repo provenance, empty `evidence_json`), and a real, locally-hosted
+`build_manifest_evidence_router` (real uvicorn server, real local socket) denying an unauthenticated
+request and an evaluator's write (403) before `session_factory` is ever called, while an
+evaluator's read reaches the session layer — all pass, confirmed by directly running
+`uv run python3 tests/tasks/test_ftf_04a20.py` and reading its own "all checks passed" output.
+
+`tests/integration/test_ftf_04a20_manifest_evidence.py`: real Postgres 16 evidence (this sandbox's
+own real sudo/`service postgresql start` access, a fresh scratch `sovra_migrate` role/
+`sovra_ftf04a20` database created for this run, never reused across runs) — full Alembic chain
+`0001` through `0016_manifest_evidence` upgrades clean, and `0016` alone round-trips
+`downgrade -1` -> `upgrade head` clean (both confirmed directly before writing this test). One real
+organization pair, a real draft `AgentManifest` seeded for org1's own project, a real uvicorn
+server bound to the real, distinct, least-privileged `sovra_app` role (confirmed
+`app_engine.url.username == APP_ROLE_NAME != owner_engine.url.username`), proving: unauthenticated
+denial (401), evaluator write-denied/read-allowed (403/200), the core cross-tenant IDOR case (404),
+an unknown `field_path` refused (400), a cross-snapshot `repository_commit_sha` refused (409), a
+real `repo_file` evidence create anchored to the manifest's own real snapshot commit (201, with the
+real commit/line/confidence round-tripping), a real `user_input` evidence create with no repo
+provenance at all (201), a fabricated line ref on a non-line-anchored `config` row refused (400),
+get-by-id and list (both real), and three real database-level defense-in-depth proofs: a raw
+`INSERT` of a `config` row missing `file_path` caught by `ck_manifest_evidence_file_path_iff_repo_
+cited`, `sovra_app` refused an `UPDATE` on any `manifest_evidence` row at all (grant-surface,
+immutable once written), and `sovra_app` refused a direct `DELETE`.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (290 source files); `uv run mypy .`
+clean repo-wide (290 files, zero new errors — one real `**kwargs`-against-heterogeneous-signature
+mypy error found and fixed during development by switching the route handler's own payload
+extraction to a typed `dataclass` and passing each field as an explicit keyword, never `**dict`).
+`python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow` resolved the
+shallow-clone `stale_commit` false positives every prior shift's own history already disclosed).
+`product_truth_check.py --fail-on-unwired`: **22/22** (up from 21/21) — `build_manifest_evidence_
+router` (this task's own real `proving_symbol`) is a real, genuine live caller from `apps/api/app/
+main.py`, confirmed by direct inspection of the diff (the import and `app.include_router(...)`
+call are both real, not merely claimed). `status.py`: unchanged `85/300` certified, `21` product-
+true (Law 2 — this is a submission, not a certification; `certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN` do not count toward either stricter count until independently certified).
+Regression swept `test_ftf_04a19.py`/`test_ftf_04a01.py`/`test_ftf_04a07.py`/`test_ftf_04a17.py`/
+`test_ftf_1001.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0407.py` —
+all "all checks passed," zero regressions.
+
+`docs/spec-matrix.yaml` FTF-04A20 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: build_manifest_evidence_router`
+/ `proving_test: tests/tasks/test_ftf_04a20.py`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A20 negative-test proof`) added to `.github/workflows/ci.yml`
+immediately after the FTF-04A19 step, plus a new dedicated `manifest-evidence-integration` job (a
+real `services: postgres` container) mirroring `agent-manifest-integration`'s own pattern exactly.
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A20) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-27 — FTF-04A19 — Control plane: certify (PR #331)
 
 Scheduled Control-plane certifier shift, session

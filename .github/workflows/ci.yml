@@ -277,6 +277,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a16.py
       - name: FTF-04A19 negative-test proof (AgentManifest schema/versioning/hash, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a19.py
+      - name: FTF-04A20 negative-test proof (ManifestEvidence schema/API, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a20.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1598,3 +1600,53 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real AgentManifest evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a19_agent_manifest.py
+
+  manifest-evidence-integration:
+    # FTF-04A20: real Postgres ManifestEvidence evidence (Section 6.8E/
+    # 7A.6-7A.7/9/45/65-67/77/81) -- one real organization pair, a real
+    # draft AgentManifest seeded for org1's own project, a real uvicorn
+    # server proving create/get/list, the {workspace_admin,
+    # organization_admin}-write/wide-read RBAC boundary (reused directly
+    # from FTF-04A19), the cross-tenant IDOR case, an unknown field_path
+    # refused (400), a cross-snapshot repository_commit_sha refused (409
+    # -- this task's own negative_acceptance "cross-snapshot evidence ...
+    # rejected"), a real repo_file evidence create anchored to the
+    # manifest's own real snapshot commit, a real user_input evidence
+    # create with no repo provenance at all, a fabricated line ref on a
+    # non-line-anchored type refused (400 -- "Fabricated line refs ...
+    # rejected"), the real ck_manifest_evidence_file_path_iff_repo_cited
+    # CHECK constraint catching a raw INSERT that bypasses the ORM
+    # entirely, and sovra_app can never UPDATE or DELETE a row directly
+    # (immutable once written). No OpenBao needed -- this resource
+    # carries no credential. Same real `services: postgres` container
+    # pattern as agent-manifest-integration (this repo's interactive dev
+    # sandbox has no container-registry egress for a Docker Postgres
+    # image; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a20
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a20"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a20
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real ManifestEvidence evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a20_manifest_evidence.py
