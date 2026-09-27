@@ -323,27 +323,43 @@ def apply_manifest(cluster: str, manifest: str) -> None:
         raise ScenarioFailure("kubectl apply -f - failed")
 
 
-def probe_tcp(cluster: str, host: str, port: int) -> bool:
+def probe_tcp(cluster: str, host: str, port: int, attempts: int = 3) -> bool:
     """Real TCP connectivity check from inside the `target` pod -- a plain
     exit-code assertion (Section 84.4: "actual command ... exit codes"),
-    never a string match on YAML or an inferred result."""
-    result = kubectl(
-        cluster,
-        "-n",
-        NAMESPACE,
-        "exec",
-        "target",
-        "--",
-        "nc",
-        "-z",
-        "-w",
-        str(PROBE_TIMEOUT_SECONDS),
-        host,
-        str(port),
-        check=False,
-        timeout=PROBE_TIMEOUT_SECONDS + 15,
-    )
-    return result.returncode == 0
+    never a string match on YAML or an inferred result.
+
+    Retries a genuinely successful connection up to `attempts` times before
+    giving up (CI run 36352118097's own real, disclosed finding: a freshly
+    created sibling pod on the same single-node bridge network occasionally
+    is not yet ARP-resolvable from another pod created moments earlier, a
+    transient link-layer condition self-healing within a couple of seconds,
+    distinct from real policy enforcement). This does not weaken the
+    negative_acceptance proof: a destination genuinely blocked by policy
+    fails identically on every attempt, so retrying can only rescue a false
+    negative on a destination that should be reachable, never turn a real
+    block into a false "allowed"."""
+    for attempt in range(1, attempts + 1):
+        result = kubectl(
+            cluster,
+            "-n",
+            NAMESPACE,
+            "exec",
+            "target",
+            "--",
+            "nc",
+            "-z",
+            "-w",
+            str(PROBE_TIMEOUT_SECONDS),
+            host,
+            str(port),
+            check=False,
+            timeout=PROBE_TIMEOUT_SECONDS + 15,
+        )
+        if result.returncode == 0:
+            return True
+        if attempt < attempts:
+            time.sleep(2)
+    return False
 
 
 def build_network_policy_yaml(allowed_ip: str) -> str:
