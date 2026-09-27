@@ -21683,3 +21683,145 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A19) is `L1-PRO
 defect found by this session's own review -- awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-27T14:10:00Z -- Scheduled autonomous relay shift -- FTF-0601 submitted PROVISIONAL
+
+Session: https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm. STEP 0.1: CLAUDE.md.sha256
+self-check matched `sha256sum CLAUDE.md` directly. Read PROGRESS.md/QUEUE.md/docs/certifications/
+queue.md fresh (tail sections, given file size) plus `scripts/status.py` (86/300 certified, 22
+product-true) directly.
+
+This session's own designated branch (`claude/wizardly-fermat-17bf9h`) had already been merged
+into `main` -- no matching remote ref existed at shift start (`git ls-remote --heads origin`
+confirmed it genuinely absent, not merely stale locally). Per this session's own git instructions
+("if the pull request for your designated branch has already been merged, restart from the
+latest default branch"), reset the branch to fresh `origin/main`: `git fetch origin main &&
+git checkout -B claude/wizardly-fermat-17bf9h origin/main`.
+
+Checked all open PRs directly via the GitHub API before picking new work: #336 (Control plane
+certifying a separate FTF-04A20 duplicate submission, PR #334 -- a parallel session's own stale
+work, not overlapping this pick), #335 (FTF-0500D, in flight), #328 (FTF-04A15, in flight), #315/
+#314 (FTF-0303, NOT CERTIFIED), #313/#311/#308 (FTF-0513, already certified/recorded), #295
+(FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/#194
+(FTF-0304, duplicate PRs) -- none overlap with this shift's own eventual pick.
+
+Recomputed the dependency-ready frontier directly (`docs/TASK_INDEX.md`'s own dependency column
+cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state`, via a small
+one-off script, never trusted from a prior shift's own claim alone): 8 tasks came back
+dependency-ready after excluding every already-CERTIFIED and in-flight-PR task. Excluded
+FTF-04A02/FTF-0902/FTF-1201/FTF-H004 (disclosed `BLOCKED_EXTERNAL`/real-network-egress precedents
+this sandbox already established), FTF-0500A (disclosed no-composed-route blocker, same class PR
+#295 already found for FTF-0214), FTF-1703 (needs >=1000 real curated traces this sandbox does not
+have). Picked **FTF-0601 ("Evaluation suite schema/API")** -- all three of its own real
+dependencies (FTF-0401/FTF-04A19/FTF-0405) confirmed `CERTIFIED` directly in `docs/spec-matrix.yaml`
+before relying on them, no open PR claims it, and it unblocks a dozen downstream MUST-criticality
+tasks (the FTF-0602 through FTF-06xx evaluation chain).
+
+Task contract pulled fresh: `python3 tools/r1_handoff.py packet FTF-0601 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md` directly; the `--out <path>.md` directory quirk handled the same
+way every sibling packet already disclosed -- moved the generated file up to the plain
+`docs/implementation/task-packets/FTF-0601.md` path).
+
+Implemented `apps/api/app/evaluation/evaluation_suite_schema.py` (a project-scoped
+`EvaluationSuite` bound to one specific, already-`locked` `AgentManifest` version -- this task's
+own real "versioned mandate/runtime binding" reading, disclosed in full in the module's own
+docstring: `AgentManifest` already carries the versioned mandate/runtime tuple, so a suite's own
+job is to *bind* to one frozen manifest row, never to duplicate those fields), `evaluation_suite_crud.py`
+(create/get/list/update/lock through the exact same `TenantContext`/`authorize_resource_ownership`/
+`execute_tenant_scoped` composition FTF-0201/FTF-0301/FTF-0401/FTF-0404/FTF-1001/FTF-04A07/
+FTF-04A19 already proved), `evaluation_suite_routes.py` (the live router -- gated to `{evaluator,
+workspace_admin, organization_admin}` write, matching Section 45's own real, specific sentence
+"evaluator: create/run evaluation, no deployment" -- the first task in this chain with a literal
+role sentence of its own rather than the generic workspace_admin fallback -- / every Section 45
+role read), the real forward Alembic migration (`0017_evaluation_suites`), and the new phase-06
+contract freeze (`packages/contracts/openapi/06-interface.yaml`,
+`packages/contracts/jsonschema/06-domain.schema.json`, under a new `contracts:06` lock).
+
+Path refined from the task packet's own generic suggestion
+(`apps/web/components/evaluation-factory/evaluation_suite_schema_api.tsx`, a frontend path with no
+backend counterpart at all) to `apps/api/app/evaluation/evaluation_suite_schema.py`, matching
+FTF-04A19/FTF-04A20's own real `apps/api/app/<domain>/*_schema.py` layout precedent exactly.
+
+This task's own compressed negative_acceptance ("Wrong project/manifest, unversioned grading logic
+and mixed train/final data grants rejected") is disclosed in full, split into four real,
+independently-enforced conditions, in the schema module's own docstring: (1) a manifest belonging
+to a different project, or not currently `locked`, is refused (409); (2) `project_id` itself must
+genuinely belong to the caller's own organization; (3) `grading_logic_version` is a real, `NOT
+NULL`, `>= 1` integer with no default -- there is no way to persist an unversioned value; (4)
+`purpose` is a closed two-value `CHECK`-enforced enum (`development`, `final`) -- there is no
+"mixed" value to request in the first place. Section 69.1's own "Final suite creator/reviewer is
+independent of candidate implementer" is enforced both at construction and by a real database
+`CHECK` (`ck_evaluation_suites_independent_final_reviewer`) for `final`-purpose suites specifically
+-- `development`-purpose suites carry no such restriction (Section 69.1 names the rule for the
+final suite alone, disclosed explicitly rather than over-applied).
+
+`tests/tasks/test_ftf_0601.py`: 20 test functions covering validators
+(`validate_status`/`validate_purpose`/`validate_name`/`validate_grading_logic_version`/
+`validate_reviewer_id_or_none`), `EvaluationSuite.__init__` structural consistency (locked_at/
+reviewer/self-review pairing, including the explicit disclosure that a development-purpose suite
+may legally self-review while a final-purpose suite may not), and a real, locally-hosted
+`build_evaluation_suite_router` (real uvicorn server, real local socket, the same pattern
+`tests/tasks/test_ftf_04a19.py` established) denying an unauthenticated request and a viewer's
+write (403) before `session_factory` is ever called, while an evaluator's write and read both
+reach the session layer -- all pass.
+
+`tests/integration/test_ftf_0601_evaluation_suite.py`: real Postgres 16 evidence (this sandbox's
+own real sudo/`service postgresql start` access -- started fresh, was not already running; a
+fresh scratch `sovra_migrate` role/`sovra_ftf0601` database created for this run, never reused
+across runs). Full Alembic chain `0001` through `0017_evaluation_suites` upgrades clean, and
+`0017` alone round-trips `downgrade -1` -> `upgrade head` clean. Two real organizations (org1 with
+two real projects/connections/snapshots/manifests -- a locked manifest, a draft manifest, and a
+second project's own locked manifest, each to exercise a distinct negative case -- org2 for the
+cross-tenant IDOR case), a real uvicorn server bound to the real, distinct, least-privileged
+`sovra_app` role (confirmed `app_engine.url.username == APP_ROLE_NAME != owner_engine.url.username`),
+proving: unauthenticated denial (401), viewer write-denied/read-allowed (403/200), the core
+cross-tenant IDOR case (404), a 'mixed' purpose value refused (400), `grading_logic_version=0`
+refused (400), a manifest belonging to a different project refused (409), a not-yet-locked
+manifest refused (409), a real development suite create (201) with a real incrementing per-project
+version (a second suite for the same project gets version 2), locking without a reviewer refused
+(409), assigning a reviewer via PATCH then locking succeeding (200) with a real `locked_at`,
+re-locking an already-locked suite refused (409), editing a locked suite's content refused (409),
+a final-purpose suite's self-review locking refused (409, Section 69.1) and succeeding once a
+genuinely distinct reviewer is assigned (200), and three real database-level defense-in-depth
+proofs: a raw INSERT with `purpose='mixed'` caught by `ck_evaluation_suites_purpose`, a raw INSERT
+of a locked final suite with `reviewer_id == created_by` caught by
+`ck_evaluation_suites_independent_final_reviewer`, and a grant-surface proof that `sovra_app`
+cannot `DELETE` an `evaluation_suites` row directly.
+
+One real, substantive lint/format cleanup found and fixed by this same producer session before
+submission (disclosed, not hidden): five new files (both schema/crud/routes modules and both test
+files) initially carried 24 line-length/unused-variable findings under `uv run ruff check .`/
+`ruff format --check .` -- `ruff format` auto-fixed the wrapping, and two genuinely unused local
+variables (`project1b_id`/`project2_id` in the integration test's own seed block) were removed by
+hand; re-verified clean and both test suites re-run clean after the fix.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (297 source files); `uv run mypy .`
+clean repo-wide (297 files, zero new errors). `python3 scripts/validate_spec.py --strict` clean
+(after `git fetch --unshallow` resolved the shallow-clone `stale_commit` false positives every
+prior shift's own history already disclosed). `product_truth_check.py --fail-on-unwired`:
+**23/23** (up from 22/22) -- `build_evaluation_suite_router` (this task's own real
+`proving_symbol`) is a real, genuine live caller from `apps/api/app/main.py`, confirmed by direct
+inspection of the diff (the import and `app.include_router(...)` call are both real, not merely
+claimed). `status.py`: unchanged `86/300` certified, `22` product-true (Law 2 -- this is a
+submission, not a certification; `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` do not
+count toward either stricter count until independently certified). Regression swept
+`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_1001.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/
+`test_ftf_0405.py` -- zero regressions (three of the six emit an expected, intentionally-triggered
+`TenantContextError` traceback to stderr as part of their own negative-test fault injection; each
+still ends "all checks passed").
+
+`docs/spec-matrix.yaml` FTF-0601 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: build_evaluation_suite_router`
+/ `proving_test: tests/tasks/test_ftf_0601.py`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-0601 negative-test proof`) added to `.github/workflows/ci.yml`
+immediately after the FTF-04A20 step, plus a new dedicated `evaluation-suite-integration` job (real
+`services: postgres` container) mirroring `manifest-evidence-integration`'s own pattern exactly.
+**Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0601) is `L1-PROVEN`, no blocking
+defect found by this session's own review -- awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).

@@ -279,6 +279,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a19.py
       - name: FTF-04A20 negative-test proof (ManifestEvidence schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a20.py
+      - name: FTF-0601 negative-test proof (EvaluationSuite schema/API, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0601.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1650,3 +1652,55 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real ManifestEvidence evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a20_manifest_evidence.py
+
+  evaluation-suite-integration:
+    # FTF-0601: real Postgres EvaluationSuite evidence (Section 23-30/69/
+    # 45/65-67/77/81) -- two real organizations (org1 with two real
+    # projects/connections/snapshots/manifests, org2 for the cross-tenant
+    # IDOR case), a real uvicorn server proving create/get/list/update/
+    # lock, the {evaluator, workspace_admin, organization_admin}-write/
+    # wide-read RBAC boundary, the cross-tenant IDOR case, this task's own
+    # full negative_acceptance ("Wrong project/manifest, unversioned
+    # grading logic and mixed train/final data grants rejected" -- a
+    # 'mixed' purpose value refused 400, grading_logic_version=0 refused
+    # 400, a manifest belonging to a different project refused 409, a
+    # not-yet-locked manifest refused 409), Section 69.1's own creator/
+    # reviewer independence rule for a final-purpose suite (self-review
+    # refused 409, a distinct reviewer succeeds), a real per-project
+    # incrementing version, editing/re-locking an already-locked suite
+    # refused 409, the real ck_evaluation_suites_purpose and
+    # ck_evaluation_suites_independent_final_reviewer CHECK constraints
+    # both catching a raw INSERT that bypasses the ORM entirely, and
+    # sovra_app can never DELETE a row directly. No OpenBao needed -- this
+    # resource carries no credential. Same real `services: postgres`
+    # container pattern as manifest-evidence-integration (this repo's
+    # interactive dev sandbox has no container-registry egress for a
+    # Docker Postgres image; that evidence was instead produced locally
+    # against a directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0601
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0601"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0601
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real EvaluationSuite evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0601_evaluation_suite.py
