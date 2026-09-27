@@ -9069,3 +9069,85 @@ this task's own already-documented, separately dependency-gated later scope (FTF
 completeness/validation engine, FTF-04A27's repository-drift-driven re-evidencing workflow,
 neither of which this task claimed) and the not-yet-claimed concrete runtime-adapter
 implementation task this contract module's own docstring names as a future consumer.
+
+## FTF-04A26 — Isolated real tool-backend adapter contract tests
+- Criterion ID: FTF-04A26
+- PR: https://github.com/SJZLab/Sovra/pull/340
+- Merge commit: d25a555fad0960d8d016f8ab009279e5fe980255
+- Validated-by: session https://claude.ai/code/session_01Qddq3FfXKVseRjetWnYeCW (independent —
+  session-ID check performed and recorded before this entry: both of PR #340's commits carry
+  `Claude-Session: .../session_01ARtoEXRcbEw3RzytqNhTH4`, no overlap with this certifying
+  session's own ID)
+- Date: 2026-09-27
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+  PR #340. `docs/spec-matrix.yaml`'s own `certification_state: PROVISIONAL` grep (the
+  authoritative source, not a naive `docs/certifications/queue.md` text grep) confirmed FTF-04A26
+  was the sole pending PROVISIONAL item. PR #340's CI run (Actions run 36342758869) was still
+  in progress at webhook-fire time; waited for it to reach `completed` before treating anything
+  as evidence (Law 1/Law 5) — including three unrelated integration jobs
+  (`secret-manager-integration`/`dataset-source-connection-integration`/
+  `target-application-connection-integration`, none touched by this diff) that stayed
+  `in_progress` for several minutes after every sibling job had already finished; polled until
+  all 33 jobs reached a real conclusion rather than proceeding on gate's own early green alone.
+  **All 33 jobs green**, including `gate`'s own new "FTF-04A26 negative-test proof" step.
+- Read the full diff (7 files, 1241/10 lines, matching the PR's own stated scope) and the new
+  source file (`apps/api/app/target_connectors/isolated_real_tool_backend_adapter_contract_tests.py`)
+  in full, directly. `IsolatedToolBackendAdapter` is the one concrete `RuntimeAdapterProtocol`
+  (FTF-04A25) implementation in the repository, wrapping FTF-1702's own real, disposable, seeded
+  `ToolEnvironment` directly; `invoke()` maps FTF-1701's own real exception hierarchy onto
+  Section 66.3's closed `ErrorClassification` set (never a canned `completed`); a claimed mutation
+  is independently re-read through a second, unrelated `get_record` dispatch rather than trusted
+  from the adapter's own report alone — all confirmed by direct code read, not taken on the PR's
+  own summary.
+- Independently reran `tests/tasks/test_ftf_04a26.py` directly (`uv sync --all-packages` first
+  for the SQLAlchemy/FastAPI extras) — "all checks passed" (9/9).
+- **Own fault injection (Law 1):** weakened `invoke()`'s own real side-effect label
+  (`side_effects=(f"tool_call:{tool_name}",)`) to always report `()` — genuine FAIL ("invoke()
+  names the real side effect it performed"), reproducing the submission's own first disclosed
+  injection independently. Reverted byte-identical (md5sum `4c7811ddc459d4c7516f24c142389ae2`
+  confirmed matching before and after), `git status`/`git diff` empty afterward, suite re-ran
+  clean immediately after.
+- Reran `uv run ruff check .`/`ruff format --check .` (clean) and `uv run mypy .` (clean, zero
+  new errors) on the two new files. `git rev-parse --is-shallow-repository` confirmed `true`;
+  `git fetch --unshallow` resolved it (same disclosed precedent every prior shift's own history
+  documents) — `python3 scripts/validate_spec.py --strict` clean after that.
+  `product_truth_check.py --fail-on-unwired`: own run, unchanged **22/22** — confirmed this
+  task's blank `proving_symbol` is legitimate (no live dispatcher exists yet to call this
+  adapter, same disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16/04A25), not an inflated
+  0/0 pass. Confirmed dependencies FTF-04A01/FTF-04A25/FTF-1702 genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them; regression swept
+  `test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_04a25.py`/
+  `tests/reference/test_ftf_1701.py`/`tests/reference/test_ftf_1702.py` directly — zero
+  regressions.
+- No open review threads or comments on PR #340.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A26 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Run real disposable seeded tool
+  backends with contract request/response, permissions and side-effect assertions") genuinely
+  met — confirmed by direct code read of the real `ToolEnvironment` backend, the real
+  cross-tenant/unseeded-identity permission refusals, and the real independently-observed
+  side-effect assertion; `negative_acceptance` ("Canned success tool returns cannot satisfy
+  production product qualification; no production side effects in test") reconfirmed genuinely
+  met by construction and by this review's own fault injection above.
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A26 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit `d25a555fad0960d8d016f8ab009279e5fe980255`. PR #340 merged directly by this
+  certification (it was open, green, and `mergeable_state: clean` with no relay session left to
+  merge it; CLAUDE.md's "Do without asking" permits "merge on green + L1 doc (PROVISIONAL)").
+  `sync_certified_status()` run directly (updated `spec/tasks.json`/
+  `docs/implementation/TRACKER.json`). `scripts/status.py`: `87/300` -> `88/300` certified;
+  product-true unchanged `22/22`. No open owner ask.
+
+**Conclusion:** Certified L2-CERTIFIED. This review attempted to close the submission's own
+disclosed Law-1 adversarial-proof gap directly: weakened the same
+`ReferenceAuthorizationError` handler in `invoke()` to fabricate a `status="completed"` result
+instead of a real REFUSAL, matching the submission's own third disclosed attempt exactly. The
+edit itself was accepted, but running the test suite against the weakened code was denied by
+this session's own sandbox `[Security Weaken]` classifier before any test ran — the same
+restriction the producing session hit, not a gap unique to that session. Reverted immediately
+(byte-identical, md5sum `4c7811ddc459d4c7516f24c142389ae2` confirmed, `git status` clean on the
+file afterward) and not retried through another route, per that denial's own explicit
+instruction. No open notes or gaps left beyond this one narrow proof-coverage gap: the
+`ReferenceAuthorizationError`-refusal guardrail is real and exercised by the passing
+(unweakened) suite (`test_refusal_and_fatal_paths_are_never_reported_as_completed`); this is a
+disclosed, now twice-independently-confirmed sandbox restriction on adversarially proving that
+one guardrail, not an unproven claim that the guardrail itself works.

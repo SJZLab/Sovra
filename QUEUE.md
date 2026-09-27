@@ -1,5 +1,32 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01Qddq3FfXKVseRjetWnYeCW, triggered by the `pull_request.opened`
+  webhook for PR #340) — independently certified **FTF-04A26 (Isolated real tool-backend adapter
+  contract tests)**. Session-ID check: both of PR #340's commits carry `Claude-Session:
+  .../session_01ARtoEXRcbEw3RzytqNhTH4`, no overlap with this certifying session's own ID — Law 4
+  independence confirmed. Waited for PR #340's real CI run to reach `completed` (33/33 jobs
+  green, including the new "FTF-04A26 negative-test proof" step; three unrelated integration jobs
+  stayed `in_progress` for several minutes after every sibling job had finished, polled until they
+  too settled green) before treating anything as evidence. Read the full diff/new source file
+  directly, independently reran `tests/tasks/test_ftf_04a26.py` (clean, 9/9). Ran a real fault
+  injection (weakened `invoke()`'s own side-effect label — genuine FAIL, reverted byte-identical)
+  and attempted the submission's own third, disclosed-but-untested injection (fabricating a
+  `completed` result on an authorization refusal) — the edit was accepted but running the suite
+  against it was denied by this session's own sandbox `[Security Weaken]` classifier, confirming
+  the same restriction independently rather than merely repeating it; reverted byte-identical.
+  Reran ruff/mypy/validate_spec.py --strict/product_truth_check.py --fail-on-unwired — all clean,
+  unchanged 22/22 product-true (blank `proving_symbol` confirmed legitimate). Confirmed
+  dependencies FTF-04A01/FTF-04A25/FTF-1702 genuinely `CERTIFIED`. Task contract re-pulled via
+  `tools/r1_handoff.py` — both the acceptance clause and the full negative_acceptance clause
+  genuinely met. No open review threads. PR #340 merged directly (merge commit
+  `d25a555fad0960d8d016f8ab009279e5fe980255`) — open, green, `mergeable_state: clean`, no relay
+  session left to merge it; CLAUDE.md's "Do without asking" permits "merge on green + L1 doc
+  (PROVISIONAL)". `docs/spec-matrix.yaml` FTF-04A26 set to `certification_state: CERTIFIED` /
+  `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit.
+  `sync_certified_status()` run directly. `scripts/status.py`: `87/300` -> `88/300` certified;
+  product-true unchanged `22/22`. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01DS8AG6WWnKw8twauFMmHCe, triggered by the `pull_request.opened`
   webhook for PR #338) — independently certified **FTF-04A25 (Production-faithful target-agent
   harness contract)**. Session-ID check: PR #338's sole commit carries `Claude-Session:
@@ -6426,9 +6453,18 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+None currently. FTF-04A26 (Isolated real tool-backend adapter contract tests) — the item named
+directly below as still "awaiting independent Control-plane L2 review" — was independently
+reviewed and CERTIFIED this shift via PR #340 (merge commit
+`d25a555fad0960d8d016f8ab009279e5fe980255`) — see this file's own top dated log entry and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
+
+Superseded by the certification above, kept verbatim for the record:
+
 **FTF-04A26** ("Isolated real tool-backend adapter contract tests") — submitted PROVISIONAL this
-shift. See this file's own top dated log entry and `docs/certifications/queue.md` for the full
-evidence record. Awaiting independent Control-plane L2 review.
+shift via **[PR #340](https://github.com/SJZLab/Sovra/pull/340)**. See this file's own top dated
+log entry and `docs/certifications/queue.md` for the full evidence record. Awaiting independent
+Control-plane L2 review.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A25** ("Production-
 faithful target-agent harness contract") as the current pending item; it was independently
