@@ -1,5 +1,85 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_014eRKjsG4bTuq5Q9XfJmCL8, triggered by the `pull_request.opened`
+  webhook for PR #335) — swept `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for every
+  `certification_state: PROVISIONAL` item and found two: **FTF-04A20** (already had an open,
+  unmerged Control-plane certification PR, #334, prepared by a different session) and **FTF-0500D**
+  (a fresh relay submission, PR #335, this shift's own webhook trigger).
+
+  **FTF-04A20 (PR #334) — independently re-verified and merged, CERTIFIED.** Session-ID check:
+  PR #333's commit carries `session_01DV6JW7DUe1YfrdLj4LHPNB`, PR #334's commit carries
+  `session_015atcDZbzcrRMTRtWZumvor` — neither overlaps this session's own ID — independent per
+  Law 4. Re-read PR #334's own diff directly: 7 files, tracker/doc-only (`PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+  `docs/implementation/TRACKER.json`/`spec/tasks.json`), no code changes, matching its own stated
+  scope. Re-confirmed CI green on the real PR #333 head via the GitHub Actions API (run
+  36314794620): 30/30 jobs `success`, including `gate`'s own "FTF-04A20 negative-test proof" step
+  and the dedicated `manifest-evidence-integration` job. Reproduced `tests/tasks/test_ftf_04a20.py`
+  directly on this session's own checkout of `main` — "all checks passed" — and confirmed
+  `product_truth_check.py --fail-on-unwired` at a real, reproduced `22/22`. Confirmed the real
+  9-CHECK-constraint migration (`0016_manifest_evidence.py`) exists and matches the claimed
+  per-`evidence_type` field-shape design; confirmed dependencies FTF-04A01/FTF-04A19 both
+  genuinely `CERTIFIED`. Re-pulled the task's own contract via `tools/r1_handoff.py packet
+  FTF-04A20 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both the acceptance clause and
+  the full `negative_acceptance` clause are genuinely covered by real, non-stub assertions in
+  `tests/tasks/test_ftf_04a20.py` (`_rejects`/`check` genuinely require
+  `ManifestEvidenceValidationError` to be raised, verified by reading the harness itself, not
+  merely trusting its printed result).
+
+  **Disclosed limitation:** this session's own live fault injection (deliberately breaking a guard
+  in `manifest_evidence_schema.py` and re-running the suite to watch it fail) was blocked mid-edit
+  by this sandbox's own auto-mode permission classifier (`[Security Weaken]`) the moment the test
+  was re-run against the weakened check; the edit was reverted immediately (byte-identical,
+  `md5sum 502b7394e643bf37e1056ff8b52c3cb8` before/after) and not retried through another tool, per
+  that denial's own instructions. In its place: static verification that the negative-path tests
+  are real (`_rejects` genuinely calls the constructor and returns `True` only on a real caught
+  `ManifestEvidenceValidationError`; `check`/`main` genuinely `sys.exit(1)` on any recorded
+  failure), plus the two independent, distinct fault injections already on record from two
+  separate non-producer sessions (PR #333's own three disclosed database-level proofs; PR #334's
+  own additional `ck_manifest_evidence_symbol_iff_repo_symbol` drop-and-reinsert proof). No
+  blocking defect found. **Merged PR #334** (merge commit `66c2d6174be8b0dc068e6900cb8e921da4ebb834`)
+  — `docs/spec-matrix.yaml`/`docs/certifications/ledger.md` already carried the correct CERTIFIED
+  state and evidence in that PR's own diff; certified 85/300 -> 86/300, product-true 21/21 -> 22/22.
+
+  **FTF-0500D (PR #335) — independently reviewed, holds up, but NOT merged (operational blocker,
+  not a defect).** Session-ID check: PR #335's sole commit carries
+  `session_01VNYcLTeDxuSYqxCHADKbp9` — no overlap with this session's own ID — independent per Law
+  4. Confirmed CI green on the real PR #335 head via the GitHub Actions API (run 36321059865,
+  `completed`/`success`). Read the full diff directly (7 files, 1288/11 insertions/deletions,
+  matching the PR's own stated scope) and both new files in full
+  (`workers/data/dataset_source_security_boundary_preview_audit_evidence.py`,
+  `tests/tasks/test_ftf_0500d.py`) via the GitHub API. Confirmed dependencies FTF-0402/FTF-0500
+  both genuinely `CERTIFIED`. Re-pulled the task's own contract via `tools/r1_handoff.py packet
+  FTF-0500D --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both the acceptance clause
+  ("Display source classification, bytes/records, boundary, retention, transformations and
+  purpose before copying") and the negative_acceptance clause ("UI warning alone cannot allow
+  forbidden egress; backend checks grant and destination again at import") are genuinely met:
+  `build_dataset_source_copy_preview` never raises (a preview), `authorize_dataset_source_copy`
+  independently re-derives both checks from its own arguments every call and never reads a
+  previously built preview object — confirmed by reading the function body directly, not merely
+  the docstring's own claim. Checked out the PR branch into a scratch worktree
+  (`/tmp/pr335-wt`, removed after use) and reproduced `tests/tasks/test_ftf_0500d.py` directly —
+  "all checks passed" — plus `ruff check` (clean) and `mypy` (clean, 1 source file) on both new
+  files, and `product_truth_check.py --fail-on-unwired` unchanged at a real, reproduced `22/22`
+  (this task's own `proving_symbol` stays blank, disclosed "no live caller yet" precedent —
+  FTF-0501, this task's own dependent, does not exist yet). No blocking defect found in the
+  implementation itself.
+
+  **Attempting to merge PR #335 failed for real** (`405 Pull Request has merge conflicts` from the
+  GitHub API) — caused by this same session's own prior action: merging PR #334 first landed
+  tracker-doc changes to the exact same files PR #335 also touches (`QUEUE.md`/`PROGRESS.md`/
+  `docs/certifications/queue.md`/`docs/spec-matrix.yaml`), since PR #335 branched before PR #334
+  merged. Attempting to resolve this the standard way (`git merge origin/main --no-edit` in a
+  scratch worktree on the PR branch, to push a real conflict-resolution commit) was explicitly
+  denied by this sandbox's own auto-mode permission classifier (`[Merge Without Review]`). Per
+  that denial's own explicit instruction not to pursue the same outcome through another tool or a
+  later turn, did **not** attempt a workaround (e.g. GitHub's own "update PR branch" API, which
+  would perform the identical merge under a different name). `certification_state` stays
+  `PROVISIONAL` on `docs/spec-matrix.yaml` — this is a real, disclosed operational blocker, not a
+  defect in FTF-0500D's own implementation, and not silently dropped (Law 2): see "Owner actions —
+  current" below.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor, triggered by the `pull_request.opened`
   webhook for PR #333) — independently certified **FTF-04A20 (ManifestEvidence schema/API)**.
   Session-ID check: PR #333's sole commit carries `Claude-Session: .../session_01DV6JW7DUe1YfrdLj4LHPNB`
@@ -6284,8 +6364,43 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. The GitHub Actions runner-provisioning outage first
-found on PR #170 (2026-09-21, escalated to an owner ask the same day)
+2026-09-27: **PR #335 (FTF-0500D) cannot be merged by this session — real merge conflict against
+`main`, and this sandbox's own auto-mode permission classifier denies the standard fix.**
+
+What happened: this shift certified FTF-04A20 first (merging PR #334), which landed changes to
+`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`. PR #335
+(FTF-0500D) branched before that merge and touches the exact same files, so merging it now fails
+for real (`405 Pull Request has merge conflicts`, confirmed via the GitHub API, not a permission
+issue on its own). FTF-0500D's own implementation independently holds up in full (see this file's
+own top dated entry for the complete re-verification) — this is purely a merge-conflict-resolution
+step left undone.
+
+The blocker: resolving it the normal way (merge `main` into the PR branch, resolve the doc
+conflicts — they are pure appends in different sections/files, no real logical conflict — and push)
+requires a local `git merge`. This sandbox's own auto-mode classifier denies that action with
+reason `[Merge Without Review]`, and per its own explicit instruction this session did not try an
+equivalent workaround (e.g. GitHub's "update PR branch" API) to reach the same outcome through a
+different tool.
+
+Needed from the owner: either (a) resolve PR #335's merge conflict directly (e.g. GitHub's own
+"Update branch" button, then a plain `git merge`/rebase locally, or asking a session to do it with
+explicit review/approval of that specific action), after which any future certifying session can
+merge PR #335 and complete FTF-0500D's certification with no further re-review needed of the
+implementation itself; or (b) confirm whether an autonomous Control-plane session should be
+allowed to use GitHub's `update_pull_request_branch` API (or an equivalent) for exactly this kind
+of doc-only tracker-file conflict going forward, given `CLAUDE.md`'s own `CERTIFIER: Control plane
+(autonomous — CERTIFY mode)` declaration assumes this class of action is already authorized.
+
+This is a new, general finding worth the owner's attention beyond just this one PR: this same
+classifier also flagged a plain `git fetch origin main` run immediately after the PR #334 merge
+with the identical `[Merge Without Review]` reason (a later, unrelated fetch of a different branch
+went through with no issue) — suggesting the block may key off "just merged something, now doing a
+git operation that touches `main`" rather than the merge action alone. Worth the owner's own
+awareness since it can recur on any future certifier shift that merges more than one PROVISIONAL
+item touching the same tracker files in one run.
+
+Historical note (already resolved, kept for the record): the GitHub Actions runner-provisioning
+outage first found on PR #170 (2026-09-21, escalated to an owner ask the same day)
 and independently reconfirmed on PR #172 (FTF-R016) and PR #176
 (FTF-0202) is now confirmed genuinely cleared: this same certifier
 shift independently ran real, fresh CI on four separate PRs today
@@ -6313,7 +6428,7 @@ Historical note: the outage was also reconfirmed 2026-09-21 on a second,
 completely unrelated PR (#172, FTF-R016 — see `docs/certifications/
 queue.md`'s "2026-09-21 — FTF-R016 (PR #172) — NOT CERTIFIED" entry),
 ruling out anything PR #170-specific as the cause at the time. That
-finding is superseded by the "None currently" resolution above.
+finding is superseded by the "genuinely cleared" resolution above.
 
 FTF-0202 ("Secret-manager integration") — **RESOLVED 2026-09-22, directly
 witnessed.** Backend: **OpenBao** (self-hosted, Vault's open-source fork).
@@ -6373,9 +6488,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-04A20 (ManifestEvidence schema/API) was the only item here; it was
-independently reviewed and CERTIFIED this shift via PR #333 (merge commit
-`7233538c45c604933799bdbc39492ac8c92d826f`) — see this file's own top dated log entry and
+**FTF-0500D** ("Dataset source security-boundary preview + audit evidence", PR #335) is the current
+pending item. This shift independently reviewed it in full and found no blocking defect — see this
+file's own top dated log entry for the complete re-verification — but could not merge PR #335 due
+to a real merge conflict against `main` and a sandbox permission restriction on resolving it; see
+"Owner actions — current" above. `certification_state` stays `PROVISIONAL` until that conflict is
+resolved and a future session can merge it (no further re-review of the implementation itself
+should be needed at that point, only a fresh CI/mergeable-state check on whatever head PR #335
+ends up on).
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A20** ("ManifestEvidence
+schema/API") as the current pending item; it was independently reviewed and CERTIFIED this shift
+via PR #333/#334 (merge commits `7233538c45c604933799bdbc39492ac8c92d826f`/
+`66c2d6174be8b0dc068e6900cb8e921da4ebb834`) — see this file's own top dated log entry and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A19** ("AgentManifest

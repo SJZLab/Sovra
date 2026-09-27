@@ -1,4 +1,32 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-04A20 certified (PR #334 merged); FTF-0500D (PR #335) reviewed and blocked — Control plane
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_014eRKjsG4bTuq5Q9XfJmCL8`, triggered by the `pull_request.opened`
+webhook for PR #335. Full re-verification write-up: `QUEUE.md`'s own top dated entry and
+`docs/certifications/queue.md`'s "2026-09-27 — Control plane: FTF-04A20 merge completed; FTF-0500D
+reviewed, blocked on a merge conflict" entry.
+
+Summary: found two pending `certification_state: PROVISIONAL` items. **FTF-04A20** already had an
+independent certification PR (#334) prepared by a different session (`session_015atcDZbzcrRMTRtWZumvor`,
+no overlap with this session — Law 4); re-verified its claims directly (CI, tests,
+`product_truth_check.py`, migration constraints, dependencies, task contract) rather than trusting
+them, found no blocking defect, and merged it (`66c2d6174be8b0dc068e6900cb8e921da4ebb834`) —
+certified `85/300` -> `86/300`. Live fault injection on FTF-04A20 was blocked by this sandbox's own
+`[Security Weaken]` permission classifier; relied on static verification of the real test harness
+plus two prior independent sessions' own disclosed fault injections instead — no blocking defect
+found either way.
+
+**FTF-0500D** (PR #335, `session_01VNYcLTeDxuSYqxCHADKbp9`, no overlap — Law 4) was independently
+reviewed in full (diff, both new files, contract via `tools/r1_handoff.py`, real test reproduction
+in a scratch worktree, ruff/mypy, `product_truth_check.py`) and holds up — no blocking defect
+found. It could not be merged: merging PR #334 first put a real merge conflict on PR #335 (both
+touch the same tracker docs), and resolving it via `git merge` was denied by this sandbox's own
+`[Merge Without Review]` permission classifier. `certification_state` stays `PROVISIONAL`; recorded
+as an "Owner actions — current" item in `QUEUE.md` (needs either the conflict resolved by a human,
+or explicit authorization for an autonomous branch-update path for this class of doc-only
+conflict).
+
 ## 2026-09-27 — FTF-04A20 — Control plane: certify (PR #333)
 
 Scheduled Control-plane certifier shift, session
