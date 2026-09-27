@@ -1,5 +1,42 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01EmqfwCimL9Fcto43aQ1G46, triggered by the `pull_request.opened`
+  webhook for PR #342) — reviewed **FTF-0902 (Network-policy templates)**, **NOT CERTIFIED**.
+  Session-ID check: all of PR #342's commits carry `Claude-Session: .../session_014VhkpG6UEpZF1XPHcuYkAV`,
+  no overlap — Law 4 independence confirmed. PR #342's first CI run failed installing `kind`
+  (`chmod: ... Operation not permitted` on `/usr/local/bin/kind` — the hosted runner's
+  unprivileged user cannot `chmod` there directly); the submitting session pushed a real fix
+  (`curl` to `/tmp` + `sudo install`) live during this review. Waited for the resulting fresh run
+  (head `88a4957`) to reach a genuine terminal state before evaluating anything (Law 1/Law 5):
+  `gate` passed, but the new `network-policy-enforcement-integration` job — the job PR #342's own
+  description names as "this task's own actual acceptance-clause evidence" — **failed for real**:
+  both `kind` clusters came up (the install fix worked), but the suite's own TCP-probe assertions
+  showed the `allowed`/`denied` ClusterIP destinations unreachable on **both** the non-enforcing
+  baseline and the enforcing Calico cluster alike (only the cloud-metadata sub-scenario behaved
+  as claimed: reachable on baseline, blocked under Calico). The suite's own log text says a
+  denied-destination failure on the non-enforcing baseline means "the probe methodology itself
+  cannot distinguish enforcement from network unavailability, and the negative_acceptance proof
+  ... would be worthless" — so this is the suite correctly reporting its own acceptance-clause
+  evidence is not established, not a flake (every sibling job green, `gate` green, one specific
+  reproducible assertion failure on the integration job's second attempt).
+  **Fix needed for the next relay shift:** root-cause why the `allowed`/`denied` ClusterIP TCP
+  probes fail on both clusters in
+  `tests/integration/test_ftf_0902_network_policy_enforcement.py` — most likely the `target`/
+  `allowed`/`denied` pod or Service wiring itself (confirm the target pod has a real listener on
+  port 8080, the Service `port`/`targetPort` mapping is correct, and `kubectl exec target -- nc
+  ...` targets the right destination) — the metadata sub-scenario's own correct
+  baseline-reachable/enforcing-blocked contrast shows the probe mechanism itself can work, so this
+  looks like a narrower, fixable fixture bug, not a defect in the CNI enforcement claim or in
+  `packages/security/network_policy_templates.py` itself (not independently re-audited this shift
+  since the acceptance-clause integration evidence was already red — moot until it is green). Then
+  re-run CI (`network-policy-enforcement-integration` reaching a genuine `success`) and resubmit.
+  `docs/spec-matrix.yaml` on `main` is unaffected (FTF-0902 was never merged; stays
+  `certification_state: NONE` there). PR #342 left open, unmerged. `scripts/status.py` unchanged:
+  `88/300` certified, `22` product-true. No open owner ask — this is a fixable CI/test-harness
+  defect, not a policy or ask-first item. Full record: `docs/certifications/queue.md`'s matching
+  2026-09-27 FTF-0902 NOT CERTIFIED entry.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01Qddq3FfXKVseRjetWnYeCW, triggered by the `pull_request.opened`
   webhook for PR #340) — independently certified **FTF-04A26 (Isolated real tool-backend adapter
   contract tests)**. Session-ID check: both of PR #340's commits carry `Claude-Session:

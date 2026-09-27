@@ -18747,3 +18747,100 @@ evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `87/3
 certified; product-true unchanged `22/22`. No open owner ask.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-27.
+
+## 2026-09-27 — Control plane: CERTIFY review of FTF-0902 (Network-policy templates), PR #342 — NOT CERTIFIED
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01EmqfwCimL9Fcto43aQ1G46`,
+triggered by the `pull_request.opened` webhook for PR #342. Checked `docs/spec-matrix.yaml` (grep
+`certification_state: PROVISIONAL` — none on `main`) and this queue's own last entries — the
+FTF-0902 submission entry above (this file's own preceding entry) was the sole pending item.
+
+**Session-ID check:** PR #342's commits (`3b0ae0e`, `4e1845d`, and a third pushed live during
+this review, `88a4957`) all carry `Claude-Session: .../session_014VhkpG6UEpZF1XPHcuYkAV` — no
+overlap with this session's own ID (`session_01EmqfwCimL9Fcto43aQ1G46`) — independent per Law 4.
+
+**Real CI checked to its actual terminal state, not taken on faith.** PR #342's first CI run
+(workflow run `36351319396`, head `4e1845d`) showed the new `network-policy-enforcement-
+integration` job failing at install time: `chmod: changing permissions of '/usr/local/bin/kind':
+Operation not permitted`, exit 1 — the GitHub Actions hosted `ubuntu-latest` runner's unprivileged
+user cannot `chmod` directly under `/usr/local/bin`. While this review was in progress, the
+submitting session pushed a third commit (`88a4957`, "fix kind/kubectl install (no perms on
+/usr/local/bin directly)") switching to `curl -Lo /tmp/... && sudo install -o root -g root -m
+0755 /tmp/... /usr/local/bin/...` — a real, correct fix for that specific failure (matches the
+standard pattern for installing a third-party CLI on a hosted runner). This review waited for
+the resulting fresh CI run (workflow run `36351452649`, head `88a4957`, the PR's current real
+head — confirmed no further commits landed after) to reach a genuine terminal state on both
+`gate` and `network-policy-enforcement-integration` before evaluating anything (Law 1/Law 5):
+31/34 check runs reached `completed` (`gate`: `success`; three pre-existing, unrelated integration
+jobs — `dataset-source-connection-integration`/`secret-manager-integration`/
+`target-application-connection-integration` — still `in_progress` at review time, not blocking
+since they predate this PR and are not part of its own claimed evidence). **`network-policy-
+enforcement-integration` itself: `completed` / `conclusion: failure`** (job `108710792888`, run
+`36351452649`).
+
+**This is the exact job PR #342's own description names as "this task's own actual
+acceptance-clause evidence."** Pulled its real log directly (`get_job_logs`, `return_content:
+true`), not the PR's self-report. The install fix worked this time — both `kind` clusters (`npt-
+baseline` kindnet, `npt-enforcing` Calico v3.28.2) genuinely came up and the identical rendered
+`NetworkPolicy` manifest was applied to both. But the suite's own three real TCP-probe assertions
+then genuinely failed:
+- `FAIL: baseline: expected allowed destination to succeed even before enforcement` —
+  `{'allowed': False, 'denied': False, 'metadata': True}` on the non-enforcing `kindnet` cluster.
+- `FAIL: baseline: expected denied destination to ALSO succeed on a nonenforcing CNI` — the
+  suite's own log text calls this out directly: *"if this fails, the probe methodology itself
+  cannot distinguish enforcement from network unavailability, and the negative_acceptance proof
+  below would be worthless."*
+- `FAIL: enforcing: expected the explicitly allowed internal endpoint to remain reachable under
+  deny-by-default enforcement` — `{'allowed': False, 'denied': False, 'metadata': False}` on the
+  Calico cluster: the explicitly-allowed ClusterIP is also unreachable, not just the denied one.
+
+Only the cloud-metadata sub-scenario behaved as the PR describes (reachable on the non-enforcing
+baseline, genuinely blocked under Calico). The `allowed`/`denied` ClusterIP probes fail
+identically on **both** clusters, enforcing and non-enforcing alike — this is not a CNI
+enforcement result, it points at something more basic in the test's own harness (the `target`/
+`allowed`/`denied` pod/Service wiring on port 8080, e.g. no real listener on the target container,
+a wrong Service port, or an exec-target mismatch), not proven here since root-causing it is
+implementation work, out of scope for a certification review. What matters for this review: the
+suite's own text already identifies this exact failure pattern as invalidating the whole
+negative_acceptance proof, so this cannot be a "close enough" or flaky result — it is the suite
+correctly reporting that its own methodology did not establish what the PR claims.
+
+**Not treated as a flake.** Every other job in the same run reached `success` on schedule; `gate`
+(which only runs the no-cluster `tests/tasks/test_ftf_0902.py` unit suite) passed cleanly — the
+failure is isolated to this one new integration job, on its second attempt, after a real fix for
+its first-attempt failure, with a specific and reproducible assertion failure (not a timeout, not
+a runner-provisioning error).
+
+**Task contract pulled** via `python3 tools/r1_handoff.py packet FTF-0902 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — returns `SPEC_PACKET_ONLY`/`DOCUMENT_HANDOFF_ONLY`, i.e. the
+task packet document itself (`docs/implementation/task-packets/FTF-0902.md`), consistent with
+every prior handoff in this queue. This task's own acceptance clause requires real live-cluster
+enforcement evidence, and its negative_acceptance clause is literally "a NetworkPolicy YAML on a
+nonenforcing cluster is not a pass" — the one clause this review most needed to check, and the
+one the job's own failure output says was not established for real.
+
+Did not re-run the no-cluster unit suite or attempt an independent fault injection against
+`packages/security/network_policy_templates.py` itself (the PROVISIONAL submission's own two
+disclosed injections there are plausible and consistent with the earlier-certified FTF-04A25/26
+sibling pattern) — moot while the acceptance-clause integration evidence itself is red; no
+amount of unit-level soundness substitutes for it per this task's own DoD.
+
+**Result: NOT CERTIFIED.** `docs/spec-matrix.yaml` on `main` never carried an FTF-0902 entry to
+downgrade (`certification_state: NONE` there, unchanged); the `certification_state: PROVISIONAL`
+claim stays on the PR #342 branch only, untouched by this review. PR #342 left open, unmerged —
+not merged per Law 1/Law 5 (existence of a job is not evidence; a red job is not a pass). Fix
+needed for the next relay shift, written into `QUEUE.md`'s top status note: root-cause why the
+`allowed`/`denied` ClusterIP TCP probes fail on **both** the non-enforcing and enforcing clusters
+in `tests/integration/test_ftf_0902_network_policy_enforcement.py` (most likely the `target`/
+`allowed`/`denied` pod or Service definitions themselves — check the target pod actually listens
+on 8080, the Service `port`/`targetPort` mapping, and that `kubectl exec target -- nc ...` is
+probing the right destination) — the metadata sub-scenario's own baseline-reachable /
+enforcing-blocked contrast proves the probe mechanism itself can work, so this is a narrower,
+fixable bug in the `allowed`/`denied` fixtures, not the whole harness. Re-run CI (including the
+`network-policy-enforcement-integration` job reaching a genuine `success`) before resubmitting
+for certification. No production code touched by this review — certification review only, no new
+task work, no design decisions, no queue reprioritization beyond what this rejection naturally
+requires (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty) — this
+is a fixable CI/test-harness defect, not a policy or ask-first item.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
