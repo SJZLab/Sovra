@@ -21686,7 +21686,8 @@ current" unchanged, empty).
 
 ## 2026-09-27T14:10:00Z -- Scheduled autonomous relay shift -- FTF-0601 submitted PROVISIONAL
 
-Session: https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm. STEP 0.1: CLAUDE.md.sha256
+Session: https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm. Opened as
+[PR #337](https://github.com/SJZLab/Sovra/pull/337). STEP 0.1: CLAUDE.md.sha256
 self-check matched `sha256sum CLAUDE.md` directly. Read PROGRESS.md/QUEUE.md/docs/certifications/
 queue.md fresh (tail sections, given file size) plus `scripts/status.py` (86/300 certified, 22
 product-true) directly.

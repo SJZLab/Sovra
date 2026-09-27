@@ -18529,7 +18529,8 @@ certified; product-true `21/21` -> `22/22`. No open owner ask.
 
 ## 2026-09-27 — FTF-0601 (Evaluation suite schema/API) — submitted PROVISIONAL
 
-Scheduled autonomous relay shift, session `https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm`.
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm`,
+opened as [PR #337](https://github.com/SJZLab/Sovra/pull/337).
 Dependencies FTF-0401/FTF-04A19/FTF-0405 confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
 before relying on them. No open PR claimed this task at pick time (checked all open PRs directly
 via the GitHub API first).

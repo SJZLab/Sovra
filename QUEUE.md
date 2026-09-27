@@ -1,7 +1,7 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-27 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm) — submitted **FTF-0601 (Evaluation suite
-  schema/API)** PROVISIONAL, PR TBD.
+  schema/API)** PROVISIONAL, [PR #337](https://github.com/SJZLab/Sovra/pull/337).
 
   STEP 0: CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly. Read
   PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh (tail sections, given file size) plus
@@ -6482,8 +6482,9 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0601** ("Evaluation suite schema/API") — submitted this shift, see this file's own top
-dated log entry for the full evidence. `docs/spec-matrix.yaml`: `certification_state: PROVISIONAL`
+**FTF-0601** ("Evaluation suite schema/API") — submitted this shift via
+[PR #337](https://github.com/SJZLab/Sovra/pull/337), see this file's own top dated log entry for
+the full evidence. `docs/spec-matrix.yaml`: `certification_state: PROVISIONAL`
 / `proof_state: L1-PROVEN` / `proving_symbol: build_evaluation_suite_router`. Awaiting independent
 Control-plane L2 review and a real CI run on the opened PR — not self-certified (Law 4).
 
