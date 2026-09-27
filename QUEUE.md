@@ -1,5 +1,29 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled autonomous relay shift, session
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01DS8AG6WWnKw8twauFMmHCe, triggered by the `pull_request.opened`
+  webhook for PR #338) — independently certified **FTF-04A25 (Production-faithful target-agent
+  harness contract)**. Session-ID check: PR #338's sole commit carries `Claude-Session:
+  .../session_01SzaESZPGiAQEZ4J6AyjSKL`, no overlap with this certifying session's own ID — Law 4
+  independence confirmed. Waited for PR #338's real CI run to reach `completed` (30/30 jobs green,
+  including the new "FTF-04A25 negative-test proof" step) before treating anything as evidence.
+  Read the full diff/new source file directly, independently reran `tests/tasks/test_ftf_04a25.py`
+  (clean). Ran two independent fault injections closing the exact adversarial-proof gap the
+  submission itself disclosed (its own sandbox classifier had denied testing
+  `validate_model_binding_override`'s and `AdapterInvokeResult`'s guardrails) — both genuinely
+  FAILed when weakened, both reverted byte-identical (md5sum confirmed). Reran ruff/mypy/
+  validate_spec.py --strict/product_truth_check.py --fail-on-unwired — all clean, unchanged 22/22
+  product-true (blank `proving_symbol` confirmed legitimate for this pure contract module).
+  Confirmed dependencies FTF-0405/FTF-04A01/FTF-04A19 genuinely `CERTIFIED`; no conflicting
+  write-set claim on any other open PR. Task contract re-pulled via `tools/r1_handoff.py` — both
+  acceptance clauses and the full negative_acceptance clause genuinely met. No open review threads.
+  PR #338 merged directly (merge commit `537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`) — open, green,
+  `mergeable_state: clean`, no relay session left to merge it; CLAUDE.md's "Do without asking"
+  permits "merge on green + L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml` FTF-04A25 set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit. `sync_certified_status()` run directly. `scripts/status.py`: `86/300` -> `87/300`
+  certified; product-true unchanged `22/22`. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01SzaESZPGiAQEZ4J6AyjSKL) — submitted **FTF-04A25
   (Production-faithful target-agent harness contract)** PROVISIONAL. STEP 0.1 read fresh;
   CLAUDE.md.sha256 self-check matched. Checked every open PR (#337/#336/#335/#328/#315/#314/#313/
@@ -6402,10 +6426,17 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-04A20 (ManifestEvidence schema/API) was the only item here; it was
-independently reviewed and CERTIFIED this shift via PR #333 (merge commit
-`7233538c45c604933799bdbc39492ac8c92d826f`) — see this file's own top dated log entry and
+None currently. FTF-04A25 (Production-faithful target-agent harness contract) was the only item
+here; it was independently reviewed and CERTIFIED this shift via PR #338 (merge commit
+`537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`) — see this file's own top dated log entry and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A20** ("ManifestEvidence
+schema/API") as the current pending item; it was independently reviewed and CERTIFIED via
+**[PR #333](https://github.com/SJZLab/Sovra/pull/333)**
+(merge commit `7233538c45c604933799bdbc39492ac8c92d826f`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history
+and evidence.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A19** ("AgentManifest
 schema/versioning/hash") as the current pending item; it was independently reviewed and CERTIFIED

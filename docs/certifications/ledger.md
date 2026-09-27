@@ -8979,3 +8979,93 @@ drift detector — none of which this task claimed).
 this task's own already-documented, separately dependency-gated later scope (FTF-04A23's
 completeness/validation engine, FTF-04A27's repository-drift-driven re-evidencing workflow —
 neither of which this task claimed).
+
+## FTF-04A25 — Production-faithful target-agent harness contract
+- Criterion ID: FTF-04A25
+- PR: https://github.com/SJZLab/Sovra/pull/338
+- Merge commit: 537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9
+- Validated-by: session https://claude.ai/code/session_01DS8AG6WWnKw8twauFMmHCe (independent —
+  session-ID check performed and recorded before this entry: PR #338's sole commit carries
+  `Claude-Session: .../session_01SzaESZPGiAQEZ4J6AyjSKL`, no overlap with this certifying
+  session's own ID)
+- Date: 2026-09-27
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+  PR #338. `docs/certifications/queue.md`'s own FTF-04A25 submission entry was the sole
+  pending PROVISIONAL item. PR #338's CI run (Actions run 36335499443) was still in progress at
+  webhook-fire time; waited for it to reach `completed` before treating anything as evidence
+  (Law 1/Law 5): **30/30 jobs green**, including `gate`'s own new "FTF-04A25 negative-test
+  proof" step.
+- Read the full diff (7 files, 1299/8 lines, matching the PR's own stated scope) and the new
+  source file (`apps/api/app/target_connectors/production_faithful_target_agent_harness_contract.py`)
+  in full, directly, not taken on the PR's own summary. This is a pure typed contract/protocol
+  module (this task's own `database_changes` clause: "No independent schema change. Consume
+  frozen contract.") — `RuntimeEntryKind`'s closed `signed_container`/`http_endpoint` pair,
+  `RuntimeAdapterProtocol`'s seven named Section 66.3 operations with no concrete
+  implementation anywhere in the module, `AdapterInvokeRequest`/`AdapterInvokeResult` with
+  construction-time enforcement of the business-outcome-completeness rule,
+  `ModelBinding`/`validate_model_binding_override` with no prompt/tool/workflow field on
+  `ModelBinding` at all, and `evaluate_target_runtime_qualification`'s Section 66.4 parity rule
+  as a pure function — all confirmed by direct read to match Section 66.1/66.3/66.4/66.5 as
+  read literally.
+- Independently reran `tests/tasks/test_ftf_04a25.py` directly (`python3
+  tests/tasks/test_ftf_04a25.py`) — "all checks passed" (24/24).
+- **Own fault injection (Law 1), specifically closing the gap the submitting session itself
+  disclosed:** the submission's own two fault-injection attempts on
+  `validate_model_binding_override`'s "unsupported binding is blocked" check and on
+  `AdapterInvokeResult`'s business-outcome-completeness check were each denied by that
+  session's own sandbox permission classifier before any test ran against the weakened code —
+  a real Law-1 adversarial-proof gap for those two guardrails, disclosed, not hidden. This
+  session does not carry that same classifier restriction, so both were run directly: (1)
+  weakened `validate_model_binding_override`'s key-membership check to `if False and key not
+  in supported:` — genuine FAIL (`test_model_binding_key_outside_declared_surface_is_rejected`);
+  (2) weakened `AdapterInvokeResult.__post_init__`'s business-outcome check to `if False and
+  self.business_outcome is None:` — genuine FAIL
+  (`test_invoke_result_completed_requires_business_outcome`, this task's own Section 66.3
+  negative case verbatim). Both edits reverted byte-identical (md5sum
+  `8315a3588f3d55db53d4071699764414` confirmed matching before and after each), `git status`/
+  `git diff` empty afterward, suite re-ran clean immediately after each revert. Both of this
+  task's negative_acceptance-adjacent guardrails are now independently shown able to fail, not
+  merely exercised by the passing suite.
+- Reran repo-wide `uv run ruff check .`/`ruff format --check .` — clean; `uv run mypy .` —
+  clean repo-wide (292 source files; the same 17 pre-existing `alembic`-stub/`env.py` errors
+  only, zero new). `git rev-parse --is-shallow-repository` confirmed `true`; `git fetch
+  --unshallow` resolved it (same disclosed precedent every prior FTF-04A0x/04A1x/04A19/04A20
+  review already established) — `python3 scripts/validate_spec.py --strict` clean after that.
+  `product_truth_check.py --fail-on-unwired`: own run, unchanged **22/22** — confirmed this
+  task's blank `proving_symbol` is legitimate (a pure contract/protocol module genuinely has no
+  live dispatcher yet, same disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16), not an
+  inflated 0/0 pass. `uv sync --all-packages` installed the FastAPI/uvicorn/SQLAlchemy extras;
+  confirmed dependencies FTF-0405/FTF-04A01/FTF-04A19 genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml` before relying on them; regression swept
+  `test_ftf_0405.py`/`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py` directly —
+  zero regressions. Checked every other open PR
+  (#337/#336/#335/#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) for a conflicting
+  write-set claim on `apps/api/app/target_connectors/` — none found (this task's own
+  `shared_lock_required` is empty).
+- No open review threads or comments on PR #338.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A25 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Define actual container/HTTP target
+  runtime protocol and model-binding override/parity requirements") genuinely met — confirmed
+  by direct code read of the five contract symbols above; acceptance clause 2 ("Independent
+  review, exact merged commit, real relevant integration and negative-test evidence recorded")
+  met by this review itself; `negative_acceptance` ("Do not substitute a generic Factory chat
+  loop for product orchestration; unsupported binding is blocked") reconfirmed genuinely met —
+  `RuntimeAdapterProtocol` is a `typing.Protocol` with no concrete class satisfying it anywhere
+  in the module (`test_module_defines_no_concrete_adapter_implementation`), and both the
+  runtime-entry-kind and model-binding-key rejections are real, fault-injection-proven guards
+  (this review's own injection above, plus the submission's own `deadline_seconds`/parity-
+  coverage injections).
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A25 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the
+  merge commit `537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`. PR #338 merged directly by this
+  certification (it was open, green, and `mergeable_state: clean` with no relay session left
+  to merge it; CLAUDE.md's "Do without asking" permits "merge on green + L1 doc
+  (PROVISIONAL)"). `sync_certified_status()` run directly (updated
+  `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `86/300` ->
+  `87/300` certified; product-true unchanged `22/22`. No open owner ask.
+
+**Conclusion:** Certified L2-CERTIFIED. No open notes or gaps left for the next shift beyond
+this task's own already-documented, separately dependency-gated later scope (FTF-04A23's
+completeness/validation engine, FTF-04A27's repository-drift-driven re-evidencing workflow,
+neither of which this task claimed) and the not-yet-claimed concrete runtime-adapter
+implementation task this contract module's own docstring names as a future consumer.

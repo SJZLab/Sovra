@@ -18603,3 +18603,43 @@ L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/te
 proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A20 step; no new
 integration job needed (no DB). **Not self-certified (Law 4)** — independent Control-plane L2
 review and a real CI run on the opened PR are required before certification. No open owner ask.
+
+## 2026-09-27 — Control plane: certify FTF-04A25 (Production-faithful target-agent harness contract), PR #338
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01DS8AG6WWnKw8twauFMmHCe`,
+triggered by the `pull_request.opened` webhook for PR #338. This queue's own FTF-04A25 submission
+entry above was the sole pending PROVISIONAL item. PR #338's CI run was still in progress at
+webhook-fire time — waited for it to reach `completed` before treating anything as evidence (Law
+1/Law 5).
+
+**Session-ID check:** PR #338's sole commit carries `Claude-Session: .../session_01SzaESZPGiAQEZ4J6AyjSKL`.
+No overlap with this session's own ID — independent per Law 4.
+
+Read the full diff (7 files, 1299/8, matching the PR's own stated scope) and the new source file
+in full — a pure typed contract/protocol module per this task's own `database_changes` clause. CI's
+own 30/30 jobs green, including `gate`'s new "FTF-04A25 negative-test proof" step. Independently
+reran `tests/tasks/test_ftf_04a25.py` directly — clean.
+
+Ran two independent fault injections closing the exact gap the submitting session disclosed (its
+own sandbox classifier had denied testing these two guardrails): (1) weakened
+`validate_model_binding_override`'s key-membership check — genuine FAIL; (2) weakened
+`AdapterInvokeResult.__post_init__`'s business-outcome-completeness check — genuine FAIL. Both
+reverted byte-identical (md5sum `8315a3588f3d55db53d4071699764414` confirmed before/after each),
+suite re-ran clean. Reran ruff/mypy/validate_spec.py --strict (all clean, same disclosed
+shallow-clone precedent) and `product_truth_check.py --fail-on-unwired` (unchanged 22/22, blank
+`proving_symbol` confirmed legitimate — same precedent as FTF-04A08/09/10/11/16). Confirmed
+FTF-0405/FTF-04A01/FTF-04A19 all genuinely `CERTIFIED`; checked every other open PR for a
+conflicting write-set claim on `apps/api/app/target_connectors/` — none found. Task contract
+re-pulled via `tools/r1_handoff.py` — both the acceptance clause and the full `negative_acceptance`
+clause genuinely met. No open review threads or comments on PR #338.
+
+**Result: CERTIFIED.** PR #338 merged directly by this certification (merge commit
+`537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`) — it was open, green, and `mergeable_state: clean`
+with no relay session left to merge it; CLAUDE.md's "Do without asking" permits "merge on green +
+L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml`'s FTF-04A25 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge commit.
+`sync_certified_status()` run directly. Appended `docs/certifications/ledger.md` with the full
+evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `86/300` -> `87/300`
+certified; product-true unchanged `22/22`. No open owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
