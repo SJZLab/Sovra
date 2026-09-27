@@ -6212,12 +6212,13 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A19** ("AgentManifest schema/versioning/hash") — submitted PROVISIONAL this shift
-(2026-09-27T09:18:55Z). Real live router (`build_agent_manifest_router`) wired into
-`apps/api/app/main.py`; real forward Alembic migration (`0015_agent_manifests`); real Postgres
-integration evidence in `tests/integration/test_ftf_04a19_agent_manifest.py`. Not self-certified
-(Law 4) — awaiting an independently-triggered Control-plane certifier session and a real CI run
-on the opened PR. See this file's own top dated log entry and `docs/certifications/queue.md` for
-the full submission record.
+(2026-09-27T09:18:55Z) via **[PR #331](https://github.com/SJZLab/Sovra/pull/331)**. Real live
+router (`build_agent_manifest_router`) wired into `apps/api/app/main.py`; real forward Alembic
+migration (`0015_agent_manifests`); real Postgres integration evidence in
+`tests/integration/test_ftf_04a19_agent_manifest.py`. Not self-certified (Law 4) — awaiting an
+independently-triggered Control-plane certifier session and a real CI run on the opened PR. See
+this file's own top dated log entry and `docs/certifications/queue.md` for the full submission
+record.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A16** ("Runtime
 trace/deployment contract discovery") as the current pending item; it was independently reviewed

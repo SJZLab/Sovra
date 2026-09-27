@@ -18195,7 +18195,7 @@ left in the ledger entry for the next relay/producer shift: add a test covering
 
 ## 2026-09-27 — FTF-04A19 ("AgentManifest schema/versioning/hash") — submitted PROVISIONAL
 
-- **PR:** (recorded in a follow-up commit once opened)
+- **PR:** https://github.com/SJZLab/Sovra/pull/331 (`claude/wizardly-fermat-x7eynx` -> `main`)
 
 STEP 0.1: read PROGRESS.md/QUEUE.md/this file fresh (tail sections, given file size).
 CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly. This session's own designated
