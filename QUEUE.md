@@ -1,5 +1,61 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_016L5ScEwaCus1Hfe1kDUk3V, triggered by the `pull_request.opened`
+  webhook for PR #331) — independently certified **FTF-04A19 (AgentManifest
+  schema/versioning/hash)**. Session-ID check: no overlap with PR #331's producer session
+  (`session_01D5fLj4ojYwXHNBHyqQHPsV`) — independent per Law 4.
+
+  PR #331's own CI run was still `queued` at webhook-fire time; waited for it to reach `completed`
+  before treating anything as evidence (Law 1/Law 5) — `conclusion: success` on the exact PR head
+  SHA (run 36309207865), `gate` and the new `agent-manifest-integration` job both confirmed
+  `success` directly via the GitHub Actions API.
+
+  Read the full diff (14 files, 4885/36 insertions/deletions, matching the PR's own stated scope)
+  and the four new source files in full: confirmed `ALLOWED_STATUS_TRANSITIONS` is a strict
+  one-directional `draft -> review_required -> locked -> superseded` graph; confirmed
+  `compute_manifest_sha256` hashes exactly `CONTENT_FIELDS` (envelope/audit fields excluded);
+  confirmed the database-level `CHECK`/partial-unique-index invariants in the real forward Alembic
+  migration (`0015_agent_manifests`) match the ORM's own runtime checks; confirmed
+  `update_agent_manifest_content`/`submit_for_review`/`lock_agent_manifest` each re-fetch and
+  check the row's *current* status before any write; confirmed the disclosed ordering-bug fix (an
+  explicit intermediate `session.flush()` in `lock_agent_manifest`, since Postgres cannot declare a
+  partial unique index `DEFERRABLE`); confirmed real live wiring
+  (`app.include_router(build_agent_manifest_router(session_factory))` in `apps/api/app/main.py`).
+
+  Own reproduction: `tests/tasks/test_ftf_04a19.py` (no-DB suite) and
+  `tests/integration/test_ftf_04a19_agent_manifest.py` (real Postgres 16, this session's own
+  installed cluster, mirroring the CI job's exact role/database/env setup) both "all checks
+  passed", independently reproduced, not merely trusted from the PR's own report. **Own fault
+  injection** (disabled the locked-manifest content-edit guard in `update_agent_manifest_content`
+  — distinct from the PR's own two disclosed injections): the integration suite's own
+  negative_acceptance check failed for real (`editing a locked manifest is refused (409)`),
+  confirming a genuine, live-enforced guard; reverted byte-identical (md5sum
+  `54024be7959f4147df16d737dbed8e89`, matching the PR's own disclosed baseline).
+
+  Repo-wide `ruff`/`mypy`/`validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` confirmed `21/21` (up from 20/20) with a real live caller, not a 0/0-accepted
+  pass. Regression swept `test_ftf_04a01.py`/`test_ftf_04a07.py`/`test_ftf_04a17.py`/
+  `test_ftf_1001.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py`/`test_ftf_0407.py` —
+  zero regressions. Confirmed dependencies FTF-0405/FTF-0407/FTF-04A01/FTF-04A07 and shared-lock
+  partner FTF-04A17 all genuinely `CERTIFIED`; checked every other open PR
+  (#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) for a conflicting
+  `migration:application`/`contracts:04A` lock claim — none found.
+
+  Pulled the task contract via `python3 tools/r1_handoff.py packet FTF-04A19 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both acceptance clauses and the full
+  `negative_acceptance` clause are genuinely met. PR #331 merged directly (merge commit
+  `45d94f8d08bc82614fb5d3792d56df3255824299`) as part of this certification — it was open, green,
+  and `mergeable_state: clean` with no relay session left to merge it; CLAUDE.md's "Do without
+  asking" permits "merge on green + L1 doc (PROVISIONAL)" — no open review threads or comments.
+
+  Result: CERTIFIED. This commit contains only the tracking-doc updates: `docs/spec-matrix.yaml`
+  (FTF-04A19 -> `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` =
+  merge commit), `spec/tasks.json`/`docs/implementation/TRACKER.json` (via
+  `sync_certified_status()`), a new `docs/certifications/ledger.md` entry, and
+  `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` updates. `scripts/status.py`: `84/300`
+  -> `85/300` certified; product-true `20/20` -> `21/21`. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01GPoKVEwERvNWYqDjN92r4F, triggered by the `pull_request.opened`
   webhook for PR #329) — independently certified **FTF-04A16 (Runtime trace/deployment contract
   discovery)**. Session-ID check: no overlap with PR #329's producer session
@@ -6211,14 +6267,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A19** ("AgentManifest schema/versioning/hash") — submitted PROVISIONAL this shift
-(2026-09-27T09:18:55Z) via **[PR #331](https://github.com/SJZLab/Sovra/pull/331)**. Real live
-router (`build_agent_manifest_router`) wired into `apps/api/app/main.py`; real forward Alembic
-migration (`0015_agent_manifests`); real Postgres integration evidence in
-`tests/integration/test_ftf_04a19_agent_manifest.py`. Not self-certified (Law 4) — awaiting an
-independently-triggered Control-plane certifier session and a real CI run on the opened PR. See
-this file's own top dated log entry and `docs/certifications/queue.md` for the full submission
-record.
+None currently. **FTF-04A19** ("AgentManifest schema/versioning/hash") was the only item here; it
+was independently reviewed and CERTIFIED this shift via **[PR #331](https://github.com/SJZLab/Sovra/pull/331)**
+(merge commit `45d94f8d08bc82614fb5d3792d56df3255824299`) — see this file's own top dated log entry
+and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and
+evidence.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A16** ("Runtime
 trace/deployment contract discovery") as the current pending item; it was independently reviewed

@@ -18357,3 +18357,40 @@ immediately after the FTF-04A16 step, plus a new dedicated `agent-manifest-integ
 real `services: postgres` container) mirroring `discovered-agent-candidate-integration`'s own
 pattern exactly. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real
 CI run on the opened PR are required before certification.
+
+## 2026-09-27 — Control plane: certify FTF-04A19 (AgentManifest schema/versioning/hash), PR #331
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_016L5ScEwaCus1Hfe1kDUk3V`,
+triggered by the `pull_request.opened` webhook for PR #331. `docs/certifications/queue.md`'s own
+FTF-04A19 submission entry above was the sole pending PROVISIONAL item. PR #331's CI run was still
+`queued` at webhook-fire time — waited for it to reach `completed` before treating anything as
+evidence (Law 1/Law 5).
+
+**Session-ID check:** PR #331's two commits carry `Claude-Session: .../session_01D5fLj4ojYwXHNBHyqQHPsV`.
+No overlap with this session's own ID — independent per Law 4.
+
+Read the full diff (14 files, 4885/36, matching the PR's own stated scope) and the four new source
+files in full; re-ran both the no-DB test suite and the real Postgres 16 integration suite directly
+against this session's own installed cluster (mirroring the CI job's exact role/database/env
+setup); ran one independent fault injection (disabled the locked-manifest content-edit guard,
+distinct from the PR's own two disclosed injections) — the integration suite's own
+negative_acceptance check failed for real, confirming it is a genuine, live-enforced guard, then
+reverted byte-identical. Repo-wide ruff/mypy/validate_spec.py/product_truth_check.py all clean;
+`product_truth_check.py --fail-on-unwired` confirmed `21/21` (up from 20/20) with a real live
+caller, not a 0/0 pass. Regression swept all six named dependency/lock-partner test files — zero
+regressions. Confirmed FTF-0405/FTF-0407/FTF-04A01/FTF-04A07 and lock partner FTF-04A17 all
+genuinely `CERTIFIED`; checked every other open PR for a conflicting `migration:application`/
+`contracts:04A` lock claim — none found. Task contract re-pulled via `tools/r1_handoff.py`
+(`source_sha256` confirmed) — both acceptance clauses and the full `negative_acceptance` clause
+genuinely met. No open review threads or comments on PR #331.
+
+**Result: CERTIFIED.** No blocking defect found. PR #331 merged directly by this certification
+(merge commit `45d94f8d08bc82614fb5d3792d56df3255824299`) — it was open, green, and
+`mergeable_state: clean` with no relay session left to merge it; CLAUDE.md's "Do without asking"
+permits "merge on green + L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml`'s FTF-04A19 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge
+commit. `sync_certified_status()` run directly. Appended `docs/certifications/ledger.md` with the
+full evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `84/300` ->
+`85/300` certified; product-true `20/20` -> `21/21`. No open owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
