@@ -1,5 +1,68 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift) — submitted **FTF-04A20 (ManifestEvidence
+  schema/API)** PROVISIONAL. STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh;
+  CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly (no mismatch). Confirmed
+  FTF-04A19 already independently CERTIFIED (PR #331) before this shift started — this file's own
+  "## Active"/"## Provisional" sections both already read "None currently," matching
+  `docs/spec-matrix.yaml` directly.
+
+  Checked every open PR directly via the GitHub API before picking new work: #328 (FTF-04A15),
+  #315/#314 (FTF-0303), #313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290
+  (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304, duplicate PRs) — none
+  overlap with this shift's own eventual pick; PR #328's own file list confirmed directly (no
+  migration, no `04A-interface.yaml` touch — no shared-lock conflict). Recomputed the dependency-
+  ready frontier directly from `docs/spec-matrix.yaml`: FTF-04A20 came back newly dependency-ready
+  (both real dependencies, FTF-04A01/FTF-04A19, genuinely CERTIFIED) with no open PR claiming it.
+
+  Implemented `apps/api/app/target_connectors/manifest_evidence_schema.py`/`manifest_evidence_
+  crud.py`/`manifest_evidence_routes.py` and the real forward Alembic migration
+  (`0016_manifest_evidence.py`, plus a purely additive `UNIQUE (organization_id, id)` on
+  `agent_manifests` for the new composite FK, matching `0006_tool_definitions.py`'s own precedent
+  for `projects`). This task's own acceptance/negative_acceptance was split into a disclosed,
+  explicit per-`evidence_type` field-shape design (`DETECTED_EVIDENCE_TYPES`/`REPO_CITED_EVIDENCE_
+  TYPES`/`LINE_REF_EVIDENCE_TYPES`), enforced twice — once as 9 real database `CHECK` constraints,
+  again in `ManifestEvidence.__init__` — see `manifest_evidence_schema.py`'s own module docstring
+  for the full reasoning (not repeated here; see this file's own top `PROGRESS.md` entry for the
+  same shift's own fuller summary). `manifest_evidence_crud.py`'s own `create_manifest_evidence`
+  performs the one real cross-table check no `CHECK` constraint can express: a caller-supplied
+  `repository_commit_sha` must equal the parent manifest's own `TargetSourceSnapshot.commit_sha`
+  exactly (negative_acceptance: "cross-snapshot evidence ... rejected"), reusing FTF-04A19's own
+  already-CERTIFIED `get_agent_manifest` for the ownership fetch. `manifest_evidence` is immutable
+  once written — `sovra_app` granted `SELECT`/`INSERT` only, no update/delete endpoint at all. Real
+  live router wired into `apps/api/app/main.py`; role gating reused directly from
+  `agent_manifest_routes.py`'s own `AGENT_MANIFEST_READ_ROLES`/`AGENT_MANIFEST_WRITE_ROLES`.
+  `packages/contracts/openapi/04A-interface.yaml` extended with the real `/evidence` paths and
+  schemas under its own shared `contracts:04A` lock.
+
+  `tests/tasks/test_ftf_04a20.py` (no-DB suite) and `tests/integration/test_ftf_04a20_manifest_
+  evidence.py` (real Postgres 16, this session's own installed cluster) both "all checks passed" —
+  field validators, per-`evidence_type` `__init__` structural-consistency negatives (fabricated
+  line-ref range, unpaired line refs, line refs on a non-line-anchored type, missing symbol/commit/
+  confidence, `user_input` carrying real repo provenance, empty `evidence_json`), a real, locally-
+  hosted router denying an unauthenticated request and an evaluator's write (403) before
+  `session_factory` is ever called, cross-tenant IDOR (404), an unknown `field_path` refused (400),
+  a cross-snapshot commit refused (409), a real `repo_file`/`user_input` create each succeeding
+  (201), a fabricated line ref refused (400), get/list, and three real database-level defense-in-
+  depth proofs (a raw `INSERT` missing `file_path` caught by a real `CHECK` constraint, `sovra_app`
+  refused an `UPDATE`, `sovra_app` refused a `DELETE`).
+
+  `uv run ruff check .`/`ruff format --check .`/`uv run mypy .` clean repo-wide (290 source files);
+  `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, same disclosed
+  shallow-clone artifact every prior shift's own history already documents).
+  `product_truth_check.py --fail-on-unwired`: **22/22** (up from 21/21) with a real live caller.
+  `status.py`: unchanged `85/300` certified, `21` product-true (Law 2 — submission, not
+  certification). Regression swept nine dependency/lock-partner test files — zero regressions.
+
+  `docs/spec-matrix.yaml` FTF-04A20 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: build_manifest_evidence_
+  router` / `proving_test: tests/tasks/test_ftf_04a20.py`; `evidence_hash` left blank pending the
+  real merge commit. CI gate step (`FTF-04A20 negative-test proof`) added immediately after the
+  FTF-04A19 step, plus a new dedicated `manifest-evidence-integration` job (a real
+  `services: postgres` container) mirroring `agent-manifest-integration`'s own pattern exactly.
+  **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+  opened PR are required before certification. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_016L5ScEwaCus1Hfe1kDUk3V, triggered by the `pull_request.opened`
   webhook for PR #331) — independently certified **FTF-04A19 (AgentManifest
   schema/versioning/hash)**. Session-ID check: no overlap with PR #331's producer session
@@ -6267,8 +6330,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. **FTF-04A19** ("AgentManifest schema/versioning/hash") was the only item here; it
-was independently reviewed and CERTIFIED this shift via **[PR #331](https://github.com/SJZLab/Sovra/pull/331)**
+**FTF-04A20** ("ManifestEvidence schema/API") is the current pending item, submitted PROVISIONAL
+this shift (see this file's own top dated log entry and `docs/certifications/queue.md` for the
+full submission record). Not yet independently reviewed.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A19** ("AgentManifest
+schema/versioning/hash") as the current pending item; it was independently reviewed and CERTIFIED
+via **[PR #331](https://github.com/SJZLab/Sovra/pull/331)**
 (merge commit `45d94f8d08bc82614fb5d3792d56df3255824299`) — see this file's own top dated log entry
 and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and
 evidence.
