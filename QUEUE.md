@@ -6154,14 +6154,13 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A16** ("Runtime trace/deployment contract discovery") is the current item, submitted
-2026-09-27 (branch `claude/wizardly-fermat-loquvq` -> `main`), title `[relay] FTF-04A16: Runtime
-trace/deployment contract discovery`, producer session
-`https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V`. PR number recorded in a follow-up commit
-on the same branch once opened (same "record PR #NNN link" precedent FTF-04A14/FTF-0513 already
-established). Full submission record: this file's own top dated log above, `PROGRESS.md`'s matching
-2026-09-27 entry, `docs/certifications/queue.md`'s matching entry, `docs/spec-matrix.yaml`'s
-FTF-04A16 notes. **Not self-certified (Law 4)** — awaiting an independently-triggered Control-plane
-L2 certifier session.
+2026-09-27 via **[PR #329](https://github.com/SJZLab/Sovra/pull/329)** (branch
+`claude/wizardly-fermat-loquvq` -> `main`), title `[relay] FTF-04A16: Runtime trace/deployment
+contract discovery`, producer session
+`https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V`. Full submission record: this file's own
+top dated log above, `PROGRESS.md`'s matching 2026-09-27 entry, `docs/certifications/queue.md`'s
+matching entry, `docs/spec-matrix.yaml`'s FTF-04A16 notes. **Not self-certified (Law 4)** —
+awaiting an independently-triggered Control-plane L2 certifier session.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A14** ("Tool/schema/
 permission discovery + evidence capture") as the current pending item; it was independently reviewed

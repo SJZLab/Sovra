@@ -18002,6 +18002,8 @@ Appended `docs/certifications/ledger.md`; `QUEUE.md`/`PROGRESS.md` updated. `scr
 
 ## 2026-09-27 — FTF-04A16 ("Runtime trace/deployment contract discovery") — submitted PROVISIONAL
 
+- **PR:** https://github.com/SJZLab/Sovra/pull/329 (`claude/wizardly-fermat-loquvq` -> `main`)
+
 STEP 0.1: read PROGRESS.md/QUEUE.md/this file fresh (tail sections, given file size).
 CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly. This session's own branch head
 already matched `origin/main` exactly — FTF-04A14 had already been independently certified via PR
