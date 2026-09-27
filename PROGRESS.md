@@ -1,4 +1,65 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-0902 — Control plane: independent CERTIFY review, NOT CERTIFIED (PR #342)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_01EmqfwCimL9Fcto43aQ1G46`, triggered by the `pull_request.opened`
+webhook for PR #342. `docs/spec-matrix.yaml` had no `certification_state: PROVISIONAL` entries on
+`main`; this queue's own FTF-0902 submission entry was the sole pending item.
+
+**Session-ID check:** all of PR #342's commits carry `Claude-Session:
+.../session_014VhkpG6UEpZF1XPHcuYkAV` — no overlap with this session's own ID, independent per
+Law 4.
+
+**Real CI checked to its actual terminal state, not the PR's self-report.** PR #342's first CI
+run (head `4e1845d`) failed installing `kind`: `chmod: changing permissions of
+'/usr/local/bin/kind': Operation not permitted` — the hosted `ubuntu-latest` runner's unprivileged
+user cannot `chmod` directly under `/usr/local/bin`. While this review was in progress, the
+submitting session pushed a real fix live (`88a4957`: download to `/tmp`, then `sudo install`).
+Confirmed no further commits landed, then waited for the resulting fresh CI run (head `88a4957`)
+to reach a genuine terminal state on both `gate` and the new `network-policy-enforcement-
+integration` job before treating anything as evidence (Law 1/Law 5).
+
+`gate` passed. **`network-policy-enforcement-integration` — the job PR #342's own description
+names as "this task's own actual acceptance-clause evidence" — failed for real** (job
+`108710792888`, run `36351452649`). Pulled its log directly: the install fix worked, both `kind`
+clusters (`npt-baseline` kindnet, `npt-enforcing` Calico v3.28.2) genuinely came up, but the
+suite's own three TCP-probe assertions then failed:
+- baseline: the `allowed` ClusterIP destination did not succeed on the non-enforcing cluster.
+- baseline: the `denied` ClusterIP destination also did not succeed on the non-enforcing cluster —
+  the suite's own log text: *"if this fails, the probe methodology itself cannot distinguish
+  enforcement from network unavailability, and the negative_acceptance proof below would be
+  worthless."*
+- enforcing: the explicitly-`allowed` ClusterIP destination also did not succeed under Calico.
+
+Only the cloud-metadata sub-scenario behaved as claimed (reachable on baseline, blocked under
+Calico). The `allowed`/`denied` probes failing identically on **both** clusters — enforcing and
+non-enforcing alike — points at the test harness's own pod/Service wiring (e.g. no real listener
+on the `target` container on port 8080, a Service `port`/`targetPort` mismatch, or an exec-target
+mismatch), not a CNI enforcement result; root-causing it further is implementation work, out of
+scope for this review.
+
+**Not a flake:** every other job in the run reached `success` on schedule; `gate` (the no-cluster
+`tests/tasks/test_ftf_0902.py` unit suite) passed cleanly; the integration job failed with a
+specific, reproducible assertion failure on its second attempt, after a real fix for its first
+failure — not a timeout or runner-provisioning error.
+
+**Task contract pulled** via `tools/r1_handoff.py packet FTF-0902 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — this task's negative_acceptance clause is literally "a
+NetworkPolicy YAML on a nonenforcing cluster is not a pass," which is exactly the clause the
+job's own failure output says was not established for real. Did not independently re-audit the
+no-cluster unit module (`packages/security/network_policy_templates.py`) — moot while the
+acceptance-clause integration evidence itself is red.
+
+**Result: NOT CERTIFIED.** `docs/spec-matrix.yaml` on `main` is unaffected — FTF-0902 was never
+merged, stays `certification_state: NONE`/`implementation_state: ABSENT`. PR #342 left open,
+unmerged. Fix needed: root-cause why the `allowed`/`denied` ClusterIP probes fail on both clusters
+in `tests/integration/test_ftf_0902_network_policy_enforcement.py` (check the target pod's actual
+listener, the Service port mapping, and the exec target) — the metadata sub-scenario's own correct
+contrast shows the probe mechanism itself can work, so this looks like a narrower, fixable fixture
+bug. Re-run CI to a genuine green, then resubmit. Certified: unchanged at 88/300. Product-true:
+unchanged at 22/22. Full record: `docs/certifications/queue.md`'s matching 2026-09-27 FTF-0902 NOT
+CERTIFIED entry, `QUEUE.md`'s top entry.
+
 ## 2026-09-27 — FTF-04A26 — Control plane: certify (PR #340)
 
 Scheduled Control-plane certifier shift, session
