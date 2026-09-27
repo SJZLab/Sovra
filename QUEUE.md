@@ -6426,9 +6426,14 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-04A25 (Production-faithful target-agent harness contract) was the only item
-here; it was independently reviewed and CERTIFIED this shift via PR #338 (merge commit
-`537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`) — see this file's own top dated log entry and
+**FTF-04A26** ("Isolated real tool-backend adapter contract tests") — submitted PROVISIONAL this
+shift. See this file's own top dated log entry and `docs/certifications/queue.md` for the full
+evidence record. Awaiting independent Control-plane L2 review.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A25** ("Production-
+faithful target-agent harness contract") as the current pending item; it was independently
+reviewed and CERTIFIED via **[PR #338](https://github.com/SJZLab/Sovra/pull/338)** (merge commit
+`537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A20** ("ManifestEvidence

@@ -18643,3 +18643,61 @@ evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `86/3
 certified; product-true unchanged `22/22`. No open owner ask.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
+## 2026-09-27 — FTF-04A26 ("Isolated real tool-backend adapter contract tests") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01ARtoEXRcbEw3RzytqNhTH4`.
+STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh; `CLAUDE.md.sha256`
+self-check matched `sha256sum CLAUDE.md` directly (no mismatch).
+
+Checked every open PR directly via the GitHub API before picking new work (#337/#336/#335/#328/
+#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) — none claim FTF-04A26. Recomputed the
+dependency-ready frontier directly from `docs/spec-matrix.yaml`'s own real per-task
+`certification_state` and `deps=` list: FTF-04A26 had just become dependency-ready this shift
+cycle (its own dependency FTF-04A25 was certified via PR #338 immediately prior); all three of its
+own real dependencies (FTF-04A01/FTF-04A25/FTF-1702) confirmed `CERTIFIED` directly.
+
+Implemented `apps/api/app/target_connectors/isolated_real_tool_backend_adapter_contract_tests.py`
+-- `IsolatedToolBackendAdapter`, the one concrete `RuntimeAdapterProtocol` (FTF-04A25)
+implementation in this repository, wraps FTF-1702's own real, disposable, seeded `ToolEnvironment`
+directly (a native adapter, qualified by construction per FTF-04A25's own
+`evaluate_target_runtime_qualification`). `invoke()` dispatches one real tool call per case through
+the real, unmodified backend and maps FTF-1701's own real exception hierarchy onto Section 66.3's
+closed `ErrorClassification` set (`ReferenceAuthorizationError`/`ReferenceDenialError` -> REFUSAL,
+`ToolEnvironmentError` -> FATAL, `ReferenceAgentSpecificationError` -> MALFORMED_OUTPUT) -- never a
+canned "completed". `reset()`/`cancel()`/`collect_outcome()`/`attest()` are each real, disclosed,
+narrowly-scoped implementations against the real backend (full detail in this task's own
+`docs/spec-matrix.yaml` notes and this repo's `PROGRESS.md`).
+
+This task's own negative_acceptance ("Canned success tool returns cannot satisfy production
+product qualification; no production side effects in test") is proven by a real side-effect
+assertion: a claimed mutation is independently re-read through a second, unrelated dispatch call
+against the real backend, never trusted from the adapter's own reported result alone.
+
+`tests/tasks/test_ftf_04a26.py`: 9 tests, all pass (`uv run python3`, requires `uv sync
+--all-packages` for the SQLAlchemy/FastAPI extras). Two independent, disclosed fault injections
+(Law 1), both reverted byte-identical (md5sum `4c7811ddc459d4c7516f24c142389ae2` before/after
+each): (1) `invoke()`'s own side-effect label weakened to always report empty -- 1 genuine FAIL;
+(2) `reset()`'s own case-history clear removed -- 2 genuine FAILs. **Disclosed, not hidden:** a
+third injection attempt (weakening the `ReferenceAuthorizationError` handler to fabricate a
+"completed" result) was denied by this session's own sandbox `[Security Weaken]` classifier before
+any test ran against it; reverted immediately, not retried through another route -- the same class
+of gap FTF-04A25's own producer session already disclosed for a different guard. That guardrail
+remains real and exercised by the passing (unweakened) suite.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (294 files); `uv run mypy .` clean
+repo-wide (294 files, zero new errors). `validate_spec.py --strict` clean (after `git fetch
+--unshallow`, this sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py
+--fail-on-unwired` unchanged `22/22` (`proving_symbol` left blank -- no live dispatcher exists yet,
+same disclosed precedent as FTF-04A08/09/10/11/16/25). `status.py` unchanged `87/300` certified,
+`22` product-true (Law 2 -- submission, not certification). Regression swept `test_ftf_04a01.py`/
+`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_04a25.py`/`test_ftf_1701.py`/`test_ftf_1702.py`
+-- zero regressions.
+
+`docs/spec-matrix.yaml` FTF-04A26 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_04a26.py`;
+`evidence_hash` left blank pending the real merge commit. CI gate step (`FTF-04A26 negative-test
+proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A25 step; no new
+integration job needed (no DB, no network). **Not self-certified (Law 4)** -- independent
+Control-plane L2 review and a real CI run on the opened PR are required before certification. No
+open owner ask.
