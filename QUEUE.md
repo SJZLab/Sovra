@@ -1,5 +1,41 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27T22:50:00Z (scheduled autonomous relay shift, branch `claude/wizardly-fermat-bpvsvl`)
+  — submitted **FTF-04A02 (GitHub App/token read-only secret integration)** PROVISIONAL. FTF-0902
+  (PR #342) remains blocked on the same disclosed, repo-wide GitHub Actions outage the immediately
+  prior entry below found (no workflow run created for any branch since `2026-09-27T21:32:41Z`,
+  independently reconfirmed still ongoing ~78 minutes later at this shift's own start, `22:50:20
+  UTC`) — per STEP 4(c) ("stuck: same action, same failure 3x -> stop"), this shift does not retry
+  a nudge push and instead picks the next genuinely unblocked, unclaimed item. Recomputed the
+  dependency-ready frontier directly from `docs/spec-matrix.yaml` (never trusting `spec/tasks.json`'s
+  own stale bootstrap-time `ready` flag): of 12 dependency-ready tasks, 7 already had an open PR in
+  flight; FTF-04A02/FTF-0500A/FTF-1201/FTF-1703/FTF-H004 were genuinely unclaimed. Picked FTF-04A02
+  — dependencies FTF-0202/FTF-04A01 both confirmed CERTIFIED, and it unblocks the most direct
+  downstream work (FTF-04A03/FTF-04A33/FTF-1812).
+
+  Implemented `apps/api/app/target_connectors/github_app_token_read_only_secret_integration.py`
+  (Section 7A.1/7A.2) and `tests/tasks/test_ftf_04a02.py` (14 tests, a real local HTTPS
+  GitHub-REST-API-v3-shaped fixture with a real self-signed CA installed into this sandbox's own
+  system trust store, same precedent `test_ftf_0302.py` established). Disclosed scope boundary: does
+  not itself mint a GitHub App installation token from a private key (would need a new
+  `cryptography`/`PyJWT` runtime dependency, an ask-first item under CLAUDE.md); accepts an
+  already-resolved bearer token instead, the same "caller resolves the secret" shape FTF-0302/
+  FTF-0303 already established for FTF-0202's own `resolve_secret_ref`. This task's own
+  negative_acceptance is enforced as one single, comprehensive `if response.status != 200:` gate
+  (refactored mid-shift after an initial three-separate-checks draft's own first fault-injection
+  attempt showed each individual check was not independently load-bearing — a real, disclosed
+  finding, not assumed) plus a structural, non-overridable GET-only guarantee. Three disclosed fault
+  injections (Law 1), all reverted byte-identical.
+
+  `ruff`/`mypy`/`validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own
+  shallow-clone artifact, same disclosed precedent every prior shift documents). `product_truth_check.py
+  --fail-on-unwired` unchanged 22/22 (proving_symbol left blank — no live caller yet, same precedent
+  as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26). `status.py` unchanged 88/300 certified, 22
+  product-true. Regression swept `test_ftf_0202.py`/`test_ftf_04a01.py` — zero regressions.
+  `docs/spec-matrix.yaml` FTF-04A02 set to certification_state: PROVISIONAL / proof_state:
+  L1-PROVEN / implementation_state: IMPLEMENTED. CI gate step added after FTF-04A26's. Not
+  self-certified (Law 4) — awaiting independent Control-plane L2 review. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01EmqfwCimL9Fcto43aQ1G46, triggered by the `pull_request.opened`
   webhook for PR #342) — reviewed **FTF-0902 (Network-policy templates)**, **NOT CERTIFIED**.
   Session-ID check: all of PR #342's commits carry `Claude-Session: .../session_014VhkpG6UEpZF1XPHcuYkAV`,
@@ -6490,10 +6526,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-04A26 (Isolated real tool-backend adapter contract tests) — the item named
-directly below as still "awaiting independent Control-plane L2 review" — was independently
-reviewed and CERTIFIED this shift via PR #340 (merge commit
-`d25a555fad0960d8d016f8ab009279e5fe980255`) — see this file's own top dated log entry and
+**FTF-04A02** ("GitHub App/token read-only secret integration") — submitted PROVISIONAL this shift
+via a PR from branch `claude/wizardly-fermat-bpvsvl` → main. See this file's own top dated log entry
+and `docs/certifications/queue.md` for the full evidence record. Awaiting independent Control-plane
+L2 review and a real CI run on the opened PR.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A26** ("Isolated real
+tool-backend adapter contract tests") as the current pending item; it was independently reviewed
+and CERTIFIED via **[PR #340](https://github.com/SJZLab/Sovra/pull/340)** (merge commit
+`d25a555fad0960d8d016f8ab009279e5fe980255`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
 Superseded by the certification above, kept verbatim for the record:

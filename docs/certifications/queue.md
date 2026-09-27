@@ -18844,3 +18844,93 @@ requires (Law 4). No open owner ask (`QUEUE.md` "Owner actions — current" unch
 is a fixable CI/test-harness defect, not a policy or ask-first item.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
+## 2026-09-27 — FTF-04A02 ("GitHub App/token read-only secret integration") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-bpvsvl`. STEP 0.1 read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh; `CLAUDE.md.sha256` self-check matched
+`sha256sum CLAUDE.md` directly.
+
+FTF-0902 (PR #342) is the most recently active item, but it is blocked on a disclosed, repo-wide
+GitHub Actions outage (no workflow run created for any branch since `2026-09-27T21:32:41Z`) the
+immediately prior shift already diagnosed, fixed every real code defect for, and could not resolve
+by retrying further. Independently reconfirmed via `list_workflow_runs` that the outage was still
+ongoing at this shift's own start (~78 minutes later, multiple further pushes, zero new runs
+repo-wide) rather than assuming the prior finding was still current. Per STEP 4(c) ("stuck: same
+action, same failure 3x -> stop, never retry a 4th time" — the prior shift already nudged once),
+this shift does not push another empty commit there and instead picks the next genuinely
+**unblocked** item.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s own real per-task
+`certification_state` and `deps=` list (never trusting `spec/tasks.json`'s own stale bootstrap-time
+`ready` flag, which is never updated as certifications land). Of 12 tasks whose real dependencies
+are all `CERTIFIED`, 7 already had an open PR in flight (checked every open PR directly:
+#337/#335/#328/#315/#314/#313/#311/#308/#295/#231/#195/#194/#342). FTF-04A02/FTF-0500A/FTF-1201/
+FTF-1703/FTF-H004 were genuinely unclaimed. Picked **FTF-04A02** — dependencies FTF-0202/FTF-04A01
+both confirmed `CERTIFIED`, and it unblocks the most direct downstream work (FTF-04A03/FTF-04A33/
+FTF-1812 all name it as a dependency).
+
+Read `local_repository_connector.py` (FTF-04A06), `hugging_face_artifact_resolver.py` (FTF-0302)
+and `private_s3_artifact_resolver.py` (FTF-0303) first to confirm this repository's own established
+patterns: a resolver/connector accepts an already-resolved credential (never a
+`credential_secret_ref` itself — "the caller resolves the secret" shape FTF-0303's own docstring
+states explicitly); every outbound HTTP call goes through `packages/security/outbound_guard.py`'s
+`guarded_fetch`; a public SaaS API this sandbox cannot reach is proven against a real local HTTPS
+server with a real self-signed CA installed into the sandbox's own system trust store
+(`test_ftf_0302.py`'s own precedent) — confirmed this sandbox actually has `openssl`/
+`update-ca-certificates`/passwordless `sudo` before relying on that path.
+
+Implemented `apps/api/app/target_connectors/github_app_token_read_only_secret_integration.py`:
+`validate_github_repository_access()` calls the one real, read-only GitHub REST API v3 endpoint
+(`GET /repos/{owner}/{repo}`) needed to confirm an already-resolved bearer token's real
+installation/repository scope. Disclosed scope boundary: does not itself mint a GitHub App
+installation token from an App's private key — that needs a new asymmetric-signing runtime
+dependency (`cryptography`/`PyJWT`) neither already present in this repository nor named by any
+architecture doc, which CLAUDE.md's "Ask owner first" would require asking about. Section 7A.2's
+own "GitHub App installation **or** organization-approved token" is read as: either credential
+shape arrives here as already-minted opaque bearer-token bytes, indistinguishable to GitHub's own
+`Authorization: Bearer <token>` contract.
+
+This task's own negative_acceptance ("Private repo outside installation and revoked token deny
+access; no write scopes requested for analysis") is proven as one single, comprehensive gate
+(`if response.status != 200: _raise_for_non_200_status(...)`) — deliberately refactored mid-shift
+out of an initial draft using three separate, redundant per-status checks, once this shift's own
+first fault-injection attempt showed each individual check was **not** independently load-bearing
+(disabling any one specific-status branch still left every status caught by the shared terminal
+`!= 200` guard, so no single-branch mutation produced a fabricated success — a real, disclosed
+mid-shift finding). `_HTTP_METHOD` is a module-level constant never exposed as a caller parameter,
+so "no write scopes requested for analysis" is structural.
+
+`tests/tasks/test_ftf_04a02.py`: a real local HTTPS server implementing the exact GitHub REST API
+v3 subset this module calls, with a real self-signed CA installed into this sandbox's own system
+trust store for the run (removed in `atexit`). 14 test functions, all real HTTPS round trips, no
+DB, no live egress to `api.github.com` (confirmed unreachable from this sandbox at the outbound
+proxy). Three disclosed fault injections (Law 1), each reverted byte-identical: (1)/(2) both target
+the shared `if response.status != 200:` gate — the `revoked-repo`/`outside-installation-repo`
+fixture routes deliberately also carry a plausible-looking `full_name`/`default_branch` alongside
+their own real 401/404 status specifically so disabling the gate produces a genuine fabricated
+success, not just a different exception type; (3) hardcoding `_HTTP_METHOD` to `"POST"` genuinely
+breaks against the real fixture server (which only implements `do_GET`), proving the GET-only
+guarantee is real and observable.
+
+`uv sync --all-packages` run first (this sandbox's own local venv was missing `uvicorn`/`fastapi`/
+etc.). `uv run ruff check .`/`ruff format --check .` clean repo-wide (298 files). `uv run mypy .`
+clean on every new/changed file (17 pre-existing, unrelated `alembic`-stub errors confirmed present
+identically on `origin/main`, same disclosed precedent every prior 04A-family shift documents).
+`git fetch --unshallow` run first (this sandbox's own clone was shallow) so `validate_spec.py
+--strict` could resolve historical evidence commits — clean. `verify_task.py --task FTF-04A02
+--stage task` reports `BLOCKED` ("no merged verification evidence yet") — expected/disclosed, same
+two-commit pattern as FTF-0402/FTF-04A26. `product_truth_check.py --fail-on-unwired` unchanged
+`22/22` (`proving_symbol` left blank — no live caller wires a `TargetApplicationConnection`'s own
+`credential_secret_ref` through `resolve_secret_ref` into this module yet, same disclosed precedent
+as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26). `status.py` unchanged `88/300` certified, `22`
+product-true (Law 2 — submission, not certification). Regression swept `test_ftf_0202.py`/
+`test_ftf_04a01.py` — zero regressions (the latter needed `uv run python3`, not plain `python3`).
+
+`docs/spec-matrix.yaml` FTF-04A02 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_04a02.py`;
+`evidence_hash` left blank pending the real merge commit. CI gate step (`FTF-04A02 negative-test
+proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A26 step; no new
+integration job needed (no DB, no live egress). **Not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are required before certification. No
+open owner ask.
