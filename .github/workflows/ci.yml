@@ -279,6 +279,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a19.py
       - name: FTF-04A20 negative-test proof (ManifestEvidence schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a20.py
+      - name: FTF-04A25 negative-test proof (Production-faithful target-agent harness contract, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a25.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

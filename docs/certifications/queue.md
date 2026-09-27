@@ -18526,3 +18526,80 @@ evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `85/3
 certified; product-true `21/21` -> `22/22`. No open owner ask.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
+## 2026-09-27 — FTF-04A25 ("Production-faithful target-agent harness contract") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift, session
+`https://claude.ai/code/session_01SzaESZPGiAQEZ4J6AyjSKL`. STEP 0.1 read PROGRESS.md/QUEUE.md/
+docs/certifications/queue.md fresh; `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md`
+directly (no mismatch).
+
+Checked every open PR directly via the GitHub API before picking new work (#337/#336/#335/#328/
+#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) — none claim FTF-04A25; #337 (FTF-0601) and
+#335 (FTF-0500D, blocked on a real merge conflict per PR #336) are both already in flight from
+other concurrent sessions. Recomputed the dependency-ready frontier directly from
+`docs/spec-matrix.yaml`/`spec/tasks.json` (both real `CERTIFIED` states and each task's own real
+`dependencies` list, not trusted from a prior shift's own claim): 13 tasks came back
+dependency-ready; excluding everything already claimed by an open PR and everything a prior
+shift already disclosed as blocked (FTF-04A02/FTF-0902/FTF-1201/FTF-H004: real-network-egress
+precedent; FTF-1703: needs >=1000 real curated traces this sandbox does not have) left
+**FTF-04A25** and FTF-0500A as the only two genuinely new, unclaimed candidates. Picked FTF-04A25
+— all three real dependencies (FTF-0405/FTF-04A01/FTF-04A19) confirmed `CERTIFIED` directly.
+
+Task contract pulled fresh via `python3 tools/r1_handoff.py packet FTF-04A25 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` — `database_changes: "No independent schema change. Consume
+frozen contract."` and an empty `shared_lock_required` make this a pure contract/protocol module,
+not a database table or HTTP route.
+
+Implemented `apps/api/app/target_connectors/production_faithful_target_agent_harness_contract.py`
+— see this file's own module docstring and `docs/spec-matrix.yaml`'s FTF-04A25 entry for the full
+disclosed design reading of Section 66.1/66.3/66.4/66.5: `RuntimeEntryKind` (Section 66.1's closed
+container/HTTP pair), `RuntimeAdapterProtocol` (a `typing.Protocol` declaring exactly Section
+66.3's seven named operations, deliberately with no concrete implementation in this module),
+`AdapterInvokeRequest`/`AdapterInvokeResult` (Section 66.3's own request/result fields, with
+construction-time enforcement of "a plain text answer without a required business-state result is
+incomplete evidence"), `ModelBinding`/`validate_model_binding_override` (Section 66.4's "injection
+modifies only the selected agent's model route" as a structural guarantee, plus this task's own
+negative_acceptance "unsupported binding is blocked"), and
+`evaluate_target_runtime_qualification`/`ReconstructedAdapterDeclaration` (Section 66.4's parity
+rule: a native adapter is qualified by construction; a reconstructed adapter is qualified only
+once its own tested parity categories cover the full closed six-category set — "matching
+happy-path text alone is not parity").
+
+`tests/tasks/test_ftf_04a25.py`: 24 test functions, no DB, no network egress. All pass (`python3`
+and `uv run python3`, identical). Two independent, disclosed fault injections (Law 1), both
+reverted byte-identical (md5sum `8315a3588f3d55db53d4071699764414` before/after each): (1)
+`AdapterInvokeRequest`'s `deadline_seconds <= 0` check weakened to `<= -999` — 1 genuine FAIL; (2)
+`evaluate_target_runtime_qualification`'s own superset check weakened to "any non-empty set
+qualifies" — 2 genuine FAILs, including this task's own negative_acceptance clause verbatim
+("matching happy-path text alone is not parity"). **Disclosed, not hidden:** two other
+fault-injection attempts (on the model-binding-override "unsupported binding is blocked" check,
+and on the business-outcome-completeness check) were each denied by this session's own sandbox
+auto-mode permission classifier (`[Security Weaken]`, then `[Security Test Removal]`) before any
+test ran against the weakened code; both edits were reverted immediately (byte-identical, md5sum
+`8315a3588f3d55db53d4071699764414` confirmed) and neither outcome was retried through any other
+route, per that denial's own explicit instruction. Both of those guarantees are still real and
+exercised by the passing (unweakened) suite (`test_model_binding_key_outside_declared_surface_is_
+rejected`, `test_invoke_result_completed_requires_business_outcome`) — this is a gap in
+Law-1-style adversarial proof for two of the module's guardrails, not an unproven claim that the
+guardrails themselves work.
+
+`uv run ruff check .`/`ruff format --check .` clean on this task's own files; `uv run mypy .`
+clean repo-wide (292 source files; 17 pre-existing `alembic`-stub/`env.py` errors only, zero new).
+`pnpm install --frozen-lockfile`/`pnpm run lint`/`pnpm run format:check` clean repo-wide (no JS/TS
+files touched by this task). `python3 scripts/validate_spec.py --strict` clean (`git fetch
+--unshallow` resolved this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent every prior shift's own history documents). `product_truth_check.py --fail-on-unwired`
+unchanged `22/22` (`proving_symbol` left blank — pure contract module, no live dispatcher, same
+disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16). `status.py` unchanged `86/300`
+certified, `22` product-true (Law 2 — submission, not certification). `uv sync --all-packages`
+installed the FastAPI/uvicorn/SQLAlchemy extras; regression swept `test_ftf_0405.py`/
+`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py` (all "all checks passed") — zero
+regressions.
+
+`docs/spec-matrix.yaml` FTF-04A25 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_04a25.py`;
+`evidence_hash` left blank pending the real merge commit. CI gate step (`FTF-04A25 negative-test
+proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A20 step; no new
+integration job needed (no DB). **Not self-certified (Law 4)** — independent Control-plane L2
+review and a real CI run on the opened PR are required before certification. No open owner ask.
