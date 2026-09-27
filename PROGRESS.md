@@ -1,4 +1,178 @@
 # PROGRESS — Sovra
+## 2026-09-27T00:00:00Z — FTF-0902 — Scheduled autonomous relay shift — submitted PROVISIONAL
+
+Session: `https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV`, branch
+`claude/wizardly-fermat-gwocup` (already reset fresh onto `origin/main`). Read CLAUDE.md and the
+task packet (`docs/implementation/task-packets/FTF-0902.md`) in full before any code change.
+
+**Why FTF-0902, and why now:** dozens of prior relay shifts since 2026-09-20 (see QUEUE.md's own
+history) correctly ruled this task out as blocked, each naming the same real, still-true gap for
+this *interactive* sandbox: "needs a real enforcing CNI/firewall cluster this sandbox does not
+have." That disclosure is not contradicted here. What this shift does differently is route the
+live-enforcement proof through a *separate, real* execution environment this repository already
+uses for exactly this class of gap: GitHub Actions' hosted runner, which has a real Docker daemon
+and container-registry/package-mirror egress this sandbox lacks (the identical, already-disclosed
+FTF-0004 precedent every other Docker-dependent integration job in `.github/workflows/ci.yml`
+already relies on). CI tooling (`kind`, `kubectl`, Calico's manifest) is build/test-time
+infrastructure for proving a real Kubernetes control plane, not a new product runtime dependency —
+per CLAUDE.md's own default-resolution rule, this does not require an owner ask, and no
+architecture doc fixes a specific CNI product either (Calico is picked, and that reasoning
+recorded, below).
+
+Confirmed dependencies FTF-0005 (Configuration system) and FTF-0402 (Project security profile) both
+genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them. `shared_lock_required:
+["contracts:09", "security:network_policy_templates"]` — grepped every open PR (via the GitHub API)
+and this repository's own QUEUE.md/docs/certifications/queue.md history for `contracts:09`: nothing
+else currently holds it. `packages/contracts/openapi/09-interface.yaml` and
+`packages/contracts/jsonschema/09-domain.schema.json` did not exist — no prior task had claimed
+Phase 9 ("Zero-data-egress enforcement"; FTF-0901/0903-0909 all still `ABSENT`/`NONE`, each naming
+FTF-0902 as its own dependency per `docs/TASK_INDEX.md`) — so this shift is that phase's interface
+owner.
+
+**Interface freeze (`09-interface.yaml`/`09-domain.schema.json`):** deliberately **zero HTTP
+paths**. This task's own `database_changes` clause is explicit — "No independent schema change.
+Consume frozen contract" — there is no `NetworkPolicyTemplate` database table and no live caller
+anywhere in this repository; declaring an HTTP route neither backed by a real row nor wired into
+`apps/api/app/main.py` would itself be the "placeholder route" Law 11 and Section 84.4 forbid. The
+domain schema instead freezes the exact `NetworkPolicyTemplate`/`CidrEndpoint`/
+`PodSelectorEndpoint`/`PortRule` shapes verbatim from this task's own enforcing Python module, so a
+future caller (FTF-0805 "Provisioning security policies" is a plausible one — it already names
+FTF-0902 as its own dependency) extends this same file under this same `contracts:09` lock rather
+than re-deriving an independent shape.
+
+**Implementation — `packages/security/network_policy_templates.py`:** a frozen, versioned
+`NetworkPolicyTemplate` dataclass (namespace/pod_selector/cni_profile/deny_by_default_egress/
+deny_by_default_ingress/block_metadata_endpoint/ipv6_policy/allowed_internal_endpoints/allow_dns)
+with two allowed-endpoint shapes: `CidrEndpoint` (a stable ClusterIP/VIP, strict `ipaddress`
+validation) and `PodSelectorEndpoint` (another in-cluster service reached by real Kubernetes
+namespace+pod selectors, for services whose pod IPs are ephemeral). Reuses FTF-H006's own
+`packages.security.url_policy.is_cloud_metadata_address` as this module's single source of truth
+for "what counts as a cloud-metadata identity," rather than re-deriving a second, possibly-drifting
+list.
+
+Every one of this task's own negative_acceptance invariants raises a specifically-typed exception,
+never a single generic one: `NetworkPolicyDefaultOpenError` (deny_by_default_egress/ingress=False,
+or a `0.0.0.0/0` wildcard endpoint — "default-open ... is a release blocker"),
+`MetadataEndpointExposedError` (block_metadata_endpoint=False, or an endpoint CIDR containing a real
+cloud-metadata address), `IPv6EscapeError` (an IPv6 endpoint CIDR, or `ipv6_policy` forced to
+anything but the one closed `"blocked"` Release-1 value by bypassing the type checker — "IPv6
+escape is a release blocker"), and `MissingExplicitScopingError` ("rejects one missing explicit
+endpoint scoping": `allowed_internal_endpoints=None`, an empty `pod_selector` — an empty Kubernetes
+podSelector matches every pod in the namespace, a real semantics trap this validator refuses to let
+a caller trigger by omission — or an endpoint's own empty `pod_labels`/blank `namespace`).
+`render_network_policy_manifest` always re-validates internally before rendering the real
+`networking.k8s.io/v1` NetworkPolicy dict: deny-all ingress (`ingress: []` under
+`policyTypes: [Ingress, Egress]`), a mandatory kube-dns egress carve-out (real CoreDNS
+namespace/pod labels, UDP+TCP 53) so the workload can still resolve names, then one egress rule per
+configured allowed endpoint — nothing else is reachable. `render_network_policy_yaml`/
+`manifest_digest` complete the render/evidence-identity surface.
+
+**`tests/tasks/test_ftf_0902.py`** (no DB, no cluster, no network egress): 19 test functions —
+every negative_acceptance invariant above; positive/boundary cases (a `/32` immediately adjacent to,
+but not containing, a real metadata address is accepted; a non-strict CIDR with host bits set is
+refused; an explicit empty `allowed_internal_endpoints` tuple is a valid, different case from
+`None`; `render_network_policy_manifest` refuses a template mutated via `object.__setattr__` after
+construction, proving it "always re-validates," not merely trusting `__post_init__`); YAML
+round-trip (`yaml.safe_load` of the rendered text equals the rendered dict) and digest-sensitivity
+checks. **Fault injection (Law 1):** a literal-text mutation of the real on-disk module removes the
+`deny_by_default_egress` check from `validate_network_policy_template`; a fresh subprocess against
+the mutated module genuinely accepts a `deny_by_default_egress=False` template ("proving the removed
+check was load-bearing, not decorative"); the file is restored byte-identical (confirmed by direct
+bytes comparison, not merely re-running the suite). All 19 checks pass against the real, unmutated
+module (`uv run python3 tests/tasks/test_ftf_0902.py` → "all checks passed").
+
+**Live-cluster enforcement — the real acceptance-clause/negative_acceptance evidence:**
+`tests/integration/test_ftf_0902_network_policy_enforcement.py`, run in a new CI job,
+`network-policy-enforcement-integration` (`.github/workflows/ci.yml`), not re-executable in this
+sandbox (no Docker/kind here — the same disclosed FTF-0004 precedent). It stands up two real,
+disposable, single-node `kind` clusters in sequence:
+  - `npt-baseline` — kind's own default, non-enforcing `kindnet` CNI.
+  - `npt-enforcing` — kind with the default CNI disabled, Calico v3.28.2 (the non-operator
+    all-in-one manifest) installed instead. CNI choice: neither Calico nor kind is one of the seven
+    reused components (Section 77.1) and no architecture doc fixes a CNI product;
+    `docs/architecture/REFERENCE_REPOSITORIES.md`'s own Network Policy row already frames the
+    requirement as "verify enforcement in the installed CNI; a YAML file alone is not proof" without
+    naming one — Calico is picked as the most standard, widely-documented enforcing CNI for exactly
+    this kind-based qualification pattern (Tigera's own published kind installation guide), per
+    CLAUDE.md's default-resolution rule, and that reasoning is recorded here rather than raised as
+    an owner ask.
+
+The *identical* rendered manifest (from the same production module, not a hand-authored test-only
+YAML) is applied to both clusters. Three real destinations are probed by real TCP-connect exit code
+from inside the policy-restricted pod, never a YAML/string assertion:
+  - `allowed` — a real Service ClusterIP named in the template's own `allowed_internal_endpoints`.
+  - `denied` — a real Service ClusterIP deliberately *not* named anywhere in the template.
+  - `metadata` — the real AWS/GCP/Azure/DigitalOcean cloud-metadata address `169.254.169.254`,
+    made genuinely reachable-or-not (rather than merely unrouable, which would prove nothing) by a
+    real `hostNetwork` pod that binds that exact address on the node itself and serves real TCP
+    connections.
+
+Expected/asserted result: on `npt-baseline`, `allowed` **and** `denied` both succeed — the exact,
+literal negative_acceptance proof ("NetworkPolicy YAML on a nonenforcing cluster is not a pass").
+On `npt-enforcing`, `allowed` stays reachable and `denied` is blocked — the core deny-by-default
+enforcement proof. The `metadata` sub-scenario is asserted only when the baseline cluster first
+proves the fake listener genuinely reachable (distinguishing "blocked by policy" from "merely
+unreachable"); if that setup itself does not succeed, this script reports `BLOCKED_EXTERNAL` for
+that one sub-scenario specifically and does not assert anything about it, without weakening the
+core allowed/denied assertions the job's exit code always depends on. Real IPv6 live-cluster
+enforcement is disclosed `BLOCKED_EXTERNAL` for this CI job entirely — kind's default cluster
+networking is single-stack IPv4, and this sandbox independently confirmed (via
+`test_ftf_h006.py`'s own pre-existing disclosure) that it has no IPv6 stack at all; standing up a
+genuinely dual-stack kind cluster with verified IPv6 connectivity on a GitHub Actions hosted runner
+is a materially larger, independently-flaky undertaking this task's own resource_gate does not
+require attempting when Release 1's structural guarantee (no code path anywhere in
+`network_policy_templates.py` can ever render an IPv6-allowing egress rule at all) is already proven
+for real in the no-cluster unit suite above. **This job's own real CI run result on the opened PR is
+this task's actual acceptance-clause evidence** — this record does not assert it as already-passing
+in advance of that run; the PR/QUEUE.md follow-up records the real result once observed.
+
+**Repo-wide checks:** `uv run ruff check .` / `uv run ruff format --check .` clean (300 source
+files, zero new errors). `uv run mypy .` clean on every new/changed file — confirmed via `git stash`
+that the 17 `alembic`-stub `attr-defined` errors mypy reports are pre-existing on `origin/main`
+itself (294 files checked there vs. 297 here — exactly this shift's 3 new Python files, zero new
+errors). `python3 scripts/validate_spec.py --strict` clean. `python3 scripts/verify_task.py --task
+FTF-0902 --stage task` → `BLOCKED` / exit code 1 (`FTF-0902 has no merged verification evidence
+yet`) — expected and disclosed: `spec/verification-map.json`'s own entry is added in a later
+certifying commit once the implementation commit already exists in history, the identical
+two-commit pattern FTF-0402/FTF-04A26's own entries already document; not treated as a blocking
+failure of this PROVISIONAL submission. `product_truth_check.py --fail-on-unwired` unchanged
+`22/22` (blank `proving_symbol` — no live dispatcher exists for a pure rendering/validation library,
+same disclosed precedent as FTF-04A25/FTF-04A26). `status.py` unchanged `88/300` certified, `22`
+product-true (Law 2 — this is a submission, not a certification). Regression swept
+`test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` (whose own `is_cloud_metadata_address` this
+task reuses directly) — all "all checks passed", zero regressions.
+
+**Second, independent fault injection**, performed directly during this shift's own Verify step
+(distinct from the one embedded in the test suite above, and targeting the metadata clause of the
+negative_acceptance specifically rather than the default-open clause): weakened the
+metadata-overlap check inside `CidrEndpoint.__post_init__`
+(`if same_family_and_contained and is_cloud_metadata_address(probe):` → `if False and ...`) and
+reran the full suite directly — 3 genuine `FAIL`s (the exact AWS/GCP/Azure-exact, broad-link-local,
+and Alibaba metadata-overlap cases), confirming those three checks are load-bearing. Reverted
+byte-identical (md5sum `1eee70d5e58079e8e8f0ce2d8c7d50ca` confirmed identical before the mutation,
+after reverting, and against the original backup copy independently), suite re-ran clean
+immediately after (`uv run python3 tests/tasks/test_ftf_0902.py` → "all checks passed"); `git
+status`/`git diff` on the file confirmed empty afterward.
+
+`docs/spec-matrix.yaml` FTF-0902 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0902.py`;
+`evidence_hash` left blank pending the real merge commit (same convention as every other
+PROVISIONAL submission in this repository). CI gate step (`FTF-0902 negative-test proof`) added to
+`.github/workflows/ci.yml` immediately after the FTF-04A26 step; the new
+`network-policy-enforcement-integration` job added at the end of the same file, following the house
+style of `docker-local-stack-integration`/`organization-workspace-schema-integration` for a
+Docker-dependent job that cannot run in this sandbox.
+
+`QUEUE.md`/`docs/certifications/queue.md` both updated this shift, before opening the PR. **Not
+self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened PR
+(including the new `network-policy-enforcement-integration` job actually reaching a real
+conclusion) are required before certification. No open owner ask — the CNI/tooling choice above was
+resolved directly per CLAUDE.md's default-resolution rule, not escalated.
+
+STEP 4 stop condition (a): 1/1 in-flight item (FTF-0902) is `L1-PROVEN`, no blocking defect found by
+this session's own review, awaiting independent Control-plane certification. This shift stops here
+per its own instructions rather than picking up a second task.
+
 ## 2026-09-27 — FTF-04A26 — Control plane: certify (PR #340)
 
 Scheduled Control-plane certifier shift, session

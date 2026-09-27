@@ -1,5 +1,66 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV, branch `claude/wizardly-fermat-gwocup`)
+  — submitted **FTF-0902 (Network-policy templates)** PROVISIONAL via PR (link recorded in a
+  follow-up commit once opened). Dozens of prior shifts since 2026-09-20 correctly ruled this task
+  out as blocked on "a real enforcing CNI/firewall cluster this sandbox does not have" — that gap
+  is real and unchanged for this *interactive* sandbox; this shift instead routes the real
+  live-enforcement proof through a new GitHub Actions CI job
+  (`network-policy-enforcement-integration`), which has a real Docker daemon and container-registry
+  egress this sandbox lacks, the same pattern every other Docker-dependent integration job in
+  `.github/workflows/ci.yml` already uses (FTF-0004's own original disclosed precedent). No prior
+  shift's disclosure is contradicted — a CI job is a genuinely different, real execution
+  environment, not a claim that this sandbox itself gained cluster access.
+
+  Confirmed dependencies FTF-0005/FTF-0402 `CERTIFIED` first. `shared_lock_required:
+  [contracts:09, security:network_policy_templates]` — grepped every open PR and this file's own
+  history for `contracts:09`: unclaimed: `packages/contracts/openapi/09-interface.yaml`/
+  `jsonschema/09-domain.schema.json` did not exist, so this shift is Phase 9's interface owner,
+  frozen with deliberately zero HTTP paths (this task's own `database_changes` clause: no DB table,
+  no live caller — inventing an unwired route would itself be the placeholder Law 11 forbids).
+
+  Implemented `packages/security/network_policy_templates.py` (typed, versioned
+  `NetworkPolicyTemplate`/`CidrEndpoint`/`PodSelectorEndpoint` renderer/validator; reuses FTF-H006's
+  own `is_cloud_metadata_address` as the single metadata-identity source of truth; every
+  negative_acceptance invariant — default-open egress/ingress, a wildcard endpoint, a metadata-
+  overlapping endpoint, any IPv6 endpoint or `ipv6_policy` bypass, a missing/empty explicit
+  endpoint scoping — is a specifically-typed exception, never a generic one).
+  `tests/tasks/test_ftf_0902.py`: 19 tests, no DB/cluster/network egress, all pass; one disclosed
+  fault injection (Law 1, `deny_by_default_egress` check removed from the real on-disk module,
+  genuinely accepted a default-open template in a fresh subprocess, reverted byte-identical).
+
+  The real acceptance-clause evidence is
+  `tests/integration/test_ftf_0902_network_policy_enforcement.py`, run in the new CI job: two real
+  disposable `kind` clusters (`npt-baseline` — kindnet, non-enforcing; `npt-enforcing` — Calico
+  v3.28.2, picked per CLAUDE.md's default-resolution rule since no architecture doc fixes a CNI),
+  the identical rendered manifest applied to both, three real TCP-probe destinations (allowed
+  ClusterIP, denied ClusterIP, and the real cloud-metadata address served by a `hostNetwork` pod for
+  genuine reachability) asserted by exit code — proving the same YAML is a no-op on the nonenforcing
+  cluster (this task's own negative_acceptance, literally) and genuinely enforces on Calico. Real
+  IPv6 live-cluster enforcement is disclosed `BLOCKED_EXTERNAL` (kind's default networking is
+  single-stack IPv4; this sandbox has no IPv6 stack at all per `test_ftf_h006.py`'s own prior
+  disclosure) — never converted to a fabricated pass; the structural IPv6 guarantee is proven for
+  real in the no-cluster unit suite instead. **This job's own real CI run result on the opened PR is
+  the actual acceptance-clause evidence**, not asserted as already-passing in advance of that run.
+
+  `ruff`/`mypy` clean repo-wide (17 pre-existing, unrelated `alembic`-stub errors confirmed present
+  identically on `origin/main` via `git stash` — not introduced here). `validate_spec.py --strict`
+  clean. `verify_task.py --task FTF-0902 --stage task` reports `BLOCKED` (exit 1) — expected,
+  disclosed: `spec/verification-map.json`'s entry is added in a later certifying commit, same
+  two-commit pattern as FTF-0402/FTF-04A26. `product_truth_check.py --fail-on-unwired` unchanged
+  `22/22` (blank `proving_symbol`, same disclosed precedent as FTF-04A25/04A26). `status.py`
+  unchanged `88/300` certified, `22` product-true. Regression swept `test_ftf_0005.py`/
+  `test_ftf_0402.py`/`test_ftf_h006.py` — zero regressions. Second, independent fault injection
+  during this shift's own Verify step (metadata-overlap check weakened — 3 genuine FAILs, reverted
+  byte-identical, md5sum `1eee70d5e58079e8e8f0ce2d8c7d50ca` confirmed before/after).
+
+  `docs/spec-matrix.yaml` FTF-0902 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0902.py`.
+  Not self-certified (Law 4) — awaiting independent Control-plane L2 review and a real CI run
+  (including the new integration job reaching a real conclusion) on the opened PR. No open owner
+  ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01Qddq3FfXKVseRjetWnYeCW, triggered by the `pull_request.opened`
   webhook for PR #340) — independently certified **FTF-04A26 (Isolated real tool-backend adapter
   contract tests)**. Session-ID check: both of PR #340's commits carry `Claude-Session:
@@ -6453,13 +6514,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-04A26 (Isolated real tool-backend adapter contract tests) — the item named
-directly below as still "awaiting independent Control-plane L2 review" — was independently
-reviewed and CERTIFIED this shift via PR #340 (merge commit
-`d25a555fad0960d8d016f8ab009279e5fe980255`) — see this file's own top dated log entry and
+**FTF-0902** ("Network-policy templates") — submitted PROVISIONAL this shift via PR
+`claude/wizardly-fermat-gwocup` (link recorded in a follow-up commit once opened). See this file's
+own top dated log entry and `docs/certifications/queue.md` for the full evidence record, including
+the new `network-policy-enforcement-integration` CI job's own real kind+Calico enforcement proof.
+Awaiting independent Control-plane L2 review and that job's own real CI run result.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A26** ("Isolated real
+tool-backend adapter contract tests") as the current pending item — the item named directly below
+as still "awaiting independent Control-plane L2 review" — was independently reviewed and CERTIFIED
+via PR #340 (merge commit `d25a555fad0960d8d016f8ab009279e5fe980255`) — see
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
-Superseded by the certification above, kept verbatim for the record:
+Superseded by that certification, kept verbatim for the record:
 
 **FTF-04A26** ("Isolated real tool-backend adapter contract tests") — submitted PROVISIONAL this
 shift via **[PR #340](https://github.com/SJZLab/Sovra/pull/340)**. See this file's own top dated
