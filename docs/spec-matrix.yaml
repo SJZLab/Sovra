@@ -4376,10 +4376,10 @@ FTF-04A24:
   proving_symbol: ''
   proving_test: ''
 FTF-04A25:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Production-faithful target-agent harness contract
-  evidence_hash: ''
+  evidence_hash: 537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-12; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0405, FTF-04A01,
     FTF-04A19 (all CERTIFIED, confirmed before relying on them). Path: `apps/api/app/target_connectors/production_faithful_target_agent_harness_contract.py`
@@ -4449,9 +4449,55 @@ FTF-04A25:
     (all "all checks passed") -- zero regressions. CI gate step (`FTF-04A25 negative-test proof`) added
     to `.github/workflows/ci.yml` immediately after the FTF-04A20 step; no new integration job needed (no
     DB). `verify_task.py --task FTF-04A25 --stage task` expected `BLOCKED` pre-merge (no merged verification
-    evidence yet), same precedent as every prior sibling task. **Not self-certified (Law 4)** -- independent
-    Control-plane L2 review and a real CI run on the opened PR are required before certification.'
-  proof_state: L1-PROVEN
+    evidence yet), same precedent as every prior sibling task.
+
+
+    Control-plane L2 review (2026-09-27, PR #338, triggered by the pull_request.opened webhook):
+    session-ID checked against PR #338''s sole commit (Claude-Session .../session_01SzaESZPGiAQEZ4J6AyjSKL)
+    -- no overlap with this certifying session''s own ID, independent per Law 4. Waited for PR #338''s real
+    CI run (Actions run 36335499443) to reach completed before treating anything as evidence (Law 1/Law
+    5): 30/30 jobs green, including gate''s own new "FTF-04A25 negative-test proof" step. Read the full
+    diff (7 files, 1299/8, matching the PR''s own stated scope) and the new source file in full. Independently
+    reran `tests/tasks/test_ftf_04a25.py` directly (clean, "all checks passed"). Ran two independent fault
+    injections myself specifically targeting the two guardrails the submitting session''s own sandbox
+    classifier had denied testing: (1) `validate_model_binding_override`''s own key-membership check
+    weakened to `if False and key not in supported:` -- 1 genuine FAIL (`test_model_binding_key_outside_declared_surface_is_rejected`);
+    (2) `AdapterInvokeResult.__post_init__`''s business-outcome-completeness check weakened to `if False
+    and self.business_outcome is None:` -- 1 genuine FAIL (`test_invoke_result_completed_requires_business_outcome`,
+    the task''s own Section 66.3 negative case). Both edits reverted byte-identical (md5sum `8315a3588f3d55db53d4071699764414`
+    confirmed before and after each), `git status`/`git diff` empty afterward, suite re-ran clean. This
+    closes the Law-1 adversarial-proof gap the submission itself disclosed -- both of this task''s
+    negative_acceptance-adjacent guardrails are now independently shown able to fail, not merely exercised
+    by the passing suite. Reran repo-wide `uv run ruff check .`/`ruff format --check .` (clean) and `uv
+    run mypy .` (clean, 292 source files, the same 17 pre-existing alembic-stub/env.py errors only, zero
+    new); `git rev-parse --is-shallow-repository` confirmed true, `git fetch --unshallow` resolved it
+    (same disclosed precedent), then `python3 scripts/validate_spec.py --strict` -- clean.
+    `product_truth_check.py --fail-on-unwired` reproduced directly at unchanged `22/22` -- confirmed this
+    is a legitimate blank `proving_symbol` (a pure contract/protocol module genuinely has no live
+    dispatcher yet, same disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16), not an inflated 0/0
+    pass. Confirmed dependencies FTF-0405/FTF-04A01/FTF-04A19 genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+    before relying on them (`uv sync --all-packages` installed the FastAPI/uvicorn/SQLAlchemy extras
+    first); regression swept `test_ftf_0405.py`/`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py`
+    directly -- zero regressions. Checked every other open PR (#337/#336/#335/#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194)
+    for a conflicting write-set/lock claim on `apps/api/app/target_connectors/` -- none found (this
+    task''s own `shared_lock_required` is empty). Task contract re-pulled via `python3 tools/r1_handoff.py
+    packet FTF-04A25 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Define actual
+    container/HTTP target runtime protocol and model-binding override/parity requirements") confirmed
+    genuinely met by direct code read of `RuntimeEntryKind`/`RuntimeAdapterProtocol`/`ModelBinding`/
+    `validate_model_binding_override`/`evaluate_target_runtime_qualification`; negative_acceptance ("Do
+    not substitute a generic Factory chat loop for product orchestration; unsupported binding is
+    blocked") confirmed genuinely met -- `RuntimeAdapterProtocol` is a `typing.Protocol` with no concrete
+    class satisfying it anywhere in the module (`test_module_defines_no_concrete_adapter_implementation`),
+    and both the runtime-entry-kind and model-binding-key rejections are real, fault-injection-proven
+    guards. No open review threads or comments on PR #338.
+
+
+    No blocking defect found. PR #338 merged directly by this certification (merge commit
+    `537d28f8d65a6a0de0ba25b6b2c2c6fad37fdff9`) -- it was open, green, and `mergeable_state: clean` with
+    no relay session left to merge it; CLAUDE.md''s "Do without asking" permits "merge on green + L1 doc
+    (PROVISIONAL)". `sync_certified_status()` run directly. `scripts/status.py`: `86/300` -> `87/300`
+    certified; product-true unchanged `22/22`. No open owner ask. Not self-certified (Law 4).'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a25.py
 FTF-04A26:
