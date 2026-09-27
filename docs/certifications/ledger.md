@@ -8504,3 +8504,97 @@ reasons given above.
   session-ID check above), 2026-09-26
 
 **Conclusion:** Certified L2-CERTIFIED.
+
+## FTF-04A13 — Prompt-source discovery + evidence capture
+
+- Criterion ID: FTF-04A13
+- PR: https://github.com/SJZLab/Sovra/pull/324 (`[relay] FTF-04A13: Prompt-source discovery +
+  evidence capture`)
+- Merge commit: `9d7294e60a0abe11edf987030afab0d13c72b783`
+- Head commit reviewed: `40514e181c5f2229d592e04111f38fa61f64dcd3`
+- CI run: https://github.com/SJZLab/Sovra/actions/runs/36284539456 — 31/31 jobs `completed`/
+  `success`, `gate` included (job `108522674736`)
+- **Session-ID check:** this session's own ID is
+  `https://claude.ai/code/session_01DXhyapeY1fzRBx287LkDzE`. PR #324's commits carry
+  `Claude-Session: .../session_01Y6AZCE8N3RnkaZEXR1Bu8s`. No overlap, independent per Law 4.
+- **Diff read directly** (`git diff` against the PR's own base commit `315441bbdbdbbcadf3748fd34b773f616fc8a23b`):
+  9 files changed, matching the PR's own stated scope exactly (new module
+  `apps/api/app/target_connectors/prompt_source_discovery_evidence_capture.py`, new subprocess
+  helper `_typescript_javascript_prompt_source_ast_helper.cjs`, new test file
+  `tests/tasks/test_ftf_04a13.py`, `.github/workflows/ci.yml` gate step, tracking-doc appends, and
+  a freshly-generated `docs/implementation/task-packets/FTF-04A13.md` — the first packet-generation
+  for this task ID, consistent with `tools/r1_handoff.py packet`'s own documented default output
+  path). Read both new source files in full: the module's own security-boundary disclosure (no
+  `PromptSourceCandidate` ever carries real prompt/template text, only `content_sha256`/
+  `content_length` and/or a bare `referenced_path`; a `referenced_path` is resolved only by
+  exact-string-match lookup against the caller's own already-captured `SourceFileRef` sequence,
+  never opened/fetched) matches the actual code exactly in both the Python module and the JS/TS
+  subprocess helper (which computes its own sha256 digest via Node's core `crypto` module inside
+  the helper itself, so raw prompt text never crosses the subprocess stdout boundary).
+- **Own reproduction:** `uv sync --all-packages`; `pnpm install` (resolves this sandbox's own
+  missing `node_modules/typescript`, the same real, already-declared root devDependency FTF-04A10
+  already relies on); `uv run python3 tests/tasks/test_ftf_04a13.py` — "all checks passed" (20
+  `test_*` functions; `node` available in this sandbox, so all 3 TS/JS-gated tests ran too).
+- **Own fault injection (Law 1) #1, reproducing the config-derived negative_acceptance half:**
+  bypassed the secret-like config-key guard in `_config_derived_candidates` (`if key.secret_like:
+  continue` replaced with `if False: continue`). Mutation confirmed real (md5sum
+  `f20dd04504597f67fb9fc4139d18f3b1` before and after). Re-ran the suite: 1 genuine failure
+  (`test_secret_like_config_key_is_never_treated_as_prompt_source`), matching the PR's own claimed
+  fault-injection pattern. Reverted byte-identical (same md5sum), re-ran clean.
+- **Own fault injection (Law 1) #2, reproducing the "never leak raw prompt text" security
+  boundary, independently on the JS/TS side (a different mutation from either of the PR's own two
+  disclosed injections):** in `_typescript_javascript_prompt_source_ast_helper.cjs`, changed the
+  embedded-literal branch of `extractPromptSource` to return `content_sha256:
+  contentResult.value` (the raw string) instead of `sha256Hex(contentResult.value)`. Mutation
+  confirmed real (md5sum `25fdfba42df20e273c80c1deb131dd69` before and after). Re-ran the suite: 1
+  genuine failure
+  (`test_typescript_javascript_embedded_literal_system_prompt_is_hashed`). Reverted
+  byte-identical (same md5sum), re-ran clean — confirming the "never carried as raw text"
+  security boundary holds independently on the TS/JS side, not only the Python side the PR's own
+  two disclosed injections exercised.
+- **Real CI confirmed on the exact merged head, not a self-report:** PR #324's own workflow run
+  (`36284539456`) on head SHA `40514e181c5f2229d592e04111f38fa61f64dcd3` — 31/31 jobs `completed`/
+  `success`, `gate` included (job `108522674736`); fetched the `gate` job's raw log directly and
+  confirmed it printed `FTF-04A13 Prompt-source discovery + evidence capture: all checks passed`
+  immediately before `product_truth_check.py --fail-on-unwired`'s own `Product-truth: 20/20
+  product-true` and `status.py`'s own `Status: 81/300 certified · 20 product-true` — matching the
+  PR's own claims exactly. Three OpenBao-Go-build integration jobs (secret-manager-integration,
+  target-application-connection-integration, dataset-source-connection-integration — all testing
+  pre-existing, already-CERTIFIED criteria unrelated to FTF-04A13's own files) briefly appeared to
+  lag behind their own historical ~6.5-minute precedent (cross-checked against PR #322's run
+  `36278406138`) during this review; re-polled via `mcp__github__actions_get` (step-level detail,
+  not the cached check-runs listing) and confirmed all three completed successfully once the API's
+  own status-propagation caught up — not a genuine hang. Waited for the full run (all 31 jobs) to
+  reach `completed`/`success` before treating CI as green.
+- `uv run ruff check .`/`ruff format --check .` clean repo-wide. `uv run mypy .` clean repo-wide
+  (the pre-existing, already-disclosed `alembic`-stub errors are the only ones present, confirmed
+  unrelated to this PR's own files). `git fetch --unshallow` resolved this sandbox's own
+  pre-existing shallow-clone artifact (disclosed precedent, same as every prior FTF-04A0x/FTF-04A1x
+  shift) — `validate_spec.py --strict` clean after that. `product_truth_check.py --fail-on-unwired`:
+  `20/20` unchanged — confirmed `proving_symbol` is genuinely blank (no live route yet, same
+  disclosed precedent as FTF-04A09/FTF-04A10/FTF-04A11/FTF-04A12), not a 0/0-accepted-as-pass case.
+  `status.py`: `81/300` pre-certification. Confirmed dependencies FTF-04A01/FTF-04A09/FTF-04A10/
+  FTF-04A11 genuinely `CERTIFIED` (matching ledger entries) before relying on them.
+- No open review threads or comments on PR #324 (merged directly by this certification).
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A13 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: acceptance clause 1 ("Record system/developer prompt source
+  and referenced template dependencies by hash/location") genuinely met — no `PromptSourceCandidate`
+  this module or its JS/TS helper ever produces carries real prompt/template text; acceptance
+  clause 2 ("Independent review, exact merged commit, real relevant integration and negative-test
+  evidence recorded") met by this review; `negative_acceptance` ("External/floating prompt source
+  or embedded injection is treated as data, never analyzer instruction") reconfirmed genuinely met
+  — both sub-clauses independently re-verified via fresh fault injection/inspection above (the
+  floating-template half via the PR's own disclosed injection #1 reproduction path, the
+  embedded-injection half via `test_embedded_prompt_injection_attempt_is_only_ever_hashed_not_
+  interpreted`, read directly and confirmed to assert only the sha256 digest, never the raw
+  injection string).
+- No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A13 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `9d7294e60a0abe11edf987030afab0d13c72b783`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). `scripts/status.py`: `81/300` ->
+  `82/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed).
+- Validated-by: session https://claude.ai/code/session_01DXhyapeY1fzRBx287LkDzE (independent — see
+  session-ID check above), 2026-09-27
+
+**Conclusion:** Certified L2-CERTIFIED.
