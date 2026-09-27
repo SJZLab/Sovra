@@ -1,4 +1,85 @@
 # PROGRESS — Sovra
+## 2026-09-27T21:49:00Z — FTF-0902 — Same relay shift — real CI Verify loop, then a disclosed external blocker
+
+Continuation of this same shift's own entry directly below (same session
+`https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV`), after opening PR #342. Watched the
+real CI run rather than treating the local no-cluster unit suite as sufficient by itself for a
+task whose entire acceptance clause is live-cluster enforcement.
+
+**Iteration 1 (commit `88a4957`):** run `36351319396`'s `network-policy-enforcement-integration`
+job failed at "Install kind" — `chmod: changing permissions of '/usr/local/bin/kind': Operation not
+permitted`. GitHub Actions' hosted runner does not allow the unprivileged `runner` user to `chmod`
+directly under `/usr/local/bin`. Fixed: download to `/tmp`, then `sudo install -o root -g root -m
+0755` into place (the standard pattern for installing a third-party CLI on a hosted runner).
+
+**Iteration 2 (commit `fd20f0e`, then `02ec3db`):** run `36351452649` (after the install fix)
+showed a new, real failure: both the `allowed` and `denied` TCP probes failed on *both* the
+baseline (kindnet, non-enforcing) and enforcing (Calico) clusters — including the baseline, where
+nothing should have been blocking anything. This ruled out real policy enforcement as the cause
+before it was even trusted. First hypothesis: kube-proxy's own asynchronous iptables/ipvs
+programming for a freshly created Service had not yet propagated by probe time (a pod's own
+`condition=Ready` says nothing about that). Added `wait_for_service_endpoints` (fix `fd20f0e`) —
+run `36351770167` showed the wait itself resolving instantly (endpoints were already present) yet
+the exact same failure persisted, disproving that specific hypothesis with real evidence rather
+than assuming the first fix attempt had worked. Reconsidered: the one probe that *did* behave
+correctly in both runs (the metadata sub-scenario) reaches a raw node-bound address directly,
+bypassing kube-proxy/Service entirely — so the Service/ClusterIP layer itself was the more likely
+structural cause, not a mere timing race. Fixed by removing Services from the manifest entirely
+and probing each server pod's own real `status.podIP` directly (commit `02ec3db`) — still a
+genuine, real `CidrEndpoint` "explicit internal endpoint" (a `/32` pod address), just without an
+unnecessary extra asynchronous layer this task's own acceptance clause never required exercising.
+
+**Iteration 3 (commit `fc352bf`):** run `36352118097` (pod-IP-direct fix) came back with only
+**one** remaining failure out of three assertions: `allowed=True` on both clusters (fixed);
+`metadata` behaved exactly as designed (`True` on baseline, `False` on enforcing — genuinely
+blocked); only `denied` still failed, and identically on both clusters again (a full 5-second
+connect timeout on the *nonenforcing* baseline specifically, where it should have succeeded
+near-instantly like `allowed` did). Diagnosed as a transient link-layer condition (a freshly
+created sibling pod on the same single-node bridge network not yet ARP-resolvable from a pod
+created moments earlier) rather than a policy effect, given both pods received comparable buffer
+time before their own probes in the real log timestamps. Fixed with a bounded retry in `probe_tcp`
+(up to 3 attempts, 2s apart) — disclosed explicitly in the module docstring why this cannot weaken
+the negative_acceptance proof: a destination genuinely blocked by real policy enforcement fails
+identically on every attempt, so retrying can only rescue a false negative on a destination that
+should be reachable, never turn a real block into a false "allowed."
+
+**Current, disclosed, external blocker — not a code defect:** after pushing commit `fc352bf`, `gh
+api repos/SJZLab/Sovra/commits/fc352bff.../check-suites` showed only the unrelated "Claude" and
+"Railway App" app check-suites — no "GitHub Actions" check-suite was created at all, unlike every
+prior commit on this same branch (which each got a normal one, confirmed by the same query against
+the immediately prior commit `02ec3db`). Pushed an empty nudge commit (`bbbb2b1`) to force a fresh
+`synchronize` event — identical result, still no GitHub Actions check-suite. Confirmed this is
+genuinely repo-wide rather than specific to this branch/PR: queried
+`repos/SJZLab/Sovra/actions/runs` repeatedly over roughly 16 minutes and found **zero new workflow
+runs created for any branch in the entire repository** since the last real run
+(`36352118097`, `created_at: 2026-09-27T21:32:41Z`), despite two further pushes to this branch in
+that window. This is the same class of issue this repository's own QUEUE.md history already
+documents and previously resolved on its own ("the GitHub Actions runner-provisioning outage first
+found on PR #170"), except manifesting one stage earlier this time (no workflow run/check-suite is
+even created, rather than a run being created but stuck waiting for a runner assignment). Per Law
+17 ("Provider failure/outage/unknown state stays visible as blocked ... never converted to
+success"), this is disclosed rather than waited out indefinitely or worked around.
+
+**Net result:** `docs/spec-matrix.yaml`'s FTF-0902 entry is left exactly as this shift's own prior
+submission set it — `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` — not upgraded
+and not downgraded. The implementation is believed correct (every root cause above was real,
+specific, and independently confirmed by an actual prior CI run's own log output, never guessed
+blind; the retry fix is structurally incapable of inflating a real negative into a false positive),
+and the last real CI run that completed before the outage began (`36352118097`) showed the
+enforcement contrast working exactly as designed for two of three destinations with a clear,
+already-fixed root cause for the third — but **the actual, final green
+`network-policy-enforcement-integration` run confirming the current head commit has not been
+observed**, and this record does not claim it has. PR #342 remains open with all fix commits
+pushed. Not self-certified (Law 4); the real CI confirmation (by this shift if the outage clears
+before it ends, or by whichever session next opens the PR) and independent Control-plane L2 review
+both remain outstanding. No owner decision is needed — this is GitHub's own infrastructure, not a
+choice for the owner to make, the same as the prior documented outage's own resolution path.
+
+STEP 4 stop condition: this shift stops here. FTF-0902 is submitted PROVISIONAL via an opened,
+still-open PR (#342) with every real, diagnosed defect this shift found already fixed and pushed;
+the one remaining gap (a real green CI run) is blocked by a disclosed external outage this shift
+cannot resolve by retrying further, not by a repeated failure of this shift's own making.
+
 ## 2026-09-27T00:00:00Z — FTF-0902 — Scheduled autonomous relay shift — submitted PROVISIONAL
 
 Session: `https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV`, branch

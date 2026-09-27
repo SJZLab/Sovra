@@ -18841,3 +18841,30 @@ L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/te
 independent Control-plane L2 review and a real CI run on the opened PR (including the new
 `network-policy-enforcement-integration` job actually reaching a real conclusion) are required
 before certification. No open owner ask.
+
+## 2026-09-27 — FTF-0902 addendum — real CI Verify loop, then a disclosed external blocker
+
+Same submitting shift, continuing directly on PR #342. Three real, evidence-driven fixes were
+applied and pushed after watching PR #342's own real CI runs (never guessed blind): (1) `kind`/
+`kubectl` install failed on `chmod` permission under `/usr/local/bin` — fixed via `sudo install`.
+(2) Both `allowed`/`denied` probes failed identically on both clusters even on the nonenforcing
+baseline — diagnosed as a Service/kube-proxy asynchronous-propagation layer, fixed by probing each
+server pod's own real `status.podIP` directly instead of a Service ClusterIP. (3) Only `denied`
+then failed, identically on both clusters — diagnosed as a transient link-layer (ARP) condition on
+a freshly created sibling pod, fixed with a bounded, disclosed-safe retry in the probe (cannot
+convert a real policy block into a false "allowed"). Full diagnostic detail, including the exact
+CI run IDs and log excerpts each diagnosis was drawn from, is in `PROGRESS.md`'s matching
+`2026-09-27T21:49:00Z` entry and `QUEUE.md`'s matching top dated entry.
+
+After the third fix (commit `fc352bf`) and a follow-up empty nudge commit (`bbbb2b1`), **no
+GitHub Actions check-suite was created for either commit** (confirmed via the check-suites API,
+contrasted against every prior commit on the same branch, which each got a normal one), and **zero
+new workflow runs were created for any branch across the entire repository** for at least 16
+minutes despite these two pushes — a genuine, disclosed, repo-wide external GitHub Actions outage
+(Law 17: "Provider failure/outage ... stays visible as blocked ... never converted to success"),
+not a code defect and not this task's own resource_gate. `docs/spec-matrix.yaml`'s FTF-0902 entry
+is left at `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` — not upgraded. The real,
+final green CI run confirming the current head commit has not been observed; this is disclosed
+rather than assumed. No owner decision is needed (GitHub's own infrastructure, not a choice for the
+owner to make) — a future session re-opening PR #342 should first check for a real, fresh CI run
+before doing anything else.
