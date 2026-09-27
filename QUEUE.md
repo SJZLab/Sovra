@@ -6427,8 +6427,9 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A26** ("Isolated real tool-backend adapter contract tests") — submitted PROVISIONAL this
-shift. See this file's own top dated log entry and `docs/certifications/queue.md` for the full
-evidence record. Awaiting independent Control-plane L2 review.
+shift via **[PR #340](https://github.com/SJZLab/Sovra/pull/340)**. See this file's own top dated
+log entry and `docs/certifications/queue.md` for the full evidence record. Awaiting independent
+Control-plane L2 review.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A25** ("Production-
 faithful target-agent harness contract") as the current pending item; it was independently
