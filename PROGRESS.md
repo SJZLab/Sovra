@@ -1,4 +1,97 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-04A14 — Control plane: certify (PR #326)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_012z85Stet2ioQ4SSFLkiZc5`, triggered by the `pull_request.opened`
+webhook for PR #326. Checked `docs/certifications/queue.md` per this session's own scope and found
+FTF-04A14 the sole pending PROVISIONAL item; waited for PR #326's own CI run (still queued/
+in-progress at webhook-fire time) to reach `completed` before proceeding, per Law 1/Law 5 (a
+green-but-incomplete run is not evidence).
+
+**Session-ID check:** PR #326's commits carry `Claude-Session:
+.../session_018vZBrjqmDmsbc6jZx7Nfeo`. No overlap with this session's own ID, independent per
+Law 4.
+
+**Diff read directly** against the PR's own base commit `e7691cae53693b97f6ff9ddfa8b77f6476bb287f`:
+9 files changed, matching the PR's own stated scope exactly (new module
+`apps/api/app/target_connectors/tool_schema_permission_discovery_evidence_capture.py`, new
+subprocess helper `_typescript_javascript_tool_schema_permission_ast_helper.cjs`, new test file
+`tests/tasks/test_ftf_04a14.py`, `.github/workflows/ci.yml` gate step, tracking-doc appends, and
+`docs/implementation/task-packets/FTF-04A14.md`). Read the full 912-line module directly: confirmed
+no code path in the module or its own JS/TS helper ever reads a tool's own `description` field
+(grepped for `description` across both — zero references); confirmed `side_effect_class`/
+`requires_confirmation` resolve only from their own same-named literal keyword-argument/object-
+property/config-key value; confirmed FTF-0405's `validate_json_schema_document` and FTF-0406's
+`RISK_RANK` closed five-value enum are reused by reference, never reimplemented or re-declared;
+confirmed `enforce_side_effect_classification` is independently already live-wired into
+`app.tools.tool_definition_schema.ToolDefinition.__init__` (line 306) — the real enforcement
+boundary this task's own `negative_acceptance` clause's second half names — and that this module
+never constructs a `ToolDefinition` row or otherwise reaches that boundary.
+
+**Own reproduction:** this sandbox was itself missing `node_modules/typescript`; `pnpm install
+--frozen-lockfile` materialized it (same disclosed precedent FTF-04A10 already established); `uv
+run python3 tests/tasks/test_ftf_04a14.py` — "all checks passed" (25 `test_*` functions, `node`
+available so all TS/JS-gated tests ran too).
+
+**Own fault injection (Law 1), two independent mutations, deliberately different from the PR's own
+two disclosed injections:**
+1. In `run_tool_schema_permission_discovery`, changed `resolved_tool_name_count = sum(...)` to
+   `sum(...) + 1`: md5sum `6c150eaede1c14ccecc3682a6d3efef0` confirmed as baseline, mutated md5sum
+   `ca81ba79feca5890e2788f6ac70b6e00`. Re-ran: 1 genuine failure ("the real aggregate
+   resolved_tool_name_count matches the real per-candidate outcomes"). Reverted byte-identical
+   (md5sum back to `6c150eaede1c14ccecc3682a6d3efef0`), re-ran clean.
+2. In `_run_python_discovery`, disabled the oversized-file skip (`if file_ref.size >
+   limits.max_file_bytes:` → `if False and file_ref.size > limits.max_file_bytes:`): mutated md5sum
+   `5fb134095ca45e03a8df22bed109f6ec`. Re-ran: `test_oversized_file_is_not_read`'s own fixture
+   raised `AssertionError("must never be read once oversized")` — a genuine failure, since the
+   module actually called `read_content()` on the oversized fixture with the guard disabled.
+   Reverted byte-identical (md5sum back to `6c150eaede1c14ccecc3682a6d3efef0`), re-ran clean.
+
+**Real CI confirmed on the exact merged head:** PR #326's own workflow run (`36290710957`) on head
+SHA `edee2fed83add50ba8dafc0df06b7ce66299b76c` — waited for the full run to reach `completed`, then
+confirmed `conclusion: success` across 31/31 jobs including `gate` (job `108540118747`); confirmed
+via the CI YAML diff that this exact job carries the added `FTF-04A14 negative-test proof` step
+running `tests/tasks/test_ftf_04a14.py`. **Disclosed limitation:** this sandbox's outbound proxy
+denies CONNECT to `results-receiver.actions.githubusercontent.com` and
+`*.blob.core.windows.net` (confirmed via the proxy's own `/__agentproxy/status`, which listed both
+hosts under `recentRelayFailures` as `connect_rejected`), so unlike FTF-04A13's own certification
+this session could not fetch the `gate` job's raw log text directly. In its place: the check run's
+own `success` conclusion fetched directly from the GitHub API on the exact head commit, plus this
+session's own independent local reproduction of the identical test command (above) and both fault
+injections, substitute for a direct raw-log read.
+
+`uv run ruff check`/`uv run mypy` clean on this task's own files. `pnpm run lint` clean repo-wide.
+`git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone artifact (disclosed
+precedent, same as every prior FTF-04A0x/FTF-04A1x shift) — `validate_spec.py --strict` clean after
+that. `product_truth_check.py --fail-on-unwired`: `20/20` unchanged — confirmed `proving_symbol: ''`
+is genuinely blank in `docs/spec-matrix.yaml`'s own FTF-04A14 entry (no live route yet, same
+disclosed precedent as FTF-04A09–FTF-04A13), not a 0/0-accepted-as-pass case. `status.py`: `82/300`
+pre-certification. Regression swept `test_ftf_04a09.py`–`test_ftf_04a13.py` (all "all checks
+passed") plus `uv run pytest tests/unit` (3/3) — zero regressions. Confirmed dependencies
+FTF-0405/FTF-0406/FTF-04A01/FTF-04A09/FTF-04A10/FTF-04A11 genuinely `CERTIFIED` (matching ledger
+entries) before relying on them.
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-04A14 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 ("Resolve supported tool schemas and
+observed permission/confirmation evidence with explicit uncertainties") genuinely met — every
+resolvable field carries an explicit `resolved`/`reason` pair, never a guessed default; acceptance
+clause 2 ("Independent review, exact merged commit, real relevant integration and negative-test
+evidence recorded") met by this review; the full `negative_acceptance` clause ("Unknown
+authorization is not inferred from tool description; desired deny policy must be enforced in
+runtime") is genuinely met on both halves — the first half by direct code/grep inspection plus the
+PR's own `test_reassuring_description_without_structural_declaration_is_unresolved` (read directly,
+reproduced passing), the second half by confirming `enforce_side_effect_classification`'s
+independent, already-live wiring named above. No open review threads or comments on PR #326;
+already merged by this certification.
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A14 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to PR #326's
+merge commit `876e9937051f818c9049175e0b126c4cb85f1bd8`. `sync_certified_status()` run directly.
+Appended `docs/certifications/ledger.md`; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`:
+`82/300` -> `83/300` certified; product-true unchanged at `20/20`.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
 ## 2026-09-27 — FTF-04A13 — Control plane: certify (PR #324)
 
 Scheduled Control-plane certifier shift, session
