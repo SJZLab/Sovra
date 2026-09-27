@@ -1,4 +1,105 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-04A16 — Control plane: certify (PR #329)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_01GPoKVEwERvNWYqDjN92r4F`, triggered by the `pull_request.opened`
+webhook for PR #329. Checked `docs/certifications/queue.md` and confirmed directly against
+`docs/spec-matrix.yaml` (grep for `certification_state: PROVISIONAL`) that FTF-04A16 was the sole
+pending PROVISIONAL item. Waited for PR #329's own CI run (`36302096115`, still queued/in-progress
+at webhook-fire time) to reach `completed` before proceeding, per Law 1/Law 5.
+
+**Session-ID check:** PR #329's two commits carry `Claude-Session:
+.../session_01HXdjCPYPHGRMfRsT6Bom1V`. No overlap with this session's own ID, independent per
+Law 4.
+
+**Diff read directly** (`git show d688668a8ef6e56393c256a5712e175e6825f23d --stat`): 8 files
+changed, matching the PR's own stated scope (new module `apps/api/app/target_connectors/
+runtime_trace_deployment_contract_discovery.py`, new test file `tests/tasks/test_ftf_04a16.py`,
+`.github/workflows/ci.yml` gate step, tracking-doc appends, and
+`docs/implementation/task-packets/FTF-04A16.md`). Read the full 759-line module directly:
+confirmed the only I/O it performs is `file_ref.read_content()` on caller-supplied
+`SourceFileRef` entries — no `open`/socket/HTTP-client call against any discovered path or URL
+string anywhere; confirmed the Python scan uses only `ast.parse` (never `exec`/`eval`/`compile`/
+`importlib`/a subprocess); confirmed the JSON/YAML/TOML-shaped manifest path reuses FTF-04A11's
+own already-CERTIFIED `run_json_yaml_toml_configuration_discovery` by direct call, not a
+re-implementation; confirmed every URL-shaped `literal_value` is routed through
+`_endpoint_evidence_for`, which returns the fixed string `"unverified_static_reference"` and
+nothing else for a URL shape.
+
+**Own reproduction:** ran `tests/tasks/test_ftf_04a16.py` via its own real entry point (`python3
+tests/tasks/test_ftf_04a16.py`, per the module's own docstring) — 26 `test_*` functions (the PR's
+own description/PROGRESS.md/QUEUE.md say "27" — a minor miscount, disclosed here rather than
+silently repeated), "all checks passed". **Disclosed finding:** this test file's `check()` helper
+only appends to a module-level `FAILURES` list and never raises, so running the same file under
+plain `pytest` reports every `test_*` function as "passed" regardless of the assertion's actual
+outcome — confirmed by deliberately running it under `pytest` first (26/26 "passed" even before
+any fault injection, the tell). `pytest` against this file is not evidence either way; the real
+verification command is the direct `python3` invocation, and that is what CI's own gate step and
+this review both rely on.
+
+**Own fault injection (Law 1), two independent mutations, deliberately different from the PR's
+own two disclosed injections:**
+1. In `_endpoint_evidence_for`, changed the URL-shape check from `value.startswith("http://") or
+   value.startswith("https://")` to `value.startswith("http://")` only: **no test failure** — a
+   genuine, disclosed test-coverage gap. No test in the suite exercises `endpoint_reachability`
+   for an `https://`-shaped literal (the one `https://` fixture, in
+   `test_compose_ports_and_dict_environment_captured`'s `SENTRY_DSN` value, only asserts
+   `category`, never `endpoint_reachability`). Does not violate `negative_acceptance` itself (the
+   faulted code still never returns `"reachable"`, only `None`), but is a real gap in this task's
+   own proof of that clause's `https://` half — left as a disclosed gap for a future shift to
+   close with an added test, not a blocking defect on its own.
+2. Inserted a real `open(value)` call into `_parse_dockerfile_lines` immediately after computing a
+   reference's literal value: mutated md5sum `3010909400bd69b9a9815c8f25bdc4c7` (baseline
+   `111b013fc6696e4a73834d4050404917`). Re-ran: 1 genuine, hard failure —
+   `test_detected_log_path_is_never_opened`'s own `builtins.open` monkeypatch raised
+   `AssertionError("must never open a path discovered inside scanned content")`, propagating as
+   an uncaught exception — confirming that guard actually exercises real I/O, not a no-op.
+   Reverted byte-identical (md5sum back to `111b013fc6696e4a73834d4050404917`), re-ran clean.
+
+**Real CI confirmed on the exact merged head:** PR #329's own workflow run (`36302096115`) on head
+SHA `6735fe024d2fb1624f484535dd175cedbcdd60cb` — waited for the full run to reach `completed`, then
+confirmed `conclusion: success` across all 30 jobs including `gate` (job `108571513281`);
+confirmed via the CI YAML diff and the job's own step list that this exact job carries the added
+`FTF-04A16 negative-test proof` step (step 102) running `tests/tasks/test_ftf_04a16.py`, itself
+`completed`/`success` — fetched directly from the GitHub Actions API on the real run, not a
+self-reported claim.
+
+`uv run ruff check .`/`uv run mypy .` clean on this task's own files and repo-wide (278 files,
+only the pre-existing disclosed `alembic`-stub note). `pnpm run lint` clean repo-wide after `pnpm
+install --frozen-lockfile` (same disclosed precedent every prior FTF-04A10/04A13/04A14 review
+already established). `git fetch --unshallow` resolved this sandbox's own pre-existing
+shallow-clone artifact (disclosed precedent) — `validate_spec.py --strict` clean after that.
+`product_truth_check.py --fail-on-unwired`: `20/20` unchanged — confirmed `proving_symbol: ''` is
+genuinely blank in `docs/spec-matrix.yaml`'s own FTF-04A16 entry, not a 0/0-accepted-as-pass case.
+`status.py`: `83/300` pre-certification. Regression swept `test_ftf_04a08.py`–`test_ftf_04a14.py`/
+`test_ftf_04a17.py` (all "all checks passed", the last requiring `uv sync --all-packages` for
+`uvicorn` in this sandbox, disclosed) plus `uv run pytest tests/unit` (3/3) — zero regressions,
+independently reproduced, not merely trusted from the producing session's own report. Confirmed
+dependencies FTF-04A01/FTF-04A09/FTF-04A10/FTF-04A11 genuinely `CERTIFIED` directly in
+`docs/spec-matrix.yaml` before relying on them.
+
+Task contract re-pulled (`python3 tools/r1_handoff.py packet FTF-04A16 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1 ("Identify trace/deployment configuration
+and actual runtime-binding inputs without contacting arbitrary URLs") genuinely met — both scan
+classes are static/non-executing, confirmed by direct code read; acceptance clause 2
+("Independent review, exact merged commit, real relevant integration and negative-test evidence
+recorded") met by this review; the full `negative_acceptance` clause ("Detected logs are not
+automatically harvested and a string in config is not proof a production endpoint is reachable")
+is genuinely met — the "never opens a discovered path" half reconfirmed live by fault injection #2
+above, the "never claims reachable" half reconfirmed by direct code read (fault injection #1 shows
+a coverage gap on the `https://` case specifically, not a violation of the clause itself). No open
+review threads or comments on PR #329; already merged by this certification.
+
+**Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A16 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to PR #329's
+merge commit `0c796be1bdbc70c085f5c8851300e84bb04aae6a`. `sync_certified_status()` run directly.
+Appended `docs/certifications/ledger.md`; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`:
+`83/300` -> `84/300` certified; product-true unchanged at `20/20`. A note was left in the ledger
+entry for the next relay/producer shift: add a test covering `endpoint_reachability` for an
+`https://`-shaped value (fault injection #1 above) — not a blocker.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
 ## 2026-09-27 — FTF-04A14 — Control plane: certify (PR #326)
 
 Scheduled Control-plane certifier shift, session

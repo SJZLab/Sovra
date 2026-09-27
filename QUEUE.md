@@ -1,5 +1,63 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled autonomous relay shift, session
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01GPoKVEwERvNWYqDjN92r4F, triggered by the `pull_request.opened`
+  webhook for PR #329) — independently certified **FTF-04A16 (Runtime trace/deployment contract
+  discovery)**. Session-ID check: no overlap with PR #329's producer session
+  (`session_01HXdjCPYPHGRMfRsT6Bom1V`) — independent per Law 4.
+
+  Diff read directly (`git show d688668a8ef6e56393c256a5712e175e6825f23d --stat`): 8 files changed,
+  matching the PR's own stated scope. Read the full 759-line module directly: confirmed its only
+  I/O is `file_ref.read_content()` on caller-supplied entries; confirmed the Python scan uses only
+  `ast.parse`; confirmed the JSON/YAML/TOML-shaped manifest path reuses FTF-04A11's own
+  `run_json_yaml_toml_configuration_discovery` by direct call. Reproduced
+  `tests/tasks/test_ftf_04a16.py` via its own real entry point (`python3 tests/tasks/
+  test_ftf_04a16.py`): 26 test functions (the PR's own "27" claim in its description/PROGRESS.md/
+  QUEUE.md is a minor miscount, disclosed rather than repeated), all pass. Noted and disclosed:
+  this file's `check()` helper never raises, so a plain `pytest` run reports every test "passed"
+  regardless of outcome — confirmed by deliberately running it under `pytest` first and seeing
+  the same "26 passed" before any fault injection. The module's own docstring names the real
+  verification command as `python3 tests/tasks/test_ftf_04a16.py`; this review used that command.
+
+  **Own fault injection #1** (dropped `https://` from `_endpoint_evidence_for`'s URL-shape check,
+  leaving only `http://`): no test failure — a genuine, disclosed test-coverage gap (no test
+  exercises `endpoint_reachability` for an `https://`-shaped literal). Does not violate
+  `negative_acceptance` itself (still never returns `"reachable"`), but is a real gap in this
+  task's own proof of that clause's `https://` half — flagged for a future shift to close with an
+  added test, not a blocker. **Own fault injection #2** (inserted a real `open(value)` call into
+  `_parse_dockerfile_lines` right after computing a reference's literal value): 1 genuine, hard
+  failure — `test_detected_log_path_is_never_opened`'s own `builtins.open` monkeypatch raised
+  `AssertionError`, confirming that guard actually exercises real I/O. Both mutations reverted
+  byte-identical (md5sum `111b013fc6696e4a73834d4050404917` matching baseline).
+
+  Confirmed real CI on the exact merged head (run 36302096115): all 30 jobs `completed`/`success`
+  including `gate` (job `108571513281`, carrying the added `FTF-04A16 negative-test proof` step,
+  itself `completed`/`success`) — confirmed directly via the GitHub Actions API, not a
+  self-reported claim. `git fetch --unshallow` resolved this sandbox's own pre-existing
+  shallow-clone artifact (disclosed precedent) — `validate_spec.py --strict` clean after that.
+  `product_truth_check.py --fail-on-unwired` unchanged `20/20` (`proving_symbol` confirmed
+  genuinely blank). `uv run ruff check .`/`uv run mypy .`/`pnpm run lint` clean repo-wide.
+  Regression swept `test_ftf_04a08.py`–`test_ftf_04a14.py`/`test_ftf_04a17.py` (all "all checks
+  passed", the last requiring `uv sync --all-packages` for `uvicorn` in this sandbox, disclosed)
+  plus `uv run pytest tests/unit` (3/3) — zero regressions, independently reproduced. Confirmed
+  dependencies FTF-04A01/FTF-04A09/FTF-04A10/FTF-04A11 genuinely `CERTIFIED` directly in
+  `docs/spec-matrix.yaml` before relying on them.
+
+  Pulled the task contract via `python3 tools/r1_handoff.py packet FTF-04A16 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed the acceptance/negative_acceptance clauses are
+  genuinely met (the `https://` coverage gap above is a proof gap, not a clause violation). PR
+  #329 merged directly (merge commit `0c796be1bdbc70c085f5c8851300e84bb04aae6a`) as part of this
+  certification — no open review threads or comments.
+
+  Result: CERTIFIED. This commit contains only the tracking-doc updates: `docs/spec-matrix.yaml`
+  (FTF-04A16 -> `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` =
+  merge commit), `spec/tasks.json`/`docs/implementation/TRACKER.json` (via
+  `sync_certified_status()`), a new `docs/certifications/ledger.md` entry, and
+  `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` updates. `scripts/status.py`: `83/300`
+  -> `84/300` certified; product-true unchanged at `20/20`. No open owner ask. A note was left in
+  the ledger entry for the next relay/producer shift: add a test covering `endpoint_reachability`
+  for an `https://`-shaped value (fault injection #1 above) — not a blocker.
+
+Previously updated: 2026-09-27 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V) — **submitted FTF-04A16 ("Runtime
   trace/deployment contract discovery") PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
   certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly.
@@ -6153,14 +6211,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A16** ("Runtime trace/deployment contract discovery") is the current item, submitted
-2026-09-27 via **[PR #329](https://github.com/SJZLab/Sovra/pull/329)** (branch
-`claude/wizardly-fermat-loquvq` -> `main`), title `[relay] FTF-04A16: Runtime trace/deployment
-contract discovery`, producer session
-`https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V`. Full submission record: this file's own
-top dated log above, `PROGRESS.md`'s matching 2026-09-27 entry, `docs/certifications/queue.md`'s
-matching entry, `docs/spec-matrix.yaml`'s FTF-04A16 notes. **Not self-certified (Law 4)** —
-awaiting an independently-triggered Control-plane L2 certifier session.
+None currently. **FTF-04A16** ("Runtime trace/deployment contract discovery") was the item here;
+independently reviewed and CERTIFIED via **[PR #329](https://github.com/SJZLab/Sovra/pull/329)**
+(merge commit `0c796be1bdbc70c085f5c8851300e84bb04aae6a`) — see this file's own top dated log for
+the certification summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for
+the full history and evidence.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A14** ("Tool/schema/
 permission discovery + evidence capture") as the current pending item; it was independently reviewed
