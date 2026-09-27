@@ -1,5 +1,87 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-26 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift) — **submitted FTF-04A13 ("Prompt-source
+  discovery + evidence capture") PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
+  certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md`
+  directly. Recomputed the dependency-ready frontier directly from `docs/TASK_INDEX.md`'s own
+  dependency column cross-checked against `docs/spec-matrix.yaml`'s real `certification_state`
+  per task (never trusted from a prior shift's own claim alone): 15 tasks came back
+  dependency-ready and `certification_state: NONE`. Checked all open PRs directly via the GitHub
+  API before picking new work: excluded FTF-0212 (PR #231, an earlier session's own open PR),
+  FTF-0304 (PRs #195/#194, an already-duplicated pair from two earlier sessions), FTF-0214 (PR
+  #295, a genuine, already-disclosed blocker -- no live backend surface for its own stated
+  acceptance), FTF-04A02 (a keyed external GitHub credential, ask-first per CLAUDE.md), FTF-0500A/
+  FTF-0500D (still blocked on the same no-`Dataset`-entity/no-composed-route class FTF-0214 already
+  established), FTF-1201/FTF-H004 (real network egress this sandbox lacks), and FTF-1703 (needs
+  ≥1000 real curated traces). Picked **FTF-04A13** -- lowest `docs/TASK_INDEX.md` file-order item
+  among the genuinely ready and unclaimed candidates, and the first task to build Section 7A.4 step
+  5 ("Detect system/developer prompt sources") over FTF-04A09's/FTF-04A10's own already-CERTIFIED
+  completion-call-site detection.
+
+  Task contract pulled fresh (`python tools/r1_handoff.py packet FTF-04A13 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`) rather than trusted from the title alone. Implemented
+  `apps/api/app/target_connectors/prompt_source_discovery_evidence_capture.py` (path refined from
+  the packet's own generic `packages/target-connectors/...` suggestion to this repo's own real
+  `apps/api/app/target_connectors/*.py` layout, same refinement FTF-04A09/FTF-04A10/FTF-04A11/
+  FTF-04A12 each already disclosed) plus a new, separate JS/TS subprocess helper
+  (`_typescript_javascript_prompt_source_ast_helper.cjs` -- never an edit to FTF-04A10's own
+  already-CERTIFIED, frozen `_typescript_javascript_ast_helper.cjs`, per Section 75.1's own "shared
+  module changes require ownership transfer" rule).
+
+  Detects a real system/developer prompt source over the same completion-call sites FTF-04A09
+  (Python `litellm.completion`/`acompletion`) and FTF-04A10 (JS/TS
+  `<client>.chat.completions.create`) already identify independently (duplicated, disclosed, closed
+  three-import-shape detection per language -- the same per-task-duplication precedent FTF-04A10
+  itself already established one task over versus FTF-04A09), plus a new closed-vocabulary
+  config-key heuristic over FTF-04A11's own `ConfigKeyEvidence`
+  (`SYSTEMPROMPT`/`DEVELOPERPROMPT`/`PROMPTPATH`/`PROMPTTEMPLATE`/`PROMPTFILE`/
+  `SYSTEMPROMPTPATH`, exact match only), the same three-source composition shape FTF-04A12 already
+  established for model bindings.
+
+  This task's own acceptance clause ("Record system/developer prompt source and referenced template
+  dependencies by hash/location") is met structurally: no `PromptSourceCandidate` this module ever
+  produces carries real prompt/template text -- only `content_sha256`/`content_length` (both
+  Python's own `hashlib.sha256` and the JS/TS helper's own Node `crypto.createHash("sha256")`, pure
+  non-executing digests) and/or a bare `referenced_path` location string. This task's own
+  negative_acceptance ("External/floating prompt source or embedded injection is treated as data,
+  never analyzer instruction") is met by two independent structural decisions: (1) a
+  `referenced_path` is resolved only by exact-string-match lookup against the caller's own
+  already-captured `SourceFileRef` sequence -- never opened, fetched, or normalized; a path this
+  module cannot find there is honestly `template_dependency_resolved=False`
+  ("external_or_missing_template"), never silently treated as present; (2) whatever a resolved
+  prompt string's own content says -- an embedded prompt-injection attempt included -- changes
+  nothing about how this module classifies it, since the string is only ever hashed, never parsed
+  or matched against any keyword list.
+
+  `tests/tasks/test_ftf_04a13.py`: 20 tests (17 unconditional, 3 TS/JS-specific tests gated on a
+  real `node` runtime), all pass against the unmodified code. Two independent fault injections,
+  both reverted byte-identical (md5sum `f20dd04504597f67fb9fc4139d18f3b1` before and after each,
+  confirmed via direct `md5sum` comparison), re-run clean: (1) a missing referenced template
+  silently marked `template_dependency_resolved=True` instead of `False` -- 1 genuine FAIL; (2) the
+  embedded-literal path made to return the real raw prompt text as `content_sha256` instead of its
+  own real sha256 digest -- 4 genuine FAILs, including the dedicated
+  `test_raw_prompt_content_never_appears_in_any_candidate_json`.
+
+  `pnpm install` resolved this sandbox's own missing `node_modules/typescript` (same real,
+  already-declared root devDependency FTF-04A10 already relies on -- not a new dependency this task
+  introduces). `git fetch --unshallow` resolved this sandbox's own pre-existing shallow-clone
+  artifact (disclosed precedent, same as every prior FTF-04A0x/FTF-04A1x shift) --
+  `validate_spec.py --strict` clean after that. `uv run ruff check .`/`ruff format --check .` clean
+  repo-wide; `uv run mypy .` clean repo-wide (274 files; the previously-disclosed 15 `alembic`-stub
+  errors are the only ones present, confirmed pre-existing and unrelated). `pnpm run lint` clean
+  repo-wide (confirms the new `.cjs` helper is real, lint-clean JS). `product_truth_check.py
+  --fail-on-unwired` unchanged `20/20` (`proving_symbol` left blank, same disclosed "no live route
+  yet" precedent FTF-04A09/FTF-04A10/FTF-04A11/FTF-04A12 already established). `status.py`
+  unchanged `81/300` (Law 2 -- this is a submission, not a certification). Regression swept
+  `test_ftf_04a09.py`/`test_ftf_04a10.py`/`test_ftf_04a11.py`/`test_ftf_04a12.py` (all "all checks
+  passed") plus `uv run pytest tests/unit` (3/3) -- zero regressions.
+
+  `docs/spec-matrix.yaml` FTF-04A13 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real
+  merge commit. CI gate step (`FTF-04A13 negative-test proof`) added to `.github/workflows/ci.yml`.
+  **Not self-certified (Law 4)** -- awaiting an independently-triggered Control-plane L2 certifier
+  session and the L4 gate.
+
+Previously updated: 2026-09-26 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk, triggered by the `pull_request.opened`
   webhook for PR #322) — independently certified **FTF-04A12 (LiteLLM/current-model binding
   discovery)**. Session-ID check: no overlap with PR #322's sole producer session
@@ -5807,7 +5889,11 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-No item is currently pending here — the queue is empty as of the correction below.
+**FTF-04A13** ("Prompt-source discovery + evidence capture") — submitted 2026-09-27 via a scheduled
+autonomous relay shift (this file's own top dated entry has the full record; PR not yet opened as
+of this entry — see this file's own top log for the branch/PR link once pushed). `docs/
+spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. Awaiting an
+independently-triggered Control-plane L2 certifier session and the L4 gate.
 
 Correction (2026-09-26, Control-plane certifier shift, session
 `https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk`): this paragraph previously still named
