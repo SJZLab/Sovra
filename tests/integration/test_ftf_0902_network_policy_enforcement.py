@@ -32,10 +32,12 @@ in-Docker) clusters and applies the *identical* rendered
 
 Both clusters probe three real, distinct TCP destinations from the same
 policy-restricted pod:
-  - `allowed`  -- a real in-cluster Service ClusterIP named in the
-    template's own `allowed_internal_endpoints` (explicit allowlist).
-  - `denied`   -- a real in-cluster Service ClusterIP deliberately *not*
-    named anywhere in the template (an ordinary internal destination the
+  - `allowed`  -- a real in-cluster pod IP named in the template's own
+    `allowed_internal_endpoints` (explicit allowlist; deliberately a direct
+    pod IP rather than a Service ClusterIP -- see `get_pod_ip`'s own
+    docstring for why).
+  - `denied`   -- a real in-cluster pod IP deliberately *not* named
+    anywhere in the template (an ordinary internal destination the
     template's own deny-by-default posture must still block).
   - `metadata` -- the real AWS/GCP/Azure/DigitalOcean cloud-metadata
     address (`169.254.169.254`). Since this sandbox/runner is not a real
@@ -215,26 +217,23 @@ def wait_for_pod_ready(cluster: str, namespace: str, name: str, timeout: float) 
     )
 
 
-def get_cluster_ip(cluster: str, namespace: str, service: str) -> str:
-    result = kubectl(
-        cluster, "-n", namespace, "get", "svc", service, "-o", "jsonpath={.spec.clusterIP}"
-    )
-    ip = result.stdout.strip()
-    if not ip:
-        raise ScenarioFailure(f"service {service!r} in {namespace!r} has no ClusterIP")
-    return ip
-
-
-def wait_for_service_endpoints(cluster: str, namespace: str, service: str, timeout: float) -> None:
-    """A pod's own `condition=Ready` says nothing about whether kube-proxy has
-    yet programmed a real route for a Service that selects it -- the
-    endpoint controller and kube-proxy's iptables/ipvs sync both run
-    asynchronously after the pod becomes Ready. Probing a ClusterIP before
-    that propagation completes fails for a purely timing reason indistinguishable
-    from a real connection failure, which is exactly the false signal this
-    script's own baseline-vs-enforcing contrast must never produce. Polls the
-    real EndpointSlice (the modern replacement for the deprecated v1
-    Endpoints API) until it names at least one real ready address."""
+def get_pod_ip(cluster: str, namespace: str, pod: str, timeout: float = 30) -> str:
+    """The real, directly-routable pod IP -- deliberately *not* a Service
+    ClusterIP. An earlier version of this script routed the `allowed`/
+    `denied` probes through a Service, which failed identically on both the
+    baseline and the enforcing cluster even before any policy was applied
+    (CI run 36351770167's own real, disclosed failure) -- kube-proxy's own
+    iptables/ipvs programming for a freshly created Service is an entire
+    extra asynchronous layer this task's own acceptance clause does not
+    actually need to exercise, and its timing proved unreliable on a
+    single-node kind cluster within this job's own short lifetime. A pod's
+    own IP is allocated synchronously by the CNI as part of scheduling --
+    by the time `condition=Ready` is true, the address below is already
+    real and stable for this pod's lifetime, and this is still a genuine
+    "explicit internal endpoint" `CidrEndpoint` (a `/32` pod address),
+    exactly the kind of destination Section 77.5's own component bindings
+    reach other in-cluster services by.
+    """
     deadline = time.monotonic() + timeout
     last_output = ""
     while time.monotonic() < deadline:
@@ -243,21 +242,17 @@ def wait_for_service_endpoints(cluster: str, namespace: str, service: str, timeo
             "-n",
             namespace,
             "get",
-            "endpointslices.discovery.k8s.io",
-            "-l",
-            f"kubernetes.io/service-name={service}",
+            "pod",
+            pod,
             "-o",
-            "jsonpath={.items[*].endpoints[*].addresses[0]}",
+            "jsonpath={.status.podIP}",
             check=False,
         )
         last_output = result.stdout.strip()
         if last_output:
-            return
+            return last_output
         time.sleep(1)
-    raise ScenarioFailure(
-        f"service {service!r} in {namespace!r} never got a real endpoint address within "
-        f"{timeout}s (last query output: {last_output!r})"
-    )
+    raise ScenarioFailure(f"pod {pod!r} in {namespace!r} never got a real IP within {timeout}s")
 
 
 _LISTENER_SERVER_MANIFEST = """
@@ -273,18 +268,6 @@ spec:
     - name: server
       image: busybox:1.36
       command: ["sh", "-c", "while true; do echo -e 'ok' | nc -l -p {port}; done"]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {name}
-  namespace: {namespace}
-spec:
-  selector:
-    app: {name}
-  ports:
-    - port: {port}
-      targetPort: {port}
 """
 
 _TARGET_POD_MANIFEST = """
@@ -404,14 +387,8 @@ def run_scenario(cluster: str, install_calico: bool) -> dict[str, bool | str]:
     wait_for_pod_ready(cluster, NAMESPACE, "allowed", timeout=120)
     wait_for_pod_ready(cluster, NAMESPACE, "denied", timeout=120)
 
-    allowed_ip = get_cluster_ip(cluster, NAMESPACE, "allowed")
-    denied_ip = get_cluster_ip(cluster, NAMESPACE, "denied")
-    # See wait_for_service_endpoints's own docstring: a Service's ClusterIP
-    # existing is not the same real thing as kube-proxy having programmed a
-    # route to it yet -- wait for both before any policy is even applied, so
-    # a probe failure later can only mean what this script claims it means.
-    wait_for_service_endpoints(cluster, NAMESPACE, "allowed", timeout=60)
-    wait_for_service_endpoints(cluster, NAMESPACE, "denied", timeout=60)
+    allowed_ip = get_pod_ip(cluster, NAMESPACE, "allowed")
+    denied_ip = get_pod_ip(cluster, NAMESPACE, "denied")
 
     metadata_available = False
     try:
