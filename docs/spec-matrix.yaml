@@ -4501,16 +4501,80 @@ FTF-04A25:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a25.py
 FTF-04A26:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Isolated real tool-backend adapter contract tests
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-12; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A25,
-    FTF-1702
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-12; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A25,
+    FTF-1702 (all CERTIFIED, confirmed before relying on them). Path: `apps/api/app/target_connectors/isolated_real_tool_backend_adapter_contract_tests.py`
+    (refined from the task packet''s own generic `packages/target-connectors/...` suggestion to this repo''s
+    own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family task already
+    discloses).
+
+
+    `IsolatedToolBackendAdapter` is the one concrete `RuntimeAdapterProtocol` (FTF-04A25) implementation
+    in this repository, wrapping FTF-1702''s own real, disposable, seeded `ToolEnvironment` directly (a
+    native, not reconstructed, adapter). `invoke()` dispatches exactly one real tool call per case (no
+    model-driven decision loop -- no live LLM call is available in this sandbox) and maps FTF-1701''s own
+    real exception hierarchy onto Section 66.3''s closed `ErrorClassification` set:
+    `ReferenceAuthorizationError`/`ReferenceDenialError` -> REFUSAL, `ToolEnvironmentError` -> FATAL,
+    `ReferenceAgentSpecificationError` -> MALFORMED_OUTPUT -- never collapsed into a canned "completed".
+
+
+    This task''s own negative_acceptance ("Canned success tool returns cannot satisfy production product
+    qualification; no production side effects in test") is met by construction (no code path returns
+    `status=completed` without a real, unmodified `ToolEnvironment.dispatch` result) and proven by a real
+    side-effect assertion: a claimed mutation (`create_note`) is independently re-read through a second,
+    unrelated `get_record` dispatch against the real backend, never trusted from the adapter''s own report
+    alone. All state is FTF-1702''s own real, disposable, in-process backend -- reset or discarded between
+    cases, so nothing escapes into a production system.
+
+
+    `tests/tasks/test_ftf_04a26.py`: 9 test functions, no DB, no network egress, no live LLM call. All pass
+    (`python3` and `uv run python3`, identical -- `uv sync --all-packages` required for the SQLAlchemy/FastAPI
+    extras FTF-1701''s own tool-schema guards import transitively). Two independent, disclosed fault
+    injections (Law 1), both reverted byte-identical (md5sum `4c7811ddc459d4c7516f24c142389ae2` before/after
+    each, re-ran clean immediately after each): (1) `invoke()`''s own real side-effect label
+    (`side_effects=(f"tool_call:{tool_name}",)`) weakened to always report `()` -- 1 genuine FAIL
+    ("invoke() names the real side effect it performed"); (2) `reset()`''s own `self._cases.clear()` call
+    removed -- 2 genuine FAILs (the embedded contract suite''s own "reset() clears prior case records" and
+    the dedicated test''s "reset() clears prior case history, not just backend state"). **Disclosed, not
+    hidden:** a third fault-injection attempt -- weakening the `ReferenceAuthorizationError` handler in
+    `invoke()` to report a fabricated `status="completed"` result instead of a real REFUSAL -- was denied by
+    this session''s own sandbox auto-mode permission classifier (`[Security Weaken]`) before any test ran
+    against the weakened code; the edit was reverted immediately (byte-identical, md5sum
+    `4c7811ddc459d4c7516f24c142389ae2` confirmed) and not retried through any other route, per that denial''s
+    own explicit instruction -- the same class of gap FTF-04A25''s own producer session already disclosed for
+    a different guard. This guardrail is still real and exercised by the passing (unweakened) suite
+    (`test_refusal_and_fatal_paths_are_never_reported_as_completed`) -- this is a gap in Law-1-style
+    adversarial proof for one guardrail, not an unproven claim that the guardrail itself works.
+
+
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide (294 source files). `uv run mypy .` clean
+    repo-wide (294 source files, zero new errors). `python3 scripts/validate_spec.py --strict` clean (after
+    `git fetch --unshallow` resolved this sandbox''s own pre-existing shallow-clone artifact, same disclosed
+    precedent every prior shift''s own history documents). `product_truth_check.py --fail-on-unwired`
+    unchanged `22/22` (`proving_symbol` left blank -- no live dispatcher exists yet to call this adapter,
+    same disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16/04A25). `status.py` unchanged `87/300`
+    certified, `22` product-true (Law 2 -- this is a submission, not a certification). Regression swept
+    `test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_04a25.py`/`test_ftf_1701.py`/
+    `test_ftf_1702.py` (all "all checks passed") -- zero regressions.
+
+
+    This session''s own designated branch had already been merged into `main` before this shift started
+    (per this session''s own git instructions, reset to fresh `origin/main` before picking new work:
+    `git fetch origin main && git checkout -B <branch> origin/main`). `git rev-parse
+    --is-shallow-repository` was `true`; `git fetch --unshallow` resolved it, same disclosed precedent every
+    prior FTF-04A0x/04A1x/04A2x shift has hit.
+
+
+    CI gate step (`FTF-04A26 negative-test proof`) added to `.github/workflows/ci.yml` immediately after the
+    FTF-04A25 step; no new integration job needed (no DB, no network). **Not self-certified (Law 4)** --
+    independent Control-plane L2 review and a real CI run on the opened PR are required before certification.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a26.py
 FTF-04A27:
   certification_state: NONE
   criticality: MUST

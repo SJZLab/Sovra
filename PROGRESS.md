@@ -21846,3 +21846,125 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A19) is `L1-PRO
 defect found by this session's own review -- awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-27T18:59:01Z — Scheduled autonomous relay shift — FTF-04A26 submitted PROVISIONAL
+
+Session: https://claude.ai/code/session_01ARtoEXRcbEw3RzytqNhTH4. STEP 0.1: read PROGRESS.md/
+QUEUE.md/docs/certifications/queue.md fresh (tail sections, given file size). CLAUDE.md.sha256
+self-check matched `sha256sum CLAUDE.md` directly (no mismatch). `cognee-cli` is not installed in
+this sandbox — declared per STEP 0.2, text-search fallback active throughout this shift.
+
+QUEUE.md's own "Active"/"Provisional" sections were both empty ("None currently" — the prior
+FTF-04A25 submission had already been independently certified via PR #338 before this shift
+started) and "Owner actions — current" was empty. Checked every open PR directly via the GitHub
+API before picking new work (#337 FTF-0601, #336 control-plane FTF-04A20/FTF-0500D, #335
+FTF-0500D, #328 FTF-04A15, #315/#314 FTF-0303 (rejected, needs rework), #313/#311/#308 FTF-0513,
+#295 FTF-0214 (disclosed blocker), #290 FTF-04A08 tracking (doc-only), #231 FTF-0212, #195/#194
+FTF-0304 (duplicates)) — none claim FTF-04A26.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s own real
+`certification_state` per task and each task's own real `deps=` list embedded in its `notes`
+field (never trusted from a prior shift's own claim alone): 13 tasks came back dependency-ready.
+Excluding everything already claimed by an open PR above and everything a prior shift already
+disclosed as blocked (FTF-04A02/FTF-0902/FTF-1201/FTF-H004: real-network-egress precedent;
+FTF-1703: needs >=1000 real curated traces this sandbox does not have) left **FTF-04A26** and
+FTF-0500A as the only two genuinely new, unclaimed candidates. Picked FTF-04A26 — it had just
+become dependency-ready this same shift cycle (its own dependency FTF-04A25 was certified via PR
+#338 immediately prior), and all three of its own real dependencies (FTF-04A01/FTF-04A25/
+FTF-1702) confirmed `CERTIFIED` directly before relying on them.
+
+This session's own designated branch (`claude/wizardly-fermat-8c423d`) had already been merged
+into `main` before this shift started (`git merge-base --is-ancestor` confirmed the branch tip was
+already an ancestor of `origin/main`). Per this session's own git instructions ("if the pull
+request for your designated branch has already been merged, restart from the latest default
+branch"), reset the branch to fresh `origin/main` before finishing this shift's work: `git fetch
+origin main && git checkout -B claude/wizardly-fermat-8c423d origin/main` (the two new working-tree
+files already written by this shift were preserved across the reset — confirmed via `git status`
+before and after). Re-confirmed FTF-04A26 still `NONE`/unclaimed and no new competing PR existed
+on the fresh `origin/main` before continuing. `git rev-parse --is-shallow-repository` was `true`;
+`git fetch --unshallow` resolved it, same disclosed precedent every prior FTF-04A0x/04A1x/04A2x
+shift has hit.
+
+Task contract pulled fresh: `python3 tools/r1_handoff.py packet FTF-04A26 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md` directly).
+
+Implemented `apps/api/app/target_connectors/isolated_real_tool_backend_adapter_contract_tests.py`
+(path refined from the packet's own generic `packages/target-connectors/...` suggestion to this
+repo's own real `apps/api/app/target_connectors/*.py` layout, the same refinement every prior
+04A-family task already discloses). `IsolatedToolBackendAdapter` is the one concrete
+`RuntimeAdapterProtocol` (FTF-04A25) implementation in this repository, wrapping FTF-1702's own
+real, disposable, seeded `ToolEnvironment` directly — a native (not reconstructed) adapter, since
+it *is* the real backend process with no separate reconstruction to compare parity against.
+`invoke()` deliberately runs no model-driven decision loop (no live LLM call is available in this
+sandbox): each case names exactly one real tool call (`tool_name`/`subject_id`/`arguments`), and
+`invoke()` dispatches it through the real, unmodified `ToolEnvironment.dispatch`. FTF-1701's own
+real exception hierarchy is mapped onto Section 66.3's closed `ErrorClassification` set, never
+collapsed into a single generic failure: `ReferenceAuthorizationError`/`ReferenceDenialError` ->
+REFUSAL, `ToolEnvironmentError` (an identity this environment's own seed never declared) -> FATAL,
+`ReferenceAgentSpecificationError` (unknown tool / schema violation) -> MALFORMED_OUTPUT.
+`reset(tenant_namespace)` validates the tenant is genuinely seeded, then performs the one real
+whole-environment reset FTF-1702 actually offers (disclosed narrowing — Section 66.3 names a
+per-tenant reset, FTF-1702 has no independent per-tenant partition to reset separately) and clears
+this adapter's own case history. `cancel()`/`collect_outcome()` read back a real, previously
+stored `AdapterInvokeResult` for a case this adapter itself actually invoked, raising
+`HarnessContractError` for an unknown case rather than fabricating a result; `cancel()` on an
+already-completed case is idempotent (invoke() is synchronous, so there is never a genuine
+in-flight case to interrupt). `attest()` returns real sha256 digests of this module's own actual
+source bytes, FTF-1701's own frozen tool schemas, and this adapter's own real seed spec — never a
+fabricated or hard-coded fingerprint; `prompt_fingerprint` hashes a disclosed, literal
+"no_prompt:isolated_tool_backend_adapter" marker rather than inventing a fake prompt string, since
+this adapter genuinely has no prompt of its own.
+
+This task's own negative_acceptance ("Canned success tool returns cannot satisfy production
+product qualification; no production side effects in test") is met by construction (`invoke` has
+no code path that reports `status="completed"` without a real, unmodified backend result) and
+proven by a real side-effect assertion, not merely a returned-value check: the reusable
+`run_isolated_tool_backend_adapter_contract_suite` function independently re-reads a claimed
+mutation (`create_note`) through a second, unrelated `get_record` dispatch straight against the
+real backend, rather than trusting the adapter's own reported `side_effects` label alone. Every
+test fixture is FTF-1702's own real, disposable, in-process backend, reset or discarded between
+cases — no state ever touches, or could be mistaken for, a production system.
+
+`tests/tasks/test_ftf_04a26.py`: 9 test functions, no DB, no network egress, no live LLM call
+(`uv sync --all-packages` required to pull in the FastAPI/SQLAlchemy extras FTF-1701's own
+tool-schema guards import transitively — same disclosed precedent as FTF-04A19). All pass
+(`python3` fails without `uv run` due to the missing `sqlalchemy` import chain, `uv run python3`
+passes clean — both confirmed). Two independent, disclosed fault injections (Law 1), both reverted
+byte-identical (md5sum `4c7811ddc459d4c7516f24c142389ae2` before/after each, re-ran clean
+immediately after each): (1) `invoke()`'s own real side-effect label weakened to always report an
+empty tuple — 1 genuine FAIL ("invoke() names the real side effect it performed"); (2) `reset()`'s
+own `self._cases.clear()` call removed — 2 genuine FAILs (the embedded contract suite's own
+"reset() clears prior case records" and the dedicated test's "reset() clears prior case history,
+not just backend state"). **Disclosed, not hidden:** a third fault-injection attempt — weakening
+the `ReferenceAuthorizationError` handler in `invoke()` to report a fabricated `status="completed"`
+result instead of a real REFUSAL — was denied by this session's own sandbox auto-mode permission
+classifier (`[Security Weaken]`) before any test ran against the weakened code; the edit was
+reverted immediately (byte-identical, md5sum `4c7811ddc459d4c7516f24c142389ae2` confirmed) and not
+retried through any other route, per that denial's own explicit instruction — the same class of
+gap FTF-04A25's own producer session already disclosed for a different guard. That guardrail is
+still real and exercised by the passing (unweakened) suite
+(`test_refusal_and_fatal_paths_are_never_reported_as_completed`) — this is a gap in Law-1-style
+adversarial proof for one guardrail, not an unproven claim that the guardrail itself works.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (294 source files). `uv run mypy .`
+clean repo-wide (294 source files, zero new errors). `python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow`). `product_truth_check.py --fail-on-unwired` unchanged
+`22/22` (`proving_symbol` left blank — no live dispatcher exists yet to call this adapter, same
+disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16/04A25). `status.py` unchanged `87/300`
+certified, `22` product-true (Law 2 — this is a submission, not a certification). Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_04a25.py`/`test_ftf_1701.py`/
+`test_ftf_1702.py` (all "all checks passed") — zero regressions.
+
+`docs/spec-matrix.yaml` FTF-04A26 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_04a26.py`;
+`evidence_hash` left blank pending the real merge commit. CI gate step (`FTF-04A26 negative-test
+proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A25 step; no new
+integration job needed (no DB, no network). **Not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A26) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
