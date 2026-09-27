@@ -1,4 +1,75 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-04A25 — relay: submit PROVISIONAL
+
+Scheduled autonomous relay shift, session
+`https://claude.ai/code/session_01SzaESZPGiAQEZ4J6AyjSKL`. STEP 0.1 read PROGRESS.md/QUEUE.md/
+docs/certifications/queue.md fresh; `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md`
+directly.
+
+Checked every open PR (#337 FTF-0601, #336 control-plane doc, #335 FTF-0500D blocked on a real
+merge conflict per PR #336, #328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) before
+picking new work — none claim FTF-04A25. Recomputed the dependency-ready frontier directly from
+`docs/spec-matrix.yaml`/`spec/tasks.json`: of 13 dependency-ready tasks, only FTF-04A25 and
+FTF-0500A were unclaimed and not already disclosed-blocked by a prior shift. Picked **FTF-04A25
+("Production-faithful target-agent harness contract")** — all three real dependencies
+(FTF-0405/FTF-04A01/FTF-04A19) confirmed `CERTIFIED`.
+
+This task's own `database_changes` clause ("No independent schema change. Consume frozen
+contract.") and empty `shared_lock_required` make it a pure contract/protocol module — no DB
+table, no HTTP route. Implemented
+`apps/api/app/target_connectors/production_faithful_target_agent_harness_contract.py`: Section
+66.1's closed `RuntimeEntryKind` pair (signed_container/http_endpoint); `RuntimeAdapterProtocol`,
+a `typing.Protocol` declaring exactly Section 66.3's seven named operations
+(describe/preflight/invoke/cancel/collect_outcome/reset/attest) with deliberately no concrete
+implementation in this module (this task's own negative_acceptance: "Do not substitute a generic
+Factory chat loop for product orchestration"); `AdapterInvokeRequest`/`AdapterInvokeResult`
+enforcing Section 66.3's "a plain text answer without a required business-state result is
+incomplete evidence" at construction; `ModelBinding`/`validate_model_binding_override` making
+Section 66.4's "injection modifies only the selected agent's model route" a structural guarantee
+(no workflow/prompt/tool field exists on `ModelBinding` at all) plus this task's own
+negative_acceptance "unsupported binding is blocked"; and
+`evaluate_target_runtime_qualification`/`ReconstructedAdapterDeclaration` implementing Section
+66.4's parity rule — a native adapter is qualified by construction, a reconstructed adapter only
+once its tested parity categories cover the full closed six-category set ("matching happy-path
+text alone is not parity" always returns `INTEGRATION_REQUIRED`).
+
+`tests/tasks/test_ftf_04a25.py`: 24 test functions, no DB, no network egress, all pass (`python3`
+and `uv run python3`). Two independent, disclosed fault injections (Law 1), both reverted
+byte-identical (md5sum `8315a3588f3d55db53d4071699764414` before/after each): (1)
+`deadline_seconds <= 0` weakened to `<= -999` — 1 genuine FAIL; (2)
+`evaluate_target_runtime_qualification`'s superset check weakened to "any non-empty set
+qualifies" — 2 genuine FAILs including the task's own negative_acceptance clause verbatim.
+**Disclosed:** two other fault-injection attempts (on the model-binding-override check and the
+business-outcome-completeness check) were each denied by this session's own sandbox auto-mode
+permission classifier (`[Security Weaken]`, then `[Security Test Removal]`) before any test ran;
+both edits were reverted immediately, byte-identical, and neither was retried through another
+route, per that denial's own instruction — both guarantees are still real and exercised by the
+passing unweakened suite, so this is a gap in adversarial proof strength for two guardrails, not
+an unproven claim.
+
+`uv run ruff check .`/`ruff format --check .` clean; `uv run mypy .` clean repo-wide (292 files,
+17 pre-existing alembic-stub errors only, zero new). `pnpm install --frozen-lockfile`/`pnpm run
+lint`/`format:check` clean repo-wide (no JS/TS touched). `python3 scripts/validate_spec.py
+--strict` clean (`git fetch --unshallow` resolved the disclosed shallow-clone artifact).
+`product_truth_check.py --fail-on-unwired` unchanged **22/22** (`proving_symbol` left blank — pure
+contract module, no live dispatcher, same precedent as FTF-04A08/09/10/11/16). `status.py`
+unchanged `86/300` certified, `22` product-true (Law 2 — submission, not certification). `uv sync
+--all-packages` installed FastAPI/uvicorn/SQLAlchemy extras; regression swept
+`test_ftf_0405.py`/`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py` — zero regressions.
+
+`docs/spec-matrix.yaml` FTF-04A25 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_04a25.py`;
+`evidence_hash` left blank pending the real merge commit. CI gate step (`FTF-04A25 negative-test
+proof`) added to `.github/workflows/ci.yml` immediately after the FTF-04A20 step; no new
+integration job (no DB). **Not self-certified (Law 4)** — independent Control-plane L2 review and
+a real CI run on the opened PR are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A25) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-27 — FTF-04A20 — Control plane: certify (PR #333)
 
 Scheduled Control-plane certifier shift, session

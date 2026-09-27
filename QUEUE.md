@@ -1,5 +1,34 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01SzaESZPGiAQEZ4J6AyjSKL) — submitted **FTF-04A25
+  (Production-faithful target-agent harness contract)** PROVISIONAL. STEP 0.1 read fresh;
+  CLAUDE.md.sha256 self-check matched. Checked every open PR (#337/#336/#335/#328/#315/#314/#313/
+  #311/#308/#295/#290/#231/#195/#194) — none claim FTF-04A25; #335 (FTF-0500D) is blocked on a
+  real merge conflict per PR #336, disclosed there, not this shift's own to resolve. Recomputed
+  the dependency-ready frontier directly from docs/spec-matrix.yaml/spec/tasks.json: of 13
+  ready tasks, only FTF-04A25 and FTF-0500A were unclaimed and not already disclosed-blocked.
+  Picked FTF-04A25 — dependencies FTF-0405/FTF-04A01/FTF-04A19 all confirmed CERTIFIED.
+
+  This task's own `database_changes` clause ("No independent schema change. Consume frozen
+  contract.") makes it a pure contract/protocol module. Implemented
+  `apps/api/app/target_connectors/production_faithful_target_agent_harness_contract.py`
+  (Section 66.1/66.3/66.4/66.5 — RuntimeEntryKind, RuntimeAdapterProtocol, AdapterInvokeRequest/
+  Result, ModelBinding/validate_model_binding_override, evaluate_target_runtime_qualification;
+  see this file's own module docstring and docs/spec-matrix.yaml's FTF-04A25 entry for the full
+  reading) and `tests/tasks/test_ftf_04a25.py` (24 tests, no DB, all pass). Two independent,
+  disclosed fault injections (Law 1), both reverted byte-identical — see PROGRESS.md's own fuller
+  entry for the exact detail, including two other fault-injection attempts this session's own
+  sandbox permission classifier denied (disclosed, reverted immediately, not retried).
+
+  `ruff`/`mypy`/`pnpm lint`/`validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` unchanged 22/22 (proving_symbol left blank — no live dispatcher, same
+  precedent as FTF-04A08/09/10/11/16). `status.py` unchanged 86/300 certified, 22 product-true.
+  Regression swept four dependency test files — zero regressions. `docs/spec-matrix.yaml`
+  FTF-04A25 set to certification_state: PROVISIONAL / proof_state: L1-PROVEN /
+  implementation_state: IMPLEMENTED. CI gate step added after FTF-04A20's. Not self-certified
+  (Law 4) — awaiting independent Control-plane L2 review. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor, triggered by the `pull_request.opened`
   webhook for PR #333) — independently certified **FTF-04A20 (ManifestEvidence schema/API)**.
   Session-ID check: PR #333's sole commit carries `Claude-Session: .../session_01DV6JW7DUe1YfrdLj4LHPNB`

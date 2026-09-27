@@ -4376,16 +4376,84 @@ FTF-04A24:
   proving_symbol: ''
   proving_test: ''
 FTF-04A25:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Production-faithful target-agent harness contract
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-12; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0405, FTF-04A01,
-    FTF-04A19
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-12; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0405, FTF-04A01,
+    FTF-04A19 (all CERTIFIED, confirmed before relying on them). Path: `apps/api/app/target_connectors/production_faithful_target_agent_harness_contract.py`
+    (refined from the task packet''s own generic `packages/target-connectors/...` suggestion to this repo''s
+    own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family task already
+    discloses).
+
+
+    This task''s own `database_changes` clause ("No independent schema change. Consume frozen contract.")
+    and empty `shared_lock_required` make this a pure contract/protocol module -- no database table, no
+    HTTP route, no OpenAPI change -- read literally from its own acceptance clause ("Define actual container/HTTP
+    target runtime protocol and model-binding override/parity requirements"), not FTF-04A23''s own separate,
+    later, full completeness/tool-schema/security-profile validation engine and not Section 7A.9''s repository-drift
+    detector (FTF-04A27, a separate task). `RuntimeEntryKind` is Section 66.1''s own closed pair (signed_container/http_endpoint);
+    `validate_runtime_entry_kind` rejects any other value. `RuntimeAdapterProtocol` is a `typing.Protocol`
+    (not an ABC with a default method body) declaring exactly Section 66.3''s own seven named operations
+    (describe/preflight/invoke/cancel/collect_outcome/reset/attest) -- deliberately no concrete class in
+    this module satisfies it, so a ''default'' adapter cannot accidentally substitute for a real one (this
+    task''s own negative_acceptance: ''Do not substitute a generic Factory chat loop for product orchestration'').
+    `AdapterInvokeResult.__post_init__` enforces Section 66.3''s own literal ''a plain text answer without
+    a required business-state result is incomplete evidence'' at construction. `ModelBinding` carries no
+    prompt/tool/permission/workflow field at all -- a structural guarantee of Section 66.4''s ''injection
+    modifies only the selected agent''s model route'' -- and `validate_model_binding_override` rejects any
+    `route_params` key outside the adapter''s own declared `supported_model_binding_keys` (this task''s
+    own negative_acceptance: ''unsupported binding is blocked''). `evaluate_target_runtime_qualification`
+    is Section 66.4''s own parity rule as a pure function: a native adapter is QUALIFIED by construction;
+    a separately reconstructed adapter is QUALIFIED only once its own `tested_parity_categories` is a superset
+    of the full closed six-category set (success/timeout/refusal/malformed_output/approval/multi_step) --
+    a strict subset, including `{SUCCESS}` alone (''matching happy-path text alone is not parity''), always
+    returns `INTEGRATION_REQUIRED`, never `QUALIFIED`. `RuntimeAttestation` carries one fingerprint per
+    Section 66.5 compatibility-tuple member this task''s own dependency chain has a real source for today;
+    `retrieval_index_fingerprint` alone is optional (a target agent may have no retrieval component).
+
+
+    `tests/tasks/test_ftf_04a25.py`: 24 test functions, no DB, no network egress -- every symbol under test
+    is a pure dataclass/enum/validation function over caller-supplied values. All pass (run via both `python3`
+    and `uv run python3`, identical result). Two independent, disclosed fault injections (Law 1), both reverted
+    byte-identical (md5sum `8315a3588f3d55db53d4071699764414` before/after each, re-ran clean immediately
+    after each): (1) `AdapterInvokeRequest.__post_init__`''s `deadline_seconds <= 0` check weakened to `deadline_seconds
+    <= -999` -- 1 genuine FAIL (`test_invoke_request_requires_positive_deadline`); (2) `evaluate_target_runtime_qualification`''s
+    own superset check (`tested_parity_categories >= REQUIRED_PARITY_CATEGORIES`) weakened to `len(...)
+    >= 1` (any non-empty set qualifies) -- 2 genuine FAILs (`test_reconstructed_adapter_with_only_happy_path_parity_is_not_qualified`,
+    this task''s own negative_acceptance clause verbatim, and `test_reconstructed_adapter_missing_one_required_category_is_not_qualified`).
+    Disclosed, not hidden: two other fault-injection attempts, on `validate_model_binding_override`''s own
+    ''unsupported binding is blocked'' check and on `AdapterInvokeResult`''s own business-outcome-completeness
+    check, were each denied by this session''s own sandbox auto-mode permission classifier (`[Security Weaken]`,
+    then `[Security Test Removal]`) before any test ran against them; both edits were reverted immediately
+    (byte-identical, confirmed by md5sum) without ever executing a test against the weakened code, and neither
+    outcome was retried through any other route, per that denial''s own explicit instruction. The two fault
+    injections that did run cover this task''s own two acceptance/negative_acceptance clauses directly (request-shape
+    validation and the parity-coverage rule); the two denied ones would have covered the model-binding-override
+    and business-outcome-completeness guarantees with a stronger (production-code-level) proof than this
+    module''s own construction-time `__post_init__` validation already provides by itself -- not an unproven
+    claim, since `test_model_binding_key_outside_declared_surface_is_rejected` and `test_invoke_result_completed_requires_business_outcome`
+    both still exercise the real, unweakened code path and pass.
+
+
+    `uv run ruff check .`/`ruff format --check .` clean on this task''s own files; `uv run mypy .` clean
+    repo-wide (292 source files; the 17 pre-existing `alembic`-stub/`env.py` errors are the only ones present,
+    confirmed pre-existing and unrelated -- zero new errors). `python3 scripts/validate_spec.py --strict`
+    clean (`git fetch --unshallow` resolved this sandbox''s own pre-existing shallow-clone artifact, same
+    disclosed precedent as every prior FTF-04A0x/04A1x/04A19/04A20 shift). `product_truth_check.py --fail-on-unwired`
+    unchanged `22/22` (`proving_symbol` left blank -- this is a pure contract/protocol module with no live
+    dispatcher to call it, the same disclosed precedent as FTF-04A08/04A09/04A10/04A11/04A16). `status.py`
+    unchanged `86/300` certified, `22` product-true (Law 2 -- this is a submission, not a certification).
+    `uv sync --all-packages` installed the FastAPI/uvicorn/SQLAlchemy extras; regression swept `test_ftf_0405.py`/`test_ftf_04a01.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py`
+    (all "all checks passed") -- zero regressions. CI gate step (`FTF-04A25 negative-test proof`) added
+    to `.github/workflows/ci.yml` immediately after the FTF-04A20 step; no new integration job needed (no
+    DB). `verify_task.py --task FTF-04A25 --stage task` expected `BLOCKED` pre-merge (no merged verification
+    evidence yet), same precedent as every prior sibling task. **Not self-certified (Law 4)** -- independent
+    Control-plane L2 review and a real CI run on the opened PR are required before certification.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a25.py
 FTF-04A26:
   certification_state: NONE
   criticality: MUST
