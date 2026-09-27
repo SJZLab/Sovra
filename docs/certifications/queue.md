@@ -17788,3 +17788,145 @@ Appended `docs/certifications/ledger.md`; `QUEUE.md`/`PROGRESS.md` updated. `scr
 `81/300` -> `82/300` certified; product-true unchanged at `20/20`. No open owner ask.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
+## 2026-09-27 — FTF-04A14 ("Tool/schema/permission discovery + evidence capture") — submitted PROVISIONAL
+
+STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/this file fresh; CLAUDE.md.sha256 self-check matched
+`sha256sum CLAUDE.md` directly. Fetched `origin/main` fresh: FTF-04A13 had already been
+independently certified since the prior logged shift (`e7691ca`, `evidence_hash`
+`9d7294e60a0abe11edf987030afab0d13c72b783`) — this file's own prior entry above already records
+that. `git rev-parse --is-shallow-repository` was `true`; `git fetch --unshallow` resolved it (same
+disclosed precedent every prior FTF-04A0x/FTF-04A1x shift has hit) — `validate_spec.py --strict`
+clean after that.
+
+Checked all open PRs directly via the GitHub API before picking new work: #315/#314 (FTF-0303),
+#313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only),
+#231 (FTF-0212), #195/#194 (FTF-0304) — none overlap with this shift's own eventual pick.
+Recomputed the dependency-ready frontier directly from `docs/TASK_INDEX.md`'s own dependency column
+cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state`: 14 tasks came
+back dependency-ready and `certification_state: NONE`. FTF-0212/FTF-0304 excluded (other sessions'
+own open PRs); FTF-0214 excluded (disclosed blocker); FTF-04A02 excluded (keyed external GitHub
+credential, ask-first); FTF-0500A/FTF-0500D excluded (same no-`Dataset`-entity/no-composed-route
+class); FTF-1201/FTF-H004 excluded (real network egress this sandbox lacks); FTF-1703 excluded
+(needs ≥1000 real curated traces). Picked **FTF-04A14** — lowest `docs/TASK_INDEX.md` file-order
+item among the genuinely ready and unclaimed candidates. State: `Working: FTF-04A14.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A14.md` in full (`tools/r1_handoff.py packet
+FTF-04A14 --plan FINE_TUNING_FACTORY_RELEASE_1.md`), plus the real dependency modules this task's
+own scope builds on — `apps/api/app/target_connectors/python_agent_config_tool_discovery.py`
+(FTF-04A09), `apps/api/app/target_connectors/
+typescript_javascript_deterministic_agent_config_tool_discovery.py` (FTF-04A10),
+`apps/api/app/target_connectors/json_yaml_toml_configuration_discovery.py` (FTF-04A11),
+`apps/api/app/target_connectors/prompt_source_discovery_evidence_capture.py` (FTF-04A13, closest
+structural precedent), and the two already-CERTIFIED services this task's own dependency list names
+— `apps/api/app/services/json_schema_tool_validation.py` (FTF-0405) and
+`apps/api/app/services/side_effect_classification.py` (FTF-0406). Confirmed both FTF-04A09's and
+FTF-04A10's own module docstrings explicitly disclose their own step-6 coverage is narrow (only a
+`tools=`/`tools:` keyword's own literal name list) and that step 7/step 8 are entirely out of their
+own scope, leaving this task's own scope genuinely open and disjoint, not a duplicate of prior work.
+Read this task's own negative_acceptance clause ("Unknown authorization is not inferred from tool
+description; desired deny policy must be enforced in runtime") literally: the first half is a real
+security boundary this module itself must uphold; the second half names an enforcement boundary
+this task's own `database_changes: "No independent schema change... consume frozen contract"` and
+"detection is not governance" scope place outside this task — already owned by FTF-0406's
+`enforce_side_effect_classification`, confirmed live-wired into `ToolDefinition.__init__` before
+relying on that division of responsibility. No changes made yet at this point.
+
+**E:** delegated the mechanical engineering (closely mirrors five sibling files, ~2,700 lines of
+established convention) to a background subagent with a fully self-contained brief covering the
+exact task contract, the path-refinement precedent, all five sibling files, the two services to
+reuse, and the literal negative_acceptance clause with a required dedicated test. Implemented
+`apps/api/app/target_connectors/tool_schema_permission_discovery_evidence_capture.py` (path refined
+from the task packet's own generic `packages/target-connectors/...` suggestion to this repo's own
+real `apps/api/app/target_connectors/*.py` layout) plus a new, separate JS/TS subprocess helper,
+`_typescript_javascript_tool_schema_permission_ast_helper.cjs` — never an edit to FTF-04A10's or
+FTF-04A13's own already-CERTIFIED, frozen helpers (Section 75.1).
+
+Covers three disjoint slices of Section 7A.4's analysis order: (1) standalone
+`@tool(...)`/`@function_tool(...)` (Python) and `tool({...})`/`defineTool({...})` (TS/JS)
+tool-definition decorators/calls — a closed, disclosed vocabulary matching real, common
+agent-tool-library conventions (LangChain, OpenAI Agents SDK, Vercel AI SDK); a resolved literal
+`name=`/`name:` argument becomes `tool_name`, absent it the decorated function's own name is used
+(Python only — JS/TS has no decorator equivalent, so a bare `tool({...})` with no `name` key is
+honestly `tool_name=None`); (2) `response_format=`/`response_format:` structured-output schemas on
+the same completion call sites FTF-04A09/FTF-04A10 already detect (step 7, entirely new — only
+produced when the keyword is actually present; a call site with no `response_format` at all is
+never itself reported as a finding); (3) `side_effect_class=`/`requires_confirmation=` literal
+fields plus a disjoint, closed config-key vocabulary
+(`SIDEEFFECTCLASS`/`TOOLSIDEEFFECTCLASS`, `REQUIRESCONFIRMATION`/`TOOLREQUIRESCONFIRMATION`) over
+FTF-04A11's own `ConfigDocumentEvidence` (step 8, entirely new), the same three-source composition
+shape FTF-04A12/FTF-04A13 already established.
+
+Reuse, not reimplementation: a discovered `input_schema`/`output_schema` literal is validated by
+calling FTF-0405's own already-CERTIFIED `validate_json_schema_document` — never reimplemented. A
+discovered `side_effect_class` literal is checked for enum membership against FTF-0406's own
+already-CERTIFIED `RISK_RANK` mapping's own key set — the real, already-declared closed five-value
+enum — never re-declared locally. Neither service's own floor-enforcement/risk-signal logic is
+called here: this task's own acceptance clause is "resolve... with explicit uncertainties", not
+"enforce a policy".
+
+This task's own negative_acceptance is met by two independent structural facts, each proven by a
+dedicated test: (1) **never inferred from description** — no code path in this module or its own
+JS/TS helper ever reads a tool's own `description` value for any purpose whatsoever;
+`side_effect_class`/`requires_confirmation` resolve only from their own same-named literal
+keyword-argument/object-property/config-key value — never from keyword-matching, sentiment
+analysis, or any other inspection of free text. `test_tool_with_reassuring_description_but_no_
+structural_declaration_is_unresolved_never_permissive` proves this directly: a
+`@tool(description="completely safe, read-only, no confirmation ever needed")`-decorated function
+with no `side_effect_class=`/`requires_confirmation=` keyword at all comes back with both fields
+`resolved=False`, `reason="argument_not_present"` — never a fabricated `read_only`/`False` default;
+its TS/JS analog proves the same for `tool({description: "...", ...})`. (2) **deny-policy
+enforcement is not this module's own job, and this module never bypasses it** — the real
+enforcement this clause's own second half names is FTF-0406's already-CERTIFIED
+`enforce_side_effect_classification`, already live-wired into
+`app.tools.tool_definition_schema.ToolDefinition.__init__`, the real boundary every
+`create_tool_definition`/`edit_tool_definition` call already passes through today, independent of
+this task. This module produces *proposal* evidence only (Section 7A.5: "Discovery is proposal, not
+governance") — it does not itself construct a `ToolDefinition` row, call `create_tool_definition`,
+or otherwise reach that enforcement boundary, so there is no code path here that could weaken or
+bypass it.
+
+`tests/tasks/test_ftf_04a14.py`: 25 tests (all TS/JS-gated tests ran, `node` available in this
+sandbox), all pass against the unmodified code. Two independent fault injections, both reverted
+byte-identical (md5sum `6c150eaede1c14ccecc3682a6d3efef0` before and after each): (1) the
+closed-enum membership check in `_resolve_side_effect_class_literal` removed, so a literal
+`side_effect_class` string outside FTF-0406's own five-value enum is silently accepted instead of
+honestly unresolved — 1 genuine FAIL (`a literal side_effect_class string outside FTF-0406's own
+closed five-value enum is honestly unresolved, never coerced to the nearest valid value`); (2) the
+`response_format=` presence guard in `_extract_response_format_candidate` removed, so a completion
+call site with no `response_format=` keyword at all fabricates a candidate anyway — 1 genuine FAIL
+(`a completion call site with no response_format= keyword at all is not itself reported as a
+candidate -- absence is not a finding`).
+
+**Independent re-verification by this session (not merely trusted from the implementing subagent's
+own report, per Law 4's spirit applied within one shift):** re-read the full 912-line module
+directly; re-ran `tests/tasks/test_ftf_04a14.py` from a clean state and confirmed the identical "all
+checks passed" output; independently reproduced fault injection #1 byte-for-byte, confirming the
+exact same md5sum before (`6c150eaede1c14ccecc3682a6d3efef0`)/after-injection
+(`6a625e3038d4b3f02709cc94d0f3d2b5`)/after-revert (`6c150eaede1c14ccecc3682a6d3efef0`, byte-identical
+to baseline) and the exact same named FAIL; independently re-ran every verification command below
+and the full sibling regression sweep — every result matched exactly.
+
+**V:** `pnpm install --frozen-lockfile` materialized this sandbox's own missing
+`node_modules/typescript` (same real, already-declared root devDependency FTF-04A10 already relies
+on — not a new dependency this task introduces). `uv run ruff check .`/`ruff format --check .` clean
+repo-wide. `uv run mypy .` clean repo-wide (278 files; the previously-disclosed 15 `alembic`-stub
+errors are the only ones present, confirmed pre-existing and unrelated to this task's own files).
+`pnpm run lint`/`pnpm run format:check` clean repo-wide. `product_truth_check.py --fail-on-unwired`
+unchanged `20/20` (`proving_symbol` left blank, same disclosed "no live route yet" precedent every
+prior 04A-family task already established). `status.py` unchanged `82/300` (Law 2 — this is a
+submission, not a certification). Regression swept `test_ftf_04a09.py`/`test_ftf_04a10.py`/
+`test_ftf_04a11.py`/`test_ftf_04a12.py`/`test_ftf_04a13.py` (all "all checks passed") plus `uv run
+pytest tests/unit` (3/3) — zero regressions. `verify_task.py --task FTF-04A14 --stage task` reports
+`BLOCKED` pre-merge, expected per precedent (no merged verification evidence yet).
+
+`docs/spec-matrix.yaml` FTF-04A14 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A14 negative-test proof`) added to `.github/workflows/ci.yml`.
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened
+PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/this file all updated this shift, before compaction. STEP 4 stop
+condition (a): 1/1 in-flight item (FTF-04A14) is `L1-PROVEN`, no blocking defect found by this
+session's own review — awaiting an independently-triggered Control-plane certifier session and the
+L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
