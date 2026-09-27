@@ -1,7 +1,82 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled autonomous relay shift) — submitted **FTF-04A20 (ManifestEvidence
-  schema/API)** PROVISIONAL. STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh;
-  CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly (no mismatch). Confirmed
+Updated: 2026-09-27 (scheduled autonomous relay shift) — submitted **FTF-0500D (Dataset source
+  security-boundary preview + audit evidence)** PROVISIONAL. STEP 0.1 read PROGRESS.md/QUEUE.md/
+  docs/certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md`
+  directly (no mismatch). STEP 0.2: cognee-cli not installed in this sandbox — text-search
+  fallback active, declared per STEP 0.2.
+
+  Confirmed FTF-04A20 already has an open Control-plane certification PR (#334, opened by a
+  separate session before this shift started) — no relay action left there; this file's own
+  "## Provisional" section below is corrected to point at FTF-0500D as the new current pending
+  item. Checked every other open PR directly via the GitHub API: #328 (FTF-04A15), #315/#314
+  (FTF-0303), #313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08
+  tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304, duplicate PRs) — none overlap.
+  Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s own real
+  `certification_state` per task: 5 tasks came back ready and unclaimed (FTF-04A02/FTF-0500A/
+  FTF-0500D/FTF-0902/FTF-1201). Excluded FTF-04A02 (keyed external GitHub secret integration,
+  ask-first). Pulled all four remaining task packets via `tools/r1_handoff.py packet <id> --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: set aside FTF-1201 (touches the LiteLLM reused component's
+  own integration form) and FTF-0902 (its own negative_acceptance requires a real
+  CNI-policy-enforcing cluster this sandbox does not have — "NetworkPolicy YAML on nonenforcing
+  cluster is not pass" — BLOCKED_EXTERNAL, not a task this shift could evidence for real) and
+  FTF-0500A (a frontend `apps/web` UI task, a different stack). Picked **FTF-0500D** — deps
+  FTF-0402/FTF-0500 both genuinely CERTIFIED, a backend pure-function task matching this
+  repository's own established `workers/data/*.py` pattern (FTF-0508/FTF-0511/FTF-0512/FTF-0513)
+  exactly.
+
+  Implemented `workers/data/dataset_source_security_boundary_preview_audit_evidence.py`:
+  `build_dataset_source_copy_preview` composes Section 7A.10's own literal "before import, show"
+  field list (source name/type, estimated records/bytes, security classification, requested
+  purpose, retention policy, whether data will leave its current security boundary, expected
+  transformations) and never raises on a blocking condition; `authorize_dataset_source_copy` is
+  the independent backend gate this task's own negative_acceptance names literally ("UI warning
+  alone cannot allow forbidden egress; backend checks grant and destination again at import.") —
+  it re-derives both the purpose/status check and the security-boundary check from its own
+  arguments every call, never reading a previously built preview, and raises rather than
+  returning a soft pass. Following FTF-0506's own disclosed "workers/data cannot import apps/api"
+  precedent (reused again by FTF-0511/FTF-0512/FTF-0513), FTF-0500's own `security_classification`/
+  `allowed_purposes` enums and FTF-0402's own `SECURITY_PROFILE_LEVELS`/
+  `resolve_effective_security_profile` rule are mirrored locally, never cross-boundary imported.
+  Two disclosed, narrow design choices where this specification underspecifies (same class of
+  precedent as FTF-0402/FTF-0500's own disclosed enum choices): (1)
+  `MINIMUM_REQUIRED_SECURITY_PROFILE` maps `security_classification` to the minimum project
+  `security_profile` required to receive it (public/internal -> standard, confidential ->
+  zero_egress, restricted -> air_gapped) — no section of this plan fixes this mapping; (2)
+  `RETENTION_POLICY_STATUS` is a single honest sentinel (`"not_yet_configured"`) rather than a
+  fabricated retention value, since Section 67.4's `DataUseGrant` (the entity that will actually
+  carry a real retention policy) is a separate, not-yet-built, dependency-gated concept FTF-0500's
+  own module docstring already discloses.
+
+  `tests/tasks/test_ftf_0500d.py`: 25 test functions — full Section 7A.10 field list on the
+  positive path, the honest retention sentinel, every `build_dataset_source_copy_preview` blocking
+  path (purpose denied, revoked connection, boundary crossing, both simultaneously) surfaced
+  without raising, the effective-profile resolution rule, the closed classification->profile
+  mapping, field validators, and `authorize_dataset_source_copy`'s own independent re-derivation —
+  all pass. Two independent, disclosed fault injections, both reverted byte-identical (md5sum
+  `2113594afa576abbd248d9e147fd8745` before/after each): (1) the boundary-crossing check
+  short-circuited to never fire — 1 genuine FAIL; (2) the purpose/status check short-circuited the
+  same way — 4 genuine FAILs.
+
+  `uv run ruff check .`/`ruff format --check .` clean repo-wide (292 source files); `uv run mypy .`
+  clean (the 17 pre-existing `alembic.op`/`alembic.context` errors in `apps/api/alembic/*` are
+  unrelated to this task, zero new errors). `python3 scripts/validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired`: unchanged **22/22** — this task's own
+  `proving_symbol` stays blank (disclosed "no live caller yet" precedent: FTF-0501, this task's
+  own dependent, does not exist yet). `status.py`: unchanged `85/300` certified, `21` product-true
+  (Law 2 — submission, not certification). Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/
+  `test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0513.py` — zero regressions.
+
+  `docs/spec-matrix.yaml` FTF-0500D set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0500d.py`
+  (`proving_symbol` left blank, disclosed above); `evidence_hash` left blank pending the real merge
+  commit. CI gate step ("FTF-0500D negative-test proof") added immediately after the FTF-04A20
+  step. **Not self-certified (Law 4)** — independent Control-plane L2 review is required before
+  certification. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled autonomous relay shift) — submitted **FTF-04A20
+  (ManifestEvidence schema/API)** PROVISIONAL. STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
+  certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md`
+  directly (no mismatch). Confirmed
   FTF-04A19 already independently CERTIFIED (PR #331) before this shift started — this file's own
   "## Active"/"## Provisional" sections both already read "None currently," matching
   `docs/spec-matrix.yaml` directly.
@@ -6330,9 +6405,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A20** ("ManifestEvidence schema/API") is the current pending item, submitted PROVISIONAL
-this shift (see this file's own top dated log entry and `docs/certifications/queue.md` for the
-full submission record). Not yet independently reviewed.
+Two items pending: **FTF-0500D** ("Dataset source security-boundary preview + audit evidence"),
+submitted PROVISIONAL this shift (see this file's own top dated log entry and
+`docs/certifications/queue.md` for the full submission record) — not yet independently reviewed;
+and **FTF-04A20** ("ManifestEvidence schema/API"), submitted PROVISIONAL the previous shift and
+already picked up by a separate Control-plane certifier session as
+**[PR #334](https://github.com/SJZLab/Sovra/pull/334)**, opened 2026-09-27T11:21:51Z — in flight,
+no relay action left there.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A19** ("AgentManifest
 schema/versioning/hash") as the current pending item; it was independently reviewed and CERTIFIED
