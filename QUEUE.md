@@ -5890,10 +5890,10 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-04A13** ("Prompt-source discovery + evidence capture") — submitted 2026-09-27 via a scheduled
-autonomous relay shift (this file's own top dated entry has the full record; PR not yet opened as
-of this entry — see this file's own top log for the branch/PR link once pushed). `docs/
-spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. Awaiting an
-independently-triggered Control-plane L2 certifier session and the L4 gate.
+autonomous relay shift, branch `claude/wizardly-fermat-vru1mn` -> `main`,
+[PR #324](https://github.com/SJZLab/Sovra/pull/324) (this file's own top dated entry has the full
+record). `docs/spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`.
+Awaiting an independently-triggered Control-plane L2 certifier session and the L4 gate.
 
 Correction (2026-09-26, Control-plane certifier shift, session
 `https://claude.ai/code/session_014Hxe7oodTekLv7ufMf6WDk`): this paragraph previously still named
