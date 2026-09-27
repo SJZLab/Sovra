@@ -1,5 +1,63 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled autonomous relay shift) — **submitted FTF-04A14 ("Tool/schema/
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_012z85Stet2ioQ4SSFLkiZc5, triggered by the `pull_request.opened`
+  webhook for PR #326) — independently certified **FTF-04A14 (Tool/schema/permission discovery +
+  evidence capture)**. Session-ID check: no overlap with PR #326's producer session
+  (`session_018vZBrjqmDmsbc6jZx7Nfeo`) — independent per Law 4.
+
+  Diff read directly against the PR's own base commit (`e7691ca`): 9 files changed, matching the
+  PR's own stated scope exactly (new module
+  `tool_schema_permission_discovery_evidence_capture.py`, new subprocess helper
+  `_typescript_javascript_tool_schema_permission_ast_helper.cjs`, new test file
+  `tests/tasks/test_ftf_04a14.py`, CI gate step, tracking-doc appends, and
+  `docs/implementation/task-packets/FTF-04A14.md`). Read the full 912-line module directly:
+  confirmed no code path ever reads a tool's own `description` field; confirmed
+  `side_effect_class`/`requires_confirmation` resolve only from their own same-named literal
+  keyword/property/config-key; confirmed reuse (not reimplementation) of FTF-0405's
+  `validate_json_schema_document` and FTF-0406's `RISK_RANK` enum; confirmed
+  `enforce_side_effect_classification` is independently already live-wired into
+  `ToolDefinition.__init__` (the real enforcement boundary this task's own negative_acceptance
+  clause names). Own reproduction: this sandbox was itself missing `node_modules/typescript`;
+  `pnpm install --frozen-lockfile` materialized it (same disclosed precedent FTF-04A10 already
+  established); `test_ftf_04a14.py` — "all checks passed" (25 tests, node available).
+
+  **Own fault injection, two independent mutations (different from the PR's own two disclosed
+  injections):** (1) `resolved_tool_name_count = sum(...)` changed to `sum(...) + 1` — 1 genuine
+  failure (the aggregate-count-matches-per-candidate-outcomes check); (2) the oversized-file skip
+  in `_run_python_discovery` disabled (`if False and file_ref.size > limits.max_file_bytes:`) — 1
+  genuine failure (`test_oversized_file_is_not_read`'s own fixture raises
+  `AssertionError("must never be read once oversized")` because the disabled guard lets the module
+  actually call `read_content()`). Both reverted byte-identical (md5sum
+  `6c150eaede1c14ccecc3682a6d3efef0` before/after each), both re-ran clean.
+
+  Real CI confirmed on the exact merged head (run `36290710957`): 31/31 jobs `success` including
+  `gate` (job `108540118747`, carrying the added `FTF-04A14 negative-test proof` step, confirmed
+  via the CI YAML diff). Disclosed limitation: this sandbox's outbound proxy denies CONNECT to the
+  GitHub Actions log-download hosts (`results-receiver.actions.githubusercontent.com`,
+  `*.blob.core.windows.net` — confirmed via the proxy's own `/__agentproxy/status`), so unlike
+  FTF-04A13's own certification this session could not fetch the `gate` job's raw log text
+  directly; the check run's own `success` conclusion on the exact head commit plus independent
+  local reproduction (above) substitute for it. `ruff`/`mypy` clean on this task's own files;
+  `pnpm run lint` clean repo-wide; `validate_spec.py --strict` clean (`git fetch --unshallow`
+  resolved this sandbox's own pre-existing shallow-clone artifact, same disclosed precedent as
+  every prior FTF-04A0x/FTF-04A1x shift). `product_truth_check.py --fail-on-unwired`: `20/20`
+  unchanged, confirmed legitimate (`proving_symbol: ''`, genuinely blank). Regression swept
+  `test_ftf_04a09.py`–`test_ftf_04a13.py` (all "all checks passed") plus `pytest tests/unit` (3/3)
+  — zero regressions. Confirmed dependencies FTF-0405/FTF-0406/FTF-04A01/FTF-04A09/FTF-04A10/
+  FTF-04A11 genuinely `CERTIFIED` before relying on them. Task contract re-pulled; acceptance
+  clauses 1/2 and the full `negative_acceptance` clause are genuinely met — see
+  `docs/certifications/ledger.md`'s matching entry for the complete breakdown.
+
+  **Result: CERTIFIED.** No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A14 entry set to
+  `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge
+  commit `876e9937051f818c9049175e0b126c4cb85f1bd8`. `sync_certified_status()` run directly
+  (updated `spec/tasks.json`/`docs/implementation/TRACKER.json`). Appended a matching entry to
+  `docs/certifications/ledger.md`; `PROGRESS.md` updated below. `scripts/status.py`: `82/300` ->
+  `83/300` certified; product-true unchanged at `20/20` (no live caller added by this
+  certification, disclosed). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged,
+  empty).
+
+Previously updated: 2026-09-27 (scheduled autonomous relay shift) — **submitted FTF-04A14 ("Tool/schema/
   permission discovery + evidence capture") PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
   certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly.
   Fetched `origin/main` fresh rather than trusted from this branch's own local history: FTF-04A13
@@ -6035,13 +6093,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A14** ("Tool/schema/permission discovery + evidence capture") — submitted 2026-09-27 via a
-scheduled autonomous relay shift, branch `claude/wizardly-fermat-m34za8` -> `main` (this file's own
-top dated entry has the full record; PR link recorded here in a follow-up commit once opened).
-`docs/spec-matrix.yaml`: `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN`. Awaiting an
-independently-triggered Control-plane L2 certifier session and the L4 gate.
+None currently. **FTF-04A14** ("Tool/schema/permission discovery + evidence capture") was the item
+here; it was independently reviewed and CERTIFIED this shift via
+[PR #326](https://github.com/SJZLab/Sovra/pull/326) (merge commit
+`876e9937051f818c9049175e0b126c4cb85f1bd8`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
-Correction (2026-09-27, scheduled autonomous relay shift): this paragraph previously still named
+Prior history, kept for the record: this paragraph previously still named
 **FTF-04A13** ("Prompt-source discovery + evidence capture") as the current pending item, dated from
 its own submission (PR #324). That is now stale — FTF-04A13 was independently certified since (this
 file's own top dated log has the full certifier record; `docs/spec-matrix.yaml`:
