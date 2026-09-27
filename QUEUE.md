@@ -1,8 +1,8 @@
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-09-27 (scheduled autonomous relay shift, session
   https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV, branch `claude/wizardly-fermat-gwocup`)
-  — submitted **FTF-0902 (Network-policy templates)** PROVISIONAL via PR (link recorded in a
-  follow-up commit once opened). Dozens of prior shifts since 2026-09-20 correctly ruled this task
+  — submitted **FTF-0902 (Network-policy templates)** PROVISIONAL via
+  **[PR #342](https://github.com/SJZLab/Sovra/pull/342)**. Dozens of prior shifts since 2026-09-20 correctly ruled this task
   out as blocked on "a real enforcing CNI/firewall cluster this sandbox does not have" — that gap
   is real and unchanged for this *interactive* sandbox; this shift instead routes the real
   live-enforcement proof through a new GitHub Actions CI job
@@ -6514,8 +6514,8 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-0902** ("Network-policy templates") — submitted PROVISIONAL this shift via PR
-`claude/wizardly-fermat-gwocup` (link recorded in a follow-up commit once opened). See this file's
+**FTF-0902** ("Network-policy templates") — submitted PROVISIONAL this shift via
+**[PR #342](https://github.com/SJZLab/Sovra/pull/342)**. See this file's
 own top dated log entry and `docs/certifications/queue.md` for the full evidence record, including
 the new `network-policy-enforcement-integration` CI job's own real kind+Calico enforcement proof.
 Awaiting independent Control-plane L2 review and that job's own real CI run result.
