@@ -3818,10 +3818,10 @@ FTF-04A13:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a13.py
 FTF-04A14:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tool/schema/permission discovery + evidence capture
-  evidence_hash: ''
+  evidence_hash: 876e9937051f818c9049175e0b126c4cb85f1bd8
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -3895,9 +3895,23 @@ FTF-04A14:
     reviewing session, not merely trusted from the producing agent's own
     report. `verify_task.py --task FTF-04A14 --stage task` reports BLOCKED
     pre-merge, expected per precedent (no merged verification evidence yet).
-    Not self-certified (Law 4) -- awaiting an independently-triggered
-    Control-plane L2 certifier session and the L4 gate.
-  proof_state: L1-PROVEN
+    Independently re-verified by Control plane, PR #326: own reproduction (25
+    tests pass, node/typescript available after `pnpm install
+    --frozen-lockfile`); two independent fault injections, both deliberately
+    different from the PR's own two disclosed injections (resolved_tool_name_
+    count off-by-one -- 1 genuine FAIL; oversized-file skip disabled -- 1
+    genuine FAIL via the fixture's own read-guard assertion), both reverted
+    byte-identical (md5sum `6c150eaede1c14ccecc3682a6d3efef0`). Real CI
+    confirmed on the exact merged head (run 36290710957): 31/31 jobs
+    completed/success including gate (job 108540118747, carrying the added
+    FTF-04A14 negative-test proof step, confirmed via the CI YAML diff); this
+    sandbox's outbound proxy denied the raw log fetch itself (disclosed), so
+    the check run's own `success` conclusion plus independent local
+    reproduction substitute for it. Session-ID check: no overlap with PR
+    #326's producer session (session_018vZBrjqmDmsbc6jZx7Nfeo) and this
+    ledger's own certifier session (session_012z85Stet2ioQ4SSFLkiZc5) --
+    independent per Law 4.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a14.py
 FTF-04A15:
