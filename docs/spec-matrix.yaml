@@ -3926,10 +3926,10 @@ FTF-04A15:
   proving_symbol: ''
   proving_test: ''
 FTF-04A16:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Runtime trace/deployment contract discovery
-  evidence_hash: ''
+  evidence_hash: 0c796be1bdbc70c085f5c8851300e84bb04aae6a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -4015,9 +4015,48 @@ FTF-04A16:
     --stage task` expected `BLOCKED` pre-merge (no merged verification
     evidence yet), same precedent as every prior sibling task.
 
-    **Not self-certified (Law 4)** -- independent Control-plane L2 review and
-    a real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+    Independently re-verified by Control plane, PR #329: own reproduction (26
+    tests -- the "27" in the PR's own description/PROGRESS.md/QUEUE.md is a
+    minor miscount, disclosed here rather than silently repeated -- all pass
+    via the module's own real entry point `python3 tests/tasks/
+    test_ftf_04a16.py`; a plain `pytest` run of the same file is not this
+    task's real verification path -- its own `check()` helper only appends to
+    a module-level list and never raises, so pytest reports every test
+    "passed" regardless of the assertion's outcome). Two independent fault
+    injections, both deliberately different from the PR's own two disclosed
+    injections: (1) dropping the `https://` branch from
+    `_endpoint_evidence_for`'s URL-shape check produced no test failure --
+    a genuine, disclosed test-coverage gap (no test exercises an
+    https-shaped literal's `endpoint_reachability`; the existing
+    `SENTRY_DSN: https://...` fixture in
+    `test_compose_ports_and_dict_environment_captured` only asserts
+    `category`, never `endpoint_reachability`), left for a future shift to
+    close -- not a negative_acceptance violation, since the faulted code
+    still never claims `"reachable"`; (2) inserting a real `open(value)` call
+    into `_parse_dockerfile_lines` immediately after computing a `LOGFILE`
+    reference's literal value -- 1 genuine FAIL, caught by
+    `test_detected_log_path_is_never_opened`'s own `builtins.open` guard
+    raising `AssertionError`, confirming that guard actually exercises real
+    I/O and is not a no-op. Both reverted byte-identical (md5sum
+    `111b013fc6696e4a73834d4050404917` matching the PR's own baseline).
+    Real CI confirmed on the exact merged head (run 36302096115): the `gate`
+    job (108571513281) and all 30 jobs completed/success, including the
+    `FTF-04A16 negative-test proof` step (confirmed running
+    `tests/tasks/test_ftf_04a16.py` and completing `success`) -- confirmed
+    directly via the GitHub Actions API on the real run, not a self-reported
+    claim. `validate_spec.py --strict` and `product_truth_check.py
+    --fail-on-unwired` (`20/20`, `proving_symbol` confirmed genuinely blank)
+    both reproduced clean; `ruff`/`mypy`/`pnpm lint` clean. Regression swept
+    `test_ftf_04a08.py`-`test_ftf_04a14.py`/`test_ftf_04a17.py` plus `uv run
+    pytest tests/unit` (3/3) after `pnpm install --frozen-lockfile`/`uv sync
+    --all-packages` -- zero regressions, independently reproduced (not
+    merely trusted from the producing session's own report). Dependencies
+    FTF-04A01/FTF-04A09/FTF-04A10/FTF-04A11 confirmed genuinely `CERTIFIED`
+    directly in this file before relying on them. Session-ID check: no
+    overlap between PR #329's producer session
+    (session_01HXdjCPYPHGRMfRsT6Bom1V) and this ledger's own certifier
+    session (session_01GPoKVEwERvNWYqDjN92r4F) -- independent per Law 4.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a16.py
 FTF-04A17:
