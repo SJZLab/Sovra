@@ -1,5 +1,48 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled autonomous relay shift) — submitted **FTF-04A20 (ManifestEvidence
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor, triggered by the `pull_request.opened`
+  webhook for PR #333) — independently certified **FTF-04A20 (ManifestEvidence schema/API)**.
+  Session-ID check: PR #333's sole commit carries `Claude-Session: .../session_01DV6JW7DUe1YfrdLj4LHPNB`
+  — no overlap with this session's own ID — independent per Law 4.
+
+  PR #333's own CI run was still queued/in-progress at webhook-fire time; waited for it to reach
+  `completed` before treating anything as evidence (Law 1/Law 5) — 30/30 jobs `success` on the
+  exact PR head SHA (run 36314794620), `gate` and the new `manifest-evidence-integration` job both
+  confirmed `success` directly via the GitHub Actions API.
+
+  Read the full diff (14 files, 4317/9 insertions/deletions, matching the PR's own stated scope)
+  and the four new source files in full. Own reproduction: `tests/tasks/test_ftf_04a20.py` (no-DB
+  suite) and `tests/integration/test_ftf_04a20_manifest_evidence.py` (real Postgres 16, this
+  session's own installed cluster — a fresh scratch `sovra_migrate` role/`sovra_ftf04a20` database,
+  dropped after use) both "all checks passed", independently reproduced, not merely trusted from
+  the PR's own report. **Own fault injection**, distinct from the PR's own three disclosed
+  database-level proofs: confirmed the baseline (a `repo_symbol` row with `symbol=NULL` is
+  genuinely rejected by `ck_manifest_evidence_symbol_iff_repo_symbol`), then dropped that
+  constraint directly against the live database and confirmed the identical insert now succeeds —
+  confirming a genuine, live-enforced guard.
+
+  Repo-wide `ruff`/`mypy`/`validate_spec.py --strict` clean (after `git fetch --unshallow`, same
+  disclosed shallow-clone artifact every prior shift's own history already documents);
+  `product_truth_check.py --fail-on-unwired` confirmed `22/22` (up from 21/21) with a real live
+  caller, not a 0/0-accepted pass. Confirmed dependencies FTF-04A01/FTF-04A19 both genuinely
+  `CERTIFIED`; checked every other open PR (#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194)
+  for a conflicting `migration:application`/`contracts:04A` lock claim — none found.
+
+  Pulled the task contract via `python3 tools/r1_handoff.py packet FTF-04A20 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both the acceptance clause and the full
+  `negative_acceptance` clause are genuinely met. PR #333 merged directly (merge commit
+  `7233538c45c604933799bdbc39492ac8c92d826f`) as part of this certification — it was open, green,
+  and `mergeable_state: clean` with no relay session left to merge it; CLAUDE.md's "Do without
+  asking" permits "merge on green + L1 doc (PROVISIONAL)" — no open review threads or comments.
+
+  Result: CERTIFIED. This commit contains only the tracking-doc updates: `docs/spec-matrix.yaml`
+  (FTF-04A20 -> `certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` =
+  merge commit), `spec/tasks.json`/`docs/implementation/TRACKER.json` (via
+  `sync_certified_status()`), a new `docs/certifications/ledger.md` entry, and
+  `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` updates. `scripts/status.py`: `85/300`
+  -> `86/300` certified; product-true `21/21` -> `22/22`. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled autonomous relay shift) — submitted **FTF-04A20 (ManifestEvidence
   schema/API)** PROVISIONAL. STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh;
   CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly (no mismatch). Confirmed
   FTF-04A19 already independently CERTIFIED (PR #331) before this shift started — this file's own
@@ -6330,9 +6373,10 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A20** ("ManifestEvidence schema/API") is the current pending item, submitted PROVISIONAL
-this shift (see this file's own top dated log entry and `docs/certifications/queue.md` for the
-full submission record). Not yet independently reviewed.
+None currently. FTF-04A20 (ManifestEvidence schema/API) was the only item here; it was
+independently reviewed and CERTIFIED this shift via PR #333 (merge commit
+`7233538c45c604933799bdbc39492ac8c92d826f`) — see this file's own top dated log entry and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A19** ("AgentManifest
 schema/versioning/hash") as the current pending item; it was independently reviewed and CERTIFIED

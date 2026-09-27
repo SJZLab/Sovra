@@ -18488,3 +18488,41 @@ immediately after the FTF-04A19 step, plus a new dedicated `manifest-evidence-in
 real `services: postgres` container) mirroring `agent-manifest-integration`'s own pattern exactly.
 **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
 opened PR are required before certification.
+
+## 2026-09-27 — Control plane: certify FTF-04A20 (ManifestEvidence schema/API), PR #333
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor`,
+triggered by the `pull_request.opened` webhook for PR #333. This queue's own FTF-04A20 submission
+entry above was the sole pending PROVISIONAL item. PR #333's CI run was still queued/in-progress
+at webhook-fire time — waited for it to reach `completed` before treating anything as evidence
+(Law 1/Law 5).
+
+**Session-ID check:** PR #333's sole commit carries `Claude-Session: .../session_01DV6JW7DUe1YfrdLj4LHPNB`.
+No overlap with this session's own ID — independent per Law 4.
+
+Read the full diff (14 files, 4317/9, matching the PR's own stated scope) and the four new source
+files in full; re-ran both the no-DB test suite and the real Postgres 16 integration suite directly
+against this session's own installed cluster (scratch `sovra_migrate` role / `sovra_ftf04a20`
+database, dropped after use) — both "all checks passed". Ran one independent fault injection
+distinct from the PR's own three disclosed DB-level proofs: confirmed the baseline (a `repo_symbol`
+row with `symbol=NULL` is genuinely rejected by `ck_manifest_evidence_symbol_iff_repo_symbol`),
+then dropped that constraint directly against the live database and confirmed the identical insert
+now succeeds — proving it is a real, live-enforced guard. CI's own 30/30 jobs green, including
+`gate`'s new "FTF-04A20 negative-test proof" step and the dedicated `manifest-evidence-integration`
+job. Repo-wide ruff/mypy/validate_spec.py/product_truth_check.py all clean;
+`product_truth_check.py --fail-on-unwired` confirmed `22/22` (up from 21/21) with a real live
+caller, not a 0/0 pass. Confirmed FTF-04A01/FTF-04A19 both genuinely `CERTIFIED`; checked every
+other open PR for a conflicting `migration:application`/`contracts:04A` lock claim — none found.
+Task contract re-pulled via `tools/r1_handoff.py` — both the acceptance clause and the full
+`negative_acceptance` clause genuinely met. No open review threads or comments on PR #333.
+
+**Result: CERTIFIED.** PR #333 merged directly by this certification (merge commit
+`7233538c45c604933799bdbc39492ac8c92d826f`) — it was open, green, and `mergeable_state: clean`
+with no relay session left to merge it; CLAUDE.md's "Do without asking" permits "merge on green +
+L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml`'s FTF-04A20 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge commit.
+`sync_certified_status()` run directly. Appended `docs/certifications/ledger.md` with the full
+evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `85/300` -> `86/300`
+certified; product-true `21/21` -> `22/22`. No open owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.

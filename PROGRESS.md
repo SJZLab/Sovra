@@ -1,4 +1,89 @@
 # PROGRESS — Sovra
+## 2026-09-27 — FTF-04A20 — Control plane: certify (PR #333)
+
+Scheduled Control-plane certifier shift, session
+`https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor`, triggered by the `pull_request.opened`
+webhook for PR #333. Checked `docs/certifications/queue.md` and confirmed directly against
+`docs/spec-matrix.yaml` (grep for `certification_state: PROVISIONAL`) that FTF-04A20 was the sole
+pending PROVISIONAL item. PR #333's own CI run (`36314794620`) was still queued/in-progress at
+webhook-fire time; waited for it to reach `completed` before treating anything as evidence, per
+Law 1/Law 5.
+
+**Session-ID check:** PR #333's sole commit carries `Claude-Session:
+.../session_01DV6JW7DUe1YfrdLj4LHPNB`. No overlap with this session's own ID, independent per
+Law 4.
+
+**Diff read directly**: 14 files changed / 4317 insertions / 9 deletions, matching the PR's own
+stated scope exactly. Read `manifest_evidence_schema.py`, `manifest_evidence_crud.py`,
+`manifest_evidence_routes.py`, and the real forward Alembic migration
+(`0016_manifest_evidence.py`) in full:
+- The nine per-`evidence_type` `CHECK` constraints in the migration match
+  `ManifestEvidence.__init__`'s own runtime checks exactly — never only an application-level check
+  a bypassing raw `INSERT` could evade.
+- `field_path`'s leading dot-segment is validated against `agent_manifest_schema.py`'s own
+  already-`CERTIFIED` `CONTENT_FIELDS` — real enforcement of "unknown values presented as detected
+  are rejected," reusing the dependency's own real field list rather than a second, hand-duplicated
+  copy.
+- `manifest_evidence_crud.py`'s own `create_manifest_evidence` fetches the parent manifest via
+  FTF-04A19's own already-`CERTIFIED` `get_agent_manifest`, then its `TargetSourceSnapshot.
+  commit_sha`, and refuses a mismatched caller-supplied `repository_commit_sha` with
+  `CrossSnapshotEvidenceError` (409) — the one real cross-table check no `CHECK` constraint can
+  express.
+- `manifest_evidence` is immutable once written: the migration grants `sovra_app`
+  `SELECT`/`INSERT` only, never `UPDATE`/`DELETE`, and the router declares no update/delete
+  endpoint at all.
+- Real live wiring (`app.include_router(build_manifest_evidence_router(session_factory))` in
+  `apps/api/app/main.py`).
+
+**Own reproduction:** `tests/tasks/test_ftf_04a20.py` (no-DB suite, after `uv sync --all-packages`
+installed the FastAPI/uvicorn extras) and `tests/integration/test_ftf_04a20_manifest_evidence.py`
+(real Postgres 16 — this sandbox's own directly-installed cluster, `sudo service postgresql start`,
+a fresh scratch `sovra_migrate` role and `sovra_ftf04a20` database created for this review) both
+ran clean: "all checks passed" in both cases, independently reproduced, not merely trusted from
+the PR's own report. Full Alembic chain `0001`-`0016` upgraded clean against the fresh database.
+
+**Own fault injection (Law 1), independent of the PR's own three disclosed database-level
+proofs:** confirmed the baseline first — a raw `INSERT` of a `repo_symbol` evidence row with
+`symbol = NULL` was genuinely rejected with `ck_manifest_evidence_symbol_iff_repo_symbol` violated.
+Then ran `ALTER TABLE manifest_evidence DROP CONSTRAINT
+ck_manifest_evidence_symbol_iff_repo_symbol` directly against the live database and re-ran the
+identical insert: it succeeded. This confirms the constraint is a real, live-enforced guard the
+schema actually depends on for "unknown values presented as detected are rejected" (a fabricated
+symbol citation with no symbol name is exactly that class of fabrication), not a decorative or
+dead one. Scratch database and roles dropped afterward.
+
+Repo-wide `uv run ruff check .`/`ruff format --check .` clean (290 files); `uv run mypy .` clean
+(290 source files, zero new errors). `git fetch --unshallow` resolved this sandbox's own
+pre-existing shallow-clone artifact (same disclosed precedent every prior shift's own history
+already documents) — `python3 scripts/validate_spec.py --strict` clean after that.
+`product_truth_check.py --fail-on-unwired`: own run, **22/22** (up from 21/21) — confirmed
+`build_manifest_evidence_router` has a real live caller in `apps/api/app/main.py` by direct
+inspection, not a 0/0-accepted-as-pass case. Confirmed dependencies FTF-04A01/FTF-04A19 both
+genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on them; checked every other open
+PR (#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) for a conflicting
+`migration:application`/`contracts:04A` lock claim — none found (PR #328/FTF-04A15 is a pure
+discovery module with no route or migration).
+
+No open review threads or comments on PR #333. Pulled the task contract via `python3
+tools/r1_handoff.py packet FTF-04A20 --plan FINE_TUNING_FACTORY_RELEASE_1.md` and confirmed both
+the acceptance clause ("Store per-field source commit/path/symbol/hash or user override provenance
+and confidence method") and the full `negative_acceptance` clause ("Fabricated line refs,
+cross-snapshot evidence and unknown values presented as detected are rejected") are genuinely met
+— by direct code read for the first, and by the real integration suite's own three negative cases
+(400/400/409) plus this review's own independent `CHECK`-constraint fault injection for the
+second.
+
+**Result: CERTIFIED.** No blocking defect found. PR #333 merged directly by this certification
+(merge commit `7233538c45c604933799bdbc39492ac8c92d826f`) — it was open, green, and
+`mergeable_state: clean` with no relay session left to merge it; CLAUDE.md's "Do without asking"
+permits "merge on green + L1 doc (PROVISIONAL)". `docs/spec-matrix.yaml`'s FTF-04A20 entry set to
+`certification_state: CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to that merge
+commit. `sync_certified_status()` run directly. Appended `docs/certifications/ledger.md` with the
+full evidence breakdown; `QUEUE.md`/`docs/certifications/queue.md` updated. `scripts/status.py`:
+`85/300` -> `86/300` certified; product-true `21/21` -> `22/22`. No open owner ask.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
 ## 2026-09-27 — FTF-04A20 — relay: submit PROVISIONAL
 
 Scheduled autonomous relay shift. STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
