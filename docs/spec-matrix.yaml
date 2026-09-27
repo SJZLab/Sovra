@@ -3757,16 +3757,59 @@ FTF-04A12:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a12.py
 FTF-04A13:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Prompt-source discovery + evidence capture
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A09,
-    FTF-04A10, FTF-04A11
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A09, FTF-04A10, FTF-04A11 (all CERTIFIED, confirmed
+    before relying on them). Path: `apps/api/app/target_connectors/
+    prompt_source_discovery_evidence_capture.py`, matching FTF-04A08's/
+    FTF-04A09's/FTF-04A10's/FTF-04A11's/FTF-04A12's own real `apps/api/app/
+    target_connectors/*.py` layout precedent (refined from the task packet's
+    own generic `packages/target-connectors/...` suggestion). Section 7A.4
+    step 5 ("Detect system/developer prompt sources") over the same real
+    completion-call sites FTF-04A09 (Python `litellm.completion`/
+    `acompletion`)/FTF-04A10 (JS/TS `<client>.chat.completions.create`)
+    already identify, plus a new closed-vocabulary config-key heuristic over
+    FTF-04A11's own `ConfigKeyEvidence` (`SYSTEMPROMPT`/`DEVELOPERPROMPT` for
+    an embedded literal; `PROMPTPATH`/`PROMPTTEMPLATE`/`PROMPTFILE`/
+    `SYSTEMPROMPTPATH` for a referenced template path), the same three-source
+    composition shape FTF-04A12 already established for model bindings. A
+    new, separate JS/TS subprocess helper
+    (`_typescript_javascript_prompt_source_ast_helper.cjs`) is added rather
+    than editing FTF-04A10's own already-CERTIFIED, frozen
+    `_typescript_javascript_ast_helper.cjs`. This task's own security
+    boundary ("by hash/location") is structural: no `PromptSourceCandidate`
+    this module produces ever carries real prompt/template text -- only
+    `content_sha256`/`content_length` and/or a bare `referenced_path`
+    location string; a `referenced_path` is resolved only by exact-match
+    lookup against the caller's own already-captured `SourceFileRef`
+    sequence, never opened/fetched/normalized (negative_acceptance:
+    "External/floating prompt source ... is treated as data, never analyzer
+    instruction"). `tests/tasks/test_ftf_04a13.py`: 20 tests (17 run
+    unconditionally, 3 TS/JS tests gated on a real `node` runtime being
+    present), all pass. Two independent fault injections, both reverted
+    byte-identical (md5sum `f20dd04504597f67fb9fc4139d18f3b1` before/after
+    each): (1) a missing referenced template silently marked resolved
+    instead of floating -- 1 genuine FAIL; (2) the embedded-literal path
+    made to leak real prompt text instead of its own sha256 -- 4 genuine
+    FAILs (including the dedicated "raw content never appears in serialized
+    JSON" test). `ruff`/`mypy`/`pnpm run lint`/`validate_spec.py --strict`
+    clean repo-wide. `product_truth_check.py --fail-on-unwired` unchanged
+    20/20 (proving_symbol left blank, same disclosed "no live route yet"
+    precedent FTF-04A09/FTF-04A10/FTF-04A11/FTF-04A12 already established).
+    `status.py` unchanged 81/300 (Law 2 -- this is a submission, not a
+    certification). Regression swept test_ftf_04a09.py/test_ftf_04a10.py/
+    test_ftf_04a11.py/test_ftf_04a12.py plus `pytest tests/unit` (3/3) --
+    zero regressions. Not self-certified (Law 4) -- awaiting an
+    independently-triggered Control-plane L2 certifier session and the L4
+    gate.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a13.py
 FTF-04A14:
   certification_state: NONE
   criticality: MUST
