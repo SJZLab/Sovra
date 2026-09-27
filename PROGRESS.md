@@ -1,4 +1,114 @@
 # PROGRESS — Sovra
+## 2026-09-27T22:50:00Z — FTF-04A02 — Scheduled autonomous relay shift — submitted PROVISIONAL
+
+STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh; CLAUDE.md.sha256
+self-check matched (`sha256sum CLAUDE.md` == committed hash). `cognee-cli` not present in this
+environment; declaring text-search fallback per STEP 0.2 (unchanged from every prior shift's own
+same disclosure).
+
+Checked the currently open PR most recently touched (PR #342, FTF-0902): the prior relay shift
+already fixed every real defect Control plane's own NOT CERTIFIED review (PR #343) found, and
+pushed all fix commits; the one remaining gap is a disclosed, repo-wide GitHub Actions outage (no
+workflow run/check-suite created for **any** branch since `2026-09-27T21:32:41Z`) that shift
+already diagnosed and could not resolve by retrying. Independently reconfirmed the outage was
+still ongoing at this shift's own start (`22:50:20 UTC`, ~78 minutes and multiple further pushes
+with zero new workflow runs repo-wide via `list_workflow_runs`) rather than assuming the prior
+shift's finding was still current. Per STEP 4(c) ("stuck: same action, same failure 3x -> stop,
+never retry a 4th time") -- the prior shift already nudged once -- this shift does not push another
+empty commit to FTF-0902; instead it picks the next highest-priority **unblocked** item, per STEP
+1's own "unblocked" qualifier.
+
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`/`spec/tasks.json`
+(the `ready` boolean baked into `spec/tasks.json` at bootstrap time is stale and never updated as
+certifications land -- cross-checked every dependency's real `certification_state` in
+`docs/spec-matrix.yaml` directly rather than trusting it, the same discipline prior shifts already
+established for this exact class of staleness). Of 12 tasks whose real dependencies are all
+`CERTIFIED`, 7 already have an open PR in flight (FTF-0212/PR #231, FTF-0214/PR #295 disclosed
+blocked, FTF-0304/PR #195+#194, FTF-04A15/PR #328, FTF-0500A is itself unclaimed but FTF-0500D/PR
+#335 shares its `FTF-0500` dependency lock, FTF-0601/PR #337, FTF-0902/PR #342 as above). Five were
+genuinely unclaimed: FTF-04A02, FTF-0500A, FTF-1201, FTF-1703, FTF-H004. Picked **FTF-04A02**
+("GitHub App/token read-only secret integration") -- dependencies FTF-0202/FTF-04A01 both confirmed
+`CERTIFIED`; it also unblocks the most direct downstream work (FTF-04A03, FTF-04A33, FTF-1812 all
+name it as a dependency).
+
+Pulled the real task contract via `python3 tools/r1_handoff.py packet FTF-04A02 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`. Read `local_repository_connector.py` (FTF-04A06, Section 7A.3's
+own sibling connector), `hugging_face_artifact_resolver.py` (FTF-0302) and
+`private_s3_artifact_resolver.py` (FTF-0303) first to confirm this repository's own established
+patterns before writing anything: (1) a resolver/connector module accepts an already-resolved
+credential, never a `credential_secret_ref` itself -- "the caller resolves the secret" shape
+`private_s3_artifact_resolver.py`'s own docstring states explicitly; (2) every real outbound HTTP
+call goes through `packages/security/outbound_guard.py`'s `guarded_fetch`; (3) a public SaaS API
+this sandbox cannot reach is proven against a real local HTTPS server with a real self-signed CA
+installed into the sandbox's own system trust store (`tests/tasks/test_ftf_0302.py`'s own
+precedent) -- confirmed this sandbox actually has `openssl`/`update-ca-certificates`/passwordless
+`sudo` before relying on that path (it does; no disclosed skip was needed, unlike some prior
+shifts' own sandboxes).
+
+Implemented `apps/api/app/target_connectors/github_app_token_read_only_secret_integration.py`:
+`validate_github_repository_access()` calls the one real, read-only GitHub REST API v3 endpoint
+(`GET /repos/{owner}/{repo}`) needed to confirm an already-resolved bearer token's real
+installation/repository scope. Disclosed scope boundary, not silently invented: this module does
+not itself mint a GitHub App installation token from an App's private key -- that needs a new
+asymmetric-signing runtime dependency (`cryptography`/`PyJWT`) neither already present in this
+repository nor named by any architecture doc, which CLAUDE.md's "Ask owner first" would require
+asking about. Section 7A.2's own "GitHub App installation **or** organization-approved token" is
+read as: either credential shape arrives here as already-minted opaque bearer-token bytes,
+indistinguishable to GitHub's own `Authorization: Bearer <token>` contract.
+
+This task's own negative_acceptance ("Private repo outside installation and revoked token deny
+access; no write scopes requested for analysis") is proven as one single, comprehensive gate
+(`if response.status != 200: _raise_for_non_200_status(...)`), deliberately refactored out of an
+initial draft that used three separate, redundant per-status `if` checks once this shift's own
+first fault-injection attempt revealed each one individually was **not** load-bearing (disabling
+any single specific-status check still left every other status caught by the shared terminal `!=
+200` guard, so no single-branch mutation ever produced a fabricated success -- a real, disclosed
+mid-shift finding, not assumed). The refactored single-gate design makes the real load-bearing
+checkpoint explicit and directly provable. `_HTTP_METHOD` is a module-level constant never exposed
+as a caller parameter, so "no write scopes requested for analysis" is structural, not a runtime
+flag.
+
+`tests/tasks/test_ftf_04a02.py`: a real local HTTPS server implementing the exact GitHub REST API
+v3 subset this module calls, with a real self-signed CA installed into this sandbox's own system
+trust store for the run (removed in `atexit`). 14 test functions, all real HTTPS round trips, no
+DB, no live egress to `api.github.com` (confirmed unreachable from this sandbox at the outbound
+proxy). Three disclosed fault injections (Law 1), each reverted byte-identical (confirmed via
+`_MODULE_PATH.read_bytes() == original`): (1)/(2) both target the shared `if response.status !=
+200:` gate -- the `revoked-repo`/`outside-installation-repo` fixture routes deliberately also carry
+a plausible-looking `full_name`/`default_branch` alongside their own real 401/404 status
+specifically so this fault injection can show a genuine fabricated success once the gate is
+removed, not just a different exception type; (3) hardcoding `_HTTP_METHOD` to `"POST"` genuinely
+breaks against the real fixture server (which only implements `do_GET`), proving the GET-only
+guarantee is real and observable.
+
+`uv sync --all-packages` (this sandbox's own local venv was missing `uvicorn`/`fastapi`/etc. before
+this shift ran it -- disclosed, not a code defect). `uv run ruff check .`/`ruff format --check .`
+clean repo-wide (298 files). `uv run mypy .` clean on every new/changed file (17 pre-existing,
+unrelated `alembic`-stub errors confirmed present identically on `origin/main`, same disclosed
+precedent every prior 04A-family shift already documents). `git fetch --unshallow` run first (this
+sandbox's own clone was shallow, same disclosed precedent every prior shift's own history
+documents) so `python3 scripts/validate_spec.py --strict` could resolve historical evidence commits
+-- clean. `python3 scripts/verify_task.py --task FTF-04A02 --stage task` reports `BLOCKED` (exit 0,
+printed reason "no merged verification evidence yet") -- expected/disclosed, same two-commit
+pattern as FTF-0402/FTF-04A26 (`spec/verification-map.json`'s entry is added in a later certifying
+commit). `product_truth_check.py --fail-on-unwired` unchanged `22/22` (`proving_symbol` left blank
+-- no live caller wires a `TargetApplicationConnection`'s own `credential_secret_ref` through
+`resolve_secret_ref` into this module yet, same disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/
+FTF-04A09/FTF-04A10/FTF-04A25/FTF-04A26). `status.py` unchanged `88/300` certified, `22`
+product-true. Regression swept `test_ftf_0202.py`/`test_ftf_04a01.py` -- zero regressions (the
+latter needed `uv run python3`, not plain `python3`, for its own FastAPI/SQLAlchemy imports; its
+own real negative-path prints a caught `TenantContextError` traceback to stderr, disclosed as
+expected/pre-existing rather than investigated as a new regression, since the suite's own final
+line still reports "all checks passed").
+
+`docs/spec-matrix.yaml` FTF-04A02 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`. CI gate step added after FTF-04A26's own. Not
+self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run on the
+opened PR. No open owner ask.
+
+STEP 4 stop condition: this shift stops here, submission complete (PR opened, PROVISIONAL,
+appended to `docs/certifications/queue.md`).
+
 ## 2026-09-27 — FTF-0902 — Control plane: independent CERTIFY review, NOT CERTIFIED (PR #342)
 
 Scheduled Control-plane certifier shift, session

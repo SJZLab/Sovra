@@ -2731,15 +2731,81 @@ FTF-04A01:
   proving_symbol: build_target_application_connection_router
   proving_test: tests/tasks/test_ftf_04a01.py
 FTF-04A02:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: GitHub App/token read-only secret integration
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0202, FTF-04A01
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-0202,
+    FTF-04A01 (both CERTIFIED, confirmed before relying on them). Path: `apps/api/app/target_connectors/github_app_token_read_only_secret_integration.py`
+    (refined from the task packet''s own generic `packages/target-connectors/...` suggestion to this
+    repo''s own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family
+    task already discloses).
+
+
+    Section 7A.1''s own "Minimum production connectors required by DoD" names exactly two: the GitHub
+    connector (this task) and the local repository connector (FTF-04A06, already CERTIFIED).
+    `target_application_connection_schema.py` (FTF-04A01) deliberately stopped short of "the concrete
+    GitHub App/token exchange," naming it as this task''s own scope. This module is that real caller:
+    `validate_github_repository_access()` takes an already-resolved bearer token (never a
+    `credential_secret_ref` itself -- the same "caller resolves the secret, this module only ever sees
+    a real already-resolved credential" shape FTF-0302/FTF-0303 already established for FTF-0202''s own
+    `resolve_secret_ref`) and confirms it via one real, read-only GitHub REST API v3 call
+    (`GET /repos/{owner}/{repo}`) -- the one endpoint this module ever calls, with the HTTP verb held as
+    a module-level constant (`_HTTP_METHOD`) never exposed as a caller parameter, so no caller can ever
+    make this module issue a write-shaped request.
+
+
+    Disclosed scope boundary: this module does not itself mint a GitHub App installation token from an
+    App''s private key (that needs a new asymmetric-signing runtime dependency -- `cryptography`/`PyJWT`
+    -- neither already present in this repository nor named by any architecture doc, which CLAUDE.md''s
+    "Ask owner first" would require asking about). Section 7A.2''s own "connect using GitHub App
+    installation **or** organization-approved token" is read as: either credential shape is accepted as
+    already-minted opaque bearer-token bytes at this module''s boundary -- both are indistinguishable to
+    GitHub''s own `Authorization: Bearer <token>` contract and validated identically here. Minting a
+    fresh installation token is a separate, later, explicitly-scoped task.
+
+
+    This task''s own negative_acceptance ("Private repo outside installation and revoked token deny
+    access; no write scopes requested for analysis") is proven as one single, comprehensive gate
+    (`if response.status != 200: _raise_for_non_200_status(...)`) rather than several independent,
+    redundant per-status checks that would each mask the others'' removal: HTTP 401 (revoked/invalid
+    token) and HTTP 404 (a private repository outside the credential''s own installation/token grant --
+    GitHub deliberately does not distinguish "does not exist" from "you cannot see it") both raise and
+    deny through this one checkpoint. A real HTTP 403 with an exhausted `X-RateLimit-Remaining: 0` is
+    kept distinct (`GitHubRateLimitExceededError`) from a genuine access denial, per Section 7A.2''s own
+    "obey API rate limits with bounded retry/backoff."
+
+
+    `tests/tasks/test_ftf_04a02.py`: a real local HTTPS server implementing the exact GitHub REST API v3
+    subset this module calls, with a real self-signed CA generated and installed into this sandbox''s own
+    system trust store for the run (the same precedent `tests/tasks/test_ftf_0302.py` already
+    established) -- this sandbox has no route to `api.github.com` itself. 14 test functions, all real
+    HTTPS round trips, no DB. Three disclosed fault injections (Law 1), each reverted byte-identical: (1)
+    and (2) both target the single shared `if response.status != 200:` gate -- with it disabled, a
+    revoked-token (401) and a private-repo-outside-installation (404) response each carry a
+    deliberately plausible-looking `full_name`/`default_branch` body in the test fixture, so removing the
+    gate lets both through as a genuine fabricated success, proving the gate is the real, load-bearing
+    enforcement point for both negative_acceptance clauses at once; (3) hardcoding `_HTTP_METHOD` to
+    `"POST"` genuinely breaks against the real fixture server (which only ever implements `do_GET`),
+    proving the GET-only guarantee is real and observable, not decorative.
+
+
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide. `uv run mypy .` clean on every new/
+    changed file (17 pre-existing, unrelated `alembic`-stub errors confirmed present identically on
+    `origin/main`, same disclosed precedent every prior 04A-family shift already documents).
+    `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, same disclosed
+    shallow-clone artifact every prior shift''s own history already documents).
+    `product_truth_check.py --fail-on-unwired` unchanged `22/22` (`proving_symbol` left blank -- no live
+    caller wires a `TargetApplicationConnection`''s own `credential_secret_ref` through
+    `resolve_secret_ref` into this module yet, same disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/
+    FTF-04A09/FTF-04A10/FTF-04A25/FTF-04A26). `status.py` unchanged `88/300` certified, `22`
+    product-true (Law 2 -- this is a submission, not a certification). Regression swept
+    `test_ftf_0202.py`/`test_ftf_04a01.py` -- zero regressions. Not self-certified (Law 4) -- awaiting
+    independent Control-plane L2 review and a real CI run on the opened PR.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a02.py
 FTF-04A03:
   certification_state: NONE
   criticality: MUST
