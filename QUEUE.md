@@ -1,10 +1,36 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (same scheduled autonomous relay shift, session
+Updated: 2026-09-27T21:56Z (same scheduled autonomous relay shift, session
   https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV, continuing directly on
   **[PR #342](https://github.com/SJZLab/Sovra/pull/342)**, FTF-0902) — this entry supersedes the one
-  directly below it (same shift, same session, not a new pick), which already covered the initial
-  submission; this one covers the real CI-driven Verify loop that followed it, and a currently
-  open, disclosed, external blocker.
+  directly below it (same shift, same session), which recorded the real CI-driven Verify loop and
+  the disclosed GitHub Actions outage. New information since that entry:
+
+  A Control-plane certifier session independently reviewed PR #342 in parallel (PR #343, merged to
+  `main`, doc-only) and returned **NOT CERTIFIED**, citing the exact `allowed`/`denied` ClusterIP
+  probe failures already described below. That review explicitly waited for CI on head `88a4957`
+  and confirmed "no further commits landed after" — true at the instant it checked (21:28:28Z), but
+  this submitting session kept iterating concurrently and pushed `fd20f0e` -> `02ec3db` -> `fc352bf`
+  in the same window (21:27-21:39Z), landing the fix for the exact failure the review found
+  (Service ClusterIP -> direct pod IP, then a bounded retry) before the review's own commit finished
+  landing. A genuine timing race between two concurrent sessions, not a disputed finding: the
+  review's diagnosis was correct for the commit it tested, which was already superseded when it
+  landed. `docs/spec-matrix.yaml` on `main` was never downgraded by that review (FTF-0902 was never
+  `CERTIFIED` there to begin with) — no correction needed on that file.
+
+  Independently re-confirmed the outage claim (not taken on the prior entry's word):
+  `list_workflow_runs` shows the highest `run_number` anywhere in this repository is **512**
+  (`02ec3db`, completed 21:39:40Z) -- including the certifier's own doc-only run (`run_number` 511,
+  completed successfully 21:36:20Z, proving Actions was healthy at that point). Zero workflow runs
+  of any kind, on any branch, have been created since 21:32:41Z; as of this update (21:56Z) that is
+  ~24 minutes with no new runs despite three more pushes to this branch in that window. Real,
+  repo-wide, not specific to this PR.
+
+  Posted a comment on PR #342 cross-referencing PR #343's review against this timing race, and
+  telling whoever next opens the PR to check for a fresh real CI run on `621e411` (or later) before
+  re-diagnosing the `allowed`/`denied` failure from scratch. `docs/spec-matrix.yaml` stays
+  `PROVISIONAL`/`L1-PROVEN` -- not upgraded, no real green CI run observed yet. Stopping this shift
+  here: the code fix believed to address PR #343's finding is already pushed; what remains is
+  GitHub's own infrastructure resuming, not further code or design work from this session.
 
   After opening PR #342, watched its real CI run rather than assuming the local sandbox-only
   evidence would transfer unchanged to a live kind+Calico cluster (it cannot be run in this sandbox

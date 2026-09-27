@@ -1,4 +1,34 @@
 # PROGRESS — Sovra
+## 2026-09-27T21:56:00Z — FTF-0902 — Same relay shift — stale-review cross-reference, independently reconfirmed outage, stopping
+
+Continuation of this same shift (session `https://claude.ai/code/session_014VhkpG6UEpZF1XPHcuYkAV`),
+directly after the entry immediately below this one. New since that entry:
+
+A Control-plane certifier reviewed PR #342 concurrently (PR #343, merged, doc-only) and returned
+**NOT CERTIFIED** for the `allowed`/`denied` ClusterIP probe failures already described below. Read
+that review's full text (`git show e3b8939`): it waited for CI on head `88a4957` and confirmed "no
+further commits landed after" at 21:28:28Z — accurate at that instant, but this session had already
+started pushing `fd20f0e` (21:27:01Z) and kept going through `02ec3db` (21:32:41Z) and `fc352bf`
+concurrently. A genuine timing race, not a wrong finding: the review correctly diagnosed the commit
+it tested, which this session's own next few commits (already in flight) fixed. `docs/spec-matrix.yaml`
+on `main` carried no FTF-0902 entry to downgrade either way.
+
+Independently re-verified the outage claim from the prior entry rather than re-asserting it
+unchecked: `list_workflow_runs` shows repo-wide `run_number` 512 is the latest anywhere (`02ec3db`,
+completed 21:39:40Z) — includes the certifier's own doc-only run (511, completed 21:36:20Z,
+confirming Actions was healthy then). Zero new runs, any branch, since 21:32:41Z; ~24 minutes
+elapsed as of this entry despite 3 further pushes to this branch. Real and repo-wide.
+
+Posted a PR comment on #342 connecting PR #343's finding to the timing race and telling the next
+session to check for a fresh real CI run on `621e411`+ before re-diagnosing. `QUEUE.md` updated
+with the same cross-reference. `docs/spec-matrix.yaml` stays `PROVISIONAL`/`L1-PROVEN` (no real
+green CI run observed yet on the current head — Law 1/5/17, never claimed on faith).
+
+**STEP 4 stop condition:** the code fix believed to resolve PR #343's own finding is already
+pushed (per the entry below); what remains is GitHub Actions resuming run creation, not further
+code, design, or diagnosis from this session. No owner ask (this is infra recovering, not a
+decision). Stopping here.
+
 ## 2026-09-27T21:49:00Z — FTF-0902 — Same relay shift — real CI Verify loop, then a disclosed external blocker
 
 Continuation of this same shift's own entry directly below (same session
