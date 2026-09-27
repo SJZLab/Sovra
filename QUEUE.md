@@ -1,5 +1,65 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V) — **submitted FTF-04A16 ("Runtime
+  trace/deployment contract discovery") PROVISIONAL.** STEP 0.1 read PROGRESS.md/QUEUE.md/docs/
+  certifications/queue.md fresh; CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly.
+  Confirmed FTF-04A14 already independently CERTIFIED (PR #326) before this shift started — this
+  file's own "## Provisional"/"## Active" sections both already read "None currently," matching
+  `docs/spec-matrix.yaml` directly.
+
+  Checked all open PRs directly via the GitHub API before picking new work: #328 (FTF-04A15, a fresh
+  relay submission from earlier the same day), #315/#314 (FTF-0303), #313/#311/#308 (FTF-0513),
+  #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/
+  #194 (FTF-0304, duplicate PRs) — none overlap with this shift's own eventual pick. Recomputed the
+  dependency-ready frontier directly from `docs/TASK_INDEX.md`'s own dependency column cross-checked
+  against `docs/spec-matrix.yaml`'s real per-task `certification_state`: 13 tasks came back
+  dependency-ready. Excluded FTF-0212/FTF-0214/FTF-0304 (other sessions' own open PRs), FTF-04A02
+  (keyed external GitHub credential, ask-first per CLAUDE.md), FTF-04A15 (open PR #328). Picked
+  **FTF-04A16**, the same discovery-task family and dependency set as FTF-04A15
+  (FTF-04A01/04A09/04A10/04A11), with no open PR.
+
+  Implemented `apps/api/app/target_connectors/runtime_trace_deployment_contract_discovery.py`: two
+  disjoint, non-executing scan classes -- (1) deployment-manifest evidence from a closed, named
+  basename allowlist (Dockerfile, docker-compose/compose.yml/.yaml, Procfile, railway.json/.toml,
+  fly.toml, render.yaml, vercel.json), reusing FTF-04A11's own already-CERTIFIED
+  `run_json_yaml_toml_configuration_discovery` directly for the JSON/YAML/TOML-shaped manifests
+  (Section 77.1 reuse-first), with this task's own narrow line parsers for Dockerfile/Procfile; (2)
+  runtime-binding/trace-shaped env-var reference evidence via a closed, named key-marker set, matched
+  against a real `os.environ.get(...)`/`os.getenv(...)`/`os.environ[...]` call site statically traced
+  via `ast.parse` (never `exec`/`eval`/`compile`/`importlib`/a subprocess -- FTF-04A09's own
+  discipline exactly) and a disclosed, narrow regex scan for `process.env.NAME`/`process.env["NAME"]`
+  in JS/TS source (deliberately no second `.cjs` AST helper, unlike FTF-04A10 -- a known, disclosed
+  limitation). negative_acceptance ("Detected logs are not automatically harvested and a string in
+  config is not proof a production endpoint is reachable") is met by construction: the only I/O this
+  worker performs is `file_ref.read_content()` on caller-supplied entries -- it never opens a
+  discovered path or contacts a discovered URL; every URL-shaped detected value carries the fixed
+  `"unverified_static_reference"` marker, never `"reachable"`.
+
+  27 tests in `tests/tasks/test_ftf_04a16.py`, all pass. Two independent, disclosed fault injections,
+  both reverted byte-identical (md5sum `111b013fc6696e4a73834d4050404917` before/after each): (1)
+  `_classify_marker` always returning `"runtime_binding"` for an unmatched key -- 1 genuine FAIL; (2)
+  `_endpoint_evidence_for` returning `"reachable"` instead of the unverified marker for a URL-shaped
+  value -- 1 genuine FAIL (this task's own negative_acceptance clause verbatim). `uv run ruff
+  check .`/`ruff format --check .` clean; `uv run mypy .` clean repo-wide (278 files, only the
+  previously-disclosed 15 pre-existing `alembic`-stub errors present); `pnpm run lint`/
+  `format:check` clean repo-wide. `validate_spec.py --strict` clean (`git fetch --unshallow`
+  resolved this sandbox's own pre-existing shallow-clone artifact). `product_truth_check.py
+  --fail-on-unwired` unchanged `20/20` (`proving_symbol` left blank -- no live dispatcher yet, same
+  disclosed precedent as FTF-04A08/04A09/04A10/04A11). `status.py` unchanged `83/300` (Law 2).
+  Regression swept `test_ftf_04a08.py`-`test_ftf_04a14.py` plus `test_ftf_04a17.py` (all "all checks
+  passed") plus `uv run pytest tests/unit` (3/3) -- zero regressions. `docs/spec-matrix.yaml`
+  FTF-04A16 set to `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` /
+  `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge commit. CI
+  gate step (`FTF-04A16 negative-test proof`) added to `.github/workflows/ci.yml`. **Not
+  self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened PR
+  are required before certification. Full record: `PROGRESS.md`'s matching 2026-09-27 entry,
+  `docs/certifications/queue.md`'s matching entry, `docs/implementation/task-packets/FTF-04A16.md`.
+
+  No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty). STEP 4 stop condition
+  (a): 1/1 in-flight item (FTF-04A16) is `L1-PROVEN`, awaiting an independently-triggered
+  Control-plane certifier session. Stopping here.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_012z85Stet2ioQ4SSFLkiZc5, triggered by the `pull_request.opened`
   webhook for PR #326) — independently certified **FTF-04A14 (Tool/schema/permission discovery +
   evidence capture)**. Session-ID check: no overlap with PR #326's producer session
@@ -6093,9 +6153,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. **FTF-04A14** ("Tool/schema/permission discovery + evidence capture") was the item
-here; it was independently reviewed and CERTIFIED this shift via
-[PR #326](https://github.com/SJZLab/Sovra/pull/326) (merge commit
+**FTF-04A16** ("Runtime trace/deployment contract discovery") is the current item, submitted
+2026-09-27 (branch `claude/wizardly-fermat-loquvq` -> `main`), title `[relay] FTF-04A16: Runtime
+trace/deployment contract discovery`, producer session
+`https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V`. PR number recorded in a follow-up commit
+on the same branch once opened (same "record PR #NNN link" precedent FTF-04A14/FTF-0513 already
+established). Full submission record: this file's own top dated log above, `PROGRESS.md`'s matching
+2026-09-27 entry, `docs/certifications/queue.md`'s matching entry, `docs/spec-matrix.yaml`'s
+FTF-04A16 notes. **Not self-certified (Law 4)** — awaiting an independently-triggered Control-plane
+L2 certifier session.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A14** ("Tool/schema/
+permission discovery + evidence capture") as the current pending item; it was independently reviewed
+and CERTIFIED via [PR #326](https://github.com/SJZLab/Sovra/pull/326) (merge commit
 `876e9937051f818c9049175e0b126c4cb85f1bd8`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 

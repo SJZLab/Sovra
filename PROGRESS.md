@@ -21007,3 +21007,99 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A14) is `L1-PRO
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-27T07:02:45Z — Scheduled autonomous relay shift — FTF-04A16 submitted PROVISIONAL
+
+Session: https://claude.ai/code/session_01HXdjCPYPHGRMfRsT6Bom1V. STEP 0.1: read PROGRESS.md/
+QUEUE.md/docs/certifications/queue.md fresh (tail sections, given file size). CLAUDE.md.sha256
+self-check matched `sha256sum CLAUDE.md` directly. `git rev-parse --is-shallow-repository` was
+`true`; `git fetch --unshallow` resolved it (same disclosed precedent every prior FTF-04A0x/04A1x
+shift has hit).
+
+Fetched `origin/main` fresh: this session's own branch head (`c295fcd`) already matched
+`origin/main` exactly — FTF-04A14 had already been independently certified via PR #326 by the time
+this shift started (`docs/spec-matrix.yaml`: `certification_state: CERTIFIED`, `evidence_hash`
+`876e9937051f818c9049175e0b126c4cb85f1bd8`), and QUEUE.md's own "## Provisional"/"## Active"
+sections both correctly read "None currently."
+
+Checked all open PRs directly via the GitHub API before picking new work: #328 (FTF-04A15, a fresh
+relay submission from earlier the same day — excluded, already in flight, not this shift's own
+producer session), #315/#314 (FTF-0303, under Control-plane review), #313/#311/#308 (FTF-0513,
+already certified/recorded), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only),
+#231 (FTF-0212), #195/#194 (FTF-0304, duplicate PRs) — none overlap with this shift's own eventual
+pick.
+
+Recomputed the dependency-ready frontier directly (`docs/TASK_INDEX.md`'s own dependency column
+cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state`, via a small
+one-off script, never trusted from a prior shift's own claim alone): 13 tasks came back
+dependency-ready (`certification_state: NONE`, every dependency `CERTIFIED`). Excluded FTF-0212/
+FTF-0214/FTF-0304 (open PRs above), FTF-04A02 (keyed external GitHub credential, ask-first per
+CLAUDE.md, same exclusion a prior shift already recorded), FTF-04A15 (open PR #328). Picked
+**FTF-04A16 ("Runtime trace/deployment contract discovery")** — same dependency set as FTF-04A15
+(FTF-04A01/04A09/04A10/04A11), same discovery-task family, no open PR.
+
+Task contract pulled fresh: `python3 tools/r1_handoff.py packet FTF-04A16 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (note: `--out <path>.md` creates a directory named `<path>.md`
+containing the real file — moved the generated file up to the plain `docs/implementation/
+task-packets/FTF-04A16.md` path matching every sibling packet's own real file shape, not a
+directory).
+
+Implemented `apps/api/app/target_connectors/runtime_trace_deployment_contract_discovery.py` (path
+refined from the packet's own generic `packages/target-connectors/...` suggestion to this repo's
+own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family task
+already disclosed). Two disjoint, non-executing scan classes over a caller-supplied
+`Sequence[SourceFileRef]`: (1) deployment-manifest evidence from a closed, named allowlist of
+basenames (Dockerfile, docker-compose/compose.yml/.yaml, Procfile, railway.json/.toml, fly.toml,
+render.yaml, vercel.json) — a JSON/YAML/TOML-shaped manifest reuses FTF-04A11's own already-CERTIFIED
+`run_json_yaml_toml_configuration_discovery` directly (Section 77.1 reuse-first) rather than a second
+parser; Dockerfile/Procfile get this task's own narrow line-oriented parsers; (2) runtime-binding/
+trace-shaped env-var reference evidence from a closed, named key-marker set, matched against a real
+`os.environ.get(...)`/`os.getenv(...)`/`os.environ[...]` call site statically traced via `ast.parse`
+in Python (only `ast.parse`, never `exec`/`eval`/`compile`/`importlib`/a subprocess — FTF-04A09's own
+discipline exactly), and a disclosed, narrow regex scan for `process.env.NAME`/`process.env["NAME"]`
+in JS/TS source (deliberately does not add a second `.cjs` TypeScript-compiler-backed AST helper the
+way FTF-04A10 did — a known, disclosed limitation, stated in the module's own docstring).
+
+This task's own negative_acceptance ("Detected logs are not automatically harvested and a string in
+config is not proof a production endpoint is reachable") is met by construction: this worker's only
+I/O is `file_ref.read_content()` against the caller-supplied `SourceFileRef` entries themselves — it
+never opens a path or contacts a URL discovered inside scanned content; and every URL-shaped detected
+value carries a fixed `endpoint_reachability` marker, the literal string
+`"unverified_static_reference"` — never `"reachable"`, never inferred.
+
+`tests/tasks/test_ftf_04a16.py`: 27 tests, all pass (run via both `python3` and `uv run python3`).
+Two independent, disclosed fault injections (Law 1), both reverted byte-identical (md5sum
+`111b013fc6696e4a73834d4050404917` before/after each, re-ran clean immediately after each): (1)
+`_classify_marker` changed to always return `"runtime_binding"` for an otherwise-unmatched key
+instead of `None` — 1 genuine FAIL (`test_unrecognized_key_name_is_never_treated_as_binding_or_trace`
+— an unrecognized key must never be fabricated as evidence); (2) `_endpoint_evidence_for` changed to
+return the literal string `"reachable"` instead of `"unverified_static_reference"` for a URL-shaped
+value — 1 genuine FAIL (`test_url_shaped_value_is_disclosed_as_unverified_never_reachable`, this
+task's own negative_acceptance clause verbatim).
+
+`uv run ruff check .`/`ruff format --check .` clean on this task's own files; `uv run mypy .` clean
+repo-wide (278 files; the previously-disclosed 15 `alembic`-stub errors are the only ones present,
+confirmed pre-existing and unrelated — zero new errors). `pnpm run lint`/`pnpm run format:check`
+clean repo-wide (`pnpm install --frozen-lockfile` materialized `node_modules/typescript`, same
+disclosed precedent every prior FTF-04A10/04A13/04A14 shift already established — no new runtime
+dependency added, and this task's own module does not even invoke it directly). `validate_spec.py
+--strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `20/20` (`proving_symbol` left
+blank — no live source-analysis-pipeline dispatcher exists yet to call this worker, same disclosed
+precedent as FTF-04A08/04A09/04A10/04A11). `status.py` unchanged `83/300` (Law 2 — this is a
+submission, not a certification). Regression swept `test_ftf_04a08.py`/`test_ftf_04a09.py`/
+`test_ftf_04a10.py`/`test_ftf_04a11.py`/`test_ftf_04a12.py`/`test_ftf_04a13.py`/`test_ftf_04a14.py`/
+`test_ftf_04a17.py` (all "all checks passed") plus `uv run pytest tests/unit` (3/3) — zero
+regressions. `verify_task.py --task FTF-04A16 --stage task` reports `BLOCKED` pre-merge, expected per
+precedent (no merged verification evidence yet).
+
+`docs/spec-matrix.yaml` FTF-04A16 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A16 negative-test proof`) added to `.github/workflows/ci.yml`
+immediately after the FTF-04A14 step. **Not self-certified (Law 4)** — independent Control-plane L2
+review and a real CI run on the opened PR are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A16) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
