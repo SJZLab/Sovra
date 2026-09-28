@@ -1,4 +1,74 @@
 # PROGRESS — Sovra
+## 2026-09-28T15:20:00Z — FTF-04A05 — Control plane: CERTIFIED (PR #358, session https://claude.ai/code/session_01DmDPEKYgnfDV64NHzTX8wL)
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+#359 (FTF-0500B — still open/unmerged at review time, nothing on `main` yet to certify, left
+untouched). `docs/spec-matrix.yaml` grepped directly for `certification_state: PROVISIONAL`: two
+pending items found — FTF-04A05 (PR #358, already merged to `main`, genuinely unclaimed) and
+FTF-0500B (unmerged, not yet eligible). Reviewed FTF-04A05.
+
+Session-ID check: PR #358's own two commits both carry `Claude-Session:
+.../session_012JU5T7hSZSU9qu8d7NjkQx` — no overlap with this session, independent per Law 4.
+Confirmed PR #358's own CI runs reached `completed`/`success` on the real PR head commit
+`21a08fe0644e7e70c96edfe1374bd3e769347e4b`, including the new
+`github-source-snapshot-integration` job. Confirmed the merge commit
+`f17260c158b2858b0fbadd01ae60495ba0eecf71` is genuinely `origin/main`'s current head.
+
+Read the full diff directly (7 files, +2506/-1 excluding tracking docs):
+`apps/api/app/target_connectors/github_source_snapshot_resolver.py` (connector — reuses
+FTF-04A04's own `resolve_ref_to_commit` unmodified, then three further real GitHub REST API v3
+calls for the commit's real canonical tree hash, the full recursive tree, and a root
+`.gitattributes` blob for LFS detection; submodules detected structurally from `type: "commit"`
+gitlink entries; refuses a truncated tree listing and any tree entry whose path could escape the
+repository root if materialized), `github_source_snapshot_crud.py` (capture+persist+audit
+composition via FTF-04A07's already-CERTIFIED `create_target_source_snapshot`, re-deriving
+`commit_sha`/`tree_hash` from a real GitHub call rather than trusting a client-supplied value),
+`github_source_snapshot_routes.py` (new `POST .../target-connections/{connection_id}/github-source-snapshot`
+route), and the `apps/api/app/main.py` wiring (fifteenth router).
+
+Delegated the independent verification pass to a fresh subagent (no session-ID overlap with the
+producer either way) instructed to re-derive every claim rather than trust the PR narrative.
+Independently reran all three real evidence suites: `tests/tasks/test_ftf_04a05.py` (connector,
+real local HTTPS fixture, 19 checks) and `tests/tasks/test_ftf_04a05_routes.py` (route-boundary,
+13 checks) both "all checks passed"; `tests/integration/test_ftf_04a05_github_source_snapshot.py`
+against a freshly-provisioned local PostgreSQL 16 (matching CI's own `services: postgres`
+config) — "all checks passed" (14 checks), including the isolating "nonexistent project_id +
+real same-organization connection_id" negative scenario the PR discloses adding after its own
+first-draft test was confounded by a downstream, already-certified connection-ownership check.
+
+**Own fault injection (Law 1), not merely re-trusting the submission's own disclosed one:**
+disabled `_validate_entry_path_safety`'s body (no-op in place of the real absolute-path/`..`-
+segment/embedded-NUL guard) and reran `tests/tasks/test_ftf_04a05.py`: **1 genuine, specific
+failure** on the unsafe-archive negative_acceptance check. Reverted byte-identical (`git status
+--short`/`git diff --stat` both empty after), suite re-ran clean immediately after. No open
+review threads or comments on PR #358.
+
+Ran `python3 scripts/product_truth_check.py --fail-on-unwired`: **23/23**, up from 22/22 —
+confirmed `proving_symbol: build_github_source_snapshot_router` legitimately resolves to a real,
+non-test caller in `apps/api/app/main.py` (unlike sibling task FTF-04A04, this task's own scope
+is backend-only, so there is no Law-6 front-door gap being papered over). Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a04_connector.py`/`test_ftf_04a04_routes.py`/`test_ftf_04a07.py`
+— zero regressions. `uv run ruff check`/`ruff format --check` clean on all 6 changed files;
+`uv run mypy` — "Success: no issues found in 3 source files". Confirmed no Alembic migration in
+the diff, matching the packet's own "no independent schema change" contract.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A05 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: the acceptance clauses ("Snapshot exact commit tree and file
+hashes, recording LFS/submodules/truncated listing completion" and "Independent review, exact
+merged commit, real relevant integration and negative-test evidence recorded") and the
+negative_acceptance clause ("Missing critical objects/unsafe archives block immutable complete
+snapshot rather than proceed with partial evidence") all genuinely met — confirmed by the direct
+code read, the independently rerun test suites, and this review's own fault injection above.
+
+**Result: CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-04A05 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`f17260c158b2858b0fbadd01ae60495ba0eecf71`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-04A05']` updated).
+`scripts/status.py`: `93/300` -> `94/300` certified; product-true `22/22` -> `23/23`. No open
+owner ask. `docs/certifications/ledger.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated
+this shift. No relay task work performed — certification-only shift, per scope. PR #359
+(FTF-0500B) left untouched, still open/unmerged.
+
 ## 2026-09-28T11:30:00Z — FTF-H004 — Control plane: CERTIFIED (PR #354, session https://claude.ai/code/session_01VArQ9CEsLoQMEUN4RGSPgH)
 
 Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR

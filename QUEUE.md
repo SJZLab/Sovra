@@ -1,4 +1,35 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T15:20:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01DmDPEKYgnfDV64NHzTX8wL, triggered by the `pull_request.opened`
+  webhook for PR #359) — reviewed **FTF-04A05 (GitHub source snapshot implementation)**,
+  **CERTIFIED**. `docs/spec-matrix.yaml` showed two `PROVISIONAL` items: FTF-04A05 (PR #358,
+  already merged to `main`, genuinely unclaimed) and FTF-0500B (PR #359, the PR that triggered
+  this webhook — still open/unmerged, nothing on `main` yet to certify, left untouched per
+  standing precedent). Session-ID check: PR #358's own two commits both carry `Claude-Session:
+  .../session_012JU5T7hSZSU9qu8d7NjkQx` — no overlap, independent per Law 4.
+
+  Independently confirmed PR #358's own CI runs reached `completed`/`success` on all checks on
+  the real PR head commit `21a08fe0644e7e70c96edfe1374bd3e769347e4b`, including the new
+  `github-source-snapshot-integration` job. Read the full diff directly (connector + CRUD +
+  routes + `main.py` wiring). Delegated the independent verification pass to a fresh subagent
+  with explicit instructions to re-derive every claim rather than trust the PR narrative:
+  independently reran all three real evidence suites (including the real-Postgres integration
+  test, freshly provisioning local PostgreSQL 16 in this sandbox), ran an own fault injection
+  (disabled `_validate_entry_path_safety`'s body) that produced one genuine, specific failure on
+  the unsafe-archive negative check, reverted byte-identical (`git status`/`git diff` both empty
+  after). Ran `product_truth_check.py --fail-on-unwired` (22/22 -> 23/23, confirmed
+  `proving_symbol: build_github_source_snapshot_router` resolves to a real caller in `main.py`).
+  Regression swept `test_ftf_04a01.py`/`test_ftf_04a04_connector.py`/`test_ftf_04a04_routes.py`/
+  `test_ftf_04a07.py` — zero regressions. Task contract re-pulled via `tools/r1_handoff.py` — both
+  acceptance clauses and the negative_acceptance clause genuinely met. No open review threads on
+  PR #358. Full evidence in `docs/certifications/ledger.md`'s own new FTF-04A05 entry.
+
+  `docs/spec-matrix.yaml` FTF-04A05 set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to merge commit `f17260c158b2858b0fbadd01ae60495ba0eecf71`.
+  `sync_certified_status()` run directly. `scripts/status.py`: `93/300` -> `94/300` certified;
+  product-true `22/22` -> `23/23`. No open owner ask. This shift is certification-only — no relay
+  task work, no action taken on PR #359 (FTF-0500B) beyond noting it remains open.
+
 Updated: 2026-09-28T15:00:00Z (scheduled relay shift, session
   https://claude.ai/code/session_01WXPYTLbfBkkBH2SCwTrrYL) — STEP 0: hash-checked CLAUDE.md
   (match, `sha256sum CLAUDE.md` == `CLAUDE.md.sha256`). Read `BLOCKER.md` in full: both entries
@@ -7162,9 +7193,9 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-0500B** ("S3/MinIO source validation + metadata preview") — submitted PROVISIONAL via
-**PR pending** (opened this shift; branch `claude/wizardly-fermat-lp04ue` → `main` — see this
-file's own top dated entry and `docs/certifications/queue.md`'s matching entry for the full
-evidence record, updated with the real PR link once created).
+**PR https://github.com/SJZLab/Sovra/pull/359** (branch `claude/wizardly-fermat-lp04ue` →
+`main` — still open/unmerged as of the 2026-09-28T15:07:00Z certifier shift below; not yet
+eligible for certification, nothing on `main` to certify until it merges).
 `apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` is the real connector: a
 real, paginated, bounded `ListObjectVersions` call against a real S3/MinIO-compatible endpoint,
 signed via `storage_semantics_client.py`'s own real SigV4 `sign_request` (FTF-R017, CERTIFIED)
@@ -7192,6 +7223,14 @@ certified (Law 2 — this is a submission, not a certification). Regression swep
 `docs/spec-matrix.yaml`'s own FTF-0500B entry and `docs/certifications/queue.md`'s matching dated
 entry. Not self-certified (Law 4) — independent Control-plane L2 review and a real CI run on the
 opened PR are required before certification.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A05** ("GitHub
+source snapshot implementation") as a pending item; it was independently reviewed and CERTIFIED
+(merge commit `f17260c158b2858b0fbadd01ae60495ba0eecf71`) — see "## Done" for the certification
+summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history
+and evidence.
+
+Superseded by the certification above, kept verbatim for the record:
 
 **FTF-04A05** ("GitHub source snapshot implementation") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/358** (branch `claude/wizardly-fermat-yfpaot` →

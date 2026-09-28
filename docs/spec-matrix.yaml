@@ -3065,10 +3065,10 @@ FTF-04A04:
     tests/integration/test_ftf_04a04_github_branch_ref.py,
     apps/web/tests/ftf_04a04.spec.ts
 FTF-04A05:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: GitHub source snapshot implementation
-  evidence_hash: ''
+  evidence_hash: f17260c158b2858b0fbadd01ae60495ba0eecf71
   implementation_state: IMPLEMENTED
   notes: |-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06;
@@ -3140,9 +3140,19 @@ FTF-04A05:
     job mirroring `github-branch-ref-integration`'s own real `services: postgres`
     container pattern exactly.
 
-    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI
-    run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+    Independently re-verified and CERTIFIED (control plane, session
+    session_01DmDPEKYgnfDV64NHzTX8wL): PR #358 merged as f17260c, real CI green on
+    head 21a08fe (37/37 checks incl. github-source-snapshot-integration), all three
+    proving_test suites independently rerun against a freshly-provisioned local
+    PostgreSQL 16 -- clean. Own fault injection distinct from the producer's own
+    (disabled `_validate_entry_path_safety`'s body): the unsafe-archive negative
+    check genuinely failed, reverted byte-identical (git diff/status confirmed
+    clean). ruff/mypy clean on the changed files. product_truth_check.py
+    --fail-on-unwired confirmed 23/23, proving_symbol build_github_source_snapshot_router
+    resolves to a real caller in apps/api/app/main.py. Task contract re-pulled via
+    tools/r1_handoff.py packet FTF-04A05 -- both acceptance clauses and the
+    negative_acceptance clause genuinely met. No open review threads on PR #358.
+  proof_state: L2-CERTIFIED
   proving_symbol: build_github_source_snapshot_router
   proving_test: tests/tasks/test_ftf_04a05.py, tests/tasks/test_ftf_04a05_routes.py,
     tests/integration/test_ftf_04a05_github_source_snapshot.py
