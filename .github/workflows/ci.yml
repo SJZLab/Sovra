@@ -285,6 +285,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a26.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
+      - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a03_connector.py
+      - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing route-boundary, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a03_routes.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1339,6 +1343,56 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real TargetSourceSnapshot evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a07_target_source_snapshot.py
+
+  github-repository-listing-integration:
+    # FTF-04A03: real Postgres GitHub accessible-repository listing
+    # evidence (Section 6.8A/7A.1-7A.2/9/45/65-67/77/81) -- two real
+    # organizations (each with a real project), a real uvicorn server
+    # proving the organization_admin-only RBAC boundary, the
+    # cross-organization project-ID IDOR case (denied identically to
+    # missing, no audit row for it), a real local HTTPS
+    # `GET /installation/repositories`-shaped GitHub fixture (this repo's
+    # interactive dev sandbox has no route to the public internet -- same
+    # disclosed finding test_ftf_04a02.py/test_ftf_04a03_connector.py
+    # already made), and this task's own real audit evidence: a
+    # successful listing writes a real, queryable audit row whose details
+    # never contain the raw credential, and a denied listing (a real
+    # revoked-credential HTTP 401 from the fixture) writes its own
+    # distinct audit action rather than silently vanishing on rollback (a
+    # real defect this task's own test caught during development -- see
+    # `github_repository_listing_crud.py`'s own module docstring). No
+    # OpenBao needed -- this step never persists a credential. Same real
+    # `services: postgres` container pattern as
+    # target-source-snapshot-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a03
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a03"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a03
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real GitHub accessible-repository listing evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a03_github_repository_listing.py
 
   component-bindings-integration:
     # FTF-R002: real Postgres ComponentBinding/ComponentSyncOutbox evidence

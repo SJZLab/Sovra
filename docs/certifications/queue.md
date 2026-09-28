@@ -18991,3 +18991,44 @@ full evidence breakdown; `QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: 
 `89/300` certified; product-true unchanged `22/22`. No open owner ask.
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
+
+## 2026-09-28 — FTF-04A03 — GitHub accessible-repository selector UI (relay submission)
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-h2iqrm`. Submitted PROVISIONAL.
+See `QUEUE.md`'s matching 2026-09-28T01:18:18Z entry and `PROGRESS.md`'s matching dated entry for
+the full PEV record (dependency-frontier recomputation, the disclosed backend scope refinement,
+the real audit-write defect found and fixed via `tests/integration/
+test_ftf_04a03_github_repository_listing.py`, and the full verification-command output).
+
+**Summary for Control-plane review:**
+- **Files:** `apps/api/app/target_connectors/github_accessible_repository_listing.py` (new
+  connector), `github_repository_listing_crud.py` (new CRUD/audit layer),
+  `github_repository_listing_routes.py` (new route, wired into `apps/api/app/main.py`),
+  `apps/web/components/target-application/github_accessible_repository_selector_ui.tsx` (the
+  packet's own named frontend file).
+- **Tests:** `tests/tasks/test_ftf_04a03_connector.py`, `tests/tasks/test_ftf_04a03_routes.py`,
+  `tests/integration/test_ftf_04a03_github_repository_listing.py`,
+  `apps/web/tests/ftf_04a03.spec.ts` (5 tests).
+- **Disclosed scope refinement:** FTF-04A02 (CERTIFIED) validates only one already-named
+  repository; this task adds the real repository-*listing* capability Section 7A.2/this task's
+  own acceptance clause need, as new additive files rather than reopening FTF-04A02's own
+  CERTIFIED evidence (Law 15) or fabricating a placeholder list (Law 11). Full reasoning in
+  `docs/spec-matrix.yaml`'s own FTF-04A03 entry.
+- **Real defect found and fixed during this shift (Law 1):** a denied listing's own audit event
+  was silently rolled back with its propagated exception in the first draft; fixed with an
+  explicit intra-transaction commit before re-raising (`github_repository_listing_crud.py`'s own
+  docstring has the full reasoning). The integration test's own real-Postgres audit-row assertion
+  caught this for real, not merely disclosed after the fact.
+- **CI:** added job `github-repository-listing-integration` (real `services: postgres`, no
+  OpenBao needed -- no secret is ever persisted by this task) and two new `gate` steps for the
+  connector/route negative-test proofs.
+- **Verification run locally before submission:** `ruff check .`/`ruff format --check .`/
+  `mypy .` clean repo-wide; `pnpm run lint`/`format:check`/`typecheck` clean; `pnpm run test`
+  32/32; `validate_spec.py --strict` clean; `verify_task.py --task FTF-04A03 --stage task`
+  reports `BLOCKED` (expected/disclosed, same two-commit pattern as FTF-0402/FTF-04A26/FTF-04A02);
+  `product_truth_check.py --fail-on-unwired` unchanged 22/22; `status.py` unchanged 89/300
+  certified. Regression swept every `test_ftf_04a*.py` file plus `test_ftf_0202.py` -- zero
+  regressions.
+
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification. No open owner ask.

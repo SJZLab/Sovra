@@ -1,5 +1,64 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-28T01:18:18Z (scheduled autonomous relay shift, branch
+  `claude/wizardly-fermat-h2iqrm`) — submitted **FTF-04A03 (GitHub accessible-repository selector
+  UI)** PROVISIONAL. Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`
+  (never trusting `spec/tasks.json`'s own stale bootstrap-time `ready` flag): of 12 dependency-ready
+  tasks, PR #342 (FTF-0902), #337 (FTF-0601) and #335 (FTF-0500D) already had an open PR in flight;
+  FTF-0212/FTF-0214/FTF-0304/FTF-04A03/FTF-04A15/FTF-0500A/FTF-1201/FTF-1703/FTF-H004 were genuinely
+  unclaimed. Picked FTF-04A03 -- dependencies FTF-04A01/FTF-04A02 both confirmed CERTIFIED, and it
+  is the direct next step in the target-connector track FTF-04A02 unblocked last shift.
+
+  Disclosed scope refinement (recorded in `docs/spec-matrix.yaml`'s own FTF-04A03 entry in full):
+  the task packet's own file list names only the frontend component/test, but this task's own
+  acceptance clause ("Render only credential-accessible repositories with pagination") needs a real
+  backend call that lists repositories -- FTF-04A02 (CERTIFIED) deliberately validates only one
+  already-named repository (`GET /repos/{owner}/{repo}`), never enumerating a credential's
+  accessible set (its own module docstring names that boundary explicitly). Rather than reopen that
+  CERTIFIED module (Law 15) or fabricate a placeholder list client-side (Law 11), added a new,
+  additive sibling connector module (`github_accessible_repository_listing.py`, real
+  `GET /installation/repositories` with real `Link: rel="next"` pagination), a CRUD/audit layer
+  (`github_repository_listing_crud.py`), and a new route
+  (`POST .../target-connections/github-repositories`, `github_repository_listing_routes.py`, wired
+  into `apps/api/app/main.py`, same `organization_admin`-only role boundary FTF-04A01 established)
+  -- plus the packet's own named frontend component
+  (`github_accessible_repository_selector_ui.tsx`), which renders exactly what the real backend
+  returns and never auto-selects (selection state starts `null`, set only inside a real click
+  handler).
+
+  A real defect was found and fixed during this shift's own PEV cycle, not merely disclosed after
+  the fact (Law 1): the first draft re-raised a denied-listing's `GitHubConnectionError` from inside
+  the same session `tenant_scoped_session_for` rolls back on any exception, silently discarding the
+  "list_denied" audit event Section 6.8A requires ("connection creation and validation are
+  audited") right along with it. `tests/integration/test_ftf_04a03_github_repository_listing.py`'s
+  own real-Postgres audit-row assertion caught this for real; fixed by having the CRUD layer commit
+  that one audit row itself before re-raising (see the CRUD module's own docstring for the full
+  reasoning).
+
+  Tests: `tests/tasks/test_ftf_04a03_connector.py` (real local HTTPS GitHub-REST-API-v3-shaped
+  fixture with a real self-signed CA, same precedent `test_ftf_04a02.py` established -- real
+  pagination/401/403/malformed-response checks, two disclosed fault injections), `tests/tasks/
+  test_ftf_04a03_routes.py` (real uvicorn + `MagicMock` session factory, same precedent
+  `test_ftf_04a01.py` established), `tests/integration/test_ftf_04a03_github_repository_listing.py`
+  (real Postgres, two real organizations/projects, cross-organization IDOR denial, real audit-row
+  assertions for both a successful and a denied listing -- no OpenBao needed, no secret is ever
+  persisted here), and `apps/web/tests/ftf_04a03.spec.ts` (5 tests, Vitest + RTL + jsdom). Added a
+  new CI job (`github-repository-listing-integration`, real `services: postgres`, no OpenBao) and
+  two new `gate` job steps for the connector/route negative-test proofs.
+
+  `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (302 source files). `pnpm run
+  lint`/`format:check`/`typecheck` clean. `pnpm run test`: 32/32 (7 files, all pre-existing plus the
+  new one). `python3 scripts/validate_spec.py --strict` clean. `python3 scripts/verify_task.py
+  --task FTF-04A03 --stage task` reports `BLOCKED`, expected/disclosed (same two-commit pattern as
+  FTF-0402/FTF-04A26/FTF-04A02: `spec/verification-map.json`'s entry is added in a later certifying
+  commit). `product_truth_check.py --fail-on-unwired` unchanged 22/22 (`proving_symbol` left blank
+  -- no live caller wires this route into a setup UI flow yet, same disclosed precedent as
+  FTF-0302/FTF-0303/FTF-04A08/09/10/25/26). `status.py` unchanged 89/300 certified, 22 product-true.
+  Regression swept `test_ftf_04a01.py`/`test_ftf_04a02.py`/every other `test_ftf_04a*.py` file --
+  zero regressions. `docs/spec-matrix.yaml` FTF-04A03 set to `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN` / `implementation_state: IMPLEMENTED`. Not self-certified (Law 4) --
+  awaiting independent Control-plane L2 review. No open owner ask.
+
+Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01S2SmhwUGZzSEmyzHhJiTTg, triggered by the `pull_request.opened`
   webhook for PR #344) — reviewed **FTF-04A02 (GitHub App/token read-only secret integration)**,
   **CERTIFIED**. Session-ID check: both of PR #344's commits carry `Claude-Session:
