@@ -9334,3 +9334,39 @@ and one disclosed, non-blocking fragility recorded above (the `check()`/`FAILURE
 false-PASS-under-bare-pytest gap, not exercised by CI's own correct invocation). Both fault
 injections performed by this review independently confirmed the role-boundary gate and the
 terminal status guard are genuinely load-bearing, not decorative. No open notes or gaps left.
+
+**Landing addendum (2026-09-28, session https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2):**
+this certification's own PR (#348) was left open and unmerged, blocked by a real merge conflict
+(`mergeable_state: dirty`) — FTF-0500A's own submission (PR #347) merged to `main` afterward and
+touched the same shared doc files (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`).
+Session-ID check for this landing session: neither PR #346's commits
+(`session_01FSaDWJkmkJ1Bpk583aZAaE`) nor PR #348's own commit
+(`session_01WiDx2X5iJ7YYyVWtYj3k7f`) overlap this session's ID — independent per Law 4 of both
+the original producer and the certifying session above. Before pushing, this session
+independently reproduced the certification's own evidence rather than trusting it on the page:
+reran `test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py` (both "all checks passed"),
+independently confirmed PR #346's CI run (36365631417) 34/34 `success` via a fresh API call,
+confirmed the `organization_admin`-only role gate and the no-auto-select frontend code path by
+direct read, ran `product_truth_check.py --fail-on-unwired` (22/22 unchanged),
+`validate_spec.py --strict` (clean, after `git fetch --unshallow`), the full `ruff`/`mypy`/`pnpm
+lint`/`format:check`/`typecheck`/`vitest run` (42/42) sweep, and stood up a real local Postgres
+16 role/database (`sovra_migrate`/`sovra_ftf04a03`, matching CI's own contract) to rerun
+`tests/integration/test_ftf_04a03_github_repository_listing.py` directly — "all checks passed".
+Regression swept `test_ftf_0202.py`/`test_ftf_04a01.py`/`test_ftf_04a02.py` — zero regressions
+(same expected `TenantContextError` diagnostic noted above). Did not repeat the two source-level
+fault injections above verbatim (widening the role gate / disabling the status guard): this
+sandbox's own auto-mode permission classifier denied re-editing
+`github_repository_listing_routes.py` to widen the role set (`[Modify Shared Resources]`-class
+denial), so this session relied instead on (a) the certifying session's own already-disclosed,
+byte-identical-reverted fault-injection results above and (b) this task's own suite already
+containing a self-contained fault-injection test
+(`test_fault_injection_get_only_guarantee_is_load_bearing` in
+`tests/tasks/test_ftf_04a03_connector.py`, which injects and reverts the GET-only guard from
+within the test process itself, not requiring a source edit) — confirmed passing in this
+session's own rerun above, proving that guard's load-bearing property directly. Resolved the
+merge conflict (`PROGRESS.md`/`QUEUE.md` — additive, newest-first, no reordering needed;
+`docs/certifications/queue.md` — additive, chronological, FTF-0500A's earlier submission entry
+placed before this entry; `docs/spec-matrix.yaml` merged automatically, no conflict) and pushed
+PR #348's branch, then merged it. No new finding beyond what is already recorded above; this
+addendum documents only who landed the work and how its claims were independently reproduced
+before landing, not a new review.

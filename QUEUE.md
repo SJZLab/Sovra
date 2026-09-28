@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T05:10:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2, triggered by the `pull_request.opened`
+  webhook for PR #349) — landed the FTF-04A03 certification below: its own PR (#348) was open and
+  independently written but blocked by a real merge conflict against `main` (FTF-0500A's own
+  submission, PR #347, merged afterward and touched the same shared doc files). Session-ID check:
+  neither PR #346 (`session_01FSaDWJkmkJ1Bpk583aZAaE`) nor PR #348
+  (`session_01WiDx2X5iJ7YYyVWtYj3k7f`) overlaps this session's own ID — independent of both.
+  Independently reproduced the certification's own evidence before pushing (CI 34/34 rechecked,
+  both no-DB test files rerun, a real local Postgres 16 role/database stood up for the
+  integration test, full ruff/mypy/pnpm lint/format/typecheck/vitest sweep, `validate_spec.py
+  --strict`, `product_truth_check.py --fail-on-unwired` 22/22, zero regressions) — full detail in
+  `docs/certifications/ledger.md`'s FTF-04A03 entry's own landing addendum. Resolved the merge
+  conflict (additive doc-file merges, `spec-matrix.yaml` merged clean) and merged PR #348.
+  FTF-0500A (PR #347's own submission) remains PROVISIONAL, not reviewed by this session — a
+  fresh independent certifier is still required before it can move to CERTIFIED (Law 4).
+
 Updated: 2026-09-28T03:20:00Z (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01WiDx2X5iJ7YYyVWtYj3k7f, triggered by the `pull_request.opened`
   webhook for PR #347) — reviewed **FTF-04A03 (GitHub accessible-repository selector UI)**,
