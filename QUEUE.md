@@ -58,6 +58,8 @@ Updated: 2026-09-28T01:18:18Z (scheduled autonomous relay shift, branch
   `proof_state: L1-PROVEN` / `implementation_state: IMPLEMENTED`. Not self-certified (Law 4) --
   awaiting independent Control-plane L2 review. No open owner ask.
 
+  PR: https://github.com/SJZLab/Sovra/pull/346 (branch `claude/wizardly-fermat-h2iqrm` → main).
+
 Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01S2SmhwUGZzSEmyzHhJiTTg, triggered by the `pull_request.opened`
   webhook for PR #344) — reviewed **FTF-04A02 (GitHub App/token read-only secret integration)**,
