@@ -9622,3 +9622,64 @@ connection-level revocation guard is genuinely load-bearing, not decorative. FTF
 other PROVISIONAL item found pending) was left untouched this shift — already independently
 claimed by a concurrent Control-plane session via PR #356 at review time; revisit only if that
 PR is not landed by the next certifier shift.
+
+## FTF-04A05 — GitHub source snapshot implementation
+- Criterion ID: FTF-04A05
+- PR: https://github.com/SJZLab/Sovra/pull/358 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: f17260c158b2858b0fbadd01ae60495ba0eecf71
+- Validated-by: session https://claude.ai/code/session_015vKY7Ttvy3ZEv7ds7w2m31 (independent — PR #358's
+  commits carry `Claude-Session: .../session_012JU5T7hSZSU9qu8d7NjkQx` and `.../session_018NMJgNwTV1tawdME5cFXyt`;
+  no overlap with this session's own ID)
+- Date: 2026-09-28
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR #364
+  (FTF-0500C, still open/unmerged -- not certifiable, left untouched). Grepped `docs/spec-matrix.yaml` for
+  `certification_state: PROVISIONAL`: FTF-04A05 and FTF-H005, both merged and unclaimed.
+- Re-read the diff (13 files, +4182/-8) with focus on
+  `apps/api/app/target_connectors/github_source_snapshot_resolver.py`: `truncated: true` tree listing raises
+  `IncompleteSourceTreeError`; absolute/NUL/`..` paths raise `UnsafeSourceTreeEntryError`; missing commit tree
+  raises `MissingCommitTreeError`; submodule (`type: commit`) and LFS entries are recorded.
+- CI: PR #358's head has 37/37 check runs `completed`/`success` (incl. `gate` and
+  `github-source-snapshot-integration`); the merge commit differs from it only by QUEUE/PROGRESS doc records.
+- Reran `uv run python3 tests/tasks/test_ftf_04a05.py` and `test_ftf_04a05_routes.py`: all checks passed.
+  (The integration suite needs the CI Postgres service and was not rerun locally; CI's green run is the evidence.)
+- **Own fault injection (Law 1):** changed `if truncated:` to `if False and truncated:` in the resolver;
+  `test_ftf_04a05.py` reported `1 failed` -- "a real truncated tree listing ... blocks the snapshot rather than
+  proceeding with partial evidence". Reverted via `git checkout` (md5sum `81a4e20eb60ffc1b6dbdaada2c01ecb2` before
+  and after; tree clean). Note: these tests are script-style (`check()` + exit code, as CI runs them), so
+  `pytest` alone reports pass regardless -- the fault injection was run via `python3`, the CI harness.
+- `product_truth_check.py --fail-on-unwired`: 23/23. `proving_symbol` is blank and the module has routes wired
+  in `apps/api/app/main.py`; the pure-connector "no live UI caller yet" disclosure was accepted as in prior tasks.
+- Contract re-pulled (`tools/r1_handoff.py packet FTF-04A05`): acceptance (exact commit tree + file hashes,
+  LFS/submodule/truncation recorded) and negative_acceptance (missing critical objects/unsafe archives block a
+  complete snapshot) both met by the code read and the fault injection above.
+- **Result: CERTIFIED.** spec-matrix set CERTIFIED / L2-CERTIFIED, `evidence_hash` = merge commit;
+  `sync_certified_status()` updated tasks.json/TRACKER.json.
+
+## FTF-H005 — Route identity, fallback and cache provenance
+- Criterion ID: FTF-H005
+- PR: https://github.com/SJZLab/Sovra/pull/361 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: 2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1
+- Validated-by: session https://claude.ai/code/session_015vKY7Ttvy3ZEv7ds7w2m31 (independent — PR #361's
+  commits carry `Claude-Session: .../session_012JU5T7hSZSU9qu8d7NjkQx`; no overlap)
+- Date: 2026-09-28
+- Re-read the diff: `packages/litellm_client/route_attestation.py::attest_route` (approved-set check before any
+  network call; cache-bypass field on every probe; route identity VERIFIED only with a deployment fingerprint;
+  every gateway failure a distinct non-ATTESTED state) and
+  `packages/model_catalog/route_snapshot.py` (`pin_route_identity` refuses UNVERIFIED identity;
+  `require_pinned_route_unchanged` raises `RouteQualificationInvalidError` on re-attestation failure,
+  fingerprint change, or resolved-model change).
+- CI: PR #361's head has 37/37 check runs `completed`/`success`, incl. `gate`.
+- Reran `tests/tasks/test_ftf_h005_route_attestation.py` and `test_ftf_h005_route_snapshot.py`: all checks passed.
+- **Own fault injections (three, each reverted via `git checkout`, tree clean):**
+  (1) `"cache": {"no-cache": False}` -> FAIL "every real attestation request carries LiteLLM's own real
+  cache-bypass field"; (2) fingerprint check forced true -> FAIL "route identity is UNVERIFIED when the
+  fingerprint is missing, even with a real model"; (3) approved-set check disabled -> FAIL "an unapproved model id
+  is refused before any network call".
+- `product_truth_check.py --fail-on-unwired`: 23/23; blank `proving_symbol` accepted under the same "no live
+  job-admission caller yet" precedent as FTF-H004.
+- Contract re-pulled (`tools/r1_handoff.py packet FTF-H005`): acceptance (alias/upstream change invalidates
+  qualification; sensitive request denied, not silently rerouted) and negative_acceptance (unknown upstream
+  cannot claim reproducible/private qualification; cache must not replace probes) both met. The acceptance
+  clause "no full release claim until all mapped scenarios pass" is untouched -- this certifies the task only.
+- **Result: CERTIFIED.** spec-matrix set CERTIFIED / L2-CERTIFIED, `evidence_hash` = merge commit.
+  `scripts/status.py`: 93/300 -> 95/300 certified; product-true unchanged 23/23.

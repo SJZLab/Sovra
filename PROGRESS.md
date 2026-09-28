@@ -1,4 +1,10 @@
 # PROGRESS — Sovra
+## 2026-09-28T19:30:00Z — Control plane: certified FTF-04A05 and FTF-H005 (session https://claude.ai/code/session_015vKY7Ttvy3ZEv7ds7w2m31)
+
+Both merged PROVISIONAL items independently verified (diff re-read, CI 37/37 on PR heads, own fault
+injection per item, packet acceptance/negative_acceptance met) and set CERTIFIED / L2-CERTIFIED. 93 -> 95/300;
+product-true 23/23 unchanged. FTF-0500C (PR #364) not yet merged -- deferred.
+
 ## 2026-09-28T17:11:00Z — FTF-H005 — relay: PR #361 confirmed green and merged (session https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt)
 
 Subscribed to PR #361's own GitHub activity immediately after opening it. The real

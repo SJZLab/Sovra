@@ -19975,3 +19975,8 @@ opened PR are required before certification.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
 - **PR:** https://github.com/SJZLab/Sovra/pull/361 (branch `claude/wizardly-fermat-q43eub` →
   `main`, open).
+
+## 2026-09-28 — Control plane: certify FTF-04A05 (PR #358) and FTF-H005 (PR #361)
+Independent certifier session https://claude.ai/code/session_015vKY7Ttvy3ZEv7ds7w2m31. Both CERTIFIED / L2-CERTIFIED; see docs/certifications/ledger.md.
+PR #364 (FTF-0500C) is still open/unmerged (head CI unstable at review time) -- not certifiable under the
+CERTIFY procedure yet; left PROVISIONAL-pending, untouched. Certify after the relay merges it on green.

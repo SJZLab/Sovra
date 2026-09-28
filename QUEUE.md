@@ -1,4 +1,10 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T19:30:00Z (Control-plane certifier, session https://claude.ai/code/session_015vKY7Ttvy3ZEv7ds7w2m31) —
+  **FTF-04A05 (PR #358) and FTF-H005 (PR #361) CERTIFIED** (L2-CERTIFIED; evidence_hash = merge commits
+  f17260c / 2e9a575). Independent (no shared session IDs), CI 37/37 green on both PR heads, own fault
+  injections reddened the tests (see docs/certifications/ledger.md). Certified count 93 -> 95/300; 0 merged
+  PROVISIONAL remain. PR #364 (FTF-0500C) is open/unmerged: not certified, awaiting relay merge on green.
+  No open owner ask.
 Updated: 2026-09-28T17:11:00Z (same scheduled shift, branch `claude/wizardly-fermat-q43eub`) —
   **PR #361 (FTF-H005) confirmed green and merged.** Subscribed to PR #361's own GitHub activity
   immediately after opening it; the real `check_suite.completed` event on the actual head commit
