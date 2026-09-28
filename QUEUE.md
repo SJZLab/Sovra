@@ -1,4 +1,39 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T13:00:00Z (scheduled relay shift, session
+  https://claude.ai/code/session_012JU5T7hSZSU9qu8d7NjkQx) — STEP 0: hash-checked CLAUDE.md
+  (match) and re-synced this branch onto `origin/main` (was already fast-forward-mergeable, no
+  conflict). STEP 0.2: no `cognee-cli` in this environment — text-search fallback (`grep`/direct
+  file reads against `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed per standing
+  instruction.
+
+  STEP 1: recomputed the dependency-ready frontier from `docs/spec-matrix.yaml`'s real
+  `certification_state` joined against `docs/TASK_INDEX.md`'s own structured `Dependencies`
+  column (93 CERTIFIED/PROMOTED, 0 PROVISIONAL at shift start — both FTF-04A04 and FTF-H004,
+  the prior shift's own in-flight items, were independently certified by Control-plane shifts
+  earlier the same day). 13 of the remaining 207 tasks now have every dependency CERTIFIED — up
+  from the last relay tracking entry's own 10 (PR #349), because FTF-04A04's and FTF-H004's
+  certifications newly unblocked FTF-04A05, FTF-H005, FTF-0500B and FTF-0500C. Checked all open
+  PRs and searched PR titles for each of the four newly-unblocked IDs — none claimed; the other
+  nine frontier items (FTF-0212/FTF-0214/FTF-0304/FTF-0500D/FTF-0601/FTF-0902/FTF-04A15 each
+  already have a live open PR; FTF-1201/FTF-1703 remain disclosed-blocked by genuine sandbox
+  limits per the prior tracking entry) were left untouched.
+
+  **Working: FTF-04A05** ("GitHub source snapshot implementation"). Task contract pulled via
+  `python tools/r1_handoff.py packet FTF-04A05 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  (`source_sha256` matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`) — a real, resolvable DoD,
+  not a title-only task. PEV cycle followed (P: read FTF-04A01/04A04/04A07's own real code first,
+  no changes; E: implemented + wrote real tests, ran them against a real local HTTPS fixture and a
+  real local PostgreSQL 16, showed the negative_acceptance tests genuinely fail via disclosed fault
+  injection before passing; V: `product_truth_check.py --fail-on-unwired` 22/22 → 23/23, no
+  TRACKER). Submitted PROVISIONAL — see this file's own "## Provisional" section below and
+  `docs/certifications/queue.md`'s matching entry for the full evidence record.
+
+  STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
+  shift, before compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A05) is
+  `L1-PROVEN`, no blocking defect found by this session's own review — awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No open
+  owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 Updated: 2026-09-28T11:30:00Z (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01VArQ9CEsLoQMEUN4RGSPgH, triggered by the `pull_request.opened`
   webhook for PR #355) — reviewed **FTF-H004 (Authorized LiteLLM catalog and revocation
@@ -7082,6 +7117,61 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-04A05** ("GitHub source snapshot implementation") — submitted PROVISIONAL this shift.
+`apps/api/app/target_connectors/github_source_snapshot_resolver.py` is the real connector:
+reuses FTF-04A04's own `resolve_ref_to_commit` unmodified, then adds three further real GitHub
+REST API v3 calls (`GET .../git/commits/{sha}` for the commit's own real, canonical tree hash;
+`GET .../git/trees/{tree_sha}?recursive=1` for the full tree, whose real `truncated` field is this
+task's own "missing critical objects" negative_acceptance signal; `GET .../git/blobs/{sha}` for a
+root `.gitattributes` blob, to detect real Git LFS `filter=lfs` declarations). Submodules are
+detected structurally from the tree's own real `type: "commit"` gitlink entries. "Unsafe archive"
+(this task's own other negative_acceptance half) is a real, tested check that no tree entry's own
+path can escape the repository root if materialized (absolute path / `..` segment / embedded NUL
+byte) — this task does not download a real tarball archive at all (GitHub's own archive endpoints
+always redirect to a separate `codeload.github.com` host this task's own contract does not
+authorize adding to the allowed destination set; `default_github_connector_policy()` disallows
+redirects by design). `apps/api/app/target_connectors/github_source_snapshot_crud.py` +
+`github_source_snapshot_routes.py` (new `POST .../target-connections/{connection_id}/github-source-snapshot`
+route, wired into `main.py`) compose this connector with FTF-04A07's own already-CERTIFIED
+`create_target_source_snapshot` — the real GitHub-backed sibling of FTF-04A07's own
+client-trusting `POST .../snapshots` route, re-deriving `commit_sha`/`tree_hash` from a real
+GitHub call rather than trusting a client-supplied value for either.
+
+Real fault injection (Law 1, disclosed) found a genuine gap in this submission's own first-draft
+test suite before it was fixed: the integration test's original "cross-organization project_id"
+scenario was confounded by the separately-CERTIFIED FTF-04A07 connection-ownership check
+downstream, which alone already happened to deny that exact request — disabling this task's own
+new `_authorize_project_or_raise` guard left every original negative test passing. A second,
+isolating scenario (a nonexistent project ID paired with a real, valid same-organization
+connection ID) was added, confirmed to genuinely fail with the guard disabled, and confirmed clean
+again after reverting byte-identical (md5sum confirmed matching before/after).
+
+Test evidence: `tests/tasks/test_ftf_04a05.py` (connector, no-DB, real local HTTPS fixture, 19
+checks incl. a disclosed GET-only fault injection), `tests/tasks/test_ftf_04a05_routes.py`
+(route-boundary, no-DB, 13 checks), `tests/integration/test_ftf_04a05_github_source_snapshot.py`
+(real, freshly-provisioned local PostgreSQL 16 + the same local HTTPS fixture, 14 checks) — all
+clean. `ruff check .`/`ruff format --check .` clean repo-wide (319 files); `mypy .` clean
+repo-wide (319 files); `pnpm run lint`/`typecheck`/`format:check` clean; `pnpm exec vitest run`
+48/48 unchanged (no frontend file touched). `validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired`: 22/22 → 23/23 (`proving_symbol` set to
+`build_github_source_snapshot_router`, a real non-test caller in `main.py` — this task's own
+scope carries no UI component, so there is no Law-6 front-door gap to disclose here, unlike
+FTF-04A04). `scripts/status.py`: unchanged 93/300 certified (Law 2 — this is a submission, not a
+certification). Regression swept `test_ftf_04a01.py`/`test_ftf_04a04_connector.py`/
+`test_ftf_04a04_routes.py`/`test_ftf_04a07.py` (no-DB) and
+`test_ftf_04a04_github_branch_ref.py` (real Postgres, re-provisioned fresh) — zero regressions.
+Full evidence in `docs/spec-matrix.yaml`'s own FTF-04A05 entry and this file's own top dated log
+entry. Not self-certified (Law 4) — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+Prior history, kept for the record: this paragraph previously named **FTF-H004** ("Authorized
+LiteLLM catalog and revocation semantics") as the current pending item; it was independently
+reviewed and CERTIFIED (merge commit `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`) — see "## Done"
+for the certification summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md`
+for the full history and evidence.
+
+Superseded by the certification above, kept verbatim for the record:
+
 **FTF-H004** ("Authorized LiteLLM catalog and revocation semantics") — submitted PROVISIONAL
 via **PR #354** (branch `claude/wizardly-fermat-wq6qdg` -> `main`).
 `packages/model_catalog/access_snapshot.py::build_access_snapshot`
