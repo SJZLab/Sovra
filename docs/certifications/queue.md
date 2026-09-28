@@ -19868,5 +19868,5 @@ independent Control-plane L2 review and a real CI run on the opened PR are requi
 certification.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-- **PR:** pending (opened this shift, see `QUEUE.md`'s own top dated entry for the link once
-  created).
+- **PR:** https://github.com/SJZLab/Sovra/pull/358 (branch `claude/wizardly-fermat-yfpaot` →
+  `main`, open).

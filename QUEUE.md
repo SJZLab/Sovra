@@ -25,8 +25,9 @@ Updated: 2026-09-28T13:00:00Z (scheduled relay shift, session
   no changes; E: implemented + wrote real tests, ran them against a real local HTTPS fixture and a
   real local PostgreSQL 16, showed the negative_acceptance tests genuinely fail via disclosed fault
   injection before passing; V: `product_truth_check.py --fail-on-unwired` 22/22 → 23/23, no
-  TRACKER). Submitted PROVISIONAL — see this file's own "## Provisional" section below and
-  `docs/certifications/queue.md`'s matching entry for the full evidence record.
+  TRACKER). Submitted PROVISIONAL via **PR https://github.com/SJZLab/Sovra/pull/358** (branch
+  `claude/wizardly-fermat-yfpaot` → `main`) — see this file's own "## Provisional" section below
+  and `docs/certifications/queue.md`'s matching entry for the full evidence record.
 
   STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
   shift, before compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A05) is
@@ -7117,7 +7118,9 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-**FTF-04A05** ("GitHub source snapshot implementation") — submitted PROVISIONAL this shift.
+**FTF-04A05** ("GitHub source snapshot implementation") — submitted PROVISIONAL via
+**PR https://github.com/SJZLab/Sovra/pull/358** (branch `claude/wizardly-fermat-yfpaot` →
+`main`).
 `apps/api/app/target_connectors/github_source_snapshot_resolver.py` is the real connector:
 reuses FTF-04A04's own `resolve_ref_to_commit` unmodified, then adds three further real GitHub
 REST API v3 calls (`GET .../git/commits/{sha}` for the commit's own real, canonical tree hash;
