@@ -8567,16 +8567,39 @@ FTF-H003:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h003.py
 FTF-H004:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Authorized LiteLLM catalog and revocation semantics
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-03, AF-04; scenarios=Q02; deps=FTF-0204, FTF-0205, FTF-0207,
-    FTF-0208, FTF-0209, FTF-H003
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=audit_hardening; requirements=AF-03, AF-04; scenarios=Q02; deps=FTF-0204, FTF-0205, FTF-0207,
+    FTF-0208, FTF-0209, FTF-H003 (all CERTIFIED). Built for real in two new modules: packages/model_catalog/access_snapshot.py::build_access_snapshot
+    combines FTF-0208''s own historic CatalogSnapshot with a fresh FTF-0207 AliasReconciliationResult
+    -- a second, independent left-join boundary (Section 3.2 "no authorization union" reapplied):
+    real safe fields attach only to an entry whose own catalog status is CALLABLE, never to a stale/removed
+    entry even if the fresh reconciliation still names it, and a reconciliation id absent from the
+    catalog entirely never becomes a new displayed entry. packages/litellm_client/access_guard.py::require_model_access
+    is the real fail-closed gate: (1) authorize_resource_ownership (FTF-H003) against litellm_connections,
+    (2) a fresh read of that connection''s own status column (a distinct, Factory-level "missing grant"
+    independent of the gateway''s own 401/403), (3) catalog.is_call_authorized (FTF-0208, unchanged).
+    This task''s own acceptance clause ("Real restricted gateway key cannot enumerate/probe metadata-only
+    models; revoke a once-valid model/key and verify new queued actions fail while history remains
+    visible") is proven with a real local HTTPS gateway (self-signed CA installed into this sandbox''s
+    trust store) across two real sequential discover_models/enrich_visible_models/reconcile_aliases
+    cycles (healthy credential -> revoked credential) in tests/tasks/test_ftf_h004.py, and with real
+    Postgres cross-tenant/revoked-connection/revoked-catalog denial evidence in tests/integration/test_ftf_h004_access_guard.py.
+    This task''s own negative_acceptance ("401/403 never invoke last-known-good execution; retries
+    of a disappearing catalog cannot silently restore access") is proven by a real retried still-revoked
+    discovery call never resetting access_state away from revoked, and by an explicitly-revoked LiteLLMConnection
+    denying access even when its own in-memory catalog still reports the model callable. Disclosed,
+    not hidden (same precedent every one of this task''s own dependencies already established): no
+    live job-admission/execution route exists anywhere in this repository yet to call require_model_access,
+    and no live UI/route calls build_access_snapshot -- docs/TASK_INDEX.md lists FTF-0214 ("Model
+    catalog UI") as the task that renders a catalog to an end user. proving_symbol stays blank and
+    product_truth_check.py''s product-true count is deliberately unchanged.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h004.py, tests/integration/test_ftf_h004_access_guard.py
 FTF-H005:
   certification_state: NONE
   criticality: MUST

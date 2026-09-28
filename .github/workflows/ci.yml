@@ -231,6 +231,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0209.py
       - name: FTF-0215 negative-test proof (Periodic sync workflow, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0215.py
+      - name: FTF-H004 negative-test proof (authorized catalog snapshot + real-gateway left-join/revocation, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h004.py
       - name: FTF-0210 negative-test proof (Real chat probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0210.py
       - name: FTF-0211 negative-test proof (Real streaming probe, no DB required)
@@ -549,6 +551,51 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real LiteLLM connection CRUD evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0201_litellm_connection_crud.py
+
+  litellm-access-guard-integration:
+    # FTF-H004: real Postgres authorized-access-guard evidence --
+    # require_model_access's own real ownership/status half: two real
+    # organizations with real litellm_connections (one owned+active, one
+    # owned+explicitly-revoked, one foreign), composed with FTF-H003's
+    # already-CERTIFIED authorize_resource_ownership and FTF-0208's
+    # already-CERTIFIED LastKnownGoodCatalog -- cross-tenant/missing
+    # connection IDOR denial (identical reason, no existence oracle), an
+    # explicitly-revoked Factory-level connection denying even a catalog
+    # that still reports the model callable, a real catalog-level
+    # revocation denying even an owned/active connection, and a
+    # never-successfully-discovered catalog denying by default --
+    # tests/integration/test_ftf_h004_access_guard.py. Same real
+    # `services: postgres` container pattern as
+    # litellm-connection-crud-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh004
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh004"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh004
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real authorized-access-guard evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_h004_access_guard.py
 
   trainable-artifact-schema-api-integration:
     # FTF-0301: real Postgres TrainableArtifact schema/API evidence -- two

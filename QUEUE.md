@@ -1,4 +1,121 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T10:05:00Z (scheduled autonomous relay shift, branch
+  `claude/wizardly-fermat-wq6qdg`) — submitted **FTF-H004 (Authorized LiteLLM catalog and
+  revocation semantics)** PROVISIONAL. STEP 0.1: read PROGRESS.md/QUEUE.md/
+  `docs/certifications/queue.md` fresh. CLAUDE.md.sha256 self-check matched `sha256sum
+  CLAUDE.md` directly. Checked GitHub directly (not merely this file's own tracking prose):
+  **PR #353 (this repository's own prior FTF-04A04 fix) is merged** (`89c0b0a` on `main`),
+  still awaiting independent Control-plane L2 review/certification -- no relay action left on
+  it, correctly reflected in "## Provisional" below. `cognee-cli` not installed in this
+  sandbox; text-search fallback active throughout this shift (STEP 0.2).
+
+  Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml`'s real
+  `certification_state` joined against `docs/TASK_INDEX.md`'s own canonical `Dependencies`
+  column: 12 items ready (FTF-0212, FTF-0214, FTF-0304, FTF-04A15, FTF-0500B, FTF-0500C,
+  FTF-0500D, FTF-0601, FTF-0902, FTF-1201, FTF-1703, FTF-H004). Checked every open PR (17
+  total, `#352/#349/#342/#337/#336/#335/#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194`)
+  directly against this list: FTF-0212 (#231), FTF-0214 (#295, blocked), FTF-0304 (#195/#194),
+  FTF-04A15 (#328), FTF-0500D (#335), FTF-0601 (#337) and FTF-0902 (#342) all already have an
+  open PR. FTF-0500B, FTF-0500C, FTF-1201, FTF-1703 and FTF-H004 are genuinely unclaimed.
+  Picked **FTF-H004** (`audit_hardening`, well-bounded, no new external resource -- FTF-0500B/
+  FTF-0500C's own acceptance needs a real S3/MinIO-shaped fixture and FTF-1703's own packet
+  needs a real dataset-training-count minimum this sandbox has no existing precedent for;
+  FTF-1201 overlaps this same connection-CRUD surface but is a later pick for a future shift).
+
+  `python3 tools/r1_handoff.py packet FTF-H004 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  re-pulled fresh (`source_sha256` matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`).
+  Inspected the real dependency chain directly before writing any code: `packages/litellm_client/
+  last_known_good_catalog.py` (FTF-0208, CERTIFIED) already separates historic/callable catalog
+  entries but only ever tracks a boolean `metadata_status`, never `packages/litellm_client/
+  alias_reconciliation.py` (FTF-0207, CERTIFIED)'s own real allowlisted `/model/info` field
+  values -- nothing in this repository combined the two. `packages/litellm_client/connection_
+  schema.py` (FTF-0201, CERTIFIED) models an administrator's explicit connection revocation as
+  a soft `status='revoked'` row, independent of anything the gateway itself reports -- a
+  distinct, Factory-level "missing grant" this task's own goal names but FTF-0208's own
+  catalog cannot see.
+
+  **Built for real** (path refined from the packet's own generic `packages/model-catalog/
+  access_snapshot.py`/`packages/litellm-client/access_guard.py` suggestion to this
+  repository's own real underscore-module layout, matching every prior task's own precedent):
+  `packages/model_catalog/access_snapshot.py::build_access_snapshot` combines FTF-0208's own
+  historic `CatalogSnapshot` with a fresh FTF-0207 `AliasReconciliationResult` as a second,
+  independent "no authorization union" boundary (Section 3.2) -- real safe fields attach only
+  to an entry whose own catalog status is `CALLABLE`, never to a stale/removed entry even if
+  the fresh reconciliation still names it, and a reconciliation id the catalog has never seen
+  never becomes a new displayed entry (this function only ever iterates the catalog's own
+  entries). `packages/litellm_client/access_guard.py::require_model_access` is the real
+  fail-closed gate a future job-admission/execution call site is required to pass: (1)
+  `authorize_resource_ownership` (FTF-H003, CERTIFIED) against `litellm_connections`, (2) a
+  fresh read of that connection's own `status` column (the Factory-level revocation half), (3)
+  `catalog.is_call_authorized` (FTF-0208, unchanged, reused not reimplemented).
+
+  **Real evidence, no mocked gateway:** `tests/tasks/test_ftf_h004.py` -- six pure/no-I/O
+  checks for `build_access_snapshot`'s left-join composition, plus one real local HTTPS
+  gateway round trip (self-signed CA installed into this sandbox's own trust store, same
+  precedent `tests/tasks/test_ftf_0207.py`/`test_ftf_0208.py` already established) across two
+  real sequential `discover_models`/`enrich_visible_models`/`reconcile_aliases` cycles (healthy
+  credential -> revoked credential): the real gateway's metadata-only alias
+  (`internal-mgmt-model`, advertised only via `/model/info`, never `/v1/models`) never appears
+  in the combined snapshot at all -- this task's own "Real restricted gateway key cannot
+  enumerate/probe metadata-only models" acceptance, proven through a real round trip, not only
+  at unit level; after the real revocation, the previously-callable alias remains visible
+  (downgraded to stale, no fields) and a real retried still-failing call never resets
+  `access_state` away from `revoked` -- this task's own negative_acceptance ("retries of a
+  disappearing catalog cannot silently restore access").
+
+  `tests/integration/test_ftf_h004_access_guard.py` -- real local PostgreSQL 16 (fresh scratch
+  `sovra_migrate` role/`sovra_ftfh004` database, this sandbox's own real sudo/`service
+  postgresql start` access): two real organizations, a real owned/active connection, a real
+  owned/explicitly-revoked connection and a real foreign-tenant connection. Proves: an owned,
+  active connection with a genuinely callable model is authorized; a cross-tenant connection ID
+  and a wholly nonexistent one are denied with the *identical* reason (no existence oracle,
+  live against Postgres/RLS); an explicitly-revoked `LiteLLMConnection` denies access even
+  though its own in-memory catalog still reports the model callable (the "disappearing
+  catalog" case, at the Factory-connection level); a real gateway-level (catalog) revocation
+  denies access even for an owned, still-active connection, and the revoked model remains
+  visible in the catalog's own history; and a catalog with no successful discovery cycle yet
+  denies by default rather than "no rows, so allow."
+
+  **Own fault injection (Law 1), proving both new guards are load-bearing, not decorative:**
+  (1) disabled `access_guard.py`'s connection-`status` denial (`if False:` in place of the real
+  check) -- reran the real-Postgres suite: 1 genuine failure (the explicitly-revoked-connection
+  check). (2) dropped `access_snapshot.py`'s `CatalogEntryStatus.CALLABLE` guard from the
+  left-join condition -- reran the pure suite: 2 genuine failures (the stale-entry and
+  removed-entry field-leak checks). Both reverted byte-identical (md5sum confirmed before/
+  after), both suites re-ran clean immediately after.
+
+  `uv run ruff check .`/`ruff format --check .` clean (315 source files); `uv run mypy .` clean
+  (315 files, zero new errors). `pnpm run lint`/`typecheck`/`format:check` clean; `pnpm exec
+  vitest run` 48/48 across 9 files, unchanged (no frontend file touched). `python3
+  scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own
+  pre-existing shallow-clone artifact). `product_truth_check.py --fail-on-unwired` unchanged
+  **22/22** -- `proving_symbol` left blank (disclosed): no live job-admission/execution route
+  or UI exists anywhere in this repository yet to call either new module; `docs/TASK_INDEX.md`
+  lists FTF-0214 ("Model catalog UI") as the task that renders a catalog to an end user, same
+  precedent every one of this task's own six dependencies already established for itself.
+  `status.py` unchanged `91/300` certified, `22` product-true (Law 2 -- submission, not
+  certification). Regression swept `test_ftf_0204.py`/`test_ftf_0205.py`/`test_ftf_0207.py`/
+  `test_ftf_0208.py`/`test_ftf_0209.py`/`test_ftf_0215.py`/`test_ftf_h003.py` -- zero
+  regressions. `tests/integration/test_ftf_h003_cross_layer_isolation.py`/
+  `test_ftf_0201_litellm_connection_crud.py` (the sibling resource's own real Postgres proofs)
+  reran clean on fresh scratch databases too, as additional regression checks.
+
+  `.github/workflows/ci.yml`: one `FTF-H004 negative-test proof` step added to the `gate` job
+  immediately after FTF-0215's own step (no DB required), plus a new dedicated
+  `litellm-access-guard-integration` job (real `services: postgres` container) mirroring
+  `litellm-connection-crud-integration`'s own pattern.
+
+  `docs/spec-matrix.yaml` FTF-H004 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_h004.py,
+  tests/integration/test_ftf_h004_access_guard.py`; `evidence_hash` left blank pending the real
+  merge commit. **Not self-certified (Law 4)** -- independent Control-plane L2 review and a
+  real CI run on the opened PR are required before certification.
+
+  STEP 3: PROGRESS.md/QUEUE.md/`docs/certifications/queue.md` all updated this shift, before
+  compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-H004) is `L1-PROVEN`, no
+  blocking defect found by this session's own review -- awaiting an independently-triggered
+  Control-plane certifier session and the L4 gate. Stopping here. No open owner ask.
+
 Updated: 2026-09-28T09:10:00Z (scheduled autonomous relay shift, branch
   `claude/wizardly-fermat-3w4uhd`) — fixed and resubmitted **FTF-04A04 (GitHub branch/ref
   selector + immutable SHA resolver)**, PROVISIONAL, after PR #352's independent Control-plane
@@ -6879,6 +6996,19 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-H004** ("Authorized LiteLLM catalog and revocation semantics") — submitted PROVISIONAL
+this shift via a new PR (branch `claude/wizardly-fermat-wq6qdg` -> `main`; link recorded in a
+follow-up commit once opened). `packages/model_catalog/access_snapshot.py::build_access_snapshot`
+composes FTF-0208's historic catalog with a fresh FTF-0207 reconciliation as a second,
+independent left-join boundary; `packages/litellm_client/access_guard.py::require_model_access`
+is the real fail-closed gate composing FTF-H003's ownership check, a fresh
+`litellm_connections.status` read, and FTF-0208's own `is_call_authorized`. See this file's own
+top dated log entry and `docs/certifications/queue.md`'s matching 2026-09-28 FTF-H004 entry for
+the full evidence record. Awaiting independent Control-plane L2 review and a real CI run on the
+opened PR.
+
+PR: https://github.com/SJZLab/Sovra/pull/354 (branch `claude/wizardly-fermat-wq6qdg` → main).
+
 **FTF-04A04** ("GitHub branch/ref selector + immutable SHA resolver") — the original submission
 (PR #351, branch `claude/wizardly-fermat-r37pvq`) was independently reviewed via PR #352 and
 found **NOT CERTIFIED** (acceptance clause 1's own "persist... display ref and resolved
