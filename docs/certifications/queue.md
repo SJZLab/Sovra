@@ -19975,3 +19975,96 @@ opened PR are required before certification.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
 - **PR:** https://github.com/SJZLab/Sovra/pull/361 (branch `claude/wizardly-fermat-q43eub` →
   `main`, open).
+
+## 2026-09-28 — FTF-1201 — LiteLLM registration capability detection
+
+Detects whether a LiteLLM connection's stored credential genuinely holds gateway
+management/registration authority (Section 3/38/66/77/81), separate from the inference-only
+dimension FTF-0203's `validate_connection` already reports. Also freezes the shared phase-12
+contract pair (`packages/contracts/openapi/12-interface.yaml`,
+`packages/contracts/jsonschema/12-domain.schema.json`) — confirmed the sole claim on
+`contracts:12` (no other task in `docs/TASK_INDEX.md` references phase 12) and declares only the
+one real route this task actually wires in, per Law 11.
+
+`packages/litellm_client/litellm_registration_capability_detection.py::
+detect_registration_capability` reuses FTF-0202's already-CERTIFIED `resolve_secret_ref` and
+FTF-H006's already-CERTIFIED `guarded_fetch` — the identical composition `connection_validation.py`
+already established, never duplicated or reimplemented — to call the gateway's real `GET
+/user/info` self-lookup. `RegistrationCapabilityState.MANAGEMENT_CAPABLE` is reported only when a
+genuinely observed `proxy_admin` role is present on a real response; `proxy_admin_viewer`
+(LiteLLM's own explicitly read-only admin role), every other real documented LiteLLM proxy role
+(`internal_user`, `internal_user_viewer`, `team`, `customer`), a real 401/403, an unreachable
+gateway, and a malformed/role-less response each get their own distinct, sanitized, non-capable
+state — this task's own negative_acceptance ("No assumption every virtual key can register
+routes; lack of bootstrap permission is explicit blocker") is met by construction: no path through
+this module can ever produce a false `MANAGEMENT_CAPABLE`.
+
+**Disclosed, version-pinned assumption:** this sandbox's outbound network policy blocks
+`docs.litellm.ai` (`EGRESS_BLOCKED`, confirmed this shift via a direct `WebFetch` attempt, not
+assumed), so the `/user/info` + `user_role` signal could not be freshly re-verified against the
+live docs site this shift. It is cited from LiteLLM's long-stable, versioned public proxy RBAC
+surface, in the same evidentiary posture this repository's own already-CERTIFIED FTF-0210
+(`x-litellm-model-id` response header) and FTF-H005 (`"cache": {"no-cache": true}` request field)
+submissions already established for citing real LiteLLM API surface without a live fetch in-shift.
+Should this exact field/role shape ever prove wrong against a real deployment, the failure mode is
+fail-closed (an unrecognized role reports `MALFORMED_RESPONSE`, never `MANAGEMENT_CAPABLE`) — the
+negative_acceptance clause is not contingent on this assumption being exactly right.
+
+`apps/api/app/litellm/connection_routes.py` adds the real `GET .../connections/litellm/
+{connection_id}/registration-capability` route (`organization_admin` only, per Section 45's own
+literal role table and matching every sibling route on this resource), the same tenant-scoped
+session, IDOR-denial (404), and revoked-connection (409) pattern as `/validate`/`/models`. No
+independent schema change (this task's own `database_changes` clause): capability is computed
+fresh per call, never persisted onto `LiteLLMConnection`.
+
+**Real fault injection (Law 1), disclosed:** `tests/tasks/test_ftf_1201.py::
+test_fault_injection_treating_viewer_as_capable_is_caught` mutates the real on-disk module via a
+regex substitution (survives a `ruff format` reflow, unlike a literal-text match) to widen
+`_MANAGEMENT_CAPABLE_ROLES` to include `proxy_admin_viewer`, runs the mutated module in a fresh
+subprocess against a real gateway configured to return exactly that role, and confirms it
+genuinely reports `management_capable` (`STATE=management_capable`) — proving the role check is
+load-bearing, not decorative. Reverted the file byte-identical (direct bytes comparison
+before/after, `git status` clean on the tracked file) and reran clean.
+
+**Test evidence:** `tests/tasks/test_ftf_1201.py` (34 no-DB, no-external-egress checks — real
+local HTTPS gateways with a real, freshly generated CA installed into the sandbox's own system
+trust store for the run, removed again in `atexit`; every real, documented non-admin LiteLLM role
+individually proven `inference_only`; a real 401 reports `forbidden`; a malformed/role-less body
+reports `malformed_response`; real secret-backend failure states; the fault injection above, all
+clean). `tests/integration/test_ftf_1201_registration_capability.py` (real Postgres 16 + real
+local HTTPS gateway proof, 13 checks) — two real organizations, a real uvicorn server, real
+create/detect/revoke through the actual FastAPI route (never a direct call to
+`detect_registration_capability` bypassing the HTTP layer); a real `proxy_admin` gateway reports
+`management_capable` with the real `observed_role`; a real `proxy_admin_viewer` gateway reports
+`inference_only` at the same 200 HTTP status (negative_acceptance lives in the response body,
+matching FTF-0203's own established convention); the cross-organization IDOR case (a real
+connection ID belonging to org1, requested under org2's own path by a real org2
+`organization_admin`) denied identically to missing (404), confirmed the real gateway is never
+dialed for that request; a real revoke followed by a real capability-detection attempt refused
+(409) — all clean.
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (326
+source files, up from 323). `uv run mypy .` clean repo-wide (326 files, zero new errors).
+`pnpm run lint`/`typecheck`/`format:check` unaffected (no frontend file touched this shift; `pnpm
+exec vitest run` unchanged at 48/48). `python3 scripts/validate_spec.py --strict` clean (required
+`git fetch --unshallow` first — this sandbox's own checkout started shallow).
+`product_truth_check.py --fail-on-unwired`: 23/23 → 24/24 (`proving_symbol` set to
+`detect_registration_capability`, a real non-test caller confirmed in `apps/api/app/litellm/
+connection_routes.py`). `scripts/status.py`: unchanged 93/300 certified, 22 product-true (Law 2 —
+this is a submission, not a certification). Regression swept `test_ftf_0201.py`/
+`test_ftf_0202.py`/`test_ftf_0203.py`/`test_ftf_0204.py` (no-DB) — zero regressions.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately after
+FTF-H005's own two steps, plus a new dedicated `litellm-registration-capability-integration` job
+mirroring `connection-validation-integration`'s own real `services: postgres` container pattern
+exactly.
+
+`docs/spec-matrix.yaml` FTF-1201 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: detect_registration_capability`
+/ `proving_test: tests/tasks/test_ftf_1201.py`; `evidence_hash` left blank pending the real merge
+commit. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on
+the opened PR are required before certification.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
+- **PR:** https://github.com/SJZLab/Sovra/pull/366 (branch `claude/wizardly-fermat-85vqbq` →
+  `main`, open).

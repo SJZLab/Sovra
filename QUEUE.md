@@ -7171,6 +7171,59 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-1201** ("LiteLLM registration capability detection") — submitted PROVISIONAL via
+**PR https://github.com/SJZLab/Sovra/pull/366** (branch `claude/wizardly-fermat-85vqbq` → `main`,
+open). Detects whether a LiteLLM connection's stored credential genuinely holds gateway
+management/registration authority (Section 38), separate from the inference-only dimension
+FTF-0203 already validates. `packages/litellm_client/
+litellm_registration_capability_detection.py::detect_registration_capability` reuses FTF-0202's
+already-CERTIFIED `resolve_secret_ref` and FTF-H006's already-CERTIFIED `guarded_fetch` to call
+the gateway's real `GET /user/info` self-lookup; only a genuinely observed `proxy_admin` role is
+ever reported `management_capable` — every other real, documented role (including the read-only
+`proxy_admin_viewer`) and every denied/malformed/unreachable probe is its own distinct non-capable
+state, never a silent capable default (this task's own negative_acceptance). Freezes the shared
+phase-12 contract pair (`packages/contracts/openapi/12-interface.yaml`,
+`packages/contracts/jsonschema/12-domain.schema.json`), sole claim on `contracts:12`. New route
+`GET .../connections/litellm/{connection_id}/registration-capability`, `organization_admin` only,
+same tenant-scoped/IDOR/revoked-connection pattern as its `/validate`/`/models` siblings.
+
+Disclosed, version-pinned assumption: this sandbox's outbound network policy blocks
+`docs.litellm.ai` (`EGRESS_BLOCKED`, confirmed via a direct `WebFetch` attempt this shift), so the
+`/user/info` + `user_role` signal could not be freshly re-verified against the live docs site —
+cited from LiteLLM's long-stable public proxy RBAC surface instead, same evidentiary posture
+already-CERTIFIED FTF-0210/FTF-H005 established for citing real LiteLLM API surface without an
+in-shift live fetch. The negative_acceptance clause holds regardless of this assumption's
+exactness: no path in this design can produce a false `management_capable`.
+
+Real fault injection (Law 1, disclosed): a regex-based mutation of the real on-disk module widens
+`_MANAGEMENT_CAPABLE_ROLES` to include `proxy_admin_viewer`, run in a fresh subprocess against a
+real gateway returning that exact role, genuinely reports `management_capable` — proving the role
+check is load-bearing, not decorative — then reverted byte-identical (direct bytes comparison
+before/after).
+
+Test evidence: `tests/tasks/test_ftf_1201.py` (34 no-DB, no-external-egress checks, real local
+HTTPS gateways with a real, freshly generated CA), `tests/integration/
+test_ftf_1201_registration_capability.py` (real Postgres 16 + real local HTTPS gateway, 13 checks,
+driven end-to-end through the live FastAPI route) — all clean. `ruff check .`/`ruff format
+--check .`/`mypy .` clean repo-wide (326 files). `validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired`: 23/23 → 24/24 (`proving_symbol` set to
+`detect_registration_capability`, a real non-test caller in `connection_routes.py`).
+`scripts/status.py`: unchanged 93/300 certified, 22 product-true (Law 2 — this is a submission,
+not a certification). Regression swept `test_ftf_0201.py`/`test_ftf_0202.py`/
+`test_ftf_0203.py`/`test_ftf_0204.py` — zero regressions. Full evidence in `docs/spec-matrix.yaml`'s
+own FTF-1201 entry and `docs/certifications/queue.md`'s matching 2026-09-28 entry. Not
+self-certified (Law 4) — independent Control-plane L2 review and a real CI run on the opened PR
+are required before certification.
+
+Prior history, kept for the record: this paragraph previously named **FTF-H005** ("Route identity,
+fallback and cache provenance") as the current pending item, submitted via **PR #361** (merged to
+`main`) — a Control-plane certification session opened PRs against it (#363/#365), still in
+progress at this shift's start; left untouched per this shift's own "no relay action left on a
+submission awaiting Control-plane review" scope. See `docs/certifications/queue.md`'s matching
+FTF-H005 entry for the full evidence record.
+
+Superseded by the above, kept verbatim for the record:
+
 **FTF-H005** ("Route identity, fallback and cache provenance") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`,
 merged — merge commit `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`, real CI confirmed 37/37 green
