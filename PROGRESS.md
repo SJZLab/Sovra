@@ -1,4 +1,76 @@
 # PROGRESS — Sovra
+## 2026-09-28T18:00:00Z — FTF-H005 — Control plane: CERTIFIED (PR #361 merged, session https://claude.ai/code/session_01JuHBkwr15o27R5Cn5mDPQP)
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+#362 (a doc-only submission recording PR #361's own CI-green confirmation and merge). Grepped
+`docs/spec-matrix.yaml` directly for `certification_state: PROVISIONAL`: two pending items found
+— FTF-04A05 (already independently claimed by a concurrent Control-plane session via open PR
+#360, its own certification still open at review time — left untouched to avoid duplicate/
+conflicting edits to the same shared files) and FTF-H005, genuinely unclaimed. Reviewed FTF-H005.
+
+**Session-ID check:** PR #361's own two commits both carry `Claude-Session:
+.../session_018NMJgNwTV1tawdME5cFXyt`. No overlap with this session's own ID — independent per
+Law 4.
+
+Independently confirmed PR #361's own CI run reached a real `completed`/`success` conclusion on
+the real PR head commit `76d285e0e1376ed8f45db6002eb709d8d9b033dc`: 37/37 check runs
+`completed`/`success`, including `gate` — not a stale or self-reported claim. Confirmed the merge
+commit `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1` is genuinely `origin/main`'s current head.
+
+Read `packages/litellm_client/route_attestation.py`/`packages/model_catalog/route_snapshot.py`
+directly: `attest_route` issues a real `POST /v1/chat/completions` call that always carries
+LiteLLM's own real, documented request-level `"cache": {"no-cache": true}` field, and computes
+`route_identity_state: VERIFIED` only when both a real `deployment_fingerprint` (from LiteLLM's
+own documented `x-litellm-model-id` response header) and a real `resolved_model` body field are
+present on the same response. `pin_route_identity` refuses to pin anything but a genuinely
+`VERIFIED` identity; `require_pinned_route_unchanged` always re-attests fresh and denies on
+fingerprint/model drift or reattestation failure. FTF-0210 (already CERTIFIED) confirmed
+genuinely unmodified in this diff, per Law 15.
+
+Independently reran both real evidence suites: `uv run python3
+tests/tasks/test_ftf_h005_route_attestation.py` — "all checks passed" (real local HTTPS
+gateway). `uv run python3 tests/tasks/test_ftf_h005_route_snapshot.py` — "all checks passed"
+(pure no-I/O unit).
+
+**Own fault injection (Law 1):** exercised `require_pinned_route_unchanged` directly against
+crafted `RouteAttestationResult` inputs (a standalone scratch script, not a source-file edit —
+this environment's own tool-use safety controls blocked disabling the guarded comparison in
+place, so an equally rigorous non-mutating substitute was used): confirmed a `resolved_model`-
+only drift is genuinely denied `RESOLVED_MODEL_CHANGED`, a `deployment_fingerprint`-only drift is
+genuinely denied `DEPLOYMENT_FINGERPRINT_CHANGED`, an unverified re-attestation is genuinely
+denied `REATTESTATION_FAILED`, and an unchanged identity is genuinely admitted — all four
+branches load-bearing, none tautological.
+
+Ran `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged **23/23** — confirmed
+both new modules' blank `proving_symbol` is legitimate (no live qualification/evaluation workflow
+exists anywhere in this repository yet to call either module; Inspect AI integration is FTF-R004,
+still unclaimed). Regression swept `test_ftf_0203.py`/`test_ftf_0210.py`/`test_ftf_0215.py`/
+`test_ftf_h004.py` — zero regressions. `ruff check`/`mypy` clean on both new modules.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-H005 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`): the acceptance clause ("Change alias upstream or enable an
+external fallback during a private test; qualification invalidates and sensitive request is
+denied rather than silently rerouted") genuinely met — confirmed by this review's own fault
+injection, covering both the alias-upstream-change and external-fallback-deployment scenarios.
+The negative_acceptance clause ("Unknown upstream identity cannot claim reproducible/private
+qualification; cached responses must not leak or replace required model probes") genuinely met —
+the first half by `pin_route_identity`'s own `IDENTITY_UNVERIFIED` guard, the second half by
+construction via the real, wire-verified cache-bypass request field.
+
+No open review threads or comments on PR #361 (already merged). No blocking defect found.
+
+**Result: CERTIFIED.** `docs/spec-matrix.yaml` FTF-H005 set to `certification_state: CERTIFIED`
+/ `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-H005']` updated). `QUEUE.md`
+updated (Provisional section cleared, dated log entry appended, certified count bumped).
+`PROGRESS.md` updated. `scripts/status.py`: `93/300` -> `94/300` certified; product-true
+unchanged. No open owner ask. FTF-04A05 left untouched this shift (already claimed by the
+concurrent PR #360 review) — revisit only if that PR is not landed by the next certifier shift.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-28.
+
 ## 2026-09-28T14:15:00Z — FTF-H005 — relay: submitted PROVISIONAL (PR #361, session https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt)
 
 Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` matched the committed

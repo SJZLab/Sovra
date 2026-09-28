@@ -8715,10 +8715,10 @@ FTF-H004:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h004.py, tests/integration/test_ftf_h004_access_guard.py
 FTF-H005:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Route identity, fallback and cache provenance
-  evidence_hash: ''
+  evidence_hash: 2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=audit_hardening; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0203, FTF-0210, FTF-0215,
@@ -8768,7 +8768,41 @@ FTF-H005:
     post-exit SSLEOFError from a teardown-timing race after its own process already printed "all
     checks passed" and exited 0 -- pre-existing test-harness behavior, not a regression this task
     introduced).
-  proof_state: L1-PROVEN
+
+    Independent Control-plane L2 review (2026-09-28): session-ID check clean (PR #361 commits carry
+    Claude-Session .../session_018NMJgNwTV1tawdME5cFXyt, no overlap with this certifying session).
+    Confirmed all 37/37 GitHub Actions check runs, incl. gate, completed/success on the real merged
+    head 76d285e0e1376ed8f45db6002eb709d8d9b033dc; confirmed 2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1
+    is genuinely origin/main's current head. Read route_attestation.py/route_snapshot.py directly:
+    route_identity_state is VERIFIED only when both a real deployment_fingerprint header and a real
+    resolved_model body field are present on the same response; pin_route_identity refuses to pin
+    anything but a genuinely VERIFIED identity; require_pinned_route_unchanged always re-attests
+    fresh (no cached decision). Ran both real evidence suites directly -- both clean. Own fault
+    injection (Law 1, distinct from the producer's own disabled-fingerprint-comparison check):
+    exercised require_pinned_route_unchanged against crafted RouteAttestationResult inputs without
+    modifying source -- confirmed resolved_model-only drift is denied RESOLVED_MODEL_CHANGED,
+    deployment_fingerprint-only drift is denied DEPLOYMENT_FINGERPRINT_CHANGED, an unverified
+    re-attestation is denied REATTESTATION_FAILED, and an unchanged identity is admitted -- all four
+    paths genuinely load-bearing, not tautological. ruff/mypy clean on both new files.
+    product_truth_check.py --fail-on-unwired: unchanged 23/23, confirmed legitimate (proving_symbol
+    is genuinely blank -- no live qualification/evaluation workflow exists anywhere in this
+    repository yet to call either module; Inspect AI integration is FTF-R004, still unclaimed -- not
+    a 0/0 masquerading as a pass). No open review threads/comments on PR #361 (already merged). Task
+    contract re-pulled via `python3 tools/r1_handoff.py packet FTF-H005 --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md` (source_sha256 matched sha256sum
+    FINE_TUNING_FACTORY_RELEASE_1.md): acceptance clause ("Change alias upstream or enable an
+    external fallback during a private test; qualification invalidates and sensitive request is
+    denied rather than silently rerouted") confirmed genuinely met by the fault-injection above --
+    both an alias-upstream change (resolved_model drift) and an external-fallback-deployment change
+    (deployment_fingerprint drift) are denied, never silently rerouted. negative_acceptance ("Unknown
+    upstream identity cannot claim reproducible/private qualification; cached responses must not leak
+    or replace required model probes") confirmed met: pin_route_identity's own IDENTITY_UNVERIFIED
+    guard (read directly in source) blocks the first half; the real, wire-verified
+    "cache": {"no-cache": true} field on every attestation request satisfies the second half by
+    construction. No blocking defect found.
+
+    Result: CERTIFIED.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h005_route_attestation.py, tests/tasks/test_ftf_h005_route_snapshot.py
 FTF-H006:

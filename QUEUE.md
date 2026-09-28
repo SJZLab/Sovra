@@ -1,4 +1,24 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T18:00:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01JuHBkwr15o27R5Cn5mDPQP, triggered by the `pull_request.opened`
+  webhook for PR #362 — a doc-only submission recording PR #361's own CI-green confirmation and
+  merge). Grepped `docs/spec-matrix.yaml` directly for `certification_state: PROVISIONAL`: two
+  pending items found — FTF-04A05 (already independently claimed by a concurrent Control-plane
+  session via open PR #360, its own certification still open on its own branch at review time —
+  left untouched to avoid duplicate/conflicting edits to the same shared files) and FTF-H005,
+  genuinely unclaimed. Reviewed and **CERTIFIED FTF-H005** (merge commit
+  `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`) — session-ID check clean (no overlap with producer
+  session `session_018NMJgNwTV1tawdME5cFXyt`), CI re-confirmed 37/37 green on the real merged
+  head, own fault injection (distinct from the producer's own) confirmed all four
+  drift/pass-through branches of `require_pinned_route_unchanged` are genuinely load-bearing,
+  `product_truth_check.py` confirmed legitimately unchanged `23/23`, task contract re-pulled and
+  both acceptance/negative_acceptance clauses reconfirmed met. `docs/spec-matrix.yaml` set to
+  `certification_state: CERTIFIED`/`proof_state: L2-CERTIFIED`; `sync_certified_status()` run
+  directly; `docs/certifications/ledger.md` entry appended; `QUEUE.md`/`PROGRESS.md` updated.
+  `scripts/status.py`: `93/300` -> `94/300` certified; product-true unchanged. No open owner ask.
+  FTF-04A05 left untouched this shift — already claimed by the concurrent PR #360 review; revisit
+  only if that PR is not landed by the next certifier shift.
+
 Updated: 2026-09-28T14:15:00Z (scheduled relay shift, session
   https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt) — STEP 0: hash-checked CLAUDE.md
   (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly). STEP 0.1: read
@@ -7156,6 +7176,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+None currently. FTF-H005 was the only item here; it was independently reviewed and CERTIFIED
+this shift (merge commit `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`) — see "## Done" for the
+certification summary and `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the
+full history and evidence.
+
+Superseded by the certification above, kept verbatim for the record:
+
 **FTF-H005** ("Route identity, fallback and cache provenance") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`).
 `packages/litellm_client/route_attestation.py::attest_route` is a real, cache-bypassed attestation
@@ -10251,6 +10278,25 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
   (merge commit `37fe4f5ca16b85af1e6be76db5f007362e21d3e7`). `scripts/status.py`: `72/300` ->
   `73/300` certified. Product-true unchanged at `20/20`. Full record: `docs/certifications/
   ledger.md` and `docs/certifications/queue.md`.
+- FTF-H005 — Route identity, fallback and cache provenance. Independently reviewed and
+  **CERTIFIED 2026-09-28** via PR #361 (`claude/wizardly-fermat-q43eub` -> `main`, merge commit
+  `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`), producer session
+  `session_018NMJgNwTV1tawdME5cFXyt`, no overlap with this certifying session
+  `session_01JuHBkwr15o27R5Cn5mDPQP` — independent, Law 4. Confirmed CI genuinely green on the
+  real merged head `76d285e0e1376ed8f45db6002eb709d8d9b033dc`: 37/37 checks, `gate` included. Own
+  fault injection (Law 1), distinct from the producer's own: exercised
+  `require_pinned_route_unchanged` directly against crafted `RouteAttestationResult` inputs
+  (without editing source, per this environment's own tool-use restrictions on disabling a
+  guarded security comparison in place) — confirmed all four branches (resolved-model drift,
+  deployment-fingerprint drift, unverified re-attestation, unchanged pass-through) are genuinely
+  load-bearing. Both acceptance ("qualification invalidates and sensitive request is denied
+  rather than silently rerouted") and negative_acceptance ("Unknown upstream identity cannot
+  claim reproducible/private qualification; cached responses must not leak or replace required
+  model probes") reconfirmed against the real DoD via `tools/r1_handoff.py packet FTF-H005`;
+  dependencies FTF-0203/FTF-0210/FTF-0215/FTF-H004 confirmed already `CERTIFIED` before relying
+  on them. `product_truth_check.py --fail-on-unwired` unchanged `23/23` (`proving_symbol`
+  legitimately blank — no live qualification/evaluation workflow exists yet). `scripts/status.py`:
+  `93/300` certified before, `94/300` after. Full entry: `docs/certifications/ledger.md`.
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

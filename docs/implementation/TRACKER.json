@@ -1921,9 +1921,11 @@
       "blockers": []
     },
     "FTF-H005": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1"
+      ],
       "independent_review": null,
       "blockers": []
     },
