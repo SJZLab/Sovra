@@ -19870,3 +19870,108 @@ certification.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
 - **PR:** https://github.com/SJZLab/Sovra/pull/358 (branch `claude/wizardly-fermat-yfpaot` →
   `main`, open).
+
+## 2026-09-28 — FTF-H005 — Route identity, fallback and cache provenance
+
+Scheduled autonomous relay shift. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh. `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md` directly. Checked
+GitHub directly: **PR #358 (FTF-04A05) is merged** (`f17260c` on `main`) and a Control-plane
+certification session already has PR #360 open against it -- no relay action left there. PR #359
+already claims FTF-0500B (`[relay] FTF-0500B: S3/MinIO source validation + metadata preview`) --
+left untouched to avoid duplicate work. `cognee-cli` not installed in this sandbox; text-search
+fallback active throughout this shift (STEP 0.2).
+
+Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml`'s real
+`certification_state` (93/300 CERTIFIED at shift start) joined against `docs/TASK_INDEX.md`'s own
+`Dependencies` column: **FTF-H005**'s own dependencies (FTF-0203, FTF-0210, FTF-0215, FTF-H004)
+are all CERTIFIED, and no open PR claims it. Picked FTF-H005 (`audit_hardening`, the sole owner of
+AF-05 per `FINE_TUNING_FACTORY_RELEASE_1.md`'s own criticality table, well-bounded, no new
+external resource -- unlike FTF-0500B/FTF-0500C, which need a real S3/MinIO-shaped fixture this
+sandbox has no existing precedent for and which FTF-0500B's own open PR #359 already claims).
+
+`python3 tools/r1_handoff.py packet FTF-H005 --plan FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled
+fresh (`source_sha256` matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`). Task contract's own
+exact acceptance clause: "Change alias upstream or enable an external fallback during a private
+test; qualification invalidates and sensitive request is denied rather than silently rerouted."
+negative_acceptance: "Unknown upstream identity cannot claim reproducible/private qualification;
+cached responses must not leak or replace required model probes." Cross-checked against
+`FINE_TUNING_FACTORY_RELEASE_1.md`'s own AF-05 row: "Mutable aliases and fallback routes
+invalidate privacy/evaluation identity | Sections 3.4-3.6,38,66.5: Pin model route/config
+identities; disable or qualify fallbacks/cache; bind actual upstream provenance."
+
+Inspected the real dependency chain directly before writing any code: `packages/litellm_client/
+real_chat_probe.py` (FTF-0210, CERTIFIED) already records a per-call `resolved_model` from the
+gateway's own OpenAI-compatible response body, but an alias name alone cannot detect a silent
+fallback to a *different* deployment answering under the identical alias -- exactly this task's
+own acceptance-clause scenario. FTF-0210 is deliberately left unmodified (Law 15: a material
+change to certified code invalidates its own evidence until requalification).
+
+**Implementation**: `packages/litellm_client/route_attestation.py::attest_route` is a new,
+self-contained real attestation call (same guard/secret-classification convention every sibling
+FTF-020x/FTF-H00x module already duplicates per-task rather than importing). Every request always
+carries LiteLLM's own real, documented request-level cache-bypass field
+(`"cache": {"no-cache": true}`, https://docs.litellm.ai/docs/proxy/caching) -- disclosed
+reasoning: this satisfies "cached responses must not... replace required model probes" by
+construction (the probe can never be served from cache in the first place) rather than by
+detecting a cache-hit after the fact from an unverified header name. The response is read for a
+second, independent identity signal beyond `resolved_model`: LiteLLM's own real, documented
+`x-litellm-model-id` response header (https://docs.litellm.ai/docs/proxy/response_headers),
+recorded as `deployment_fingerprint`. `route_identity_state` is `VERIFIED` only when *both*
+signals are genuinely present in the same response; either missing leaves it `UNVERIFIED`, never
+fabricated.
+
+`packages/model_catalog/route_snapshot.py::pin_route_identity`/`require_pinned_route_unchanged` is
+the pin/drift half (pure, no-I/O, same convention `access_snapshot.py`/FTF-H004 already
+established). `pin_route_identity` refuses -- `RouteQualificationInvalidError(IDENTITY_UNVERIFIED)`
+-- to freeze anything but a genuinely `VERIFIED` identity, directly implementing this task's own
+negative_acceptance. `require_pinned_route_unchanged` takes a *fresh* attestation (never a cached
+decision) and denies -- `DEPLOYMENT_FINGERPRINT_CHANGED` / `RESOLVED_MODEL_CHANGED` /
+`REATTESTATION_FAILED` -- the instant a private test's pinned route drifts, rather than silently
+rerouting.
+
+**Real fault injection (Law 1), disclosed:** `tests/tasks/test_ftf_h005_route_snapshot.py::
+test_fallback_drift_is_genuinely_caught_by_the_real_comparison` directly disabled the real
+`deployment_fingerprint` comparison line in `packages/model_catalog/route_snapshot.py` and
+confirmed the fallback-drift assertion genuinely **FAILS** (2 checks failed:
+`a fallback to a different deployment under the same alias is denied, not rerouted` and
+`the real, unmodified comparison genuinely catches the fallback drift`), then reverted the file
+byte-identical (md5sum `d7c90fc4961f2f758f7477749d73d187` confirmed matching before/after,
+`git status` clean on the tracked file) and reran clean.
+
+**Test evidence:** `tests/tasks/test_ftf_h005_route_attestation.py` (real local HTTPS gateway with
+a real self-signed CA installed into this sandbox's own trust store for the run, same convention
+`test_ftf_0210.py` already established -- 5 checks incl. the real observed cache-bypass byte on
+the wire and the missing-fingerprint-header negative case, all clean).
+`tests/tasks/test_ftf_h005_route_snapshot.py` (pure no-I/O unit, 7 checks incl. the disclosed
+fault injection above, all clean).
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (323
+source files, up from 319). `uv run mypy .` clean repo-wide (323 files, zero new errors -- the 17
+pre-existing `alembic` `op`/`context` `attr-defined` errors are unrelated and unchanged).
+`pnpm lint`/`typecheck`/`format:check` unaffected (no frontend file touched this shift).
+`python3 scripts/validate_spec.py --strict` clean -- required `git fetch --unshallow` first (this
+sandbox's own checkout started shallow; same precedent FTF-04A04 already disclosed).
+`product_truth_check.py --fail-on-unwired`: unchanged `23/23` -- disclosed, not hidden (same
+precedent every sibling FTF-H00x module already established for "no live caller yet"): no live
+qualification/evaluation workflow anywhere in this repository calls either new module yet
+(Inspect AI integration is FTF-R004, still unclaimed). `proving_symbol` stays blank.
+`scripts/status.py`: unchanged `93/300` certified (Law 2 -- this is a submission, not a
+certification). Regression swept `test_ftf_0203.py`/`test_ftf_0210.py`/`test_ftf_0215.py`/
+`test_ftf_h004.py` -- zero regressions (`test_ftf_0210.py`'s own background `ThreadingHTTPServer`
+thread logs a benign post-exit `SSLEOFError` from a teardown-timing race after its own process
+already printed "all checks passed" and exited 0 -- pre-existing test-harness behavior, not a
+regression this shift introduced).
+
+`.github/workflows/ci.yml`: two negative-test-proof steps added to the `gate` job immediately
+after FTF-04A05's own two steps.
+
+`docs/spec-matrix.yaml` FTF-H005 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/
+test_ftf_h005_route_attestation.py, tests/tasks/test_ftf_h005_route_snapshot.py`; `evidence_hash`
+left blank pending the real merge commit; `proving_symbol` deliberately left blank (see above).
+**Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
+- **PR:** https://github.com/SJZLab/Sovra/pull/361 (branch `claude/wizardly-fermat-q43eub` →
+  `main`, open).

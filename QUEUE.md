@@ -1,4 +1,42 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T14:15:00Z (scheduled relay shift, session
+  https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt) — STEP 0: hash-checked CLAUDE.md
+  (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly). STEP 0.1: read
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh before any action. STEP 0.2: no
+  `cognee-cli` in this environment — text-search fallback (`grep`/direct file reads against
+  `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed per standing instruction.
+
+  Checked GitHub directly rather than trusting this file's own prior tracking prose: **PR #358
+  (FTF-04A05) is merged** (`f17260c` on `main`, confirmed the tip of both `main` and this
+  session's own fresh branch) and a Control-plane certification session already has **PR #360**
+  open against it ("Control plane: certify FTF-04A05...") — no relay action left there this
+  shift. **PR #359** already claims **FTF-0500B** (`[relay] FTF-0500B: S3/MinIO source
+  validation + metadata preview`) — left untouched to avoid duplicate work.
+
+  Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml`'s real
+  `certification_state` (93/300 CERTIFIED at shift start, unchanged from the prior shift) joined
+  against `docs/TASK_INDEX.md`'s own `Dependencies` column: **FTF-H005**'s own dependencies
+  (FTF-0203, FTF-0210, FTF-0215, FTF-H004) are all genuinely CERTIFIED and no open PR claims it.
+
+  **Working: FTF-H005** ("Route identity, fallback and cache provenance", the sole owner of AF-05
+  per `FINE_TUNING_FACTORY_RELEASE_1.md`'s own criticality table). Task contract pulled via
+  `tools/r1_handoff.py packet FTF-H005 --plan FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256`
+  matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`). PEV cycle followed (P: read FTF-0210's
+  own already-CERTIFIED `real_chat_probe.py` and FTF-H004's own `access_snapshot.py` first, no
+  changes; E: implemented `route_attestation.py`/`route_snapshot.py` + wrote real tests, ran a
+  disclosed real fault injection showing the fallback-drift assertion genuinely fail before
+  passing; V: `product_truth_check.py --fail-on-unwired` unchanged 23/23 — disclosed, no live
+  qualification workflow calls either module yet — no TRACKER). Submitted PROVISIONAL via **PR
+  https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`) —
+  see this file's own "## Provisional" section below and `docs/certifications/queue.md`'s
+  matching entry for the full evidence record.
+
+  STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
+  shift, before compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-H005) is
+  `L1-PROVEN`, no blocking defect found by this session's own review — awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No open
+  owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 Updated: 2026-09-28T13:00:00Z (scheduled relay shift, session
   https://claude.ai/code/session_012JU5T7hSZSU9qu8d7NjkQx) — STEP 0: hash-checked CLAUDE.md
   (match) and re-synced this branch onto `origin/main` (was already fast-forward-mergeable, no
@@ -7118,6 +7156,48 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-H005** ("Route identity, fallback and cache provenance") — submitted PROVISIONAL via
+**PR https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`).
+`packages/litellm_client/route_attestation.py::attest_route` is a real, cache-bypassed attestation
+call (every request carries LiteLLM's own real, documented `"cache": {"no-cache": true}` field so
+an attestation can never be answered from a cached response by construction) that records both the
+already-established `resolved_model` body field (FTF-0210's own convention, left unmodified per
+Law 15) and a new, independent `deployment_fingerprint` read from LiteLLM's own real, documented
+`x-litellm-model-id` response header — needed because a resolved alias name alone cannot detect a
+silent fallback to a *different* deployment answering under the identical alias, this task's own
+acceptance-clause scenario. `route_identity_state` is `VERIFIED` only when both signals are
+genuinely present. `packages/model_catalog/route_snapshot.py::pin_route_identity`/
+`require_pinned_route_unchanged` is the pin/drift half: refuses to pin an unverified identity
+(negative_acceptance), and denies — rather than silently rerouting — the instant a private
+qualification session's pinned route drifts.
+
+Real fault injection (Law 1, disclosed): temporarily disabled the real `deployment_fingerprint`
+comparison in `route_snapshot.py`, confirmed the fallback-drift assertion genuinely fails (2
+checks), reverted byte-identical (md5sum `d7c90fc4961f2f758f7477749d73d187` confirmed matching
+before/after), reran clean.
+
+Test evidence: `tests/tasks/test_ftf_h005_route_attestation.py` (real local HTTPS fixture, 5
+checks), `tests/tasks/test_ftf_h005_route_snapshot.py` (pure no-I/O unit, 7 checks incl. the fault
+injection above) — all clean. `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (323
+files). `validate_spec.py --strict` clean (required `git fetch --unshallow` first — this sandbox's
+own checkout started shallow). `product_truth_check.py --fail-on-unwired`: unchanged `23/23`
+(disclosed: no live qualification/evaluation workflow calls either module yet — Inspect AI
+integration is FTF-R004, still unclaimed — `proving_symbol` stays blank). `scripts/status.py`:
+unchanged `93/300` certified (Law 2 — this is a submission, not a certification). Regression swept
+`test_ftf_0203.py`/`test_ftf_0210.py`/`test_ftf_0215.py`/`test_ftf_h004.py` — zero regressions.
+Full evidence in `docs/spec-matrix.yaml`'s own FTF-H005 entry and `docs/certifications/queue.md`'s
+matching 2026-09-28 entry. Not self-certified (Law 4) — independent Control-plane L2 review and a
+real CI run on the opened PR are required before certification.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A05** ("GitHub source
+snapshot implementation") as the current pending item, submitted via **PR #358** (merged to
+`main`, `f17260c`) — a Control-plane certification session opened **PR #360** against it
+("Control plane: certify FTF-04A05..."), still in progress at this shift's start; left untouched
+per this shift's own "no relay action left on a submission awaiting Control-plane review" scope.
+See `docs/certifications/queue.md`'s matching FTF-04A05 entry for the full evidence record.
+
+Superseded by the above, kept verbatim for the record:
+
 **FTF-04A05** ("GitHub source snapshot implementation") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/358** (branch `claude/wizardly-fermat-yfpaot` →
 `main`).

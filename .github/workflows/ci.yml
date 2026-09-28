@@ -299,6 +299,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a05.py
       - name: FTF-04A05 negative-test proof (GitHub source snapshot capture route-boundary, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a05_routes.py
+      - name: FTF-H005 negative-test proof (route attestation -- real cache-bypass + deployment fingerprint, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h005_route_attestation.py
+      - name: FTF-H005 negative-test proof (route pin/drift -- fallback and alias-upstream denial, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h005_route_snapshot.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
