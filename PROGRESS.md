@@ -23159,3 +23159,123 @@ CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commi
 `QUEUE.md` updated, item moved to certified. `scripts/status.py`: `91/300` → `92/300` certified;
 product-true unchanged at `22/22` (no live caller added by this certification, disclosed). No
 open owner ask.
+
+## 2026-09-28T13:00:00Z — Scheduled relay shift — FTF-04A05 submitted PROVISIONAL
+
+Session `https://claude.ai/code/session_012JU5T7hSZSU9qu8d7NjkQx`. STEP 0.1: read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state. CLAUDE.md
+hash-checked (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`). Branch
+`claude/wizardly-fermat-yfpaot` was fast-forward-mergeable onto `origin/main` (`da084bb`, already
+carrying both of the prior shift's own in-flight items — FTF-04A04 and FTF-H004 — as CERTIFIED).
+STEP 0.2: no `cognee-cli` installed in this environment; text-search fallback used throughout
+(disclosed, per standing instruction).
+
+STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s real
+`certification_state` joined against `docs/TASK_INDEX.md`'s own structured `Dependencies` column
+(93 CERTIFIED, 0 PROVISIONAL at shift start). 13 of the remaining 207 tasks now have every
+dependency CERTIFIED — FTF-04A04's and FTF-H004's same-day certifications newly unblocked
+FTF-04A05, FTF-H005, FTF-0500B and FTF-0500C on top of the prior shift's own 10-item frontier (PR
+#349). Searched all 18 open PRs and GitHub PR-title search for each of the four newly-unblocked
+IDs — none claimed. Picked **FTF-04A05** ("GitHub source snapshot implementation").
+
+Task contract pulled via `python tools/r1_handoff.py packet FTF-04A05 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`). Dependencies FTF-04A01/FTF-04A04/FTF-04A07 reconfirmed
+CERTIFIED before relying on them. Delegated a read-only research pass (Explore agent) to survey
+`apps/api/app/target_connectors/`'s real existing layout, FTF-04A04's own real GitHub REST API v3
+request/auth/error pattern (`github_branch_ref_resolver.py`), FTF-04A07's own real
+`TargetSourceSnapshot` schema/CRUD (`create_target_source_snapshot` already exists, INSERT-only,
+takes already-resolved `commit_sha`/`tree_hash` as inputs — nothing in the repo yet computed a
+real GitHub tree hash), the established "no live route to the public internet in this sandbox"
+local-HTTPS-fixture test pattern, and confirmed no reusable zip-slip/archive-safety utility exists
+anywhere in the repo. Then read the actual source of `target_source_snapshot_schema.py`,
+`target_source_snapshot_crud.py`, `github_branch_ref_resolver.py`, `github_branch_ref_crud.py`,
+`local_repository_connector.py` (FTF-04A06's own "connector returns a value, a separate composing
+layer persists it" scope-boundary precedent), `target_source_snapshot_routes.py`, and `main.py`'s
+own router-wiring section directly before writing any code.
+
+**Implementation** (new files, `apps/api/app/target_connectors/`):
+- `github_source_snapshot_resolver.py` — real connector. Reuses FTF-04A04's own
+  `resolve_ref_to_commit` unmodified, then adds three further real GitHub REST API v3 calls: `GET
+  .../git/commits/{sha}` (the commit's own real, canonical Git tree hash — never independently
+  recomputed), `GET .../git/trees/{tree_sha}?recursive=1` (the real full tree; its own real
+  `truncated` field is this task's "missing critical objects" negative_acceptance signal — a
+  truncated response raises `IncompleteSourceTreeError`, never a partial capture), `GET
+  .../git/blobs/{sha}` (used once per capture, only for a root `.gitattributes` blob, to detect
+  real Git LFS `filter=lfs` declarations). Submodules are detected structurally from the tree's
+  own real `type: "commit"` gitlink entries — no further call needed. "Unsafe archive"
+  (negative_acceptance) is read as: no tree entry's own path may escape the repository root if
+  materialized (absolute path / `..` segment / embedded NUL byte) — `UnsafeSourceTreeEntryError`,
+  a real zip-slip-shaped gate. Disclosed, sourced scope decision: this module does not download a
+  real tarball/zipball archive at all — `default_github_connector_policy()` (FTF-04A02, reused
+  unmodified) sets `allow_redirects=False`, and GitHub's own real archive endpoints always
+  302-redirect to a separate `codeload.github.com` host; widening the allowed destination set to
+  include it is a real policy change this task's own `api_contract`/`database_changes` scope does
+  not authorize — the tree-entry path-safety check is this task's own real "unsafe archive" gate
+  instead.
+- `github_source_snapshot_crud.py` — composes the connector with FTF-04A07's own already-CERTIFIED
+  `create_target_source_snapshot` (imported, not modified). Authorizes `project_id` (own
+  `_authorize_project_or_raise`, same shape every sibling CRUD module already established), calls
+  the connector, persists on success, writes a real audit event either way (never the credential).
+- `github_source_snapshot_routes.py` — new `POST
+  .../target-connections/{connection_id}/github-source-snapshot` route, wired into `main.py`
+  (the fifteenth router). The real GitHub-backed sibling of FTF-04A07's own client-trusting `POST
+  .../snapshots` route (which stores whatever `commit_sha`/`tree_hash` the caller's own request
+  asserts): this route re-derives both from a real GitHub call, never trusting a client-supplied
+  value for either.
+
+**Tests**: `tests/tasks/test_ftf_04a05.py` (connector, no-DB, real local HTTPS fixture with a
+self-signed CA in the system trust store — this sandbox has no route to the public internet, same
+disclosed precedent `test_ftf_04a04_connector.py` already established — 19 checks, all clean),
+`tests/tasks/test_ftf_04a05_routes.py` (route-boundary, no-DB, real uvicorn server + `MagicMock`
+session factory, 13 checks, all clean), `tests/integration/test_ftf_04a05_github_source_snapshot.py`
+(real, freshly-provisioned local PostgreSQL 16 + the same local HTTPS fixture, 14 checks, all
+clean).
+
+**Real fault injection (Law 1, disclosed)**: while building the integration test, found a genuine
+gap in this submission's own first-draft negative-test coverage before it was fixed here — the
+"cross-organization project_id" scenario was confounded by the separately-CERTIFIED FTF-04A07
+connection-ownership check downstream, which alone already happened to deny that exact request:
+commenting out this task's own new `_authorize_project_or_raise` call left every original negative
+test passing (a false sense of coverage). Added a second, isolating scenario (a nonexistent
+project ID paired with a real, valid same-organization connection ID) that only a live
+project-authorization guard can catch. Confirmed the new check genuinely fails with the guard
+disabled (`FAIL [FTF-04A05] negative_acceptance: a nonexistent project ID is denied...`), then
+reverted the file byte-identical (md5sum `33c489ade6ed660b0474414cbbf62093` confirmed matching
+before/after `git status`/no diff on the untracked file) and reran clean.
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (319
+source files, up from 316); `uv run mypy .` clean repo-wide (319 files, zero new errors — one
+type-invariance fix applied to the routes test's own `_VALID_PAYLOAD` annotation before this was
+clean). `pnpm install --frozen-lockfile`/`pnpm run lint`/`typecheck`/`format:check` clean; `pnpm
+exec vitest run` 48/48, unchanged (no frontend file touched this shift). `python3
+scripts/validate_spec.py --strict` clean (no `git fetch --unshallow` needed this shift — the
+sandbox checkout was already a full, non-shallow clone). `product_truth_check.py
+--fail-on-unwired`: `22/22` → `23/23` — `proving_symbol` set to
+`build_github_source_snapshot_router`, a real non-test caller in `apps/api/app/main.py`; unlike
+FTF-04A04 (which left `proving_symbol` blank because its own task scope includes a `.tsx` UI
+component with no live Next.js front door yet, Law 6), this task's own scope is backend-only, so
+there is no front-door gap to disclose here. `status.py`: unchanged `93/300` certified (Law 2 —
+this is a submission, not a certification). Regression swept `test_ftf_04a01.py`/
+`test_ftf_04a04_connector.py`/`test_ftf_04a04_routes.py`/`test_ftf_04a07.py` (no-DB, all clean)
+and `test_ftf_04a04_github_branch_ref.py` (real Postgres, re-provisioned fresh — all clean, zero
+regressions).
+
+`.github/workflows/ci.yml`: two negative-test-proof steps added to the `gate` job immediately
+after FTF-04A04's own two steps, plus a new dedicated `github-source-snapshot-integration` job
+mirroring `github-branch-ref-integration`'s own real `services: postgres` container pattern
+exactly.
+
+`docs/spec-matrix.yaml` FTF-04A05 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol:
+build_github_source_snapshot_router` / `proving_test: tests/tasks/test_ftf_04a05.py,
+tests/tasks/test_ftf_04a05_routes.py, tests/integration/test_ftf_04a05_github_source_snapshot.py`;
+`evidence_hash` left blank pending the real merge commit. **Not self-certified (Law 4)** —
+independent Control-plane L2 review and a real CI run on the opened PR are required before
+certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A05) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).

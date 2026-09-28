@@ -295,6 +295,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a04_connector.py
       - name: FTF-04A04 negative-test proof (GitHub branch/ref resolver route-boundary, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a04_routes.py
+      - name: FTF-04A05 negative-test proof (GitHub source snapshot capture connector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a05.py
+      - name: FTF-04A05 negative-test proof (GitHub source snapshot capture route-boundary, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a05_routes.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -1493,6 +1497,53 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real GitHub branch listing/ref-resolution evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a04_github_branch_ref.py
+
+  github-source-snapshot-integration:
+    # FTF-04A05: real Postgres GitHub source snapshot capture evidence
+    # (Section 6.8B/7A.1-7A.2/9/45/65-67/77/81) -- two real organizations
+    # (each with a real project and a real TargetApplicationConnection), a
+    # real uvicorn server proving the organization_admin-only RBAC
+    # boundary, a real local HTTPS `GET .../commits/{ref}` +
+    # `GET .../git/commits/{sha}` + `GET .../git/trees/{tree_sha}?recursive=1`
+    # -shaped GitHub fixture (this repo's interactive dev sandbox has no
+    # route to the public internet -- same disclosed finding
+    # test_ftf_04a04_connector.py/test_ftf_04a04_github_branch_ref.py
+    # already made), this task's own real negative_acceptance (a
+    # nonexistent project ID is denied even with a real, valid connection
+    # ID -- proves the router's own project-authorization guard is
+    # independently load-bearing; a cross-organization connection ID is
+    # denied; a real truncated tree listing is refused, never persisted as
+    # a partial snapshot), and a real, durable `TargetSourceSnapshot` row
+    # read back fresh from Postgres, never merely trusted from the
+    # response body. No OpenBao needed -- this step never persists a
+    # credential. Same real `services: postgres` container pattern as
+    # github-branch-ref-integration.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a05
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a05"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a05
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real GitHub source snapshot capture evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a05_github_source_snapshot.py
 
   component-bindings-integration:
     # FTF-R002: real Postgres ComponentBinding/ComponentSyncOutbox evidence

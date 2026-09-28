@@ -3065,16 +3065,87 @@ FTF-04A04:
     tests/integration/test_ftf_04a04_github_branch_ref.py,
     apps/web/tests/ftf_04a04.spec.ts
 FTF-04A05:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: GitHub source snapshot implementation
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
-    FTF-04A04, FTF-04A07
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: |-
+    kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A04, FTF-04A07 (all CERTIFIED, confirmed before relying on
+    them). Path refined to apps/api/app/target_connectors/github_source_snapshot_resolver.py
+    (connector), github_source_snapshot_crud.py (auth+capture+persist+audit), and
+    github_source_snapshot_routes.py (POST .../target-connections/{connection_id}/github-source-snapshot,
+    wired into main.py) -- matching the real apps/api/app/target_connectors/*.py
+    layout every prior 04A-family task already established.
+
+    Scope, disclosed not hidden: the connector reuses FTF-04A04's own resolve_ref_to_commit
+    unmodified, then adds three further real GitHub REST API v3 calls (GET .../git/commits/{sha}
+    for the commit's own real, canonical tree hash; GET .../git/trees/{tree_sha}?recursive=1
+    for the full tree, whose real `truncated` field is this task's own "truncated
+    listing completion" signal; GET .../git/blobs/{sha}, used only once per capture
+    for a root .gitattributes blob, to detect real Git LFS filter=lfs declarations).
+    Submodules are detected structurally from the tree's own real `type: "commit"`
+    gitlink entries, no further call needed. "Unsafe archive" (negative_acceptance)
+    is read as: no tree entry may describe a path that could escape the repository
+    root if materialized (absolute path, a `..` segment, or an embedded NUL byte) --
+    a real, tested, zip-slip-shaped gate. This task does not download a real tarball/zipball
+    archive: default_github_connector_policy() (FTF-04A02, reused unmodified) sets
+    allow_redirects=False, and GitHub's own real archive endpoints always 302-redirect
+    to a separate codeload.github.com host outside this task's own api_contract/database_changes
+    scope to authorize adding.
+
+    The new route is the real GitHub-backed sibling of FTF-04A07's own client-trusting
+    `POST .../snapshots` route (which stores whatever commit_sha/tree_hash the caller's
+    own request asserts): this route re-derives both from a real GitHub call, never
+    trusting a client-supplied value for either field, then persists via FTF-04A07's
+    own already-CERTIFIED create_target_source_snapshot (imported, not modified).
+
+    Real fault injection (Law 1, disclosed) found a genuine gap in this submission's
+    own first draft test suite before it was fixed here: the integration test's original
+    "cross-organization project_id" negative scenario was confounded by the separately-CERTIFIED
+    FTF-04A07 connection-ownership check downstream, which alone already happened to
+    deny that exact request -- disabling this task's own new `_authorize_project_or_raise`
+    guard left every original negative test passing. Added a second, isolating scenario
+    (a nonexistent project ID paired with a real, valid same-organization connection
+    ID) that only a live project-authorization guard can catch; with the guard disabled
+    this new check genuinely failed, and passed again once reverted byte-identical
+    (md5sum confirmed matching before/after, `git status` clean).
+
+    proving_symbol set to build_github_source_snapshot_router -- a real, non-test caller
+    in apps/api/app/main.py. Unlike FTF-04A04 (which left it blank because its own
+    task scope includes a .tsx UI component with no live Next.js front door yet, Law
+    6), this task's own scope is backend-only; product_truth_check.py --fail-on-unwired
+    confirmed this raises the live product-true count.
+
+    Test evidence: tests/tasks/test_ftf_04a05.py (connector, no-DB, real local HTTPS
+    fixture with a self-signed CA in the system trust store -- this sandbox has no
+    route to the public internet, same disclosed precedent test_ftf_04a04_connector.py
+    already established -- 19 checks incl. a disclosed GET-only fault injection),
+    tests/tasks/test_ftf_04a05_routes.py (route-boundary, no-DB, 13 checks), tests/integration/test_ftf_04a05_github_source_snapshot.py
+    (real, freshly-provisioned local PostgreSQL 16 + the same local HTTPS fixture,
+    14 checks incl. the isolating project-authorization fault injection above) --
+    all clean. `uv run ruff check .`/`ruff format --check .` clean repo-wide (319
+    files); `uv run mypy .` clean repo-wide (319 files). `pnpm install --frozen-lockfile`/`pnpm
+    run lint`/`typecheck`/`format:check` clean; `pnpm exec vitest run` 48/48 unchanged
+    (no frontend file touched). `python3 scripts/validate_spec.py --strict` clean.
+    `product_truth_check.py --fail-on-unwired`: 22/22 -> 23/23. `scripts/status.py`:
+    93/300 certified (Law 2 -- this is a submission, not a certification). Regression
+    swept test_ftf_04a01.py/test_ftf_04a04_connector.py/test_ftf_04a04_routes.py/test_ftf_04a07.py
+    directly (no-DB) and test_ftf_04a04_github_branch_ref.py (real Postgres, re-provisioned
+    fresh) -- zero regressions.
+
+    `.github/workflows/ci.yml`: two negative-test-proof steps added to the `gate`
+    job immediately after FTF-04A04's own two steps, plus a new dedicated `github-source-snapshot-integration`
+    job mirroring `github-branch-ref-integration`'s own real `services: postgres`
+    container pattern exactly.
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI
+    run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
+  proving_symbol: build_github_source_snapshot_router
+  proving_test: tests/tasks/test_ftf_04a05.py, tests/tasks/test_ftf_04a05_routes.py,
+    tests/integration/test_ftf_04a05_github_source_snapshot.py
 FTF-04A06:
   certification_state: CERTIFIED
   criticality: MUST
