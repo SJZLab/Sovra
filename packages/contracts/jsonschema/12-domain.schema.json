@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-12/domain.schema.json",
+  "title": "Sovra Phase 12 Domain Schemas (FTF-1201 — LiteLLM registration capability detection)",
+  "description": "Frozen shared domain schemas for the read-only registration-capability detection result (Section 3/38/45/66/77/81). Field constraints (the enum) are copied verbatim from the single real enforcing source — packages/litellm_client/litellm_registration_capability_detection.py's own RegistrationCapabilityState (tested in tests/tasks/test_ftf_1201.py) — so this file cannot silently drift from the code that actually computes this result.",
+  "$defs": {
+    "RegistrationCapabilityState": {
+      "type": "string",
+      "description": "Never defaults to capable. management_capable is reported only when a genuine proxy_admin role is actually observed on a real gateway response.",
+      "enum": [
+        "management_capable",
+        "inference_only",
+        "forbidden",
+        "unavailable",
+        "malformed_response",
+        "secret_not_found",
+        "secret_access_denied",
+        "secret_expired",
+        "secret_backend_error",
+        "secret_backend_unsupported"
+      ]
+    },
+    "RegistrationCapabilityResult": {
+      "type": "object",
+      "description": "Content-free by construction: detail never carries the resolved credential or a raw gateway response body; observed_role is the gateway's own real, non-secret role label, never the credential itself.",
+      "properties": {
+        "state": { "$ref": "#/$defs/RegistrationCapabilityState" },
+        "observed_role": { "type": ["string", "null"] },
+        "detail": { "type": "string" },
+        "checked_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["state", "observed_role", "detail", "checked_at"],
+      "additionalProperties": false
+    }
+  }
+}

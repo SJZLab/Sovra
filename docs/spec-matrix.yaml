@@ -7108,15 +7108,71 @@ FTF-1108:
   proving_symbol: ''
   proving_test: ''
 FTF-1201:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: LiteLLM registration capability detection
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0203, FTF-0202, FTF-0103
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0203, FTF-0202,
+    FTF-0103 (all CERTIFIED, confirmed before relying on them). Path refined from the task
+    packet's own hyphenated packages/litellm-client/... to the real, already-established
+    packages/litellm_client/ package directory (same disclosed refinement FTF-0202 already
+    established -- hyphens are not a valid Python package segment). Freezes the shared phase-12
+    contract pair (packages/contracts/openapi/12-interface.yaml,
+    packages/contracts/jsonschema/12-domain.schema.json, contract_owner FTF-1201, sole claim on
+    contracts:12 -- no other task in docs/TASK_INDEX.md references phase 12) declaring only the
+    one real route this task actually wires in, per Law 11.
+    packages/litellm_client/litellm_registration_capability_detection.py::
+    detect_registration_capability is the real detection: calls the gateway's real
+    GET /user/info self-lookup (Section 3/38) through FTF-H006's already-CERTIFIED
+    guarded_fetch, using FTF-0202's already-CERTIFIED resolve_secret_ref to obtain the
+    credential -- exactly the same secret-resolution/outbound-guard composition
+    connection_validation.py (FTF-0203) already established, never duplicated or
+    reimplemented. Only a genuinely observed proxy_admin role is reported
+    management_capable; every other real, documented LiteLLM proxy role (including the
+    read-only proxy_admin_viewer) is inference_only, and every denied/malformed/unreachable
+    probe is its own distinct non-capable state -- this task's own negative_acceptance ("No
+    assumption every virtual key can register routes; lack of bootstrap permission is explicit
+    blocker") is met by construction: the only path that can ever report management_capable is
+    a real proxy_admin value actually present on a real response. Disclosed, version-pinned
+    assumption: this sandbox's outbound network policy blocks docs.litellm.ai
+    (EGRESS_BLOCKED, confirmed via a direct fetch attempt this shift), so the /user/info +
+    user_role signal could not be freshly re-verified against the live docs site this shift;
+    it is cited from LiteLLM's long-stable, versioned public proxy RBAC surface, same
+    evidentiary posture this repository's own already-CERTIFIED FTF-0210/FTF-H005 submissions
+    already established for citing real LiteLLM API surface without a live fetch in-shift.
+    apps/api/app/litellm/connection_routes.py adds the real GET .../connections/litellm/
+    {connection_id}/registration-capability route (organization_admin only, same tenant-scoped
+    session and IDOR-denial pattern as its siblings; refuses a revoked connection, 409). No
+    independent schema change (this task's own database_changes clause): capability is
+    computed fresh per call, never persisted onto LiteLLMConnection.
+    tests/tasks/test_ftf_1201.py (34 no-DB, no-external-egress checks) -- real local HTTPS
+    gateways with a real, freshly generated CA installed into the sandbox's own system trust
+    store; every real, documented non-admin LiteLLM role (proxy_admin_viewer, internal_user,
+    internal_user_viewer, team, customer) individually proven inference_only, never capable;
+    a real 401 reports forbidden; a real malformed/role-less body reports malformed_response;
+    real secret-backend failure states. Own fault injection (Law 1): a regex-based mutation of
+    the real on-disk module widens _MANAGEMENT_CAPABLE_ROLES to include proxy_admin_viewer,
+    run in a fresh subprocess against a real gateway returning that exact role, genuinely
+    reports management_capable -- proving the role check is load-bearing, not decorative --
+    then the file is restored byte-identical (confirmed by a direct bytes comparison).
+    tests/integration/test_ftf_1201_registration_capability.py (real live-Postgres + real local
+    gateway proof, 13 checks) -- two real organizations, a real uvicorn server, real
+    create/detect/revoke through the actual FastAPI route (never a direct call to
+    detect_registration_capability bypassing the HTTP layer); a real proxy_admin gateway
+    reports management_capable; a real proxy_admin_viewer gateway reports inference_only at
+    the same 200 HTTP status (negative_acceptance lives in the response body, matching
+    FTF-0203's own established convention); the cross-organization IDOR case denied
+    identically to missing (404); a real revoke followed by a real capability-detection
+    attempt refused (409). .github/workflows/ci.yml wires the no-DB suite into the gate job
+    and adds litellm-registration-capability-integration (real Postgres service, same pinned
+    image digest every other integration job in this file already uses).
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
+    opened PR are required before certification.
+  proof_state: L1-PROVEN
+  proving_symbol: detect_registration_capability
+  proving_test: tests/tasks/test_ftf_1201.py
 FTF-1202:
   certification_state: NONE
   criticality: MUST

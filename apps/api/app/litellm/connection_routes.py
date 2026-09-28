@@ -1,6 +1,7 @@
 """Live `/api/v1/organizations/{organization_id}/connections/litellm` routes
-(FTF-0201/FTF-0203, Section 2-3/38/45/65/77/81) -- the second live-wired
-product-runtime path in this repository, after FTF-0101's `/auth/*`.
+(FTF-0201/FTF-0203/FTF-1201, Section 2-3/38/45/65/77/81) -- the second
+live-wired product-runtime path in this repository, after FTF-0101's
+`/auth/*`.
 
 Scope (disclosed explicitly, not hidden -- see this task's own
 docs/certifications/queue.md submission entry): this router implements
@@ -30,6 +31,19 @@ route, this repository's first live caller of
 tenant-scoped read, same revoked-connection 409 and foreign-tenant 404 as
 `/validate`; reuses the same injected `validation_policy_factory`/
 `secret_manager_config_factory` rather than adding a redundant pair.
+
+FTF-1201 adds a real `GET .../connections/litellm/{connection_id}/
+registration-capability` route, this repository's first live caller of
+`packages/litellm_client/litellm_registration_capability_detection.py::
+detect_registration_capability` -- see that module's own docstring for the
+full detection design and its disclosed, version-pinned assumption about
+the gateway's `/user/info` role signal. Same tenant-scoped read,
+revoked-connection 409, and foreign-tenant 404 pattern as its siblings;
+its own `capability_policy_factory` is injected separately from
+`validation_policy_factory` (same call-time-only convention) since a
+future deployment may authorize a different destination policy for the
+registration-capability probe than for `/validate`/`/models`, even though
+both currently default to the same https-only, no-allowlist shape.
 
 Path shape (refined from the task packet's own abbreviated
 `api_contract: "/api/v1/connections/litellm"` to include the real
@@ -72,6 +86,11 @@ from packages.litellm_client.connection_validation import (  # noqa: E402
     ConnectionValidationResult,
     default_connection_validation_policy,
     validate_connection,
+)
+from packages.litellm_client.litellm_registration_capability_detection import (  # noqa: E402
+    RegistrationCapabilityResult,
+    default_capability_detection_policy,
+    detect_registration_capability,
 )
 from packages.litellm_client.secret_manager_integration import (  # noqa: E402
     OpenBaoConfig,
@@ -116,6 +135,7 @@ _COLLECTION_PATH = "/api/v1/organizations/{organization_id}/connections/litellm"
 _ITEM_PATH = _COLLECTION_PATH + "/{connection_id}"
 _VALIDATE_PATH = _ITEM_PATH + "/validate"
 _MODELS_PATH = _ITEM_PATH + "/models"
+_REGISTRATION_CAPABILITY_PATH = _ITEM_PATH + "/registration-capability"
 
 
 def _default_secret_manager_config() -> OpenBaoConfig | None:
@@ -137,6 +157,20 @@ def _serialize_validation(result: ConnectionValidationResult) -> dict[str, objec
         "inference_state": result.inference_state.value,
         "management_state": result.management_state.value,
         "model_count": result.model_count,
+        "detail": result.detail,
+        "checked_at": result.checked_at.isoformat(),
+    }
+
+
+def _serialize_capability(result: RegistrationCapabilityResult) -> dict[str, object]:
+    """Content-free by construction, same convention as
+    `_serialize_validation`/`_serialize_discovery`: `result.detail` never
+    carries the resolved credential or a raw gateway response body.
+    `observed_role` is the gateway's own real, non-secret role label
+    (e.g. `internal_user`), never the credential itself."""
+    return {
+        "state": result.state.value,
+        "observed_role": result.observed_role,
         "detail": result.detail,
         "checked_at": result.checked_at.isoformat(),
     }
@@ -232,6 +266,7 @@ def build_litellm_connection_router(
     validation_policy_factory: Callable[
         [], ConnectionPolicy
     ] = default_connection_validation_policy,
+    capability_policy_factory: Callable[[], ConnectionPolicy] = default_capability_detection_policy,
 ) -> APIRouter:
     """Real FastAPI router for FTF-0201's CRUD surface plus FTF-0203's
     `/validate` route.
@@ -387,6 +422,43 @@ def build_litellm_connection_router(
             policy=validation_policy_factory(),
         )
         return JSONResponse(_serialize_discovery(result), status_code=200)
+
+    @router.get(_REGISTRATION_CAPABILITY_PATH)
+    async def registration_capability(
+        organization_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        ctx: AuthorizedContext = admin_dependency,
+    ) -> JSONResponse:
+        """FTF-1201: detects whether this connection's own stored
+        credential genuinely holds gateway management/registration
+        authority, separately from the inference-only dimension FTF-0203's
+        `/validate` already reports. Same tenant-scoped read, same
+        revoked-connection 409 and foreign-tenant 404 pattern as its
+        siblings -- the stored `base_url`/`secret_ref` are never trusted
+        from the client."""
+        del organization_id
+        tenant_context = TenantContext.from_authorized_context(ctx)
+        try:
+            with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                connection = get_connection(session, tenant_context, connection_id)
+                if connection.status == "revoked":
+                    raise ConnectionStateError(
+                        "cannot detect registration capability for a revoked connection"
+                    )
+                base_url = connection.base_url
+                secret_ref = connection.secret_ref
+        except (ConnectionNotFoundError, TenantContextError) as exc:
+            raise HTTPException(status_code=404, detail="not_found") from exc
+        except ConnectionStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        result = detect_registration_capability(
+            base_url=base_url,
+            secret_ref=secret_ref,
+            secret_config=secret_manager_config_factory(),
+            policy=capability_policy_factory(),
+        )
+        return JSONResponse(_serialize_capability(result), status_code=200)
 
     @router.patch(_ITEM_PATH)
     async def update(
