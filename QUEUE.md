@@ -38,6 +38,21 @@ Updated: 2026-09-28T11:20:00Z (scheduled Control-plane certifier shift, triggere
   (FTF-H004) is untouched by this shift — certification-only, no relay task work, per this
   shift's own scope.
 
+Updated: 2026-09-28T11:17:00Z (same scheduled shift, branch `claude/wizardly-fermat-wq6qdg`) —
+  **PR #354 (FTF-H004) confirmed green and merged.** Subscribed to PR #354's own GitHub activity
+  immediately after opening it; the real `check_suite.completed` event on the actual final head
+  (`2b339fe`) confirmed all 36 CI jobs completed with `conclusion: success` (including the new
+  `litellm-access-guard-integration` job and the `gate` job's new `FTF-H004 negative-test proof`
+  step) and `mergeable_state: clean` -- verified directly via `pull_request_read`
+  (`get_check_runs`/`get`), not merely trusted from the webhook payload alone. Merged via
+  `merge_pull_request` (merge commit `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`), matching
+  CLAUDE.md's own "Do without asking: ... merge on green + L1 doc (PROVISIONAL)" authorization --
+  `docs/spec-matrix.yaml`'s `evidence_hash` stays blank (unchanged, same precedent FTF-04A04's own
+  PR #353 already established: `evidence_hash` is filled at independent certification, not at
+  merge). This entry itself was written on a fresh branch reset onto the just-merged `main`
+  (this session's own designated branch had already landed), per the repository's own
+  already-merged-branch restart convention. No open owner ask.
+
 Updated: 2026-09-28T10:05:00Z (scheduled autonomous relay shift, branch
   `claude/wizardly-fermat-wq6qdg`) — submitted **FTF-H004 (Authorized LiteLLM catalog and
   revocation semantics)** PROVISIONAL. STEP 0.1: read PROGRESS.md/QUEUE.md/
@@ -7043,10 +7058,17 @@ independent left-join boundary; `packages/litellm_client/access_guard.py::requir
 is the real fail-closed gate composing FTF-H003's ownership check, a fresh
 `litellm_connections.status` read, and FTF-0208's own `is_call_authorized`. See this file's own
 top dated log entry and `docs/certifications/queue.md`'s matching 2026-09-28 FTF-H004 entry for
-the full evidence record. Awaiting independent Control-plane L2 review and a real CI run on the
-opened PR (not this shift's own action — this shift's job is certifying already-pending
+the full evidence record. Real CI confirmed on the actual final head (`2b339fe`, run
+`36413819814`): all 36 jobs green, including the new `litellm-access-guard-integration` job and
+the `gate` job (which covers the new `FTF-H004 negative-test proof` step). Merged (relay's own
+"merge on green + L1 doc (PROVISIONAL)" authorization) — merge commit `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`.
+Awaiting independent Control-plane L2 review before `certification_state` can move past
+`PROVISIONAL` (not this shift's own action — this shift's job is certifying already-pending
 PROVISIONAL items, and FTF-H004 was not yet appended to `docs/certifications/queue.md` as an
 evidence entry when this shift began).
+
+PR: https://github.com/SJZLab/Sovra/pull/354 (branch `claude/wizardly-fermat-wq6qdg` → main,
+merged).
 
 Prior history, kept for the record: this paragraph previously named **FTF-04A04** ("GitHub
 branch/ref selector + immutable SHA resolver") as the current pending item; it was independently

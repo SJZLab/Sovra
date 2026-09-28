@@ -22988,6 +22988,27 @@ defect found by this session's own review — awaiting an independently-triggere
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
 
+## 2026-09-28T11:17:00Z — Same shift — PR #354 confirmed green and merged
+
+Subscribed to PR #354's own GitHub activity immediately after opening it. The real
+`check_suite.completed` webhook event fired on the actual final head (`2b339fe`, after the
+"record PR #354 link" follow-up commit); verified directly via `pull_request_read`
+(`get_check_runs`/`get`), not merely trusted from the webhook payload alone: all 36 real CI jobs
+`completed`/`success`, including the new `litellm-access-guard-integration` job (real Postgres
+service container) and the `gate` job's new `FTF-H004 negative-test proof` step;
+`mergeable_state: clean`, no merge conflict. Merged via `merge_pull_request` (merge commit
+`00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`) — CLAUDE.md's own "Do without asking: ... merge on
+green + L1 doc (PROVISIONAL)" authorization. `docs/spec-matrix.yaml`'s `evidence_hash` stays
+blank (unchanged) — filled at independent certification, not at merge, same precedent FTF-04A04's
+own merged-but-uncertified PR #353 already established.
+
+This session's own designated branch (`claude/wizardly-fermat-wq6qdg`) had already landed as part
+of PR #354; this closeout note was written on the same branch name reset onto the just-merged
+`main` and submitted as a small, separate, docs-only PR, per the repository's own
+already-merged-branch restart convention. Still 1/1 in-flight item (FTF-H004), now merged to
+`main` as PROVISIONAL, awaiting an independently-triggered Control-plane certifier session and the
+L4 gate. No open owner ask.
+
 ## 2026-09-28 — FTF-04A04 — Control plane: CERTIFIED (PR #353 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #354 (FTF-H004) —
