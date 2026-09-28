@@ -1,4 +1,30 @@
 # PROGRESS — Sovra
+## 2026-09-28T21:20:00Z — FTF-1201 — relay: PR #366 confirmed green and merged (session https://claude.ai/code/session_01TFyTkMLqBbbw3BaSxcmcDo)
+
+Subscribed to PR #366's own GitHub activity immediately after opening it. Independently verified
+via `pull_request_read` (`get`/`get_check_runs`, not the webhook payload alone, since an early
+`check_suite.completed` event named a stale `head_sha` from the PR's first commit, superseded by
+this same shift's own second, docs-only commit before the PR was even read for the first time):
+the real workflow run (`36484245881`) attached to the actual current head `25066b1` — confirmed via
+`actions_get::get_workflow_run` naming that exact `head_sha` — completed all 38 jobs with
+`conclusion: success`, including the new `litellm-registration-capability-integration` job and the
+`gate` job (covering the new `FTF-1201 negative-test proof` step). `mergeable_state: clean`. No
+reviews or comments were open on the PR.
+
+Merged via `merge_pull_request` (merge commit `3dcee5d602494fa5a15ff8069fb16313305c52fa`), matching
+CLAUDE.md's own "Do without asking: ... merge on green + L1 doc (PROVISIONAL)" authorization — same
+precedent FTF-04A05's/FTF-H004's/FTF-H005's own PRs already established. `docs/spec-matrix.yaml`'s
+`evidence_hash` stays blank (filled at independent Control-plane certification, not at merge).
+
+This session's own designated branch was restarted from the just-merged `main`
+(`git checkout -B claude/wizardly-fermat-85vqbq origin/main`) rather than fast-forwarded, since the
+branch's prior commits are already contained in `main`'s history via the merge commit and this
+follow-up (tracking-only) push needs no relationship to them — non-destructive.
+
+FTF-1201 is now genuinely merged to `main`, `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`, awaiting an independently-triggered Control-plane certifier session and
+the L4 gate before certification. No open owner ask.
+
 ## 2026-09-28T19:40:00Z — FTF-1201 — relay: submitted PROVISIONAL (PR #366, session https://claude.ai/code/session_01TFyTkMLqBbbw3BaSxcmcDo)
 
 Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` matched the committed
