@@ -1912,9 +1912,11 @@
       "blockers": []
     },
     "FTF-H004": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "00d0b8f38edb64b603cadd2c9cb157fc852d2aa2"
+      ],
       "independent_review": null,
       "blockers": []
     },

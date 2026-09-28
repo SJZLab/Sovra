@@ -9543,3 +9543,82 @@ architecturally sourced rather than silently narrowed, and the UI's own `onResol
 now accurately documented as notification-only. This session's own fault injection independently
 reproduced the submission's claimed 4 failures, confirming the persist call is genuinely
 load-bearing, not decorative. No open notes or gaps left.
+
+## FTF-H004 — Authorized LiteLLM catalog and revocation semantics
+- Criterion ID: FTF-H004
+- PR: https://github.com/SJZLab/Sovra/pull/354 (already merged — the relay's own PROVISIONAL
+  submission, merged on green per CLAUDE.md's "Do without asking", not a prior certification)
+- Merge commit: 00d0b8f38edb64b603cadd2c9cb157fc852d2aa2
+- Validated-by: session https://claude.ai/code/session_01VArQ9CEsLoQMEUN4RGSPgH (independent — PR
+  #354's own two commits both carry `Claude-Session: .../session_015WMxTwMhLQdbDvuLUye7RY`, no
+  overlap with this certifying session's own ID)
+- Date: 2026-09-28
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+  #355 (a doc-only submission recording PR #354's own CI-green confirmation and merge).
+  Grepped `docs/spec-matrix.yaml` directly for `certification_state: PROVISIONAL` and found two
+  pending items: FTF-04A04 (already independently claimed and reviewed by a concurrent
+  Control-plane session via PR #356, still open at the time of this review — left untouched to
+  avoid duplicate/conflicting edits) and FTF-H004, genuinely unclaimed. Reviewed FTF-H004.
+- Read the full diff between PR #354's own base (`89c0b0ad5aefedf3bfb16ed89bfb3392871af828`) and
+  head (`2b339fe9f3d77f30648cfb887411851bceb05f46`) directly (13 files, +3486/-6): confirmed
+  `packages/model_catalog/access_snapshot.py::build_access_snapshot` only ever attaches a fresh
+  `AliasReconciliationResult` model's `fields` to a display entry when that entry's own catalog
+  `status` is `CatalogEntryStatus.CALLABLE`, iterates only `catalog_snapshot.entries` (so a
+  reconciliation id the catalog has never seen cannot become a new entry), and leaves every
+  `fields` empty for a `None` reconciliation. Confirmed
+  `packages/litellm_client/access_guard.py::require_model_access` runs, in order, (1)
+  `authorize_resource_ownership` (FTF-H003, CERTIFIED) against `litellm_connections`, (2) a
+  fresh, uncached `SELECT` of that connection's own `status` column, (3)
+  `catalog.is_call_authorized` (FTF-0208, CERTIFIED, unchanged) — no cached authorization state
+  anywhere in the module for a retry to fall back on, and a single `ModelAccessDeniedError` with
+  a stable `reason` enum on the first failing check.
+- Independently confirmed CI genuinely passed on the real PR head commit
+  `2b339fe9f3d77f30648cfb887411851bceb05f46` (not a stale or self-reported claim): 36/36 check
+  runs `completed`/`success`, including `gate` and the new `litellm-access-guard-integration`
+  job (real `services: postgres` container). Confirmed the merge commit
+  `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2` is genuinely `origin/main`'s current head.
+- Independently reran both real evidence suites against a freshly-provisioned local PostgreSQL
+  16 (`sovra_migrate` role, scratch `sovra_ftfh004` database, `uv sync --all-packages`):
+  `uv run python3 tests/tasks/test_ftf_h004.py` — "all checks passed" (17 checks, including the
+  real local HTTPS gateway round trip proving a metadata-only alias never surfaces and that a
+  retried still-revoked discovery cycle never resets `access_state` away from `revoked`).
+  `uv run python3 tests/integration/test_ftf_h004_access_guard.py` — "all checks passed" (7
+  checks, real cross-tenant/missing/revoked-connection/revoked-catalog denial paths).
+- **Own fault injection (Law 1), not merely re-trusting the submission's own disclosed ones:**
+  disabled `access_guard.py`'s connection-`status` denial (`if False and (...)` in place of the
+  real check) and reran the real-Postgres integration suite: **1 genuine failure**
+  (`test_explicitly_revoked_connection_denies_even_a_still_callable_model`), the same outcome
+  the submission itself disclosed. Reverted byte-identical (md5sum `1a073f66512b8cac122a6e48e34e6491`
+  confirmed matching before and after; `git status` clean afterward), suite re-ran clean
+  immediately after.
+- No open review threads or comments on PR #354 (already merged).
+- Ran `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged **22/22** —
+  confirmed both new modules' blank `proving_symbol` is legitimate (no live job-admission/
+  execution route or catalog UI exists anywhere in this repository yet to call either
+  `require_model_access` or `build_access_snapshot`; `docs/TASK_INDEX.md` lists FTF-0214 as the
+  task that renders a catalog to an end user, the same "no live caller yet" precedent every one
+  of this task's own six dependencies already established for itself). Regression swept
+  `tests/tasks/test_ftf_0208.py` and `tests/tasks/test_ftf_h003.py` — zero regressions.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-H004 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+  FINE_TUNING_FACTORY_RELEASE_1.md`): the acceptance clause ("Real restricted gateway key cannot
+  enumerate/probe metadata-only models; revoke a once-valid model/key and verify new queued
+  actions fail while history remains visible") and the negative_acceptance clause ("401/403
+  never invoke last-known-good execution; retries of a disappearing catalog cannot silently
+  restore access") both genuinely met — confirmed by the direct code read and by this review's
+  own fault injection above, not taken on the PR's own summary.
+- **Result: CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-H004 entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+  `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`. `sync_certified_status()` run directly (updated
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-H004']` updated).
+  `scripts/status.py`: `91/300` -> `92/300` certified; product-true unchanged `22/22`. No open
+  owner ask.
+
+**Conclusion:** Certified L2-CERTIFIED. No blocking defect found. Both new modules compose
+already-CERTIFIED dependencies (FTF-0207, FTF-0208, FTF-H003) correctly and fail closed on every
+disclosed denial path; the disclosed "no live caller yet" scope gap is genuine and does not
+affect this task's own evidence. This session's own fault injection independently confirmed the
+connection-level revocation guard is genuinely load-bearing, not decorative. FTF-04A04 (the
+other PROVISIONAL item found pending) was left untouched this shift — already independently
+claimed by a concurrent Control-plane session via PR #356 at review time; revisit only if that
+PR is not landed by the next certifier shift.

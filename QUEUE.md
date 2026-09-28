@@ -1,4 +1,36 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T11:30:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01VArQ9CEsLoQMEUN4RGSPgH, triggered by the `pull_request.opened`
+  webhook for PR #355) — reviewed **FTF-H004 (Authorized LiteLLM catalog and revocation
+  semantics)**, **CERTIFIED**. `docs/spec-matrix.yaml` showed two `PROVISIONAL` items:
+  FTF-04A04 (already independently claimed and under review by a concurrent Control-plane
+  session via PR #356, still open on its own branch at review time — left untouched to avoid
+  duplicate/conflicting edits to the same shared doc files) and FTF-H004 (PR #354, already
+  merged to `main`, genuinely unclaimed). Session-ID check: PR #354's own two commits both carry
+  `Claude-Session: .../session_015WMxTwMhLQdbDvuLUye7RY` — no overlap, independent per Law 4.
+
+  Independently confirmed PR #354's own CI run reached `completed`/`success` on all 36 checks on
+  the real PR head commit `2b339fe9f3d77f30648cfb887411851bceb05f46`, including the new
+  `litellm-access-guard-integration` job. Read the full diff directly; confirmed
+  `build_access_snapshot`'s left-join only ever attaches fresh reconciled metadata to an entry
+  whose own catalog status is `CALLABLE` and never widens the entry set beyond the catalog's own
+  history, and confirmed `require_model_access` runs ownership → fresh connection-status read →
+  catalog authorization in that order with no cached decision for a retry to reuse. Independently
+  reran both real evidence suites against a freshly-provisioned local PostgreSQL 16 (`uv sync
+  --all-packages`, scratch `sovra_ftfh004` database) — both "all checks passed". Ran an own fault
+  injection (disabled the connection-`status` denial) — reproduced the same single genuine
+  failure the submission itself disclosed, reverted byte-identical (md5sum confirmed). Ran
+  `product_truth_check.py --fail-on-unwired` (unchanged 22/22, blank `proving_symbol` confirmed
+  legitimate — no live job-admission/catalog-UI caller exists yet). Regression swept
+  `test_ftf_0208.py`/`test_ftf_h003.py` — zero regressions. Task contract re-pulled via
+  `tools/r1_handoff.py` — both the acceptance clause and the negative_acceptance clause genuinely
+  met. Full evidence in `docs/certifications/ledger.md`'s own new FTF-H004 entry.
+
+  `docs/spec-matrix.yaml` FTF-H004 set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to merge commit `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`.
+  `sync_certified_status()` run directly. `scripts/status.py`: `91/300` -> `92/300` certified;
+  product-true unchanged `22/22`. No open owner ask.
+
 Updated: 2026-09-28T11:20:00Z (scheduled Control-plane certifier shift, triggered by the
   `pull_request.opened` webhook for PR #354 (FTF-H004)) — PR #354 is a genuinely new, unclaimed
   submission not yet appended to `docs/certifications/queue.md` as an evidence entry at
