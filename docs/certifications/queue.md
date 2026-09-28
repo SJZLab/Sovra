@@ -19209,3 +19209,70 @@ updated. `scripts/status.py`: `89/300` -> `90/300` certified; product-true uncha
 open owner ask.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-28.
+
+## 2026-09-28 — Control plane: certify FTF-0500A (Dataset source selector + purpose-authorization UI), PR #347
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2`,
+triggered by the `pull_request.opened` webhook for PR #349 (a doc-only tracking submission that
+itself reported the dependency-ready frontier fully saturated, no new task that shift).
+`docs/spec-matrix.yaml` grepped directly for `certification_state: PROVISIONAL`: after this same
+session landed the FTF-04A03 certification above (PR #348, resolving its merge conflict), the
+sole remaining pending item was FTF-0500A (PR #347, already merged to `main`).
+
+**Session-ID check:** PR #347's own commit carries `Claude-Session:
+.../session_01PhftQs9fQMFCE7TPYQ3hRP`. No overlap with this session's own ID -- independent per
+Law 4.
+
+Independently confirmed PR #347's own CI run (Actions run `36372341337`, merged commit
+`4548ef86d9c2c500679bb5f83eebf3512664bb31`) reached a real `completed`/`success` conclusion on
+all 34 jobs, including `gate` -- not a stale or self-reported claim.
+
+Read the full diff (6 files, +1272/-6) and the new component in full
+(`apps/web/components/dataset-factory/dataset_source_selector_purpose_authorization_ui.tsx`, 516
+lines): confirmed its `DATASET_SOURCE_TYPES`/`DATASET_SOURCE_PURPOSES`/
+`DATASET_SOURCE_SECURITY_CLASSIFICATIONS` constants match
+`apps/api/app/datasets/dataset_source_connection_schema.py`'s own real `ALLOWED_SOURCE_TYPES`/
+`ALLOWED_PURPOSES`/`ALLOWED_SECURITY_CLASSIFICATIONS` exactly (direct read of both files);
+confirmed its URL helpers (`datasetSourceConnectionsUrl`/`datasetSourceAuthorizeUrl`) match
+`dataset_source_connection_routes.py`'s own real `_COLLECTION_PATH`/`_AUTHORIZE_PATH` route
+paths exactly; confirmed the credential field is only ever sent on create and never
+re-displayed; confirmed the Review button's disabled gate requires
+`displayName`/`purposes`/`securityClassification` all non-empty; confirmed no code path
+defaults `security_classification` or auto-selects a connection. Confirmed dependency FTF-0500
+genuinely `CERTIFIED` before relying on it.
+
+Independently reran `apps/web/tests/ftf_0500a.spec.ts` (10/10) and the full `pnpm exec vitest
+run` suite (42/42 across 8 files, zero regressions). Ran `ruff check .`/`ruff format --check
+.`/`mypy .` (clean, no Python touched), `pnpm run lint`/`format:check`/`typecheck` (clean),
+`python3 scripts/validate_spec.py --strict` (clean, after `git fetch --unshallow`), `python3
+scripts/product_truth_check.py --fail-on-unwired` (unchanged 22/22, blank `proving_symbol`
+confirmed legitimate -- composes only FTF-0500's already-wired routes, same disclosed precedent
+as FTF-0408).
+
+**Own fault injection (Law 1):** removed the `resetForm()` call inside `handleConfirmCreate`
+after a successful creation -- genuine failure reproduced (the "Confirm and create ... resets
+the form" assertion failed for real). Reverted byte-identical (md5sum
+`5d3073ce709de910da392f64a3d41a14` confirmed matching before/after; `git status` clean
+afterward), suite re-ran clean immediately after (10/10). The submission's own third,
+sandbox-denied fault-injection target (the credential-secrecy guard) is exercised by this task's
+own passing "never the raw credential" preview-panel assertion, independently reran and
+confirmed passing.
+
+No open review threads or comments on PR #347 (already merged).
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-0500A --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses ("UI selects explicit source,
+credentials scope, purpose and privacy boundary with preview and approval" and "Independent
+review, exact merged commit, real relevant integration and negative-test evidence recorded")
+and the `negative_acceptance` clause ("No automatic repo/log harvesting or hidden broad source
+permissions") genuinely met -- confirmed by direct code read and by this review's own fault
+injection above, not taken on the PR's own summary.
+
+**Result: CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-0500A entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`e7234cd1915f67300677943bf4b112d6512ac820`. `sync_certified_status()` run directly. Appended
+`docs/certifications/ledger.md` with the full evidence breakdown; `QUEUE.md`/`PROGRESS.md`
+updated. `scripts/status.py`: `90/300` -> `91/300` certified; product-true unchanged `22/22`. No
+open owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-28.

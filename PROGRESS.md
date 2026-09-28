@@ -1,4 +1,48 @@
 # PROGRESS — Sovra
+## 2026-09-28T05:25:00Z — FTF-0500A — Control plane: CERTIFIED (PR #347, session https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2)
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+#349 (a doc-only tracking submission reporting the dependency-ready frontier fully saturated).
+After this same session landed the FTF-04A03 certification below (resolving its PR #348's merge
+conflict), FTF-0500A (PR #347, already merged) was the sole remaining `PROVISIONAL` item.
+
+Session-ID check: PR #347's own commit carries `Claude-Session:
+.../session_01PhftQs9fQMFCE7TPYQ3hRP` — no overlap with this session, independent per Law 4.
+Confirmed PR #347's own CI run (Actions run 36372341337) reached `completed`/`success` on 34/34
+jobs. Read the full diff (6 files, +1272/-6) and the new component
+(`dataset_source_selector_purpose_authorization_ui.tsx`, 516 lines) directly: confirmed its
+source-type/purpose/security-classification closed vocabularies match
+`dataset_source_connection_schema.py`'s own real constants exactly, its URL helpers match
+`dataset_source_connection_routes.py`'s own real route paths exactly, the credential is never
+re-displayed (only a boolean), the Review button stays disabled until all required fields are
+explicitly chosen, and no code path auto-selects a connection. Confirmed dependency FTF-0500
+genuinely `CERTIFIED` before relying on it.
+
+Reran `apps/web/tests/ftf_0500a.spec.ts` (10/10) and the full `pnpm exec vitest run` suite
+(42/42, zero regressions). Ran `ruff check .`/`ruff format --check .`/`mypy .` (clean, no Python
+touched), `pnpm run lint`/`format:check`/`typecheck` (clean), `python3 scripts/validate_spec.py
+--strict` (clean, after `git fetch --unshallow`), `python3 scripts/product_truth_check.py
+--fail-on-unwired` (unchanged 22/22, blank `proving_symbol` confirmed legitimate — composes
+only FTF-0500's already-wired routes).
+
+**Own fault injection (Law 1):** removed the `resetForm()` call inside `handleConfirmCreate`
+after a successful creation — genuine failure reproduced (the "resets the form" assertion failed
+for real). Reverted byte-identical (md5sum `5d3073ce709de910da392f64a3d41a14` confirmed
+matching before/after), suite re-ran clean immediately after. The submission's own
+sandbox-denied third fault-injection target (the credential-secrecy guard) is exercised by this
+task's own passing "never the raw credential" preview-panel assertion, independently reran and
+confirmed passing. No open review threads or comments on PR #347.
+
+Task contract re-pulled via `tools/r1_handoff.py packet FTF-0500A` — both acceptance clauses and
+the negative_acceptance clause genuinely met, confirmed by direct code read and this review's
+own fault injection, not taken on the PR's own summary.
+
+`docs/spec-matrix.yaml` FTF-0500A set to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED`, `evidence_hash: e7234cd1915f67300677943bf4b112d6512ac820`. `sync_certified_status()`
+run directly (`spec/tasks.json`/`docs/implementation/TRACKER.json` updated). `scripts/status.py`:
+`90/300` -> `91/300` certified, product-true unchanged `22/22`. `docs/certifications/ledger.md`
+appended; `QUEUE.md` updated. No open owner ask.
+
 ## 2026-09-28T03:20:00Z — FTF-04A03 — Control plane: CERTIFIED (PR #346, session https://claude.ai/code/session_01WiDx2X5iJ7YYyVWtYj3k7f)
 
 Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR

@@ -9370,3 +9370,78 @@ placed before this entry; `docs/spec-matrix.yaml` merged automatically, no confl
 PR #348's branch, then merged it. No new finding beyond what is already recorded above; this
 addendum documents only who landed the work and how its claims were independently reproduced
 before landing, not a new review.
+
+## FTF-0500A — Dataset source selector + purpose-authorization UI
+- Criterion ID: FTF-0500A
+- PR: https://github.com/SJZLab/Sovra/pull/347 (already merged — the relay's own PROVISIONAL
+  submission, merged on green per CLAUDE.md's "Do without asking", not a prior certification)
+- Merge commit: e7234cd1915f67300677943bf4b112d6512ac820
+- Validated-by: session https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2 (independent —
+  PR #347's own commit carries `Claude-Session: .../session_01PhftQs9fQMFCE7TPYQ3hRP`, no
+  overlap with this certifying session's own ID)
+- Date: 2026-09-28
+- Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for
+  PR #349 (a doc-only tracking submission that itself reported the dependency-ready frontier
+  fully saturated). Grepped `docs/spec-matrix.yaml` directly for `certification_state:
+  PROVISIONAL` and found FTF-0500A the sole remaining pending item after FTF-04A03 (this
+  session's own prior entry above) was landed.
+- Independently confirmed PR #347's own CI run (Actions run `36372341337`, merged commit
+  `4548ef86d9c2c500679bb5f83eebf3512664bb31`) reached a real `completed`/`success` conclusion on
+  all 34 jobs, including `gate` — not a stale or self-reported claim.
+- Read the full diff (6 files, +1272/-6) and the new component in full
+  (`apps/web/components/dataset-factory/dataset_source_selector_purpose_authorization_ui.tsx`,
+  516 lines): confirmed its `DATASET_SOURCE_TYPES`/`DATASET_SOURCE_PURPOSES`/
+  `DATASET_SOURCE_SECURITY_CLASSIFICATIONS` constants match
+  `apps/api/app/datasets/dataset_source_connection_schema.py`'s own `ALLOWED_SOURCE_TYPES`/
+  `ALLOWED_PURPOSES`/`ALLOWED_SECURITY_CLASSIFICATIONS` exactly (direct read of both files, not
+  taken on the PR's own claim); confirmed its URL helpers
+  (`datasetSourceConnectionsUrl`/`datasetSourceAuthorizeUrl`) match
+  `dataset_source_connection_routes.py`'s own real `_COLLECTION_PATH`/`_AUTHORIZE_PATH` route
+  paths exactly; confirmed the credential field is only ever sent on create and never
+  re-displayed (the preview step shows only "credential provided"/"no credential provided");
+  confirmed the Review button's disabled gate requires `displayName`/`purposes`/
+  `securityClassification` all non-empty; confirmed no code path defaults
+  `security_classification` or auto-selects a connection. Confirmed dependency FTF-0500
+  genuinely `CERTIFIED` in `docs/spec-matrix.yaml` before relying on it.
+- Independently reran `apps/web/tests/ftf_0500a.spec.ts` (10/10 pass) and the full `pnpm exec
+  vitest run` suite (42/42 across 8 files, zero regressions). Ran `ruff check .`/`ruff format
+  --check .`/`mypy .` (clean, no Python file touched by this task), `pnpm run
+  lint`/`format:check`/`typecheck` (clean), `python3 scripts/validate_spec.py --strict` (clean,
+  after `git fetch --unshallow`), `python3 scripts/product_truth_check.py --fail-on-unwired`
+  (unchanged **22/22** — confirmed this task's blank `proving_symbol` is legitimate: it composes
+  only FTF-0500's already-wired routes and introduces no new backend dispatcher, same disclosed
+  precedent as FTF-0408).
+- **Own fault injection (Law 1), not merely re-trusting the submission's disclosed ones:**
+  removed the `resetForm()` call inside `handleConfirmCreate` after a successful creation —
+  genuine failure reproduced (the "Confirm and create ... resets the form" assertion failed for
+  real, timing out waiting for the form to reappear). Reverted byte-identical (md5sum
+  `5d3073ce709de910da392f64a3d41a14` confirmed matching before and after; `git status` clean
+  afterward), suite re-ran clean immediately after (10/10). Did not repeat the submission's own
+  two disclosed fault injections verbatim; instead confirmed their claimed outcomes are
+  consistent with the code read above (the `security_classification`-gated Review button and
+  the `resetForm` call are both directly visible, single-purpose code paths, not indirect
+  claims). The submission's own third, sandbox-denied fault-injection target (the
+  credential-secrecy guard) is exercised by this task's own passing "never the raw credential"
+  preview-panel assertion (`queryByText("super-secret-token")` returns null), independently
+  reran and confirmed passing in this session's own test run above.
+- No open review threads or comments on PR #347 (already merged).
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-0500A --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses ("UI selects explicit source,
+  credentials scope, purpose and privacy boundary with preview and approval" and "Independent
+  review, exact merged commit, real relevant integration and negative-test evidence recorded")
+  and the `negative_acceptance` clause ("No automatic repo/log harvesting or hidden broad source
+  permissions") genuinely met — confirmed by direct code read and by this review's own fault
+  injection above, not taken on the PR's own summary.
+- **Result: CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-0500A entry set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+  `e7234cd1915f67300677943bf4b112d6512ac820`. `sync_certified_status()` run directly (updated
+  `spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-0500A']` updated).
+  `scripts/status.py`: `90/300` -> `91/300` certified; product-true unchanged `22/22`. No open
+  owner ask.
+
+**Conclusion:** Certified L2-CERTIFIED. No blocking defect found. The submission's own disclosed
+gap (a third fault injection blocked by this sandbox's own security classifier) does not affect
+this task's own evidence — the guard it would have targeted is independently confirmed exercised
+by a passing assertion, not merely claimed. This session's own fault injection (the `resetForm`
+guard) independently confirmed genuinely load-bearing, not decorative. No open notes or gaps
+left.

@@ -684,9 +684,11 @@
       "blockers": []
     },
     "FTF-0500A": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "e7234cd1915f67300677943bf4b112d6512ac820"
+      ],
       "independent_review": null,
       "blockers": []
     },

@@ -4993,10 +4993,10 @@ FTF-0500:
   proving_symbol: build_dataset_source_connection_router
   proving_test: tests/tasks/test_ftf_0500.py
 FTF-0500A:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dataset source selector + purpose-authorization UI
-  evidence_hash: ''
+  evidence_hash: e7234cd1915f67300677943bf4b112d6512ac820
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500.
     Submitted PROVISIONAL 2026-09-28 (scheduled autonomous relay shift). Recomputed
@@ -5054,8 +5054,66 @@ FTF-0500A:
     left blank, this task composes only FTF-0500''s already-wired routes and introduces
     no new backend dispatcher, the same disclosed no-live-caller-needed precedent
     FTF-0408 already established. Not self-certified (Law 4) -- awaiting independent
-    Control-plane L2 review.'
-  proof_state: L1-PROVEN
+    Control-plane L2 review.
+
+
+    Independently certified 2026-09-28 (session https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2,
+    scheduled Control-plane certifier shift, triggered by the pull_request.opened webhook
+    for PR #349). Session-ID check: PR #347''s own commit carries Claude-Session:
+    .../session_01PhftQs9fQMFCE7TPYQ3hRP -- no overlap with this session''s own ID, independent
+    per Law 4. Independently confirmed PR #347''s own CI run (Actions run 36372341337,
+    head/merged commit 4548ef86d9c2c500679bb5f83eebf3512664bb31) reached a real completed/success
+    conclusion on all 34 jobs -- not a stale or self-reported claim. Read the full diff
+    (6 files, +1272/-6) and the new component in full
+    (apps/web/components/dataset-factory/dataset_source_selector_purpose_authorization_ui.tsx,
+    516 lines): confirmed its DATASET_SOURCE_TYPES/DATASET_SOURCE_PURPOSES/DATASET_SOURCE_SECURITY_CLASSIFICATIONS
+    constants match apps/api/app/datasets/dataset_source_connection_schema.py''s own
+    ALLOWED_SOURCE_TYPES/ALLOWED_PURPOSES/ALLOWED_SECURITY_CLASSIFICATIONS exactly (direct
+    read of both files, not taken on the PR''s own claim); confirmed its URL helpers
+    (datasetSourceConnectionsUrl/datasetSourceAuthorizeUrl) match dataset_source_connection_routes.py''s
+    own real _COLLECTION_PATH/_AUTHORIZE_PATH route paths exactly; confirmed the credential
+    field is only ever sent on create (never re-displayed -- the preview step shows only
+    "credential provided"/"no credential provided"); confirmed the Review button''s disabled
+    gate requires displayName/purposes/securityClassification all non-empty; confirmed
+    no code path defaults security_classification or auto-selects a connection. Confirmed
+    dependency FTF-0500 genuinely CERTIFIED in this file before relying on it.
+
+    Independently reran apps/web/tests/ftf_0500a.spec.ts (10/10 pass) and the full pnpm
+    exec vitest run suite (42/42 across 8 files, zero regressions). Ran ruff check/format
+    --check/mypy (clean, no Python touched), pnpm run lint/format:check/typecheck (clean),
+    python3 scripts/validate_spec.py --strict (clean, after git fetch --unshallow),
+    python3 scripts/product_truth_check.py --fail-on-unwired (unchanged 22/22 -- confirmed
+    this task''s blank proving_symbol is legitimate: it composes only FTF-0500''s already-wired
+    routes and introduces no new backend dispatcher, same disclosed precedent as FTF-0408).
+    Own fault injection (Law 1), not merely re-trusting the submission''s disclosed ones:
+    removed the resetForm() call inside handleConfirmCreate after a successful creation
+    -- genuine failure reproduced (the "Confirm and create ... resets the form" assertion
+    failed for real, waiting on the form testid timing out). Reverted byte-identical
+    (md5sum 5d3073ce709de910da392f64a3d41a14 confirmed matching before and after), suite
+    re-ran clean immediately after (10/10). Did not repeat the submission''s own two disclosed
+    fault injections verbatim; instead confirmed their claimed outcomes are consistent
+    with the code read above (the security_classification-gated Review button and the
+    resetForm call are both directly visible, single-purpose code paths, not indirect
+    claims). The submission''s own third, sandbox-denied fault-injection target (the
+    credential-secrecy guard) is exercised by this task''s own passing "never the raw
+    credential" preview-panel assertion (queryByText("super-secret-token") returns null),
+    independently reran and confirmed passing.
+
+    Task contract re-pulled via python3 tools/r1_handoff.py packet FTF-0500A --plan
+    FINE_TUNING_FACTORY_RELEASE_1.md: both acceptance clauses ("UI selects explicit source,
+    credentials scope, purpose and privacy boundary with preview and approval" and "Independent
+    review, exact merged commit, real relevant integration and negative-test evidence
+    recorded") and the negative_acceptance clause ("No automatic repo/log harvesting or
+    hidden broad source permissions") genuinely met -- confirmed by direct code read and
+    by this review''s own fault injection above, not taken on the PR''s own summary. No
+    open review threads or comments on PR #347 (already merged).
+
+    Result: CERTIFIED. docs/spec-matrix.yaml''s FTF-0500A entry set to certification_state:
+    CERTIFIED / proof_state: L2-CERTIFIED, evidence_hash set to the merge commit e7234cd1915f67300677943bf4b112d6512ac820.
+    sync_certified_status() run directly. docs/certifications/ledger.md appended;
+    QUEUE.md/PROGRESS.md updated. scripts/status.py: 90/300 -> 91/300 certified; product-true
+    unchanged 22/22. No open owner ask.'
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0500a.spec.ts
 FTF-0500B:
