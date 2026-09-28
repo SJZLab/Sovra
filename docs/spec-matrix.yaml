@@ -2943,15 +2943,84 @@ FTF-04A03:
   proving_test: tests/tasks/test_ftf_04a03_connector.py, tests/tasks/test_ftf_04a03_routes.py,
     tests/integration/test_ftf_04a03_github_repository_listing.py, apps/web/tests/ftf_04a03.spec.ts
 FTF-04A04:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: GitHub branch/ref selector + immutable SHA resolver
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A03
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A03 (both CERTIFIED, confirmed before relying on
+    them). Path refined to
+    apps/api/app/target_connectors/github_branch_ref_resolver.py (connector),
+    github_branch_ref_crud.py (auth+audit), github_branch_ref_routes.py
+    (POST .../target-connections/github-branches and
+    .../github-resolve-ref, wired into main.py), and
+    apps/web/components/target-application/
+    github_branch_ref_selector_immutable_sha_resolver.tsx (UI) --
+    matching FTF-04A03's own real layout precedent rather than the
+    packet's initial owner-path suggestion.
+
+    REVISION (this submission, following a real NOT CERTIFIED review of
+    the prior PR #351 submission -- see docs/certifications/queue.md's
+    2026-09-28 FTF-04A04 entries for both the rejection and this fix):
+    the rejected submission's own acceptance-clause-1 "persist" claim was
+    inaccurate -- github_branch_ref_crud.py wrote only an AuditEvent, and
+    both a TargetApplicationConnection/TargetSourceSnapshot write and the
+    UI's own onResolve hand-off were unwired (Law 7). Fixed for real, not
+    re-narrowed silently: .../github-resolve-ref now requires a real,
+    already-existing target_application_connection_id and, on a
+    successful resolution, persists resolved.ref onto that row's own real
+    TargetApplicationConnection.selected_branch column via the
+    already-CERTIFIED (FTF-04A01) update_target_application_connection --
+    a genuine, durable, queryable write in the same transaction as the
+    resolution's own audit event, proven by tests/integration/
+    test_ftf_04a04_github_branch_ref.py reading selected_branch back
+    fresh from Postgres after the request completes (not merely trusting
+    the response body), plus real 404 (unknown/cross-org connection_id)
+    and 409 (already-revoked connection) denial paths. The "resolved
+    identity" (commit SHA) half is still not written onto
+    TargetApplicationConnection -- Section 6.8A's own field list has no
+    field for it, this task's own database_changes contract forbids an
+    independent schema change, and docs/TASK_INDEX.md lists FTF-04A05
+    ("GitHub source snapshot implementation") as depending on FTF-04A04,
+    confirming the architecture's own intended split: FTF-04A04 durably
+    records the branch selection; FTF-04A05 is the downstream task that
+    captures an immutable TargetSourceSnapshot (tree_hash/capture_method/
+    archive -- fields this task never produces) and durably records the
+    resolved commit onto it. This is a disclosed, sourced scope boundary
+    (Section 6.8A/6.8B field lists + the TASK_INDEX dependency graph +
+    the no-independent-schema-change constraint), resolved per CLAUDE.md's
+    own default-resolution-rule rather than a fresh BLOCKER.md ask -- the
+    resolved commit SHA remains real and durably recorded today in the
+    same-transaction github_ref_resolved audit event, a genuine append-
+    only row in this repository's own audit trail.
+
+    Acceptance clause 1's resolve-to-SHA half is unchanged from the prior
+    submission and remains real: two real GitHub REST API v3 calls
+    (GET .../branches for orientation, GET .../commits/{ref} for
+    resolution) -- resolve_ref_to_commit always issues a fresh call,
+    never reusing a list-time SHA, proven by a real local HTTPS fixture
+    whose branch-list SHA deliberately differs from its own
+    commits/{ref} response. negative_acceptance ("Branch advancing
+    between list/read does not mix commits; unknown/inaccessible ref is
+    blocked") is proven at the connector level (fresh resolution, real
+    404/422 denial), the UI level (selecting a different branch or
+    editing the ref field clears any previously resolved SHA
+    immediately), and the new persistence path (a revoked or cross-org
+    connection is denied server-side, never silently persisted).
+    proving_symbol left blank (disclosed): no Next.js app shell exists
+    yet for this UI component to be reachable from a real front door
+    (Law 6), the same precedent FTF-04A03/FTF-0408/FTF-0500A already
+    established, even though the backend routes are genuinely wired into
+    main.py.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: >-
+    tests/tasks/test_ftf_04a04_connector.py,
+    tests/tasks/test_ftf_04a04_routes.py,
+    tests/integration/test_ftf_04a04_github_branch_ref.py,
+    apps/web/tests/ftf_04a04.spec.ts
 FTF-04A05:
   certification_state: NONE
   criticality: MUST

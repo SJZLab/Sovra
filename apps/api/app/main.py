@@ -51,7 +51,12 @@ router from
 `/api/v1/organizations/{organization_id}/projects/{project_id}/
 target-connections/github-repositories` router from
 `app.target_connectors.github_repository_listing_routes.build_github_repository_listing_router`
--- the thirteenth.
+-- the thirteenth, and (FTF-04A04) the real
+`/api/v1/organizations/{organization_id}/projects/{project_id}/
+target-connections/github-branches` and `.../github-resolve-ref` routers
+from
+`app.target_connectors.github_branch_ref_routes.build_github_branch_ref_router`
+-- the fourteenth.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -122,6 +127,7 @@ from app.target_connectors.agent_manifest_routes import build_agent_manifest_rou
 from app.target_connectors.discovered_agent_candidate_routes import (
     build_discovered_agent_candidate_router,
 )
+from app.target_connectors.github_branch_ref_routes import build_github_branch_ref_router
 from app.target_connectors.github_repository_listing_routes import (
     build_github_repository_listing_router,
 )
@@ -167,6 +173,7 @@ def create_app() -> FastAPI:
     app.include_router(build_dataset_source_connection_router(session_factory))
     app.include_router(build_target_application_connection_router(session_factory))
     app.include_router(build_github_repository_listing_router(session_factory))
+    app.include_router(build_github_branch_ref_router(session_factory))
     app.include_router(build_target_source_snapshot_router(session_factory))
     app.include_router(build_discovered_agent_candidate_router(session_factory))
     app.include_router(build_component_binding_router(session_factory))
