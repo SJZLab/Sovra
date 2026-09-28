@@ -19973,5 +19973,5 @@ left blank pending the real merge commit; `proving_symbol` deliberately left bla
 opened PR are required before certification.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-- **PR:** (opened this shift; see `QUEUE.md`'s matching "## Provisional" entry for the link once
-  recorded).
+- **PR:** https://github.com/SJZLab/Sovra/pull/361 (branch `claude/wizardly-fermat-q43eub` →
+  `main`, open).
