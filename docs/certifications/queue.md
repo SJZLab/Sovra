@@ -19603,4 +19603,13 @@ merge commit.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Awaiting independent
   Control-plane L2 review per Law 4. No open owner ask.
 - **PR:** https://github.com/SJZLab/Sovra/pull/354 (branch `claude/wizardly-fermat-wq6qdg` →
-  main).
+  main, merged).
+
+**Merged.** Real CI confirmed directly via `pull_request_read` (`get_check_runs`) on the actual
+final head (`2b339fe`): all 36 jobs `completed`/`success`, including the new
+`litellm-access-guard-integration` job and the `gate` job's new `FTF-H004 negative-test proof`
+step; `mergeable_state: clean`. Merged via `merge_pull_request`, merge commit
+`00d0b8f38edb64b603cadd2c9cb157fc852d2aa2` -- relay's own "merge on green + L1 doc (PROVISIONAL)"
+authorization (CLAUDE.md). `evidence_hash` stays blank pending independent certification (same
+precedent FTF-04A04's own merged-but-uncertified PR #353 already established -- `evidence_hash`
+is filled at certification, not at merge).
