@@ -23070,3 +23070,92 @@ of PR #354; this closeout note was written on the same branch name reset onto th
 already-merged-branch restart convention. Still 1/1 in-flight item (FTF-H004), now merged to
 `main` as PROVISIONAL, awaiting an independently-triggered Control-plane certifier session and the
 L4 gate. No open owner ask.
+
+## 2026-09-28 — FTF-04A04 — Control plane: CERTIFIED (PR #353 merged)
+
+Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #354 (FTF-H004) —
+an unrelated, genuinely new submission not yet appended to `docs/certifications/queue.md` as an
+evidence entry at webhook-fire time. This session's fixed task per its own standing CERTIFY
+prompt is to sweep `docs/certifications/queue.md`/`docs/spec-matrix.yaml` for any pending
+PROVISIONAL item regardless of which PR triggered the run, not to review PR #354 itself. Session
+`https://claude.ai/code/session_016VGfqXGvpgrKTU9qN1yFoc`.
+
+Checked `docs/certifications/queue.md` and confirmed via a direct `certification_state:
+PROVISIONAL` grep against `docs/spec-matrix.yaml` — exactly one pending item, FTF-04A04. PR #353
+had already been merged to `main` (merge commit `89c0b0ad5aefedf3bfb16ed89bfb3392871af828`), the
+fix for PR #352's own prior NOT CERTIFIED finding on PR #351 (acceptance clause 1's "persist ...
+display ref and resolved identity" half not genuinely met — only an `AuditEvent` was written, and
+the docstring inaccurately claimed the real persistence targets were "not-yet-existing").
+
+Session-ID check: both of PR #353's commits (`b2bca9d`/`5323bad`) carry producer session
+`session_013JKVbbb5QnKqBYy6EQgXTu`. This session's own ID matches neither — independent, Law 4.
+
+Diff read directly: `github_branch_ref_crud.py::resolve_project_github_ref` now requires a
+`connection_id` and, on a successful resolution, genuinely calls the already-CERTIFIED
+(FTF-04A01) `update_target_application_connection(..., selected_branch=resolved.ref, ...)` in the
+same transaction as its own audit-event write. `update_target_application_connection` (confirmed,
+via `git log`, last touched at a commit outside this PR's own diff — only imported from, not
+modified) genuinely raises `TargetApplicationConnectionNotFoundError`/
+`TargetApplicationConnectionStateError` for an unknown/cross-tenant/already-revoked connection;
+`github_branch_ref_routes.py` genuinely maps these to real 404/409 and requires
+`target_application_connection_id` in the request body (400 if missing/non-UUID). The UI
+component sends `targetApplicationConnectionId` on every resolve request and now accurately
+documents `onResolve` as a plain notification callback, not the persistence step — the prior
+review's "unwired `onResolve`"/inaccurate-docstring finding is genuinely fixed, not reworded.
+
+**Own re-verification, against a real, freshly-provisioned local PostgreSQL 16** (`sovra_migrate`
+role/`sovra_ftf04a04` database, matching CI's own environment): `uv sync --all-packages`;
+`uv run python3 tests/integration/test_ftf_04a04_github_branch_ref.py` — "all checks passed",
+including the persistence read-back (fresh `SELECT` after the happy-path resolution, never
+trusting the response body alone) and all three new denial paths (unknown/cross-org/revoked
+connection). `tests/tasks/test_ftf_04a04_connector.py`/`test_ftf_04a04_routes.py` — "all checks
+passed". `uv run ruff check .`/`ruff format --check .` (clean, 308 files), `uv run mypy .` (clean,
+308 files), `pnpm run lint`/`typecheck`/`format:check` (clean), `pnpm exec vitest run` (48/48,
+zero regressions). `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone
+artifact, same disclosed precedent as every prior shift) resolved the `stale_commit` batch
+`validate_spec.py --strict` otherwise reports; clean (exit 0) after unshallowing.
+`product_truth_check.py --fail-on-unwired`: `22/22` unchanged — confirmed legitimate directly
+(FTF-04A04 carries no `proving_symbol` entry in this script at all; no live Next.js app shell
+exists yet for this UI component, same disclosed precedent as FTF-04A03/FTF-0500A). `status.py`:
+`91/300` certified pre-certification (Law 2, confirmed not self-inflated). Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py`/`test_ftf_0202.py`
+directly — zero regressions. `test_ftf_04a01_target_application_connection.py`'s own
+real-Postgres suite independently confirmed `BLOCKED_EXTERNAL` (no `bao` binary on `PATH`) —
+pre-existing, unrelated.
+
+**Fault-injection verification, a real one:** wrapped the new
+`update_target_application_connection(...)` call in `if False:` and reran the real-Postgres
+integration suite — 4 genuine failures reproduced (display-ref persistence,
+cross-org-connection-id denial, revoked-connection 409, unknown-connection-id 404 — every check
+depending on the persist call actually running and actually raising). Reverted byte-identical
+(md5sum `92d0b8626d8b82c30f91a28051c0b63a` confirmed matching before and after, `git status`/
+`git diff` clean afterward), suite re-ran clean immediately after.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A04 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1's "persist ... display ref" half verified
+genuinely met by the delivered, real, durable `TargetApplicationConnection.selected_branch`
+write. The "resolved identity" half is genuinely covered by the fix's own disclosed, sourced
+scope-boundary reasoning — the task's own `database_changes` contract forbids an independent
+schema change, `TargetSourceSnapshot` requires a real source-capture this task never performs,
+and `docs/TASK_INDEX.md` lists FTF-04A05 as *depending on* FTF-04A04, confirming the
+architecture's own intended split (not a silent narrowing); the resolved commit SHA remains real
+and durably recorded in the same-transaction `github_ref_resolved` audit event. `negative_
+acceptance` ("Branch advancing between list/read does not mix commits; unknown/inaccessible ref
+is blocked") verified genuinely met — `resolve_ref_to_commit` always issues a fresh call, never
+reusing a list-time SHA; an unknown/cross-org/revoked connection is denied before any
+persistence.
+
+Real CI reconfirmed directly via the GitHub check-runs API against PR #353's actual final head
+(`5323badcbc6baa383ebdf75ee7d01abae0c96bcf`, run `36401249710`): 35/35 checks
+`completed`/`success`, `gate` and `github-branch-ref-integration` included — not a self-reported
+claim. PR state: `merged: true`, merged by `samerzakaria`.
+
+No blocking defect found. `docs/spec-matrix.yaml`'s FTF-04A04 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`89c0b0ad5aefedf3bfb16ed89bfb3392871af828`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json` — `['FTF-04A04']` updated).
+`docs/certifications/ledger.md` entry appended with this session's ID stated explicitly.
+`QUEUE.md` updated, item moved to certified. `scripts/status.py`: `91/300` → `92/300` certified;
+product-true unchanged at `22/22` (no live caller added by this certification, disclosed). No
+open owner ask.

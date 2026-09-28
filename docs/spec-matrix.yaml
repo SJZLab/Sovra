@@ -2943,10 +2943,10 @@ FTF-04A03:
   proving_test: tests/tasks/test_ftf_04a03_connector.py, tests/tasks/test_ftf_04a03_routes.py,
     tests/integration/test_ftf_04a03_github_repository_listing.py, apps/web/tests/ftf_04a03.spec.ts
 FTF-04A04:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: GitHub branch/ref selector + immutable SHA resolver
-  evidence_hash: ''
+  evidence_hash: 89c0b0ad5aefedf3bfb16ed89bfb3392871af828
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -3014,7 +3014,50 @@ FTF-04A04:
     (Law 6), the same precedent FTF-04A03/FTF-0408/FTF-0500A already
     established, even though the backend routes are genuinely wired into
     main.py.
-  proof_state: L1-PROVEN
+
+    CERTIFIED (independent Control-plane L2 review, this entry): session
+    session_016VGfqXGvpgrKTU9qN1yFoc, no session-ID overlap with PR #353's
+    own commits (session_013JKVbbb5QnKqBYy6EQgXTu) -- independent per Law
+    4. Verified directly, not taken on the submission's word: PR #353
+    merged (merge commit 89c0b0ad5aefedf3bfb16ed89bfb3392871af828, fast-
+    forward tree-identical to head commit 5323badcbc6baa383ebdf75ee7d01
+    abae0c96bcf); all 35 real CI check runs (including `gate` and
+    `github-branch-ref-integration`) completed successfully on that head
+    commit. Re-read the full diff directly. Reran
+    tests/integration/test_ftf_04a04_github_branch_ref.py against a real,
+    freshly-provisioned local PostgreSQL 16 -- "all checks passed"; own
+    fault injection (disabled the new `update_target_application_connection`
+    persist call) reproduced the same 4 genuine failures the submission
+    disclosed, reverted byte-identical (md5sum `92d0b8626d8b82c30f91a28
+    051c0b63a` confirmed matching before/after, `git diff` clean). Reran
+    ruff/mypy/pnpm lint/typecheck/format:check/vitest (48/48) clean;
+    `validate_spec.py --strict` clean after `git fetch --unshallow`;
+    `product_truth_check.py --fail-on-unwired` unchanged 22/22 (FTF-04A04
+    carries no proving_symbol entry -- confirmed legitimately blank, not
+    an inflated 0/0 pass, since no live UI-reachable front door exists yet
+    for this component, same disclosed precedent as FTF-04A03/FTF-0500A).
+    Regression swept test_ftf_04a01.py/test_ftf_04a03_connector.py/
+    test_ftf_04a03_routes.py/test_ftf_0202.py -- zero regressions.
+    test_ftf_04a01_target_application_connection.py's own real-Postgres
+    suite independently confirmed BLOCKED_EXTERNAL in this sandbox (no
+    `bao` binary on PATH) -- pre-existing and unrelated, confirmed
+    `target_application_connection_crud.py` was last touched at a commit
+    outside this PR's diff (only imported from, not modified).
+    `tools/r1_handoff.py packet FTF-04A04` re-pulled fresh (`source_sha256`
+    matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance
+    clause 1's "persist ... display ref" half is genuinely met (real,
+    durable `TargetApplicationConnection.selected_branch` write, read back
+    fresh from Postgres); the "resolved identity" half is genuinely
+    covered by the disclosed, sourced scope-boundary reasoning above
+    (no-independent-schema-change contract + TASK_INDEX's own FTF-04A05
+    dependency on FTF-04A04), not a silent narrowing -- the resolved
+    commit SHA is real and durably recorded today in the same-transaction
+    audit event, a genuine queryable row. negative_acceptance clause
+    confirmed met (fresh resolve call never reuses list-time SHA; unknown/
+    cross-org/revoked connection denied 404/409 before any persistence).
+    No open review threads/comments on PR #353 (already merged). No
+    blocking defect found.
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: >-
     tests/tasks/test_ftf_04a04_connector.py,
