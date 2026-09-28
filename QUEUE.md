@@ -32,9 +32,10 @@ Updated: 2026-09-28T19:20:00Z (scheduled relay shift, branch `claude/wizardly-fe
   genuinely fails when the real check is disabled, reverted byte-identical; V:
   `product_truth_check.py --fail-on-unwired` unchanged 23/23 -- disclosed, no dataset-import
   composition task calls either connector yet, same precedent FTF-0500B's own module already
-  established -- no TRACKER). Submitted PROVISIONAL via **PR (opened this shift, branch
-  `claude/wizardly-fermat-f9qdmb` -> `main`)** -- see this file's own "## Provisional" section
-  below and `docs/certifications/queue.md`'s matching entry for the full evidence record.
+  established -- no TRACKER). Submitted PROVISIONAL via **PR
+  https://github.com/SJZLab/Sovra/pull/364** (branch `claude/wizardly-fermat-f9qdmb` -> `main`)
+  -- see this file's own "## Provisional" section below and `docs/certifications/queue.md`'s
+  matching entry for the full evidence record.
 
   STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
   shift, before compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500C) is
@@ -7215,7 +7216,8 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-0500C** ("Database/API/trace source contract and fail-closed validation") — submitted
-PROVISIONAL this shift via **PR (branch `claude/wizardly-fermat-f9qdmb` → `main`)**.
+PROVISIONAL this shift via **PR https://github.com/SJZLab/Sovra/pull/364** (branch
+`claude/wizardly-fermat-f9qdmb` → `main`, open).
 `apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py` implements
 Section 67.1's own real PostgreSQL connector (`validate_and_preview_postgres_source` — allowlisted,
 identifier-validated, parameterized SELECT; `READ ONLY` + `REPEATABLE READ` for "no writes" +

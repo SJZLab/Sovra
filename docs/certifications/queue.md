@@ -20083,5 +20083,5 @@ left blank. **Not self-certified (Law 4)** -- independent Control-plane L2 revie
 run on the opened PR are required before certification.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-- **PR:** opened this shift, branch `claude/wizardly-fermat-f9qdmb` → `main` (see QUEUE.md's own
-  top dated log entry for the URL once assigned by GitHub).
+- **PR:** https://github.com/SJZLab/Sovra/pull/364 (branch `claude/wizardly-fermat-f9qdmb` →
+  `main`, open).
