@@ -1,4 +1,28 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T05:25:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2, triggered by the `pull_request.opened`
+  webhook for PR #349) — reviewed **FTF-0500A (Dataset source selector +
+  purpose-authorization UI)**, **CERTIFIED**. This was the sole remaining `PROVISIONAL` item
+  after this same session landed FTF-04A03 above. Session-ID check: PR #347's own commit carries
+  `Claude-Session: .../session_01PhftQs9fQMFCE7TPYQ3hRP` — no overlap, independent per Law 4.
+  Independently confirmed PR #347's own CI run (Actions run 36372341337) reached
+  `completed`/`success` on all 34 jobs. Read the full diff and the new component directly;
+  confirmed its source-type/purpose/security-classification vocabularies and URL helpers match
+  the real FTF-0500 backend contract exactly (direct read of both files, not taken on the PR's
+  own claim), the credential is never re-displayed, and no code path auto-selects a connection
+  or defaults a required field. Independently reran the task's own test file (10/10) and the
+  full frontend suite (42/42, zero regressions); ran the full lint/format/typecheck/
+  validate_spec.py/product_truth_check.py sweep (22/22 unchanged, legitimately blank
+  `proving_symbol`). Ran an own fault injection (removed the post-creation `resetForm()` call) —
+  genuine failure reproduced, reverted byte-identical. Task contract re-pulled via
+  `tools/r1_handoff.py` — both acceptance clauses and the negative_acceptance clause genuinely
+  met. Full evidence in `docs/certifications/ledger.md`'s own new FTF-0500A entry.
+
+  `docs/spec-matrix.yaml` FTF-0500A set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to merge commit `e7234cd1915f67300677943bf4b112d6512ac820`.
+  `sync_certified_status()` run directly. `scripts/status.py`: `90/300` -> `91/300` certified;
+  product-true unchanged `22/22`. No open owner ask.
+
 Updated: 2026-09-28T05:10:00Z (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2, triggered by the `pull_request.opened`
   webhook for PR #349) — landed the FTF-04A03 certification below: its own PR (#348) was open and

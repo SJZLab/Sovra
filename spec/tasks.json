@@ -4161,8 +4161,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "e7234cd1915f67300677943bf4b112d6512ac820"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
