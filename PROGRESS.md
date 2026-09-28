@@ -22849,10 +22849,10 @@ state`/`proof_state`/`implementation_state`/`proving_test` unchanged (`PROVISION
 `github-branch-ref-integration` job already cover the modified files; no new job needed).
 
 Closed PR #351 without merging (superseded by this shift's own new PR, which carries the actual
-fix) and left a comment pointing to the new PR and to PR #352's own rejection, per this file's own
+fix) and left a comment pointing to PR #353 and to PR #352's own rejection, per this file's own
 established precedent for a superseded, unmerged PR (e.g. QUEUE.md's 2026-09-22 FTF-0202 entry:
 "PR #162 is being closed without merging as part of this same resolution"). **Not self-certified
-(Law 4)** — independent Control-plane L2 review and a real CI run on the newly opened PR are
+(Law 4)** — independent Control-plane L2 review and a real CI run on PR #353 are
 required before certification.
 
 STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before

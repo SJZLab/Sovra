@@ -69,12 +69,12 @@ Updated: 2026-09-28T09:10:00Z (scheduled autonomous relay shift, branch
   `implementation_state`/`proving_test` unchanged (`PROVISIONAL`/`L1-PROVEN`/`IMPLEMENTED`/the
   same four test files). `evidence_hash` still blank pending the real merge commit.
   `.github/workflows/ci.yml` unchanged from PR #351's own diff (already covers the modified
-  files). PR #351 closed without merging (superseded); a comment on it points to the new PR and
+  files). PR #351 closed without merging (superseded); a comment on it points to PR #353 and
   to PR #352's own rejection, per this repository's own established precedent for a superseded,
   unmerged PR (this file's own 2026-09-22 FTF-0202 entry, "PR #162 is being closed without
   merging as part of this same resolution"). `scripts/status.py` unchanged `91/300` certified,
   `22` product-true (Law 2 -- submission, not certification). **Not self-certified (Law 4)** --
-  independent Control-plane L2 review and a real CI run on the newly opened PR are required
+  independent Control-plane L2 review and a real CI run on PR #353 are required
   before certification. Full record in `docs/certifications/queue.md`'s matching 2026-09-28
   FTF-04A04 entries. No open owner ask.
 
@@ -6882,14 +6882,14 @@ full history and evidence.
 **FTF-04A04** ("GitHub branch/ref selector + immutable SHA resolver") — the original submission
 (PR #351, branch `claude/wizardly-fermat-r37pvq`) was independently reviewed via PR #352 and
 found **NOT CERTIFIED** (acceptance clause 1's own "persist... display ref and resolved
-identity" half was not genuinely met). Fixed and resubmitted this shift via a PR opened from
-branch `claude/wizardly-fermat-3w4uhd` -> `main`: `resolve_project_github_ref` now durably
+identity" half was not genuinely met). Fixed and resubmitted this shift via **PR #353**
+(branch `claude/wizardly-fermat-3w4uhd` -> `main`): `resolve_project_github_ref` now durably
 persists the resolved display ref onto a real `TargetApplicationConnection.selected_branch` row
 via the already-CERTIFIED `update_target_application_connection`, with real 404/409 denial paths
 for an unknown/cross-tenant/revoked connection. PR #351 closed without merging (superseded). See
 this file's own top dated log entry and `docs/certifications/queue.md`'s matching 2026-09-28
 entries (the NOT CERTIFIED finding and this fix) for the full evidence record. Awaiting
-independent Control-plane L2 review and a real CI run on the newly opened PR.
+independent Control-plane L2 review and a real CI run on PR #353.
 
 Prior history, kept for the record: this paragraph previously said "None currently" — FTF-04A02
 ("GitHub App/token read-only secret integration") had been independently reviewed and CERTIFIED

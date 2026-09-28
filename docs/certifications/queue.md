@@ -19482,7 +19482,7 @@ the sourced scope-boundary reasoning; `certification_state`/`proof_state`/`imple
 from PR #351's own diff (already covers the modified files).
 
 PR #351 closed without merging (superseded by this shift's own new PR); a comment on it points to
-the new PR and to PR #352's own rejection, per this repository's own established precedent for a
+PR #353 and to PR #352's own rejection, per this repository's own established precedent for a
 superseded, unmerged PR (QUEUE.md's 2026-09-22 FTF-0202 entry). **Not self-certified (Law 4)** --
-independent Control-plane L2 review and a real CI run on the newly opened PR are required before
+independent Control-plane L2 review and a real CI run on PR #353 are required before
 certification. No open owner ask.
