@@ -19032,3 +19032,88 @@ test_ftf_04a03_github_repository_listing.py`, and the full verification-command 
 
 **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
 opened PR are required before certification. No open owner ask.
+
+## 2026-09-28 — FTF-0500A ("Dataset source selector + purpose-authorization UI") — submitted PROVISIONAL
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-ats2yu`. STEP 0.1 read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh; `CLAUDE.md.sha256` self-check matched
+`sha256sum CLAUDE.md` directly (no mismatch); `BLOCKER.md` confirmed to hold only resolved history.
+
+Checked every open PR directly via the GitHub API (#342 FTF-0902, #337 FTF-0601, #336 control-plane
+FTF-04A20/FTF-0500D, #335 FTF-0500D, #328 FTF-04A15, #315/#314 FTF-0303, #313/#311/#308 FTF-0513,
+#295 FTF-0214, #290 FTF-04A08 tracking, #231 FTF-0212, #195/#194 FTF-0304) -- none claim FTF-0500A.
+Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (real
+`certification_state`/`dependencies` per task via `scripts/spec_verification.load_tasks()`): 11
+tasks came back ready. Excluding everything already claimed by an open PR above and everything
+already disclosed-blocked (FTF-1201/FTF-1703/FTF-H004 -- real-network-egress and
+>=1000-real-curated-traces precedents) left **FTF-0500A** as the only genuinely unclaimed,
+non-blocked candidate.
+
+Multiple prior shifts (see this file's own history, e.g. the 2026-09-26/2026-09-27 entries above)
+had flagged FTF-0500A as hitting "the same no-`Dataset`-entity/no-composed-route class FTF-0214
+already found" and always picked a different task instead, but none had actually attempted a
+disclosed scope narrowing for it. Independently re-verified the gap directly: read
+`apps/api/app/datasets/dataset_source_connection_routes.py`/`_crud.py`/`_schema.py` (FTF-0500,
+CERTIFIED dependency) in full. Confirmed the module's own disclosed scope is accurate -- a real,
+live create/get/list/edit/revoke plus `POST .../authorize` route exists; a `/preview`/`/import`
+route does not exist and is explicitly deferred to FTF-0501+ since no `Dataset` entity exists yet.
+Also confirmed FTF-0500D's own local preview-composition module (PR #335) is not yet merged to
+`main`, so it is not available to call either. Concluded FTF-0500's own real surface is a genuine,
+substantial live backend to build this task's own UI against -- the same class of disclosed scope
+narrowing this repository's own FTF-0408/FTF-04A03 precedents already established (build the real,
+live-wireable part; disclose the deferred part explicitly; never fabricate it).
+
+Implemented `apps/web/components/dataset-factory/dataset_source_selector_purpose_authorization_ui.tsx`:
+source-type/credentials-scope/purpose/privacy-boundary selection maps onto FTF-0500's own real
+closed vocabularies and create route; "preview" is a real, local review-before-submit step (echoes
+back exactly what will be submitted, never the raw credential -- only whether one was provided)
+rather than Section 7A.10's connector-based external source-metadata preview, which has no real
+backend anywhere in this repository yet; "approval" is the real explicit "Confirm and create" click
+plus the real backend-enforced `POST .../authorize` check, whose purpose dropdown deliberately
+offers the full closed vocabulary (not only the selected connection's own granted purposes) so a
+denial for an out-of-grant purpose is proven against the real backend, never hidden by client-side
+filtering. Full disclosed-scope reasoning is in the component's own module docstring.
+
+`apps/web/tests/ftf_0500a.spec.ts`: 10 tests, all pass (Vitest + React Testing Library + jsdom,
+mocked `fetch`, real component code paths against the real FTF-0500 API contract). Two independent,
+disclosed fault injections (Law 1), both reverted byte-identical (md5sum
+`8b1cc9f0dbada39fe80bfe7ba5d80e92` before/after each, re-ran clean immediately after each): (1)
+removed the `security_classification` check from the Review-readiness gate -- 1 genuine FAIL; (2)
+removed the `resetForm()` call after a successful creation -- 1 genuine FAIL. **Disclosed, not
+hidden:** a third fault-injection attempt -- leaking the raw credential value into the preview
+panel instead of a boolean -- was denied by this sandbox's own auto-mode permission classifier
+(`[Security Weaken]`) before any test ran against the weakened code; the edit was reverted
+immediately (byte-identical, same md5sum confirmed) and not retried through any other route, per
+that denial's own explicit instruction -- the same class of gap FTF-04A26's own producer session
+already disclosed for a different guard. That guard is still real and exercised by the passing
+(unweakened) suite's own preview-panel assertion (`queryByText("super-secret-token")` returns
+null) -- a gap in Law-1-style adversarial proof for one guard, not an unproven claim the guard
+itself works.
+
+`pnpm run lint`/`format:check`/`typecheck` clean repo-wide. `pnpm exec vitest run`: 42/42 across 8
+files, zero regressions. `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide
+(302 source files, no Python file touched). `python3 scripts/validate_spec.py --strict` clean
+(after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact). `python3
+scripts/verify_task.py --task FTF-0500A --stage task` reports `BLOCKED`, expected/disclosed (same
+two-commit pattern as FTF-0402/FTF-04A26/FTF-04A02/FTF-04A03 -- `spec/verification-map.json`'s
+entry is added in a later certifying commit). `product_truth_check.py --fail-on-unwired` unchanged
+`22/22` (`proving_symbol` left blank -- this task composes only FTF-0500's already-wired routes,
+same disclosed no-live-caller-needed precedent as FTF-0408). `status.py` unchanged `89/300`
+certified, `22` product-true (Law 2 -- this is a submission, not a certification). Regression swept
+`uv run python3 tests/tasks/test_ftf_0500.py` -- "all checks passed" (the printed traceback mid-run
+is that test's own existing negative-test path deliberately exercising a malformed-tenant-context
+guard, not a new failure).
+
+`docs/spec-matrix.yaml` FTF-0500A set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: apps/web/tests/ftf_0500a.spec.ts`;
+`evidence_hash` left blank pending the real merge commit. Edited via a targeted line-range splice
+(load full YAML, replace only the `FTF-0500A:` block, re-write only those lines) rather than a
+full-file re-dump -- confirmed via `git diff --stat` the change touches only this one entry's own
+lines, avoiding the whole-file reformatting risk and the unquoted-colon YAML-parsing hazard
+FTF-0408's own certification history already flagged. No CI gate step added -- this is a
+Vitest-only frontend task, and `pnpm exec vitest run` (already wired into
+`.github/workflows/ci.yml`) auto-discovers the new spec file, the same precedent FTF-0408/
+FTF-04A03's own frontend halves already established.
+
+**Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification. No open owner ask.
