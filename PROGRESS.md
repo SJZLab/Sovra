@@ -22479,3 +22479,64 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A26) is `L1-PRO
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+
+## 2026-09-28T04:54:08Z — Scheduled autonomous relay shift — no new task, frontier fully saturated
+
+Session: this session. STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md (tail
+sections — each file is 650KB–1.4MB, read via `tail`/targeted `grep`, not in full). CLAUDE.md
+self-check: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch,
+no BLOCKER.md written. `cognee-cli` is not installed in this sandbox — declared per STEP 0.2,
+text-search fallback active throughout.
+
+This session's designated branch (`claude/wizardly-fermat-e7yiie`) was already an ancestor of
+fresh `origin/main` (confirmed via `git merge-base --is-ancestor origin/main HEAD`) — no reset
+needed. `origin/main` tip: `e7234cd` (merge of PR #347, FTF-0500A), one commit past PR #346's
+merge (`f8e744c`, FTF-04A03). Confirmed both FTF-04A03 and FTF-0500A sit at `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN` in `docs/spec-matrix.yaml` on this fresh tip — correctly
+excluded from the `89/300` certified count `scripts/status.py` reports (Law 2).
+
+Checked all 17 open PRs directly via the GitHub API before picking work (numbers/heads/titles
+recorded in this shift's own `QUEUE.md` entry). Two pairs turned out to be stale/superseded rather
+than live claims: #315/#314 (FTF-0303) and #313/#311/#308 (FTF-0513) both correspond to tasks
+`docs/spec-matrix.yaml` already shows `CERTIFIED`/`L2-CERTIFIED` on the current tip — those open
+PRs are leftover history, not active work, and were not treated as claiming their task IDs.
+#348 (Control-plane certification of FTF-04A03, PR #346) currently reports `mergeable_state:
+dirty` — a real merge conflict, but on a certifier-owned PR this relay session did not open and
+was not asked to watch, so per this session's own scope (relay execution only, not PR janitor for
+other sessions' work) it was left untouched rather than resolved unilaterally.
+
+Recomputed the dependency-ready frontier from first principles: joined `docs/spec-matrix.yaml`'s
+real `certification_state` per task against `docs/TASK_INDEX.md`'s own canonical, structured
+`Dependencies` column (deliberately not the free-text `deps=` fragments inside individual `notes`
+fields, which exist only for tasks a prior shift already examined and would silently miss any
+newly-ready task no shift has yet looked at). Of 300 tasks: 89 `CERTIFIED`/`PROMOTED` + 2
+`PROVISIONAL` (FTF-04A03, FTF-0500A) = 91 done or in flight. Exactly 10 of the remaining 209 have
+every dependency already `CERTIFIED`: FTF-0212, FTF-0214, FTF-0304, FTF-0500D, FTF-0601,
+FTF-0902, FTF-04A15 — each genuinely claimed by a still-open, non-superseded PR (#231, #295,
+#194/#195, #335, #337, #342, #328 respectively) — plus FTF-1201, FTF-1703, FTF-H004, all three
+re-confirmed still disclosed-blocked (FTF-1201/FTF-H004 need real outbound network egress this
+sandbox's own `RELAY SANDBOX` note states it lacks; FTF-1703 needs ≥1000 real curated traces this
+sandbox does not have — this shift's own `EVAL_LLM_KEY`/CI-Actions-routing note does not change
+either constraint, since both tasks need the resource directly in the relay's own dev/test loop,
+not merely for a live-LLM-eval call that could be routed through CI).
+
+**Zero of the 10 dependency-ready tasks are genuinely available to start this shift.** This is not
+a true blocker (nothing failed, nothing is stuck on a retry) and not an ask-first item — it is the
+dependency-ready frontier being fully saturated by legitimate in-flight work, the first time this
+repository's own shift history discloses that state. No task claimed, no code changed, no new PR
+opened for product work. Only doc updates this shift: this entry, the matching `QUEUE.md` top
+entry, and this session's own designated-branch push recording the finding (committed and pushed
+as a doc-only change, mirroring the precedent PR #290 already established for a doc-only tracking
+submission).
+
+STEP 3: PROGRESS.md/QUEUE.md updated before any compaction (`docs/certifications/queue.md` not
+appended — no item was submitted to Control plane this shift, so there is nothing for that queue
+to certify). STEP 4: closest fit is stop condition (a) — every currently-provable task is already
+either `PROVISIONAL`/`L1-PROVEN` (FTF-04A03, FTF-0500A, both awaiting independent Control-plane L2
+review) or spoken for by an open PR awaiting Control-plane action; reporting this rather than
+improvising a task outside the real frontier or touching another session's in-flight PR. No open
+owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty). Next shift: re-run this same
+frontier computation fresh — if any of the seven claimed PRs above has since merged, closed
+unmerged, or gone stale long enough to warrant Control-plane attention, a new candidate may open
+up.

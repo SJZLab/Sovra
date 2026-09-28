@@ -1,5 +1,58 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-09-28T03:00:00Z (scheduled autonomous relay shift, branch
+Updated: 2026-09-28T04:54:08Z (scheduled autonomous relay shift, branch
+  `claude/wizardly-fermat-e7yiie`) — **no new task started; dependency-ready frontier is fully
+  claimed or blocked.** STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md tails
+  fresh (files are 650KB-1.4MB, read via tail rather than in full). `sha256sum CLAUDE.md` matched
+  `CLAUDE.md.sha256` directly -- no mismatch. `cognee-cli` not installed in this sandbox --
+  text-search fallback active throughout, declared per STEP 0.2.
+
+  This session's own designated branch (`claude/wizardly-fermat-e7yiie`) was confirmed already an
+  ancestor of fresh `origin/main` (`git merge-base --is-ancestor origin/main HEAD` true) -- no
+  reset needed, unlike several recent prior shifts. `origin/main` tip is `e7234cd` (merge of PR
+  #347, FTF-0500A), one commit past PR #346's merge (`f8e744c`, FTF-04A03). Confirmed via
+  `docs/spec-matrix.yaml` on this fresh tip: both FTF-04A03 and FTF-0500A are `PROVISIONAL`/
+  `L1-PROVEN` -- correctly not yet counted toward the `89/300` certified figure `scripts/
+  status.py` reports (Law 2 -- submissions, not certifications).
+
+  Checked every open PR directly via the GitHub API (17 open, listed by number/head/title): #348
+  (Control-plane certification of FTF-04A03, PR #346 -- currently `mergeable_state: dirty`, a
+  certifier-owned conflict, not a relay action), #342 (FTF-0902), #337 (FTF-0601), #336
+  (control-plane review, FTF-0500D found blocked on merge conflict), #335 (FTF-0500D), #328
+  (FTF-04A15), #315/#314 (FTF-0303 -- independently confirmed `docs/spec-matrix.yaml` already shows
+  FTF-0303 `CERTIFIED`/`L2-CERTIFIED`, so this stale pair is superseded, not a live claim), #313/
+  #311/#308 (FTF-0513 -- likewise independently confirmed already `CERTIFIED`/`L2-CERTIFIED`,
+  superseded), #295 (FTF-0214, disclosed blocked), #290 (FTF-04A08 tracking, doc-only), #231
+  (FTF-0212), #195/#194 (FTF-0304 duplicates).
+
+  Recomputed the dependency-ready frontier from first principles rather than trusting any prior
+  shift's own running list: joined `docs/spec-matrix.yaml`'s real `certification_state` per task
+  against `docs/TASK_INDEX.md`'s own canonical, structured `Dependencies` column (not the free-text
+  `deps=` fragments buried in individual `notes` fields, which only exist for tasks a prior shift
+  already touched and would silently miss any newly-ready task no shift has yet examined). Result:
+  of 300 tasks, 89 `CERTIFIED`/`PROMOTED` + 2 `PROVISIONAL` (FTF-04A03, FTF-0500A) = 91 done or
+  in flight; exactly **10** of the remaining 209 have every dependency already `CERTIFIED`:
+  FTF-0212, FTF-0214, FTF-0304, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15 (all seven genuinely
+  claimed by the still-open, non-superseded PRs enumerated above), plus FTF-1201/FTF-1703/FTF-H004
+  (all three re-confirmed still disclosed-blocked: FTF-1201/FTF-H004 need real outbound network
+  egress this sandbox's `RELAY SANDBOX` note itself states it lacks; FTF-1703 needs >=1000 real
+  curated traces this sandbox does not have -- the `EVAL_LLM_KEY`/CI-Actions-routing note in this
+  shift's own prompt does not change either constraint, since both are about the relay's own local
+  dev-loop needing the resource directly, not merely about a live-LLM-eval call).
+
+  **Zero of the 10 dependency-ready tasks are genuinely available to start this shift** -- every
+  one is either already claimed by a live, non-superseded open PR or disclosed-blocked by a
+  constraint this sandbox cannot lift. This is not a true blocker (nothing failed; nothing is
+  stuck) and not an ask-first item -- it is the queue's own dependency-ready frontier being fully
+  saturated by in-flight work for the first time this repository's history discloses. No task
+  claimed, no PR opened, no code changed this shift. Closest fit is STEP 4 stop condition (a): all
+  currently-provable work is already at PROVISIONAL/`L1-PROVEN` (FTF-04A03, FTF-0500A) or in an
+  open PR awaiting Control-plane action -- reporting and stopping rather than improvising a task
+  outside the real frontier or touching another session's in-flight PR. No open owner ask (`QUEUE.md`
+  "Owner actions -- current" unchanged, empty). Next shift: re-run this same frontier computation
+  fresh -- if any of the seven claimed PRs above has since merged, closed unmerged, or gone stale
+  long enough to warrant Control-plane attention, a new candidate may open up.
+
+Previously updated: 2026-09-28T03:00:00Z (scheduled autonomous relay shift, branch
   `claude/wizardly-fermat-ats2yu`) — submitted **FTF-0500A (Dataset source selector +
   purpose-authorization UI)** PROVISIONAL. Checked every open PR (#342/#337/#336/#335/#328/#315/
   #314/#313/#311/#308/#295/#290/#231/#195/#194) -- none claim FTF-0500A. Recomputed the
