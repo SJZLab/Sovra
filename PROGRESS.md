@@ -22861,6 +22861,133 @@ blocking defect found by this session's own review — awaiting an independently
 Control-plane certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md`
 "Owner actions — current" unchanged, empty).
 
+## 2026-09-28T10:05:00Z — Scheduled autonomous relay shift — FTF-H004 submitted PROVISIONAL
+
+Session: this session (branch `claude/wizardly-fermat-wq6qdg`). STEP 0.1: read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh (this file's own tail, above).
+CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly. STEP 0.2: `cognee-cli` not
+installed in this sandbox — text-search fallback declared and used throughout.
+
+Confirmed directly via GitHub (not merely this repository's own tracking prose) that PR #353
+(the prior shift's FTF-04A04 fix) is merged into `main` at `89c0b0a`, still awaiting
+independent Control-plane L2 review/certification — no relay action left on it. Recomputed the
+dependency-ready frontier fresh from `docs/spec-matrix.yaml`'s real `certification_state`
+joined against `docs/TASK_INDEX.md`'s own canonical `Dependencies` column: 12 items ready
+(FTF-0212, FTF-0214, FTF-0304, FTF-04A15, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902,
+FTF-1201, FTF-1703, FTF-H004). Checked all 17 open PRs directly (`#352/#349/#342/#337/#336/
+#335/#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194`): seven of the twelve
+dependency-ready items already have an open PR (FTF-0212 #231, FTF-0214 #295, FTF-0304 #195/
+#194, FTF-04A15 #328, FTF-0500D #335, FTF-0601 #337, FTF-0902 #342). FTF-0500B, FTF-0500C,
+FTF-1201, FTF-1703 and FTF-H004 are genuinely unclaimed. Picked **FTF-H004** ("Authorized
+LiteLLM catalog and revocation semantics") — a well-bounded `audit_hardening` task with no new
+external-resource dependency, unlike FTF-0500B/FTF-0500C (real S3/MinIO-shaped fixture) or
+FTF-1703 (a real dataset-training-count minimum with no existing precedent in this sandbox).
+
+`python3 tools/r1_handoff.py packet FTF-H004 --plan FINE_TUNING_FACTORY_RELEASE_1.md` re-pulled
+fresh (`source_sha256` matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`). Inspected the real
+dependency chain directly before writing any code: `packages/litellm_client/
+last_known_good_catalog.py` (FTF-0208, CERTIFIED) already separates historic/callable catalog
+entries but only ever tracks a boolean `metadata_status`, discarding `packages/litellm_client/
+alias_reconciliation.py` (FTF-0207, CERTIFIED)'s own real allowlisted `/model/info` field
+values entirely — nothing in this repository combined the two. `packages/litellm_client/
+connection_schema.py` (FTF-0201, CERTIFIED) already models an administrator's explicit
+connection revocation as a soft `status='revoked'` row, independent of anything the gateway
+itself reports — a distinct, Factory-level "missing grant" this task's own goal names but
+FTF-0208's own catalog cannot see. This confirmed genuine, non-duplicative new scope rather than
+re-implementing an already-CERTIFIED dependency.
+
+**Built for real** (path refined from the packet's own generic `packages/model-catalog/
+access_snapshot.py`/`packages/litellm-client/access_guard.py` suggestion to this repository's
+own real underscore-module layout, matching every prior task's own precedent):
+
+- `packages/model_catalog/access_snapshot.py::build_access_snapshot` — combines FTF-0208's own
+  historic `CatalogSnapshot` with a fresh FTF-0207 `AliasReconciliationResult` as a second,
+  independent "no authorization union" boundary (Section 3.2): real safe fields attach only to
+  an entry whose own catalog status is `CALLABLE`, never to a stale/removed entry even if the
+  fresh reconciliation still names it, and a reconciliation id the catalog has never seen never
+  becomes a new displayed entry (only ever iterates the catalog's own entries).
+- `packages/litellm_client/access_guard.py::require_model_access` — the real fail-closed gate a
+  future job-admission/execution call site is required to pass: (1) `authorize_resource_
+  ownership` (FTF-H003, CERTIFIED) against `litellm_connections`; (2) a fresh read of that
+  connection's own `status` column (the Factory-level revocation half, independent of the
+  gateway's own 401/403); (3) `catalog.is_call_authorized` (FTF-0208, unchanged, reused not
+  reimplemented). All three checks re-read real, current state on every call — no cached
+  "was authorized last time" flag for a retry to fall back on.
+
+**Real evidence, no mocked gateway:** `tests/tasks/test_ftf_h004.py` — six pure/no-I/O checks
+for `build_access_snapshot`'s left-join composition (callable entry gets matching fields; stale/
+removed entries never do even when reconciliation still names them; a reconciliation id absent
+from the catalog never creates a new entry; a missing reconciliation leaves every entry empty;
+access_state/alert pass through unchanged), plus one real local HTTPS gateway round trip
+(self-signed CA installed into this sandbox's own trust store, same precedent
+`tests/tasks/test_ftf_0207.py`/`test_ftf_0208.py` already established) across two real
+sequential `discover_models`/`enrich_visible_models`/`reconcile_aliases` cycles (healthy
+credential -> revoked credential): the real gateway's metadata-only alias
+(`internal-mgmt-model`, advertised only via `/model/info`, never `/v1/models`) never appears in
+the combined snapshot at all — this task's own "Real restricted gateway key cannot enumerate/
+probe metadata-only models" acceptance, proven through a real round trip, not only at unit
+level; after the real revocation, the previously-callable alias remains visible (downgraded to
+stale, no fields) and a real retried still-failing call never resets `access_state` away from
+`revoked` — this task's own negative_acceptance ("retries of a disappearing catalog cannot
+silently restore access").
+
+`tests/integration/test_ftf_h004_access_guard.py` — real local PostgreSQL 16 (fresh scratch
+`sovra_migrate` role/`sovra_ftfh004` database, this sandbox's own real sudo/`service postgresql
+start` access, created and dropped for this run): two real organizations, a real owned/active
+connection, a real owned/explicitly-revoked connection and a real foreign-tenant connection.
+Proves: an owned, active connection with a genuinely callable model is authorized; a
+cross-tenant connection ID and a wholly nonexistent one are denied with the *identical* reason
+(no existence oracle, live against Postgres/RLS); an explicitly-revoked `LiteLLMConnection`
+denies access even though its own in-memory catalog still reports the model callable (the
+"disappearing catalog" case, at the Factory-connection level); a real gateway-level (catalog)
+revocation denies access even for an owned, still-active connection, and the revoked model
+remains visible in the catalog's own history; and a catalog with no successful discovery cycle
+yet denies by default rather than "no rows, so allow."
+
+**Own fault injection (Law 1), proving both new guards are load-bearing, not decorative:** (1)
+disabled `access_guard.py`'s connection-`status` denial (`if False:` in place of the real check)
+— reran the real-Postgres suite: **1 genuine failure** (the explicitly-revoked-connection
+check). (2) dropped `access_snapshot.py`'s `CatalogEntryStatus.CALLABLE` guard from the
+left-join condition — reran the pure suite: **2 genuine failures** (the stale-entry and
+removed-entry field-leak checks). Both reverted byte-identical (md5sum confirmed before/after:
+`1a073f66512b8cac122a6e48e34e6491` for `access_guard.py`, `af8a0c91dcab97b812ea6d0603379c4f`
+for `access_snapshot.py`), both suites re-ran clean immediately after.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (315 source files); `uv run
+mypy .` clean repo-wide (315 files, zero new errors). `pnpm install --frozen-lockfile`/`pnpm
+run lint`/`format:check`/`typecheck` clean; `pnpm exec vitest run` 48/48 across 9 files,
+unchanged (no frontend file touched this shift). `python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact
+every prior shift's own history already discloses). `product_truth_check.py
+--fail-on-unwired`: unchanged **22/22** — `proving_symbol` left blank for both new modules
+(disclosed): no live job-admission/execution route or UI exists anywhere in this repository yet
+to call either one; `docs/TASK_INDEX.md` lists FTF-0214 ("Model catalog UI") as the task that
+renders a catalog to an end user — the same "no live caller yet" precedent every one of this
+task's own six dependencies already established for itself. `status.py`: unchanged `91/300`
+certified, `22` product-true (Law 2 — this is a submission, not a certification). Regression
+swept `test_ftf_0204.py`/`test_ftf_0205.py`/`test_ftf_0207.py`/`test_ftf_0208.py`/
+`test_ftf_0209.py`/`test_ftf_0215.py`/`test_ftf_h003.py` — zero regressions.
+`tests/integration/test_ftf_h003_cross_layer_isolation.py`/`test_ftf_0201_litellm_connection_
+crud.py` (the sibling resources' own real Postgres proofs) reran clean on fresh scratch
+databases too, as additional regression checks beyond this task's own write set.
+
+`.github/workflows/ci.yml`: one `FTF-H004 negative-test proof` step added to the `gate` job
+immediately after FTF-0215's own step (no DB required), plus a new dedicated
+`litellm-access-guard-integration` job (real `services: postgres` container) mirroring
+`litellm-connection-crud-integration`'s own pattern exactly.
+
+`docs/spec-matrix.yaml` FTF-H004 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_h004.py,
+tests/integration/test_ftf_h004_access_guard.py`; `evidence_hash` left blank pending the real
+merge commit. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real
+CI run on the opened PR are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-H004) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-28 — FTF-04A04 — Control plane: CERTIFIED (PR #353 merged)
 
 Scheduled Control-plane certifier shift, `pull_request.opened` webhook for PR #354 (FTF-H004) —
