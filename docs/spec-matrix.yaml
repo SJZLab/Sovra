@@ -8567,10 +8567,10 @@ FTF-H003:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h003.py
 FTF-H004:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Authorized LiteLLM catalog and revocation semantics
-  evidence_hash: ''
+  evidence_hash: 00d0b8f38edb64b603cadd2c9cb157fc852d2aa2
   implementation_state: IMPLEMENTED
   notes: 'kind=audit_hardening; requirements=AF-03, AF-04; scenarios=Q02; deps=FTF-0204, FTF-0205, FTF-0207,
     FTF-0208, FTF-0209, FTF-H003 (all CERTIFIED). Built for real in two new modules: packages/model_catalog/access_snapshot.py::build_access_snapshot
@@ -8597,7 +8597,7 @@ FTF-H004:
     and no live UI/route calls build_access_snapshot -- docs/TASK_INDEX.md lists FTF-0214 ("Model
     catalog UI") as the task that renders a catalog to an end user. proving_symbol stays blank and
     product_truth_check.py''s product-true count is deliberately unchanged.'
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h004.py, tests/integration/test_ftf_h004_access_guard.py
 FTF-H005:
