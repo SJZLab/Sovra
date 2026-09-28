@@ -7007,6 +7007,8 @@ top dated log entry and `docs/certifications/queue.md`'s matching 2026-09-28 FTF
 the full evidence record. Awaiting independent Control-plane L2 review and a real CI run on the
 opened PR.
 
+PR: https://github.com/SJZLab/Sovra/pull/354 (branch `claude/wizardly-fermat-wq6qdg` → main).
+
 **FTF-04A04** ("GitHub branch/ref selector + immutable SHA resolver") — the original submission
 (PR #351, branch `claude/wizardly-fermat-r37pvq`) was independently reviewed via PR #352 and
 found **NOT CERTIFIED** (acceptance clause 1's own "persist... display ref and resolved

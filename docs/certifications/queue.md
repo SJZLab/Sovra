@@ -19602,3 +19602,5 @@ merge commit.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Awaiting independent
   Control-plane L2 review per Law 4. No open owner ask.
+- **PR:** https://github.com/SJZLab/Sovra/pull/354 (branch `claude/wizardly-fermat-wq6qdg` →
+  main).
