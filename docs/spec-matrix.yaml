@@ -8715,16 +8715,62 @@ FTF-H004:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h004.py, tests/integration/test_ftf_h004_access_guard.py
 FTF-H005:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Route identity, fallback and cache provenance
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0203, FTF-0210, FTF-0215,
-    FTF-H004
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=audit_hardening; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0203, FTF-0210, FTF-0215,
+    FTF-H004 (all CERTIFIED). This task's own goal ("Capture route/upstream/template/cache/fallback
+    identity... use immutable scoped aliases for qualification and require actual upstream readback")
+    is packages/litellm_client/route_attestation.py::attest_route -- a real, cache-bypassed
+    POST /v1/chat/completions call (every request carries LiteLLM's own real, documented
+    "cache": {"no-cache": true} request field, https://docs.litellm.ai/docs/proxy/caching, so an
+    attestation can never be silently answered from a cached response) that records both the real
+    resolved_model body field FTF-0210's own probe_chat already established AND a second, independent
+    deployment_fingerprint read from LiteLLM's own real, documented x-litellm-model-id response
+    header (https://docs.litellm.ai/docs/proxy/response_headers) -- disclosed, not silently assumed:
+    a resolved alias name alone cannot distinguish a fallback to a different deployment answering
+    under the identical alias, which is exactly this task's own acceptance clause's scenario.
+    route_identity_state is VERIFIED only when both signals are genuinely present; FTF-0210 itself
+    (already CERTIFIED) is deliberately left unmodified (Law 15).
+    packages/model_catalog/route_snapshot.py::pin_route_identity/require_pinned_route_unchanged is
+    the pin/drift half: pin_route_identity refuses (RouteQualificationInvalidError,
+    IDENTITY_UNVERIFIED) to freeze anything but a genuinely VERIFIED identity -- this task's own
+    negative_acceptance ("Unknown upstream identity cannot claim reproducible/private
+    qualification"). require_pinned_route_unchanged re-attests fresh on every call (no cached
+    decision) and denies -- DEPLOYMENT_FINGERPRINT_CHANGED / RESOLVED_MODEL_CHANGED /
+    REATTESTATION_FAILED -- the instant a private test's pinned route drifts, rather than silently
+    rerouting (this task's own acceptance clause, proven for both an alias-upstream change and an
+    external-fallback-deployment change).
+    Real fault injection (Law 1, disclosed): tests/tasks/test_ftf_h005_route_snapshot.py's own
+    test_fallback_drift_is_genuinely_caught_by_the_real_comparison additionally disabled the real
+    deployment_fingerprint comparison directly in packages/model_catalog/route_snapshot.py and
+    confirmed the fallback-drift assertion genuinely FAILS, then reverted byte-identical (md5sum
+    d7c90fc4961f2f758f7477749d73d187 confirmed matching before/after) and reran clean.
+    Test evidence: tests/tasks/test_ftf_h005_route_attestation.py (real local HTTPS gateway + real
+    self-signed CA installed into the sandbox trust store, same convention test_ftf_0210.py already
+    established, 5 checks incl. the real observed cache-bypass byte on the wire and the missing-
+    fingerprint-header negative case) and tests/tasks/test_ftf_h005_route_snapshot.py (pure no-I/O
+    unit, 7 checks incl. the disclosed fault injection above) -- all clean.
+    ruff check ./ruff format --check . clean repo-wide (323 files, up from 319); mypy . clean
+    repo-wide (323 files, zero new errors -- the 17 pre-existing alembic "op"/"context" attr-defined
+    errors are unrelated to this task and unchanged). pnpm lint/typecheck/format:check unaffected
+    (no frontend file touched). validate_spec.py --strict clean (required `git fetch --unshallow`
+    first -- this sandbox checkout started shallow, same precedent FTF-04A04 already disclosed).
+    product_truth_check.py --fail-on-unwired: unchanged 23/23 -- disclosed, not hidden (same
+    precedent every sibling FTF-H00x module already established for "no live caller yet"): no live
+    qualification/evaluation workflow anywhere in this repository calls either new module yet (Inspect
+    AI integration is FTF-R004, still unclaimed). proving_symbol stays blank.
+    Regression swept tests/tasks/test_ftf_0203.py/test_ftf_0210.py/test_ftf_0215.py/test_ftf_h004.py
+    -- zero regressions (test_ftf_0210.py's own background ThreadingHTTPServer thread logs a benign
+    post-exit SSLEOFError from a teardown-timing race after its own process already printed "all
+    checks passed" and exited 0 -- pre-existing test-harness behavior, not a regression this task
+    introduced).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h005_route_attestation.py, tests/tasks/test_ftf_h005_route_snapshot.py
 FTF-H006:
   certification_state: CERTIFIED
   criticality: MUST
