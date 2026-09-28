@@ -1,4 +1,47 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T15:00:00Z (scheduled relay shift, session
+  https://claude.ai/code/session_01WXPYTLbfBkkBH2SCwTrrYL) — STEP 0: hash-checked CLAUDE.md
+  (match, `sha256sum CLAUDE.md` == `CLAUDE.md.sha256`). Read `BLOCKER.md` in full: both entries
+  are resolved history, no live blocker. Designated branch `claude/wizardly-fermat-lp04ue` did not
+  exist on `origin` yet at shift start (local checkout was already at `origin/main`'s own current
+  head, `f17260c` — PR #358/FTF-04A05 merged); created it fresh from that head, no conflict.
+  STEP 0.2: no `cognee-cli` in this environment — text-search fallback (`grep`/direct file reads
+  against `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed per standing instruction.
+
+  STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s real
+  `certification_state` (93 CERTIFIED, 1 PROVISIONAL — FTF-04A05/PR #358, already merged to
+  `main` but not yet independently reviewed by Control plane; left untouched, not a relay
+  action) joined against `docs/TASK_INDEX.md`'s own structured `Dependencies` column: 12 tasks
+  fully dependency-ready. Checked open PRs (`mcp__github__list_pull_requests`, state=open, 50
+  results) and searched PR titles (`mcp__github__search_pull_requests`) for each of the three
+  frontier items with no already-claimed open PR — **FTF-0500B**, FTF-0500C, FTF-H005 (all three
+  newly unblocked the same shift FTF-04A05 was picked, per this file's own prior dated entry) —
+  confirmed all three genuinely unclaimed (zero open PRs matched any of the three IDs). The other
+  nine frontier items each already have a live open PR (FTF-0212 PR #231, FTF-0214 PR #295
+  disclosed-blocked, FTF-0304 PR #195/#194, FTF-04A15 PR #328, FTF-0500D PR #335, FTF-0601 PR
+  #337, FTF-0902 PR #342) or remain disclosed-blocked by prior sandbox-limit findings (FTF-1201,
+  FTF-1703) — left untouched.
+
+  **Working: FTF-0500B** ("S3/MinIO source validation + metadata preview") — first in
+  `docs/TASK_INDEX.md`'s own file order among the three unclaimed items. Task contract pulled via
+  `python tools/r1_handoff.py packet FTF-0500B --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  (`source_sha256` matched `sha256sum FINE_TUNING_FACTORY_RELEASE_1.md`) — a real, resolvable DoD.
+  Dependencies FTF-0500/FTF-0500A/FTF-H006 reconfirmed `CERTIFIED` before relying on them. PEV
+  cycle followed (P: read FTF-0500/FTF-0500A's own real schema/CRUD/routes, FTF-H006's own
+  `guarded_fetch`/`ConnectionPolicy`, FTF-0303's own established S3-signing-reuse precedent, no
+  changes yet; E: implemented + wrote a real local-HTTP S3-shaped fixture test suite, showed two
+  disclosed fault injections genuinely fail their own real negative case before reverting
+  byte-identical; V: `product_truth_check.py --fail-on-unwired` unchanged `23/23` — disclosed
+  blank `proving_symbol`, no TRACKER). Submitted PROVISIONAL via **PR pending** (branch
+  `claude/wizardly-fermat-lp04ue` → `main`) — see this file's own "## Provisional" section below
+  and `docs/certifications/queue.md`'s matching entry for the full evidence record.
+
+  STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
+  shift, before compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500B) is
+  `L1-PROVEN`, no blocking defect found by this session's own review — awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No open
+  owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 Updated: 2026-09-28T13:00:00Z (scheduled relay shift, session
   https://claude.ai/code/session_012JU5T7hSZSU9qu8d7NjkQx) — STEP 0: hash-checked CLAUDE.md
   (match) and re-synced this branch onto `origin/main` (was already fast-forward-mergeable, no
@@ -7118,6 +7161,38 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-0500B** ("S3/MinIO source validation + metadata preview") — submitted PROVISIONAL via
+**PR pending** (opened this shift; branch `claude/wizardly-fermat-lp04ue` → `main` — see this
+file's own top dated entry and `docs/certifications/queue.md`'s matching entry for the full
+evidence record, updated with the real PR link once created).
+`apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` is the real connector: a
+real, paginated, bounded `ListObjectVersions` call against a real S3/MinIO-compatible endpoint,
+signed via `storage_semantics_client.py`'s own real SigV4 `sign_request` (FTF-R017, CERTIFIED)
+and dialed exclusively through `packages/security/outbound_guard.py`'s own `guarded_fetch`
+(FTF-H006) — never `S3Client`'s own urllib transport, the same disclosed precedent `FTF-0303`
+already established. A *metadata* preview only (key/version/size/ETag/last-modified, never
+object bytes). `negative_acceptance` ("S3 ETag is not assumed SHA; source changes, cross-tenant
+prefix and overly broad grants are denied") enforced as four independent checks: overly broad
+grant (blank/root `tenant_key_prefix` refused pre-request), cross-tenant prefix (every real
+returned key re-checked at a real path-segment boundary, refused even if the server itself
+returns an out-of-scope key), source changed during listing (a key's own `IsLatest` version id
+conflicting across two real pages is refused as `SourceChangedDuringListingError`, never
+silently mixed), and ETag never treated as a content hash (informational-only metadata). Returns
+an immutable `manifest_hash` (sha256 over the bounded key/version/size/etag tuples).
+
+Test evidence: `tests/tasks/test_ftf_0500b.py` (no-DB, real local HTTP S3-shaped fixture with a
+real independent SigV4 signature re-derivation, 15 checks incl. two disclosed fault injections)
+— all clean. `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (321 files);
+`pnpm run lint`/`typecheck`/`format:check`/`vitest run` unaffected (no frontend file touched).
+`validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`: unchanged `23/23`
+(`proving_symbol` left blank — this task is a pure connector with no composing CRUD/route/UI yet,
+the same disclosed `FTF-0303`/`FTF-0500` precedent). `scripts/status.py`: unchanged `93/300`
+certified (Law 2 — this is a submission, not a certification). Regression swept
+`test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_h006.py` — zero regressions. Full evidence in
+`docs/spec-matrix.yaml`'s own FTF-0500B entry and `docs/certifications/queue.md`'s matching dated
+entry. Not self-certified (Law 4) — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
 **FTF-04A05** ("GitHub source snapshot implementation") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/358** (branch `claude/wizardly-fermat-yfpaot` →
 `main`).
