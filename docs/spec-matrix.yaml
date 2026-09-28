@@ -7108,10 +7108,10 @@ FTF-1108:
   proving_symbol: ''
   proving_test: ''
 FTF-1201:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LiteLLM registration capability detection
-  evidence_hash: ''
+  evidence_hash: 3dcee5d602494fa5a15ff8069fb16313305c52fa
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0203, FTF-0202,
@@ -7170,7 +7170,7 @@ FTF-1201:
     image digest every other integration job in this file already uses).
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
     opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: detect_registration_capability
   proving_test: tests/tasks/test_ftf_1201.py
 FTF-1202:

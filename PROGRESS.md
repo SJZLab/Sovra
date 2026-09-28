@@ -1,4 +1,7 @@
 # PROGRESS — Sovra
+## 2026-09-28 — Control plane: FTF-1201 CERTIFIED (session https://claude.ai/code/session_01KnMgZY9dhUeCf9aPujSYFh)
+
+Independent review of PR #366: CI 38/38, own fault injection reddened tests, product_truth 24/24. Certified count 93 -> 94. See docs/certifications/ledger.md.
 ## 2026-09-28T21:20:00Z — FTF-1201 — relay: PR #366 confirmed green and merged (session https://claude.ai/code/session_01TFyTkMLqBbbw3BaSxcmcDo)
 
 Subscribed to PR #366's own GitHub activity immediately after opening it. Independently verified

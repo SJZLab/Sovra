@@ -1,4 +1,6 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T22:00:00Z (Control-plane certifier, session https://claude.ai/code/session_01KnMgZY9dhUeCf9aPujSYFh) — **FTF-1201 CERTIFIED** (PR #366, evidence `3dcee5d`; 93 -> 94/300 certified, moved to Done). FTF-04A05/FTF-H005 left to concurrent certifier PRs #360/#363/#365 (overlapping; owner may close duplicates). No open owner ask.
+
 Updated: 2026-09-28T17:11:00Z (same scheduled shift, branch `claude/wizardly-fermat-q43eub`) —
   **PR #361 (FTF-H005) confirmed green and merged.** Subscribed to PR #361's own GitHub activity
   immediately after opening it; the real `check_suite.completed` event on the actual head commit

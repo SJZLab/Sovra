@@ -20068,3 +20068,38 @@ the opened PR are required before certification.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
 - **PR:** https://github.com/SJZLab/Sovra/pull/366 (branch `claude/wizardly-fermat-85vqbq` →
   `main`, open).
+
+## 2026-09-28 — Control plane: certify FTF-1201 (LiteLLM registration capability detection), PR #366
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01KnMgZY9dhUeCf9aPujSYFh`, triggered by the
+`pull_request.opened` webhook for PR #367 (doc-only: records PR #366's merge). Pending
+PROVISIONAL items found in `docs/spec-matrix.yaml`: FTF-04A05, FTF-H005, FTF-1201. FTF-04A05 and
+FTF-H005 already have concurrent Control-plane certification PRs open (#360, #363, #365) — left
+untouched here to avoid conflicting edits to shared files (three overlapping open PRs; owner may
+want to close duplicates). FTF-1201 unclaimed — reviewed.
+
+- **Session-ID check:** PR #366's commits (`6c6f81e`, `25066b1`) carry `Claude-Session:
+  .../session_01TFyTkMLqBbbw3BaSxcmcDo`. No overlap with this session's ID — independent (Law 4).
+- **CI:** `pull_request_read get_check_runs` on PR #366: 38/38 check runs completed/success
+  (incl. `gate` and `litellm-registration-capability-integration`), workflow run
+  https://github.com/SJZLab/Sovra/actions/runs/36484245881. Merge commit
+  `3dcee5d602494fa5a15ff8069fb16313305c52fa` is in `main`'s history.
+- **Diff re-read:** `litellm_registration_capability_detection.py` returns MANAGEMENT_CAPABLE only
+  for roles in `_MANAGEMENT_CAPABLE_ROLES`; 401/403 -> FORBIDDEN, non-200 -> UNAVAILABLE, bad body
+  -> MALFORMED_RESPONSE, other roles -> INFERENCE_ONLY; never raises into a fabricated success.
+- **Reran evidence:** `tests/tasks/test_ftf_1201.py` all checks passed; real-Postgres 16
+  `tests/integration/test_ftf_1201_registration_capability.py` all checks passed.
+- **Own fault injection (Law 1):** replaced the role check with `if True:` — real failures for
+  roles internal_user, internal_user_viewer, team, customer (never management_capable).
+  Reverted byte-identical (md5 `472f6df3ede037490f2757b825d7dfab`), git clean.
+- **product_truth_check --fail-on-unwired:** 24/24; `proving_symbol: detect_registration_capability`
+  has a real non-test caller in `apps/api/app/litellm/connection_routes.py` — legitimate.
+- **Contract (packet FTF-1201):** acceptance (detect management capability separately from
+  inference key) and negative_acceptance (no assumption every key can register; lack of permission
+  is an explicit blocker state) both met per code read and fault injection.
+- **Result: CERTIFIED.** spec-matrix FTF-1201 -> CERTIFIED / L2-CERTIFIED, evidence_hash
+  `3dcee5d602494fa5a15ff8069fb16313305c52fa`; `sync_certified_status()` updated
+  `['FTF-1201']`. No open owner ask.
+
+- **State:** proof_state=L2-CERTIFIED, certification_state=CERTIFIED.
+- **PR:** https://github.com/SJZLab/Sovra/pull/366 (merged).
