@@ -97,7 +97,12 @@ def _provision() -> tuple[str, str]:
         admin.execute(f"DROP ROLE IF EXISTS {_RW_ROLE}")
         admin.execute(f"CREATE ROLE {_RO_ROLE} LOGIN PASSWORD '{_RO_PASSWORD}'")
         admin.execute(f"CREATE ROLE {_RW_ROLE} LOGIN PASSWORD '{_RW_PASSWORD}'")
-        admin.execute(f"CREATE DATABASE {_TEST_DB} OWNER postgres")
+        # Owned by whichever real role _ADMIN_DSN connects as -- this varies
+        # by environment (this sandbox's own directly-installed cluster
+        # uses "postgres"; the official postgres Docker image's own
+        # superuser is named by its POSTGRES_USER, "sovra_migrate" in CI) --
+        # never hardcoded, since a role by that literal name may not exist.
+        admin.execute(f"CREATE DATABASE {_TEST_DB}")
 
     db_dsn = _ADMIN_DSN.rsplit("/", 1)[0] + f"/{_TEST_DB}"
     with psycopg.connect(db_dsn, autocommit=True) as conn:
