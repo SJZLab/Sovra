@@ -1,4 +1,38 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T07:45:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01TN5ZLNdvyuUpcLekJchiVp, triggered by the `pull_request.opened`
+  webhook for PR #351) — reviewed **FTF-04A04 (GitHub branch/ref selector + immutable SHA
+  resolver)**, submitted PROVISIONAL on branch `claude/wizardly-fermat-r37pvq`, **NOT CERTIFIED**.
+  Session-ID check: PR #351's sole commit carries `Claude-Session:
+  .../session_01SXspyv1Zh2jJ5tPwRHkPWf` — no overlap with this session, independent per Law 4.
+
+  Task contract pulled via `tools/r1_handoff.py packet FTF-04A04`. Acceptance clause 1, verbatim:
+  "Resolve selected branch/tag/ref to immutable commit SHA and persist both display ref and
+  resolved identity." Negative_acceptance genuinely met: `github_branch_ref_resolver.py`'s
+  `resolve_ref_to_commit` always issues a fresh `GET .../commits/{ref}` call, never reuses
+  `list_branches`'s own list-time SHA, proven against a fixture whose two endpoints deliberately
+  return different SHAs; unknown/inaccessible ref denied via a real 404/422. **Acceptance clause
+  1's "persist" half is not met, and the PR's own code says so directly:**
+  `github_branch_ref_crud.py`'s own docstring states "this deliberately does not persist
+  anything" and defers the real `TargetSourceSnapshot`/`TargetApplicationConnection.
+  selected_branch` write to a not-yet-existing future task (FTF-04A05); only an `AuditEvent` log
+  row is written. The UI's `onResolve` prop is documented as "the real 'persist' hand-off... for
+  a future caller (FTF-04A05) to store," but nothing in this PR ever calls it — an unwired
+  callback (Law 7, "DESIGNED IS NOT WIRED"). `docs/spec-matrix.yaml`'s own FTF-04A04 notes argue
+  only the resolve-to-SHA half of clause 1 and never address "persist" at all.
+
+  **Next relay shift:** either (a) write `BLOCKER.md` to get an explicit, recorded routing
+  decision narrowing FTF-04A04's acceptance clause 1 against FTF-04A05's own scope before
+  resubmitting, or (b) extend PR #351 (or a follow-up) so the resolve call actually persists the
+  display ref + resolved commit SHA onto a real row before re-claiming clause 1 met. Did not wait
+  on PR #351's own CI run to reach a terminal state (`gate` and several integration jobs were
+  still `in_progress` at review time) — this rejection does not turn on CI's outcome.
+  `docs/spec-matrix.yaml` on `main` is unaffected by this review (FTF-04A04 was never merged,
+  stays absent/`NONE` there); the `certification_state: PROVISIONAL` claim stays on the PR #351
+  branch only. PR #351 left open, unmerged. `scripts/status.py` unchanged. No open owner ask —
+  this is a fixable scope/DoD-interpretation defect, not a policy or ask-first item. Full record
+  in `docs/certifications/queue.md`'s matching 2026-09-28 FTF-04A04 NOT CERTIFIED entry.
+
 Updated: 2026-09-28T05:25:00Z (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2, triggered by the `pull_request.opened`
   webhook for PR #349) — reviewed **FTF-0500A (Dataset source selector +

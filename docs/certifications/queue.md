@@ -19276,3 +19276,97 @@ updated. `scripts/status.py`: `90/300` -> `91/300` certified; product-true uncha
 open owner ask.
 
 - **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-28.
+
+## 2026-09-28 — Control plane: CERTIFY review of FTF-04A04 (GitHub branch/ref selector + immutable SHA resolver), PR #351 — NOT CERTIFIED
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01TN5ZLNdvyuUpcLekJchiVp`,
+triggered by the `pull_request.opened` webhook for PR #351 (branch `claude/wizardly-fermat-r37pvq`
+-> `main`, head `9f3b3e77c1715cecc79bd28a1594ec281ab0c2cc`). Grepped `docs/spec-matrix.yaml` on
+`main` for `certification_state: PROVISIONAL` (none) and checked open PRs: PR #351 (this review's
+own target) was the sole pending submission, a scheduled autonomous relay shift's implementation
+of FTF-04A04 ("GitHub branch/ref selector + immutable SHA resolver").
+
+**Session-ID check:** PR #351's sole commit (`9f3b3e77c1715cecc79bd28a1594ec281ab0c2cc`) carries
+`Claude-Session: .../session_01SXspyv1Zh2jJ5tPwRHkPWf` — no overlap with this session's own ID
+(`session_01TN5ZLNdvyuUpcLekJchiVp`) — independent per Law 4.
+
+**Task contract pulled** via `python3 tools/r1_handoff.py packet FTF-04A04 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md` directly). Acceptance clause 1, verbatim: **"Resolve selected
+branch/tag/ref to immutable commit SHA and persist both display ref and resolved identity."**
+Negative_acceptance, verbatim: "Branch advancing between list/read does not mix commits;
+unknown/inaccessible ref is blocked."
+
+PR #351 adds a new four-layer chain: `apps/api/app/target_connectors/github_branch_ref_resolver.py`
+(real GitHub REST API v3 branch listing + ref-to-commit-SHA resolution),
+`github_branch_ref_crud.py` (authorize-project + audit-in-transaction),
+`github_branch_ref_routes.py` (two `organization_admin`-only FastAPI routes wired into `main.py`),
+and `apps/web/components/target-application/github_branch_ref_selector_immutable_sha_resolver.tsx`
+(selector UI), plus `tests/tasks/test_ftf_04a04_connector.py` (18 checks against a real local
+HTTPS fixture), `tests/tasks/test_ftf_04a04_routes.py` (role-boundary, no DB),
+`tests/integration/test_ftf_04a04_github_branch_ref.py` (real Postgres 16) and
+`apps/web/tests/ftf_04a04.spec.ts` (6 Vitest/RTL tests).
+
+**Negative_acceptance clause: genuinely met.** Read `github_branch_ref_resolver.py` directly:
+`resolve_ref_to_commit` always issues a fresh `GET /repos/{owner}/{repo}/commits/{ref}` call and
+never reuses `list_branches`'s own list-time `commit.sha`; the connector test fixture returns a
+deliberately different SHA from the two endpoints to prove this. Unknown/inaccessible ref maps to
+a real HTTP 404/422 from GitHub, raised as `GitHubRepositoryAccessDeniedError`, never a fabricated
+resolution. This half is real and load-bearing.
+
+**Acceptance clause 1's second half — "persist both display ref and resolved identity" — is NOT
+met, and the PR's own code says so.** Read all three new backend modules directly, not the PR's
+own summary:
+- `github_branch_ref_crud.py`'s own module docstring, verbatim: *"This deliberately does not
+  persist anything either: browsing branches and resolving a ref are both steps before a
+  `TargetSourceSnapshot` row is created (FTF-04A05, a separate, dependency-gated later task)... No
+  `TargetApplicationConnection` or `TargetSourceSnapshot` row is read, created, or required to
+  exist for either call here to succeed."*
+- Both CRUD functions write only an `AuditEvent` row (`target_application_connection.
+  github_ref_resolved` etc.) whose `details_json` happens to include `ref`/`resolved_commit_sha`.
+  An audit log entry describing that a resolution occurred is not the same thing as persisting the
+  resolved identity as durable, queryable domain state (Section 6.8A `TargetApplicationConnection.
+  selected_branch` / Section 6.8B `TargetSourceSnapshot.commit_sha`+`branch` are the domain model's
+  own real fields for exactly this) — nothing on either table is read, created, or updated by this
+  PR, confirmed by grepping the diff for `TargetSourceSnapshot`/`TargetApplicationConnection`/
+  `selected_branch` (zero hits outside comments).
+- The UI component's own docstring, verbatim: *"`onResolve` is the real 'persist' hand-off -- both
+  the display ref the user actually chose and the freshly resolved commit SHA, for a future caller
+  (FTF-04A05) to store on a `TargetSourceSnapshot`."* `onResolve` is an unwired callback prop with
+  no real caller in this PR — nothing invokes it outside the component's own test harness.
+- `docs/spec-matrix.yaml`'s own FTF-04A04 `notes` field (on the PR branch) claims acceptance
+  clause 1 is "met" but, read closely, only actually argues the *resolve-to-immutable-SHA* half
+  (the fresh-call-never-reuses-list-time-SHA proof) — it never once addresses the "persist" half,
+  and grepping all four new test files for `persist` turns up no test asserting anything is
+  actually stored (one hit only, in a docstring restating the acceptance clause itself).
+
+This is a real instance of Law 7 ("DESIGNED IS NOT WIRED — WIRED-AND-PROVEN or UNWIRED, never
+both"): the callback exists and is exercised in a unit test, but nothing it produces is ever
+stored anywhere durable in this repository today. Deferring the actual snapshot write to FTF-04A05
+may well be the right scope split, but that is a design/scope decision the relay made
+unilaterally and then wrote into `docs/spec-matrix.yaml`'s notes as if the full acceptance clause
+were satisfied — the relay is execution-only and does not get to reinterpret an acceptance clause
+it finds inconvenient; per CLAUDE.md's "Relay is execution-only," an unclear or only-partially-
+satisfiable DoD is a `BLOCKER.md` case, not something to narrow silently and mark met.
+
+Did not wait on PR #351's own CI run to reach a terminal state before writing this up (`gate` and
+several integration jobs were still `in_progress` at review time) — this rejection does not turn
+on CI's outcome; a fully green CI run would not change that the acceptance clause's "persist" half
+has no implementation or test anywhere in this diff. Did not attempt an independent fault
+injection against the resolver for the same reason (Law 1 soundness of the resolve-only half is
+plausible and not in question) — moot while the acceptance clause itself is only half-satisfied.
+
+**Result: NOT CERTIFIED.** `docs/spec-matrix.yaml` on `main` is unaffected (FTF-04A04 was never
+merged; stays absent/`certification_state: NONE` there); the `certification_state: PROVISIONAL`
+claim stays on the PR #351 branch only, untouched by this review. PR #351 left open, unmerged.
+Gap written into `QUEUE.md`'s top status note for the next relay shift: either (a) narrow
+FTF-04A04's own acceptance clause 1 by writing a `BLOCKER.md` and getting the scope split against
+FTF-04A05 explicitly recorded as a resolved routing decision before resubmitting, or (b) extend
+this PR so the resolve call actually persists the display ref + resolved commit SHA onto a real
+row (even a minimal one) before claiming clause 1 met. No production code touched by this review
+— certification review only, no new task work, no design decisions of my own, no queue
+reprioritization beyond what this rejection naturally requires (Law 4). No open owner ask
+(`QUEUE.md` "Owner actions — current" unchanged, empty) — this is a fixable scope/DoD-
+interpretation defect, not a policy or ask-first item.
+
+- **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-28.
