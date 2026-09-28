@@ -1,4 +1,6 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T23:30:00Z (scheduled Control-plane certifier shift, session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3, webhook PR #369) — **CERTIFIED: FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366).** Session-ID check: none of the three PRs' commits share this session's ID. CI green on each PR head (37/37, 37/37, 38/38); own fault injections turned the tests red for each; product_truth 24/24; contracts re-pulled. `status.py`: 93/300 -> 96/300 certified. Full record in `docs/certifications/ledger.md`. The relay's "3 PROVISIONAL" frontier note below is now stale: 0 PROVISIONAL remain.
+
 Updated: 2026-09-28T22:51:39Z (scheduled relay shift, session
   `https://claude.ai/code/session_0122LwCEM8bYHK3G3TnT7fuy`) — **tracking-only, no new task this
   shift.** Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (93
