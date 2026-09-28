@@ -7173,7 +7173,9 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-1201** ("LiteLLM registration capability detection") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/366** (branch `claude/wizardly-fermat-85vqbq` → `main`,
-open). Detects whether a LiteLLM connection's stored credential genuinely holds gateway
+merged — merge commit `3dcee5d602494fa5a15ff8069fb16313305c52fa`, real CI confirmed 38/38 green on
+head `25066b1` before merge; see this file's own top dated log entry). Detects whether a LiteLLM
+connection's stored credential genuinely holds gateway
 management/registration authority (Section 38), separate from the inference-only dimension
 FTF-0203 already validates. `packages/litellm_client/
 litellm_registration_capability_detection.py::detect_registration_capability` reuses FTF-0202's
