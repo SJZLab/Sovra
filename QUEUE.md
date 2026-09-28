@@ -1,4 +1,19 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T17:11:00Z (same scheduled shift, branch `claude/wizardly-fermat-q43eub`) —
+  **PR #361 (FTF-H005) confirmed green and merged.** Subscribed to PR #361's own GitHub activity
+  immediately after opening it; the real `check_suite.completed` event on the actual head commit
+  (`76d285e`) confirmed all 37 CI jobs completed with `conclusion: success` (including the new
+  `FTF-H005 negative-test proof` steps in the `gate` job) and `mergeable_state: clean` — verified
+  directly via `pull_request_read` (`get_check_runs`/`get`), not merely trusted from the webhook
+  payload alone. No reviews or comments were open. Merged via `merge_pull_request` (merge commit
+  `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`), matching CLAUDE.md's own "Do without asking: ...
+  merge on green + L1 doc (PROVISIONAL)" authorization — `docs/spec-matrix.yaml`'s `evidence_hash`
+  stays blank (unchanged, same precedent FTF-04A05's/FTF-H004's own PRs already established:
+  `evidence_hash` is filled at independent certification, not at merge). This session's own
+  designated branch was fast-forwarded onto the just-merged `main` (`git merge --ff-only
+  origin/main`, non-destructive — the branch's own commits are already contained in `main`'s
+  history via the merge). No open owner ask.
+
 Updated: 2026-09-28T14:15:00Z (scheduled relay shift, session
   https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt) — STEP 0: hash-checked CLAUDE.md
   (`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly). STEP 0.1: read
@@ -7157,7 +7172,9 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-H005** ("Route identity, fallback and cache provenance") — submitted PROVISIONAL via
-**PR https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`).
+**PR https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`,
+merged — merge commit `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`, real CI confirmed 37/37 green
+on head `76d285e` before merge; see this file's own top dated log entry).
 `packages/litellm_client/route_attestation.py::attest_route` is a real, cache-bypassed attestation
 call (every request carries LiteLLM's own real, documented `"cache": {"no-cache": true}` field so
 an attestation can never be answered from a cached response by construction) that records both the

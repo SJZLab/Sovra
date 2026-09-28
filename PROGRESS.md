@@ -1,4 +1,28 @@
 # PROGRESS — Sovra
+## 2026-09-28T17:11:00Z — FTF-H005 — relay: PR #361 confirmed green and merged (session https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt)
+
+Subscribed to PR #361's own GitHub activity immediately after opening it. The real
+`check_suite.completed` event on the actual head commit (`76d285e`) arrived at 17:10:57Z;
+independently verified via `pull_request_read` (`get_check_runs`/`get`) rather than trusting the
+webhook payload alone: all 37 CI jobs completed with `conclusion: success`, including the new
+`FTF-H005 negative-test proof (route attestation...)` and `FTF-H005 negative-test proof (route
+pin/drift...)` steps inside the `gate` job, and `mergeable_state: clean`. No reviews or comments
+were open on the PR.
+
+Merged via `merge_pull_request` (merge commit `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`),
+matching CLAUDE.md's own "Do without asking: ... merge on green + L1 doc (PROVISIONAL)"
+authorization — same precedent FTF-04A05's/FTF-H004's own PRs already established.
+`docs/spec-matrix.yaml`'s `evidence_hash` stays blank (filled at independent Control-plane
+certification, not at merge).
+
+This session's own designated branch was fast-forwarded onto the just-merged `main` (`git merge
+--ff-only origin/main`) rather than reset, since the branch's own commits are already contained
+in `main`'s history via the merge commit — non-destructive.
+
+FTF-H005 is now genuinely merged to `main`, `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN`, awaiting an independently-triggered Control-plane certifier session and
+the L4 gate before certification. No open owner ask.
+
 ## 2026-09-28T14:15:00Z — FTF-H005 — relay: submitted PROVISIONAL (PR #361, session https://claude.ai/code/session_018NMJgNwTV1tawdME5cFXyt)
 
 Scheduled autonomous relay shift. STEP 0: `sha256sum CLAUDE.md` matched the committed
