@@ -19990,5 +19990,5 @@ commit. **Not self-certified (Law 4)** -- independent Control-plane L2 review an
 on the opened PR are required before certification.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-- **PR:** pending (opened this shift, see `QUEUE.md`'s own top dated entry for the link once
-  created).
+- **PR:** https://github.com/SJZLab/Sovra/pull/359 (branch `claude/wizardly-fermat-lp04ue` →
+  `main`, open).

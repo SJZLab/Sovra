@@ -32,8 +32,9 @@ Updated: 2026-09-28T15:00:00Z (scheduled relay shift, session
   changes yet; E: implemented + wrote a real local-HTTP S3-shaped fixture test suite, showed two
   disclosed fault injections genuinely fail their own real negative case before reverting
   byte-identical; V: `product_truth_check.py --fail-on-unwired` unchanged `23/23` — disclosed
-  blank `proving_symbol`, no TRACKER). Submitted PROVISIONAL via **PR pending** (branch
-  `claude/wizardly-fermat-lp04ue` → `main`) — see this file's own "## Provisional" section below
+  blank `proving_symbol`, no TRACKER). Submitted PROVISIONAL via
+  **PR https://github.com/SJZLab/Sovra/pull/359** (branch `claude/wizardly-fermat-lp04ue` →
+  `main`) — see this file's own "## Provisional" section below
   and `docs/certifications/queue.md`'s matching entry for the full evidence record.
 
   STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
@@ -7162,9 +7163,8 @@ full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-0500B** ("S3/MinIO source validation + metadata preview") — submitted PROVISIONAL via
-**PR pending** (opened this shift; branch `claude/wizardly-fermat-lp04ue` → `main` — see this
-file's own top dated entry and `docs/certifications/queue.md`'s matching entry for the full
-evidence record, updated with the real PR link once created).
+**PR https://github.com/SJZLab/Sovra/pull/359** (branch `claude/wizardly-fermat-lp04ue` →
+`main`).
 `apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` is the real connector: a
 real, paginated, bounded `ListObjectVersions` call against a real S3/MinIO-compatible endpoint,
 signed via `storage_semantics_client.py`'s own real SigV4 `sign_request` (FTF-R017, CERTIFIED)
