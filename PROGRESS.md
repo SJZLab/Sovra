@@ -1,4 +1,54 @@
 # PROGRESS — Sovra
+## 2026-09-28T22:51:39Z — Scheduled relay shift — tracking: dependency-ready frontier fully saturated, no new task this shift
+
+Session `https://claude.ai/code/session_0122LwCEM8bYHK3G3TnT7fuy`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly — no mismatch. STEP 0.1: read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (both files are prepended-newest,
+not appended — read the true top, not the tail, to get current state). `BLOCKER.md` contains only
+resolved history (no live blocker). STEP 0.2: no `cognee-cli` binary in this environment —
+text-search fallback (`grep`/direct file reads/a small `yaml`+`scripts.spec_verification.load_tasks`
+script) used throughout, disclosed per standing instruction.
+
+Branch `claude/wizardly-fermat-rdsmft` was reset to the current tip of `origin/main` (`12caf56`,
+already fast-forward — no divergence either direction, so a plain checkout onto `origin/main` was
+non-destructive; nothing local was lost).
+
+STEP 1: recomputed the dependency-ready frontier directly (not trusted from prior tracking prose)
+from `docs/spec-matrix.yaml`'s real `certification_state` (93 CERTIFIED, 3 PROVISIONAL —
+FTF-04A05/FTF-H005/FTF-1201, all merged to `main` but not yet independently certified — 204 NONE)
+joined against `docs/TASK_INDEX.md`'s real dependency graph via `scripts.spec_verification.
+load_tasks`. Exactly 10 tasks have every dependency CERTIFIED and are themselves still `NONE`:
+FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15,
+FTF-1703 — unchanged from the frontier the 2026-09-28T13:00Z shift already computed (PR #349's
+predecessor), because none of this shift's own three pending PROVISIONAL items (FTF-04A05/
+FTF-H005/FTF-1201) is certified yet, so nothing new unblocks until a Control-plane session
+certifies one of them.
+
+Checked all currently open PRs directly (`list_pull_requests`, state=open) rather than trusting
+this file's own prior claims: **9 of the 10** frontier items already have a live, currently-open
+PR claiming them — FTF-0212 (#231), FTF-0214 (#295, itself a disclosed blocker: "no live backend
+surface for stated acceptance"), FTF-0304 (#194/#195), FTF-0500B (#359), FTF-0500C (#364),
+FTF-0500D (#335, noted blocked on a merge conflict per #336), FTF-0601 (#337), FTF-0902 (#342),
+FTF-04A15 (#328). The tenth, **FTF-1703**, carries the same genuine, previously-disclosed sandbox
+blocker every prior shift already recorded (needs ≥1000-scale real resources this sandbox does not
+have) — not re-litigated here, only reconfirmed still open.
+
+No genuinely unclaimed, dependency-ready item exists this shift. Per this same precedent
+(2026-09-28T04:56Z shift, PR #349), this is a tracking-only entry — opening a duplicate PR against
+an already-claimed task would create write-set/merge conflicts for no benefit (Law 2: no inflating
+the tracker with parallel, competing work on the same criterion). Separately, 3 items
+(FTF-04A05/FTF-H005/FTF-1201) remain genuinely `PROVISIONAL`/`L1-PROVEN`, awaiting an
+independently-triggered Control-plane certifier session and the L4 gate — a Control-plane session
+already has PR #368 open against FTF-1201 at this shift's end, untouched here (certification is not
+a relay action).
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; `docs/certifications/
+queue.md` unchanged (no new evidence this shift — nothing certified or submitted). STEP 4 stop
+condition (a): 3/3 in-flight submissions are `L1-PROVEN`/`PROVISIONAL`, no relay action left on any
+of them, and the dependency-ready frontier is fully saturated by other sessions' live PRs or a
+genuine disclosed blocker. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current"
+unchanged, empty).
+
 ## 2026-09-28T21:20:00Z — FTF-1201 — relay: PR #366 confirmed green and merged (session https://claude.ai/code/session_01TFyTkMLqBbbw3BaSxcmcDo)
 
 Subscribed to PR #366's own GitHub activity immediately after opening it. Independently verified
