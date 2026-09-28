@@ -1,4 +1,43 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T11:20:00Z (scheduled Control-plane certifier shift, triggered by the
+  `pull_request.opened` webhook for PR #354 (FTF-H004)) — PR #354 is a genuinely new, unclaimed
+  submission not yet appended to `docs/certifications/queue.md` as an evidence entry at
+  webhook-fire time; this shift's actual job is to work `docs/certifications/queue.md`'s pending
+  PROVISIONAL items, not the specific PR that fired the webhook. Grepped `docs/spec-matrix.yaml`
+  directly for `certification_state: PROVISIONAL` and found exactly one pending item:
+  **FTF-04A04** ("GitHub branch/ref selector + immutable SHA resolver", PR #353, the fix for PR
+  #352's own prior NOT CERTIFIED finding on PR #351).
+
+  Session-ID check: PR #353's own two commits both carry `Claude-Session:
+  .../session_013JKVbbb5QnKqBYy6EQgXTu` — no overlap with this certifying session's own ID
+  (`session_016VGfqXGvpgrKTU9qN1yFoc`), independent per Law 4. Independently confirmed PR #353's
+  real CI run (Actions run 36401249710, head commit `5323badcbc6baa383ebdf75ee7d01abae0c96bcf`)
+  reached `completed`/`success` on all 35 check runs, including `gate` and the new
+  `github-branch-ref-integration` job. Read the full diff directly, then independently reran
+  `tests/integration/test_ftf_04a04_github_branch_ref.py` against a real, freshly-provisioned
+  local PostgreSQL 16 — "all checks passed" — and ran my own fault injection (disabled the new
+  `update_target_application_connection` persist call): reproduced the same 4 genuine failures
+  the submission disclosed, reverted byte-identical (md5sum `92d0b8626d8b82c30f91a28051c0b63a`
+  confirmed matching before/after). Reran `ruff`/`mypy`/`pnpm lint`/`typecheck`/`format:check`/
+  `vitest` (48/48) clean, `validate_spec.py --strict` clean (after `git fetch --unshallow`),
+  `product_truth_check.py --fail-on-unwired` unchanged 22/22. Regression swept
+  `test_ftf_04a01.py`/`test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py`/`test_ftf_0202.py`
+  — zero regressions. `test_ftf_04a01_target_application_connection.py`'s own real-Postgres suite
+  independently confirmed `BLOCKED_EXTERNAL` (no `bao` binary), pre-existing and unrelated. Task
+  contract re-pulled via `tools/r1_handoff.py packet FTF-04A04`: both acceptance clauses and the
+  negative_acceptance clause genuinely met, including the disclosed, sourced scope-boundary
+  reasoning for the resolved-commit-SHA half (see `docs/certifications/ledger.md`'s matching
+  entry for the full reasoning).
+
+  **Result: CERTIFIED.** `docs/spec-matrix.yaml` FTF-04A04 set to `certification_state:
+  CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash`
+  `89c0b0ad5aefedf3bfb16ed89bfb3392871af828`. `sync_certified_status()` run directly
+  (`spec/tasks.json`/`docs/implementation/TRACKER.json` updated). `scripts/status.py`: `91/300`
+  -> `92/300` certified; product-true unchanged `22/22`. Full record:
+  `docs/certifications/ledger.md`/`docs/certifications/queue.md`. No open owner ask. PR #354
+  (FTF-H004) is untouched by this shift — certification-only, no relay task work, per this
+  shift's own scope.
+
 Updated: 2026-09-28T09:10:00Z (scheduled autonomous relay shift, branch
   `claude/wizardly-fermat-3w4uhd`) — fixed and resubmitted **FTF-04A04 (GitHub branch/ref
   selector + immutable SHA resolver)**, PROVISIONAL, after PR #352's independent Control-plane
@@ -6879,6 +6918,16 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+None currently.
+
+Prior history, kept for the record: this paragraph previously named **FTF-04A04** ("GitHub
+branch/ref selector + immutable SHA resolver") as the current pending item; it was independently
+reviewed and CERTIFIED via **PR #353** (merge commit
+`89c0b0ad5aefedf3bfb16ed89bfb3392871af828`) — see "## Done" for the certification summary and
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
+
+Superseded by the certification above, kept verbatim for the record:
+
 **FTF-04A04** ("GitHub branch/ref selector + immutable SHA resolver") — the original submission
 (PR #351, branch `claude/wizardly-fermat-r37pvq`) was independently reviewed via PR #352 and
 found **NOT CERTIFIED** (acceptance clause 1's own "persist... display ref and resolved
@@ -6888,8 +6937,7 @@ persists the resolved display ref onto a real `TargetApplicationConnection.selec
 via the already-CERTIFIED `update_target_application_connection`, with real 404/409 denial paths
 for an unknown/cross-tenant/revoked connection. PR #351 closed without merging (superseded). See
 this file's own top dated log entry and `docs/certifications/queue.md`'s matching 2026-09-28
-entries (the NOT CERTIFIED finding and this fix) for the full evidence record. Awaiting
-independent Control-plane L2 review and a real CI run on PR #353.
+entries (the NOT CERTIFIED finding and this fix) for the full evidence record.
 
 Prior history, kept for the record: this paragraph previously said "None currently" — FTF-04A02
 ("GitHub App/token read-only secret integration") had been independently reviewed and CERTIFIED

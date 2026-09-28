@@ -19486,3 +19486,92 @@ PR #353 and to PR #352's own rejection, per this repository's own established pr
 superseded, unmerged PR (QUEUE.md's 2026-09-22 FTF-0202 entry). **Not self-certified (Law 4)** --
 independent Control-plane L2 review and a real CI run on PR #353 are required before
 certification. No open owner ask.
+
+## 2026-09-28 — Control plane: certify FTF-04A04 (GitHub branch/ref selector + immutable SHA resolver), PR #353
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+#354 (FTF-H004). PR #354 is a genuinely new, unclaimed submission not yet appended to this file
+as an evidence entry at webhook-fire time -- this shift's actual job is to work this file's own
+pending PROVISIONAL items, not the specific PR that fired the webhook. Grepped
+`docs/spec-matrix.yaml` directly for `certification_state: PROVISIONAL` and found exactly one
+pending item: FTF-04A04 (PR #353, branch `claude/wizardly-fermat-3w4uhd`, head
+`5323badcbc6baa383ebdf75ee7d01abae0c96bcf` -- the fix for PR #352's own prior NOT CERTIFIED
+finding on PR #351).
+
+Session `session_016VGfqXGvpgrKTU9qN1yFoc` reviewing PR #353 (both of its own commits carry
+`Claude-Session: .../session_013JKVbbb5QnKqBYy6EQgXTu` -- no session-ID overlap, independent per
+Law 4).
+
+**CI genuinely ran and passed on the real merged commit, not a stale or self-reported claim:**
+independently pulled PR #353's own check runs -- 35/35 `completed`/`success`, including `gate`
+and the new `github-branch-ref-integration` job (Actions run 36401249710, head commit
+`5323badcbc6baa383ebdf75ee7d01abae0c96bcf`). Confirmed via `git log`/`git diff` that `main`'s own
+merge commit (`89c0b0ad5aefedf3bfb16ed89bfb3392871af828`) is a plain fast-forward two-parent
+merge, tree-identical to the commit CI validated -- not a different, unvalidated tree substituted
+at merge time.
+
+**Diff re-read directly, not taken on the submission's word:** `github_branch_ref_crud.py::
+resolve_project_github_ref` genuinely calls the already-CERTIFIED (FTF-04A01)
+`update_target_application_connection(..., selected_branch=resolved.ref, ...)` in the same
+transaction as its own audit-event write, before returning success. `update_target_application_
+connection` (confirmed last touched at a commit outside this PR's own diff -- only imported from,
+not modified) genuinely raises `TargetApplicationConnectionNotFoundError`/
+`TargetApplicationConnectionStateError` for an unknown/cross-tenant/already-revoked connection.
+`github_branch_ref_routes.py` genuinely maps these to real 404/409 and requires
+`target_application_connection_id` in the request body (400 if missing/non-UUID) before any
+GitHub call. The UI component sends `targetApplicationConnectionId` on every resolve request and
+now accurately documents `onResolve` as a plain notification callback, not the persistence step
+-- the prior review's "unwired `onResolve`"/inaccurate-docstring finding is genuinely fixed.
+
+**Own fault injection (Law 1), a real one, not a re-trust of the submission's disclosed one:**
+wrapped the new `update_target_application_connection(...)` call in `if False:` and reran the
+real-Postgres integration suite (`tests/integration/test_ftf_04a04_github_branch_ref.py`) against
+a fresh, freshly-provisioned local PostgreSQL 16 (`sovra_migrate` role/`sovra_ftf04a04` database,
+matching CI's own environment) -- **4 genuine failures** reproduced (display-ref persistence,
+cross-org-connection-id denial, revoked-connection 409, unknown-connection-id 404 -- every check
+depending on the persist call actually running and actually raising). Reverted byte-identical
+(md5sum `92d0b8626d8b82c30f91a28051c0b63a` confirmed matching before and after, `git status`/
+`git diff` clean afterward), suite re-ran clean immediately after (all checks passed).
+
+**Full independent re-run, all clean:** `tests/tasks/test_ftf_04a04_connector.py`/
+`test_ftf_04a04_routes.py` -- "all checks passed". `ruff check .`/`ruff format --check .` (clean,
+308 files), `mypy .` (clean, 308 files), `pnpm run lint`/`typecheck`/`format:check` (clean),
+`pnpm exec vitest run` (48/48, zero regressions), `python3 scripts/validate_spec.py --strict`
+(clean, after `git fetch --unshallow`), `python3 scripts/product_truth_check.py
+--fail-on-unwired` (unchanged 22/22 -- independently confirmed FTF-04A04 carries no
+`proving_symbol` entry at all in this script, legitimately blank rather than an inflated 0/0
+pass, since no live Next.js app shell/front door exists yet for this UI component, same
+disclosed precedent as FTF-04A03/FTF-0500A). Regression swept `test_ftf_04a01.py`/
+`test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py`/`test_ftf_0202.py` directly -- zero
+regressions. `test_ftf_04a01_target_application_connection.py`'s own real-Postgres suite
+independently confirmed `BLOCKED_EXTERNAL` in this sandbox (no `bao` binary on `PATH`) --
+pre-existing and unrelated.
+
+**Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A04 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`** (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`): acceptance clause 1's "persist ... display ref" half is
+genuinely met (real, durable `TargetApplicationConnection.selected_branch` write, read back
+fresh from Postgres by the integration test). The "resolved identity" half is genuinely covered
+by the fix's own disclosed, sourced scope-boundary reasoning: the task's own `database_changes`
+contract ("No independent schema change...") forbids adding a commit-SHA field to
+`TargetApplicationConnection`; `TargetSourceSnapshot` requires a real source-capture
+(`tree_hash`/`capture_method`) this task never performs; and `docs/TASK_INDEX.md` lists FTF-04A05
+("GitHub source snapshot implementation") as *depending on* FTF-04A04 -- confirming the
+architecture's own intended split, not a silent narrowing. The resolved commit SHA remains real
+and durably recorded today in the same-transaction `github_ref_resolved` audit event, a genuine
+append-only, queryable row. `negative_acceptance` ("Branch advancing between list/read does not
+mix commits; unknown/inaccessible ref is blocked") confirmed genuinely met: `resolve_ref_to_
+commit` always issues a fresh call, never reusing a list-time SHA; an unknown/cross-org/revoked
+connection is denied (404/409) before any persistence.
+
+No open review threads or comments on PR #353 (already merged). No blocking defect found.
+
+**Result: CERTIFIED.** `docs/spec-matrix.yaml` FTF-04A04 set to `certification_state: CERTIFIED`
+/ `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`89c0b0ad5aefedf3bfb16ed89bfb3392871af828`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json` -- `['FTF-04A04']` updated). `QUEUE.md`
+updated (Provisional section cleared, dated log entry appended, certified count bumped).
+`PROGRESS.md` updated. `scripts/status.py`: `91/300` -> `92/300` certified; product-true unchanged
+`22/22`. No open owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-28.
