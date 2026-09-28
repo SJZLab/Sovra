@@ -1,4 +1,47 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T19:20:00Z (scheduled relay shift, branch `claude/wizardly-fermat-f9qdmb`) —
+  STEP 0: hash-checked CLAUDE.md (`sha256sum CLAUDE.md` matched the committed
+  `CLAUDE.md.sha256` directly). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh before any action. STEP 0.2: no `cognee-cli` in this
+  environment -- text-search fallback (`grep`/direct file reads against
+  `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed per standing instruction.
+
+  This session's own branch was already at the tip of `origin/main` (`1256f2a`, carrying PR
+  #362's merge -- FTF-H005 recorded certified/merged by the prior shift). Checked GitHub
+  directly: `main` has 93/300 CERTIFIED, 2 PROVISIONAL (FTF-04A05 under Control-plane review via
+  PR #360; FTF-H005 under Control-plane review via PR #363). Recomputed the dependency-ready
+  frontier fresh from `docs/spec-matrix.yaml`'s real `certification_state` joined against
+  `docs/TASK_INDEX.md`'s own structured `Dependencies` column: 11 items ready (FTF-0212,
+  FTF-0214, FTF-0304, FTF-04A15, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-1201,
+  FTF-1703). Checked all open PRs (#194/#195/#231/#290/#295/#308/#311/#313/#314/#315/#328/#335/
+  #336/#337/#342/#349/#352/#359/#360/#363): every frontier item except **FTF-0500C** already has
+  a live open PR claiming it, or (FTF-1201/FTF-1703) is disclosed-blocked by this sandbox's own
+  genuine real-network/real-curated-trace-volume limits, same finding every prior shift already
+  recorded.
+
+  **Working: FTF-0500C** ("Database/API/trace source contract and fail-closed validation").
+  Task contract pulled via `python3 tools/r1_handoff.py packet FTF-0500C --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+  FINE_TUNING_FACTORY_RELEASE_1.md`). PEV cycle followed (P: read FTF-0500's own
+  `dataset_source_connection_schema.py`/`_crud.py`, FTF-H006's own `outbound_guard.py`/
+  `url_policy.py`, and FTF-0500B's own not-yet-merged `s3_minio_source_validation_metadata_
+  preview.py` [fetched directly from its own open branch, PR #359] for the established
+  "pure connector, caller resolves the secret" precedent -- no changes; E: implemented +
+  wrote real tests against a real local PostgreSQL 16 and a real local HTTPS fixture, ran a
+  disclosed real fault injection on each connector proving its own negative-test assertion
+  genuinely fails when the real check is disabled, reverted byte-identical; V:
+  `product_truth_check.py --fail-on-unwired` unchanged 23/23 -- disclosed, no dataset-import
+  composition task calls either connector yet, same precedent FTF-0500B's own module already
+  established -- no TRACKER). Submitted PROVISIONAL via **PR (opened this shift, branch
+  `claude/wizardly-fermat-f9qdmb` -> `main`)** -- see this file's own "## Provisional" section
+  below and `docs/certifications/queue.md`'s matching entry for the full evidence record.
+
+  STEP 3: `PROGRESS.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this
+  shift, before compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500C) is
+  `L1-PROVEN`, no blocking defect found by this session's own review -- awaiting an
+  independently-triggered Control-plane certifier session and the L4 gate. Stopping here. No
+  open owner ask (`QUEUE.md` "Owner actions -- current" unchanged, empty).
+
 Updated: 2026-09-28T17:11:00Z (same scheduled shift, branch `claude/wizardly-fermat-q43eub`) —
   **PR #361 (FTF-H005) confirmed green and merged.** Subscribed to PR #361's own GitHub activity
   immediately after opening it; the real `check_suite.completed` event on the actual head commit
@@ -7171,6 +7214,38 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-0500C** ("Database/API/trace source contract and fail-closed validation") — submitted
+PROVISIONAL this shift via **PR (branch `claude/wizardly-fermat-f9qdmb` → `main`)**.
+`apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py` implements
+Section 67.1's own real PostgreSQL connector (`validate_and_preview_postgres_source` — allowlisted,
+identifier-validated, parameterized SELECT; `READ ONLY` + `REPEATABLE READ` for "no writes" +
+"repeatable snapshot" in one real transaction-mode setting; `statement_timeout` set and
+independently read back) and REST/agent-trace connector (`validate_and_preview_rest_trace_source` —
+bounded cursor pagination, bounded 429 retry honoring `Retry-After`, a declared snapshot-version
+header tracked across pages, cooperative cancellation, bounded by `max_page_fetches` against an
+endpoint that never ends). Both negative_acceptance halves are real: a genuine Postgres
+`UndefinedTable`/`UndefinedColumn` or a REST response missing the declared `records_field` raises
+`UnknownSourceContractError`; a Postgres resume whose watermark row was deleted by a real
+concurrent connection raises `LostWatermarkError` (re-verified inside the same `REPEATABLE READ`
+transaction as the subsequent SELECT), and a REST snapshot-version header that changes mid-listing
+raises `SourceChangedDuringListingError`. Two independent real "no writes" mechanisms are proven
+separately: a real least-privileged Postgres role's own database grants deny a write
+(`psycopg.errors.InsufficientPrivilege`), and, independently, this module's own `READ ONLY`
+transaction mode blocks a write from a role that otherwise has write privilege
+(`psycopg.errors.ReadOnlySqlTransaction`). Real fault injection (Law 1, disclosed) proved both
+negative-test assertions genuinely fail when their real check is disabled, then reverted the module
+file byte-identical (md5sum confirmed matching before/after) — once for the REST snapshot-version
+comparison (`tests/tasks/test_ftf_0500c.py`, real local HTTPS fixture, no DB required) and once for
+the Postgres watermark-presence guard against a real database
+(`tests/integration/test_ftf_0500c_database_api_trace_source.py`, real local PostgreSQL 16). This
+module does not implement Section 8's own file-content import pipeline, does not read/write
+`DatasetSourceConnection` rows or resolve `credential_secret_ref` via OpenBao, and exposes no HTTP
+route — same disclosed, dependency-gated composition-task boundary FTF-0500B's own module already
+established for its identical-shaped sibling task. `product_truth_check.py --fail-on-unwired`
+unchanged 23/23 (disclosed, no dataset-import composition task calls either connector yet). Not
+self-certified (Law 4) — independent Control-plane L2 review and a real CI run on the opened PR are
+required before certification.
+
 **FTF-H005** ("Route identity, fallback and cache provenance") — submitted PROVISIONAL via
 **PR https://github.com/SJZLab/Sovra/pull/361** (branch `claude/wizardly-fermat-q43eub` → `main`,
 merged — merge commit `2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1`, real CI confirmed 37/37 green
