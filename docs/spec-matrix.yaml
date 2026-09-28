@@ -2845,10 +2845,10 @@ FTF-04A02:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a02.py
 FTF-04A03:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: GitHub accessible-repository selector UI
-  evidence_hash: ''
+  evidence_hash: f8e744c840e6dd8f18d7800c84cf9363cf39d48c
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -2892,9 +2892,53 @@ FTF-04A03:
     a successful and a denied listing, no OpenBao needed since no secret is ever persisted here), and
     `apps/web/tests/ftf_04a03.spec.ts` (5 tests). `product_truth_check.py --fail-on-unwired`
     unchanged (`proving_symbol` left blank -- no live caller wires this route into a setup UI flow
-    yet, same disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26). Not self-certified
-    (Law 4) -- awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+    yet, same disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26).
+
+    Independently certified 2026-09-28 (session https://claude.ai/code/session_01WiDx2X5iJ7YYyVWtYj3k7f,
+    scheduled Control-plane certifier shift): session-ID check against PR #346's two commits
+    (session_01FSaDWJkmkJ1Bpk583aZAaE) found no overlap. PR #346's own CI run (Actions run
+    36365631417, head commit 746ff6e) independently confirmed `completed`/`success`. Diff
+    re-read in full (15 files, +4057/-8); read `github_accessible_repository_listing.py`,
+    `github_repository_listing_crud.py`, `github_repository_listing_routes.py`, and the frontend
+    component directly -- confirmed GET-only by construction, real `Link: rel="next"` pagination,
+    `organization_admin`-only role gate, and no auto-select code path. Reran
+    `tests/tasks/test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py` via direct script
+    execution (`python3 <file>.py`, not bare pytest -- these files use a `check()`/`FAILURES`
+    accumulator only enforced in their own `main()`, so a bare `pytest` invocation reports a
+    false PASS regardless of `check()` results; confirmed CI itself already invokes them the
+    correct way, `.github/workflows/ci.yml` lines 288-291) -- both "all checks passed". Stood up
+    a real local PostgreSQL 16 cluster and ran
+    `tests/integration/test_ftf_04a03_github_repository_listing.py` directly against it -- "all
+    checks passed". Ran two independent fault injections of my own: (1) widened
+    `GITHUB_REPOSITORY_LISTING_ROLES` to `frozenset(Role)` -- genuine failure reproduced (viewer
+    reached the session layer, `test_role_set_matches_target_connection_roles` and
+    `test_viewer_is_denied` both failed for real); (2) disabled the connector's terminal
+    `if response.status != 200` guard -- genuine failure reproduced (a real
+    `GitHubConnectionError` downstream, not a silent pass). Both reverted byte-identical (md5sum
+    confirmed matching before/after each). Reran `ruff check .`/`ruff format --check .`/`mypy .`
+    (clean, 302 files), `pnpm run lint`/`format:check`/`typecheck` (clean),
+    `pnpm exec vitest run` (42/42, zero regressions), `python3 scripts/validate_spec.py --strict`
+    (clean, after `git fetch --unshallow`), `python3 scripts/product_truth_check.py
+    --fail-on-unwired` (unchanged 22/22, blank `proving_symbol` confirmed legitimate -- same
+    disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26, not an inflated 0/0 pass).
+    Regression swept `tests/tasks/test_ftf_0202.py`/`test_ftf_04a01.py`/`test_ftf_04a02.py`
+    directly -- zero regressions. Task contract re-pulled via `python3 tools/r1_handoff.py packet
+    FTF-04A03 --plan FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses and the
+    negative_acceptance clause genuinely met, confirmed by direct code read and by this review's
+    own fault injections, not taken on the PR's own summary. No open comments/review threads on
+    PR #346. No blocking defect found.
+
+    Separately disclosed, not blocking: the merge commit that landed PR #346
+    (`f8e744c840e6dd8f18d7800c84cf9363cf39d48c`) carries the message "Merge pull request #346:
+    Control plane certify FTF-04A03" even though `certification_state` stayed `PROVISIONAL`
+    through that merge -- no independent L2 review had actually happened yet at merge time. The
+    merge itself was legitimate (CLAUDE.md's "Do without asking" permits "merge on green + L1 doc
+    (PROVISIONAL)"), but the commit *message* reads as a completed-certification claim it was not
+    -- the same class of gap Section 84's own audit history already flags for FTF-0207. Recorded
+    here rather than silently worked around; no tracker field was falsely elevated as a result
+    (this entry's own `certification_state` stayed accurate at `PROVISIONAL` until this
+    independent review, just now, made it true).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a03_connector.py, tests/tasks/test_ftf_04a03_routes.py,
     tests/integration/test_ftf_04a03_github_repository_listing.py, apps/web/tests/ftf_04a03.spec.ts

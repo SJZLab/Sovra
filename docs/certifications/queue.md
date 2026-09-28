@@ -19117,3 +19117,95 @@ FTF-04A03's own frontend halves already established.
 
 **Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the
 opened PR are required before certification. No open owner ask.
+
+## 2026-09-28 — Control plane: certify FTF-04A03 (GitHub accessible-repository selector UI), PR #346
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01WiDx2X5iJ7YYyVWtYj3k7f`,
+triggered by the `pull_request.opened` webhook for PR #347 (FTF-0500A). `docs/spec-matrix.yaml`
+grepped directly for `certification_state: PROVISIONAL`: two pending items, FTF-04A03 (PR #346,
+already merged to `main`) and FTF-0500A (PR #347, CI still `in_progress` at webhook-fire time).
+Certifying FTF-04A03 now, in place on a fresh branch off `origin/main`; FTF-0500A deferred to a
+separate review once its own CI reaches a real terminal state (Law 1/Law 5).
+
+**Session-ID check:** both of PR #346's commits carry `Claude-Session: .../session_01FSaDWJkmkJ1Bpk583aZAaE`.
+No overlap with this session's own ID -- independent per Law 4.
+
+Independently confirmed PR #346's own CI run (Actions run `36365631417`, head commit
+`746ff6e82b25b8b245c421754f2980a5031cce67`) reached a real `completed`/`success` conclusion on
+all 34 jobs, including `gate`'s own two new "FTF-04A03 negative-test proof" steps and the new
+`github-repository-listing-integration` job -- not a stale or self-reported claim.
+
+Read the full diff (15 files, +4057/-8) and all four new source files in full:
+`github_accessible_repository_listing.py` (real `GET /installation/repositories`, GET-only by a
+module-level constant never exposed as a caller parameter, real pagination via the response's
+own `Link: rel="next"` header), `github_repository_listing_crud.py` (real
+`authorize_resource_ownership`/tenant-scoped authorization, plus the disclosed
+audit-commit-before-re-raise fix for a denied listing), `github_repository_listing_routes.py`
+(real `organization_admin`-only `require_role` gate, credential only ever a request-body value,
+never persisted/echoed/audited), and `github_accessible_repository_selector_ui.tsx` (confirmed no
+code path assigns `selectedRepositoryIdentity` outside the real `handleSelect` click handler).
+Confirmed the route is genuinely wired into `apps/api/app/main.py`.
+
+Independently reran `tests/tasks/test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py` via
+their real `main()` entry point -- both "all checks passed". **Disclosed, non-blocking finding:**
+both files use a `check()`/`FAILURES` accumulator pattern only enforced inside their own `main()`
+-- a bare `pytest` invocation on either file reports every `test_*` function PASSED regardless of
+what `check()` actually recorded, since nothing raises. Confirmed `.github/workflows/ci.yml`
+(lines 288-291) already invokes both files the correct way (`uv run python3 <file>.py`), so this
+is not a gap in this task's own CI-gated evidence -- recorded as a fragility for any future test
+file reusing this pattern, not a defect here.
+
+Stood up a real, directly-installed local PostgreSQL 16 cluster (`pg_ctlcluster 16 main start`;
+no container-registry egress here, same disclosed finding as FTF-0004/FTF-0102/FTF-0104/
+FTF-R017/FTF-1601/FTF-0105) and ran `tests/integration/test_ftf_04a03_github_repository_listing.py`
+directly against it -- "all checks passed" (real cross-organization IDOR denial, real audit-row
+assertions for both a successful and a denied listing, credential never in the audit row). Ran
+`pnpm exec vitest run apps/web/tests/ftf_04a03.spec.ts` directly -- 5/5 pass.
+
+**Own fault injections (Law 1), not merely re-trusting the submission's disclosed ones:** (1)
+widened `GITHUB_REPOSITORY_LISTING_ROLES` from `frozenset({Role.ORGANIZATION_ADMIN})` to
+`frozenset(Role)` -- genuine failure reproduced running the real `main()` entry point (a viewer
+reached the session layer; 3 failures reported for real); (2) replaced the connector's own
+terminal `if response.status != 200: _raise_for_non_200_status(response)` guard with a no-op --
+genuine failure reproduced (a real, different `GitHubConnectionError` downstream, "missing a real
+'repositories' array", proving the gate load-bearing). Both reverted byte-identical (md5sum
+`aad3626cfbacbdba47d5077886d9209a` and `173fe908ecdf4be4ca5edccc0ede92bd` respectively, confirmed
+matching before/after each; `git status` clean afterward), suites re-ran clean immediately after
+each revert.
+
+Reran `uv run ruff check .`/`ruff format --check .` (clean, 302 files) and `uv run mypy .` (clean).
+`pnpm run lint`/`format:check`/`typecheck` clean. `pnpm exec vitest run` (full suite): 42/42
+across 8 files, zero regressions. `git fetch --unshallow` run first (this sandbox's own shallow
+clone) -- `python3 scripts/validate_spec.py --strict` clean after that. `python3
+scripts/product_truth_check.py --fail-on-unwired`: own run, unchanged 22/22 -- confirmed this
+task's blank `proving_symbol` is legitimate (same disclosed precedent as FTF-0302/FTF-0303/
+FTF-04A08/09/10/25/26), not an inflated 0/0 pass. Confirmed dependencies FTF-04A01/FTF-04A02
+genuinely `CERTIFIED` before relying on them; regression swept `test_ftf_0202.py`/
+`test_ftf_04a01.py`/`test_ftf_04a02.py` directly -- zero regressions. No open review threads or
+comments on PR #346.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A03 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`: both acceptance clauses ("Render only credential-accessible
+repositories with pagination and explicit selection" and "Independent review, exact merged
+commit, real relevant integration and negative-test evidence recorded") and the
+`negative_acceptance` clause ("UI cannot expose admin-visible repos to ordinary user or
+auto-select first result") genuinely met -- confirmed by direct code read and by this review's
+own fault injections above, not taken on the PR's own summary.
+
+**Disclosed, non-blocking:** the merge commit that landed PR #346
+(`f8e744c840e6dd8f18d7800c84cf9363cf39d48c`) carries the message "Merge pull request #346: Control
+plane certify FTF-04A03", which reads as a completed-certification claim -- but
+`certification_state` correctly stayed `PROVISIONAL` through that merge; no independent L2 review
+had actually happened yet at merge time. The merge action itself was legitimate (CLAUDE.md's "Do
+without asking" permits "merge on green + L1 doc (PROVISIONAL)"); only the commit message text
+overclaims. No tracker field was ever falsely elevated as a result -- this entry is the first
+time FTF-04A03's `certification_state` actually becomes `CERTIFIED`.
+
+**Result: CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-04A03 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`f8e744c840e6dd8f18d7800c84cf9363cf39d48c`. `sync_certified_status()` run directly. Appended
+`docs/certifications/ledger.md` with the full evidence breakdown; `QUEUE.md`/`PROGRESS.md`
+updated. `scripts/status.py`: `89/300` -> `90/300` certified; product-true unchanged `22/22`. No
+open owner ask.
+
+- **Reviewed-by:** this session (independent -- see session-ID check above), 2026-09-28.

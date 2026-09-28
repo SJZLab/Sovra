@@ -1,4 +1,54 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T05:10:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2, triggered by the `pull_request.opened`
+  webhook for PR #349) — landed the FTF-04A03 certification below: its own PR (#348) was open and
+  independently written but blocked by a real merge conflict against `main` (FTF-0500A's own
+  submission, PR #347, merged afterward and touched the same shared doc files). Session-ID check:
+  neither PR #346 (`session_01FSaDWJkmkJ1Bpk583aZAaE`) nor PR #348
+  (`session_01WiDx2X5iJ7YYyVWtYj3k7f`) overlaps this session's own ID — independent of both.
+  Independently reproduced the certification's own evidence before pushing (CI 34/34 rechecked,
+  both no-DB test files rerun, a real local Postgres 16 role/database stood up for the
+  integration test, full ruff/mypy/pnpm lint/format/typecheck/vitest sweep, `validate_spec.py
+  --strict`, `product_truth_check.py --fail-on-unwired` 22/22, zero regressions) — full detail in
+  `docs/certifications/ledger.md`'s FTF-04A03 entry's own landing addendum. Resolved the merge
+  conflict (additive doc-file merges, `spec-matrix.yaml` merged clean) and merged PR #348.
+  FTF-0500A (PR #347's own submission) remains PROVISIONAL, not reviewed by this session — a
+  fresh independent certifier is still required before it can move to CERTIFIED (Law 4).
+
+Updated: 2026-09-28T03:20:00Z (scheduled Control-plane certifier shift, session
+  https://claude.ai/code/session_01WiDx2X5iJ7YYyVWtYj3k7f, triggered by the `pull_request.opened`
+  webhook for PR #347) — reviewed **FTF-04A03 (GitHub accessible-repository selector UI)**,
+  **CERTIFIED**. `docs/spec-matrix.yaml`/`docs/certifications/queue.md` showed two PROVISIONAL
+  items: FTF-04A03 (PR #346, already merged) and FTF-0500A (PR #347, CI still `in_progress` at
+  webhook-fire time). This shift certifies FTF-04A03 now and defers FTF-0500A until its own CI
+  reaches a real terminal state (Law 1/Law 5).
+
+  Session-ID check: PR #346's two commits both carry `Claude-Session:
+  .../session_01FSaDWJkmkJ1Bpk583aZAaE` — no overlap with this session's own ID, independent per
+  Law 4. PR #346's own CI run (Actions run 36365631417) independently confirmed `completed`/
+  `success` (34/34 jobs). Read the full diff and all four new source files directly; confirmed
+  GET-only enumeration, real `Link: rel="next"` pagination, `organization_admin`-only role gate,
+  and no auto-select code path in the frontend component. Reran both no-DB test files via their
+  real `main()` entry point (disclosed, non-blocking finding: bare `pytest` on these files
+  reports a false PASS regardless of their own `check()` results, since they only raise via
+  `sys.exit` inside `main()` — confirmed CI already invokes them correctly). Stood up a real
+  local PostgreSQL 16 cluster and ran the integration test directly against it — clean. Ran two
+  independent fault injections of my own (widened the role set to all roles; disabled the
+  connector's terminal status guard) — both reproduced genuine failures, both reverted
+  byte-identical. Full regression sweep (`ruff`/`mypy`/`pnpm lint`/`format:check`/`typecheck`/
+  `vitest run` 42/42/`validate_spec.py --strict`/`product_truth_check.py --fail-on-unwired`
+  22/22) clean. Task contract re-pulled via `tools/r1_handoff.py` — both acceptance clauses and
+  the negative_acceptance clause genuinely met. Full evidence in
+  `docs/certifications/ledger.md`'s own new FTF-04A03 entry, including a disclosed, non-blocking
+  finding: PR #346's own merge-commit message ("Control plane certify FTF-04A03") reads as a
+  completed-certification claim that was not yet true at merge time — `certification_state`
+  correctly stayed `PROVISIONAL` through that merge and only becomes `CERTIFIED` with this entry.
+
+  `docs/spec-matrix.yaml` FTF-04A03 set to `certification_state: CERTIFIED` / `proof_state:
+  L2-CERTIFIED`, `evidence_hash` set to merge commit `f8e744c840e6dd8f18d7800c84cf9363cf39d48c`.
+  `sync_certified_status()` run directly. `scripts/status.py`: `89/300` -> `90/300` certified;
+  product-true unchanged `22/22`. No open owner ask.
+
 Updated: 2026-09-28T03:00:00Z (scheduled autonomous relay shift, branch
   `claude/wizardly-fermat-ats2yu`) — submitted **FTF-0500A (Dataset source selector +
   purpose-authorization UI)** PROVISIONAL. Checked every open PR (#342/#337/#336/#335/#328/#315/

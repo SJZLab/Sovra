@@ -1,4 +1,65 @@
 # PROGRESS — Sovra
+## 2026-09-28T03:20:00Z — FTF-04A03 — Control plane: CERTIFIED (PR #346, session https://claude.ai/code/session_01WiDx2X5iJ7YYyVWtYj3k7f)
+
+Scheduled Control-plane certifier shift, triggered by the `pull_request.opened` webhook for PR
+#347 (FTF-0500A). `docs/spec-matrix.yaml` showed two `PROVISIONAL` items: FTF-04A03 (PR #346,
+already merged to `main`) and FTF-0500A (PR #347, CI still `in_progress`). Certified FTF-04A03
+in place on a fresh branch off `origin/main`; FTF-0500A is deferred to its own review once its
+CI reaches a real terminal state (Law 1/Law 5).
+
+Session-ID check: PR #346's commits carry `Claude-Session: .../session_01FSaDWJkmkJ1Bpk583aZAaE`
+-- no overlap with this session, independent per Law 4. Confirmed PR #346's own CI run (Actions
+run 36365631417) reached `completed`/`success` on 34/34 jobs. Read the full diff (15 files,
++4057/-8) and all four new source files directly -- the connector
+(`github_accessible_repository_listing.py`, real `GET /installation/repositories`, GET-only by
+a module-level constant, real `Link: rel="next"` pagination), the CRUD/audit layer
+(`github_repository_listing_crud.py`, real tenant authorization plus the disclosed
+audit-commit-before-re-raise fix), the route (`github_repository_listing_routes.py`, real
+`organization_admin`-only `require_role` gate, credential only ever a request-body value), and
+the frontend component (confirmed no code path assigns `selectedRepositoryIdentity` outside the
+real click handler). Confirmed the route is genuinely wired into `apps/api/app/main.py`.
+
+Reran `tests/tasks/test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py` via their real
+`main()` entry point -- both "all checks passed". **Disclosed, non-blocking finding:** both
+files use a `check()`/`FAILURES` accumulator only enforced inside `main()` -- running either
+under bare `pytest` instead reports every test function PASSED regardless of what `check()`
+recorded, since nothing raises. Confirmed `.github/workflows/ci.yml` already invokes both files
+the correct way, so this is not a gap in this task's own CI-gated evidence, just a fragility
+worth flagging for any future test file reusing this pattern.
+
+Stood up a real, directly-installed local PostgreSQL 16 cluster (`pg_ctlcluster 16 main start`)
+and ran `tests/integration/test_ftf_04a03_github_repository_listing.py` directly against it --
+"all checks passed". Ran `pnpm exec vitest run apps/web/tests/ftf_04a03.spec.ts` -- 5/5 pass.
+
+**Own independent fault injections (Law 1):** (1) widened `GITHUB_REPOSITORY_LISTING_ROLES` to
+`frozenset(Role)` -- genuine failure reproduced via the real `main()` run (3 failures: a viewer
+reached the session layer); (2) replaced the connector's terminal `if response.status != 200`
+guard with a no-op -- genuine failure reproduced (a real, different `GitHubConnectionError`
+downstream). Both reverted byte-identical (md5sum confirmed matching before/after each).
+
+Reran `ruff check .`/`ruff format --check .`/`mypy .` (clean, 302 files), `pnpm run
+lint`/`format:check`/`typecheck` (clean), `pnpm exec vitest run` (42/42, zero regressions),
+`python3 scripts/validate_spec.py --strict` (clean, after `git fetch --unshallow`), `python3
+scripts/product_truth_check.py --fail-on-unwired` (unchanged 22/22, blank `proving_symbol`
+confirmed legitimate). Regression swept `test_ftf_0202.py`/`test_ftf_04a01.py`/
+`test_ftf_04a02.py` directly -- zero regressions. Task contract re-pulled via
+`tools/r1_handoff.py packet FTF-04A03` -- both acceptance clauses and the negative_acceptance
+clause genuinely met. No open review threads or comments on PR #346.
+
+**Disclosed, non-blocking:** PR #346's own merge-commit message ("Merge pull request #346:
+Control plane certify FTF-04A03") reads as a completed-certification claim, but
+`certification_state` correctly stayed `PROVISIONAL` through that merge -- no independent
+review had happened yet. The merge action itself was legitimate (CLAUDE.md's "Do without
+asking" permits merging PROVISIONAL work on green); only the commit message text overclaims.
+Recorded in `docs/certifications/ledger.md`'s own new FTF-04A03 entry rather than silently
+worked around.
+
+`docs/spec-matrix.yaml` FTF-04A03 set to `certification_state: CERTIFIED` / `proof_state:
+L2-CERTIFIED`, `evidence_hash: f8e744c840e6dd8f18d7800c84cf9363cf39d48c`. `sync_certified_status()`
+run directly (`spec/tasks.json`/`docs/implementation/TRACKER.json` updated). `scripts/status.py`:
+`89/300` -> `90/300` certified, product-true unchanged `22/22`. `docs/certifications/ledger.md`
+appended; `QUEUE.md` updated. No open owner ask.
+
 ## 2026-09-28T03:00:00Z — FTF-0500A — relay: submit PROVISIONAL (branch `claude/wizardly-fermat-ats2yu`)
 
 Scheduled autonomous relay shift. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
