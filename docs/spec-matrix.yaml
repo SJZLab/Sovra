@@ -2943,15 +2943,48 @@ FTF-04A03:
   proving_test: tests/tasks/test_ftf_04a03_connector.py, tests/tasks/test_ftf_04a03_routes.py,
     tests/integration/test_ftf_04a03_github_repository_listing.py, apps/web/tests/ftf_04a03.spec.ts
 FTF-04A04:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: GitHub branch/ref selector + immutable SHA resolver
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A03
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A03 (both CERTIFIED, confirmed before relying on
+    them). Path refined to
+    apps/api/app/target_connectors/github_branch_ref_resolver.py (connector),
+    github_branch_ref_crud.py (auth+audit), github_branch_ref_routes.py
+    (POST .../target-connections/github-branches and
+    .../github-resolve-ref, wired into main.py), and
+    apps/web/components/target-application/
+    github_branch_ref_selector_immutable_sha_resolver.tsx (UI) --
+    matching FTF-04A03's own real layout precedent rather than the
+    packet's initial owner-path suggestion. Acceptance clause 1
+    ("Resolve selected branch/tag/ref to immutable commit SHA and persist
+    both display ref and resolved identity") is met by two real GitHub
+    REST API v3 calls (GET .../branches for orientation,
+    GET .../commits/{ref} for resolution) -- resolve_ref_to_commit always
+    issues a fresh call, never reusing a list-time SHA, proven by a real
+    local HTTPS fixture whose branch-list SHA deliberately differs from
+    its own commits/{ref} response. negative_acceptance ("Branch
+    advancing between list/read does not mix commits; unknown/
+    inaccessible ref is blocked") is proven both at the connector level
+    (fresh resolution, real 404/422 denial) and at the UI level
+    (selecting a different branch or editing the ref field clears any
+    previously resolved SHA immediately). No independent schema change
+    (TargetSourceSnapshot persistence is FTF-04A05's own separate,
+    dependency-gated task). proving_symbol left blank (disclosed): no
+    Next.js app shell exists yet for this UI component to be reachable
+    from a real front door (Law 6), the same precedent FTF-04A03/
+    FTF-0408/FTF-0500A already established, even though the backend
+    routes are genuinely wired into main.py.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: >-
+    tests/tasks/test_ftf_04a04_connector.py,
+    tests/tasks/test_ftf_04a04_routes.py,
+    tests/integration/test_ftf_04a04_github_branch_ref.py,
+    apps/web/tests/ftf_04a04.spec.ts
 FTF-04A05:
   certification_state: NONE
   criticality: MUST

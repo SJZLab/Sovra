@@ -22584,3 +22584,151 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A26) is `L1-PRO
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-28T07:15:00Z — Scheduled autonomous relay shift — FTF-04A04 submitted PROVISIONAL
+
+Session: this session. STEP 0.1: read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh
+(tail sections, given file size). CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md`
+directly (no mismatch). `cognee-cli` is not installed in this sandbox — declared per STEP 0.2,
+text-search fallback active throughout this shift.
+
+No open owner ask (`QUEUE.md` "Owner actions — current" empty), no `BLOCKER.md`, and
+`docs/spec-matrix.yaml` had zero `PROVISIONAL` entries at shift start (`status.py`: `91/300`
+certified, `22` product-true) — FTF-0500A and FTF-04A03 had both been independently certified by
+prior shifts earlier the same day (PR #347/#348). Checked every open PR directly
+(#349/#342/#337/#336/#335/#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) — #349 was a
+prior shift's own "frontier fully saturated" tracking submission (doc-only, no code), dated
+before FTF-0500A/FTF-04A03 were certified. None of the 16 claim FTF-04A04.
+
+Recomputed the dependency-ready frontier from first principles rather than trusting PR #349's own
+stale snapshot: joined `docs/spec-matrix.yaml`'s real `certification_state` per task against
+`docs/TASK_INDEX.md`'s own canonical, structured `Dependencies` column. Result: 13 tasks came
+back dependency-ready (up from PR #349's own 10 — FTF-04A03/FTF-0500A both landing since unblocked
+three new ones: FTF-04A04, FTF-0500B, FTF-0500C). Excluding everything already claimed by an open
+PR (FTF-0212/FTF-0214/FTF-0304/FTF-0500D/FTF-0601/FTF-0902/FTF-04A15) and everything already
+disclosed-blocked (FTF-1201/FTF-1703/FTF-H004) left FTF-04A04/FTF-0500B/FTF-0500C as the three
+genuinely new, unclaimed candidates. Picked **FTF-04A04** ("GitHub branch/ref selector +
+immutable SHA resolver") — its own two real dependencies (FTF-04A01/FTF-04A03) confirmed
+`CERTIFIED` directly before relying on them.
+
+Task contract pulled fresh: `python3 tools/r1_handoff.py packet FTF-04A04 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md` directly).
+
+Read the existing FTF-04A02/FTF-04A03 chain in full (`github_app_token_read_only_secret_
+integration.py`, `github_accessible_repository_listing.py`, their CRUD/route layers, and
+`github_accessible_repository_selector_ui.tsx`) before writing anything, to match this
+repository's own established four-layer pattern (connector -> CRUD/audit -> FastAPI route -> UI)
+exactly rather than inventing a different shape.
+
+Implemented `apps/api/app/target_connectors/github_branch_ref_resolver.py` (path refined from
+the packet's own generic `files` suggestion, same refinement every prior 04A-family task already
+discloses): two real, GET-only GitHub REST API v3 calls, `GET /repos/{owner}/{repo}/branches`
+(orientation listing, each branch's own list-time commit SHA) and `GET
+/repos/{owner}/{repo}/commits/{ref}` (the real "immutable SHA resolver" — accepts a branch name,
+tag, or SHA; slashes in branch names percent-encoded per GitHub's own documented requirement for
+this endpoint). `resolve_ref_to_commit` always issues a fresh request — this task's own real
+"Branch advancing between list/read does not mix commits" negative_acceptance is met structurally:
+there is no code path that returns a list-time SHA as a resolved identity. An unknown/inaccessible
+ref (real HTTP 404, GitHub's own documented ambiguity between "does not exist" and "you cannot see
+it") or an unresolvable ref (HTTP 422) is denied via `GitHubRepositoryAccessDeniedError`, never a
+fabricated resolution.
+
+`apps/api/app/target_connectors/github_branch_ref_crud.py`: same authorize-project-ownership +
+audit-in-the-same-transaction shape `github_repository_listing_crud.py` (FTF-04A03) already
+established, for both the listing and resolution calls — the audit event's own `details` record
+the repository/ref/resolved-SHA shape, never the raw credential.
+
+`apps/api/app/target_connectors/github_branch_ref_routes.py`: two real FastAPI routes (`POST
+.../target-connections/github-branches`, `POST .../target-connections/github-resolve-ref`),
+`organization_admin`-only (`GITHUB_BRANCH_REF_ROLES`, identical to every prior credential-bearing
+target-connection route's own role set). Wired into `apps/api/app/main.py` as its fourteenth live
+router (module docstring's own numbered history updated to match).
+
+`apps/web/components/target-application/github_branch_ref_selector_immutable_sha_resolver.tsx`:
+lists branches for orientation, lets the user pick one or type a free-form ref, and resolves it
+via a real, fresh backend call on every "Resolve" click. `handleSelectBranch`/`handleRefChange`
+both clear `resolvedRef` immediately — the real UI-level half of "does not mix commits": there is
+no code path that leaves a resolved SHA visible next to a ref it was not actually resolved for.
+
+This sandbox has no route to the public internet (`curl` to `api.github.com` fails at the
+outbound proxy, same disclosed precedent FTF-04A02/FTF-04A03 already established), so the real
+request/response/verification logic is proven against a real local HTTPS server implementing the
+exact GitHub REST API v3 subset this task calls, using this repository's own established
+real-self-signed-CA-in-the-system-trust-store precedent rather than a mocked `guarded_fetch`.
+
+`tests/tasks/test_ftf_04a04_connector.py`: 18 checks, all pass. Covers real pagination (`Link:
+...rel="next"`), the branch-listing fixture deliberately reporting a *different* SHA for `main`
+than the real `commits/main` fixture response (so a test that mistakenly trusted the list-time
+SHA as resolved would genuinely fail — it doesn't), percent-encoding of `release/1.0`, real
+401/403/404/422 denial semantics, and two independent, disclosed fault injections (Law 1), both
+reverted byte-identical (re-ran clean immediately after each): (1) the terminal non-200 status
+guard inside `resolve_ref_to_commit` disabled — genuine fabricated-success reproduction against a
+revoked-token fixture whose 401 body deliberately also carries a plausible-looking `sha` (the
+same fixture-design trick `test_ftf_04a03_connector.py` already established); (2) `_HTTP_METHOD`
+hardcoded to `"POST"` — genuine failure against the real fixture server (which only ever
+implements `do_GET`), proving the GET-only guarantee is real and observable.
+
+`tests/tasks/test_ftf_04a04_routes.py`: role-boundary tests, no real Postgres (same
+real-uvicorn-server/`MagicMock`-session-factory pattern `test_ftf_04a03_routes.py` already
+established) — unauthenticated (401) and viewer (403) requests are denied via the real
+`require_role` dependency on both routes and never open a session; missing `credential`/
+`repository_identity`/`ref` are refused (400) before any GitHub call; `organization_admin`
+genuinely reaches the session layer on both routes.
+
+`tests/integration/test_ftf_04a04_github_branch_ref.py`: real Postgres 16 evidence (this
+sandbox's own real sudo/`service postgresql start` access, a fresh scratch `sovra_migrate`
+role/`sovra_ftf04a04` database created and dropped for this run, never reused across runs) — a
+real uvicorn server, two real organizations, the `organization_admin`-only RBAC boundary, a
+cross-organization project-ID IDOR case (404, no audit row for it), a real organization_admin
+request that lists the real branches the fixture declared and resolves `main` to its real,
+*current* commit SHA (confirmed genuinely distinct from the stale list-time SHA the listing call
+itself returned — the same negative_acceptance proven again at the integration layer, not just
+unit level), real audit events whose details never contain the raw credential and do record the
+real `resolved_commit_sha`, an unknown ref denied (404) with its own distinct audit action rather
+than a fabricated success, and a second organization's own admin denied (404, never leaked) for a
+project ID that does not exist in their own organization.
+
+`apps/web/tests/ftf_04a04.spec.ts`: 6 tests (Vitest + React Testing Library + jsdom, mocked
+`fetch`), all pass — real payload/URL assertions for both routes, no branch auto-selected merely
+by loading, the resolved SHA proven distinct from the stale list-time SHA in the rendered notice,
+changing the selected ref (a different branch click, or editing the free-form input) clears a
+stale resolved-SHA notice immediately, an unknown-ref denial surfaces the real server-provided
+error text rather than a generic swallow, and the Resolve button stays disabled (no `fetch` call
+at all) until a ref is present.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (299 source files); `uv run mypy .`
+clean repo-wide (308 files, zero new errors). `pnpm install --frozen-lockfile`/`pnpm run
+lint`/`pnpm run format:check`/`pnpm run typecheck` clean repo-wide; `pnpm exec vitest run` 48/48
+across 9 files (up from 42/42), zero regressions. `python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow` resolved the shallow-clone `stale_commit` false positives
+every prior shift's own history already disclosed).
+`product_truth_check.py --fail-on-unwired`: unchanged **22/22** — `proving_symbol` left blank for
+this task (disclosed): no Next.js app shell exists yet for this UI component to be reachable from
+a real front door (Law 6), the same precedent FTF-04A03/FTF-0408/FTF-0500A already established,
+even though the two new backend routes are genuinely wired into `main.py`. `status.py`: unchanged
+`91/300` certified, `22` product-true (Law 2 — this is a submission, not a certification;
+`certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` do not count toward either stricter
+count until independently certified). Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py`/`test_ftf_04a07.py`/
+`test_ftf_04a17.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py` — zero regressions.
+`tests/integration/test_ftf_04a03_github_repository_listing.py` (the sibling resource's own real
+Postgres proof) reran clean on a fresh scratch database too, as an additional regression check
+beyond this task's own write set.
+
+`docs/spec-matrix.yaml` FTF-04A04 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+tests/tasks/test_ftf_04a04_connector.py, tests/tasks/test_ftf_04a04_routes.py,
+tests/integration/test_ftf_04a04_github_branch_ref.py, apps/web/tests/ftf_04a04.spec.ts`;
+`evidence_hash` left blank pending the real merge commit. CI gate steps (`FTF-04A04 negative-test
+proof`, connector then route-boundary) added to `.github/workflows/ci.yml` immediately after the
+FTF-04A03 steps, plus a new dedicated `github-branch-ref-integration` job (real `services:
+postgres` container) mirroring `github-repository-listing-integration`'s own pattern. **Not
+self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened PR
+are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A04) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).

@@ -1,4 +1,58 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-28T07:15:00Z (scheduled autonomous relay shift, branch
+  `claude/wizardly-fermat-r37pvq`) — submitted **FTF-04A04 (GitHub branch/ref selector +
+  immutable SHA resolver)** PROVISIONAL. CLAUDE.md.sha256 self-check matched `sha256sum
+  CLAUDE.md` directly. `cognee-cli` is not installed in this sandbox — declared per STEP 0.2,
+  text-search fallback active throughout this shift. Checked every open PR
+  (#349/#342/#337/#336/#335/#328/#315/#314/#313/#311/#308/#295/#290/#231/#195/#194) -- none claim
+  FTF-04A04. Recomputed the dependency-ready frontier fresh from `docs/spec-matrix.yaml`'s real
+  `certification_state` joined against `docs/TASK_INDEX.md`'s own canonical `Dependencies`
+  column (the same method PR #349's own tracking submission used, re-run fresh rather than
+  trusted from that submission's own snapshot): FTF-04A04, FTF-0500B and FTF-0500C became newly
+  dependency-ready this shift once FTF-0500A and FTF-04A03 (both independently certified earlier
+  the same day, confirmed directly) landed. All three were unclaimed by any open PR. Picked
+  FTF-04A04 -- dependencies FTF-04A01/FTF-04A03 confirmed already `CERTIFIED` before relying on
+  them.
+
+  Implemented a new, additive four-layer chain following FTF-04A03's own real layout precedent:
+  `apps/api/app/target_connectors/github_branch_ref_resolver.py` (real GitHub REST API v3
+  branch-listing + immutable ref-to-commit-SHA resolution, GET-only, never reuses a list-time
+  SHA as the resolved identity), `github_branch_ref_crud.py` (authorize-project + audit-in-
+  transaction), `github_branch_ref_routes.py` (two `organization_admin`-only FastAPI routes,
+  wired into `main.py` as its fourteenth live router), and
+  `apps/web/components/target-application/github_branch_ref_selector_immutable_sha_resolver.tsx`
+  (a selector UI that clears any previously resolved SHA the instant the selected branch/ref
+  changes -- never mixes a stale resolution with a new selection).
+
+  Real evidence, no mocked `guarded_fetch`: a real local HTTPS fixture server (self-signed CA
+  installed into the system trust store, this sandbox having no public-internet route, same
+  disclosed precedent as FTF-04A02/FTF-04A03) proves real pagination, a resolved SHA genuinely
+  distinct from the branch-listing's own stale list-time SHA, real 401/403/404/422 denial
+  semantics, and two disclosed fault injections (Law 1, both reverted byte-identical).
+  Role-boundary route tests (no DB, real uvicorn + `MagicMock` session factory) and a real
+  Postgres 16 integration test (cross-tenant IDOR denied, real audit events written, an unknown
+  ref denied with its own distinct audit action) both pass, alongside a 6-test Vitest/RTL
+  frontend suite. Full record: `docs/certifications/queue.md`'s matching 2026-09-28 entry.
+
+  `uv run ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide; `pnpm run
+  lint`/`typecheck`/`format:check` clean; `pnpm exec vitest run` 48/48 (up from 42/42), zero
+  regressions. `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`).
+  `product_truth_check.py --fail-on-unwired` unchanged **22/22** (`proving_symbol` left blank --
+  disclosed, no Next.js app shell exists yet for this UI to be reachable from a real front door,
+  same precedent FTF-04A03/FTF-0408/FTF-0500A already established). `status.py` unchanged
+  `91/300` certified, `22` product-true (Law 2 -- this is a submission, not a certification).
+  Regression swept `test_ftf_04a01.py`/`test_ftf_04a03_connector.py`/`test_ftf_04a03_routes.py`/
+  `test_ftf_04a07.py`/`test_ftf_04a17.py`/`test_ftf_04a19.py`/`test_ftf_04a20.py` -- zero
+  regressions.
+
+  `.github/workflows/ci.yml`: two `FTF-04A04 negative-test proof` steps added to the `gate` job,
+  plus a new dedicated `github-branch-ref-integration` job (real `services: postgres` container)
+  mirroring `github-repository-listing-integration`'s own pattern. `docs/spec-matrix.yaml`
+  FTF-04A04 set to `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` /
+  `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge commit.
+  **Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the
+  opened PR are required before certification. No open owner ask.
+
 Updated: 2026-09-28T05:25:00Z (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_01VedQRV3re6QXoci23J8Vq2, triggered by the `pull_request.opened`
   webhook for PR #349) — reviewed **FTF-0500A (Dataset source selector +
@@ -6746,11 +6800,21 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
-None currently. FTF-04A02 ("GitHub App/token read-only secret integration") — the item named
-directly below as still "awaiting independent Control-plane L2 review" — was independently
-reviewed and CERTIFIED this shift via PR #344 (merge commit
-`da340d39510e5d716808cb605ffff3122c1ed4c0`) — see this file's own top dated log entry and
-`docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
+**FTF-04A04** ("GitHub branch/ref selector + immutable SHA resolver") — submitted PROVISIONAL
+this shift via a PR opened from branch `claude/wizardly-fermat-r37pvq` -> `main`. Real GitHub
+REST API v3 branch listing + immutable ref resolution (`GET .../branches`, `GET
+.../commits/{ref}`), an `organization_admin`-only FastAPI router wired into `main.py`, and a
+selector UI component that never mixes a stale list-time SHA with a freshly resolved one. See
+this file's own top dated log entry and `docs/certifications/queue.md`'s matching 2026-09-28
+entry for the full evidence record (connector/routes/integration/frontend suites, two disclosed
+fault injections, `ruff`/`mypy`/`pnpm`/`validate_spec.py`/`product_truth_check.py` all clean).
+Awaiting independent Control-plane L2 review and a real CI run on the opened PR.
+
+Prior history, kept for the record: this paragraph previously said "None currently" — FTF-04A02
+("GitHub App/token read-only secret integration") had been independently reviewed and CERTIFIED
+via PR #344 (merge commit `da340d39510e5d716808cb605ffff3122c1ed4c0`) — see
+`docs/certifications/ledger.md`/`docs/certifications/queue.md` for that full history and
+evidence.
 
 Superseded by the certification above, kept verbatim for the record:
 
