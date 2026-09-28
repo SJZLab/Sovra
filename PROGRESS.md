@@ -1,4 +1,76 @@
 # PROGRESS — Sovra
+## 2026-09-28T01:18:18Z — FTF-04A03 — relay: submit PROVISIONAL (branch `claude/wizardly-fermat-h2iqrm`)
+
+Scheduled autonomous relay shift. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`, confirmed `CLAUDE.md.sha256` matches `sha256sum CLAUDE.md`
+(no mismatch, no BLOCKER). STEP 1: recomputed the dependency-ready frontier directly from
+`docs/spec-matrix.yaml` -- of 12 ready tasks, 3 (FTF-0902/FTF-0601/FTF-0500D) already had an
+open PR; picked **FTF-04A03 (GitHub accessible-repository selector UI)**, the next unclaimed
+item in the target-connector track FTF-04A02 unblocked, deps FTF-04A01/FTF-04A02 both
+CERTIFIED.
+
+**P (read):** `tools/r1_handoff.py packet FTF-04A03` resolved the real DoD (acceptance: "Render
+only credential-accessible repositories with pagination and explicit selection"; negative:
+"UI cannot expose admin-visible repos to ordinary user or auto-select first result"). Read
+`target_application_connection_routes.py`/`_crud.py`/`_schema.py` and
+`github_app_token_read_only_secret_integration.py` (FTF-04A02, CERTIFIED) in full: confirmed no
+repository-*listing* backend capability exists anywhere in this repository yet -- FTF-04A02
+validates exactly one already-named repository (`GET /repos/{owner}/{repo}`), a real, disclosed
+scope boundary its own module docstring states explicitly. The packet's own file list (frontend
+only) therefore could not be implemented against real backend state (Law 9) without a scope
+refinement.
+
+**E (write, test FAIL first):** Added a new, additive sibling connector module
+`apps/api/app/target_connectors/github_accessible_repository_listing.py`
+(`list_accessible_repositories`, real `GET /installation/repositories`, real pagination via the
+response's own `Link: rel="next"` header, GET-only by construction) rather than reopening the
+CERTIFIED FTF-04A02 module (Law 15) or fabricating a placeholder list (Law 11). Added
+`github_repository_listing_crud.py` (real project-tenant authorization via the same
+`authorize_resource_ownership`/`execute_tenant_scoped` composition FTF-04A01 proved, plus a real
+audit event per Section 6.8A) and `github_repository_listing_routes.py`
+(`POST /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/
+github-repositories`, same `organization_admin`-only role boundary FTF-04A01 established), wired
+into `apps/api/app/main.py`. Added the packet's own named frontend component
+`apps/web/components/target-application/github_accessible_repository_selector_ui.tsx`.
+
+Wrote `tests/tasks/test_ftf_04a03_connector.py` first and watched it fail against the real local
+HTTPS GitHub-REST-API-v3-shaped fixture (same real-self-signed-CA-in-the-sandbox-trust-store
+precedent `test_ftf_04a02.py` established) before the connector module existed, then made it
+pass; same for `tests/tasks/test_ftf_04a03_routes.py` (real uvicorn + `MagicMock` session
+factory, same precedent `test_ftf_04a01.py` established) and `apps/web/tests/ftf_04a03.spec.ts`
+(5 tests, Vitest + RTL + jsdom, real mocked-`fetch` assertions on URL/method/body, explicit
+negative-acceptance tests for "no auto-select").
+
+**A real defect was found and fixed, not merely disclosed (Law 1):** while writing
+`tests/integration/test_ftf_04a03_github_repository_listing.py` (real Postgres, two real
+organizations/projects, no OpenBao needed since no secret is ever persisted here), the real
+audit-row assertion for a denied listing (a revoked credential, real HTTP 401 from the fixture)
+failed for real: the first draft re-raised `GitHubConnectionError` from inside the same session
+`tenant_scoped_session_for` rolls back on any exception, so the "list_denied" audit event Section
+6.8A requires was silently discarded along with it. Fixed by having the CRUD layer commit that
+one audit row itself before re-raising (see `github_repository_listing_crud.py`'s own docstring).
+Re-ran the integration test clean after the fix (all real Postgres/RLS/audit-row checks pass,
+including cross-organization IDOR denial writing no audit row, and a second organization's own
+admin reaching the same real path for their own project).
+
+**V (verify):** `ruff check .`/`ruff format --check .`/`mypy .` clean repo-wide (302 files).
+`pnpm run lint`/`format:check`/`typecheck` clean; `pnpm run test` 32/32 (7 files). `python3
+scripts/validate_spec.py --strict` clean. `python3 scripts/verify_task.py --task FTF-04A03
+--stage task` reports `BLOCKED`, expected/disclosed (same two-commit pattern as
+FTF-0402/FTF-04A26/FTF-04A02 -- `spec/verification-map.json`'s entry lands in the certifying
+commit). `product_truth_check.py --fail-on-unwired` unchanged 22/22 (`proving_symbol` left
+blank -- no live caller wires this route into a setup UI flow yet). `status.py` unchanged
+89/300 certified, 22 product-true. Regression swept every `test_ftf_04a*.py` file plus
+`test_ftf_0202.py` -- zero regressions. Added CI job `github-repository-listing-integration`
+(real `services: postgres`, no OpenBao) and two `gate` steps for the connector/route
+negative-test proofs.
+
+`docs/spec-matrix.yaml` FTF-04A03 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`, full disclosure of the scope refinement
+recorded in its own `notes`. Submitted PROVISIONAL -- not self-certified (Law 4), awaiting
+independent Control-plane L2 review and a real CI run on the opened PR. No open owner ask.
+STEP 3 (this entry) written before compaction.
+
 ## 2026-09-27 — FTF-04A02 — Control plane: certify (PR #344)
 
 Scheduled Control-plane certifier shift, session

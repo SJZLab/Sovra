@@ -2845,15 +2845,59 @@ FTF-04A02:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a02.py
 FTF-04A03:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: GitHub accessible-repository selector UI
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A02
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A02 (both CERTIFIED, confirmed before relying on them). Frontend:
+    `apps/web/components/target-application/github_accessible_repository_selector_ui.tsx` (the task
+    packet's own named file) -- a real, DOM-tested (Vitest + RTL + jsdom) React component that POSTs
+    a real, already-resolved credential to a real backend, renders exactly the repositories the
+    backend returned (no client-side filtering/mock list), paginates via the response's own real
+    `has_next_page`/`page` fields, and never auto-selects: selection state starts `null` and is set
+    only inside a real click handler.
+
+    Disclosed scope refinement, not silently invented: this task's own acceptance clause ("Render
+    only credential-accessible repositories with pagination") needs a real backend call that lists
+    repositories, and FTF-04A02 (CERTIFIED) deliberately implements only `GET /repos/{owner}/{repo}`
+    (validating one already-named repository, never enumerating a credential's accessible set) --
+    its own module docstring names that boundary explicitly. Rather than reopen that CERTIFIED
+    module (Law 15) or fabricate a placeholder list (Law 11), this task adds a new, additive sibling
+    connector module for GitHub's own real enumeration endpoint: `apps/api/app/target_connectors/
+    github_accessible_repository_listing.py` (`GET /installation/repositories`, real pagination via
+    the response's own `Link: rel="next"` header, GET-only by construction), a CRUD/audit layer
+    `github_repository_listing_crud.py` (real project-tenant authorization via the same
+    `authorize_resource_ownership`/`execute_tenant_scoped` composition FTF-04A01 already proved, plus
+    a real audit event per Section 6.8A's own "connection creation and validation are audited" --
+    including a *denied* validation, which a real fault this task's own integration test caught:
+    without an explicit intra-transaction commit before re-raising, a denied listing's own audit row
+    was silently rolled back with the propagated exception), and the real
+    `POST /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/
+    github-repositories` route (`github_repository_listing_routes.py`, wired into `apps/api/app/
+    main.py`, same `organization_admin`-only role boundary FTF-04A01 already established for this
+    class of credential-bearing resource). The credential is a request-body value, never persisted,
+    echoed back, or written into the audit event.
+
+    Tests: `tests/tasks/test_ftf_04a03_connector.py` (real local HTTPS GitHub-REST-API-v3-shaped
+    fixture with a real self-signed CA installed into the sandbox trust store, same precedent
+    `test_ftf_04a02.py` established -- real pagination/401/403/malformed-response checks plus two
+    disclosed fault injections proving the terminal status guard and the GET-only guarantee are each
+    load-bearing), `tests/tasks/test_ftf_04a03_routes.py` (real uvicorn + `MagicMock` session
+    factory, same precedent `test_ftf_04a01.py` established -- role-boundary denial never opens a
+    session), `tests/integration/test_ftf_04a03_github_repository_listing.py` (real Postgres, two
+    real organizations/projects, cross-organization IDOR denial, real audit-row assertions for both
+    a successful and a denied listing, no OpenBao needed since no secret is ever persisted here), and
+    `apps/web/tests/ftf_04a03.spec.ts` (5 tests). `product_truth_check.py --fail-on-unwired`
+    unchanged (`proving_symbol` left blank -- no live caller wires this route into a setup UI flow
+    yet, same disclosed precedent as FTF-0302/FTF-0303/FTF-04A08/09/10/25/26). Not self-certified
+    (Law 4) -- awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a03_connector.py, tests/tasks/test_ftf_04a03_routes.py,
+    tests/integration/test_ftf_04a03_github_repository_listing.py, apps/web/tests/ftf_04a03.spec.ts
 FTF-04A04:
   certification_state: NONE
   criticality: MUST
