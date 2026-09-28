@@ -19613,3 +19613,78 @@ step; `mergeable_state: clean`. Merged via `merge_pull_request`, merge commit
 authorization (CLAUDE.md). `evidence_hash` stays blank pending independent certification (same
 precedent FTF-04A04's own merged-but-uncertified PR #353 already established -- `evidence_hash`
 is filled at certification, not at merge).
+
+## 2026-09-28 — Control plane: certify FTF-H004 (Authorized LiteLLM catalog and revocation semantics), PR #354
+
+Scheduled Control-plane certifier shift, session `https://claude.ai/code/session_01VArQ9CEsLoQMEUN4RGSPgH`,
+triggered by the `pull_request.opened` webhook for PR #355 (a doc-only submission recording PR
+#354's own CI-green confirmation and merge). `docs/spec-matrix.yaml` grepped directly for
+`certification_state: PROVISIONAL`: two pending items found -- FTF-04A04 (already independently
+claimed and reviewed by a concurrent Control-plane session via PR #356, its own certification
+still open on its own branch at review time -- left untouched here to avoid duplicate/
+conflicting edits to the same shared files) and FTF-H004 (PR #354, already merged to `main`,
+genuinely unclaimed). Reviewed FTF-H004.
+
+**Session-ID check:** PR #354's own two commits both carry `Claude-Session:
+.../session_015WMxTwMhLQdbDvuLUye7RY`. No overlap with this session's own ID -- independent per
+Law 4.
+
+Independently confirmed PR #354's own CI run reached a real `completed`/`success` conclusion on
+the real PR head commit `2b339fe9f3d77f30648cfb887411851bceb05f46`: 36/36 check runs
+`completed`/`success`, including `gate` and the new `litellm-access-guard-integration` job (real
+`services: postgres` container) -- not a stale or self-reported claim. Confirmed the merge
+commit `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2` is genuinely `origin/main`'s current head.
+
+Read the full diff between PR #354's own base (`89c0b0ad5aefedf3bfb16ed89bfb3392871af828`) and
+head (13 files, +3486/-6) directly: confirmed `packages/model_catalog/access_snapshot.py::
+build_access_snapshot` only ever attaches a fresh `AliasReconciliationResult` model's `fields`
+to a display entry when that entry's own catalog `status` is `CatalogEntryStatus.CALLABLE`
+(never to a stale/removed entry), iterates only `catalog_snapshot.entries` (a reconciliation id
+the catalog has never seen cannot become a new entry), and leaves every `fields` empty for a
+`None` reconciliation. Confirmed `packages/litellm_client/access_guard.py::require_model_access`
+runs, in order, (1) `authorize_resource_ownership` (FTF-H003, CERTIFIED), (2) a fresh, uncached
+read of the connection's own `status` column, (3) `catalog.is_call_authorized` (FTF-0208,
+CERTIFIED, unchanged) -- no cached authorization state anywhere for a retry to fall back on.
+
+Independently reran both real evidence suites against a freshly-provisioned local PostgreSQL 16
+(`sovra_migrate` role, scratch `sovra_ftfh004` database, `uv sync --all-packages`): `uv run
+python3 tests/tasks/test_ftf_h004.py` -- "all checks passed" (17 checks, real local HTTPS
+gateway round trip). `uv run python3 tests/integration/test_ftf_h004_access_guard.py` -- "all
+checks passed" (7 checks, real cross-tenant/missing/revoked-connection/revoked-catalog denial
+paths).
+
+**Own fault injection (Law 1):** disabled `access_guard.py`'s connection-`status` denial (`if
+False and (...)` in place of the real check) -- reran the real-Postgres integration suite: **1
+genuine failure** (`test_explicitly_revoked_connection_denies_even_a_still_callable_model`),
+matching the submission's own disclosed outcome. Reverted byte-identical (md5sum
+`1a073f66512b8cac122a6e48e34e6491` confirmed matching before/after; `git status` clean
+afterward), suite re-ran clean immediately after.
+
+Ran `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged **22/22** -- confirmed
+both new modules' blank `proving_symbol` is legitimate (no live job-admission/execution route or
+catalog UI exists anywhere yet to call either function; `docs/TASK_INDEX.md` lists FTF-0214 as
+the task that renders a catalog to an end user). Regression swept `tests/tasks/test_ftf_0208.py`
+and `tests/tasks/test_ftf_h003.py` -- zero regressions.
+
+Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-H004 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`): the acceptance clause ("Real restricted gateway key cannot
+enumerate/probe metadata-only models; revoke a once-valid model/key and verify new queued
+actions fail while history remains visible") and the negative_acceptance clause ("401/403 never
+invoke last-known-good execution; retries of a disappearing catalog cannot silently restore
+access") both genuinely met -- confirmed by the direct code read and this review's own fault
+injection, not taken on the PR's own summary.
+
+**Result: CERTIFIED.** `docs/spec-matrix.yaml`'s FTF-H004 entry set to `certification_state:
+CERTIFIED` / `proof_state: L2-CERTIFIED`, `evidence_hash` set to the merge commit
+`00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`. `sync_certified_status()` run directly (updated
+`spec/tasks.json`/`docs/implementation/TRACKER.json` -- `['FTF-H004']` updated).
+`docs/certifications/ledger.md` entry appended with this session's ID stated explicitly.
+`QUEUE.md`/`PROGRESS.md` updated. `scripts/status.py`: `91/300` -> `92/300` certified;
+product-true unchanged `22/22`. No open owner ask. FTF-04A04 left untouched this shift (already
+claimed by the concurrent PR #356 review) -- revisit only if that PR is not landed by the next
+certifier shift.
+
+- **State:** proof_state=L2-CERTIFIED, certification_state=CERTIFIED.
+- **PR:** https://github.com/SJZLab/Sovra/pull/354 (merged, evidence commit
+  `00d0b8f38edb64b603cadd2c9cb157fc852d2aa2`).
