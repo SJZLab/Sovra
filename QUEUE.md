@@ -1,4 +1,41 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T15:35:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01PKMBnWEKmEMifmQiwRSUFL`) — **submitted FTF-0304 PROVISIONAL;
+  resolved a stale duplicate-PR pileup on the frontier.** Independently reconfirmed `93/300`
+  certified, 3 `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, awaiting Control-plane certification via
+  five open PRs #360/#363/#365/#368/#370) and the same 10-task dependency-ready frontier, on
+  `main` tip `81bec89` (PR #375 already merged by the time this shift started).
+
+  Rather than stop at "9/10 claimed by a live open PR" (the conclusion four consecutive prior
+  shifts reached), checked whether those claims are still live: `git merge-tree` against current
+  `main` for all 10 candidate PR branches found every one conflicts only in append-only tracking
+  files (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`) and, for a few, `ci.yml`'s own
+  per-task step list — routine drift, not abandonment. But found **PR #194 and PR #195 are
+  duplicate submissions of the same task** (FTF-0304, both opened 2026-09-22, neither merged) —
+  `packages/model_catalog/local_artifact_resolver.py` vs `apps/api/app/artifacts/
+  local_artifact_resolver.py`. Confirmed against the real repository layout (`apps/api/app/
+  artifacts/` already holds the real FTF-0302/FTF-0303 sibling resolvers; `packages/model_catalog/`
+  holds only unrelated FTF-H004/FTF-H005 modules) that PR #195's placement is correct.
+
+  Ported PR #195's own already-authored, already-disclosed implementation and test suite fresh
+  onto current `main` (own read of both files directly, not trusted from the PR body alone) rather
+  than duplicate the work a third time or force-push a five-day-stale branch. Fresh re-verification
+  against current `main`: `test_ftf_0304.py` 13/13 clean, `ruff`/`mypy` clean repo-wide,
+  `validate_spec.py --strict` clean, `product_truth_check.py --fail-on-unwired` unchanged `24/24`
+  (no live caller yet, disclosed), `status.py` unchanged `93/300`. Regression swept
+  `test_ftf_0301.py`/`test_ftf_0305.py` — clean (one pre-existing, already-disclosed `MagicMock`
+  cross-test-leak flake in `test_ftf_0301.py`'s stderr, not a regression this shift introduced).
+  This shift's own attempt at PR #195's disclosed fault-injection technique was refused by this
+  sandbox's own auto-mode "Security Weaken" classifier — disclosed, not routed around; relied on
+  PR #195's own disclosed fault-injection record plus this shift's fresh confirmation that the
+  suite's real negative tests (real symlinks, a real `chmod +x` file, a real mid-read mutation)
+  still pass. `docs/spec-matrix.yaml` FTF-0304 set to `PROVISIONAL`/`L1-PROVEN`. Not
+  self-certified (Law 4). PR: https://github.com/SJZLab/Sovra/pull/376 (branch
+  `claude/wizardly-fermat-yqnefm` → `main`, open). Full record: `PROGRESS.md`'s matching entry.
+
+  PR #194 and PR #195 closed as superseded (each commented, pointing to this PR and the directory
+  convention reasoning). No open owner ask.
+
 Updated: 2026-09-29T12:45:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_01AqG4JHDyQZtYa8WeivvbRX`) — **merged PR #374 (the immediately
   preceding shift's own doc-only tracking PR), after finding and clearing a genuine `gate`-job CI
