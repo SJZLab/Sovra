@@ -1,4 +1,48 @@
 # PROGRESS — Sovra
+## 2026-09-29T00:51:18Z — Scheduled relay shift — tracking: dependency-ready frontier still fully saturated, no new task this shift
+
+Session `https://claude.ai/code/session_01Lm3GP9J9JVPWXsxYMdruRM`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly — no mismatch. STEP 0.1: read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` fresh (both logs are
+prepended-newest at the top since the 2026-09-28 convention switch — read the true top, not the
+tail). `BLOCKER.md` contains only resolved history — no live blocker. `QUEUE.md`'s "Owner actions —
+current" section reads "None currently" — no open ask.
+
+Branch `claude/wizardly-fermat-6rdl7n` did not exist on `origin` yet this shift; created fresh from
+the current tip of `origin/main` (`12caf56`).
+
+STEP 1: independently recomputed the dependency-ready frontier rather than trusting prior tracking
+prose — `docs/spec-matrix.yaml`'s real `certification_state` (`scripts/status.py`: `93/300`
+certified, `22` product-true; exactly 3 `PROVISIONAL`/`L1-PROVEN` — FTF-04A05, FTF-H005, FTF-1201,
+all already merged to `main`, none yet independently certified) joined against
+`docs/TASK_INDEX.md`'s dependency graph. This is byte-identical to the state the
+2026-09-28T22:51:39Z shift (PR #369) already computed on this exact same `main` tip
+(`12caf56` — confirmed via `git rev-parse`, no commit has landed on `main` since), so the same 10
+dependency-ready `NONE`-state tasks apply: FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C,
+FTF-0500D, FTF-0601, FTF-0902, FTF-04A15, FTF-1703.
+
+Reconfirmed directly via `list_pull_requests` (state=open, not trusted from file prose) that all 9
+non-FTF-1703 frontier items still have a live open PR claiming them: FTF-0212 (#231), FTF-0214
+(#295, disclosed-blocked), FTF-0304 (#194/#195), FTF-0500B (#359), FTF-0500C (#364), FTF-0500D
+(#335, blocked on a merge conflict per #336), FTF-0601 (#337), FTF-0902 (#342), FTF-04A15 (#328) —
+none closed or merged since PR #369's own check. FTF-1703 still carries the same
+previously-disclosed genuine sandbox-scale blocker (needs ≥1000-scale resources unavailable here).
+Five open Control-plane certification PRs now exist against the three pending PROVISIONAL items
+(#360/#365/#363/#368/#370) — not a relay action (Law 4: producer never certifies own work; the
+relay role is execution-only).
+
+No genuinely unclaimed, dependency-ready item exists. Opening a duplicate PR against an
+already-claimed task would risk a write-set conflict for no benefit (Law 2). This is a
+tracking-only entry, same precedent as PR #349 and PR #369 — this shift adds no new information
+beyond independently reconfirming the identical state still holds.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; `docs/certifications/
+queue.md` unchanged (no new evidence this shift — nothing certified or submitted). STEP 4 stop
+condition (a): 3/3 in-flight submissions remain `L1-PROVEN`/`PROVISIONAL`, no relay action left on
+any of them, and the dependency-ready frontier is fully saturated by other sessions' live PRs or a
+genuine disclosed blocker. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current"
+unchanged, empty).
+
 ## 2026-09-28T21:20:00Z — FTF-1201 — relay: PR #366 confirmed green and merged (session https://claude.ai/code/session_01TFyTkMLqBbbw3BaSxcmcDo)
 
 Subscribed to PR #366's own GitHub activity immediately after opening it. Independently verified
