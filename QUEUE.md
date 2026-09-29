@@ -1,4 +1,15 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T15:59:00Z (same scheduled shift, branch `claude/wizardly-fermat-yqnefm`) —
+  **PR #376 (FTF-0304) confirmed green and merged.** Subscribed to PR #376's own GitHub activity
+  immediately after opening it; the real `check_suite.completed` event on the actual final head
+  commit (`cd08cb8`) confirmed all 38 CI jobs completed with `conclusion: success` (`gate`
+  included) and `mergeable_state: clean` — verified directly via `pull_request_read`, not merely
+  trusted from the webhook. No "Claude Approvals" check runs in this repository; no open
+  reviews/comments. Merged via `merge_pull_request` (merge commit
+  `4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4`). `scripts/status.py`: unchanged `93/300` certified
+  (this submission adds a 4th `PROVISIONAL` item — FTF-04A05/FTF-H005/FTF-1201/FTF-0304 — not a
+  certification), `22` product-true unchanged. No open owner ask.
+
 Updated: 2026-09-29T15:35:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_01PKMBnWEKmEMifmQiwRSUFL`) — **submitted FTF-0304 PROVISIONAL;
   resolved a stale duplicate-PR pileup on the frontier.** Independently reconfirmed `93/300`
