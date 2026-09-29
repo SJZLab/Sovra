@@ -1,4 +1,9 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29 (Control-plane certifier, session `https://claude.ai/code/session_01FWhhwBn53twHHAEhvTBxue`) --
+  **FTF-0304 CERTIFIED (L2)**, PR #376 / merge `4d15c75`, CI 38/38 green; certified 94/300. See
+  docs/certifications/ledger.md. FTF-04A05/FTF-H005/FTF-1201 left to their already-open
+  certification PRs (#360/#363/#365/#368/#370). Move FTF-0304 from Provisional to Done.
+
 Updated: 2026-09-29T15:35:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_01PKMBnWEKmEMifmQiwRSUFL`) — **submitted FTF-0304 PROVISIONAL;
   resolved a stale duplicate-PR pileup on the frontier.** Independently reconfirmed `93/300`
