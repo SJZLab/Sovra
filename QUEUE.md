@@ -1,4 +1,6 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29 (certifier shift, session `https://claude.ai/code/session_011FtbkS5ThtaheMCBMLLRGY`) — **FTF-1206 (PR #381) L2-CERTIFIED; certified 97/300 → 98/300, 0 PROVISIONAL.** Independent (no session overlap), CI 38/38 green, own fault injection reddened the script 3x/1x, product_truth 24/24. See ledger.md.
+
 Updated: 2026-09-29T21:30:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4`) — **submitted FTF-1206 PROVISIONAL.**
   STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. `BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/

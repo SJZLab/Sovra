@@ -20205,3 +20205,7 @@ FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independe
   tests/tasks/test_ftf_1206.py`; `evidence_hash` left blank pending the real merge commit. **Not
   self-certified (Law 4)** — awaiting independent Control-plane L2 review and a real CI run on the
   opened PR.
+
+## 2026-09-29 — Certifier shift (session https://claude.ai/code/session_011FtbkS5ThtaheMCBMLLRGY, webhook PR #382)
+FTF-1206 (PR #381): independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. No pending PROVISIONAL items remain. Certified 97 -> 98.
+

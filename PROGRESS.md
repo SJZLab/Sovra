@@ -1,4 +1,8 @@
 # PROGRESS — Sovra
+## 2026-09-29 — Certifier shift — FTF-1206 CERTIFIED (L2)
+
+Session `https://claude.ai/code/session_011FtbkS5ThtaheMCBMLLRGY`. Independently certified FTF-1206 (PR #381, merge `f12c2a9`); certified 98/300. FTF-0304 was already certified. Evidence: `docs/certifications/ledger.md`.
+
 ## 2026-09-29T21:30:00Z — Scheduled relay shift — FTF-1206 submitted PROVISIONAL
 
 Session `https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4`. STEP 0: `sha256sum CLAUDE.md`

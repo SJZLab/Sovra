@@ -9692,3 +9692,18 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1206 — Organization policy control
+- Criterion ID: FTF-1206
+- PR: https://github.com/SJZLab/Sovra/pull/381 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: f12c2a973519f26a0e8e98c75227ee85221acd44
+- Validated-by: session https://claude.ai/code/session_011FtbkS5ThtaheMCBMLLRGY (independent — PR #381's commits carry `Claude-Session: .../session_01XWzo5C5a9qLgk7GbapqxF4`, no overlap)
+- Date: 2026-09-29
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36642768943
+- Reran `tests/tasks/test_ftf_1206.py` locally as CI does (`uv run python3 ...`) on the merge commit: all checks passed. Note: the suite is script-style (`main()` collects failures); the pytest wrappers pass even with the fault injected, so fault injection was judged by the script's own output, which is the CI step's form.
+- Own fault injection (Law 1):
+  - Widening check in `enforce_project_gateway_permission_request` forced `if False:` -> 3 failures. Reverted, `git status` clean.
+  - Bypass check in `enforce_route_change_authority` forced `if False:` -> 1 failure. Reverted, `git status` clean.
+- `product_truth_check.py --fail-on-unwired`: 24/24; proving_symbol legitimately blank (no live caller/persistence yet — disclosed UNWIRED, not claimed wired).
+- Task contract re-pulled via `python tools/r1_handoff.py packet FTF-1206 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance (typed org policy for namespaces/approvers/route-change requirement, negative test evidence) and negative_acceptance (project cannot widen gateway capability/data boundary) confirmed met by the above. Persistence is a disclosed, separately-claimed migration prerequisite per the task's own database_changes clause.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
