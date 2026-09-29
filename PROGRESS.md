@@ -1,4 +1,47 @@
 # PROGRESS — Sovra
+## 2026-09-29T06:05:00Z — Scheduled relay shift — no new task, frontier still fully saturated
+
+Session `https://claude.ai/code/session_013DtFkmLwKhLrw87oZMqWPk`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly — no mismatch. STEP 0.1: read
+`BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` fresh. `BLOCKER.md` holds
+only resolved history — no live blocker. `QUEUE.md` "Owner actions — current" reads "None
+currently" — no open ask. STEP 0.2: no `cognee-cli` in this environment — text-search fallback
+(direct `grep`/file reads against `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed.
+
+`git fetch origin main` confirmed `main`'s tip was `180d382` (PR #373 merged) at shift start —
+this session's own designated branch (`claude/wizardly-fermat-nc35al`) was already fast-forwarded
+onto it, zero divergence. Rather than trust this file's own prior narrative, recomputed the
+dependency-ready frontier from first principles: wrote a small script joining
+`docs/spec-matrix.yaml`'s real `certification_state` for all 300 records against
+`docs/TASK_INDEX.md`'s own structured `Dependencies` column. Result: exactly the same 10-task
+frontier already on record (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D,
+FTF-0601, FTF-0902, FTF-04A15, FTF-1703). `python3 scripts/status.py` independently confirmed
+`93/300 certified · 22 product-true`, matching the prior entry exactly — nothing certified or
+merged since.
+
+Checked `list_pull_requests` (open, fresh, 24 results) directly against the frontier: 9/10 already
+claimed by a live open PR (FTF-0212→#231, FTF-0214→#295 disclosed-blocked, FTF-0304→#194/#195,
+FTF-0500B→#359, FTF-0500C→#364, FTF-0500D→#335/blocked per #336, FTF-0601→#337, FTF-0902→#342,
+FTF-04A15→#328). The tenth, FTF-1703, still carries its previously-disclosed genuine blocker
+(needs ≥1000 real curated/reviewed training traces — a data-curation task, not pure computation,
+unchanged since every prior shift). Five further open PRs (#360/#363/#365/#368/#370) are
+Control-plane certification reviews against the 3 `PROVISIONAL` items (FTF-04A05, FTF-H005,
+FTF-1201) — not a relay action. No genuinely unclaimed item exists. Left every claimed task
+untouched to avoid a write-set conflict (Law 2).
+
+Per the immediately preceding shift's own explicit finding — opening a near-identical doc-only
+tracking PR when nothing has changed is pure duplication and previously caused a real PR
+pile-up before being cleaned up — this entry lands via one small doc-only PR, merged immediately
+within this same shift once CI is green, rather than left open for a future shift to independently
+duplicate.
+
+STEP 3: this entry written before compaction. STEP 4 stop condition (a)-shaped: 3/3 in-flight
+submissions (FTF-04A05, FTF-H005, FTF-1201) remain `PROVISIONAL` awaiting independent
+Control-plane L2 certification (five PRs already open against them) and the L4 gate; the full
+dependency-ready frontier is claimed or genuinely blocked. Reporting and stopping — no relay
+action left this shift. Certified: `93/300` (unchanged). Product-true: `22` (unchanged). No open
+owner ask.
+
 ## 2026-09-29T04:05:00Z — Scheduled relay shift — merged PR #372, closed 3 stale duplicate tracking PRs
 
 Session `https://claude.ai/code/session_01HBLBtHvzSJPDJJHEvm5nWH`. STEP 0: `sha256sum CLAUDE.md`
