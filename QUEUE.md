@@ -27,8 +27,8 @@ Updated: 2026-09-29T21:30:00Z (scheduled relay shift, session
   `test_ftf_0402.py`/`test_ftf_1201.py`/`test_ftf_h034.py`, zero regressions. Added one
   `gate`-job CI step after FTF-0304's own (no new integration job — no DB/route to integration-test).
   `docs/spec-matrix.yaml` FTF-1206 set to `PROVISIONAL`/`L1-PROVEN`. **Not self-certified (Law 4)**
-  — awaiting independent Control-plane L2 review and a real CI run on the opened PR. No open owner
-  ask.
+  — awaiting independent Control-plane L2 review and a real CI run on the opened PR. **PR:**
+  https://github.com/SJZLab/Sovra/pull/381. No open owner ask.
 
 Updated: 2026-09-29T19:22:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_014UJb5qWzRhizqq3tMCyHi1`) — **diagnosed and fixed a real

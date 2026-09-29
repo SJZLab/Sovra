@@ -98,6 +98,10 @@ L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: ''` (disclos
 commit. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on
 the opened PR are required before certification.
 
+Opened PR: https://github.com/SJZLab/Sovra/pull/381 (branch `claude/wizardly-fermat-6px1ao` →
+`main`). Subscribed to its GitHub activity so CI-red/review events on this PR wake this session per
+the standing "PRs you created in this session are yours" rule.
+
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
 compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-1206) is `L1-PROVEN`, no blocking
 defect found by this session's own review — awaiting an independently-triggered Control-plane

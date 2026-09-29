@@ -20149,7 +20149,8 @@ run on the opened PR are required before certification.
 FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. No pending PROVISIONAL items remain. Certified 93 -> 96.
 
 ## 2026-09-29T21:30:00Z — FTF-1206 — Organization policy control
-- **PR:** (to be opened, branch `claude/wizardly-fermat-6px1ao` → `main`)
+- **PR:** https://github.com/SJZLab/Sovra/pull/381 (branch `claude/wizardly-fermat-6px1ao` →
+  `main`, open)
 - **Session:** https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4
 - **Dependencies:** FTF-0402, FTF-1201 (both CERTIFIED, confirmed before relying on them).
 - **Scope, disclosed:** this task's own contract (`database_changes: "No independent schema
