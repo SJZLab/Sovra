@@ -1684,15 +1684,39 @@ FTF-0303:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0303.py
 FTF-0304:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Local artifact resolver
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301 (both
+    CERTIFIED, confirmed before relying on them). Path refined from the task packet's own
+    hyphenated packages/model-catalog/... (not a uv workspace member, not even a valid Python
+    import path) to apps/api/app/artifacts/, the same refinement precedent FTF-0301/FTF-0305
+    already established for this directory. Resolves a local_filesystem TrainableArtifact
+    source_uri beneath an operator-approved local root into a deterministic file manifest
+    (sha256/size per file, sorted, content-only manifest_sha256). negative_acceptance
+    (symlink/path escape, changing file during read, unsafe executable artifact) enforced by
+    three independent real-filesystem checks, each proven by its own dedicated test against real
+    symlinks/real executable-bit files/a real mid-read mutation (tests/tasks/test_ftf_0304.py, 13
+    functions, all clean against current main). No live caller yet -- proving_symbol intentionally
+    blank, same disclosed "no live caller yet" class already independently CERTIFIED for
+    FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0301/FTF-0305/FTF-0402/FTF-0404/FTF-0405. Superseded
+    two earlier duplicate submissions of this same task (PR #194: packages/model_catalog/ variant;
+    PR #195: this apps/api/app/artifacts/ variant, both opened 2026-09-22, both stale/unmerged
+    against current main due to routine PROGRESS.md/QUEUE.md/docs/certifications/queue.md drift)
+    -- ported PR #195's already-authored, already-disclosed implementation and test suite onto
+    current main fresh rather than duplicating a third implementation; PR #195's own disclosed
+    fault injection (executable-bit guard temporarily disabled, reproduced the corresponding
+    negative test failing, reverted byte-identical) is the L1 fault-injection evidence of record --
+    this shift's own sandbox blocked the equivalent self-fault-injection technique (Claude Code
+    auto-mode "Security Weaken" classifier), disclosed rather than silently worked around; the
+    suite's own negative tests (real symlinks, a real chmod +x file, a real mid-read mutation) were
+    re-run fresh against current main and independently confirmed passing.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0304.py
 FTF-0305:
   certification_state: CERTIFIED
   criticality: MUST

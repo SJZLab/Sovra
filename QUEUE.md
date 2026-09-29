@@ -1,4 +1,134 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T15:59:00Z (same scheduled shift, branch `claude/wizardly-fermat-yqnefm`) —
+  **PR #376 (FTF-0304) confirmed green and merged.** Subscribed to PR #376's own GitHub activity
+  immediately after opening it; the real `check_suite.completed` event on the actual final head
+  commit (`cd08cb8`) confirmed all 38 CI jobs completed with `conclusion: success` (`gate`
+  included) and `mergeable_state: clean` — verified directly via `pull_request_read`, not merely
+  trusted from the webhook. No "Claude Approvals" check runs in this repository; no open
+  reviews/comments. Merged via `merge_pull_request` (merge commit
+  `4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4`). `scripts/status.py`: unchanged `93/300` certified
+  (this submission adds a 4th `PROVISIONAL` item — FTF-04A05/FTF-H005/FTF-1201/FTF-0304 — not a
+  certification), `22` product-true unchanged. No open owner ask.
+
+Updated: 2026-09-29T15:35:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01PKMBnWEKmEMifmQiwRSUFL`) — **submitted FTF-0304 PROVISIONAL;
+  resolved a stale duplicate-PR pileup on the frontier.** Independently reconfirmed `93/300`
+  certified, 3 `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, awaiting Control-plane certification via
+  five open PRs #360/#363/#365/#368/#370) and the same 10-task dependency-ready frontier, on
+  `main` tip `81bec89` (PR #375 already merged by the time this shift started).
+
+  Rather than stop at "9/10 claimed by a live open PR" (the conclusion four consecutive prior
+  shifts reached), checked whether those claims are still live: `git merge-tree` against current
+  `main` for all 10 candidate PR branches found every one conflicts only in append-only tracking
+  files (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`) and, for a few, `ci.yml`'s own
+  per-task step list — routine drift, not abandonment. But found **PR #194 and PR #195 are
+  duplicate submissions of the same task** (FTF-0304, both opened 2026-09-22, neither merged) —
+  `packages/model_catalog/local_artifact_resolver.py` vs `apps/api/app/artifacts/
+  local_artifact_resolver.py`. Confirmed against the real repository layout (`apps/api/app/
+  artifacts/` already holds the real FTF-0302/FTF-0303 sibling resolvers; `packages/model_catalog/`
+  holds only unrelated FTF-H004/FTF-H005 modules) that PR #195's placement is correct.
+
+  Ported PR #195's own already-authored, already-disclosed implementation and test suite fresh
+  onto current `main` (own read of both files directly, not trusted from the PR body alone) rather
+  than duplicate the work a third time or force-push a five-day-stale branch. Fresh re-verification
+  against current `main`: `test_ftf_0304.py` 13/13 clean, `ruff`/`mypy` clean repo-wide,
+  `validate_spec.py --strict` clean, `product_truth_check.py --fail-on-unwired` unchanged `24/24`
+  (no live caller yet, disclosed), `status.py` unchanged `93/300`. Regression swept
+  `test_ftf_0301.py`/`test_ftf_0305.py` — clean (one pre-existing, already-disclosed `MagicMock`
+  cross-test-leak flake in `test_ftf_0301.py`'s stderr, not a regression this shift introduced).
+  This shift's own attempt at PR #195's disclosed fault-injection technique was refused by this
+  sandbox's own auto-mode "Security Weaken" classifier — disclosed, not routed around; relied on
+  PR #195's own disclosed fault-injection record plus this shift's fresh confirmation that the
+  suite's real negative tests (real symlinks, a real `chmod +x` file, a real mid-read mutation)
+  still pass. `docs/spec-matrix.yaml` FTF-0304 set to `PROVISIONAL`/`L1-PROVEN`. Not
+  self-certified (Law 4). PR: https://github.com/SJZLab/Sovra/pull/376 (branch
+  `claude/wizardly-fermat-yqnefm` → `main`, open). Full record: `PROGRESS.md`'s matching entry.
+
+  PR #194 and PR #195 closed as superseded (each commented, pointing to this PR and the directory
+  convention reasoning). No open owner ask.
+
+Updated: 2026-09-29T12:45:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01AqG4JHDyQZtYa8WeivvbRX`) — **merged PR #374 (the immediately
+  preceding shift's own doc-only tracking PR), after finding and clearing a genuine `gate`-job CI
+  flake on it.** Independently reconfirmed the same "dependency-ready frontier fully saturated"
+  conclusion PR #374 had already reached minutes earlier on this same `main` tip (`180d382`): still
+  `93/300` certified, 3 `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, all merged, awaiting
+  Control-plane certification via five open PRs #360/#363/#365/#368/#370), same 10-task frontier
+  (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15,
+  FTF-1703), 9/10 claimed by a live open PR, FTF-1703 disclosed-blocked (≥1000 real curated
+  training traces needed).
+
+  Rather than open a sixth duplicate doc-only tracking PR, found PR #374's own `gate` job had
+  genuinely failed (`run 36558248783`) despite its diff touching only `PROGRESS.md`/`QUEUE.md` —
+  read the real failure log: `test_ftf_r002.py`'s own signature-verification check failed on an
+  unrelated `TenantContextError` caused by a `MagicMock` DB-session leaking in from an earlier test
+  module within the same sequential `gate` job process (component-bindings and R002 are unrelated,
+  both already `CERTIFIED`, neither touched by PR #374's diff). Per the CI-red protocol, re-ran the
+  failed jobs once (`rerun_failed_jobs`) — `gate` passed clean, `38/38` checks green,
+  `mergeable_state: clean` — confirming a real, disclosed test-isolation flake in the harness
+  itself (flagged in `PROGRESS.md`'s matching entry for a future test-harness-hardening claim, not
+  silently worked around), not a defect in PR #374's own content. Merged PR #374 (merge commit
+  `e1edce124e501683c8992773f76f5bf0c470dca5`). No open owner ask.
+
+Updated: 2026-09-29T06:05:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_013DtFkmLwKhLrw87oZMqWPk`) — **tracking-only, no new task this
+  shift; state byte-identical to PR #373's own last check on this exact `main` tip (`180d382`, no
+  new commit landed since).** STEP 0: `sha256sum CLAUDE.md` matched the committed
+  `CLAUDE.md.sha256` directly. STEP 0.1: read `BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/
+  `docs/certifications/queue.md` fresh — no live blocker, "Owner actions — current" reads "None
+  currently." Independently recomputed the dependency-ready frontier from first principles (not
+  trusted from file prose): parsed `docs/spec-matrix.yaml`'s real `certification_state` for every
+  record and joined it against `docs/TASK_INDEX.md`'s own structured `Dependencies` column
+  directly in Python (not re-reading this file's own narrative) — confirms `93/300` certified, 3
+  `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, all merged, none certified yet — five open
+  Control-plane certification PRs already exist against them: #360/#363/#365/#368/#370, not a
+  relay action), and the exact same 10-task dependency-ready frontier already on record (FTF-0212,
+  FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15, FTF-1703).
+  Checked `list_pull_requests` (open, fresh) directly against this list: FTF-0212→#231,
+  FTF-0214→#295 (disclosed-blocked), FTF-0304→#194/#195, FTF-0500B→#359, FTF-0500C→#364,
+  FTF-0500D→#335 (blocked per #336, merge conflict), FTF-0601→#337, FTF-0902→#342, FTF-04A15→#328
+  — 9/10 already claimed by a live open PR. The tenth, FTF-1703, still carries its
+  previously-disclosed genuine blocker: its own DoD needs ≥1000 real curated/reviewed training
+  traces (a data-curation task, not pure computation), unchanged since every prior shift that
+  found the same thing. No genuinely unclaimed item exists this shift either — same conclusion
+  independently reached on this exact `main` tip. Left every claimed task untouched to avoid a
+  write-set conflict (Law 2).
+
+  Per the immediately preceding shift's own explicit finding (opening a fifth near-identical
+  doc-only tracking PR is pure duplication, contrary to Law 2's spirit, and caused a real PR
+  pile-up before it was cleaned up), this entry lands via one small doc-only PR that is merged
+  immediately within this same shift once green, rather than left open for a future shift to
+  independently duplicate. No open owner ask.
+
+Updated: 2026-09-29T04:05:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01HBLBtHvzSJPDJJHEvm5nWH`) — **merged PR #372, closed 3 stale
+  duplicate tracking PRs.** Independently reconfirmed the same "dependency-ready frontier fully
+  saturated" conclusion already reached four times on this same `main` tip (`12caf56`): still
+  `93/300` certified, 3 `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, all merged, awaiting
+  Control-plane certification via five open PRs #360/#363/#365/#368/#370); same 10-task frontier
+  (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15,
+  FTF-1703), 9/10 claimed by a live open PR, FTF-1703 disclosed-blocked. Rather than open a fifth
+  duplicate doc-only PR, merged the already-green PR #372 (merge commit `74d21dd`) and closed
+  #349/#369/#371 as superseded (each commented, pointing to #372/`74d21dd`) — a real PR pile-up
+  from four separate shifts independently reaching this same conclusion without any of them
+  landing on `main`. No open owner ask.
+
+Updated: 2026-09-29T02:50:13Z (scheduled relay shift, session
+  `https://claude.ai/code/session_019zD9kMBk4ngNAFD4zHP2Z1`) — **tracking-only, no new task this
+  shift; state byte-identical to PR #371's own last check on this exact `main` tip (`12caf56`, no
+  new commit landed since).** Independently reconfirmed from first principles (not trusted from
+  file prose): `docs/spec-matrix.yaml` still `93/300` certified, 3 `PROVISIONAL`
+  (FTF-04A05/FTF-H005/FTF-1201, all merged, none certified yet); the same 10-task dependency-ready
+  frontier (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902,
+  FTF-04A15, FTF-1703) still has 9/10 items claimed by a live open PR (FTF-0212→#231,
+  FTF-0214→#295 disclosed-blocked, FTF-0304→#194/#195, FTF-0500B→#359, FTF-0500C→#364,
+  FTF-0500D→#335/blocked per #336, FTF-0601→#337, FTF-0902→#342, FTF-04A15→#328); the tenth,
+  FTF-1703, still carries its previously-disclosed genuine sandbox-scale blocker. Five open
+  Control-plane certification PRs exist against the three pending PROVISIONAL items
+  (#360/#363/#365/#368/#370) — not a relay action. No genuinely unclaimed item exists; left every
+  claimed task untouched to avoid a write-set conflict (Law 2). No open owner ask. Full detail in
+  `PROGRESS.md`'s matching entry.
+
 Updated: 2026-09-28T23:30:00Z (scheduled Control-plane certifier shift, session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3, webhook PR #369) — **CERTIFIED: FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366).** Session-ID check: none of the three PRs' commits share this session's ID. CI green on each PR head (37/37, 37/37, 38/38); own fault injections turned the tests red for each; product_truth 24/24; contracts re-pulled. `status.py`: 93/300 -> 96/300 certified. Full record in `docs/certifications/ledger.md`. The relay's "3 PROVISIONAL" frontier note below is now stale: 0 PROVISIONAL remain.
 
 Updated: 2026-09-28T22:51:39Z (scheduled relay shift, session
