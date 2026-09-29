@@ -23966,3 +23966,5 @@ current" unchanged, empty).
 
 ## 2026-09-28 — Certifier shift (session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3)
 Certified FTF-04A05, FTF-H005, FTF-1201 (L2). 93/300 -> 96/300 certified; 0 PROVISIONAL remain. See `docs/certifications/ledger.md`.
+
+## 2026-09-29 — Certifier: FTF-0304 CERTIFIED (L2), PR #376, merge 4d15c75; 94/300 certified.

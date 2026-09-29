@@ -1684,10 +1684,10 @@ FTF-0303:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0303.py
 FTF-0304:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local artifact resolver
-  evidence_hash: ''
+  evidence_hash: 4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-06; scenarios=Q07, Q10; deps=FTF-0202, FTF-0301 (both
@@ -1713,8 +1713,13 @@ FTF-0304:
     this shift's own sandbox blocked the equivalent self-fault-injection technique (Claude Code
     auto-mode "Security Weaken" classifier), disclosed rather than silently worked around; the
     suite's own negative tests (real symlinks, a real chmod +x file, a real mid-read mutation) were
-    re-run fresh against current main and independently confirmed passing.
-  proof_state: L1-PROVEN
+    re-run fresh against current main and independently confirmed passing. Independently
+    certified L2 (PR #376, merge commit 4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4): certifier
+    session-ID clean, CI 38/38 green on head cd08cb8, own fault injection of the executable-bit,
+    mid-read TOCTOU, symlink-ancestor and symlink-in-tree guards each caught by the suite;
+    the redundant real-path-escape guard is defense-in-depth behind the symlink-ancestor check
+    and is not independently caught (disclosed, not a gap in acceptance).
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0304.py
 FTF-0305:

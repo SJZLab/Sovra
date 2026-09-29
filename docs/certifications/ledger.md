@@ -9623,6 +9623,32 @@ other PROVISIONAL item found pending) was left untouched this shift — already 
 claimed by a concurrent Control-plane session via PR #356 at review time; revisit only if that
 PR is not landed by the next certifier shift.
 
+## 2026-09-29 — FTF-0304 — Local artifact resolver — CERTIFIED (L2)
+
+- **Certifier session:** `https://claude.ai/code/session_01FWhhwBn53twHHAEhvTBxue`.
+- **Session-ID comparison:** producer commits `edc1dd9`, `cd08cb8` carry
+  `session_01PKMBnWEKmEMifmQiwRSUFL` (tracking-only PR #377 head `6e3211c` is the same
+  relay identity family); none match the certifier's session ID. Independent.
+- **Evidence:** PR #376, merge commit `4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4`; CI run
+  https://github.com/SJZLab/Sovra/actions/runs/36593212670 -- 38/38 jobs `success` (`gate`
+  included) on head `cd08cb8`, read directly via check runs.
+- **Diff re-read:** `apps/api/app/artifacts/local_artifact_resolver.py` + `tests/tasks/test_ftf_0304.py`.
+- **Own test run:** `uv run python tests/tasks/test_ftf_0304.py` -> all checks passed.
+- **Own fault injection (each reverted, md5 `dab32cb8eb11a2fb0a0229841ab50a63` reconfirmed):**
+  executable-bit guard disabled -> 1 FAIL; TOCTOU before/after compare disabled -> 1 FAIL;
+  symlink-ancestor guard disabled -> 1 FAIL; symlink-in-tree guard disabled -> 1 FAIL.
+  Real-path-escape reconfirmation disabled -> 0 FAIL: it is redundant defense-in-depth behind the
+  symlink-ancestor guard (unreachable independently), disclosed, not an acceptance gap.
+- **product_truth_check:** `--fail-on-unwired` 24/24; FTF-0304 has blank `proving_symbol`
+  (disclosed "no live caller yet", same class as certified FTF-0301/0305), so 0/0 is not being
+  accepted as a pass for a claimed symbol.
+- **Contract:** `tools/r1_handoff.py packet FTF-0304` -- acceptance (deterministic manifest beneath
+  approved root) and negative_acceptance (symlink/escape, changing file, unsafe executable) met.
+- **Noted, not this task's:** `validate_spec.py --strict` reports pre-existing `stale_commit`
+  entries for FTF-0404/FTF-0405 on main; untouched by this PR.
+- **Not certified this shift:** FTF-04A05, FTF-H005, FTF-1201 -- already under open Control-plane
+  certification PRs (#360/#365/#370, #363/#365/#370, #368/#370).
+
 ## FTF-04A05 — GitHub source snapshot implementation
 - Criterion ID: FTF-04A05
 - PR: https://github.com/SJZLab/Sovra/pull/358 (already merged — the relay's own PROVISIONAL submission)
