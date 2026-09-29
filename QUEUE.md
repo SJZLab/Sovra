@@ -1,4 +1,35 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T21:30:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4`) — **submitted FTF-1206 PROVISIONAL.**
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. `BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/
+  `docs/certifications/queue.md` read fresh; prior shift's own 19:22Z entry already at `97/300`
+  certified, `0` PROVISIONAL, `main` at `174f050` (confirmed still current via `git fetch`).
+
+  Of the four newly-unblocked no-PR tasks the prior shift flagged (FTF-0306/FTF-1206/FTF-1807/
+  FTF-H007), FTF-0306 was already claimed by a new PR #380 (opened 21:06:51Z). Picked **FTF-1206**
+  ("Organization policy control", deps FTF-0402/FTF-1201, both CERTIFIED). Its own contract
+  (`database_changes: "No independent schema change"`, `shared_lock_required: []`) and a direct
+  repo-wide check (no namespace/approver table or column anywhere, no project-level connection
+  route) confirmed this is the same disclosed-scope-narrowing class FTF-0402/FTF-1201 already
+  established: a pure, DB-free enforcement primitive with no live caller yet, not a placeholder.
+
+  Implemented `packages/litellm_client/organization_policy_control.py`
+  (`enforce_project_gateway_permission_request` — this task's own negative_acceptance, "cannot
+  widen gateway management capability or data boundary", enforced across registration namespaces/
+  deployment namespaces/approvers; `enforce_route_change_authority` — Section 38.5/38.6's approval
+  gate) and `tests/tasks/test_ftf_1206.py` (19 checks, no DB/network). Real fault injection (Law 1):
+  disabled the widening check, 3 negative_acceptance checks genuinely failed, reverted
+  byte-identical. `git fetch --unshallow` was needed (shallow clone caused 32 spurious
+  `stale_commit` defects in `validate_spec.py --strict`, not a real defect — resolved, reconfirmed
+  clean). `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide; `product_truth_check.py
+  --fail-on-unwired` unchanged `24/24` (`proving_symbol` disclosed blank — no live caller yet, Law
+  6/7); `status.py` unchanged `97/300` (Law 2 — submission, not certification). Regression swept
+  `test_ftf_0402.py`/`test_ftf_1201.py`/`test_ftf_h034.py`, zero regressions. Added one
+  `gate`-job CI step after FTF-0304's own (no new integration job — no DB/route to integration-test).
+  `docs/spec-matrix.yaml` FTF-1206 set to `PROVISIONAL`/`L1-PROVEN`. **Not self-certified (Law 4)**
+  — awaiting independent Control-plane L2 review and a real CI run on the opened PR. **PR:**
+  https://github.com/SJZLab/Sovra/pull/381. No open owner ask.
+
 Updated: 2026-09-29T19:22:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_014UJb5qWzRhizqq3tMCyHi1`) — **diagnosed and fixed a real
   tracker-sync gate defect on two open Control-plane certification PRs, merged both, cleaned up 9
