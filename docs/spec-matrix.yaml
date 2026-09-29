@@ -7243,15 +7243,49 @@ FTF-1205:
   proving_symbol: ''
   proving_test: ''
 FTF-1206:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Organization policy control
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201 (both
+    CERTIFIED, confirmed before relying on them). This task's own `database_changes` clause ("No
+    independent schema change... any required change is a separately claimed migration
+    prerequisite") and empty `shared_lock_required` (it does not hold the phase-12 contract lock
+    FTF-1201 owns) mean it adds no live route, table or column -- the same disclosed-gap posture
+    FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0402 already established in this repository for a
+    real, provable primitive with no live caller yet.
+    packages/litellm_client/organization_policy_control.py::
+    enforce_project_gateway_permission_request is the real enforcement of this task's own
+    negative_acceptance ("Project-level permission cannot widen gateway management capability or
+    data boundary"), the identical inheritance/no-relaxation shape FTF-0402's own already-CERTIFIED
+    enforce_security_profile_selection established for security profiles, applied here across all
+    three dimensions this task's own acceptance clause names (registration namespaces grounded in
+    Section 38.1's "dedicated Factory-owned namespace", deployment namespaces and approvers
+    grounded in Section 38.5's "Freeze deployment bundle and request approval"): a project's
+    requested set for each dimension must already be a subset of its organization's own
+    OrganizationGatewayPolicy, or the whole request is denied (never a silent partial grant).
+    enforce_route_change_authority separately enforces Section 38.5/38.6's own real route-change
+    approval gate: an actor outside the organization's own approvers, or a bypass-approval
+    request, is denied. Real, disclosed persistence gap (not hidden): OrganizationGatewayPolicy has
+    no backing table yet -- constructing and persisting one for a real organization is the
+    separately claimed migration prerequisite this task's own database_changes clause names; no
+    live route or caller exists yet for this exact module, the same class of gap FTF-0402's own six
+    not-yet-existing consuming surfaces already carried before each was later given a real caller.
+    proving_symbol left blank accordingly (Law 6/7 -- designed is not wired, and this is honestly
+    disclosed as UNWIRED rather than claimed WIRED-AND-PROVEN).
+    tests/tasks/test_ftf_1206.py: 19 checks, no DB/network required (matches this task's own
+    schema-free scope) -- namespace/approver-identity validation, the negative_acceptance proven
+    for all three dimensions individually and combined, exact-subset/empty/full-policy grants
+    returned unchanged, and route-change authority (approver/bypass/no-approval-required paths).
+    Real fault injection (Law 1): disabled the widening check
+    (`if unauthorized_registration or unauthorized_deployment or unauthorized_approvers:` ->
+    `if False:`) -- 3 of the negative_acceptance checks genuinely FAILed, bound to this criterion
+    ID; reverted byte-identical (md5sum confirmed matching before/after) and reran clean.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1206.py
 FTF-1301:
   certification_state: CERTIFIED
   criticality: MUST

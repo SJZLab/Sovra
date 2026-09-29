@@ -1,4 +1,109 @@
 # PROGRESS — Sovra
+## 2026-09-29T21:30:00Z — Scheduled relay shift — FTF-1206 submitted PROVISIONAL
+
+Session `https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. STEP 0.1: `BLOCKER.md` has no live blocker (both
+entries resolved history); read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (all
+three exceed the 256KB single-read limit — read via tail offsets/targeted `grep`, not assumed).
+`QUEUE.md`'s own latest entry (19:22Z) already reflects `97/300` certified, `0` PROVISIONAL. STEP
+0.2: no `cognee-cli` installed in this environment — text-search fallback used throughout,
+disclosed.
+
+STEP 1: fetched `origin/main` (`174f050`, matching `QUEUE.md`'s own latest entry exactly — no
+newer merge landed since); confirmed the local `claude/wizardly-fermat-6px1ao` branch already sat
+at that same commit. Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s
+real `certification_state` joined against `docs/TASK_INDEX.md`'s own structured `Dependencies`
+column: of the four tasks the prior shift flagged as newly unblocked with no open PR
+(FTF-0306/FTF-1206/FTF-1807/FTF-H007), `list_pull_requests` showed FTF-0306 already claimed by a
+new PR #380 (opened 21:06:51Z, after the prior shift's own entry) — not started here. **Picked
+FTF-1206** ("Organization policy control"): confirmed both dependencies (FTF-0402, FTF-1201)
+`CERTIFIED` in `docs/spec-matrix.yaml` before relying on them, and confirmed no open PR references
+it.
+
+Task contract pulled via `python tools/r1_handoff.py packet FTF-1206 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`). Read Section 38 ("LiteLLM Registration and Target-Product
+Adoption") directly for what "allowed registration/deployment namespaces, approvers and route
+changes" actually grounds to: 38.1's "dedicated Factory-owned namespace" (registration), 38.5's
+"Freeze deployment bundle and request approval" (deployment namespaces + approvers), 38.6's real
+production route/session-affinity change (route-change authority). Read this task's own exact
+contract: `database_changes: "No independent schema change... any required change is a separately
+claimed migration prerequisite"` and `shared_lock_required: []` (it does not hold the phase-12
+contract lock FTF-1201 owns, confirmed by reading `packages/contracts/openapi/12-interface.yaml`/
+`packages/contracts/jsonschema/12-domain.schema.json` directly — neither declares any org-policy
+shape yet). Confirmed directly (`organization_workspace_schema.py`, `project_schema.py`,
+repo-wide grep for "namespace"/"approver") that no table or column exists anywhere in this
+repository to persist an organization gateway policy without a real migration this task's own
+contract forbids it from adding, and that `apps/api/app/litellm/connection_routes.py`'s own live
+surface is `organization_admin`-only with no project-level route at all today. This is the
+identical disclosed-scope-narrowing precedent this repository's own already-CERTIFIED FTF-0402
+(`apps/api/app/services/project_security_profile.py`) and FTF-1201 (`litellm_registration_capability_detection.py`,
+"capability is computed fresh on every call, never persisted") already established for a
+pure, DB-free, no-live-caller-yet primitive — read both source files directly before writing any
+code, not merely cited from memory.
+
+**Implementation**: `packages/litellm_client/organization_policy_control.py` (new) — a pure,
+DB-free module. `OrganizationGatewayPolicy` (allowed registration namespaces, allowed deployment
+namespaces, approvers, route-change-requires-approval) and `ProjectGatewayPermissionRequest`
+validate every namespace/approver identity at construction (a safe, non-empty identifier, never an
+unchecked string). `enforce_project_gateway_permission_request` is the real enforcement of this
+task's own negative_acceptance ("Project-level permission cannot widen gateway management
+capability or data boundary") — the identical inheritance/no-relaxation shape FTF-0402's own
+`enforce_security_profile_selection` already established, applied across all three dimensions:
+a project's requested set for each must already be a subset of its organization's own policy, or
+the whole request is denied outright (never a silent partial grant). `enforce_route_change_authority`
+separately enforces Section 38.5/38.6's real approval gate (an actor outside the organization's
+own approvers, or a bypass-approval request, is denied; an organization that does not require
+approval authorizes any actor). Disclosed, not hidden: no backing table exists yet for
+`OrganizationGatewayPolicy`, and no live route/caller exists yet for this exact module — the
+separately claimed migration prerequisite this task's own `database_changes` clause names,
+the same class of gap FTF-0402's own six not-yet-existing consuming surfaces already carried.
+
+**Tests**: `tests/tasks/test_ftf_1206.py` (no DB/network required, matching this task's own
+schema-free scope — 19 checks): namespace/approver-identity validation (safe-identifier shape,
+empty/non-string rejection), the negative_acceptance proven for all three dimensions individually
+and combined, exact-subset/empty-request/full-policy grants returned unchanged (never widened or
+silently narrowed), and route-change authority (recognized approver, outsider denial, bypass
+denial, no-approval-required organization).
+
+**Real fault injection (Law 1)**: disabled the widening check in
+`enforce_project_gateway_permission_request` (`if unauthorized_registration or
+unauthorized_deployment or unauthorized_approvers:` → `if False:`) — reran the suite: 3 of the
+negative_acceptance checks genuinely `FAIL`ed, each bound to `[FTF-1206]` and naming the exact
+scenario (unauthorized registration namespace / deployment namespace / approver). Reverted
+byte-identical (`md5sum` confirmed matching before/after `git status`/no diff), reran clean.
+
+`git fetch --unshallow` was needed this shift (the sandbox checkout was a shallow clone —
+`validate_spec.py --strict` initially reported 32 `stale_commit` defects purely from that, not a
+real defect; resolved by unshallowing, then reconfirmed genuinely clean). `uv sync --all-packages`;
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (320 source files, up from 319 —
+`ruff format` applied once to the new test file, then reconfirmed clean); `uv run mypy .` clean
+repo-wide (330 files, zero new errors). `python3 scripts/validate_spec.py --strict` clean.
+`product_truth_check.py --fail-on-unwired`: unchanged `24/24` — `proving_symbol` deliberately left
+blank (Law 6/7: this task's own real scope has no live caller yet, honestly disclosed as UNWIRED
+rather than claimed WIRED-AND-PROVEN). `status.py`: unchanged `97/300` certified (Law 2 — this is a
+submission, not a certification). Regression swept `test_ftf_0402.py`/`test_ftf_1201.py` (no-DB,
+both clean, zero regressions) and `test_ftf_h034.py` (tracker-sync gate, clean — no
+`sync_certified_status()` call needed since this entry is `PROVISIONAL`, not `CERTIFIED`, matching
+the CI-red root cause this same file's own 19:22Z entry diagnosed on PR #378).
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately after
+FTF-0304's own step (`FTF-1206 negative-test proof`), no new integration job (this task adds no
+database or live route to integration-test, per its own `database_changes` clause). YAML parse
+reconfirmed valid after the edit.
+
+`docs/spec-matrix.yaml` FTF-1206 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: ''` (disclosed) /
+`proving_test: tests/tasks/test_ftf_1206.py`; `evidence_hash` left blank pending the real merge
+commit. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-1206) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-29T19:22:00Z — Scheduled relay shift — fixed CI-red on two open certification PRs, merged both, closed 9 stale PRs
 
 Session `https://claude.ai/code/session_014UJb5qWzRhizqq3tMCyHi1`. STEP 0: `sha256sum CLAUDE.md`

@@ -20147,3 +20147,60 @@ run on the opened PR are required before certification.
 
 ## 2026-09-28 — Certifier shift (session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3, webhook PR #369)
 FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. No pending PROVISIONAL items remain. Certified 93 -> 96.
+
+## 2026-09-29T21:30:00Z — FTF-1206 — Organization policy control
+- **PR:** (to be opened, branch `claude/wizardly-fermat-6px1ao` → `main`)
+- **Session:** https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4
+- **Dependencies:** FTF-0402, FTF-1201 (both CERTIFIED, confirmed before relying on them).
+- **Scope, disclosed:** this task's own contract (`database_changes: "No independent schema
+  change... any required change is a separately claimed migration prerequisite"`,
+  `shared_lock_required: []` — it does not hold the phase-12 contract lock FTF-1201 owns) rules out
+  a new table/column or a new live route. Confirmed directly (repo-wide grep, `project_schema.py`,
+  `organization_workspace_schema.py`, `apps/api/app/litellm/connection_routes.py`) that no
+  namespace/approver persistence or project-level connection route exists anywhere in this
+  repository today. This is the identical disclosed-scope-narrowing class FTF-0402
+  (`project_security_profile.py`) and FTF-1201 (`litellm_registration_capability_detection.py`,
+  "computed fresh, never persisted") already established for a real, pure, DB-free primitive with
+  no live caller yet — not a placeholder (Law 11): every function is a real, total decision
+  procedure over its own inputs.
+- **Implementation:** `packages/litellm_client/organization_policy_control.py` —
+  `OrganizationGatewayPolicy`/`ProjectGatewayPermissionRequest` (registration namespaces grounded
+  in Section 38.1's "dedicated Factory-owned namespace"; deployment namespaces/approvers grounded
+  in Section 38.5's "Freeze deployment bundle and request approval"), validating every
+  namespace/approver identity at construction. `enforce_project_gateway_permission_request` is the
+  real enforcement of this task's own negative_acceptance ("Project-level permission cannot widen
+  gateway management capability or data boundary") — the identical inheritance/no-relaxation shape
+  FTF-0402's own `enforce_security_profile_selection` already established, applied across all three
+  dimensions: a project's requested set must already be a subset of its organization's own policy,
+  or the whole request is denied (never a silent partial grant). `enforce_route_change_authority`
+  separately enforces Section 38.5/38.6's approval gate (an actor outside the organization's own
+  approvers, or a bypass request, is denied; an organization not requiring approval authorizes any
+  actor).
+- **Test:** `tests/tasks/test_ftf_1206.py` — 19 checks, no DB/network required. Namespace/approver
+  validation; the negative_acceptance proven for all three dimensions individually and combined;
+  exact-subset/empty-request/full-policy grants returned unchanged; route-change authority
+  (recognized approver, outsider denial, bypass denial, no-approval-required organization).
+- **Real fault injection (Law 1):** disabled the widening check in
+  `enforce_project_gateway_permission_request` (`if unauthorized_registration or
+  unauthorized_deployment or unauthorized_approvers:` → `if False:`) — 3 of the negative_acceptance
+  checks genuinely `FAIL`ed, bound to `[FTF-1206]`, naming the exact unauthorized-namespace/
+  approver scenario. Reverted byte-identical (`md5sum` confirmed matching before/after), reran
+  clean.
+- **Gates:** `git fetch --unshallow` needed first (shallow clone caused 32 spurious `stale_commit`
+  defects in `validate_spec.py --strict`, not a real defect — resolved, reconfirmed genuinely
+  clean). `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide
+  (320 source files, up from 319); `uv run mypy .` clean repo-wide (330 files, zero new errors).
+  `product_truth_check.py --fail-on-unwired`: unchanged `24/24` — `proving_symbol` deliberately
+  left blank (Law 6/7 — no live caller yet for this exact module, honestly disclosed as UNWIRED).
+  `scripts/status.py`: unchanged `97/300` certified (Law 2 — submission, not certification).
+  Regression swept `test_ftf_0402.py`/`test_ftf_1201.py` (no-DB, both clean) and `test_ftf_h034.py`
+  (tracker-sync gate, clean — no `sync_certified_status()` call needed since this entry is
+  `PROVISIONAL`, not `CERTIFIED`). No frontend file touched this shift.
+- **CI:** `.github/workflows/ci.yml` — one negative-test-proof step added to the `gate` job
+  immediately after FTF-0304's own step (no new integration job — no DB/route to
+  integration-test, per this task's own `database_changes` clause). YAML parse reconfirmed valid.
+- **State:** `docs/spec-matrix.yaml` FTF-1206 set to `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+  tests/tasks/test_ftf_1206.py`; `evidence_hash` left blank pending the real merge commit. **Not
+  self-certified (Law 4)** — awaiting independent Control-plane L2 review and a real CI run on the
+  opened PR.
