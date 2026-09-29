@@ -30,7 +30,8 @@ Updated: 2026-09-29T15:35:00Z (scheduled relay shift, session
   PR #195's own disclosed fault-injection record plus this shift's fresh confirmation that the
   suite's real negative tests (real symlinks, a real `chmod +x` file, a real mid-read mutation)
   still pass. `docs/spec-matrix.yaml` FTF-0304 set to `PROVISIONAL`/`L1-PROVEN`. Not
-  self-certified (Law 4). Full record: `PROGRESS.md`'s matching entry.
+  self-certified (Law 4). PR: https://github.com/SJZLab/Sovra/pull/376 (branch
+  `claude/wizardly-fermat-yqnefm` → `main`, open). Full record: `PROGRESS.md`'s matching entry.
 
   PR #194 and PR #195 closed as superseded (each commented, pointing to this PR and the directory
   convention reasoning). No open owner ask.

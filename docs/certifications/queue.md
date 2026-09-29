@@ -20142,4 +20142,5 @@ L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/te
 run on the opened PR are required before certification.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-- **PR:** (opened this shift; URL recorded in a same-shift follow-up commit once assigned).
+- **PR:** https://github.com/SJZLab/Sovra/pull/376 (branch `claude/wizardly-fermat-yqnefm` →
+  `main`, open).
