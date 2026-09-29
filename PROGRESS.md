@@ -1,4 +1,48 @@
 # PROGRESS — Sovra
+## 2026-09-29T04:05:00Z — Scheduled relay shift — merged PR #372, closed 3 stale duplicate tracking PRs
+
+Session `https://claude.ai/code/session_01HBLBtHvzSJPDJJHEvm5nWH`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly — no mismatch. STEP 0.1: read
+`BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` fresh. `BLOCKER.md` holds
+only resolved history — no live blocker. `QUEUE.md` "Owner actions — current" reads "None
+currently" — no open ask. STEP 0.2: no `cognee-cli` in this environment — text-search fallback
+(direct `grep`/file reads against `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed.
+
+`git fetch origin main` confirmed `main`'s tip was still `12caf56` at shift start — unchanged
+since PR #371/#372's own checks. Independently recomputed the dependency-ready frontier from
+`docs/spec-matrix.yaml`'s real `certification_state` (93/300 CERTIFIED, exactly 3 PROVISIONAL:
+FTF-04A05, FTF-H005, FTF-1201) joined against `docs/TASK_INDEX.md`'s own structured
+`Dependencies` column: same 10-task frontier already on record (FTF-0212, FTF-0214, FTF-0304,
+FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15, FTF-1703). Checked directly via
+`list_pull_requests` (open, 27 results): 9/10 still claimed by a live open PR; FTF-1703 still
+carries its previously-disclosed genuine sandbox-scale blocker. No genuinely unclaimed item
+exists this shift either — same conclusion PR #349/#369/#371/#372 already reached independently,
+four times, on this same `main` tip.
+
+Rather than open a fifth near-identical doc-only tracking PR (pure duplication, zero new
+information, contrary to Law 2's "never inflate tracker" spirit), found the actual relay-actionable
+gap: PR #372 (the most recent, most thorough restatement of this same conclusion) was green
+(38/38 checks `success`, `mergeable_state: clean`) and had sat unmerged, while three earlier,
+now-stale duplicates of the same tracking PR (#349, #369, #371) were also still open — a real
+pile-up, not a one-off. `CLAUDE.md`'s own "Do without asking: ... merge on green + L1 doc
+(PROVISIONAL)" applies directly to a doc-only, no-code, green tracking PR exactly as it would to
+any other submission. **Merged PR #372** (`merge_pull_request`, merge commit `74d21dd`). Then
+closed #349 (base already 5+ merges stale, `mergeable_state: dirty` even before this), #369, and
+#371 as superseded — each carries a one-line comment pointing to #372/`74d21dd` as the landed
+record, per repo attribution convention. No content was lost: #372's own text independently
+reconfirmed the same finding each of the other three already stated.
+
+This session's own designated branch (`claude/wizardly-fermat-51pbpw`) was reset to the new
+`main` tip (`git checkout -B ... origin/main`, non-destructive — this branch had no unmerged
+commits of its own).
+
+STEP 3: this entry written before compaction. STEP 4 stop condition (a)-shaped: 3/3 in-flight
+submissions (FTF-04A05, FTF-H005, FTF-1201) remain `PROVISIONAL`/`L1-PROVEN` awaiting
+Control-plane certification (five open certifier PRs: #360/#363/#365/#368/#370 — not a relay
+action, Law 4); the dependency-ready frontier is fully saturated by other sessions' live PRs or
+FTF-1703's genuine disclosed blocker. No relay action left beyond the tracking cleanup above.
+Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 ## 2026-09-29T02:50:13Z — Scheduled relay shift — tracking: dependency-ready frontier still fully saturated, no new task this shift
 
 Session `https://claude.ai/code/session_019zD9kMBk4ngNAFD4zHP2Z1`. STEP 0: `sha256sum CLAUDE.md`
