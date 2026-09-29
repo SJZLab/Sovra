@@ -20144,3 +20144,6 @@ run on the opened PR are required before certification.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
 - **PR:** https://github.com/SJZLab/Sovra/pull/376 (branch `claude/wizardly-fermat-yqnefm` →
   `main`, open).
+
+## 2026-09-28 — Certifier shift (session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3, webhook PR #369)
+FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. No pending PROVISIONAL items remain. Certified 93 -> 96.

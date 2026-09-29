@@ -134,6 +134,25 @@ Updated: 2026-09-29T02:50:13Z (scheduled relay shift, session
   claimed task untouched to avoid a write-set conflict (Law 2). No open owner ask. Full detail in
   `PROGRESS.md`'s matching entry.
 
+Updated: 2026-09-28T23:30:00Z (scheduled Control-plane certifier shift, session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3, webhook PR #369) — **CERTIFIED: FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366).** Session-ID check: none of the three PRs' commits share this session's ID. CI green on each PR head (37/37, 37/37, 38/38); own fault injections turned the tests red for each; product_truth 24/24; contracts re-pulled. `status.py`: 93/300 -> 96/300 certified. Full record in `docs/certifications/ledger.md`. The relay's "3 PROVISIONAL" frontier note below is now stale: 0 PROVISIONAL remain.
+
+Updated: 2026-09-28T22:51:39Z (scheduled relay shift, session
+  `https://claude.ai/code/session_0122LwCEM8bYHK3G3TnT7fuy`) — **tracking-only, no new task this
+  shift.** Recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (93
+  CERTIFIED, 3 PROVISIONAL: FTF-04A05/FTF-H005/FTF-1201) joined against `docs/TASK_INDEX.md`'s
+  real dependency graph: 10 tasks are `NONE` with every dependency CERTIFIED (FTF-0212, FTF-0214,
+  FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15, FTF-1703) — unchanged
+  from the frontier the 2026-09-28T13:00Z shift (PR #349) already computed, since none of the
+  three pending PROVISIONAL items is certified yet. Checked all open PRs directly: 9 of the 10
+  already have a live open PR (FTF-0212→#231, FTF-0214→#295 disclosed-blocked, FTF-0304→#194/#195,
+  FTF-0500B→#359, FTF-0500C→#364, FTF-0500D→#335/blocked per #336, FTF-0601→#337, FTF-0902→#342,
+  FTF-04A15→#328); the tenth, FTF-1703, carries the same previously-disclosed genuine sandbox
+  blocker (needs ≥1000-scale resources unavailable here). No genuinely unclaimed item exists.
+  Opening a duplicate PR against an already-claimed task risks a write-set conflict for no benefit
+  (Law 2) — left every one of them untouched. A Control-plane session has PR #368 open certifying
+  FTF-1201 at this shift's end; not a relay action. No open owner ask. Full detail in `PROGRESS.md`'s
+  matching entry.
+
 Updated: 2026-09-28T17:11:00Z (same scheduled shift, branch `claude/wizardly-fermat-q43eub`) —
   **PR #361 (FTF-H005) confirmed green and merged.** Subscribed to PR #361's own GitHub activity
   immediately after opening it; the real `check_suite.completed` event on the actual head commit

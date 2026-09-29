@@ -3094,10 +3094,10 @@ FTF-04A04:
     tests/integration/test_ftf_04a04_github_branch_ref.py,
     apps/web/tests/ftf_04a04.spec.ts
 FTF-04A05:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: GitHub source snapshot implementation
-  evidence_hash: ''
+  evidence_hash: f17260c158b2858b0fbadd01ae60495ba0eecf71
   implementation_state: IMPLEMENTED
   notes: |-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06;
@@ -3171,7 +3171,7 @@ FTF-04A05:
 
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI
     run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_github_source_snapshot_router
   proving_test: tests/tasks/test_ftf_04a05.py, tests/tasks/test_ftf_04a05_routes.py,
     tests/integration/test_ftf_04a05_github_source_snapshot.py
@@ -7137,10 +7137,10 @@ FTF-1108:
   proving_symbol: ''
   proving_test: ''
 FTF-1201:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LiteLLM registration capability detection
-  evidence_hash: ''
+  evidence_hash: 3dcee5d602494fa5a15ff8069fb16313305c52fa
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0203, FTF-0202,
@@ -7199,7 +7199,7 @@ FTF-1201:
     image digest every other integration job in this file already uses).
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
     opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: detect_registration_capability
   proving_test: tests/tasks/test_ftf_1201.py
 FTF-1202:
@@ -8800,10 +8800,10 @@ FTF-H004:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h004.py, tests/integration/test_ftf_h004_access_guard.py
 FTF-H005:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Route identity, fallback and cache provenance
-  evidence_hash: ''
+  evidence_hash: 2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1
   implementation_state: IMPLEMENTED
   notes: >-
     kind=audit_hardening; requirements=AF-05; scenarios=Q02, Q21; deps=FTF-0203, FTF-0210, FTF-0215,
@@ -8853,7 +8853,7 @@ FTF-H005:
     post-exit SSLEOFError from a teardown-timing race after its own process already printed "all
     checks passed" and exited 0 -- pre-existing test-harness behavior, not a regression this task
     introduced).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h005_route_attestation.py, tests/tasks/test_ftf_h005_route_snapshot.py
 FTF-H006:
