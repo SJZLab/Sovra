@@ -1,4 +1,56 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T22:40:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01QModAYMWatn12S6SwAx5f5`) — **submitted FTF-0306 (Base model
+  revision/digest resolver) PROVISIONAL.** STEP 0: `sha256sum CLAUDE.md` matched
+  `CLAUDE.md.sha256` directly. STEP 0.1: read `BLOCKER.md` (no live blocker, both entries resolved
+  history) / `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` fresh; independently
+  reconfirmed `97/300` certified, `0` PROVISIONAL, on `main` tip `174f050` (already this session's
+  own starting branch tip). Confirmed the prior shift's own dependency-ready frontier still held:
+  8 open PRs claim FTF-0212/0214(blocked)/0500B/0500C/0500D/0601/0902/04A15; **FTF-0306,
+  FTF-1206, FTF-1807, FTF-H007 remained genuinely unclaimed** (no open PR). Picked FTF-0306 — its
+  five dependencies (FTF-0301/0302/0303/0304/0305) independently reconfirmed
+  `certification_state: CERTIFIED` in `docs/spec-matrix.yaml` before claiming it.
+
+  Implemented `apps/api/app/artifacts/base_model_revision_digest_resolver.py` — a dispatcher over
+  the three already-CERTIFIED sibling resolvers (FTF-0302/0303/0304), composing their own real
+  digests into Section 6.7's `weights_digest` column through `artifact_crud.py`'s already-
+  certified `update_artifact`/`apply_edits` (no independent schema change), exactly the
+  composition role each sibling's own module docstring already named this task for. Proves
+  acceptance clause 1 ("create immutable base-model/tokenizer manifest and compare hashes on
+  every load/resume") with a pure `verify_or_compute_weights_digest` core that always recomputes
+  from real bytes and raises `DigestMismatchError` on drift rather than silently accepting it, and
+  `negative_acceptance` ("alias/display-name equality or missing files cannot substitute") by
+  construction (no alias field anywhere in the digest computation) plus real error propagation for
+  missing files and an unsupported `private_registry` source type (no resolver task exists for it
+  anywhere in this repository).
+
+  `tests/tasks/test_ftf_0306.py` (no-DB, real local HTTP/HTTPS fixtures reusing FTF-0302/0303's
+  own real-fixture techniques, 9 checks) and `tests/integration/test_ftf_0306_base_model_revision_
+  digest_resolver.py` (real local PostgreSQL 16, register→accept→resolve→persist→mark-ready→
+  load-resume-reverify→real-drift-rejected→IDOR, all clean) both pass fresh. Real fault-injection
+  attempt (disabling the mismatch check) was refused by this sandbox's own auto-mode "Security
+  Test Removal" classifier — disclosed and reverted byte-identical (confirmed via `md5sum`), the
+  same disclosed sandbox limitation already recorded for FTF-0304's own PR #195 attempt; relied
+  instead on the suite's own real byte-drift negative case in both suites.
+
+  `uv run ruff check .`/`ruff format --check .`/`uv run mypy .` clean repo-wide (331 files, up
+  from 329, zero new errors). `python3 scripts/validate_spec.py --strict` clean (required `git
+  fetch --unshallow` first — this session's own checkout started shallow).
+  `product_truth_check.py --fail-on-unwired` unchanged `24/24` (no live route caller yet,
+  disclosed — matches FTF-0302/0303/0304's own precedent). `status.py` unchanged `97/300`
+  certified (Law 2 — a submission, not a certification). Regression swept
+  `test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_0303.py`/`test_ftf_0304.py`/`test_ftf_0305.py`
+  (no-DB, all clean) and this task's own new integration suite exercising the full migration chain
+  through FTF-0305's own tables (real Postgres, clean, zero regressions).
+
+  `.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately
+  after FTF-0304's own step, plus a new dedicated `base-model-revision-digest-resolver-integration`
+  job mirroring `trainable-artifact-schema-api-integration`'s own real `services: postgres`
+  container pattern. `docs/spec-matrix.yaml` FTF-0306 set to `PROVISIONAL`/`L1-PROVEN`. Not
+  self-certified (Law 4). PR: opened this shift (branch `claude/wizardly-fermat-9e7wln` → `main`)
+  — see this file's own PR link once pushed. `docs/certifications/queue.md` appended. No open
+  owner ask.
+
 Updated: 2026-09-29T19:22:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_014UJb5qWzRhizqq3tMCyHi1`) — **diagnosed and fixed a real
   tracker-sync gate defect on two open Control-plane certification PRs, merged both, cleaned up 9
