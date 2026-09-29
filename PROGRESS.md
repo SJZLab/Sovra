@@ -1,4 +1,29 @@
 # PROGRESS — Sovra
+## 2026-09-29T23:10:00Z — Same scheduled shift — PR #381 (FTF-1206) confirmed green and merged
+
+Subscribed to PR #381's own GitHub activity immediately after opening it. A `check_suite.completed`
+event arrived naming an intermediate head (`e7cc6be`, the first of this PR's two pushes); confirmed
+directly via `list_workflow_runs` that the PR actually carries **two** separate real CI runs, one
+per push — run `36642713939` (head `e7cc6be`) and run `36642768943` (head `89228116`, the PR's
+actual current head after the tracking-link follow-up commit) — both `completed`/`success`, `gate`
+included in both, 38/38 real jobs each. `pull_request_read` (`get`) directly confirmed the current
+head's own state: `mergeable_state: clean`. This repository runs no "Claude Approvals" check (none
+present across the 38 check runs) and `get_reviews`/`get_comments` were both empty — no open review
+or comment to address.
+
+Per the standing "Do without asking: ... merge on green + L1 doc (PROVISIONAL)" authorization —
+this is a PROVISIONAL/L1-PROVEN submission, not a certification (Law 4 unaffected: certification
+still requires independent Control-plane L2 review, not performed by this session). Merged via
+`merge_pull_request` (`merge_method: merge`, `expectedHeadSha` pinned to the actual head
+`89228116d58f9d0b827f0c923fa1e8ce81bf4874` — merge commit
+`f12c2a973519f26a0e8e98c75227ee85221acd44`).
+
+`scripts/status.py` on the new `main` tip: unchanged `97/300` certified (this submission adds a 1st
+`PROVISIONAL` item, FTF-1206, not a certification), `24` product-true unchanged. Restarted the
+designated branch `claude/wizardly-fermat-6px1ao` from the new `main` tip per the
+already-merged-PR convention (its prior remote tip is now fully contained in `main`'s own merge
+commit). No open owner ask.
+
 ## 2026-09-29T21:30:00Z — Scheduled relay shift — FTF-1206 submitted PROVISIONAL
 
 Session `https://claude.ai/code/session_01XWzo5C5a9qLgk7GbapqxF4`. STEP 0: `sha256sum CLAUDE.md`

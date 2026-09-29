@@ -20205,3 +20205,9 @@ FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independe
   tests/tasks/test_ftf_1206.py`; `evidence_hash` left blank pending the real merge commit. **Not
   self-certified (Law 4)** — awaiting independent Control-plane L2 review and a real CI run on the
   opened PR.
+- **PR merged:** two real CI runs on this PR (one per push), both `completed`/`success`, 38/38 jobs
+  each, `gate` included on both; `mergeable_state: clean` on the actual final head
+  (`89228116d58f9d0b827f0c923fa1e8ce81bf4874`); no "Claude Approvals" check in this repository, no
+  open reviews/comments. Merged via `merge_pull_request` per the standing "merge on green + L1 doc
+  (PROVISIONAL)" authorization — merge commit `f12c2a973519f26a0e8e98c75227ee85221acd44`. Still
+  PROVISIONAL on `main` — **awaiting independent Control-plane L2 certification.**
