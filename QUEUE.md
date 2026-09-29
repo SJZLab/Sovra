@@ -1,4 +1,60 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T19:22:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_014UJb5qWzRhizqq3tMCyHi1`) — **diagnosed and fixed a real
+  tracker-sync gate defect on two open Control-plane certification PRs, merged both, cleaned up 9
+  stale/superseded PRs.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly.
+  STEP 0.1: read `BLOCKER.md` (no live blocker, both entries resolved history) /
+  `QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` fresh.
+
+  Found two already-open Control-plane certification PRs whose `gate` CI job was genuinely red:
+  **PR #378** (FTF-0304 certification) and **PR #370** (FTF-04A05/FTF-H005/FTF-1201
+  certification). Root-caused PR #378's failure directly from the real job log: `test_ftf_h034.py`
+  failed because the certifying commit set `docs/spec-matrix.yaml`'s FTF-0304 entry to `CERTIFIED`
+  but never ran `sync_certified_status()`, leaving `spec/tasks.json`/`docs/implementation/
+  TRACKER.json` at `NOT_STARTED` — a real, disclosed-worthy defect in that PR's own diff, not an
+  infra flake. Checked out the branch, merged current `main` (resolving the expected append-only
+  `QUEUE.md` tracking conflict), ran `sync_certified_status()` directly (`Updated: ['FTF-0304']`),
+  re-ran `test_ftf_h034.py`/`test_ftf_0304.py` clean, `ruff check .` clean, pushed. CI came back
+  38/38 green; merged (merge commit `b3248658`). FTF-0304 now genuinely CERTIFIED (94/300).
+
+  PR #370 hit the identical merge-conflict pattern after #378 landed (conflicts in
+  `PROGRESS.md`/`docs/certifications/ledger.md`, both append-only — resolved by chronological
+  ordering); `sync_certified_status()` confirmed already in sync for this PR's three tasks. Pushed
+  the merge; the resulting CI run hit a **real, previously-documented cross-test-isolation flake**
+  (`test_ftf_r002.py` failing on a `MagicMock`-leaked `TenantContextError` from an unrelated,
+  already-CERTIFIED component-bindings suite in the same sequential `gate` job process — the exact
+  pattern this file's own 2026-09-29T12:45:00Z entry already root-caused and disclosed). Confirmed
+  PR #370's diff touches only tracking/doc files, nowhere near `test_ftf_r002.py` or
+  component-bindings code, before treating it as a flake. Per the CI-red protocol, re-ran the
+  failed job once (`rerun_failed_jobs`) — `gate` passed clean, `mergeable_state: clean`. Merged
+  (merge commit `71544b57`). FTF-04A05/FTF-H005/FTF-1201 now genuinely CERTIFIED. `status.py`:
+  93/300 → **97/300 certified, 0 PROVISIONAL**.
+
+  **Cleaned up 9 stale/superseded open PRs** found while investigating (each already fully
+  captured by later, real certification/fix history on `main`, none touching live code): closed
+  #352 (stale NOT-CERTIFIED review of FTF-04A04, later genuinely certified via PR #353), #314/#315
+  (FTF-0303's real cross-tenant-prefix bug, already fixed and certified via PR #316/#317 — thanked
+  the reviewer's own real finding in the closing comment), #336 (stale FTF-04A20 tracking PR),
+  #313/#311/#308 (FTF-0513's full stale lineage, already certified via PR #313's own successor
+  work), #290 (a cosmetic doc-only fix against a `main` tip from 2026-09-25, long since moot), and
+  #360/#363/#365/#368 (narrower/earlier FTF-04A05/H005/1201 certification duplicates, superseded
+  by the consolidated PR #370 this shift merged). Each closure comment cites the exact PR/commit
+  that actually landed the same conclusion — no PR closed without independently confirmed live
+  evidence on `main`.
+
+  **Recomputed the dependency-ready frontier from first principles** (parsed
+  `docs/spec-matrix.yaml`'s real `certification_state` against `docs/TASK_INDEX.md`'s own
+  structured `Dependencies` column) now that FTF-04A05/FTF-H005/FTF-1201 are genuinely certified:
+  13 tasks are `NONE` with every dependency CERTIFIED — the prior 10-task frontier
+  (FTF-0212/#231, FTF-0214/#295 disclosed-blocked, FTF-0500B/#359, FTF-0500C/#364, FTF-0500D/#335,
+  FTF-0601/#337, FTF-0902/#342, FTF-04A15/#328, FTF-1703 disclosed-blocked — all still claimed by
+  their existing open PRs, untouched this shift) **plus four newly-unblocked items with no open
+  PR**: **FTF-0306, FTF-1206, FTF-1807, FTF-H007** — genuinely unclaimed, dependency-ready work for
+  the next shift to pick up via `tools/r1_handoff.py packet <id>`. Not started here — this shift's
+  own scope (CI-red diagnosis/fix + PR cleanup) was already a complete unit of work; starting a
+  fresh multi-file implementation task in the same shift risked a rushed PEV cycle. No open owner
+  ask.
+
 Updated: 2026-09-29 (Control-plane certifier, session `https://claude.ai/code/session_01FWhhwBn53twHHAEhvTBxue`) --
   **FTF-0304 CERTIFIED (L2)**, PR #376 / merge `4d15c75`, CI 38/38 green; certified 94/300. See
   docs/certifications/ledger.md. FTF-04A05/FTF-H005/FTF-1201 left to their already-open
