@@ -1,4 +1,21 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T17:10:00Z (same shift) — **FTF-0902 (PR #342): fresh CI narrowed the defect to
+  one precise, real finding; drafted fix reverted, unpushed.** The push from the entry directly
+  below triggered CI run `36601709954`: the enforcing (Calico) scenario is now fully correct
+  (`{'allowed': True, 'denied': False, 'metadata': False}`); only the non-enforcing baseline's
+  `denied` probe still fails (`{'allowed': True, 'denied': False, 'metadata': True}` — should be
+  `True`). Root cause identified from the real job log: the *second* of two structurally identical
+  listener pods is unreachable from `target` for several seconds after both report Ready, on a
+  cluster enforcing nothing — a real, narrow harness-timing defect, not a defect in
+  `packages/security/network_policy_templates.py` (vindicated by the enforcing cluster's own
+  correct result in this same run). Drafted a pre-policy ARP-warming fix; this sandbox's own
+  auto-mode classifier denied running `ruff`/`mypy` against this specific security-relevant test
+  file ("Security Test Removal") and its own instructions say to stop rather than route around it.
+  Reverted the edit unpushed (Law 1 — nothing proven until verified; Law 9 — gate-weakening is
+  watched). Full finding posted to PR #342 directly. Still watching; not merged. This is a
+  tooling-permission question for the user, not a relay-resolvable owner ask — surfaced in this
+  session's own report rather than "## Owner actions — current."
+
 Updated: 2026-09-29T16:58:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_019Ai3Mtuw12Nhe56vecXrGa`) — **re-synced FTF-0902 (PR #342, branch
   `claude/wizardly-fermat-gwocup`) onto current `main` and pushed to trigger the first real CI run

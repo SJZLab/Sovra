@@ -1,4 +1,50 @@
 # PROGRESS — Sovra
+## 2026-09-29T17:10:00Z — Same shift — FTF-0902 (PR #342): fresh CI result narrows the defect to one real, precise finding; drafted fix reverted unpushed (local verification tooling denied on this file); stopping, disclosed
+
+Continuation of the entry directly below (same session, same PR). The push there triggered a real
+CI run (`36601709954`) for the first time since the 2026-09-27 outage — genuine progress: the
+**enforcing (Calico)** scenario is now fully correct, `{'allowed': True, 'denied': False, 'metadata':
+False}`, exactly matching this task's own acceptance clause. Only the **non-enforcing baseline**
+scenario still fails: `{'allowed': True, 'denied': False, 'metadata': True}` — `denied` should also
+be `True` there, since kindnet enforces nothing. Real job log read directly (`get_job_logs`, not a
+self-report): `allowed` (pod IP `10.244.0.6`) succeeded on the first probe attempt; `denied` (pod
+IP `10.244.0.7`) — the second of two structurally identical listener pods (same manifest, same
+image, only the Kubernetes object name differs) — failed all 3 retried attempts (~21s) on the one
+cluster where nothing is enforcing anything. This is precisely the ambiguity
+`tests/integration/test_ftf_0902_network_policy_enforcement.py`'s own comment already names as
+invalidating the whole negative_acceptance proof if it happens — a real, narrow, reproducible
+harness-timing defect, not a defect in `packages/security/network_policy_templates.py` itself
+(vindicated by the enforcing cluster's own now-fully-correct result in this same run).
+
+Drafted a fix: warm the `target` pod's own ARP/routing state against both destinations with a
+generously-retried, result-discarded probe *before* the `NetworkPolicy` object is ever created (on
+both clusters, to keep the two scenarios' own timing symmetric) — this cannot weaken the enforcing
+cluster's own negative_acceptance proof, since the real, measured probes the assertions actually
+read still run strictly after the policy is applied, unchanged. Could not get a clean local
+verification of this edit on record: this sandbox's own auto-mode security classifier denied
+running `ruff`/`mypy` against this specific security-relevant test file, flagging the change
+"Security Test Removal," and its own instructions say to stop and let a human decide rather than
+route around it through another tool or a later turn. Per Law 1 (nothing proven until shown able
+to fail, including that a fix does not itself break the check it fixes) and Law 9 (gate-weakening
+is watched out of band), reverted the edit rather than push anything unverified — confirmed
+byte-identical to the pre-edit file via `git checkout --` (no diff remains).
+
+Posted the full finding to PR #342 directly (root cause, what was tried, why it was reverted) so
+the next session — relay or one with owner sign-off on editing this specific file — does not have
+to re-diagnose from scratch. Not merging (Law 1/Law 5 — a red job is not a pass); PR left open,
+still subscribed/watched.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift (this entry). STEP 4 stop condition (c)-adjacent
+(a real, disclosed tooling blocker on the one concrete fix this shift found, not a repeated blind
+retry) — stopping here rather than attempting a fourth diagnostic approach without local
+verification. No owner ask filed: this is a tooling/process question (should this classifier's
+"Security Test Removal" flag on this exact kind of edit be treated as a hard stop for a relay
+session, or is there a narrower way to get sign-off), surfaced to the user directly in this
+session's own final report rather than written into `QUEUE.md`'s "Owner actions — current" (that
+section is for the Control-plane-relay/owner channel this session cannot itself resolve either way
+by writing into a doc; the user reading this session directly is the right channel for a
+tooling-permission question).
+
 ## 2026-09-29T16:58:00Z — Scheduled relay shift — FTF-0902 (PR #342): re-synced onto current main, real local checks clean, pushed to trigger the first real CI run since the 2026-09-27 outage
 
 Session `https://claude.ai/code/session_019Ai3Mtuw12Nhe56vecXrGa`. STEP 0: `sha256sum CLAUDE.md`
