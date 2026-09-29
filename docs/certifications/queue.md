@@ -20234,4 +20234,5 @@ self-certified (Law 4)** — independent Control-plane L2 review and a real CI r
 are required before certification.
 
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
-- **PR:** (opened this shift — see `QUEUE.md`'s matching entry for the URL).
+- **PR:** https://github.com/SJZLab/Sovra/pull/380 (branch `claude/wizardly-fermat-9e7wln` →
+  `main`, open).

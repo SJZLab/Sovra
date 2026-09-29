@@ -47,9 +47,9 @@ Updated: 2026-09-29T22:40:00Z (scheduled relay shift, session
   after FTF-0304's own step, plus a new dedicated `base-model-revision-digest-resolver-integration`
   job mirroring `trainable-artifact-schema-api-integration`'s own real `services: postgres`
   container pattern. `docs/spec-matrix.yaml` FTF-0306 set to `PROVISIONAL`/`L1-PROVEN`. Not
-  self-certified (Law 4). PR: opened this shift (branch `claude/wizardly-fermat-9e7wln` → `main`)
-  — see this file's own PR link once pushed. `docs/certifications/queue.md` appended. No open
-  owner ask.
+  self-certified (Law 4). PR: https://github.com/SJZLab/Sovra/pull/380 (branch
+  `claude/wizardly-fermat-9e7wln` → `main`, open). `docs/certifications/queue.md` appended. No
+  open owner ask.
 
 Updated: 2026-09-29T19:22:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_014UJb5qWzRhizqq3tMCyHi1`) — **diagnosed and fixed a real
