@@ -1,4 +1,34 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T06:05:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_013DtFkmLwKhLrw87oZMqWPk`) — **tracking-only, no new task this
+  shift; state byte-identical to PR #373's own last check on this exact `main` tip (`180d382`, no
+  new commit landed since).** STEP 0: `sha256sum CLAUDE.md` matched the committed
+  `CLAUDE.md.sha256` directly. STEP 0.1: read `BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/
+  `docs/certifications/queue.md` fresh — no live blocker, "Owner actions — current" reads "None
+  currently." Independently recomputed the dependency-ready frontier from first principles (not
+  trusted from file prose): parsed `docs/spec-matrix.yaml`'s real `certification_state` for every
+  record and joined it against `docs/TASK_INDEX.md`'s own structured `Dependencies` column
+  directly in Python (not re-reading this file's own narrative) — confirms `93/300` certified, 3
+  `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, all merged, none certified yet — five open
+  Control-plane certification PRs already exist against them: #360/#363/#365/#368/#370, not a
+  relay action), and the exact same 10-task dependency-ready frontier already on record (FTF-0212,
+  FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15, FTF-1703).
+  Checked `list_pull_requests` (open, fresh) directly against this list: FTF-0212→#231,
+  FTF-0214→#295 (disclosed-blocked), FTF-0304→#194/#195, FTF-0500B→#359, FTF-0500C→#364,
+  FTF-0500D→#335 (blocked per #336, merge conflict), FTF-0601→#337, FTF-0902→#342, FTF-04A15→#328
+  — 9/10 already claimed by a live open PR. The tenth, FTF-1703, still carries its
+  previously-disclosed genuine blocker: its own DoD needs ≥1000 real curated/reviewed training
+  traces (a data-curation task, not pure computation), unchanged since every prior shift that
+  found the same thing. No genuinely unclaimed item exists this shift either — same conclusion
+  independently reached on this exact `main` tip. Left every claimed task untouched to avoid a
+  write-set conflict (Law 2).
+
+  Per the immediately preceding shift's own explicit finding (opening a fifth near-identical
+  doc-only tracking PR is pure duplication, contrary to Law 2's spirit, and caused a real PR
+  pile-up before it was cleaned up), this entry lands via one small doc-only PR that is merged
+  immediately within this same shift once green, rather than left open for a future shift to
+  independently duplicate. No open owner ask.
+
 Updated: 2026-09-29T04:05:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_01HBLBtHvzSJPDJJHEvm5nWH`) — **merged PR #372, closed 3 stale
   duplicate tracking PRs.** Independently reconfirmed the same "dependency-ready frontier fully
