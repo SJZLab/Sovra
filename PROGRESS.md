@@ -1,4 +1,23 @@
 # PROGRESS — Sovra
+## 2026-09-29T15:59:00Z — Same scheduled shift — PR #376 (FTF-0304) confirmed green and merged
+
+Subscribed to PR #376's own GitHub activity immediately after opening it. The real
+`check_suite.completed` event on the actual final head commit (`cd08cb8`) confirmed all 38 CI
+jobs completed with `conclusion: success` (including the new "FTF-0304 negative-test proof" step
+in the `gate` job) and `mergeable_state: clean` — verified directly via `pull_request_read`
+(`get_check_runs`/`get`), not merely trusted from the webhook payload alone. This repository runs
+no "Claude Approvals" check (none present across either page of the 38 check runs) and no
+reviews/comments were open. Merged via `merge_pull_request` (`merge_method: merge`,
+`expectedHeadSha` pinned to the actual head `cd08cb862d3c21195dd85a648d12f4f88a2036cf` — merge
+commit `4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4`). Per the standing "Do without asking: ... merge
+on green + L1 doc (PROVISIONAL)" authorization — this is a PROVISIONAL/L1-PROVEN submission, not a
+certification (Law 4 unaffected: certification still requires independent Control-plane L2
+review, not performed by this session).
+
+`scripts/status.py` on the new `main` tip: unchanged `93/300` certified (this submission adds a
+4th `PROVISIONAL` item, FTF-04A05/FTF-H005/FTF-1201/FTF-0304, not a certification), `22`
+product-true unchanged. No open owner ask.
+
 ## 2026-09-29T15:35:00Z — Scheduled relay shift — FTF-0304 submitted PROVISIONAL, resolved a stale duplicate-PR pileup
 
 Session `https://claude.ai/code/session_01PKMBnWEKmEMifmQiwRSUFL`. STEP 0: `sha256sum CLAUDE.md`
