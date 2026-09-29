@@ -1,4 +1,56 @@
 # PROGRESS — Sovra
+## 2026-09-29T02:50:13Z — Scheduled relay shift — tracking: dependency-ready frontier still fully saturated, no new task this shift
+
+Session `https://claude.ai/code/session_019zD9kMBk4ngNAFD4zHP2Z1`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly — no mismatch. STEP 0.1: read
+`BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` fresh, no assumed state
+(both logs are prepended-newest at the top per the 2026-09-28 convention switch). `BLOCKER.md`
+contains only resolved history — no live blocker. `QUEUE.md`'s "Owner actions — current" section
+reads "None currently" — no open ask. STEP 0.2: no `cognee-cli` in this environment — text-search
+fallback (direct `grep`/file reads against `docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`),
+disclosed per standing instruction.
+
+This session's own designated branch (`claude/wizardly-fermat-ies771`) was already at the tip of
+`origin/main` (`12caf56`, confirmed via `git merge-base --is-ancestor`) — no rebase needed.
+
+STEP 1: independently recomputed the dependency-ready frontier from first principles rather than
+trusting prior tracking prose — parsed `docs/spec-matrix.yaml`'s real `certification_state`
+directly (`93/300 CERTIFIED`, exactly 3 `PROVISIONAL`: FTF-04A05, FTF-H005, FTF-1201, all already
+merged to `main`, none yet independently certified — `scripts/status.py` agrees: `93/300
+certified · 22 product-true`; `product_truth_check.py --fail-on-unwired` separately reports
+`24/24` product-true, the same disclosed reporting-scope gap already on record from the FTF-1201
+submission, not a new discrepancy) joined against `docs/TASK_INDEX.md`'s own structured
+`Dependencies` column for all 300 tasks. This produced exactly the same 10-task dependency-ready
+frontier already on record from PR #369/#371: FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C,
+FTF-0500D, FTF-0601, FTF-0902, FTF-04A15, FTF-1703 — expected, since `main`'s tip (`12caf56`) has
+not moved since PR #371's own check (confirmed via `git fetch origin main` + `git rev-parse`).
+
+Reconfirmed directly via `list_pull_requests` (state=open, not trusted from file prose) that all
+9 non-FTF-1703 frontier items still have a live open PR claiming them: FTF-0212 (#231), FTF-0214
+(#295, disclosed-blocked), FTF-0304 (#194/#195), FTF-0500B (#359), FTF-0500C (#364), FTF-0500D
+(#335, blocked on a merge conflict per #336), FTF-0601 (#337), FTF-0902 (#342), FTF-04A15 (#328)
+— none closed or merged since PR #371's own check. FTF-1703 still carries the same
+repeatedly-confirmed genuine sandbox-scale blocker (needs ≥1000-scale real curated traces this
+sandbox does not have) — not a fresh blocker requiring a new BLOCKER.md entry, per the standing
+"Write BLOCKER.md only if the DoD-resolution command itself fails" rule; this is a resource-scale
+limit, not a DoD-clarity gap. Five open Control-plane certification PRs exist against the three
+pending PROVISIONAL items (#360/#363/#365/#368/#370) — not a relay action (Law 4: producer never
+certifies own work; relay role is execution-only, per CLAUDE.md and this shift's own prompt).
+
+No genuinely unclaimed, dependency-ready item exists. Opening a duplicate PR against an
+already-claimed task would risk a write-set conflict for no benefit (Law 2). This entry adds no
+new information beyond independently reconfirming, from a fresh session with no shared state,
+that the identical conclusion PR #349/#369/#371 already reached still holds — recorded here
+rather than as a fourth near-duplicate tracking PR, since `main` has not moved and nothing would
+differ in a new PR's diff.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; `docs/certifications/
+queue.md` unchanged (no new evidence this shift — nothing certified or submitted). STEP 4 stop
+condition (a)-shaped: 3/3 in-flight submissions remain `L1-PROVEN`/`PROVISIONAL` awaiting
+Control-plane certification, and the dependency-ready frontier is fully saturated by other
+sessions' live PRs or a genuine disclosed blocker — no relay action available. Stopping here. No
+open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 ## 2026-09-28T21:20:00Z — FTF-1201 — relay: PR #366 confirmed green and merged (session https://claude.ai/code/session_01TFyTkMLqBbbw3BaSxcmcDo)
 
 Subscribed to PR #366's own GitHub activity immediately after opening it. Independently verified

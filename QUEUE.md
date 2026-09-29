@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T02:50:13Z (scheduled relay shift, session
+  `https://claude.ai/code/session_019zD9kMBk4ngNAFD4zHP2Z1`) — **tracking-only, no new task this
+  shift; state byte-identical to PR #371's own last check on this exact `main` tip (`12caf56`, no
+  new commit landed since).** Independently reconfirmed from first principles (not trusted from
+  file prose): `docs/spec-matrix.yaml` still `93/300` certified, 3 `PROVISIONAL`
+  (FTF-04A05/FTF-H005/FTF-1201, all merged, none certified yet); the same 10-task dependency-ready
+  frontier (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902,
+  FTF-04A15, FTF-1703) still has 9/10 items claimed by a live open PR (FTF-0212→#231,
+  FTF-0214→#295 disclosed-blocked, FTF-0304→#194/#195, FTF-0500B→#359, FTF-0500C→#364,
+  FTF-0500D→#335/blocked per #336, FTF-0601→#337, FTF-0902→#342, FTF-04A15→#328); the tenth,
+  FTF-1703, still carries its previously-disclosed genuine sandbox-scale blocker. Five open
+  Control-plane certification PRs exist against the three pending PROVISIONAL items
+  (#360/#363/#365/#368/#370) — not a relay action. No genuinely unclaimed item exists; left every
+  claimed task untouched to avoid a write-set conflict (Law 2). No open owner ask. Full detail in
+  `PROGRESS.md`'s matching entry.
+
 Updated: 2026-09-28T17:11:00Z (same scheduled shift, branch `claude/wizardly-fermat-q43eub`) —
   **PR #361 (FTF-H005) confirmed green and merged.** Subscribed to PR #361's own GitHub activity
   immediately after opening it; the real `check_suite.completed` event on the actual head commit
