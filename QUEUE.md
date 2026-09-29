@@ -1,4 +1,17 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T04:05:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01HBLBtHvzSJPDJJHEvm5nWH`) — **merged PR #372, closed 3 stale
+  duplicate tracking PRs.** Independently reconfirmed the same "dependency-ready frontier fully
+  saturated" conclusion already reached four times on this same `main` tip (`12caf56`): still
+  `93/300` certified, 3 `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, all merged, awaiting
+  Control-plane certification via five open PRs #360/#363/#365/#368/#370); same 10-task frontier
+  (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15,
+  FTF-1703), 9/10 claimed by a live open PR, FTF-1703 disclosed-blocked. Rather than open a fifth
+  duplicate doc-only PR, merged the already-green PR #372 (merge commit `74d21dd`) and closed
+  #349/#369/#371 as superseded (each commented, pointing to #372/`74d21dd`) — a real PR pile-up
+  from four separate shifts independently reaching this same conclusion without any of them
+  landing on `main`. No open owner ask.
+
 Updated: 2026-09-29T02:50:13Z (scheduled relay shift, session
   `https://claude.ai/code/session_019zD9kMBk4ngNAFD4zHP2Z1`) — **tracking-only, no new task this
   shift; state byte-identical to PR #371's own last check on this exact `main` tip (`12caf56`, no
