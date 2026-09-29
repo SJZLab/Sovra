@@ -305,6 +305,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h005_route_snapshot.py
       - name: FTF-1201 negative-test proof (LiteLLM registration capability detection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1201.py
+      - name: FTF-0304 negative-test proof (Local artifact resolver -- symlink/executable/TOCTOU rejection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0304.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

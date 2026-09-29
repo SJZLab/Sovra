@@ -20068,3 +20068,78 @@ the opened PR are required before certification.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
 - **PR:** https://github.com/SJZLab/Sovra/pull/366 (branch `claude/wizardly-fermat-85vqbq` →
   `main`, open).
+
+## 2026-09-29 — FTF-0304 — Local artifact resolver
+
+Resolves a `local_filesystem` `TrainableArtifact.source_uri` (FTF-0301, CERTIFIED) beneath an
+operator-approved local root into a deterministic file manifest (Section 6.7/13/34/68/77/81).
+Placed at `apps/api/app/artifacts/local_artifact_resolver.py` — the task packet's own suggested
+`packages/model-catalog/...` path is hyphenated (not a `uv` workspace member, not a valid Python
+import path); refined to the real, already-established sibling-resolver directory alongside
+FTF-0302's `hugging_face_artifact_resolver.py` and FTF-0303's `private_s3_artifact_resolver.py`,
+the same refinement precedent those two tasks already established.
+
+`resolve_local_artifact` computes a per-file `sha256`/`size_bytes` and a content-only, sorted
+`manifest_sha256` (never filesystem metadata like mtime/inode/owner). negative_acceptance
+("Symlink/path escape, changing file during read and unsafe executable artifact are rejected") is
+enforced by three independent, real-filesystem checks: no path component between the approved root
+and the resolved artifact (and no file/directory anywhere inside a directory artifact) may be a
+symlink — checked explicitly even when the symlink's own real target still lands inside the
+approved root, since `os.walk(followlinks=False)` alone would silently skip rather than reject a
+symlinked subdirectory; every file's `(size, mtime_ns)` is captured before and after it is read and
+hashed, raising on any mismatch (a real TOCTOU race, not a safe artifact); any file carrying an
+owner/group/other executable bit is rejected outright. Deliberately does not compute
+`weights_digest` or write it back onto any `TrainableArtifact` row — that is FTF-0306's own,
+later, separately dependency-gated job.
+
+**Provenance, disclosed:** this task had two duplicate open submissions from earlier sessions
+(2026-09-22) — PR #194 (`packages/model_catalog/` placement, not matching the real sibling-resolver
+convention) and PR #195 (`apps/api/app/artifacts/` placement, matching it). This submission ports
+PR #195's own already-authored implementation and test suite fresh onto current `main` — its
+original session's own disclosed fault injection (executable-bit guard temporarily disabled,
+corresponding negative test genuinely failed, reverted byte-identical) is the L1 fault-injection
+evidence of record. This shift's own attempt to independently reproduce that same technique was
+refused by this sandbox's own Claude Code auto-mode classifier ("Security Weaken" — modifying a
+security-relevant check, even temporarily and revertibly, is blocked here); disclosed rather than
+silently worked around. In its place, this shift independently re-ran the suite's own real negative
+tests fresh against current `main` — a real symlinked file inside the tree, a real symlinked
+subdirectory, a real symlinked artifact root (even with its target inside the approved root), a
+real `chmod +x` file, and a real file mutated mid-read via the module's own chunk-reading path —
+and confirmed each is still genuinely rejected. PR #194 and PR #195 are both closed as superseded
+by this submission.
+
+**Test evidence:** `tests/tasks/test_ftf_0304.py` — 13 no-DB, no-network test functions against a
+real temporary directory tree (real files, real symlinks, a real `chmod +x` file, a real mid-read
+mutation): sorted deterministic multi-file manifest; single-file artifact; per-entry `sha256`/
+`size_bytes` matches real content; `total_size_bytes` is the real sum; resolving the same
+unchanged directory twice yields the same `manifest_sha256`; changing one file's content changes
+it; the four symlink/escape negative cases above; a shape-valid-but-missing path is rejected, not
+silently returning an empty manifest; a shape-invalid `source_uri` is refused by FTF-0301's own
+`validate_source_uri` before any filesystem access; the mid-read-mutation and executable-bit
+negative cases; a non-executable file with identical content is accepted (proving content alone is
+not what triggers rejection).
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (328
+source files). `uv run mypy .` clean repo-wide (328 files, zero new errors). `python3
+scripts/validate_spec.py --strict` clean (required `git fetch --unshallow` first — this sandbox's
+own checkout started shallow, same precedent every prior shift already disclosed).
+`product_truth_check.py --fail-on-unwired`: unchanged `24/24` — no live FastAPI route or worker
+imports this module yet, same disclosed "no live caller yet" class already independently
+CERTIFIED for FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0301/FTF-0305/FTF-0402/FTF-0404/FTF-0405;
+`proving_symbol` intentionally left blank. `scripts/status.py`: unchanged `93/300` certified, `22`
+product-true (Law 2 — this is a submission, not a certification). Regression swept
+`test_ftf_0301.py` (clean — one pre-existing, already-disclosed `MagicMock` cross-test-leak flake
+printed to stderr, not a regression this shift introduced) and `test_ftf_0305.py` (clean). No
+frontend file touched this shift.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately after
+FTF-1201's own step.
+
+`docs/spec-matrix.yaml` FTF-0304 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0304.py`;
+`evidence_hash` left blank pending the real merge commit; `proving_symbol` deliberately left blank
+(see above). **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI
+run on the opened PR are required before certification.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
+- **PR:** (opened this shift; URL recorded in a same-shift follow-up commit once assigned).

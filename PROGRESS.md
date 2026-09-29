@@ -1,4 +1,112 @@
 # PROGRESS — Sovra
+## 2026-09-29T15:35:00Z — Scheduled relay shift — FTF-0304 submitted PROVISIONAL, resolved a stale duplicate-PR pileup
+
+Session `https://claude.ai/code/session_01PKMBnWEKmEMifmQiwRSUFL`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh (all three exceed the 256KB single-read limit — read via
+head/tail offsets and targeted `grep`, not assumed). `QUEUE.md` "Owner actions — current" reads
+"None currently" — no open ask, no `BLOCKER.md`. STEP 0.2: no `cognee-cli` installed — text-search
+fallback, disclosed.
+
+`git fetch origin main` found `main` already at `81bec89` (PR #375 merged, same conclusion as the
+12:45Z shift: `93/300` certified, 3 `PROVISIONAL` — FTF-04A05/FTF-H005/FTF-1201, awaiting
+Control-plane certification via five open PRs #360/#363/#365/#368/#370 — and the same 10-task
+dependency-ready frontier, 9/10 claimed by a live open PR, FTF-1703 disclosed-blocked).
+Independently recomputed the frontier from first principles rather than trusting file prose:
+joined `docs/spec-matrix.yaml`'s real `certification_state` against `docs/TASK_INDEX.md`'s
+structured `Dependencies` column directly in Python — confirmed the identical 13-task
+dependency-ready set (10 genuinely open + the 3 already-`PROVISIONAL` ones), and confirmed
+`docs/spec-matrix.yaml` parses to exactly `93 CERTIFIED / 3 PROVISIONAL / 204 NONE`.
+
+Rather than treat "9/10 claimed by a live open PR" as itself a reason to stop (the conclusion four
+consecutive prior shifts reached without checking further), checked whether those claiming PRs are
+actually live. Fetched all 10 candidate PR branches (`231`, `194`, `195`, `359`, `364`, `335`,
+`337`, `342`, `328`, `295`) and ran `git merge-tree` against current `main` for each (after
+`git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact, same precedent
+every prior shift already disclosed): all 10 conflict against current `main`, but **only** in the
+append-only tracking files (`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`) and, for a
+few, `.github/workflows/ci.yml`'s own per-task step list — never in source or test code. This is
+the routine "merge conflict" case my own operating instructions describe (append-log drift from
+other tasks merging since), not a semantic conflict, and not evidence the PRs are abandoned.
+
+Found **two duplicate open submissions for the same task**: PR #194 (`packages/model_catalog/
+local_artifact_resolver.py`, opened 2026-09-22T13:03Z) and PR #195 (`apps/api/app/artifacts/
+local_artifact_resolver.py`, opened 2026-09-22T14:58Z), both implementing FTF-0304 ("Local
+artifact resolver"), neither merged. Checked which path matches the real, already-established
+convention rather than trusting either PR's own claim: `apps/api/app/artifacts/` already holds
+`hugging_face_artifact_resolver.py` (FTF-0302) and `private_s3_artifact_resolver.py` (FTF-0303) —
+the real sibling-resolver precedent; `packages/model_catalog/` holds only `access_snapshot.py`/
+`route_snapshot.py` (FTF-H004/FTF-H005, unrelated). PR #195's placement is the one consistent with
+the real repository layout.
+
+**Picked FTF-0304**, landing PR #195's own already-authored, already-disclosed implementation and
+test suite fresh onto current `main` rather than writing a third implementation or attempting a
+history-rewriting push onto a five-day-stale branch. Read the full module
+(`apps/api/app/artifacts/local_artifact_resolver.py`, 257 lines) and full test suite
+(`tests/tasks/test_ftf_0304.py`, 359 lines, 13 test functions) directly before adopting them — not
+merely trusting the PR body's own claims. Confirmed the one import this module needs
+(`app.artifacts.artifact_schema.validate_source_uri`, FTF-0301, CERTIFIED) is unchanged on current
+`main`.
+
+**Own re-verification, fresh, against current `main`:** `uv sync --all-packages`; `uv run python3
+tests/tasks/test_ftf_0304.py` — "all checks passed" (13/13: sorted deterministic multi-file
+manifest, single-file artifact, content-change-changes-manifest-hash, a real symlinked file
+inside the tree rejected, a real symlinked subdirectory rejected (not silently skipped), a real
+symlinked artifact root rejected even when its target stays inside the approved root, a
+shape-valid-but-missing path rejected, a shape-invalid `source_uri` refused by FTF-0301's own
+validator before any filesystem access, a real mid-read file mutation rejected via the module's
+own real chunk-reading path, a real `chmod +x` file rejected, an otherwise-identical
+non-executable file accepted). `uv run ruff check .`/`ruff format --check .` clean repo-wide (328
+files unchanged in count — this task adds one source file and one test file but the repo-wide
+sweep already included them). `uv run mypy .` clean repo-wide (328 files, zero new errors).
+`python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`:
+`24/24` unchanged — `proving_symbol` intentionally left blank (no live FastAPI route or worker
+imports this module yet, same disclosed "no live caller yet" class already independently
+CERTIFIED for FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0301/FTF-0305/FTF-0402/FTF-0404/FTF-0405).
+`scripts/status.py`: unchanged `93/300` certified, `22` product-true (Law 2 — this is a
+submission, not a certification). Regression swept `test_ftf_0301.py` (its own certified
+dependency; a pre-existing, already-disclosed `MagicMock`-leak flake in an unrelated
+`TenantContextError` printed to stderr but the suite itself still reported "all checks passed" —
+same flake this file's own 12:45Z entry already found and disclosed for `test_ftf_r002.py`, not a
+regression this shift introduced) and `test_ftf_0305.py` (clean). No frontend file touched;
+`pnpm`/vitest unaffected, not re-run this shift (same citation convention already established for
+an unaffected suite).
+
+**Law 1 disclosure:** this shift's own attempt to reproduce PR #195's disclosed fault-injection
+technique (temporarily disabling the executable-bit rejection to confirm the corresponding
+negative test then fails) was refused by this sandbox's own Claude Code auto-mode classifier
+("Security Weaken") — a real sandbox constraint, disclosed here rather than silently routed
+around. The L1 fault-injection evidence of record is PR #195's own disclosed run (three targeted
+fault injections — symlink-ancestor check, executable-bit check, changed-during-read check — each
+caught for real by its own dedicated test, reverted byte-identical) combined with this shift's own
+fresh, independent confirmation that the suite's real negative tests (a real symlink, a real
+`chmod +x` file, a real mid-read mutation via the module's own chunk-reading path — not mocks)
+still pass against current `main`.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately after
+FTF-1201's own step. `docs/spec-matrix.yaml` FTF-0304 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+tests/tasks/test_ftf_0304.py`; `evidence_hash` left blank pending the real merge commit;
+`proving_symbol` deliberately left blank (see above). **Not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+`docs/implementation/TRACKER.json`/`spec/tasks.json` deliberately left untouched — confirmed by
+direct inspection that the three already-merged `PROVISIONAL` items (FTF-04A05/FTF-H005/FTF-1201)
+also still read `NOT_STARTED`/absent in these two files on current `main`, meaning
+`sync_certified_status()` only runs at L2 certification time, not at PROVISIONAL-submission time;
+PR #195's own draft update to `TRACKER.json` was a premature assumption, not matched here.
+
+PR #194 and PR #195 closed as superseded (each commented, pointing to this PR and the real
+directory-convention reasoning above) — the same "close superseded duplicates" pattern this
+file's own history already established for stale doc-tracking PRs (#349/#369/#371) and stale
+owner-ask claims (PR #162), now applied to a stale duplicate *task* submission for the first time.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0304) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-29T12:45:00Z — Scheduled relay shift — merged PR #374, found and cleared a real CI flake
 
 Session `https://claude.ai/code/session_01AqG4JHDyQZtYa8WeivvbRX`. STEP 0: `sha256sum CLAUDE.md`
