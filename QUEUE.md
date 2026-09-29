@@ -1,4 +1,27 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T12:45:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_01AqG4JHDyQZtYa8WeivvbRX`) — **merged PR #374 (the immediately
+  preceding shift's own doc-only tracking PR), after finding and clearing a genuine `gate`-job CI
+  flake on it.** Independently reconfirmed the same "dependency-ready frontier fully saturated"
+  conclusion PR #374 had already reached minutes earlier on this same `main` tip (`180d382`): still
+  `93/300` certified, 3 `PROVISIONAL` (FTF-04A05/FTF-H005/FTF-1201, all merged, awaiting
+  Control-plane certification via five open PRs #360/#363/#365/#368/#370), same 10-task frontier
+  (FTF-0212, FTF-0214, FTF-0304, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-04A15,
+  FTF-1703), 9/10 claimed by a live open PR, FTF-1703 disclosed-blocked (≥1000 real curated
+  training traces needed).
+
+  Rather than open a sixth duplicate doc-only tracking PR, found PR #374's own `gate` job had
+  genuinely failed (`run 36558248783`) despite its diff touching only `PROGRESS.md`/`QUEUE.md` —
+  read the real failure log: `test_ftf_r002.py`'s own signature-verification check failed on an
+  unrelated `TenantContextError` caused by a `MagicMock` DB-session leaking in from an earlier test
+  module within the same sequential `gate` job process (component-bindings and R002 are unrelated,
+  both already `CERTIFIED`, neither touched by PR #374's diff). Per the CI-red protocol, re-ran the
+  failed jobs once (`rerun_failed_jobs`) — `gate` passed clean, `38/38` checks green,
+  `mergeable_state: clean` — confirming a real, disclosed test-isolation flake in the harness
+  itself (flagged in `PROGRESS.md`'s matching entry for a future test-harness-hardening claim, not
+  silently worked around), not a defect in PR #374's own content. Merged PR #374 (merge commit
+  `e1edce124e501683c8992773f76f5bf0c470dca5`). No open owner ask.
+
 Updated: 2026-09-29T06:05:00Z (scheduled relay shift, session
   `https://claude.ai/code/session_013DtFkmLwKhLrw87oZMqWPk`) — **tracking-only, no new task this
   shift; state byte-identical to PR #373's own last check on this exact `main` tip (`180d382`, no

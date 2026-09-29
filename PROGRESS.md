@@ -1,4 +1,75 @@
 # PROGRESS — Sovra
+## 2026-09-29T12:45:00Z — Scheduled relay shift — merged PR #374, found and cleared a real CI flake
+
+Session `https://claude.ai/code/session_01AqG4JHDyQZtYa8WeivvbRX`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly — no mismatch, no BLOCKER.md rewrite needed.
+STEP 0.1: read `BLOCKER.md`/`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (all
+three tracker files exceed the 256KB single-read limit — read via tail offsets plus targeted
+greps, not assumed from memory). `BLOCKER.md` holds only two resolved historical entries — no
+live blocker. `QUEUE.md` "Owner actions — current" reads "None currently" — no open ask. STEP
+0.2: no `cognee-cli` in this environment — text-search fallback (`grep`/direct file reads against
+`docs/TASK_INDEX.md`/`docs/spec-matrix.yaml`), disclosed.
+
+`git fetch origin main` found `main` at `180d382` (PR #373 merged) at shift start. Rather than
+trust the prior shift's own written conclusion, checked GitHub directly: **PR #374**
+("[relay] tracking: dependency-ready frontier still fully saturated, no new task this shift",
+opened ~13 minutes earlier by session `session_013DtFkmLwKhLrw87oZMqWPk`) had already
+independently reached the exact same "nothing genuinely unclaimed" conclusion this shift was
+about to re-derive — confirmed by independently recomputing the same 10-task dependency-ready
+frontier from `docs/spec-matrix.yaml`/`docs/TASK_INDEX.md` and cross-checking `list_pull_requests`
+(open, fresh): FTF-0212→#231, FTF-0214→#295 (disclosed-blocked), FTF-0304→#194/#195,
+FTF-0500B→#359, FTF-0500C→#364, FTF-0500D→#335 (blocked per #336), FTF-0601→#337, FTF-0902→#342,
+FTF-04A15→#328 — 9/10 claimed; FTF-1703 still genuinely blocked (≥1000 real curated training
+traces required, a data-curation task, not pure computation). `scripts/status.py`: `93/300
+certified · 22 product-true`, unchanged. Five further open PRs (#360/#363/#365/#368/#370) are
+Control-plane certification reviews against the 3 `PROVISIONAL` items (FTF-04A05/FTF-H005/
+FTF-1201) — not a relay action.
+
+Rather than open a **sixth** near-identical doc-only tracking PR (the exact pile-up pattern the
+2026-09-29T04:05Z shift had just cleaned up), checked PR #374 itself to finish what it started
+(its own body commits to being merged within its own shift once green). Found its **`gate` job
+had genuinely failed** (`https://github.com/SJZLab/Sovra/actions/runs/36558248783`, job
+`109372536739`) — despite the PR's diff touching only `PROGRESS.md`/`QUEUE.md` (`additions: 73,
+changed_files: 2`), which makes the diff itself structurally incapable of causing a Python
+runtime failure. Read the real failure log directly (not trusted from a status badge alone):
+`tests/tasks/test_ftf_r002.py`'s own "a bit-flipped/tampered token fails signature verification"
+check failed with an unrelated exception —
+`app.auth.tenant_isolation_query_guards.TenantContextError: refusing to proceed: tenant context
+is not a well-formed UUID: <MagicMock name='mock().execute().scalar_one_or_none()' ...>` inside
+`component_binding_crud.py`'s `list_component_bindings` — a `MagicMock` from an earlier test
+module's own mocked DB session leaking into `test_ftf_r002.py`'s run inside the same sequential
+`gate` job process, not a real regression in either module (component-bindings and R002 are
+unrelated features; neither is touched by PR #374's own diff).
+
+Per CLAUDE.md's CI-red protocol ("'Flake' is not a root cause: re-run a job only to confirm...
+at most once"): ran `rerun_failed_jobs` once on the same run
+(`actions_run_trigger`/`rerun_failed_jobs`, run `36558248783`) and polled via `gh run view` until
+`completed`. Result: **`gate` passed clean on re-run** (`conclusion: success`), and a fresh
+`get_check_runs` confirmed all `38/38` jobs green and `mergeable_state: clean` — confirming the
+original failure was exactly the "reproduces on the diff's own unrelated service, clears on one
+re-run" flake shape, not a defect in PR #374's own content or in the two unrelated modules it
+happened to surface. Merged PR #374 (`merge_pull_request`, merge commit
+`e1edce124e501683c8992773f76f5bf0c470dca5`) rather than leaving a sixth tracking PR open,
+continuing the precedent the immediately preceding two shifts already established. This
+session's own designated branch was fast-forwarded onto the newly-merged `main`
+(`git merge --ff-only origin/main`, non-destructive).
+
+**Disclosed, not silently fixed:** the underlying test-isolation gap (some earlier test module in
+the `gate` job's own sequential run leaves a `MagicMock` DB-session patch active into
+`test_ftf_r002.py`) is a real, reproducible-on-recurrence latent flake in the test harness itself
+— not this shift's own scope to root-cause (no relay item names it, and the two modules involved,
+FTF-R002/component-bindings, are both already `CERTIFIED`; editing certified test files outside a
+claimed task's own write set is out of a single-task producer's own scope, Law 2). Flagged here
+for whichever future shift claims test-harness hardening work, rather than left as an
+unremarked one-line re-run.
+
+No genuinely unclaimed item existed this shift either (identical frontier to PR #374's own
+finding, reconfirmed independently above) — no relay task claimed. STEP 3: this entry written
+before compaction. STEP 4 stop condition (a)-shaped: 3/3 in-flight submissions (FTF-04A05,
+FTF-H005, FTF-1201) remain `PROVISIONAL` awaiting independent Control-plane L2 certification
+(five PRs already open against them); the full dependency-ready frontier is claimed or genuinely
+blocked. Certified: `93/300` (unchanged). Product-true: `22` (unchanged). No open owner ask.
+
 ## 2026-09-29T06:05:00Z — Scheduled relay shift — no new task, frontier still fully saturated
 
 Session `https://claude.ai/code/session_013DtFkmLwKhLrw87oZMqWPk`. STEP 0: `sha256sum CLAUDE.md`
