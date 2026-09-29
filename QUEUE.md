@@ -1,4 +1,28 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-29T16:58:00Z (scheduled relay shift, session
+  `https://claude.ai/code/session_019Ai3Mtuw12Nhe56vecXrGa`) — **re-synced FTF-0902 (PR #342, branch
+  `claude/wizardly-fermat-gwocup`) onto current `main` and pushed to trigger the first real CI run
+  since the 2026-09-27 GitHub Actions run-creation outage.** Independently reconfirmed `93/300`
+  certified, 4 `PROVISIONAL` (FTF-0304/FTF-04A05/FTF-1201/FTF-H005) and the same 9-task
+  dependency-ready frontier (all already claimed or disclosed-blocked). Rather than log another
+  "frontier saturated" tracking-only shift, checked every claimed item's own real CI state directly
+  instead of trusting "claimed by a live PR" — PR #342's current head (`b9d4052`) had **zero** check
+  runs of any kind (`get_check_runs`: `total_count: 0`), two full days after the fix for its own
+  NOT CERTIFIED finding (the `allowed`/`denied` ClusterIP probe fixture, fixed in commits
+  `fd20f0e`/`02ec3db`/`fc352bf`, already on the branch) was pushed but never actually tested.
+
+  Re-synced the 35-commits-stale branch onto `main` (`git merge origin/main`): 4 conflicts, all in
+  append-only tracking files/CI step lists (routine drift), resolved by union with no content
+  dropped from either side; `docs/spec-matrix.yaml` merged clean. No production-code change needed
+  — the real fix was already present. Verified locally: `test_ftf_0902.py` clean, `ruff`/`mypy`
+  clean repo-wide (331 files), `validate_spec.py --strict` clean, `product_truth_check.py
+  --fail-on-unwired` unchanged `24/24`, `status.py` unchanged `93/300`/`22`. Regression swept
+  `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — zero regressions. Pushed the merge
+  commit to `claude/wizardly-fermat-gwocup` (PR #342's own branch) — this task's own real
+  acceptance-clause evidence (`network-policy-enforcement-integration`, real `kind`+Calico) only
+  runs in GitHub Actions, never in this sandbox. Subscribed to PR #342 to watch the resulting run to
+  a genuine terminal state before drawing any conclusion. No open owner ask.
+
 Updated: 2026-09-29T15:59:00Z (same scheduled shift, branch `claude/wizardly-fermat-yqnefm`) —
   **PR #376 (FTF-0304) confirmed green and merged.** Subscribed to PR #376's own GitHub activity
   immediately after opening it; the real `check_suite.completed` event on the actual final head

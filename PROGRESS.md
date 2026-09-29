@@ -1,4 +1,77 @@
 # PROGRESS — Sovra
+## 2026-09-29T16:58:00Z — Scheduled relay shift — FTF-0902 (PR #342): re-synced onto current main, real local checks clean, pushed to trigger the first real CI run since the 2026-09-27 outage
+
+Session `https://claude.ai/code/session_019Ai3Mtuw12Nhe56vecXrGa`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly (no mismatch). STEP 0.1: read `PROGRESS.md`/
+`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state. STEP 0.2: no `cognee-cli`
+installed in this environment — text-search fallback used throughout (disclosed).
+
+(Caught and corrected a tooling artifact before relying on anything: this shift's first `git fetch
+origin main` silently returned a stale `f17260c` tip instead of the real current one — confirmed
+against the GitHub API directly (`list_commits` on `main`) that the real tip was `348f081`, 19
+commits ahead. Re-ran `git fetch origin main` a second time, which then reported the true
+`f17260c..348f081` update. Everything below is checked against the real, re-fetched `348f081`
+tip, not the stale one.)
+
+STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s real
+`certification_state` (93 CERTIFIED, 4 PROVISIONAL — FTF-0304/FTF-04A05/FTF-1201/FTF-H005, all
+merged, none certified yet) joined against `docs/TASK_INDEX.md`'s own structured `Dependencies`
+column: 9 tasks dependency-ready (FTF-0212, FTF-0214, FTF-04A15, FTF-0500B, FTF-0500C, FTF-0500D,
+FTF-0601, FTF-0902, FTF-1703), all already claimed by a live open PR or disclosed-blocked — no
+genuinely unclaimed frontier item exists this shift.
+
+Rather than log another "frontier saturated, no new task" tracking-only shift (the pattern the
+last several shifts already established), checked whether any already-claimed item was actually
+stuck rather than merely "claimed." Found one: **FTF-0902** (PR #342) was independently reviewed
+**NOT CERTIFIED** on 2026-09-27 for its `allowed`/`denied` ClusterIP TCP-probe fixture failing
+identically on both the enforcing and nonenforcing `kind` clusters. The submitting shift's own PR
+comments show it had already diagnosed and pushed a real fix for that exact defect (switching the
+probe from a Service ClusterIP to the server pod's own direct `status.podIP`, then a bounded,
+policy-safe retry) in commits `fd20f0e`/`02ec3db`/`fc352bf` — landing after the certifier's review
+had already started, a genuine timing race, not a disputed finding. But a repo-wide GitHub Actions
+run-creation outage then meant that fix was never exercised by a real CI run at all — confirmed
+directly via `pull_request_read`'s `get_check_runs` on PR #342's actual current head (`b9d4052`):
+`total_count: 0`, zero check runs of any kind, two full days later. Every other item in the
+frontier (six further open PRs, checked individually) has a real, completed, unambiguous CI
+history — this is the one genuinely stuck item, not merely unclaimed work.
+
+**Fix applied this shift:** `claude/wizardly-fermat-gwocup` (PR #342's own branch) was 35 commits
+behind `main` (still based on `9f720f1`) — re-synced it: `git merge origin/main`. Four conflicts,
+all in this repo's own append-only tracking files/CI step list (`PROGRESS.md`, `QUEUE.md`,
+`docs/certifications/queue.md`, `.github/workflows/ci.yml`) — routine drift, not a real content
+conflict; `docs/spec-matrix.yaml` merged automatically clean. Resolved each by union (kept every
+CI step from both sides; kept every dated log entry from both sides, newest-first for
+`PROGRESS.md`/`QUEUE.md`'s own top log, oldest-first/append-order for
+`docs/certifications/queue.md`, matching each file's own existing convention) — no content
+dropped from either side. No production code (`packages/security/network_policy_templates.py`,
+the two test files) needed any change beyond the merge itself — the fix for the certifier's actual
+finding was already on this branch, exactly as the submitting shift's own PR comment said.
+
+**Verify (local, no-cluster):** `uv sync --all-packages` clean. `uv run python3
+tests/tasks/test_ftf_0902.py` — all checks passed (unchanged). `uv run ruff check .`/`ruff format
+--check .` — clean repo-wide (331 files). `uv run mypy .` — clean (331 files). `python3
+scripts/validate_spec.py --strict` (after `git fetch --unshallow`) — clean. `python3
+scripts/product_truth_check.py --fail-on-unwired` — `24/24` unchanged. `python3 scripts/status.py`
+— `93/300` certified, `22` product-true, both unchanged (Law 2 — this shift neither implements new
+production code nor certifies anything). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
+`test_ftf_h006.py` (FTF-0902's own real dependencies) — zero regressions. No frontend file in this
+branch's diff — `pnpm` suite not re-run (same disclosed precedent every no-frontend-touching shift
+uses).
+
+This shift's own real evidence stops here by design: the actual acceptance-clause proof
+(`network-policy-enforcement-integration`, real `kind`+Calico clusters) only runs in GitHub
+Actions, not in this sandbox (RELAY SANDBOX: route live external proofs through CI). Pushed the
+merge commit to `claude/wizardly-fermat-gwocup` to generate a real `pull_request.synchronize`
+event and, for the first time since the outage, an actual CI run on this exact code. Subscribed to
+PR #342's own GitHub activity to watch that run to a genuine terminal state rather than guessing at
+its outcome here.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4: not yet at a stop condition — the real CI run this shift exists to produce
+had not reached a terminal state as of this entry; continuing to watch it in this same session
+rather than stopping blind. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged,
+empty).
+
 ## 2026-09-29T15:59:00Z — Same scheduled shift — PR #376 (FTF-0304) confirmed green and merged
 
 Subscribed to PR #376's own GitHub activity immediately after opening it. The real
