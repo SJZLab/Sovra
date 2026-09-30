@@ -1,4 +1,63 @@
 # PROGRESS — Sovra
+## 2026-09-30T05:10:00Z — Scheduled relay shift — frontier exhausted; cleared stale merge-conflict backlog instead
+
+Session `https://claude.ai/code/session_01F1dGicJPkGihwDxdgKkUpu`, branch
+`claude/wizardly-fermat-sbdaim`. STEP 0: CLAUDE.md hash verified against `CLAUDE.md.sha256`
+(match). `BLOCKER.md` has no live entries. `main` at `75e5ebd` — 97/300 certified, 24 product-true,
+3 PROVISIONAL pending independent Control-plane certification (FTF-1206/FTF-1807/FTF-H007, all
+already merged — correctly left untouched, that review is Control-plane's job, not the relay's).
+
+STEP 1: recomputed the dependency-ready frontier from first principles (join of
+`docs/spec-matrix.yaml`'s `certification_state` against `docs/TASK_INDEX.md`'s structured
+`Dependencies` column) and cross-checked against a fresh listing of all 12 open PRs. Finding:
+**every dependency-ready task already has an open PR**, except **FTF-1703** ("Training dataset"),
+which stays correctly declined — its acceptance clause requires ">=1000... Independent review...
+recorded," Section 77.3 names Argilla as the only real reviewer mechanism for this exact class of
+work, and no Argilla integration exists anywhere in this repository (confirmed by a fresh
+repo-wide search). Its would-be unblocker, FTF-R006 ("Integrate internal Argilla review..."), is
+itself not dependency-ready (its dependency FTF-0516 is still `certification_state: NONE`).
+Fabricating a "reviewed" status to force this through would be a genuine Law 1/Law 11 violation.
+No new task claimed — this is a legitimate stop condition, not a blocker.
+
+**Instead of idling, cleared real backlog**: found four fully-implemented, already-CI-green-at-open-
+time PROVISIONAL PRs stuck unmerged for 3-6 days purely because `main` had moved on since
+(`mergeable_state: dirty`) — #231 (FTF-0212, open since 2026-09-24), #328 (FTF-04A15) and #335
+(FTF-0500D, both since 2026-09-27), #337 (FTF-0601, since 2026-09-27). Per CLAUDE.md's "Do without
+asking: ... merge on green + L1 doc (PROVISIONAL)," resolved each in an isolated `git worktree`:
+`git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent every prior shift documents), merged `origin/main` into each PR branch. Conflicts were
+confined in every case to the shared append-only tracking docs (`QUEUE.md`/`PROGRESS.md`/
+`docs/certifications/queue.md`) and the `gate` job's step list in `.github/workflows/ci.yml` —
+resolved additively, keeping both sides' content (same precedent as FTF-0509's own PR #288
+resolution). `docs/spec-matrix.yaml` (per-task-keyed) and, for #337, `apps/api/app/main.py`'s
+router wiring auto-merged with **no conflict at all** — independently confirmed by re-reading both
+files post-merge (all prior routers, all prior task entries, intact). No production code file was
+touched by any resolution — the class of conflict was structurally incapable of silently dropping
+another session's work.
+
+Before pushing each: `uv sync --all-packages`, `ruff check .` (clean, 336-341 files), `mypy .`
+(clean repo-wide each time, zero new errors), the PR's own no-DB `tests/tasks/test_ftf_*.py` suite
+(#231 FTF-0212: all checks passed; #328 FTF-04A15: 24/24; #335 FTF-0500D: all checks passed; #337
+FTF-0601: 20/20), `validate_spec.py --strict` (clean each time), `product_truth_check.py
+--fail-on-unwired` (24/24 unchanged for #231/#328/#335; 24/24 → 25/25 for #337, whose
+`build_evaluation_suite_router` is a real live-wired caller). Pushed each resolution commit to its
+own PR branch only — never to `main`, never force-pushed. All four now report `mergeable_state:
+unstable` (mergeable; CI re-triggered and in progress on the new head) — watching all four to
+completion via a background poll of the GitHub check-runs API, to merge each on green per the same
+pre-authorized action and record the usual "confirmed green and merged" entries once done.
+
+**Deliberately left untouched: #342 (FTF-0902, open since 2026-09-27).** Unlike the four above, it
+carries a **real CI failure unrelated to the merge** (`network-policy-enforcement-integration`,
+`conclusion: failure`) on top of the same stale-merge pattern. Root-causing a live
+`kind`/Calico-cluster enforcement-job failure is a distinct PEV cycle, not something to fold into a
+mechanical doc-conflict pass — flagged here for a future shift or Control-plane review rather than
+guessed at or forced.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated before compaction (`docs/certifications/queue.md`
+untouched this entry — no new PROVISIONAL submission or certification happened, only in-flight-PR
+housekeeping; the four PRs' own existing entries there are unchanged and still accurate). STEP 4:
+continuing this same shift to watch CI and merge the four PRs on green — not yet stopping.
+
 ## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
 
 Subscribed to PR #385's own GitHub activity immediately after opening it. A `check_suite.completed`
