@@ -20274,3 +20274,83 @@ FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independe
   tests/documentation/test_ftf_1807.py`; `evidence_hash` left blank pending the real merge commit.
   **Not self-certified (Law 4)** — awaiting independent Control-plane L2 review and a real CI run on
   the opened PR.
+
+## 2026-09-30T03:15:00Z — FTF-H007 — Untrusted source acquisition and complete immutable analysis
+- **PR:** https://github.com/SJZLab/Sovra/pull/385
+- **Session:** https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6
+- **Dependencies:** FTF-04A05, FTF-04A06, FTF-04A08, FTF-04A19, FTF-H006 (all CERTIFIED, confirmed
+  before relying on them).
+- **Path refinement, disclosed:** the packet's own suggested `services/source-analysis-worker/
+  analyzers/source_boundary.py` / `packages/target-connectors/contracts/snapshot_inventory.py`
+  name two directories that do not exist anywhere in this repository (`services/` does not exist at
+  all; `packages/target-connectors/` is hyphenated and, per FTF-0302/FTF-R002's own already-recorded
+  precedent, not a valid Python import path) — refined to `apps/api/app/target_connectors/
+  {source_boundary,snapshot_inventory}.py`, matching every sibling 04A-family dependency's own
+  identical refinement.
+- **Scope, disclosed:** `database_changes: "Consume existing tenant-scoped schemas... any required
+  change is a separately claimed migration prerequisite"` — this submission adds no table/column
+  and modifies no already-CERTIFIED file; it only imports from `local_repository_connector.py`
+  (FTF-04A06, unmodified). `snapshot_inventory.py` reuses FTF-04A06's own `resolve_allowed_root`
+  unmodified for the root check, then runs its own independent, continue-on-finding walk of the
+  same real root — `local_repository_connector._iter_repository_files` is deliberately fail-fast
+  (correct for "capture one unambiguous manifest," wrong for "report every problem for security
+  review"), so this task owns a second, distinct walk rather than reusing that private function.
+  `source_boundary.py` adds the two detectors that exist nowhere else in this repository (confirmed
+  by a repo-wide grep before writing either file): a real, non-`.sample`, executable `.git/hooks/*`
+  scan (the connector's own manifest walk deliberately excludes `.git` entirely, so an active hook
+  is otherwise invisible to it) and a real Python `ast.parse`/`ast.walk` scan (never `exec`/`eval`/
+  `compile`/`importlib`/subprocess) for a closed, named set of process/interpreter-escalation calls,
+  matching FTF-04A09's own "AST only, closed named set, never guessed" discipline.
+  `evaluate_manifest_lock_readiness` is this task's own real, pure proof of "incomplete critical
+  snapshot blocks lock" — mirroring `agent_manifest_schema.CRITICAL_LOCK_FIELDS`'s own already-
+  CERTIFIED shape — but is **not** wired into the live, DB-backed `agent_manifest_crud.
+  lock_agent_manifest`: doing so needs a real column persisting this evidence against a
+  `TargetSourceSnapshot`/`AgentManifest` row, and `target_source_snapshot_schema.py`'s own docstring
+  already discloses the identical situation for `analysis_status` ("deliberately a closed one-value
+  set for Release 1... expandable only through a real schema change") — assigned to a separately
+  claimed migration prerequisite, never a hidden write bundled into this submission. `proving_symbol`
+  left blank for the same disclosed reason (Law 6/7) — no live route/CRUD call site invokes this
+  decision function yet.
+- **Test:** `tests/tasks/test_ftf_h007.py` (no-DB, real local `git` repositories via the same
+  `test_ftf_04a06.py` fixture convention — never mocked). A clean repository is safe to lock with
+  zero findings. A real malicious repository — a `plugin.py` containing a genuine `os.system(...)`
+  call, an active executable `.git/hooks/pre-push` script, a symlink whose real target resolves
+  outside the repo root to a file holding a unique secret string, a `.gitattributes`-declared
+  `*.bin` LFS pattern whose real on-disk content is still an unresolved pointer stub, and a
+  `.gitmodules`-declared submodule path that is a real, empty, uninitialized directory — is scanned
+  end to end: every one of the five findings is reported by name, `is_safe_to_lock` is `False`,
+  `evaluate_manifest_lock_readiness` raises naming every reason, the `os.system` call and the hook
+  script are both confirmed *never actually executed* (two separate marker files, each confirmed
+  absent afterward), and the real secret content behind the escaping symlink is confirmed to never
+  appear anywhere in the returned report nor to have been read into any `InventoryEntry.content`. A
+  second, isolated fixture containing only the escaping symlink confirms that check alone is
+  sufficient to block lock, independent of the other four detectors. A fourth case confirms a
+  merely-dirty (uncommitted, otherwise ordinary) working tree alone does *not* block lock, per
+  Section 7A.3's own "visibly marked, not refused."
+- **Real fault injection (Law 1), three independent vectors, each reverted byte-identical and the
+  suite re-run clean immediately after:** (1) disabled `snapshot_inventory`'s own escaping-symlink
+  check (`escapes = False and (...)`) — the isolated-symlink case and three checks on the combined
+  malicious-repo case genuinely failed by name; (2) disabled the executable-hook bit check in
+  `source_boundary._scan_git_hooks` (`if False and mode & _EXECUTABLE_BITS`) — exactly the one named
+  hook-detection check genuinely failed; (3) disabled the dangerous-attribute-call branch in
+  `_scan_dangerous_python_calls` — exactly the one named `os.system` check genuinely failed. Each
+  reverted, md5sum-confirmed byte-identical before and after.
+- **Gates:** `git fetch --unshallow`/`uv sync --all-packages` needed first (same shallow-clone/
+  missing-dependency artifact every prior shift already documents — resolved, reconfirmed clean).
+  `uv run ruff check .`/`ruff format --check .` clean repo-wide (336 source files, up from 334).
+  `uv run mypy .` clean of any new error (334 files checked; the pre-existing 17 `alembic.op`/
+  `alembic.context` `attr-defined` errors are unchanged baseline noise). `python3
+  scripts/validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`: unchanged
+  `24/24` (`proving_symbol` deliberately blank, disclosed above). `scripts/status.py`: unchanged
+  `97/300` certified (Law 2 — submission, not certification). Regression swept `test_ftf_04a05.py`/
+  `test_ftf_04a05_routes.py`/`test_ftf_04a06.py`/`test_ftf_04a09.py`/`test_ftf_0304.py`/
+  `test_ftf_h034.py`, zero regressions.
+- **CI:** `.github/workflows/ci.yml` — one negative-test-proof step added to the `gate` job
+  immediately after FTF-1807's own step (`FTF-H007 negative-test proof`, no new integration job —
+  no DB or live route to integration-test, per this task's own `database_changes` clause). YAML
+  parse reconfirmed valid.
+- **State:** `docs/spec-matrix.yaml` FTF-H007 set to `certification_state: PROVISIONAL` /
+  `proof_state: L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+  tests/tasks/test_ftf_h007.py`; `evidence_hash` left blank pending the real merge commit.
+  **Not self-certified (Law 4)** — awaiting independent Control-plane L2 review and a real CI run on
+  the opened PR.

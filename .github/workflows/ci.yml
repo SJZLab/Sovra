@@ -311,6 +311,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1206.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
         run: uv run python3 tests/documentation/test_ftf_1807.py
+      - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool

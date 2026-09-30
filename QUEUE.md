@@ -1,4 +1,56 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T03:15:00Z (scheduled relay shift, branch `claude/wizardly-fermat-l9gppv`,
+  session `https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6`) — **submitted FTF-H007
+  PROVISIONAL.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Confirmed PR #384
+  (FTF-1807) already merged directly by the owner before this shift (`merged_by: samerzakaria`) --
+  still genuinely PROVISIONAL, not self-certified, no relay action needed.
+
+  Recomputed the dependency-ready frontier from first principles: 11 tasks dependency-ready, 9
+  already claimed by an open PR, leaving **FTF-1703** ("Training dataset") and **FTF-H007**
+  ("Untrusted source acquisition and complete immutable analysis") genuinely unclaimed. **FTF-1703
+  declined, disclosed:** its own acceptance clause requires ">=1000 reviewed... training traces"
+  with "Independent review... recorded" -- Section 77.3 names a real Argilla-backed reviewer
+  workflow for that review step, and no Argilla integration exists anywhere in this repository yet.
+  Fabricating "reviewed" without a real reviewer would be a real Law 1/Law 11 risk, not a disclosed
+  scope narrowing in FTF-1206/FTF-1807's own pure-primitive family -- not picked.
+
+  **Picked FTF-H007**: concretely bounded, no external reviewer/service dependency, both
+  dependencies and acceptance clause fully buildable/provable in this sandbox today. Confirmed all
+  five dependencies (FTF-04A05/FTF-04A06/FTF-04A08/FTF-04A19/FTF-H006) CERTIFIED. Path refined from
+  the packet's own `services/source-analysis-worker/analyzers/source_boundary.py`/`packages/
+  target-connectors/contracts/snapshot_inventory.py` (neither directory exists in this repository)
+  to `apps/api/app/target_connectors/{source_boundary,snapshot_inventory}.py`, matching every
+  04A-family sibling's own identical refinement.
+
+  Implemented `snapshot_inventory.py` (reuses FTF-04A06's own `resolve_allowed_root` unmodified;
+  an independent, continue-on-finding real-path symlink-escape walk of the same root, plus real
+  `.gitattributes`/`.gitmodules`-driven Git LFS/submodule resolution checks) and `source_boundary.py`
+  (a real, non-`.sample`, executable `.git/hooks/*` scan -- invisible to the connector's own
+  `.git`-excluding manifest walk -- and a real Python `ast.parse`/`ast.walk` scan, never executing
+  anything, for a closed named set of process/interpreter-escalation calls, matching FTF-04A09's own
+  discipline; `evaluate_manifest_lock_readiness` is this task's own pure "incomplete critical
+  snapshot blocks lock" proof, disclosed as not yet wired into the live `lock_agent_manifest` since
+  that needs a real schema change out of this task's own declared scope).
+
+  `tests/tasks/test_ftf_h007.py`: a clean repo is safe to lock; a real malicious repo (genuine
+  `os.system(...)` call, active executable `.git/hooks/pre-push` script, an escaping symlink to a
+  real secret file, an unresolved Git LFS pointer, an unresolved empty submodule directory) reports
+  every finding by name, is refused for lock, and both the dangerous call and the hook script are
+  confirmed never actually executed while the real secret content is confirmed never read into the
+  report; an isolated-symlink case and a dirty-tree-alone-does-not-block case round out the suite.
+  Real fault injection (Law 1, three independent vectors -- escaping-symlink check, hook-executable-
+  bit check, dangerous-call check -- each reverted byte-identical, suite re-run clean after each).
+  `git fetch --unshallow`/`uv sync --all-packages` needed (shallow-clone/missing-dependency
+  artifacts every prior shift documents). `ruff`/`mypy`/`validate_spec.py --strict` clean
+  repo-wide; `product_truth_check.py --fail-on-unwired` unchanged `24/24` (disclosed blank
+  `proving_symbol`); `status.py` unchanged `97/300` (Law 2 -- submission, not certification).
+  Regression swept `test_ftf_04a05.py`/`test_ftf_04a05_routes.py`/`test_ftf_04a06.py`/
+  `test_ftf_04a09.py`/`test_ftf_0304.py`/`test_ftf_h034.py`, zero regressions. Added one `gate`-job
+  CI step after FTF-1807's own (no new integration job). `docs/spec-matrix.yaml` FTF-H007 set to
+  `PROVISIONAL`/`L1-PROVEN`. **Not self-certified (Law 4)** -- awaiting independent Control-plane
+  L2 review and a real CI run on the opened PR. **PR:**
+  https://github.com/SJZLab/Sovra/pull/385. No open owner ask.
+
 Updated: 2026-09-30T00:57:55Z (scheduled relay shift, branch `claude/wizardly-fermat-0rn1af`,
   session `https://claude.ai/code/session_01MbLYBmQuPKkrykH44wLaFN`) — **submitted FTF-1807
   PROVISIONAL.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. `BLOCKER.md` empty;

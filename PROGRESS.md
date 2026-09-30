@@ -1,4 +1,158 @@
 # PROGRESS — Sovra
+## 2026-09-30T03:15:00Z — Scheduled relay shift — submitted FTF-H007 PROVISIONAL
+
+Session `https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. STEP 0.1: `BLOCKER.md` has no live blocker (both
+entries resolved history); read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (each
+exceeds the 256KB single-read limit -- read via offsets/targeted `grep`, not assumed). Found the
+designated branch (`claude/wizardly-fermat-l9gppv`) already sitting at the same commit as
+`origin/main` (`f317a32`, the merge of PR #384/FTF-1807) -- no restart needed. Confirmed directly
+via GitHub (`pull_request_read`) that PR #384 (FTF-1807) was already merged (`merged_by:
+samerzakaria`, the owner, directly -- not by a relay/certifier session) before this shift started;
+still genuinely `PROVISIONAL`/`L1-PROVEN` in `docs/spec-matrix.yaml`, not self-certified, no relay
+action needed on it. STEP 0.2: no `cognee-cli` installed in this environment -- text-search fallback
+used throughout, disclosed.
+
+STEP 1: `list_pull_requests` (open) showed nine open PRs: one Control-plane certification PR (#383,
+FTF-1206 -- not this shift's to work) and eight open relay PRs already claiming a task each (#380
+FTF-0306, #364 FTF-0500C, #359 FTF-0500B, #342 FTF-0902, #337 FTF-0601, #335 FTF-0500D, #328
+FTF-04A15, #295 FTF-0214). Recomputed the dependency-ready frontier from first principles (parsed
+`docs/spec-matrix.yaml`'s real `certification_state` against `docs/TASK_INDEX.md`'s own structured
+`Dependencies` column, not trusted from any prior shift's own cached list): 11 tasks have every
+dependency `CERTIFIED` and are not yet `CERTIFIED`/`PROVISIONAL` themselves -- of these, 9 already
+have an open PR (the eight above plus FTF-0212/PR #231), leaving exactly two genuinely unclaimed:
+**FTF-1703** ("Training dataset") and **FTF-H007** ("Untrusted source acquisition and complete
+immutable analysis") -- the same two a prior shift (00:57:55Z) had already flagged, at which point
+FTF-H007 was passed over as "too large and risky... for one shift's PEV cycle" in favor of the
+smaller FTF-1807.
+
+Read both real task packets (`tools/r1_handoff.py packet <id> --plan FINE_TUNING_FACTORY_RELEASE_1.md`,
+`source_sha256` matched) before picking either. **FTF-1703's own acceptance clause literally
+requires ">=1000 reviewed... training traces with independent groups/provenance" plus "Independent
+review... recorded"** -- Section 55 names a real Argilla-backed reviewer workflow for exactly this
+review step (Section 77.3: "Argilla... Data grants, reviewer identity"), and no Argilla integration
+of any kind exists anywhere in this repository yet (confirmed by grep -- every one of the ~140
+matches is either this same task's own packet/spec-matrix prose or another task's identical
+boilerplate Section 77 text, never a real client/SDK call). Honestly satisfying "reviewed" without
+a real reviewer -- human or a real Argilla-backed queue -- would not be a disclosed scope narrowing
+in the same family as FTF-1206/FTF-1807's own pure-primitive narrowings; it would be reporting
+unreviewed synthetic data as reviewed, a real Law 1/Law 11 risk this shift declines to take. **Not
+picked, disclosed here rather than silently deferred again.**
+
+**Picked FTF-H007** instead: re-read its own real acceptance clause closely this time rather than
+re-using the prior shift's summary judgement -- it is concretely bounded ("Detect truncated trees,
+missing LFS/submodules, dirty snapshots and unsupported dynamic discovery; parse AST/config without
+executing repo imports/hooks/install scripts"; files: two new modules) and, unlike FTF-1703, every
+acceptance clause is something this sandbox can actually build and prove today with no external
+reviewer/service dependency: "Real malicious reference repo includes an executable import/hook and
+escaping symlink; scan produces evidence without execution/escape and incomplete critical snapshot
+blocks lock." Confirmed all five dependencies (FTF-04A05/FTF-04A06/FTF-04A08/FTF-04A19/FTF-H006)
+`CERTIFIED` before relying on them.
+
+**P (read, no changes yet):** delegated a read-only research pass (Explore agent) to survey the real
+source of all five dependencies before writing anything, then independently re-read the specific
+functions the implementation would depend on directly: `github_source_snapshot_resolver.py`'s own
+truncated-tree/submodule/LFS/unsafe-path detection (FTF-04A05, for the general shape of "tree-
+completeness evidence"), `local_repository_connector.py`'s own real `resolve_allowed_root`/
+`_iter_repository_files`/`capture_local_repository` (FTF-04A06, read in full), `source_analysis_
+worker.py`/`python_agent_config_tool_discovery.py`'s own real "AST only, closed named set, never
+guessed, never executed" discipline (FTF-04A08/FTF-04A09, the direct precedent for this task's own
+AST scan), `agent_manifest_schema.py`'s own real `CRITICAL_LOCK_FIELDS`/`lock_agent_manifest` shape
+(FTF-04A19, the direct precedent for this task's own "blocks lock" decision function), and
+`target_source_snapshot_schema.py`'s own docstring, which explicitly discloses that `analysis_
+status` is "a closed one-value set for Release 1... expandable only through a real schema change" --
+confirming that persisting this task's own new evidence onto a real snapshot/manifest row is
+correctly out of this task's own `database_changes` scope, not a gap to quietly route around.
+Confirmed via repo-wide grep that neither `services/` nor `packages/target-connectors/` exists
+anywhere in this repository (matching every 04A-family sibling's own already-recorded path
+refinement) and that no `.git/hooks`/dangerous-dynamic-call scanner exists anywhere yet.
+
+**E (write code/test, show FAIL first):** implemented (paths refined from the packet's own
+`services/source-analysis-worker/analyzers/source_boundary.py`/`packages/target-connectors/
+contracts/snapshot_inventory.py` to `apps/api/app/target_connectors/{source_boundary,
+snapshot_inventory}.py`, matching the unbroken 04A-family precedent):
+- `snapshot_inventory.py` -- reuses FTF-04A06's own `resolve_allowed_root` unmodified, then runs an
+  independent, **continue-on-finding** walk of the same real root (deliberately not reusing
+  `local_repository_connector._iter_repository_files`, which is fail-fast -- correct for "capture
+  one unambiguous manifest," wrong for "report every problem for security review"). Applies the
+  identical real `os.path.realpath` symlink-escape technique per entry, but records a finding
+  instead of raising, so one malicious entry can never hide the rest of the real evidence. Adds
+  real `.gitattributes`/`.gitmodules`-driven Git LFS/submodule resolution checks: an LFS-pattern-
+  matching file whose real on-disk content is still a Git LFS pointer stub, or a declared submodule
+  path that is a real, empty/missing directory on disk, is reported unresolved.
+- `source_boundary.py` -- adds the two detectors confirmed to exist nowhere else in this repository:
+  a real, non-`.sample`, executable `.git/hooks/*` scan (the connector's own manifest walk
+  deliberately excludes `.git` entirely, so this is otherwise invisible), and a real Python
+  `ast.parse`/`ast.walk` scan (never `exec`/`eval`/`compile`/`importlib`/subprocess) for a closed,
+  named set of process/interpreter-escalation calls (`eval`/`exec`/`os.system`/`subprocess.*`/etc.).
+  `evaluate_manifest_lock_readiness` raises `SourceBoundaryUnsafeError` naming every real blocking
+  reason (truncated tree, unresolved submodule/LFS path, escaping symlink, executable hook,
+  dangerous call) -- this task's own real, pure "incomplete critical snapshot blocks lock" proof,
+  mirroring `CRITICAL_LOCK_FIELDS`'s own shape but disclosed as not yet wired into the live,
+  DB-backed `lock_agent_manifest` (a real schema change, out of this task's own declared scope).
+
+`tests/tasks/test_ftf_h007.py` (no-DB, real local `git` repositories via the exact `test_ftf_04a06.py`
+fixture convention -- never mocked): a clean repository is safe to lock with zero findings. A real
+malicious repository -- `plugin.py` with a genuine `os.system(...)` call, an active executable
+`.git/hooks/pre-push` script, a symlink whose real target resolves outside the repo root to a file
+holding a unique secret string, a `.gitattributes`-declared `*.bin` LFS pattern whose real content
+is still an unresolved pointer stub, and a `.gitmodules`-declared submodule path that is a real,
+empty, uninitialized directory -- is scanned end to end: every one of the five findings is reported
+by name, `is_safe_to_lock` is `False`, `evaluate_manifest_lock_readiness` raises naming every
+reason, the `os.system` call and the hook script are both confirmed *never actually executed* (two
+separate marker files, each confirmed absent afterward), and the real secret content behind the
+escaping symlink never appears anywhere in the returned report nor in any `InventoryEntry.content`.
+A second, isolated fixture with only the escaping symlink confirms that check alone blocks lock,
+independent of the other four detectors. A fourth case confirms a merely-dirty (uncommitted,
+otherwise ordinary) working tree alone does *not* block lock, per Section 7A.3's own "visibly
+marked, not refused." Iterated to green on the first full run; no false start.
+
+**Real fault injection (Law 1), three independent vectors, each reverted byte-identical (md5sum
+confirmed before/after) and the suite re-run clean immediately after:** (1) disabled
+`snapshot_inventory`'s own escaping-symlink check (`escapes = real_target != real_root and ...` ->
+`escapes = False and (...)`) -- 4 checks genuinely `FAIL`ed by name (the isolated-symlink case and
+three checks on the combined malicious-repo case); (2) disabled the executable-hook bit check in
+`source_boundary._scan_git_hooks` (`if mode & _EXECUTABLE_BITS` -> `if False and mode & ...`) --
+exactly the one named hook-detection check genuinely failed; (3) disabled the dangerous-attribute-
+call branch in `_scan_dangerous_python_calls` (`if dotted is not None and ...` -> `if False and
+dotted is not None and ...`) -- exactly the one named `os.system` check genuinely failed.
+
+**Gates:** `git fetch --unshallow` needed (same pre-existing shallow-clone artifact every prior
+shift documents, unshallowed to match standing practice before trusting `validate_spec.py`'s own
+`stale_commit` check). `uv sync --all-packages` needed (installed `sqlalchemy`/`alembic`/`fastapi`/`uvicorn`/etc. -- not yet
+present in this fresh sandbox checkout; confirmed via `test_ftf_04a05_routes.py`/`test_ftf_0304.py`
+both failing on `ModuleNotFoundError` before the sync and passing clean after, a pre-existing
+environment gap, not caused by this task). `uv run ruff check .`/`ruff format --check .` clean
+repo-wide (336 source files, up from 334). `uv run mypy .` clean of any new error (334 files
+checked; the pre-existing 17 `alembic.op`/`alembic.context` `attr-defined` errors are unchanged
+baseline noise, confirmed identical count to every recent prior shift). `python3
+scripts/validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`: unchanged
+`24/24` (`proving_symbol` deliberately left blank -- Law 6/7, no live caller yet). `scripts/
+status.py`: unchanged `97/300` certified (Law 2 -- submission, not certification). Regression swept
+`test_ftf_04a05.py`/`test_ftf_04a05_routes.py`/`test_ftf_04a06.py`/`test_ftf_04a09.py`/
+`test_ftf_0304.py`/`test_ftf_h034.py` -- zero regressions.
+
+**CI:** `.github/workflows/ci.yml` -- one negative-test-proof step added to the `gate` job
+immediately after FTF-1807's own (`FTF-H007 negative-test proof`) -- no new integration job (this
+task's own `database_changes` clause; no DB or live route to integration-test). YAML parse
+reconfirmed valid after the edit.
+
+**State:** `docs/spec-matrix.yaml` FTF-H007 set to `certification_state: PROVISIONAL` /
+`proof_state: L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+tests/tasks/test_ftf_h007.py`; `evidence_hash` left blank pending the real merge commit. **Not
+self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened PR
+are required before certification.
+
+Opened PR: https://github.com/SJZLab/Sovra/pull/385 (branch `claude/wizardly-fermat-l9gppv` ->
+`main`). Subscribed to its GitHub activity immediately after opening so CI-red/review events on
+this PR wake this session per the standing "PRs you created in this session are yours" rule.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-H007) is `L1-PROVEN`, no blocking
+defect found by this session's own review -- awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions --
+current" unchanged, empty -- reconfirmed "None currently" read fresh this shift).
+
 ## 2026-09-30T00:57:55Z — Scheduled relay shift — submitted FTF-1807 PROVISIONAL
 
 Session `https://claude.ai/code/session_01MbLYBmQuPKkrykH44wLaFN`. STEP 0: `sha256sum CLAUDE.md`
