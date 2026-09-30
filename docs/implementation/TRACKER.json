@@ -1433,9 +1433,11 @@
       "blockers": []
     },
     "FTF-1206": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "f12c2a973519f26a0e8e98c75227ee85221acd44"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -1847,9 +1849,11 @@
       "blockers": []
     },
     "FTF-1807": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "f317a32e8841b69e15a28912aed9b821e9728deb"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -1945,9 +1949,11 @@
       "blockers": []
     },
     "FTF-H007": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3"
+      ],
       "independent_review": null,
       "blockers": []
     },

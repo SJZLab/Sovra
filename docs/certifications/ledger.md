@@ -9692,3 +9692,40 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1206 — Organization policy control
+- Criterion ID: FTF-1206
+- PR: https://github.com/SJZLab/Sovra/pull/381 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: f12c2a973519f26a0e8e98c75227ee85221acd44
+- Validated-by: session https://claude.ai/code/session_01G1Vd6dzGmxAsPUuu5njkCL (independent — PR #381's commits carry `Claude-Session: .../session_01XWzo5C5a9qLgk7GbapqxF4`, no overlap)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on PR head `8922811`, `gate` included, read directly via check runs: https://github.com/SJZLab/Sovra/actions/runs/36642768943
+- Diff re-read; reran `tests/tasks/test_ftf_1206.py` locally: all checks passed.
+- Own fault injection (Law 1), reverted and md5-confirmed byte-identical: widening guard in enforce_project_gateway_permission_request replaced with 'if False' -> 4 FAIL lines, exit 1.
+- product_truth_check: `--fail-on-unwired` 24/24; blank `proving_symbol` disclosed (no live caller yet), so 0/0 is not being accepted for a claimed symbol.
+- Contract (`tools/r1_handoff.py packet FTF-1206`): negative_acceptance (project-level permission cannot widen gateway capability/data boundary) met: superset request denied outright.
+
+## FTF-1807 — LiteLLM outage runbook
+- Criterion ID: FTF-1807
+- PR: https://github.com/SJZLab/Sovra/pull/384 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: f317a32e8841b69e15a28912aed9b821e9728deb
+- Validated-by: session https://claude.ai/code/session_01G1Vd6dzGmxAsPUuu5njkCL (independent — PR #384's commits carry `Claude-Session: .../session_01MbLYBmQuPKkrykH44wLaFN`, no overlap)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on PR head `39ea4b7`, `gate` included, read directly via check runs: https://github.com/SJZLab/Sovra/actions/runs/36653034751
+- Diff re-read; reran `tests/documentation/test_ftf_1807.py` locally: all checks passed.
+- Own fault injection (Law 1), reverted and md5-confirmed byte-identical: runbook's '5 minutes' TTL statements changed to '9 minutes' -> 4 FAIL, exit 1.
+- product_truth_check: `--fail-on-unwired` 24/24; blank `proving_symbol` disclosed (no live caller yet), so 0/0 is not being accepted for a claimed symbol.
+- Contract (`tools/r1_handoff.py packet FTF-1807`): negative_acceptance (no unauthorized cached access / unapproved external fallback in private outage) grounded in real certified modules' behavior re-exercised by the test; doc-only task, disclosed no live caller.
+
+## FTF-H007 — Untrusted source acquisition and complete immutable analysis
+- Criterion ID: FTF-H007
+- PR: https://github.com/SJZLab/Sovra/pull/385 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: 15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3
+- Validated-by: session https://claude.ai/code/session_01G1Vd6dzGmxAsPUuu5njkCL (independent — PR #385's commits carry `Claude-Session: .../session_015T4mqqL99qnLfnuyehUxz6`, no overlap)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on PR head `5e11221`, `gate` included, read directly via check runs: https://github.com/SJZLab/Sovra/actions/runs/36663166287
+- Diff re-read; reran `tests/tasks/test_ftf_h007.py` locally: all checks passed.
+- Own fault injection (Law 1), reverted and md5-confirmed byte-identical: executable-hook bit check disabled -> 2 FAIL lines, exit 1; escaping-symlink check disabled -> 5 FAIL lines, exit 1.
+- product_truth_check: `--fail-on-unwired` 24/24; blank `proving_symbol` disclosed (no live caller yet), so 0/0 is not being accepted for a claimed symbol.
+- Contract (`tools/r1_handoff.py packet FTF-H007`): acceptance (malicious repo with executable hook + escaping symlink scanned without execution/escape; incomplete snapshot blocks lock) met; unsupported fields left unresolved.
+

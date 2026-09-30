@@ -1,4 +1,6 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30 (scheduled Control-plane certifier shift, session https://claude.ai/code/session_01G1Vd6dzGmxAsPUuu5njkCL, webhook PR #387) — **CERTIFIED: FTF-1206 (PR #381), FTF-1807 (PR #384), FTF-H007 (PR #385).** Independent (no shared session IDs); CI 38/38 green on each head; own fault injections turned each test red; product_truth 24/24; contracts re-pulled. `status.py`: 97/300 -> 100/300 certified, 0 PROVISIONAL remain (the relay's "3rd PROVISIONAL pending" note below is now stale). Full record in `docs/certifications/ledger.md`.
+
 Updated: 2026-09-30T03:15:00Z (scheduled relay shift, branch `claude/wizardly-fermat-l9gppv`,
   session `https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6`) — **submitted FTF-H007
   PROVISIONAL.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Confirmed PR #384

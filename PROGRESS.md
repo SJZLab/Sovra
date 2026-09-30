@@ -24437,3 +24437,6 @@ current" unchanged, empty).
 Certified FTF-04A05, FTF-H005, FTF-1201 (L2). 93/300 -> 96/300 certified; 0 PROVISIONAL remain. See `docs/certifications/ledger.md`.
 
 ## 2026-09-29 — Certifier: FTF-0304 CERTIFIED (L2), PR #376, merge 4d15c75; 94/300 certified.
+
+## 2026-09-30 — Certifier (session https://claude.ai/code/session_01G1Vd6dzGmxAsPUuu5njkCL)
+Certified FTF-1206 (PR #381), FTF-1807 (PR #384), FTF-H007 (PR #385) (L2). 97/300 -> 100/300 certified; 0 PROVISIONAL remain. See `docs/certifications/ledger.md`.
