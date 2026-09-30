@@ -1,4 +1,6 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30 (certifier shift, session %s, webhook PR #390) — **certified FTF-0212, FTF-04A15, FTF-0500D, FTF-1206, FTF-1807, FTF-H007 (L2).** No session overlap, PR-head CI 38/38 green, own fault injections reddened each suite, product_truth 24/24. Certified 97 -> 103/300. No PROVISIONAL items pending. No open owner ask.
+
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
   on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test

@@ -9692,3 +9692,81 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-0212 — Real tool-call probe
+- Criterion ID: FTF-0212
+- PR: https://github.com/SJZLab/Sovra/pull/231 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: e83a53369d0fdc61c3fbb3f17778a68672b29e93
+- Validated-by: session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8 (independent — no commit on `main` or PR #231 carries this session ID)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36671299929
+- Reran `tests/tasks/test_ftf_0212.py` locally on merged `main`: all checks passed (script-style suite).
+- Own fault injection (Law 1): made `_extract_first_tool_call` fabricate a tool call when `tool_calls` is absent/empty -> 6 failures incl. textual-answer-is-NO_TOOL_CALL_ISSUED (the negative_acceptance clause). Reverted.
+- product_truth 24/24; `proving_symbol` legitimately blank for this criterion (no live caller claimed; disclosed by the submission).
+- Task contract re-read from `docs/implementation/task-packets/FTF-0212.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-04A15 — Agent test/evaluation fixture discovery
+- Criterion ID: FTF-04A15
+- PR: https://github.com/SJZLab/Sovra/pull/328 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: 257cb4608b4ed0a59beaba1a4ad8e768dfa9def7
+- Validated-by: session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8 (independent — no commit on `main` or PR #328 carries this session ID)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36672126675
+- Reran `tests/tasks/test_ftf_04a15.py` locally on merged `main`: all checks passed (script-style suite).
+- Own fault injection (Law 1): made `_classify` ignore real Python test filenames -> `src/conftest.py` no longer indexed, test AssertionError. Reverted.
+- product_truth 24/24; `proving_symbol` legitimately blank for this criterion (no live caller claimed; disclosed by the submission).
+- Task contract re-read from `docs/implementation/task-packets/FTF-04A15.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-0500D — Dataset source security-boundary preview + audit evidence
+- Criterion ID: FTF-0500D
+- PR: https://github.com/SJZLab/Sovra/pull/335 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: bb2ea6ca8a5944587b6a0ef017ec3fc915c6f54b
+- Validated-by: session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8 (independent — no commit on `main` or PR #335 carries this session ID)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36672941492
+- Reran `tests/tasks/test_ftf_0500d.py` locally on merged `main`: all checks passed (script-style suite).
+- Own fault injection (Law 1): disabled the `would_cross_security_boundary` refusal in `authorize_dataset_source_copy` -> backend-recheck negative_acceptance check failed. Reverted.
+- product_truth 24/24; `proving_symbol` legitimately blank for this criterion (no live caller claimed; disclosed by the submission).
+- Task contract re-read from `docs/implementation/task-packets/FTF-0500D.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1206 — Organization policy control
+- Criterion ID: FTF-1206
+- PR: https://github.com/SJZLab/Sovra/pull/381 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: f12c2a973519f26a0e8e98c75227ee85221acd44
+- Validated-by: session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8 (independent — no commit on `main` or PR #381 carries this session ID)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36642768943
+- Reran `tests/tasks/test_ftf_1206.py` locally on merged `main`: all checks passed (script-style suite).
+- Own fault injection (Law 1): disabled the project-widening refusal in `enforce_project_gateway_permission_request` -> 3 failures (registration namespace, deployment namespace, approver). Reverted.
+- product_truth 24/24; `proving_symbol` legitimately blank for this criterion (no live caller claimed; disclosed by the submission).
+- Task contract re-read from `docs/implementation/task-packets/FTF-1206.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1807 — LiteLLM outage runbook
+- Criterion ID: FTF-1807
+- PR: https://github.com/SJZLab/Sovra/pull/384 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: f317a32e8841b69e15a28912aed9b821e9728deb
+- Validated-by: session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8 (independent — no commit on `main` or PR #384 carries this session ID)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36653034751
+- Reran `tests/documentation/test_ftf_1807.py` locally on merged `main`: all checks passed (script-style suite).
+- Own fault injection (Law 1): changed every `5 minutes` TTL claim in the runbook to `9 minutes` -> 3 failures (doc/constant cross-check). Reverted byte-identical.
+- product_truth 24/24; `proving_symbol` legitimately blank for this criterion (no live caller claimed; disclosed by the submission).
+- Task contract re-read from `docs/implementation/task-packets/FTF-1807.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-H007 — Untrusted source acquisition and complete immutable analysis
+- Criterion ID: FTF-H007
+- PR: https://github.com/SJZLab/Sovra/pull/385 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: 15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3
+- Validated-by: session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8 (independent — no commit on `main` or PR #385 carries this session ID)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36663166287
+- Reran `tests/tasks/test_ftf_h007.py` locally on merged `main`: all checks passed (script-style suite).
+- Own fault injection (Law 1): disabled the raise in `evaluate_manifest_lock_readiness` -> incomplete/unsafe snapshot no longer blocks lock, test failed. Reverted.
+- product_truth 24/24; `proving_symbol` legitimately blank for this criterion (no live caller claimed; disclosed by the submission).
+- Task contract re-read from `docs/implementation/task-packets/FTF-H007.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.

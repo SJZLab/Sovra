@@ -1,4 +1,7 @@
 # PROGRESS — Sovra
+## 2026-09-30 — Certifier shift: six items certified (FTF-0212, 04A15, 0500D, 1206, 1807, H007)
+Independent L2 certification by session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8; evidence in docs/certifications/ledger.md. status.py: 103/300 certified.
+
 ## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
 
 Subscribed to PR #385's own GitHub activity immediately after opening it. A `check_suite.completed`

@@ -20677,3 +20677,6 @@ L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current
   zero regressions.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
   awaiting Control plane L2 review per Law 4.
+
+## 2026-09-30 — Certifier shift (session https://claude.ai/code/session_0127wYuTcugjtaUrucD2HSa8, webhook PR #390)
+FTF-0212 (PR #231), FTF-04A15 (PR #328), FTF-0500D (PR #335), FTF-1206 (PR #381), FTF-1807 (PR #384), FTF-H007 (PR #385): all six independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. No pending PROVISIONAL items remain. Certified 97 -> 103.
