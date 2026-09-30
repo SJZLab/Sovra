@@ -1,4 +1,60 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30 (scheduled relay shift, branch `claude/wizardly-fermat-acc0jc`) — STEP 0:
+  hash-checked CLAUDE.md (`sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly). Read
+  `BLOCKER.md` in full — both entries resolved history, no live blocker. STEP 0.1: read
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (never assumed state). This
+  session's designated branch did not exist on `origin` yet; local checkout was stale/shallow
+  (cached at an old `main` tip carrying only up to PR #358) — `git fetch --unshallow` and a fresh
+  `git fetch origin main` resolved it to the real current tip, `bb2ea6c` (PR #335 merge).
+
+  STEP 0.2: no `cognee-cli` in this environment — text-search fallback, disclosed per standing
+  instruction.
+
+  STEP 1: independently recomputed the dependency-ready frontier from `spec/tasks.json`'s own
+  `dependencies` cross-checked against `docs/spec-matrix.yaml`'s real `certification_state`
+  (never trusted from `QUEUE.md`'s own prose alone, which read stale/out of sync with the real
+  tip): `scripts/status.py` confirmed ground truth `97/300` certified, `24` product-true at
+  `bb2ea6c`. 7 tasks dependency-ready: FTF-0214 (disclosed-blocked, PR #295), FTF-0306/FTF-0500B/
+  FTF-0500C/FTF-0601/FTF-0902 (each already has an open PR — #380/#359/#364/#337/#342), FTF-1703
+  (correctly declined — needs a real Argilla review workflow that doesn't exist, and its own
+  would-be unblocker FTF-R006 isn't dependency-ready either). Independently reconfirmed the
+  identical conclusion two immediately-prior shifts had already reached (PR #389 "frontier
+  exhausted", PR #390) — **no genuinely unclaimed task exists this shift either.**
+
+  Checked all 12 open PRs directly (`mcp__github__list_pull_requests`) rather than trust any
+  session's prior claim: three PROVISIONAL submissions — **#359 (FTF-0500B), #364 (FTF-0500C),
+  #380 (FTF-0306)** — had `mergeable_state: dirty` (real merge conflicts against current `main`,
+  their own base shas stale by 1-4 merges), the same append-only-tracking-doc conflict class
+  PR #389/#390 already resolved on four other PRs (#231/#328/#335/#337/#342). PR #342 (FTF-0902)
+  was left untouched — its own real CI failure (ARP-resolution transient gap) plus a disclosed
+  sandbox tooling denial were already investigated twice by the two immediately-prior shifts;
+  retrying the identical blocked action a third time would hit STEP 4(c)'s own "stuck" threshold,
+  so it was not attempted again. Four PRs opened by Control-plane certification sessions
+  (#383/#386/#388/#391) were left untouched — not a relay action.
+
+  **Resolved all three merge conflicts**, additively, matching the established precedent (union
+  match each file's own convention, no content dropped, zero production code touched): for each
+  of #359/#364/#380, checked out the PR's own branch, merged `origin/main` in, resolved conflicts
+  confined to `.github/workflows/ci.yml` (both sides' new gate steps kept), `PROGRESS.md`,
+  `QUEUE.md`, `docs/certifications/queue.md` (both sides' dated log entries kept, in sequence;
+  `docs/spec-matrix.yaml` auto-merged cleanly every time). After each resolution: `uv sync
+  --all-packages` (this sandbox's own venv was missing `psycopg`/`fastapi`/etc. until a full
+  workspace sync, not `uv sync` alone), re-ran that PR's own task test file fresh (all three:
+  `test_ftf_0500b.py`/`test_ftf_0500c.py`/`test_ftf_0306.py` — "all checks passed", unchanged),
+  `validate_spec.py --strict` clean, `product_truth_check.py --fail-on-unwired` unchanged `24/24`,
+  `status.py` unchanged `97/300` (Law 2 — no certification happened) on every one. Pushed each
+  resolution to the PR's own existing branch (`claude/wizardly-fermat-lp04ue`/`-f9qdmb`/`-9e7wln`);
+  all three now show `base.sha` matching current `main` (`bb2ea6c`) with no conflict. No
+  `docs/spec-matrix.yaml` change, no task claimed, no certification — this shift did not touch any
+  task's own production code, only re-merged already-implemented, already-tested PROVISIONAL work
+  onto the current tip so Control-plane certifiers can review a mergeable head.
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction (no
+  `docs/certifications/queue.md` change — no certification, no new submission). STEP 4 stop
+  condition: frontier fully claimed, nothing genuinely new to pick; the three merge conflicts were
+  the only outstanding relay-actionable work and are now resolved. Stopping here. No open owner
+  ask.
+
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
   on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test

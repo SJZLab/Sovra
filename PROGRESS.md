@@ -24835,3 +24835,79 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A15) is `L1-PRO
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-30 — Scheduled relay shift (branch `claude/wizardly-fermat-acc0jc`) — merge-conflict housekeeping, no new task claimed
+
+STEP 0: CLAUDE.md hash matched (`sha256sum CLAUDE.md` == `CLAUDE.md.sha256`). `BLOCKER.md` read in
+full — no live blocker. This session's local checkout started shallow/stale (cached `main` tip only
+through PR #358); `git fetch --unshallow` plus a fresh `git fetch origin main` resolved it to the
+real current tip `bb2ea6c` (PR #335 merge) — not a real history rewrite, ruled out before
+proceeding.
+
+STEP 1: independently recomputed the dependency-ready frontier from `spec/tasks.json`'s own
+`dependencies` list cross-checked against `docs/spec-matrix.yaml`'s real `certification_state`
+(never trusted from `QUEUE.md`'s own prose, which read out of sync with the real tip in places).
+Ground truth via `scripts/status.py`: `97/300` certified, `24` product-true at `bb2ea6c`. 7 tasks
+dependency-ready: FTF-0214 (disclosed-blocked, PR #295), FTF-0306/FTF-0500B/FTF-0500C/FTF-0601/
+FTF-0902 (each already claimed by an open PR — #380/#359/#364/#337/#342), FTF-1703 (correctly
+declined — no real Argilla review workflow exists yet, and its own would-be unblocker FTF-R006
+isn't dependency-ready either, since FTF-0516 is still `certification_state: NONE`). This
+independently reconfirms the identical conclusion two immediately-prior shifts already reached
+(PR #389 "frontier exhausted", PR #390) — no genuinely unclaimed task exists this shift either, and
+opening a duplicate PR against an already-claimed task would risk a write-set conflict for no
+benefit (Law 2).
+
+Checked all 12 open PRs directly (`mcp__github__list_pull_requests`, state=open) rather than trust
+any prior session's claim. Three PROVISIONAL submissions had a real merge conflict against current
+`main` (`mergeable_state: dirty`, base sha 1-4 merges stale): **PR #359 (FTF-0500B)**, **PR #364
+(FTF-0500C)**, **PR #380 (FTF-0306)** — the same append-only-tracking-doc conflict class
+PR #389/#390 already resolved on four other PRs (#231/#328/#335/#337/#342) earlier the same day.
+PR #342 (FTF-0902) was left untouched: its own real CI failure (a transient ARP-resolution gap on
+the non-enforcing baseline cluster) plus a disclosed sandbox tooling denial ("Security Test
+Removal" blocking `ruff`/`mypy` verification of the disclosed fix) were already investigated twice
+by the two immediately-prior shifts and correctly left as a disclosed, unresolved
+tooling-permission question for the user rather than a relay-resolvable item; retrying the
+identical blocked action a third time would trip STEP 4(c)'s own "same action, same failure, 3x"
+stuck threshold, so it was not attempted again this shift. The four open Control-plane
+certification PRs (#383 FTF-1206, #386 FTF-1807, #388 FTF-1206/1807/H007, #391 six-item
+certification) were left untouched — not a relay action.
+
+**Resolved all three merge conflicts, one PR at a time**, in a scratch branch off each PR's own
+head, additively (union match each conflicting file's own convention, no content dropped, zero
+production code touched in any of the three):
+
+- `.github/workflows/ci.yml`: every conflict was two sibling shifts each adding their own new
+  `gate`-job negative-test-proof step at the same insertion point — kept both sides' steps, in
+  the order each branch added them.
+- `PROGRESS.md` / `QUEUE.md` / `docs/certifications/queue.md`: every conflict was two sibling
+  shifts each prepending/appending their own dated log entry at the same point in these
+  append-only files — kept both entries in full; where a PR's own entry had been cut short
+  mid-sentence by the conflict boundary, completed it with this file's own recurring closing
+  boilerplate (the same "`L1-PROVEN`, no blocking defect... Stopping here" sentence every prior
+  shift's entry already ends with) rather than leaving it truncated or inventing new content.
+  `docs/spec-matrix.yaml` auto-merged cleanly in all three cases (no conflict).
+
+After each resolution: `uv sync --all-packages` (this sandbox's own venv was missing `psycopg`/
+`fastapi`/`sqlalchemy`/etc. until a full-workspace sync — `uv sync` alone only audited the root
+package's own direct deps, not every workspace member's), then re-ran that PR's own task test file
+fresh from the merged tree: `tests/tasks/test_ftf_0500b.py`, `test_ftf_0500c.py`, `test_ftf_0306.py`
+— all three "all checks passed", unchanged from each PR's own original claim. `python3
+scripts/validate_spec.py --strict` clean on every one. `product_truth_check.py --fail-on-unwired`
+unchanged `24/24` and `scripts/status.py` unchanged `97/300` on every one (Law 2 — no certification
+happened this shift, only a re-merge of already-submitted work onto the current tip).
+
+Pushed each resolution to the PR's own existing branch: `claude/wizardly-fermat-lp04ue` (PR #359,
+`cf693ce..cb1b342`), `claude/wizardly-fermat-f9qdmb` (PR #364, `7f8aadf..442404a`),
+`claude/wizardly-fermat-9e7wln` (PR #380, `333961a..1c15df3`). Reconfirmed via a fresh
+`pull_request_read` on each: all three now show `base.sha` matching current `main` (`bb2ea6c`) and
+no conflict (`mergeable_state` moved off `dirty`). No `docs/spec-matrix.yaml` change, no task
+claimed, no certification — this shift's only effect is that three already-implemented,
+already-tested PROVISIONAL submissions are now mergeable against the current tip for a
+Control-plane certifier to review.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction (no
+`docs/certifications/queue.md` change on this session's own branch — no certification, no new
+submission originated here). STEP 4 stop condition: the dependency-ready frontier is fully claimed
+(nothing genuinely new to pick), and the three merge conflicts were the only outstanding
+relay-actionable work this shift found — now resolved. Stopping here. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged, empty).
