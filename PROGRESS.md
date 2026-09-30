@@ -24835,3 +24835,39 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A15) is `L1-PRO
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-09-30T13:05:00Z — Scheduled relay shift (branch `claude/wizardly-fermat-2sz42i`) — no new work, true blocker reconfirmed
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no mismatch. Read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` fresh. Local branch confirmed
+already at `origin/main` tip (`bb2ea6c`), no divergence. `status.py`: `97/300` certified, `24`
+product-true (unchanged — no certification work performed this shift).
+
+Surveyed all 15 open PRs via the GitHub API before attempting to pick work. Confirmed, for the
+third time today (after PR #389 at 05:05Z and PR #390 at 07:00Z, both still open/unmerged), that
+the dependency-ready frontier is fully claimed: every dependency-ready task already has an open PR
+except **FTF-1703**, which stays correctly declined (needs a real Argilla-backed review workflow
+that does not exist in this repository yet; its own would-be unblocker FTF-R006 is itself not
+dependency-ready — FTF-0516 still `certification_state: NONE`). No new task was pickable this
+shift.
+
+**Blocker independently reconfirmed (not duplicated):** the repo-wide GitHub Actions
+runner-provisioning outage (first diagnosed 07:04Z per PR #390, escalated as an owner ask 10:57Z
+per PR #394 — BLOCKER.md + dated QUEUE.md entry with 3 route options, still open/unmerged) is
+still ongoing. Independently checked the newest run in the whole repo (run #601, id `36705574175`,
+12:53:50–12:54:18Z): all 38 jobs `completed`/`failure`; the `gate` job shows `runner_id: 0`,
+`runner_name: ""`, ~4-second lifecycle, `get_job_logs` 404 — the same no-runner-assigned signature
+PR #394 already documents, now running continuously since ~05:30Z (7.5+ hours). Deliberately did
+not open a fifth duplicate tracking PR (four already open — #389/#390/#392/#394 — plus five
+duplicate "Control plane: certify..." PRs already thrashing on the same task set:
+#383/#386/#388/#391/#393); this shift's confirmation is recorded here and in `QUEUE.md` instead,
+per "Owner actions live in ONE place" (the ask already stands in PR #394, not re-filed). Per
+CLAUDE.md's "merge on green + L1 doc (PROVISIONAL)" authorization and this repo's own 2026-09-21
+outage precedent (wait for a fresh confirmed-green run, don't merge through red CI), deliberately
+did not merge PR #394 or any other open PR this shift.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift (no certification work, so
+`docs/certifications/queue.md` untouched — nothing to append). STEP 4 stop condition (b): true
+blocker (GitHub Actions runner-supply outage, outside this repo's own code or the relay's own
+remit), already properly escalated by a concurrent session with three route options in PR #394 —
+stopping this shift rather than duplicating that escalation. No new owner ask filed.

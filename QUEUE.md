@@ -1,4 +1,39 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T13:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-2sz42i`) —
+  **No new work claimed.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Confirmed
+  local branch already at `origin/main` tip (`bb2ea6c`) — no divergence.
+
+  Checked all 15 open PRs directly via the GitHub API before picking new work. The
+  dependency-ready frontier is confirmed already fully claimed — this is the third independent
+  reconfirmation today (after PR #389 at 05:05Z and PR #390 at 07:00Z, both docs-only, both
+  unmerged): every dependency-ready task has an open PR except **FTF-1703**, correctly declined
+  (needs a real Argilla review workflow this repo does not have yet; its own would-be unblocker
+  FTF-R006 is itself not dependency-ready). No new task was pickable.
+
+  **True blocker independently reconfirmed, not duplicated:** the repo-wide GitHub Actions
+  runner-provisioning outage first diagnosed 07:04Z (PR #390) and escalated as an owner ask
+  10:57Z (PR #394, still open/unmerged, BLOCKER.md + dated QUEUE.md entry with 3 route options) is
+  **still ongoing**. Fresh evidence gathered this shift, independent of PR #394's own claims: the
+  newest run in the whole repo, run #601 (`36705574175`, PR #394's own branch, 12:53:50–12:54:18Z),
+  completed with `conclusion: failure` on every one of 38 jobs; the `gate` job shows `runner_id: 0`
+  / `runner_name: ""`, job lifecycle under 4 seconds, `get_job_logs` 404 — the identical
+  no-runner-assigned signature PR #394 describes, now running continuously since ~05:30Z (7.5+
+  hours, longer than either 2026-09-21 or 2026-09-27 precedent). This deliberately does **not**
+  open a fifth duplicate tracking PR (four already exist: #389/#390/#392/#394, all docs-only, all
+  saying the same thing) — no new signal beyond a later timestamp, and this repo's own concurrent
+  sessions are already visibly thrashing (five separate "Control plane: certify..." PRs open for
+  the same task set: #383/#386/#388/#391/#393). The owner ask stands exactly as filed in PR #394;
+  not re-filed here per "Owner actions live in ONE place."
+
+  Per CLAUDE.md's explicit "merge on green + L1 doc (PROVISIONAL)" authorization, deliberately did
+  **not** merge PR #394 (or any other open PR) despite it being docs-only — its own CI is red from
+  this exact outage, and this repo's own 2026-09-21 precedent (`QUEUE.md` "Owner actions" history)
+  waited for a fresh confirmed-green run before treating held/blocked items as resolved rather than
+  merging through red CI. STEP 4 stop condition (b): true blocker (GitHub Actions runner supply,
+  outside this repo's own code), already properly escalated by a concurrent session with 3 route
+  options — stopping this shift without duplicating it. No new owner ask filed (already open in PR
+  #394).
+
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
   on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test
