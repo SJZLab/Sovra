@@ -2222,6 +2222,131 @@ full evidence breakdown; `QUEUE.md`/`docs/certifications/queue.md` updated. `scr
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
 
+## 2026-09-27 — FTF-0500D — relay: submit PROVISIONAL
+
+Scheduled autonomous relay shift. STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh; `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md` directly (no
+mismatch). STEP 0.2: `cognee-cli` not installed in this sandbox — text-search fallback active,
+declared here per STEP 0.2 (same disclosed gap every prior shift's own history already
+documents).
+
+Confirmed **FTF-04A20** ("ManifestEvidence schema/API") already has an open Control-plane
+certification PR (**[PR #334](https://github.com/SJZLab/Sovra/pull/334)**, opened 2026-09-27
+11:21:51Z by a separate session) before this shift started — no relay action left there; this
+file's own top entry and `QUEUE.md`'s own "## Provisional" section both still named it as the
+pending item, now stale in that one respect (a certifier session is already working it).
+
+Checked every other open PR directly via the GitHub API before picking new work: #328
+(FTF-04A15), #315/#314 (FTF-0303), #313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed
+blocker), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304, duplicate
+PRs) — none overlap with this shift's own eventual pick. Recomputed the dependency-ready
+frontier directly from `docs/spec-matrix.yaml` (every task's own real `certification_state`,
+not `docs/TASK_INDEX.md`'s dependency column alone): 5 tasks came back dependency-ready and not
+already claimed by an open PR — FTF-04A02, FTF-0500A, FTF-0500D, FTF-0902, FTF-1201. Excluded
+FTF-04A02 (GitHub App/token read-only secret integration — a keyed external service, ask-first
+per CLAUDE.md). Pulled all four remaining task packets via `tools/r1_handoff.py packet <id> --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and read each one's full acceptance/negative_acceptance
+contract before choosing: FTF-1201 (LiteLLM registration capability detection) touches one of
+the seven reused components' own integration form and was set aside as the more cautious choice
+this shift, in favor of a plainer adapter-layer task with no such touch; FTF-0902 (Network-policy
+templates) requires "Install and test actual CNI/firewall/DNS/IPv6/metadata restrictions" against
+a real enforcing cluster — no such cluster exists in this sandbox, and its own negative_acceptance
+literally rules out a non-enforcing-cluster pass ("NetworkPolicy YAML on nonenforcing cluster is
+not pass"), making it BLOCKED_EXTERNAL rather than a task this shift could produce real evidence
+for; FTF-0500A (Dataset source selector + purpose-authorization UI) is a frontend `apps/web`
+`.tsx` task, a different stack than this shift's own remaining budget favored starting fresh in.
+Picked **FTF-0500D** ("Dataset source security-boundary preview + audit evidence") — deps
+FTF-0402/FTF-0500, both genuinely `CERTIFIED` (confirmed directly in `docs/spec-matrix.yaml`
+before relying on them), a backend-only pure-function task matching this repository's own
+established `workers/data/*.py` pattern (FTF-0508/FTF-0511/FTF-0512/FTF-0513) exactly.
+
+Read `apps/api/app/datasets/dataset_source_connection_schema.py`/`dataset_source_connection_
+crud.py` (FTF-0500's own already-CERTIFIED `authorize_purpose_use`/`ALLOWED_PURPOSES`/
+`ALLOWED_SECURITY_CLASSIFICATIONS`) and `apps/api/app/services/project_security_profile.py`
+(FTF-0402's own already-CERTIFIED `SECURITY_PROFILE_LEVELS`/`resolve_effective_security_profile`/
+`require_profile_at_least` — the last of these disclosed, in FTF-0402's own module docstring, as
+having "no live caller yet") in full before writing anything. Read Section 7A.10 directly
+(`FINE_TUNING_FACTORY_RELEASE_1.md`): "before import, show: source name/type, estimated
+records/bytes, security classification, requested purposes, retention policy, whether data will
+leave its current security boundary, expected transformations" — this task's own acceptance
+clause made literal, not paraphrased.
+
+Implemented `workers/data/dataset_source_security_boundary_preview_audit_evidence.py`. Confirmed
+the established cross-boundary-import precedent first (FTF-0506's own module docstring: "workers/
+data cannot import apps/api", reused again by FTF-0511/FTF-0512/FTF-0513 for the exact same
+enum-mirroring reason) — this module does not import `DatasetSourceConnection` or
+`project_security_profile.py`; it mirrors their closed vocabularies locally
+(`SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS`/`SUPPORTED_PROJECT_SECURITY_PROFILES`/
+`SUPPORTED_PURPOSES`) and re-implements `resolve_effective_security_profile`'s own rule locally as
+`resolve_effective_project_security_profile` (most-restrictive-wins, a project may choose
+stricter than its org's own floor), the same disclosed non-import precedent FTF-0511 already
+established for `SUPPORTED_PURPOSES`. `build_dataset_source_copy_preview` composes Section
+7A.10's full field list and never raises on a blocking condition (a preview must always render,
+even to show a warning) — `blocked`/`blocking_reasons` name exactly what the second function
+would independently refuse. `authorize_dataset_source_copy` is the real, independent backend gate
+this task's own negative_acceptance names literally ("UI warning alone cannot allow forbidden
+egress; backend checks grant and destination again at import.") — it re-derives both the
+purpose/status check and the security-boundary check from its own arguments every time, never
+reading or trusting a previously built preview object, and raises
+(`DatasetSourceCopyAuthorizationError`/`SecurityBoundaryCrossingError`) rather than returning a
+soft pass.
+
+Two disclosed, narrow design choices where this specification underspecifies (same class of
+precedent as FTF-0402/FTF-0500's own disclosed enum choices, not a fresh habit): (1)
+`MINIMUM_REQUIRED_SECURITY_PROFILE` maps `security_classification` to the minimum project
+`security_profile` required to receive it (public/internal -> standard, confidential ->
+zero_egress, restricted -> air_gapped) — no section of this plan fixes this mapping, and the
+module docstring records the reasoning and that a later task may tighten/replace it via a real
+`spec-matrix.yaml` note update, never a silent widening; (2) `RETENTION_POLICY_STATUS` is a
+single honest sentinel (`"not_yet_configured"`) rather than a fabricated retention value, since
+Section 67.4's `DataUseGrant` (the entity that will actually carry a real retention policy) is a
+separate, not-yet-built, dependency-gated concept FTF-0500's own module docstring already
+discloses — Law 11 forbids fabricating one now.
+
+`tests/tasks/test_ftf_0500d.py`: 25 test functions covering the full Section 7A.10 field list on
+the positive path, the honest retention sentinel (never fabricated, never varying by
+classification), every `build_dataset_source_copy_preview` blocking path (purpose denied, revoked
+connection, security-boundary crossing, both simultaneously) surfaced without ever raising, the
+effective-profile resolution rule, the closed classification->profile mapping, field validators
+(unknown classification/profile/purpose, non-negative-int bool-exclusion, non-string
+transformation entries, empty transformations as a legitimate state), and
+`authorize_dataset_source_copy`'s own independent re-derivation (raises on purpose denial, revoked
+connection, boundary crossing, and both simultaneously; succeeds only when both checks pass; and
+explicitly proven to never read or trust a previously built preview object at all) — all pass.
+Two independent, disclosed fault injections (Law 1), both reverted byte-identical (md5sum
+`2113594afa576abbd248d9e147fd8745` before/after each, re-confirmed clean immediately after): (1)
+the boundary-crossing check in `authorize_dataset_source_copy` short-circuited to never fire (`if
+False and ...`) — 1 genuine FAIL (`authorize_dataset_source_copy raises on a security boundary
+crossing`); (2) the purpose/status check in `check_purpose_authorized` short-circuited the same
+way — 4 genuine FAILs across both the preview's own revoked-connection case and
+`authorize_dataset_source_copy`'s own revoked-connection/both-simultaneously cases.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (292 source files, both new files
+included). `uv run mypy .` clean — the 17 pre-existing `alembic.op`/`alembic.context`
+`attr-defined` errors in `apps/api/alembic/versions/*.py`/`env.py` are unrelated to this task (no
+file this task touched), confirmed zero new errors. `python3 scripts/validate_spec.py --strict`
+clean. `product_truth_check.py --fail-on-unwired`: unchanged at **22/22** — this task's own
+`proving_symbol` stays blank, matching the disclosed "no live caller yet" precedent
+(FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0513/FTF-1302/FTF-1303/FTF-1304): FTF-0501
+(Section 8's first real import surface and this task's own dependent) does not exist yet to call
+either function. `status.py`: unchanged `85/300` certified, `21` product-true (Law 2 — this is a
+submission, not a certification). Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/
+`test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0513.py` — zero regressions.
+
+`docs/spec-matrix.yaml` FTF-0500D set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+tests/tasks/test_ftf_0500d.py` (`proving_symbol` left blank, disclosed above); `evidence_hash`
+left blank pending the real merge commit. CI gate step ("FTF-0500D negative-test proof") added to
+`.github/workflows/ci.yml` immediately after the FTF-04A20 step. **Not self-certified (Law 4)** —
+independent Control-plane L2 review is required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500D) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session (FTF-04A20's own certification, PR #334, is already in flight from a separate
+session and needs no action here). Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-27 — FTF-04A20 — relay: submit PROVISIONAL
 
 Scheduled autonomous relay shift. STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
@@ -5321,6 +5446,115 @@ PR #231 lands). FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are other
 sessions' own open work — leave those alone, do not redo them.
 
 ## Previous shift
+Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
+submitted PROVISIONAL **FTF-0212** (Real tool-call probe).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh (tailed, given file sizes). Found no open `BLOCKER.md` (both its
+entries are resolved history), `QUEUE.md` "Owner actions — current" empty,
+"## Active" empty, "## Provisional" empty — FTF-0211 had just been
+CERTIFIED via PR #228 and merged to `main`. This session's own working
+branch (`claude/wizardly-fermat-t7b6qv`) already contained that merge
+(`git merge-base --is-ancestor origin/main HEAD` confirmed), so no rebase
+was needed before starting new work.
+
+STEP 1: recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (21 `certification_state: NONE` tasks whose own
+`deps=` are all `CERTIFIED`) rather than trusting any prior shift's own
+enumeration. Checked open PRs first (`mcp__github__list_pull_requests`):
+`#194`/`#195` are two open, unmerged, overlapping producer PRs for
+**FTF-0304** — per this file's own prior instruction ("leave those for
+their own producer sessions or a certifier, do not redo the work"),
+FTF-0304 was skipped entirely. `#229` is FTF-0211 tracking-doc follow-up,
+not a new task. No other ready item had an open PR. Picked **FTF-0212**
+(Real tool-call probe, deps FTF-0201/FTF-0210, both CERTIFIED) — the
+natural next item in this shift's own `FTF-020x` real-probe sequence,
+continuing directly from FTF-0210/FTF-0211's own precedent.
+
+STEP 2 (PEV):
+- **P:** Pulled the full task packet
+  (`python3 tools/r1_handoff.py packet FTF-0212`). Read
+  `packages/litellm_client/real_chat_probe.py` (FTF-0210) and
+  `real_streaming_probe.py` (FTF-0211) in full before writing any code, to
+  match their own already-established module/test conventions (private
+  per-module constants never cross-imported even for identical values;
+  `ChatProbeNotAuthorizedError`/`ChatUsage`/`RouteIdentityState` reused
+  directly as public API; real local HTTPS-gateway + OpenBao-shaped
+  secret-backend test fixtures). Read `.github/workflows/ci.yml`'s own
+  FTF-0210/FTF-0211 gate-step wiring to replicate the same pattern.
+- **E:** Implemented
+  `packages/litellm_client/real_tool_call_probe.py::probe_tool_call` --
+  issues one real, bounded, synthetic `POST /v1/chat/completions` call
+  advertising a fixed tool schema (`get_probe_time`, one required string
+  property) and records the real advertised-versus-observed outcome (this
+  task's own acceptance clause 1) as a `ToolCallProbeResult`. This task's
+  own negative_acceptance ("An ordinary textual JSON answer is not proof
+  of a tool-call capability; invalid tool result is failed probe") is
+  enforced by construction: `_extract_first_tool_call` only ever reads the
+  structured `message.tool_calls` field, never `message.content`, so
+  tool-shaped text can never be mistaken for a real tool call
+  (`NO_TOOL_CALL_ISSUED`); a real tool call naming a different function is
+  `TOOL_NAME_MISMATCH`; arguments that fail to parse into the advertised
+  schema's required property are `INVALID_TOOL_ARGUMENTS`. Wrote
+  `tests/tasks/test_ftf_0212.py` first against the real fixtures, run
+  before every check was implemented to confirm each one could genuinely
+  fail (Law 1) — the initial run caught one real test-authoring bug of
+  this shift's own (`_extract_first_tool_call` returns bare `None`, not
+  `(None, None)`, for a `tool_calls` entry missing its `function` field;
+  fixed the test's own expectation, not the module, after re-reading the
+  actual implemented contract).
+- **V:** `uv run ruff check`/`ruff format --check` (two real line-length
+  violations found and fixed), `uv run mypy` (clean on the new files; 12
+  pre-existing `alembic`/`attr-defined` errors on unrelated migration
+  files confirmed via `git stash` to exist identically without this
+  shift's own changes, not a regression this shift introduced).
+  `scripts/validate_spec.py --strict` clean (`git fetch --unshallow`
+  first). **Own fault injection, two vectors, both reverted byte-identical
+  and the suite re-confirmed clean immediately after each:** (1) removed
+  the `if model_id not in approved_model_ids: raise
+  ChatProbeNotAuthorizedError(...)` gate from `probe_tool_call` entirely —
+  the authorization negative check genuinely failed for real; (2) removed
+  the `if observed_tool_name != _PROBE_TOOL_NAME:` `TOOL_NAME_MISMATCH`
+  branch entirely — the exact negative_acceptance-mapped mismatch check
+  genuinely failed for real (`diff` confirmed byte-identical restore both
+  times). Own regression run of `test_ftf_0201.py` (needed
+  `uv sync --all-packages` first — `uvicorn` was not yet installed in this
+  sandbox), `test_ftf_0210.py`, `test_ftf_0211.py` — all clean, no
+  regression. `scripts/product_truth_check.py --fail-on-unwired` — 17/17,
+  legitimately unchanged (`proving_symbol` still blank, same disclosed "no
+  live caller yet" precedent every sibling FTF-020x probe task through
+  FTF-0211 already established).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0212.py`) to
+`.github/workflows/ci.yml` in the same commit as the implementation,
+deliberately not deferred, learning directly from the disclosed
+FTF-0205/FTF-0206 watchdog finding about a missing gate-wiring step.
+
+`docs/spec-matrix.yaml`'s FTF-0212 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit (`ceeec8f22c64984ea4428720bfe3495e66f95710`).
+**Submitted PROVISIONAL, not self-certified (Law 4)** — pushed to
+`claude/wizardly-fermat-t7b6qv`, opened as PR `[relay] FTF-0212: Real
+tool-call probe`, awaiting independent Control-plane L2 review. Full
+entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry (`FTF-0212`)
+awaiting independent Control-plane L2 review — a certifier shift should
+pick it up next. Recomputing the dependency-ready frontier fresh at this
+shift's end (do not trust this note alone) showed further genuinely
+ready, uncertified, unclaimed tasks besides FTF-0212 itself — re-derive
+this list from `docs/spec-matrix.yaml` itself rather than trusting this
+enumeration, since a certification landing after this shift ends could
+unlock further items. `FTF-0304` still has two open, unmerged candidate
+PRs (#194/#195) from other sessions — leave those for their own producer
+sessions or a certifier, do not redo the work.
+
+---
+
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered
 by the `pull_request.opened` webhook for PR #228) — independently
 re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe).
@@ -24581,3 +24815,139 @@ current" unchanged, empty).
 Certified FTF-04A05, FTF-H005, FTF-1201 (L2). 93/300 -> 96/300 certified; 0 PROVISIONAL remain. See `docs/certifications/ledger.md`.
 
 ## 2026-09-29 — Certifier: FTF-0304 CERTIFIED (L2), PR #376, merge 4d15c75; 94/300 certified.
+---
+
+## 2026-09-27T04:XX:00Z — Scheduled autonomous relay shift — FTF-04A15 submitted PROVISIONAL
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, never assumed state
+from prior context. STEP 0.2 (CLAUDE.md self-check): `sha256sum CLAUDE.md` matched the committed
+`CLAUDE.md.sha256` exactly — no mismatch, shift proceeded. `cognee-cli` is not installed in this
+sandbox (`command not found`) — text-search fallback was active this shift, disclosed per STEP 0.2.
+
+Confirmed the branch's own apparent divergence from `origin/main` (`git fetch origin main` first
+returned an old `4657881` tip with zero shared history against this branch's own `c295fcd` HEAD) was
+purely a shallow-fetch artifact, the same disclosed precedent every prior FTF-04A0x/FTF-04A1x shift
+has hit: `git fetch --unshallow` resolved it, after which `origin/main` and this branch's own HEAD
+were confirmed byte-identical (`c295fcd7d86ab8160a6864683c0ab755df0fd34c`) — not a real history
+rewrite, ruled out before proceeding rather than assumed.
+
+QUEUE.md's own "Active"/"Provisional"/"Owner actions — current" sections all read empty/none at
+shift start, consistent with FTF-04A14's own certification (PR #326) already landed. Checked all 9
+open PRs directly via the GitHub API before picking new work: #315/#314 (FTF-0303), #313/#311/#308
+(FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212),
+#195/#194 (FTF-0304) — none overlap with this shift's own eventual pick.
+
+Recomputed the dependency-ready frontier directly from `spec/tasks.json`'s own per-task
+`dependencies` list cross-checked against `docs/spec-matrix.yaml`'s real per-task
+`certification_state` (never trusted from a prior shift's own claim alone): 13 candidates came back
+dependency-ready and `certification_state: NONE` (FTF-04A14 dropped off the frontier list itself,
+since it's now `CERTIFIED`; FTF-04A15/FTF-04A16/FTF-04A19 newly appeared, unblocked by FTF-04A11's
+own certification one shift ago). Excluded FTF-0212/FTF-0304 (other sessions' own open PRs),
+FTF-0214 (disclosed blocker), FTF-04A02 (keyed external GitHub credential, ask-first per CLAUDE.md),
+FTF-0500A/FTF-0500D (same no-`Dataset`-entity/no-composed-route class FTF-0214 already established),
+FTF-1201/FTF-H004 (real network egress this sandbox lacks), FTF-1703 (needs ≥1000 real curated
+traces). Picked **FTF-04A15** — lowest `docs/TASK_INDEX.md` file-order item among the genuinely
+ready and unclaimed candidates, and the next task in the same Section 7A.4 discovery-pipeline family
+FTF-04A08–FTF-04A14 have been building sequentially.
+
+Task contract pulled fresh (`python3 tools/r1_handoff.py packet FTF-04A15 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md`) rather than trusted from the title alone. Section 7A.4's own
+"Analysis order" names step 9 ("Detect agent tests/evaluation fixtures") as this task's own exact,
+disjoint scope — never re-detecting entrypoints/models/prompts/tools/config (already-CERTIFIED
+sibling tasks' own jobs) and never assembling a `DiscoveredAgentCandidate` row (FTF-04A17's own
+already-CERTIFIED storage schema, a separate composition task).
+
+Delegated the actual engineering (module + test + fault-injection proof + local verification) to a
+background subagent with a fully self-contained brief (exact task contract, the five sibling
+files/tests to mirror — `source_analysis_worker.py`'s own `SourceFileRef` input shape,
+`json_yaml_toml_configuration_discovery.py`'s closest-shape sibling, `tool_schema_permission_
+discovery_evidence_capture.py`'s negative_acceptance framing, and the ad hoc `test_ftf_04a11.py`/
+`test_ftf_04a14.py` test-script convention — plus the literal negative_acceptance clause with
+required dedicated tests, and explicit instruction to leave all tracker/CI/git bookkeeping to this
+session). The subagent's finished work was then independently re-verified by this session before
+being trusted, not accepted on its own report alone (Law 4's spirit applied within one shift):
+re-read the full 389-line module and 469-line test file directly; re-ran
+`tests/tasks/test_ftf_04a15.py` from a clean state and confirmed the identical "all checks passed
+(24 test functions run)" output; independently reproduced both fault injections byte-for-byte,
+confirming the exact same md5sums (`93f19456ba68e6ae844a1b57bb507f26` baseline/after-revert for
+both) and the exact same named failures; confirmed via `git status --short` that only the two new
+files were touched, no existing file modified.
+
+Implemented `apps/api/app/target_connectors/agent_test_evaluation_fixture_discovery.py` (path
+refined from the packet's own generic `packages/target-connectors/...` suggestion to this repo's
+own real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family task
+already disclosed). `run_agent_test_evaluation_fixture_discovery` classifies each caller-supplied
+`SourceFileRef` (FTF-04A08's own connector-agnostic input shape, reused not reinvented) into
+`python_test` (pytest's own `test_*.py`/`*_test.py`/`conftest.py` convention, or a generic
+`tests`/`test` directory-segment catch-all), `js_ts_test` (`*.test.{ts,tsx,js,jsx}`/
+`*.spec.{ts,tsx,js,jsx}`, or a `__tests__` directory segment), `test_framework_config` (a closed
+filename set, Python and JS/TS side, content never parsed — that stays FTF-04A11's own
+already-CERTIFIED job), or `evaluation_fixture_data` (both halves must hold: a
+`fixtures`/`fixture`/`evals`/`eval`/`golden` directory segment AND a closed
+`.json`/`.yaml`/`.yml`/`.jsonl` extension allowlist), in a fixed, disclosed precedence order so the
+common `tests/fixtures/*.json` shape reports the more specific `evaluation_fixture_data` rather than
+being swallowed by the generic tests-directory catch-all.
+
+The acceptance clause's own "source version" half is honestly not fabricated: this pure function
+never receives a `TargetSourceSnapshot` id/commit SHA (only a `SourceFileRef` sequence), so a real
+source-version value is a future composition task's job (FTF-04A17), not this one's — disclosed in
+the module docstring rather than papered over with a fake value.
+
+This task's own negative_acceptance ("Discovering tests never authorizes importing their answers
+into training or certifies test correctness") is met by two independent structural facts: (1) this
+module **never calls `SourceFileRef.read_content()` at all**, for any category, for any reason —
+every classification is decidable from `relative_path`/`size` alone, structurally stronger than
+FTF-04A11's own "read but redact" shape: content that is never read cannot be graded or imported,
+because this module never sees a single byte of it (dedicated tests:
+`test_classification_never_reads_content`, a behavioral proof using a `read_content` callable that
+raises `AssertionError` if ever invoked; `test_module_source_never_executes_imports_or_runs_a_
+subprocess`, an AST-based — not naive substring-based, which would false-positive on the module's
+own docstring prose — assertion that no `subprocess`/`importlib` import or `exec(`/`eval(` call
+exists anywhere in the module); (2) this module has zero imports from any dataset/database-schema
+module and its two evidence dataclasses (`ClassifiedFixtureEvidence`,
+`AgentTestEvaluationFixtureDiscoveryEvidence`) declare no `approved`/`imported`/`dataset_id`-shaped
+field anywhere (dedicated tests: `test_module_has_no_dataset_or_database_schema_imports`,
+`test_evidence_dataclasses_have_no_training_authorization_field`, both asserting directly over the
+module's own AST imports / `__dataclass_fields__` — the absence of such a field is itself the
+proof). This module never constructs a `Dataset`/`DatasetRecord`/`DatasetSourceConnection` row —
+Section 7A.10's own "must not import [fixtures] until the user selects the source and allowed
+purpose" applies directly; discovery recommends, it never itself imports.
+
+`ResourceLimits` deliberately keeps only `max_files` (default 5,000), omitting sibling tasks'
+`max_file_bytes`/`max_total_bytes` — there is no content read in this module at all, so those fields
+would bound nothing real; disclosed explicitly in the module docstring rather than kept for false
+shape-parity with siblings.
+
+`tests/tasks/test_ftf_04a15.py`: 24 tests, all pass against the unmodified code. Two independent
+fault injections, both reverted byte-identical (md5sum `93f19456ba68e6ae844a1b57bb507f26`
+before/after each, independently re-confirmed by this session as described above): (1) added a
+`read_content()` call on the `evaluation_fixture_data` branch — genuine `AssertionError:
+read_content must never be called for 'tests/fixtures/customer.json'`, uncaught, propagated out of
+`main()`; (2) widened `_FIXTURE_DATA_EXTENSIONS` to include `.txt` — genuine FAIL ("a
+non-allowlisted extension (.txt) living under a fixtures/ directory is never guessed as fixture data
+-- both halves of the heuristic must hold").
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean repo-wide (278
+files; the previously-disclosed 15 `alembic`-stub errors are the only ones present, confirmed
+pre-existing and unrelated — zero new errors). `pnpm run lint`/`pnpm run format:check` clean
+repo-wide. `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged
+`20/20` (`proving_symbol` left blank, same disclosed "no live route yet" precedent every prior
+04A-family task already established). `status.py` unchanged `83/300` (Law 2 — this is a submission,
+not a certification). Regression swept `test_ftf_04a09.py`–`test_ftf_04a14.py` (all "all checks
+passed" — this sandbox was itself missing `node_modules/typescript`; `pnpm install
+--frozen-lockfile` materialized it, the same disclosed precedent every prior 04A-family task already
+established) plus `uv run pytest tests/unit` (3/3) — zero regressions. `verify_task.py --task
+FTF-04A15 --stage task` reports `BLOCKED` pre-merge, expected per precedent (no merged verification
+evidence yet).
+
+`docs/spec-matrix.yaml` FTF-04A15 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A15 negative-test proof`) added to `.github/workflows/ci.yml`. Opened
+[PR #328](https://github.com/SJZLab/Sovra/pull/328). **Not self-certified (Law 4)** — independent
+Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A15) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
