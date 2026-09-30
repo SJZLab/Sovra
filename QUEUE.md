@@ -3833,6 +3833,68 @@ Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
   `docs/certifications/queue.md`'s matching 2026-09-24 FTF-04A06 entry.
   Certified: unchanged at 59/300. Product-true: unchanged at 19/19. See
   "## Provisional" below for what the next relay shift needs to fix.
+Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
+  submitted PROVISIONAL **FTF-0212** (Real tool-call probe). Dependency
+  frontier recomputed fresh from `docs/spec-matrix.yaml` at shift start
+  (all `certification_state: NONE` entries whose `deps=` are all
+  CERTIFIED): FTF-0304 skipped (two open, unmerged duplicate PRs #194/#195
+  from other producer sessions already claim it — left alone per this
+  file's own prior instruction, not redone). FTF-0212 picked as the
+  natural next item in this shift's own `FTF-020x` real-probe sequence
+  (deps FTF-0201, FTF-0210, both CERTIFIED).
+
+  Built `packages/litellm_client/real_tool_call_probe.py::probe_tool_call`
+  -- issues one real, bounded, synthetic `POST /v1/chat/completions` call
+  advertising a fixed tool schema (`get_probe_time`) and records the real
+  advertised-versus-observed outcome (this task's own acceptance clause
+  1), reusing FTF-0210's exact `ChatProbeNotAuthorizedError` authorization
+  contract and its `ChatUsage`/`RouteIdentityState` dataclasses directly.
+  This task's own negative_acceptance ("An ordinary textual JSON answer
+  is not proof of a tool-call capability; invalid tool result is failed
+  probe") is enforced by construction: only the structured
+  `message.tool_calls` field is ever inspected (never `message.content`,
+  so tool-shaped text can never be mistaken for a real tool call), a
+  mismatched tool name is `TOOL_NAME_MISMATCH`, and arguments that fail
+  to parse into the advertised schema's required property are
+  `INVALID_TOOL_ARGUMENTS` -- neither ever silently accepted as `PROBED`.
+
+  `tests/tasks/test_ftf_0212.py` (no DB required) proves this against a
+  real local HTTPS gateway fixture (real self-signed CA installed into
+  this sandbox's own trust store) and a real local OpenBao-shaped secret
+  fixture, covering the real happy-path round trip, both
+  negative_acceptance failure modes (including the sharper case of
+  tool-shaped JSON typed as plain `content`), gateway/secret-backend
+  rejection classification, timeout, malformed responses, the
+  authorization gate, and pure unit checks for the tool-call-extraction/
+  argument-validity helpers. **Shown able to fail first (Law 1):** two
+  own fault injections (removed the authorization gate; removed the
+  `TOOL_NAME_MISMATCH` branch entirely) — both genuinely caught by the
+  suite for real, reverted byte-identical, suite re-confirmed clean
+  immediately after each.
+
+  `ruff`/`ruff format`/`mypy` clean repo-wide (pre-existing, unrelated
+  `alembic` `attr-defined` mypy noise on 12 migration files confirmed via
+  `git stash` to exist identically without this shift's changes — not
+  this shift's own regression). `scripts/validate_spec.py --strict`
+  clean. Own regression run of `test_ftf_0201.py`/`test_ftf_0210.py`/
+  `test_ftf_0211.py` (this task's own dependencies plus the sibling
+  module whose dataclasses are reused), all clean, no regression.
+  `scripts/product_truth_check.py --fail-on-unwired` -- 17/17,
+  legitimately unchanged (`proving_symbol` still blank, same disclosed
+  "no live caller yet" precedent every sibling FTF-020x probe task
+  through FTF-0211 already established). This task's own CI gate step
+  was added to `.github/workflows/ci.yml` in the same commit as the
+  implementation, not deferred, learning directly from the disclosed
+  FTF-0205/FTF-0206 watchdog gate-wiring-gap finding.
+
+  `docs/spec-matrix.yaml`'s FTF-0212 entry set to `certification_state:
+  PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` bound to the
+  implementation commit (`ceeec8f22c64984ea4428720bfe3495e66f95710`).
+  **Submitted PROVISIONAL, not self-certified (Law 4)** -- pushed to this
+  session's own branch `claude/wizardly-fermat-t7b6qv`, opened as a PR
+  titled `[relay] FTF-0212: Real tool-call probe`. Full entry:
+  `docs/certifications/queue.md`. Awaiting independent Control-plane L2
+  review; see "## Provisional" below.
 
 ## Previous shift
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered by
@@ -8266,6 +8328,12 @@ FTF-0213 is no longer in this section; it was independently reviewed and
 `1751211044041e15fc4708b4be552c3957509e80`) — see "## Done" for the
 certification summary and `docs/certifications/ledger.md`/
 `docs/certifications/queue.md` for the full evidence.
+FTF-0212 (Real tool-call probe) was implemented and submitted PROVISIONAL
+this shift (2026-09-24, autonomous relay) — pushed to
+`claude/wizardly-fermat-t7b6qv`, PR `[relay] FTF-0212: Real tool-call
+probe`. Awaiting independent Control-plane L2 review — see this file's
+own top status note and `docs/certifications/queue.md` for the full
+evidence record.
 
 FTF-0211 is no longer in this section; it was independently reviewed and
 **CERTIFIED 2026-09-24** via PR #228 (merge commit
