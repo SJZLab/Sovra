@@ -1229,15 +1229,62 @@ FTF-0211:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0211.py
 FTF-0212:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Real tool-call probe
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210
-  proof_state: UNPROVEN
+  evidence_hash: ceeec8f22c64984ea4428720bfe3495e66f95710
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210 (both
+    CERTIFIED). Built for real in a new packages/litellm_client/real_tool_call_probe.py::probe_tool_call
+    -- issues one real, bounded, synthetic POST /v1/chat/completions call advertising a fixed tool
+    schema (get_probe_time, one required string property) and records the real advertised-versus-
+    observed outcome (this task's own acceptance clause 1) as a ToolCallProbeResult
+    (state/route_identity_state/resolved_model/advertised_tool_name/observed_tool_name/
+    observed_arguments/usage/latency_ms/detail/probed_at). Reuses FTF-0210's exact authorization
+    contract (ChatProbeNotAuthorizedError, raised before any network call when model_id is not in the
+    caller-supplied approved_model_ids set) and its ChatUsage/RouteIdentityState dataclasses directly
+    (public API reuse); the probe prompt, tool schema and token ceiling are this module's own private
+    constants, duplicated rather than cross-imported, matching the convention every sibling FTF-020x
+    module already follows of never importing another module's private names even for identical
+    values.
+
+    This task's own negative_acceptance ("An ordinary textual JSON answer is not proof of a tool-call
+    capability; invalid tool result is failed probe") is enforced by construction, not a text
+    heuristic: only the structured message.tool_calls field is ever inspected -- a response whose
+    message.content contains text that merely looks like a tool invocation is NO_TOOL_CALL_ISSUED,
+    the same real outcome as a response with no tool-shaped text at all, since content is never read
+    to manufacture a tool call. A real tool call naming a different function than the one advertised
+    is TOOL_NAME_MISMATCH. A real tool call naming the advertised function whose arguments string
+    does not parse as a JSON object carrying the schema's one required string property is
+    INVALID_TOOL_ARGUMENTS. None of these three is ever silently accepted as PROBED.
+
+    tests/tasks/test_ftf_0212.py (no DB required) proves this against a real local HTTPS gateway
+    fixture (real self-signed CA installed into the sandbox trust store) plus a real local OpenBao-
+    shaped secret-backend fixture, covering: the real happy-path round trip and its advertised-vs-
+    observed recording; both negative_acceptance failure modes (including the sharper case of
+    tool-shaped JSON typed as plain content); secret-backend/gateway-permission/content-filter/
+    unsupported-parameter/unrecognized-rejection/timeout/malformed-response classification, each a
+    real round trip against the live fixture, not a mock; the authorization gate; and pure unit
+    checks for the tool-call-extraction and argument-structural-validity helpers. Own fault injection,
+    two vectors, both reverted byte-identical and the suite re-confirmed clean immediately after each:
+    (1) removed the approved_model_ids authorization gate entirely -- the authorization negative check
+    genuinely failed for real; (2) removed the TOOL_NAME_MISMATCH branch entirely -- the exact
+    negative_acceptance-mapped mismatch check genuinely failed for real.
+
+    ruff/ruff format/mypy clean repo-wide; scripts/validate_spec.py --strict clean; own regression run
+    of test_ftf_0201.py/test_ftf_0210.py/test_ftf_0211.py (this task's own dependencies plus the
+    sibling module reused for its dataclasses), all clean, no regression.
+    scripts/product_truth_check.py --fail-on-unwired -- 17/17, legitimately unchanged (proving_symbol
+    still blank -- no live caller yet, same disclosed "no live caller" precedent as every sibling
+    FTF-020x probe task through FTF-0211). This task's own CI gate step was added to
+    .github/workflows/ci.yml in the same commit as the implementation, not deferred, learning directly
+    from the disclosed FTF-0205/FTF-0206 watchdog finding about a missing gate-wiring step.
+
+    Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0212.py
 FTF-0213:
   certification_state: CERTIFIED
   criticality: MUST
