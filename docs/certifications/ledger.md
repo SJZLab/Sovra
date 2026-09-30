@@ -9622,3 +9622,73 @@ connection-level revocation guard is genuinely load-bearing, not decorative. FTF
 other PROVISIONAL item found pending) was left untouched this shift — already independently
 claimed by a concurrent Control-plane session via PR #356 at review time; revisit only if that
 PR is not landed by the next certifier shift.
+
+## 2026-09-29 — FTF-0304 — Local artifact resolver — CERTIFIED (L2)
+
+- **Certifier session:** `https://claude.ai/code/session_01FWhhwBn53twHHAEhvTBxue`.
+- **Session-ID comparison:** producer commits `edc1dd9`, `cd08cb8` carry
+  `session_01PKMBnWEKmEMifmQiwRSUFL` (tracking-only PR #377 head `6e3211c` is the same
+  relay identity family); none match the certifier's session ID. Independent.
+- **Evidence:** PR #376, merge commit `4d15c7594cdf7ac5b9d8b4fa11516b5b4bab42d4`; CI run
+  https://github.com/SJZLab/Sovra/actions/runs/36593212670 -- 38/38 jobs `success` (`gate`
+  included) on head `cd08cb8`, read directly via check runs.
+- **Diff re-read:** `apps/api/app/artifacts/local_artifact_resolver.py` + `tests/tasks/test_ftf_0304.py`.
+- **Own test run:** `uv run python tests/tasks/test_ftf_0304.py` -> all checks passed.
+- **Own fault injection (each reverted, md5 `dab32cb8eb11a2fb0a0229841ab50a63` reconfirmed):**
+  executable-bit guard disabled -> 1 FAIL; TOCTOU before/after compare disabled -> 1 FAIL;
+  symlink-ancestor guard disabled -> 1 FAIL; symlink-in-tree guard disabled -> 1 FAIL.
+  Real-path-escape reconfirmation disabled -> 0 FAIL: it is redundant defense-in-depth behind the
+  symlink-ancestor guard (unreachable independently), disclosed, not an acceptance gap.
+- **product_truth_check:** `--fail-on-unwired` 24/24; FTF-0304 has blank `proving_symbol`
+  (disclosed "no live caller yet", same class as certified FTF-0301/0305), so 0/0 is not being
+  accepted as a pass for a claimed symbol.
+- **Contract:** `tools/r1_handoff.py packet FTF-0304` -- acceptance (deterministic manifest beneath
+  approved root) and negative_acceptance (symlink/escape, changing file, unsafe executable) met.
+- **Noted, not this task's:** `validate_spec.py --strict` reports pre-existing `stale_commit`
+  entries for FTF-0404/FTF-0405 on main; untouched by this PR.
+- **Not certified this shift:** FTF-04A05, FTF-H005, FTF-1201 -- already under open Control-plane
+  certification PRs (#360/#365/#370, #363/#365/#370, #368/#370).
+
+## FTF-04A05 — GitHub source snapshot implementation
+- Criterion ID: FTF-04A05
+- PR: https://github.com/SJZLab/Sovra/pull/358 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: f17260c158b2858b0fbadd01ae60495ba0eecf71
+- Validated-by: session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3 (independent — PR #358's commits carry `Claude-Session: .../session_012JU5T7hSZSU9qu8d7NjkQx`, no overlap)
+- Date: 2026-09-28
+- CI: 37/37 check runs `completed`/`success` on the PR head, including `gate` and the task's integration job: https://github.com/SJZLab/Sovra/actions/runs/36427195688
+- Reran `tests/tasks/test_ftf_04a05.py` locally as CI does (`uv run python3 ...`): all checks passed. Note: these suites are script-style (`check()` collects FAILURES; pytest alone does not assert), so fault injection was judged by the script's own exit/output.
+- Own fault injection (Law 1):
+  - Fault injection: skipped the unsafe tree-entry path check in `_validate_entry_path_safety` -> 1 failure: unsafe-archive-member negative_acceptance check. Reverted, `git status` clean.
+  - Fault injection: disabled the truncated-listing block (`if truncated:` -> `if False:`) -> 1 failure: truncated-listing negative_acceptance check. Reverted, `git status` clean.
+- product_truth 24/24; `build_github_source_snapshot_router` is a real proving_symbol, mounted in `apps/api/app/main.py` (`include_router`).
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-04A05 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-H005 — Route identity, fallback and cache provenance
+- Criterion ID: FTF-H005
+- PR: https://github.com/SJZLab/Sovra/pull/361 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: 2e9a575fefabffcec4a2b13a8b3a84c5a2eb2fd1
+- Validated-by: session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3 (independent — PR #361's commits carry `Claude-Session: .../session_018NMJgNwTV1tawdME5cFXyt`, no overlap)
+- Date: 2026-09-28
+- CI: 37/37 check runs `completed`/`success` on the PR head, including `gate` and the task's integration job: https://github.com/SJZLab/Sovra/actions/runs/36455372477
+- Reran `tests/tasks/test_ftf_h005_route_snapshot.py, tests/tasks/test_ftf_h005_route_attestation.py` locally as CI does (`uv run python3 ...`): all checks passed. Note: these suites are script-style (`check()` collects FAILURES; pytest alone does not assert), so fault injection was judged by the script's own exit/output.
+- Own fault injection (Law 1):
+  - Fault injection: removed the deployment-fingerprint comparison in `require_pinned_route_unchanged` -> 2 failures: fallback-drift-denied and fault-injection-catches-drift checks. Reverted, `git status` clean.
+  - Fault injection: forced `RouteIdentityState.VERIFIED` regardless of fingerprint in `route_attestation.py` -> 1 failure: UNVERIFIED-when-fingerprint-missing check. Reverted, `git status` clean.
+- proving_symbol legitimately blank (no live qualification workflow calls these modules yet; disclosed by the submission, product_truth unchanged). Note: forcing the re-attestation-state guard off alone was masked by the fingerprint comparison, so that single branch is not independently proven load-bearing; the fingerprint and attestation checks are.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-H005 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1201 — LiteLLM registration capability detection
+- Criterion ID: FTF-1201
+- PR: https://github.com/SJZLab/Sovra/pull/366 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: 3dcee5d602494fa5a15ff8069fb16313305c52fa
+- Validated-by: session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3 (independent — PR #366's commits carry `Claude-Session: .../session_01TFyTkMLqBbbw3BaSxcmcDo`, no overlap)
+- Date: 2026-09-28
+- CI: 38/38 check runs `completed`/`success` on the PR head, including `gate` and the task's integration job: https://github.com/SJZLab/Sovra/actions/runs/36484245881
+- Reran `tests/tasks/test_ftf_1201.py` locally as CI does (`uv run python3 ...`): all checks passed. Note: these suites are script-style (`check()` collects FAILURES; pytest alone does not assert), so fault injection was judged by the script's own exit/output.
+- Own fault injection (Law 1):
+  - Fault injection: made every observed role management-capable (`if observed_role in _MANAGEMENT_CAPABLE_ROLES:` -> `if True:`) -> 6 failures: baseline plus proxy_admin_viewer/internal_user/internal_user_viewer/team/customer never-capable checks. Reverted, `git status` clean.
+- product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.

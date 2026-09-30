@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 12 Interface (LiteLLM Registration Capability)
+  version: 0.1.0
+  description: >-
+    Frozen shared component schemas and the one real live route this task
+    actually implements and wires into `apps/api/app/main.py` (Section
+    3/38/45/66/77/81, FTF-1201): a read-only detection of whether an
+    existing LiteLLM connection's stored credential genuinely holds
+    gateway management/registration authority, separate from the
+    inference-only dimension FTF-0203's `/validate` route already reports.
+    It deliberately does not declare a `/register`/`/model/new` mutation
+    route -- Section 38's own real registration flow (create candidate
+    alias, register, readback, adopt) is a separately dependency-gated
+    task (FTF-1202 depends on this one). Whichever later task adds that
+    real mutation route extends this same file under this same
+    contract-owner lock (shared_lock_required: contracts:12).
+paths:
+  /api/v1/organizations/{organization_id}/connections/litellm/{connection_id}/registration-capability:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        Detect whether this connection's own stored credential genuinely
+        holds gateway management/registration authority. Never assumes
+        capability: an unverified, denied, or malformed probe result is an
+        explicit non-capable state, never a silent "capable" default
+        (this task's own negative_acceptance).
+      operationId: getLiteLLMRegistrationCapability
+      responses:
+        '200':
+          description: The real, freshly-probed registration-capability result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationCapabilityResult'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing or belongs to a different organization -- identical in
+            every case.
+        '409':
+          description: The connection is revoked; capability cannot be detected.
+components:
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    RoleNotAuthorized:
+      description: >-
+        The authenticated principal's role in this organization does not
+        permit this operation (Section 45: "organization_admin:
+        connections, security profiles, cost profiles" is the only role
+        Section 45 names for connections -- every operation on this
+        resource, including reads, is gated to organization_admin, matching
+        FTF-0201/FTF-0203/FTF-0204's own already-live sibling routes on
+        this same resource).
+  schemas:
+    RegistrationCapabilityState:
+      type: string
+      description: >-
+        Never defaults to capable. `management_capable` is reported only
+        when a genuine `proxy_admin` role is actually observed on a real
+        gateway response.
+      enum:
+        - management_capable
+        - inference_only
+        - forbidden
+        - unavailable
+        - malformed_response
+        - secret_not_found
+        - secret_access_denied
+        - secret_expired
+        - secret_backend_error
+        - secret_backend_unsupported
+    RegistrationCapabilityResult:
+      type: object
+      description: >-
+        Content-free by construction: `detail` never carries the resolved
+        credential or a raw gateway response body; `observed_role` is the
+        gateway's own real, non-secret role label, never the credential
+        itself.
+      properties:
+        state:
+          $ref: '#/components/schemas/RegistrationCapabilityState'
+        observed_role:
+          type: [string, 'null']
+        detail:
+          type: string
+        checked_at:
+          type: string
+          format: date-time
+      required: [state, observed_role, detail, checked_at]
+      additionalProperties: false
