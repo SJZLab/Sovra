@@ -1,4 +1,84 @@
 # PROGRESS — Sovra
+## 2026-09-30T09:20:00Z — Scheduled relay shift — CI outage confirmed still live, escalated; no
+## task work possible
+
+Session `https://claude.ai/code/session_012H8xfeasTQxxrE7P73FDUn`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. The designated branch
+(`claude/wizardly-fermat-xa6526`) was found sitting exactly at the same commit as `origin/main`
+(`bb2ea6c`, the merge of PR #335/FTF-0500D) -- its own prior PR history is fully contained in
+`main`'s own ancestry (confirmed via `git merge-base --is-ancestor`), so no restart was needed
+despite the designated-branch-already-merged convention technically applying (a `git checkout -B`
+attempt was denied by this sandbox's own destructive-action classifier before this was confirmed;
+harmless here since the branch was already at the right commit).
+
+STEP 0.1: read `BLOCKER.md` (both existing entries were resolved history, no live blocker at shift
+start), `PROGRESS.md`/`QUEUE.md` (both exceed the single-read size limit -- read via targeted
+`grep`/offsets, not assumed, per this file's own standing practice) and `docs/certifications/
+queue.md` fresh. Both trackers' most recent entry was `2026-09-30T03:21:00Z` (PR #385/FTF-H007
+merged) -- listed eleven further PRs opened since then (`list_pull_requests`) that had not yet
+landed any tracker update, all still open: five relay task PRs (#380 FTF-0306, #364 FTF-0500C,
+#359 FTF-0500B, #342 FTF-0902, #337 FTF-0601, plus #295 FTF-0214 disclosed-blocked), three
+docs-only relay tracking PRs (#389, #390, #392) and five Control-plane certification PRs (#383,
+#386, #388, #391, #393) covering overlapping certification claims for
+FTF-0212/FTF-04A15/FTF-0500D/FTF-1206/FTF-1807/FTF-H007.
+
+STEP 1: independently recomputed the dependency-ready frontier from first principles -- wrote a
+short script parsing `docs/spec-matrix.yaml`'s real `certification_state` per task against
+`docs/TASK_INDEX.md`'s own structured `Dependencies` column (never trusted from any prior shift's
+cached list). Result: 13 tasks dependency-ready and not yet `CERTIFIED`/`PROMOTED`. Of these: 6
+are already `certification_state: PROVISIONAL` (FTF-0212, FTF-04A15, FTF-0500D, FTF-1206,
+FTF-1807, FTF-H007 -- Control plane's to certify, not relay's to touch); 6 with `certification_state:
+NONE` already have an open relay PR claiming them (FTF-0214/#295 disclosed-blocked,
+FTF-0306/#380, FTF-0500B/#359, FTF-0500C/#364, FTF-0601/#337, FTF-0902/#342); the remaining one,
+**FTF-1703** ("Training dataset"), stays correctly declined -- its own acceptance clause requires
+">=1000 reviewed... training traces" with "Independent review... recorded," Section 77.3 names a
+real Argilla-backed reviewer workflow for exactly that step, and no Argilla integration exists
+anywhere in this repository yet (grep-confirmed); its own would-be unblocker FTF-R006 is not
+dependency-ready either (its own dependency FTF-0516 is still `certification_state: NONE`). This
+independently reproduces the identical conclusion three separate prior shifts already reached
+today (PR #389 at 05:05Z, PR #390 at 07:00Z/07:04Z, PR #392 at 08:59Z) on fresh data rather than
+trusting their summaries. **There is no genuinely unclaimed, undeclined task to pick this shift.**
+
+**Discovered and independently confirmed a live, repo-wide GitHub Actions runner-provisioning
+outage** while checking whether any of the five open relay task PRs might already be green and
+mergeable (they are not -- and neither is anything else). Pulled real check-run data via
+`pull_request_read`/`actions_get` on PRs #337, #342, #359, #364, #380 and the single newest
+workflow run in the entire repository (run #600, PR #393, `09:08-09:10Z`): **every job on every
+open PR** -- 38-39 checks each, `gate` included -- completes in 2-40 seconds with `runner_id: 0`,
+`runner_name: ""` (no runner ever assigned), the exact signature this repo already documented and
+resolved twice before (2026-09-21, 2026-09-27; see `QUEUE.md`'s own preserved resolution note). A
+prior shift (07:04Z, PR #390) had already independently diagnosed this same occurrence and
+deliberately chose not to file a fresh owner ask, reasoning from those two prior occurrences that
+it "clears within hours." Confirmed via `actions_list` (`list_workflow_runs`, most recent 15 runs)
+that the last known-green run was #589 at `05:23Z` (real `runner_id`) and the first failing run was
+#590 at `05:33Z` -- the outage window is `05:30Z` through at least `09:10Z`, **3h37m+ continuous,
+ten further workflow runs, zero recoveries**, exceeding the "within hours" bar that justified not
+escalating at 07:04Z. `get_job_logs` 404'd on every job checked (no log content was ever produced,
+consistent with a runner never attaching, not a real test failure). Ruled out a repo-side cause:
+diffed `.github/workflows/ci.yml` between the last green and first failing commit -- no workflow
+file, secret, or runner-label change, only ordinary append-only doc content.
+
+**Escalated per this repo's own 2026-09-21 precedent** (same outage class, same repo, escalated
+"the same day" once confirmed on two independent PRs -- this shift confirms it on eleven): wrote a
+new dated `BLOCKER.md` entry (full evidence chain, three route options for the owner: check
+GitHub Actions account/org concurrency or spend-limit settings given today's unusually high
+parallel-PR volume; check the GitHub status page directly, which this sandbox's own blocked
+egress cannot reach; or do nothing and let it clear as both prior occurrences did, disclosed as
+one option rather than assumed) and a new dated `QUEUE.md` "Owner actions -- current" entry
+(removed the moment a session confirms a fresh PR event gets a real `runner_id` again, same
+resolution bar the 2026-09-21 entry itself used and that this file's own preserved history keeps
+for that reuse).
+
+**No relay task work was possible or attempted this shift**: nothing genuinely unclaimed on the
+frontier to pick, and `merge on green` cannot be exercised for any PR -- including the three
+already-open docs-only tracking PRs (#389/#390/#392) that themselves cannot go green either -- while
+the outage holds. No code changed. `docs/spec-matrix.yaml` untouched, no task claimed or marked
+`IN_PROGRESS`, `docs/certifications/queue.md` not appended to (nothing submitted). Per stop
+condition (e) (ask-first item -> `QUEUE.md` Owner actions block, stop shift) and Law 17 (provider
+outage stays visible as blocked, never routed around), this shift stops here rather than opening a
+fourth redundant docs-only tracking PR repeating the same diagnosis three prior shifts already
+made today.
+
 ## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
 
 Subscribed to PR #385's own GitHub activity immediately after opening it. A `check_suite.completed`
