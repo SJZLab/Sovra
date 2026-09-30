@@ -1531,6 +1531,65 @@ Previously updated: 2026-09-27 (scheduled autonomous relay shift, session
   No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty). STEP 4 stop condition
   (a): 1/1 in-flight item (FTF-04A16) is `L1-PROVEN`, awaiting an independently-triggered
   Control-plane certifier session. Stopping here.
+Updated: 2026-09-27 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01DVico8uFYeurLTvim6CYSh) — **submitted FTF-04A15 ("Agent
+  test/evaluation fixture discovery") PROVISIONAL** via [PR #328](https://github.com/SJZLab/Sovra/pull/328).
+  STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh; CLAUDE.md.sha256 self-check
+  matched `sha256sum CLAUDE.md` directly; `cognee-cli` not installed, text-search fallback disclosed.
+
+  This branch's own apparent divergence from `origin/main` on first fetch (a stale shallow-clone tip
+  with zero shared history) was confirmed to be purely a shallow-fetch artifact -- `git fetch
+  --unshallow` resolved it, after which `origin/main` and this branch's own HEAD were byte-identical
+  (`c295fcd`) -- not a real history rewrite, ruled out before proceeding.
+
+  Recomputed the dependency-ready frontier directly from `spec/tasks.json`'s own dependency lists
+  cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state`: 13 candidates
+  (FTF-04A14 dropped off since its own certification; FTF-04A15/FTF-04A16/FTF-04A19 newly unblocked
+  by FTF-04A11's own certification). Excluded FTF-0212/FTF-0304 (other sessions' open PRs), FTF-0214
+  (disclosed blocker), FTF-04A02 (keyed external credential, ask-first), FTF-0500A/FTF-0500D (same
+  no-`Dataset`-entity class FTF-0214 already found), FTF-1201/FTF-H004 (real network egress this
+  sandbox lacks), FTF-1703 (needs ≥1000 real curated traces). Picked **FTF-04A15** -- lowest
+  `docs/TASK_INDEX.md` file-order item among the genuinely ready and unclaimed candidates, continuing
+  the same Section 7A.4 discovery-pipeline family FTF-04A08-FTF-04A14 have been building
+  sequentially.
+
+  Implemented `apps/api/app/target_connectors/agent_test_evaluation_fixture_discovery.py`: Section
+  7A.4 step 9 ("Detect agent tests/evaluation fixtures") only. Classifies each caller-supplied
+  `SourceFileRef` (FTF-04A08's own connector-agnostic input shape) into `python_test`, `js_ts_test`,
+  `test_framework_config` (filename only, content never parsed -- FTF-04A11's own job), or
+  `evaluation_fixture_data` (a closed directory-segment + extension allowlist, both halves required),
+  in a disclosed precedence order. Never re-detects entrypoints/models/prompts/tools/config
+  (already-CERTIFIED sibling tasks' own jobs) and never assembles a `DiscoveredAgentCandidate` row
+  (FTF-04A17's own already-CERTIFIED storage schema).
+
+  negative_acceptance ("Discovering tests never authorizes importing their answers into training or
+  certifies test correctness") is met structurally: this module never calls
+  `SourceFileRef.read_content()` for any file, for any reason -- every classification is decidable
+  from `relative_path`/`size` alone, so content cannot be graded or imported because it is never
+  read (proven behaviorally and by an AST-based static assertion, not a naive substring search). It
+  also has zero imports from any dataset/database-schema module, and its evidence dataclasses declare
+  no `approved`/`imported`/`dataset_id`-shaped field anywhere.
+
+  Implementation was delegated to a background subagent with a fully self-contained brief; this
+  session independently re-verified before trusting it (Law 4's spirit applied within one shift):
+  re-read the full module/test file directly, re-ran `tests/tasks/test_ftf_04a15.py` from a clean
+  state (24 tests, "all checks passed"), independently reproduced both fault injections byte-for-byte
+  (matching md5sum `93f19456ba68e6ae844a1b57bb507f26` before/after each, and the exact same named
+  failures), and confirmed via `git status --short` that only the two new files were touched.
+
+  `ruff`/`mypy` clean (278 files, only the 15 pre-existing disclosed `alembic`-stub errors remain);
+  `pnpm run lint`/`format:check` clean; `validate_spec.py --strict` clean; `product_truth_check.py
+  --fail-on-unwired` unchanged `20/20`; `status.py` unchanged `83/300`. Regression swept
+  `test_ftf_04a09.py`-`test_ftf_04a14.py` (all "all checks passed" -- `pnpm install
+  --frozen-lockfile` materialized this sandbox's own missing `node_modules/typescript`, same
+  disclosed precedent every prior 04A-family task already established) plus `uv run pytest
+  tests/unit` (3/3) -- zero regressions.
+
+  `docs/spec-matrix.yaml` FTF-04A15 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+  commit. CI gate step (`FTF-04A15 negative-test proof`) added to `.github/workflows/ci.yml`. **Not
+  self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened PR
+  are required before certification.
 
 Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_012z85Stet2ioQ4SSFLkiZc5, triggered by the `pull_request.opened`
@@ -7943,8 +8002,24 @@ trace/deployment contract discovery") as the current pending item; it was indepe
 and CERTIFIED via **[PR #329](https://github.com/SJZLab/Sovra/pull/329)** (merge commit
 `0c796be1bdbc70c085f5c8851300e84bb04aae6a`) — see "## Done" for the certification summary and
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
+**FTF-04A15** ("Agent test/evaluation fixture discovery") — submitted 2026-09-26 via
+[PR #328](https://github.com/SJZLab/Sovra/pull/328) (branch `claude/wizardly-fermat-x60k9h`), title
+`[relay] FTF-04A15: Agent test/evaluation fixture discovery`. See this file's own top dated log for
+the full submission record. Awaiting an independently-triggered Control-plane certifier session and
+the L4 gate.
 
-Prior history, kept for the record: this paragraph previously still named
+Prior history, kept for the record: this paragraph previously named **FTF-04A14** ("Tool/schema/
+permission discovery + evidence capture") as the current pending item, dated from its own submission
+(PR #326). That is now stale — FTF-04A14 was independently certified since (this file's own top
+dated log has the full certifier record; `docs/spec-matrix.yaml`: `certification_state: CERTIFIED` /
+`proof_state: L2-CERTIFIED`, `evidence_hash` `876e9937051f818c9049175e0b126c4cb85f1bd8`, confirmed
+directly via [PR #326](https://github.com/SJZLab/Sovra/pull/326)). Corrected here rather than left
+for a future session to rediscover, per this file's own established precedent (the same class of
+staleness this paragraph itself corrected for FTF-04A13/FTF-04A12/FTF-04A11 one/two/three shifts
+ago).
+
+Correction (2026-09-27, before this shift's own FTF-04A14->FTF-04A15 update above): this paragraph
+previously still named
 **FTF-04A13** ("Prompt-source discovery + evidence capture") as the current pending item, dated from
 its own submission (PR #324). That is now stale — FTF-04A13 was independently certified since (this
 file's own top dated log has the full certifier record; `docs/spec-matrix.yaml`:
