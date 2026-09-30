@@ -5330,6 +5330,115 @@ PR #231 lands). FTF-0212 (PR #231) and FTF-0304 (PRs #194/#195) are other
 sessions' own open work — leave those alone, do not redo them.
 
 ## Previous shift
+Updated: 2026-09-24 (scheduled autonomous relay shift) — implemented and
+submitted PROVISIONAL **FTF-0212** (Real tool-call probe).
+
+STEP 0: `sha256sum CLAUDE.md` verified clean against the committed
+`CLAUDE.md.sha256`.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh (tailed, given file sizes). Found no open `BLOCKER.md` (both its
+entries are resolved history), `QUEUE.md` "Owner actions — current" empty,
+"## Active" empty, "## Provisional" empty — FTF-0211 had just been
+CERTIFIED via PR #228 and merged to `main`. This session's own working
+branch (`claude/wizardly-fermat-t7b6qv`) already contained that merge
+(`git merge-base --is-ancestor origin/main HEAD` confirmed), so no rebase
+was needed before starting new work.
+
+STEP 1: recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml` (21 `certification_state: NONE` tasks whose own
+`deps=` are all `CERTIFIED`) rather than trusting any prior shift's own
+enumeration. Checked open PRs first (`mcp__github__list_pull_requests`):
+`#194`/`#195` are two open, unmerged, overlapping producer PRs for
+**FTF-0304** — per this file's own prior instruction ("leave those for
+their own producer sessions or a certifier, do not redo the work"),
+FTF-0304 was skipped entirely. `#229` is FTF-0211 tracking-doc follow-up,
+not a new task. No other ready item had an open PR. Picked **FTF-0212**
+(Real tool-call probe, deps FTF-0201/FTF-0210, both CERTIFIED) — the
+natural next item in this shift's own `FTF-020x` real-probe sequence,
+continuing directly from FTF-0210/FTF-0211's own precedent.
+
+STEP 2 (PEV):
+- **P:** Pulled the full task packet
+  (`python3 tools/r1_handoff.py packet FTF-0212`). Read
+  `packages/litellm_client/real_chat_probe.py` (FTF-0210) and
+  `real_streaming_probe.py` (FTF-0211) in full before writing any code, to
+  match their own already-established module/test conventions (private
+  per-module constants never cross-imported even for identical values;
+  `ChatProbeNotAuthorizedError`/`ChatUsage`/`RouteIdentityState` reused
+  directly as public API; real local HTTPS-gateway + OpenBao-shaped
+  secret-backend test fixtures). Read `.github/workflows/ci.yml`'s own
+  FTF-0210/FTF-0211 gate-step wiring to replicate the same pattern.
+- **E:** Implemented
+  `packages/litellm_client/real_tool_call_probe.py::probe_tool_call` --
+  issues one real, bounded, synthetic `POST /v1/chat/completions` call
+  advertising a fixed tool schema (`get_probe_time`, one required string
+  property) and records the real advertised-versus-observed outcome (this
+  task's own acceptance clause 1) as a `ToolCallProbeResult`. This task's
+  own negative_acceptance ("An ordinary textual JSON answer is not proof
+  of a tool-call capability; invalid tool result is failed probe") is
+  enforced by construction: `_extract_first_tool_call` only ever reads the
+  structured `message.tool_calls` field, never `message.content`, so
+  tool-shaped text can never be mistaken for a real tool call
+  (`NO_TOOL_CALL_ISSUED`); a real tool call naming a different function is
+  `TOOL_NAME_MISMATCH`; arguments that fail to parse into the advertised
+  schema's required property are `INVALID_TOOL_ARGUMENTS`. Wrote
+  `tests/tasks/test_ftf_0212.py` first against the real fixtures, run
+  before every check was implemented to confirm each one could genuinely
+  fail (Law 1) — the initial run caught one real test-authoring bug of
+  this shift's own (`_extract_first_tool_call` returns bare `None`, not
+  `(None, None)`, for a `tool_calls` entry missing its `function` field;
+  fixed the test's own expectation, not the module, after re-reading the
+  actual implemented contract).
+- **V:** `uv run ruff check`/`ruff format --check` (two real line-length
+  violations found and fixed), `uv run mypy` (clean on the new files; 12
+  pre-existing `alembic`/`attr-defined` errors on unrelated migration
+  files confirmed via `git stash` to exist identically without this
+  shift's own changes, not a regression this shift introduced).
+  `scripts/validate_spec.py --strict` clean (`git fetch --unshallow`
+  first). **Own fault injection, two vectors, both reverted byte-identical
+  and the suite re-confirmed clean immediately after each:** (1) removed
+  the `if model_id not in approved_model_ids: raise
+  ChatProbeNotAuthorizedError(...)` gate from `probe_tool_call` entirely —
+  the authorization negative check genuinely failed for real; (2) removed
+  the `if observed_tool_name != _PROBE_TOOL_NAME:` `TOOL_NAME_MISMATCH`
+  branch entirely — the exact negative_acceptance-mapped mismatch check
+  genuinely failed for real (`diff` confirmed byte-identical restore both
+  times). Own regression run of `test_ftf_0201.py` (needed
+  `uv sync --all-packages` first — `uvicorn` was not yet installed in this
+  sandbox), `test_ftf_0210.py`, `test_ftf_0211.py` — all clean, no
+  regression. `scripts/product_truth_check.py --fail-on-unwired` — 17/17,
+  legitimately unchanged (`proving_symbol` still blank, same disclosed "no
+  live caller yet" precedent every sibling FTF-020x probe task through
+  FTF-0211 already established).
+
+Added this task's own CI gate step (`tests/tasks/test_ftf_0212.py`) to
+`.github/workflows/ci.yml` in the same commit as the implementation,
+deliberately not deferred, learning directly from the disclosed
+FTF-0205/FTF-0206 watchdog finding about a missing gate-wiring step.
+
+`docs/spec-matrix.yaml`'s FTF-0212 entry set to `certification_state:
+PROVISIONAL` / `proof_state: L1-PROVEN`, `evidence_hash` set to the
+implementation commit (`ceeec8f22c64984ea4428720bfe3495e66f95710`).
+**Submitted PROVISIONAL, not self-certified (Law 4)** — pushed to
+`claude/wizardly-fermat-t7b6qv`, opened as PR `[relay] FTF-0212: Real
+tool-call probe`, awaiting independent Control-plane L2 review. Full
+entry: `docs/certifications/queue.md`.
+
+## Next shift
+`docs/certifications/queue.md` now has one PROVISIONAL entry (`FTF-0212`)
+awaiting independent Control-plane L2 review — a certifier shift should
+pick it up next. Recomputing the dependency-ready frontier fresh at this
+shift's end (do not trust this note alone) showed further genuinely
+ready, uncertified, unclaimed tasks besides FTF-0212 itself — re-derive
+this list from `docs/spec-matrix.yaml` itself rather than trusting this
+enumeration, since a certification landing after this shift ends could
+unlock further items. `FTF-0304` still has two open, unmerged candidate
+PRs (#194/#195) from other sessions — leave those for their own producer
+sessions or a certifier, do not redo the work.
+
+---
+
 Updated: 2026-09-24 (scheduled Control-plane certifier shift, triggered
 by the `pull_request.opened` webhook for PR #228) — independently
 re-reviewed and **CERTIFIED FTF-0211** (Real streaming probe).
