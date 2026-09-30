@@ -1,4 +1,34 @@
 # PROGRESS — Sovra
+## 2026-09-30T07:03:00Z — Same shift — fresh GitHub Actions runner-provisioning outage confirmed repo-wide, disclosed, watching
+
+Continuation of the entry directly below (same session). After pushing the two PRs described
+there (#342's merge-conflict fix, #390's tracking doc), both PRs' own real CI runs — and,
+independently, PR #337's most recent run (`fbaf2b3a`, a different session's push around the same
+time) — all failed identically: every job (`gate` included) completed in 2-6 seconds with **zero**
+log content (`get_job_logs` 404) and `runner_id: 0`/`runner_name: ""` on every single job (checked
+directly via `get_workflow_job`, not inferred). This is the exact, previously-documented signature
+of this repo's own GitHub Actions runner-provisioning outage class (see the 2026-09-21/2026-09-27
+entries this file already carries) — a runner was never actually assigned to any job, not a real
+test/build failure, and structurally cannot be caused by any of the three PRs' own diffs (two are
+docs-only; PR #337's touches `apps/api`/tests but fails at the identical `gate`-job level with zero
+log output, the same as the docs-only ones).
+
+Re-ran PR #390's own failed run once (`rerun_workflow_run`) to confirm rather than assume — 
+`run_attempt: 2` reproduced identically (`runner_id: 0`, 3-second completion) a few minutes later.
+Per this repo's own "flake is not a root cause, but a runner-loss case gets one re-run to confirm,
+not more" convention, not re-running again. Posted one comment each on PR #390 and PR #342 naming
+the failing checks, the `runner_id: 0` evidence, and that this is external infrastructure — not
+either PR's own defect and not fixable by any push from inside this repo.
+
+Not filed as a fresh `QUEUE.md` "Owner actions — current" ask, matching this repo's own precedent
+for this exact issue class both prior times it occurred: it previously cleared on its own within
+hours (see this file's own 2026-09-21 and 2026-09-27 entries), and the next shift/check-in is the
+right point to reconfirm rather than assume. PR #390 and PR #342 both stay subscribed/watched.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated (this entry) before compaction. STEP 4 stop condition (b)
+(a true, external blocker — not this repo's code, not resolvable by a further push, already
+confirmed with the one available re-run) — stopping here for this shift. No open owner ask.
+
 ## 2026-09-30T07:00:00Z — Scheduled relay shift — resolved PR #342's merge conflict; the disclosed ARP-warming fix hit the same tooling denial as the prior session, reverted unpushed; no owner-ask channel exists for it
 
 Session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`. STEP 0: `sha256sum CLAUDE.md`

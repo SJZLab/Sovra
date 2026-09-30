@@ -1,4 +1,14 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T07:03:00Z (same shift) — **fresh GitHub Actions runner-provisioning outage
+  confirmed repo-wide (`runner_id: 0` on every job, zero log content), the same previously-
+  documented issue class (2026-09-21/2026-09-27 entries below).** Hit on PR #390's and PR #342's
+  own pushes from the entry directly below, and independently on PR #337's most recent run — all
+  three fail identically at the `gate`-job level regardless of diff content (two are docs-only).
+  Confirmed with one re-run (`run_attempt: 2` on PR #390's run, identical `runner_id: 0` outcome);
+  not re-running further per this repo's own convention. Posted one status comment each on PR #390
+  and PR #342. Not a fresh owner ask — this issue class has cleared on its own within hours both
+  prior times. Both PRs stay subscribed/watched.
+
 Updated: 2026-09-30T07:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ntfj4f`,
   session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`) — **resolved PR #342's
   merge conflict (`dirty` → pushed onto the current `main` tip, commit `8066b666`); the disclosed
