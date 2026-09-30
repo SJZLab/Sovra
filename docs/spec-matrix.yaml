@@ -1229,15 +1229,62 @@ FTF-0211:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0211.py
 FTF-0212:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Real tool-call probe
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210
-  proof_state: UNPROVEN
+  evidence_hash: ceeec8f22c64984ea4428720bfe3495e66f95710
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210 (both
+    CERTIFIED). Built for real in a new packages/litellm_client/real_tool_call_probe.py::probe_tool_call
+    -- issues one real, bounded, synthetic POST /v1/chat/completions call advertising a fixed tool
+    schema (get_probe_time, one required string property) and records the real advertised-versus-
+    observed outcome (this task's own acceptance clause 1) as a ToolCallProbeResult
+    (state/route_identity_state/resolved_model/advertised_tool_name/observed_tool_name/
+    observed_arguments/usage/latency_ms/detail/probed_at). Reuses FTF-0210's exact authorization
+    contract (ChatProbeNotAuthorizedError, raised before any network call when model_id is not in the
+    caller-supplied approved_model_ids set) and its ChatUsage/RouteIdentityState dataclasses directly
+    (public API reuse); the probe prompt, tool schema and token ceiling are this module's own private
+    constants, duplicated rather than cross-imported, matching the convention every sibling FTF-020x
+    module already follows of never importing another module's private names even for identical
+    values.
+
+    This task's own negative_acceptance ("An ordinary textual JSON answer is not proof of a tool-call
+    capability; invalid tool result is failed probe") is enforced by construction, not a text
+    heuristic: only the structured message.tool_calls field is ever inspected -- a response whose
+    message.content contains text that merely looks like a tool invocation is NO_TOOL_CALL_ISSUED,
+    the same real outcome as a response with no tool-shaped text at all, since content is never read
+    to manufacture a tool call. A real tool call naming a different function than the one advertised
+    is TOOL_NAME_MISMATCH. A real tool call naming the advertised function whose arguments string
+    does not parse as a JSON object carrying the schema's one required string property is
+    INVALID_TOOL_ARGUMENTS. None of these three is ever silently accepted as PROBED.
+
+    tests/tasks/test_ftf_0212.py (no DB required) proves this against a real local HTTPS gateway
+    fixture (real self-signed CA installed into the sandbox trust store) plus a real local OpenBao-
+    shaped secret-backend fixture, covering: the real happy-path round trip and its advertised-vs-
+    observed recording; both negative_acceptance failure modes (including the sharper case of
+    tool-shaped JSON typed as plain content); secret-backend/gateway-permission/content-filter/
+    unsupported-parameter/unrecognized-rejection/timeout/malformed-response classification, each a
+    real round trip against the live fixture, not a mock; the authorization gate; and pure unit
+    checks for the tool-call-extraction and argument-structural-validity helpers. Own fault injection,
+    two vectors, both reverted byte-identical and the suite re-confirmed clean immediately after each:
+    (1) removed the approved_model_ids authorization gate entirely -- the authorization negative check
+    genuinely failed for real; (2) removed the TOOL_NAME_MISMATCH branch entirely -- the exact
+    negative_acceptance-mapped mismatch check genuinely failed for real.
+
+    ruff/ruff format/mypy clean repo-wide; scripts/validate_spec.py --strict clean; own regression run
+    of test_ftf_0201.py/test_ftf_0210.py/test_ftf_0211.py (this task's own dependencies plus the
+    sibling module reused for its dataclasses), all clean, no regression.
+    scripts/product_truth_check.py --fail-on-unwired -- 17/17, legitimately unchanged (proving_symbol
+    still blank -- no live caller yet, same disclosed "no live caller" precedent as every sibling
+    FTF-020x probe task through FTF-0211). This task's own CI gate step was added to
+    .github/workflows/ci.yml in the same commit as the implementation, not deferred, learning directly
+    from the disclosed FTF-0205/FTF-0206 watchdog finding about a missing gate-wiring step.
+
+    Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2 review.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0212.py
 FTF-0213:
   certification_state: CERTIFIED
   criticality: MUST
@@ -4392,16 +4439,126 @@ FTF-04A14:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a14.py
 FTF-04A15:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Agent test/evaluation fixture discovery
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A09,
-    FTF-04A10, FTF-04A11
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
+    deps=FTF-04A01, FTF-04A09, FTF-04A10, FTF-04A11 (all CERTIFIED, confirmed
+    before relying on them). Path:
+    `apps/api/app/target_connectors/agent_test_evaluation_fixture_discovery.py`
+    (refined from the task packet's own generic
+    `packages/target-connectors/...` suggestion to this repo's real
+    `apps/api/app/target_connectors/*.py` layout, matching every prior
+    04A-family task's own precedent). Section 7A.4 step 9 ("Detect agent
+    tests/evaluation fixtures") only -- never re-detects entrypoints/models/
+    prompts/tools/config (FTF-04A08/09/10/11/12/13/14's own already-CERTIFIED
+    jobs) and never assembles a `DiscoveredAgentCandidate` row (FTF-04A17's
+    own already-CERTIFIED storage schema).
+
+    `run_agent_test_evaluation_fixture_discovery` classifies each
+    caller-supplied `SourceFileRef` (FTF-04A08's own connector-agnostic input
+    shape, reused not reinvented) into one of `python_test` (pytest's own
+    `test_*.py`/`*_test.py`/`conftest.py` convention, or a generic
+    `tests`/`test` directory-segment catch-all), `js_ts_test`
+    (`*.test.{ts,tsx,js,jsx}`/`*.spec.{ts,tsx,js,jsx}`, or a `__tests__`
+    directory segment), `test_framework_config` (`pytest.ini`/`setup.cfg`/
+    `tox.ini`/`pyproject.toml`/`jest.config.*`/`vitest.config.*`/
+    `playwright.config.*`, by filename only -- content is never parsed, that
+    stays FTF-04A11's own already-CERTIFIED job), or `evaluation_fixture_data`
+    (both halves must hold: a `fixtures`/`fixture`/`evals`/`eval`/`golden`
+    directory segment AND a closed `.json`/`.yaml`/`.yml`/`.jsonl` extension
+    allowlist), evaluated in a fixed, disclosed precedence order (fixture-data
+    wins over the generic tests-directory catch-all for the common
+    `tests/fixtures/*.json` shape). Everything else is left unclassified, not
+    an error.
+
+    The acceptance clause's own "source version" half is deliberately not
+    fabricated: this pure function never receives a `TargetSourceSnapshot`
+    id/commit SHA (only a `SourceFileRef` sequence), so attaching a real
+    source-version value is a future composition task's job (FTF-04A17), not
+    this one's -- disclosed in the module docstring rather than papered over
+    with a fake value.
+
+    negative_acceptance ("Discovering tests never authorizes importing their
+    answers into training or certifies test correctness") is met by two
+    independent structural facts, each with a dedicated test: (1) this module
+    **never calls `SourceFileRef.read_content()` at all**, for any category,
+    for any reason -- every classification is decidable from
+    `relative_path`/`size` alone, proven behaviorally by
+    `test_classification_never_reads_content` (a `read_content` that raises
+    if ever invoked is never triggered across all four categories) and
+    structurally by `test_module_source_never_executes_imports_or_runs_a_subprocess`
+    (an AST assertion -- not a naive substring search, which would
+    false-positive on this module's own docstring prose naming these APIs --
+    confirming no `subprocess`/`importlib` import and no `exec(`/`eval(` call
+    anywhere); (2) this module has zero imports from any dataset/
+    database-schema module and its two evidence dataclasses declare no
+    `approved`/`imported`/`dataset_id`-shaped field anywhere, proven by
+    `test_module_has_no_dataset_or_database_schema_imports` and
+    `test_evidence_dataclasses_have_no_training_authorization_field` (both
+    assert directly over the module's own AST imports / `__dataclass_fields__`
+    -- the absence of such a field is itself the proof). This module does not
+    construct a `Dataset`/`DatasetRecord`/`DatasetSourceConnection` row --
+    Section 7A.10's "must not import [fixtures] until the user selects the
+    source and allowed purpose" applies directly; discovery recommends, it
+    never itself imports.
+
+    `ResourceLimits` deliberately keeps only `max_files` (default 5,000),
+    omitting sibling tasks' `max_file_bytes`/`max_total_bytes` -- there is no
+    content read in this module at all, so those fields would bound nothing
+    real; disclosed explicitly in the module docstring rather than kept for
+    false shape-parity with siblings.
+
+    `tests/tasks/test_ftf_04a15.py`: 24 tests, all pass against the
+    unmodified code. Two independent fault injections, both independently
+    reproduced and reverted byte-identical by this shift (md5sum
+    `93f19456ba68e6ae844a1b57bb507f26` before/after each): (1) added a
+    `read_content()` call on the `evaluation_fixture_data` branch -- genuine
+    `AssertionError: read_content must never be called for
+    'tests/fixtures/customer.json'`, uncaught, propagated out of `main()`;
+    (2) widened `_FIXTURE_DATA_EXTENSIONS` to include `.txt` -- genuine FAIL
+    ("a non-allowlisted extension (.txt) living under a fixtures/ directory
+    is never guessed as fixture data -- both halves of the heuristic must
+    hold").
+
+    Implementation delegated to a background subagent with a fully
+    self-contained brief (exact task contract, the five sibling files/tests
+    to mirror, the reuse-first `SourceFileRef` shape, and the literal
+    negative_acceptance clause with required dedicated tests); this session
+    independently re-verified before trusting it, not merely accepted on its
+    own report (Law 4's spirit applied within one shift): re-read the full
+    module and test file directly; re-ran `tests/tasks/test_ftf_04a15.py`
+    from a clean checkout and confirmed the identical "all checks passed (24
+    test functions run)" output; independently reproduced both fault
+    injections byte-for-byte, confirming the exact same md5sums and the exact
+    same named failures; confirmed via `git status --short` that only the two
+    new files were touched (no existing file modified).
+
+    `uv run ruff check`/`ruff format --check` clean on both new files. `uv
+    run mypy .` clean repo-wide (278 source files; the previously-disclosed
+    15 `alembic`-stub errors are the only ones present, confirmed
+    pre-existing and unrelated). `pnpm run lint`/`pnpm run format:check` clean
+    repo-wide. `validate_spec.py --strict` clean. `product_truth_check.py
+    --fail-on-unwired` unchanged 20/20 (`proving_symbol` left blank, same
+    disclosed "no live route yet" precedent every prior 04A-family task
+    already established). `status.py` unchanged 83/300 (Law 2 -- this is a
+    submission, not a certification). Regression swept
+    `test_ftf_04a09.py`-`test_ftf_04a14.py` (all "all checks passed" -- this
+    sandbox was itself missing `node_modules/typescript`; `pnpm install
+    --frozen-lockfile` materialized it, the same disclosed precedent every
+    prior 04A-family task already established) plus `uv run pytest
+    tests/unit` (3/3) -- zero regressions. `verify_task.py --task FTF-04A15
+    --stage task` reports `BLOCKED` pre-merge, expected per precedent (no
+    merged verification evidence yet).
+
+    **Not self-certified (Law 4)** -- independent Control-plane L2 review and
+    a real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_04a15.py
 FTF-04A16:
   certification_state: CERTIFIED
   criticality: MUST
@@ -5424,15 +5581,77 @@ FTF-0500C:
   proving_symbol: ''
   proving_test: ''
 FTF-0500D:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset source security-boundary preview + audit evidence
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
+    (both CERTIFIED, confirmed before relying on them). `database_changes` charters "No
+    independent schema change. Consume frozen contract" -- pure, DB-free
+    `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` composes Section
+    7A.10's own literal "before import, show" field list (source name/type, estimated
+    records/bytes, security classification, requested purpose, retention policy, whether data
+    will leave its current security boundary, expected transformations) via
+    `build_dataset_source_copy_preview`, and this task's own negative_acceptance ("UI warning
+    alone cannot allow forbidden egress; backend checks grant and destination again at import")
+    via a second, independent function, `authorize_dataset_source_copy`, which re-derives both
+    checks from its own arguments and raises rather than trusting any previously built preview.
+    Cross-boundary-import precedent (workers/data cannot import apps/api, per FTF-0506's own
+    disclosed precedent, reused again by FTF-0511/FTF-0512/FTF-0513): FTF-0500's own
+    `security_classification`/`allowed_purposes` enums and FTF-0402's own
+    `SECURITY_PROFILE_LEVELS`/`resolve_effective_security_profile` rule are mirrored locally
+    (`SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS`/`SUPPORTED_PROJECT_SECURITY_PROFILES`/
+    `SUPPORTED_PURPOSES`, `resolve_effective_project_security_profile`), never cross-boundary
+    imported. Two disclosed, narrow design choices where this specification underspecifies (same
+    class of precedent as FTF-0402/FTF-0500's own disclosed enum choices): (1)
+    `MINIMUM_REQUIRED_SECURITY_PROFILE` maps `security_classification` to the minimum project
+    `security_profile` required to receive it (public/internal -> standard, confidential ->
+    zero_egress, restricted -> air_gapped) -- no section of this plan fixes this mapping; (2)
+    `RETENTION_POLICY_STATUS` is a single honest sentinel ("not_yet_configured") rather than a
+    fabricated retention value, since Section 67.4's `DataUseGrant` (the entity that will carry a
+    real retention policy) is a separate, not-yet-built, dependency-gated concept (FTF-0500's own
+    module docstring already discloses this). Path refined to
+    `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` (this repo's real
+    `SOURCE_ROOTS`, FTF-0001/PR #10), not the packet's suggested non-existent
+    `services/training-worker/...` tree, same precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/
+    FTF-0512/FTF-0513.
+
+    `tests/tasks/test_ftf_0500d.py`: 25 test functions covering the full Section 7A.10 field
+    list on the positive path, the honest (never fabricated, never per-classification-varying)
+    retention sentinel, both `build_dataset_source_copy_preview` blocking paths (purpose denied,
+    revoked connection, security-boundary crossing, both simultaneously) surfaced without ever
+    raising, the effective-profile resolution rule (more restrictive of org/project, and a
+    project may choose stricter than its org's own floor), the closed classification->profile
+    mapping, field validators (unknown classification/profile/purpose, non-negative-int
+    bool-exclusion, non-string transformation entries, empty transformations as a legitimate
+    state), and `authorize_dataset_source_copy`'s own independent re-derivation (raises on purpose
+    denial, revoked connection, boundary crossing, and both simultaneously; succeeds only when
+    both checks pass; and explicitly proven to never read or trust a previously built preview
+    object at all) -- all pass. Two independent, disclosed fault injections, both reverted
+    byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` before/after each): (1) the
+    boundary-crossing check in `authorize_dataset_source_copy` short-circuited to never fire (`if
+    False and ...`) -- 1 genuine FAIL (`authorize_dataset_source_copy raises on a security
+    boundary crossing`); (2) the purpose/status check in `check_purpose_authorized` short-
+    circuited the same way -- 4 genuine FAILs (both the preview's own revoked-connection case and
+    `authorize_dataset_source_copy`'s own revoked-connection/both-simultaneously cases).
+
+    `uv run ruff check .`/`ruff format --check .` clean on both new files; `uv run mypy .` clean
+    (zero new errors). `python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py
+    --fail-on-unwired`: unchanged (this task's own `proving_symbol` stays blank -- FTF-0501,
+    Section 8's first real import surface and this task's own dependent, does not exist yet to
+    call either function; disclosed "no live caller yet" precedent, same class as
+    FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0513/FTF-1302/FTF-1303/FTF-1304).
+    Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/`test_ftf_0511.py`/`test_ftf_0512.py`/
+    `test_ftf_0513.py` -- zero regressions.
+
+    CI gate step ("FTF-0500D negative-test proof") added to `.github/workflows/ci.yml`
+    immediately after the FTF-04A20 step. **Not self-certified (Law 4)** -- independent
+    Control-plane L2 review is required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
   certification_state: NONE
   criticality: MUST
@@ -7316,15 +7535,49 @@ FTF-1205:
   proving_symbol: ''
   proving_test: ''
 FTF-1206:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Organization policy control
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201 (both
+    CERTIFIED, confirmed before relying on them). This task's own `database_changes` clause ("No
+    independent schema change... any required change is a separately claimed migration
+    prerequisite") and empty `shared_lock_required` (it does not hold the phase-12 contract lock
+    FTF-1201 owns) mean it adds no live route, table or column -- the same disclosed-gap posture
+    FTF-0103/FTF-0104/FTF-0105/FTF-H003/FTF-0402 already established in this repository for a
+    real, provable primitive with no live caller yet.
+    packages/litellm_client/organization_policy_control.py::
+    enforce_project_gateway_permission_request is the real enforcement of this task's own
+    negative_acceptance ("Project-level permission cannot widen gateway management capability or
+    data boundary"), the identical inheritance/no-relaxation shape FTF-0402's own already-CERTIFIED
+    enforce_security_profile_selection established for security profiles, applied here across all
+    three dimensions this task's own acceptance clause names (registration namespaces grounded in
+    Section 38.1's "dedicated Factory-owned namespace", deployment namespaces and approvers
+    grounded in Section 38.5's "Freeze deployment bundle and request approval"): a project's
+    requested set for each dimension must already be a subset of its organization's own
+    OrganizationGatewayPolicy, or the whole request is denied (never a silent partial grant).
+    enforce_route_change_authority separately enforces Section 38.5/38.6's own real route-change
+    approval gate: an actor outside the organization's own approvers, or a bypass-approval
+    request, is denied. Real, disclosed persistence gap (not hidden): OrganizationGatewayPolicy has
+    no backing table yet -- constructing and persisting one for a real organization is the
+    separately claimed migration prerequisite this task's own database_changes clause names; no
+    live route or caller exists yet for this exact module, the same class of gap FTF-0402's own six
+    not-yet-existing consuming surfaces already carried before each was later given a real caller.
+    proving_symbol left blank accordingly (Law 6/7 -- designed is not wired, and this is honestly
+    disclosed as UNWIRED rather than claimed WIRED-AND-PROVEN).
+    tests/tasks/test_ftf_1206.py: 19 checks, no DB/network required (matches this task's own
+    schema-free scope) -- namespace/approver-identity validation, the negative_acceptance proven
+    for all three dimensions individually and combined, exact-subset/empty/full-policy grants
+    returned unchanged, and route-change authority (approver/bypass/no-approval-required paths).
+    Real fault injection (Law 1): disabled the widening check
+    (`if unauthorized_registration or unauthorized_deployment or unauthorized_approvers:` ->
+    `if False:`) -- 3 of the negative_acceptance checks genuinely FAILed, bound to this criterion
+    ID; reverted byte-identical (md5sum confirmed matching before/after) and reran clean.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1206.py
 FTF-1301:
   certification_state: CERTIFIED
   criticality: MUST
@@ -8689,16 +8942,35 @@ FTF-1806:
   proving_symbol: ''
   proving_test: ''
 FTF-1807:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: LiteLLM outage runbook
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
-    FTF-H005
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
+    FTF-H005 (all CERTIFIED, confirmed before relying on them). This task's own `database_changes`
+    clause ("No independent schema change... any required change is a separately claimed migration
+    prerequisite") and empty `shared_lock_required` mean it adds no new production code -- its own
+    `files` list names only `docs/operations/litellm_outage_runbook.md` and
+    `tests/documentation/test_ftf_1807.py`. The runbook is a human-readable summary of real,
+    already-CERTIFIED library behavior (FTF-0208/FTF-0209/FTF-0215/FTF-H004/FTF-H005): revocation
+    (`LastKnownGoodCatalog._apply_revocation`/`is_call_authorized`), the 5-minute freshness-TTL
+    admission cutoff, `require_model_access`'s ownership/connection-revocation/catalog three-check
+    gate, `CatalogAnomalyDetector`'s bounded 3-attempt retry ceiling and acknowledge-never-restores
+    audit trail, `PeriodicSyncWorkflow`'s strict-sequence out-of-order guard (safe routing recovery),
+    and `route_attestation.py`'s real cache-bypass field plus fingerprint-verified identity (this
+    task's own negative_acceptance, "No unauthorized cached access or unapproved external fallback
+    during private outage"). Every numeric/string fact the doc states is read directly from the real
+    imported constants in the test, never hardcoded twice, so the doc cannot silently drift from the
+    real code. Disclosed, not hidden: none of the cited modules has a live route/scheduler caller yet
+    (same "no live caller yet" precedent every one of them already established for itself) -- the
+    runbook says so explicitly rather than claiming a wired production incident-response system.
+    `proving_symbol` stays blank; `product_truth_check.py`'s product-true count is deliberately
+    unchanged.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/documentation/test_ftf_1807.py
 FTF-1808:
   certification_state: NONE
   criticality: MUST
@@ -9002,16 +9274,91 @@ FTF-H006:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h006.py
 FTF-H007:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Untrusted source acquisition and complete immutable analysis
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q25; deps=FTF-04A05, FTF-04A06,
-    FTF-04A08, FTF-04A19, FTF-H006
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=audit_hardening; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q25; deps=FTF-04A05,
+    FTF-04A06, FTF-04A08, FTF-04A19, FTF-H006 (all CERTIFIED, confirmed before relying on them).
+    Path refined from the packet's own hyphenated `services/source-analysis-worker/analyzers/
+    source_boundary.py`/`packages/target-connectors/contracts/snapshot_inventory.py` (neither
+    directory exists in this repository; every sibling 04A-family task already refined the
+    identical suggested shape to `apps/api/app/target_connectors/*.py`) to
+    `apps/api/app/target_connectors/{source_boundary,snapshot_inventory}.py`.
+    `snapshot_inventory.py` reuses FTF-04A06's own already-CERTIFIED `resolve_allowed_root`
+    unmodified for the root check, then runs its own independent, continue-on-finding walk of
+    the same real root (`local_repository_connector._iter_repository_files` is fail-fast --
+    correct for "capture one unambiguous manifest," wrong for "report every problem" -- so this
+    task owns a second, distinct walk rather than reusing that private function), producing a
+    `SnapshotInventory` with real per-entry symlink-escape detection (identical `os.path.realpath`
+    technique, independently applied) plus `.gitattributes`/`.gitmodules`-driven Git LFS/submodule
+    resolution checks (LFS: a real pointer-stub content check against the declared filter=lfs
+    glob patterns; submodule: a real on-disk empty/missing-directory check against `.gitmodules`'s
+    own declared paths). `source_boundary.py` adds the two detectors that exist nowhere else in
+    this repository (confirmed by a repo-wide grep before writing either file): a real,
+    non-`.sample`, executable `.git/hooks/*` scan (local_repository_connector's own manifest walk
+    deliberately excludes `.git` entirely, so an active hook is otherwise invisible to it) and a
+    real Python `ast.parse`/`ast.walk` scan (never `exec`/`eval`/`compile`/`importlib`/subprocess)
+    for a closed, named set of process/interpreter-escalation calls (`eval`/`exec`/`os.system`/
+    `subprocess.*`/etc.), matching FTF-04A09's own "AST only, closed named set, never guessed"
+    discipline. `evaluate_manifest_lock_readiness` is this task's own real, pure proof of
+    "incomplete critical snapshot blocks lock" -- mirroring `agent_manifest_schema.
+    CRITICAL_LOCK_FIELDS`'s own already-CERTIFIED shape -- raising `SourceBoundaryUnsafeError`
+    naming every real blocking reason (truncated tree, unresolved submodule/LFS path, escaping
+    symlink, executable hook, dangerous dynamic call) computed from real, tested evidence. Not
+    wired into the live, DB-backed `agent_manifest_crud.lock_agent_manifest`: doing so needs a
+    real column persisting this evidence against a `TargetSourceSnapshot`/`AgentManifest` row, and
+    `target_source_snapshot_schema.py`'s own docstring already discloses the identical situation
+    for `analysis_status` ("deliberately a closed one-value set for Release 1... expandable only
+    through a real schema change") -- a schema change this task's own contract explicitly assigns
+    to "a separately claimed migration prerequisite," never a hidden write bundled into this
+    submission (`database_changes: "Consume existing tenant-scoped schemas... not a hidden
+    write"`). `proving_symbol` left blank for the same disclosed reason (Law 6/7) -- the real,
+    tested decision function exists and is proven directly against a real malicious local-git
+    fixture, but no live route/CRUD call site invokes it yet.
+
+    tests/tasks/test_ftf_h007.py (no-DB, real local `git` repositories via the same `test_ftf_04a06.py`
+    fixture convention -- never mocked): a clean repository is safe to lock with zero findings; a
+    real malicious repository (a `plugin.py` containing a genuine `os.system(...)` call, an active
+    executable `.git/hooks/pre-push` script, a symlink whose real target resolves outside the repo
+    root to a file holding a unique secret string, a `.gitattributes`-declared `*.bin` LFS pattern
+    whose real on-disk content is still an unresolved pointer stub, and a `.gitmodules`-declared
+    submodule path that is a real, empty, uninitialized directory) is scanned end to end: every one
+    of the five findings is reported, `is_safe_to_lock` is `False`, `evaluate_manifest_lock_
+    readiness` raises naming every reason, the `os.system` call and the hook script are both
+    confirmed *never actually executed* (two separate marker files, each confirmed absent
+    afterward), and the real secret content behind the escaping symlink is confirmed to never
+    appear anywhere in the returned report (`repr(report)` substring check) nor to have been read
+    into any `InventoryEntry.content`; a second, isolated fixture containing only the escaping
+    symlink confirms that check alone is sufficient to block lock, independent of the other four
+    detectors; a fourth case confirms a merely-dirty (uncommitted, otherwise ordinary) working tree
+    alone does *not* block lock, per Section 7A.3's own "visibly marked, not refused."
+
+    Real fault injection (Law 1, three independent vectors, each reverted byte-identical and the
+    suite re-run clean immediately after): (1) disabled `snapshot_inventory`'s own escaping-symlink
+    check (`escapes = False and (...)`) -- the isolated-symlink case and three checks on the
+    combined malicious-repo case genuinely failed by name; (2) disabled the executable-hook bit
+    check in `source_boundary._scan_git_hooks` (`if False and mode & _EXECUTABLE_BITS`) -- exactly
+    the one named hook-detection check genuinely failed; (3) disabled the dangerous-attribute-call
+    branch in `_scan_dangerous_python_calls` (`if False and dotted is not None and ...`) -- exactly
+    the one named `os.system` check genuinely failed. `git fetch --unshallow`/`uv sync
+    --all-packages` needed (same shallow-clone/missing-dependency artifact every prior shift
+    already documents). `ruff check`/`ruff format --check` clean repo-wide (336 source files, up
+    from 334); `mypy` clean of any new error (334 files checked; the pre-existing 17
+    `alembic.op`/`alembic.context` `attr-defined` errors are unchanged baseline noise).
+    `scripts/validate_spec.py --strict` clean. `scripts/product_truth_check.py --fail-on-unwired`
+    unchanged `24/24` (`proving_symbol` deliberately blank, disclosed above). `scripts/status.py`
+    unchanged `97/300` certified (Law 2 -- submission, not certification). Regression swept
+    `test_ftf_04a05.py`/`test_ftf_04a05_routes.py`/`test_ftf_04a06.py`/`test_ftf_04a09.py`/
+    `test_ftf_0304.py`/`test_ftf_h034.py`, zero regressions. Added one `gate`-job CI step after
+    FTF-1807's own (no new integration job -- no DB/route to integration-test, matching this
+    task's own `database_changes` clause). **Not self-certified (Law 4)** -- awaiting independent
+    Control-plane L2 review and a real CI run on the opened PR.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_h007.py
 FTF-H008:
   certification_state: NONE
   criticality: MUST
