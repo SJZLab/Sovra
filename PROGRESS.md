@@ -143,6 +143,10 @@ tests/tasks/test_ftf_h007.py`; `evidence_hash` left blank pending the real merge
 self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened PR
 are required before certification.
 
+Opened PR: https://github.com/SJZLab/Sovra/pull/385 (branch `claude/wizardly-fermat-l9gppv` ->
+`main`). Subscribed to its GitHub activity immediately after opening so CI-red/review events on
+this PR wake this session per the standing "PRs you created in this session are yours" rule.
+
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
 compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-H007) is `L1-PROVEN`, no blocking
 defect found by this session's own review -- awaiting an independently-triggered Control-plane

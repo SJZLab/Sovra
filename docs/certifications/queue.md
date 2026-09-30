@@ -20276,7 +20276,7 @@ FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independe
   the opened PR.
 
 ## 2026-09-30T03:15:00Z — FTF-H007 — Untrusted source acquisition and complete immutable analysis
-- **PR:** (opened this shift, see PROGRESS.md/QUEUE.md for the link)
+- **PR:** https://github.com/SJZLab/Sovra/pull/385
 - **Session:** https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6
 - **Dependencies:** FTF-04A05, FTF-04A06, FTF-04A08, FTF-04A19, FTF-H006 (all CERTIFIED, confirmed
   before relying on them).

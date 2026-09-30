@@ -48,8 +48,8 @@ Updated: 2026-09-30T03:15:00Z (scheduled relay shift, branch `claude/wizardly-fe
   `test_ftf_04a09.py`/`test_ftf_0304.py`/`test_ftf_h034.py`, zero regressions. Added one `gate`-job
   CI step after FTF-1807's own (no new integration job). `docs/spec-matrix.yaml` FTF-H007 set to
   `PROVISIONAL`/`L1-PROVEN`. **Not self-certified (Law 4)** -- awaiting independent Control-plane
-  L2 review and a real CI run on the opened PR. **PR:** (see this shift's follow-up entry for the
-  link once opened). No open owner ask.
+  L2 review and a real CI run on the opened PR. **PR:**
+  https://github.com/SJZLab/Sovra/pull/385. No open owner ask.
 
 Updated: 2026-09-30T00:57:55Z (scheduled relay shift, branch `claude/wizardly-fermat-0rn1af`,
   session `https://claude.ai/code/session_01MbLYBmQuPKkrykH44wLaFN`) — **submitted FTF-1807
