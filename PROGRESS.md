@@ -2106,6 +2106,131 @@ full evidence breakdown; `QUEUE.md`/`docs/certifications/queue.md` updated. `scr
 
 - **Reviewed-by:** this session (independent — see session-ID check above), 2026-09-27.
 
+## 2026-09-27 — FTF-0500D — relay: submit PROVISIONAL
+
+Scheduled autonomous relay shift. STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh; `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md` directly (no
+mismatch). STEP 0.2: `cognee-cli` not installed in this sandbox — text-search fallback active,
+declared here per STEP 0.2 (same disclosed gap every prior shift's own history already
+documents).
+
+Confirmed **FTF-04A20** ("ManifestEvidence schema/API") already has an open Control-plane
+certification PR (**[PR #334](https://github.com/SJZLab/Sovra/pull/334)**, opened 2026-09-27
+11:21:51Z by a separate session) before this shift started — no relay action left there; this
+file's own top entry and `QUEUE.md`'s own "## Provisional" section both still named it as the
+pending item, now stale in that one respect (a certifier session is already working it).
+
+Checked every other open PR directly via the GitHub API before picking new work: #328
+(FTF-04A15), #315/#314 (FTF-0303), #313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed
+blocker), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/#194 (FTF-0304, duplicate
+PRs) — none overlap with this shift's own eventual pick. Recomputed the dependency-ready
+frontier directly from `docs/spec-matrix.yaml` (every task's own real `certification_state`,
+not `docs/TASK_INDEX.md`'s dependency column alone): 5 tasks came back dependency-ready and not
+already claimed by an open PR — FTF-04A02, FTF-0500A, FTF-0500D, FTF-0902, FTF-1201. Excluded
+FTF-04A02 (GitHub App/token read-only secret integration — a keyed external service, ask-first
+per CLAUDE.md). Pulled all four remaining task packets via `tools/r1_handoff.py packet <id> --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` and read each one's full acceptance/negative_acceptance
+contract before choosing: FTF-1201 (LiteLLM registration capability detection) touches one of
+the seven reused components' own integration form and was set aside as the more cautious choice
+this shift, in favor of a plainer adapter-layer task with no such touch; FTF-0902 (Network-policy
+templates) requires "Install and test actual CNI/firewall/DNS/IPv6/metadata restrictions" against
+a real enforcing cluster — no such cluster exists in this sandbox, and its own negative_acceptance
+literally rules out a non-enforcing-cluster pass ("NetworkPolicy YAML on nonenforcing cluster is
+not pass"), making it BLOCKED_EXTERNAL rather than a task this shift could produce real evidence
+for; FTF-0500A (Dataset source selector + purpose-authorization UI) is a frontend `apps/web`
+`.tsx` task, a different stack than this shift's own remaining budget favored starting fresh in.
+Picked **FTF-0500D** ("Dataset source security-boundary preview + audit evidence") — deps
+FTF-0402/FTF-0500, both genuinely `CERTIFIED` (confirmed directly in `docs/spec-matrix.yaml`
+before relying on them), a backend-only pure-function task matching this repository's own
+established `workers/data/*.py` pattern (FTF-0508/FTF-0511/FTF-0512/FTF-0513) exactly.
+
+Read `apps/api/app/datasets/dataset_source_connection_schema.py`/`dataset_source_connection_
+crud.py` (FTF-0500's own already-CERTIFIED `authorize_purpose_use`/`ALLOWED_PURPOSES`/
+`ALLOWED_SECURITY_CLASSIFICATIONS`) and `apps/api/app/services/project_security_profile.py`
+(FTF-0402's own already-CERTIFIED `SECURITY_PROFILE_LEVELS`/`resolve_effective_security_profile`/
+`require_profile_at_least` — the last of these disclosed, in FTF-0402's own module docstring, as
+having "no live caller yet") in full before writing anything. Read Section 7A.10 directly
+(`FINE_TUNING_FACTORY_RELEASE_1.md`): "before import, show: source name/type, estimated
+records/bytes, security classification, requested purposes, retention policy, whether data will
+leave its current security boundary, expected transformations" — this task's own acceptance
+clause made literal, not paraphrased.
+
+Implemented `workers/data/dataset_source_security_boundary_preview_audit_evidence.py`. Confirmed
+the established cross-boundary-import precedent first (FTF-0506's own module docstring: "workers/
+data cannot import apps/api", reused again by FTF-0511/FTF-0512/FTF-0513 for the exact same
+enum-mirroring reason) — this module does not import `DatasetSourceConnection` or
+`project_security_profile.py`; it mirrors their closed vocabularies locally
+(`SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS`/`SUPPORTED_PROJECT_SECURITY_PROFILES`/
+`SUPPORTED_PURPOSES`) and re-implements `resolve_effective_security_profile`'s own rule locally as
+`resolve_effective_project_security_profile` (most-restrictive-wins, a project may choose
+stricter than its org's own floor), the same disclosed non-import precedent FTF-0511 already
+established for `SUPPORTED_PURPOSES`. `build_dataset_source_copy_preview` composes Section
+7A.10's full field list and never raises on a blocking condition (a preview must always render,
+even to show a warning) — `blocked`/`blocking_reasons` name exactly what the second function
+would independently refuse. `authorize_dataset_source_copy` is the real, independent backend gate
+this task's own negative_acceptance names literally ("UI warning alone cannot allow forbidden
+egress; backend checks grant and destination again at import.") — it re-derives both the
+purpose/status check and the security-boundary check from its own arguments every time, never
+reading or trusting a previously built preview object, and raises
+(`DatasetSourceCopyAuthorizationError`/`SecurityBoundaryCrossingError`) rather than returning a
+soft pass.
+
+Two disclosed, narrow design choices where this specification underspecifies (same class of
+precedent as FTF-0402/FTF-0500's own disclosed enum choices, not a fresh habit): (1)
+`MINIMUM_REQUIRED_SECURITY_PROFILE` maps `security_classification` to the minimum project
+`security_profile` required to receive it (public/internal -> standard, confidential ->
+zero_egress, restricted -> air_gapped) — no section of this plan fixes this mapping, and the
+module docstring records the reasoning and that a later task may tighten/replace it via a real
+`spec-matrix.yaml` note update, never a silent widening; (2) `RETENTION_POLICY_STATUS` is a
+single honest sentinel (`"not_yet_configured"`) rather than a fabricated retention value, since
+Section 67.4's `DataUseGrant` (the entity that will actually carry a real retention policy) is a
+separate, not-yet-built, dependency-gated concept FTF-0500's own module docstring already
+discloses — Law 11 forbids fabricating one now.
+
+`tests/tasks/test_ftf_0500d.py`: 25 test functions covering the full Section 7A.10 field list on
+the positive path, the honest retention sentinel (never fabricated, never varying by
+classification), every `build_dataset_source_copy_preview` blocking path (purpose denied, revoked
+connection, security-boundary crossing, both simultaneously) surfaced without ever raising, the
+effective-profile resolution rule, the closed classification->profile mapping, field validators
+(unknown classification/profile/purpose, non-negative-int bool-exclusion, non-string
+transformation entries, empty transformations as a legitimate state), and
+`authorize_dataset_source_copy`'s own independent re-derivation (raises on purpose denial, revoked
+connection, boundary crossing, and both simultaneously; succeeds only when both checks pass; and
+explicitly proven to never read or trust a previously built preview object at all) — all pass.
+Two independent, disclosed fault injections (Law 1), both reverted byte-identical (md5sum
+`2113594afa576abbd248d9e147fd8745` before/after each, re-confirmed clean immediately after): (1)
+the boundary-crossing check in `authorize_dataset_source_copy` short-circuited to never fire (`if
+False and ...`) — 1 genuine FAIL (`authorize_dataset_source_copy raises on a security boundary
+crossing`); (2) the purpose/status check in `check_purpose_authorized` short-circuited the same
+way — 4 genuine FAILs across both the preview's own revoked-connection case and
+`authorize_dataset_source_copy`'s own revoked-connection/both-simultaneously cases.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (292 source files, both new files
+included). `uv run mypy .` clean — the 17 pre-existing `alembic.op`/`alembic.context`
+`attr-defined` errors in `apps/api/alembic/versions/*.py`/`env.py` are unrelated to this task (no
+file this task touched), confirmed zero new errors. `python3 scripts/validate_spec.py --strict`
+clean. `product_truth_check.py --fail-on-unwired`: unchanged at **22/22** — this task's own
+`proving_symbol` stays blank, matching the disclosed "no live caller yet" precedent
+(FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0513/FTF-1302/FTF-1303/FTF-1304): FTF-0501
+(Section 8's first real import surface and this task's own dependent) does not exist yet to call
+either function. `status.py`: unchanged `85/300` certified, `21` product-true (Law 2 — this is a
+submission, not a certification). Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/
+`test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0513.py` — zero regressions.
+
+`docs/spec-matrix.yaml` FTF-0500D set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test:
+tests/tasks/test_ftf_0500d.py` (`proving_symbol` left blank, disclosed above); `evidence_hash`
+left blank pending the real merge commit. CI gate step ("FTF-0500D negative-test proof") added to
+`.github/workflows/ci.yml` immediately after the FTF-04A20 step. **Not self-certified (Law 4)** —
+independent Control-plane L2 review is required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500D) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session (FTF-04A20's own certification, PR #334, is already in flight from a separate
+session and needs no action here). Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-27 — FTF-04A20 — relay: submit PROVISIONAL
 
 Scheduled autonomous relay shift. STEP 0.1 read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/

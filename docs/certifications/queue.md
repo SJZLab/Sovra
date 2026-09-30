@@ -20630,3 +20630,50 @@ STEP 3: `PROGRESS.md`/`QUEUE.md`/this file all updated this shift, before compac
 condition (a): 1/1 in-flight item (FTF-04A15) is `L1-PROVEN`, no blocking defect found by this
 session's own review — awaiting an independently-triggered Control-plane certifier session and the
 L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+## 2026-09-27 — FTF-0500D — Dataset source security-boundary preview + audit evidence
+- **PR:** (opened this shift — see commit below; branch `claude/wizardly-fermat-8phqdi`)
+- **Test:** tests/tasks/test_ftf_0500d.py — 25 test functions, all pass
+- **Deps:** FTF-0402 (Project security profile), FTF-0500 (DatasetSourceConnection
+  schema/API/RBAC) — both confirmed genuinely CERTIFIED in `docs/spec-matrix.yaml` before
+  relying on them.
+- **Scope:** `workers/data/dataset_source_security_boundary_preview_audit_evidence.py`. Pure,
+  DB-free (`database_changes`: "No independent schema change. Consume frozen contract").
+  `build_dataset_source_copy_preview` composes Section 7A.10's own literal "before import, show"
+  field list (source name/type, estimated records/bytes, security classification, requested
+  purpose, retention policy, whether data will leave its current security boundary, expected
+  transformations) and never raises on a blocking condition. `authorize_dataset_source_copy` is
+  the independent backend gate this task's own negative_acceptance names literally ("UI warning
+  alone cannot allow forbidden egress; backend checks grant and destination again at import.") —
+  re-derives both the purpose/status check and the security-boundary check from its own
+  arguments every call (never reads a previously built preview) and raises
+  (`DatasetSourceCopyAuthorizationError`/`SecurityBoundaryCrossingError`) rather than returning a
+  soft pass.
+- **Cross-boundary-import precedent:** following FTF-0506's own disclosed "workers/data cannot
+  import apps/api" rule (reused again by FTF-0511/FTF-0512/FTF-0513), this module mirrors FTF-0500's
+  own `security_classification`/`allowed_purposes` enums and FTF-0402's own
+  `SECURITY_PROFILE_LEVELS`/`resolve_effective_security_profile` rule locally rather than
+  importing them.
+- **Disclosed design choices** (spec underspecifies both; same class of precedent as
+  FTF-0402/FTF-0500's own disclosed enum choices): (1) `MINIMUM_REQUIRED_SECURITY_PROFILE` maps
+  `security_classification` to the minimum project `security_profile` required to receive it
+  (public/internal -> standard, confidential -> zero_egress, restricted -> air_gapped); (2)
+  `RETENTION_POLICY_STATUS` is a single honest sentinel (`"not_yet_configured"`), not a fabricated
+  retention value — Section 67.4's `DataUseGrant` (the entity that will carry a real retention
+  policy) is a separate, not-yet-built, dependency-gated concept.
+- **Evidence:** two independent, disclosed fault injections (Law 1), both reverted
+  byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` before/after each): (1) the
+  boundary-crossing check in `authorize_dataset_source_copy` short-circuited to never fire —
+  1 genuine FAIL (`authorize_dataset_source_copy raises on a security boundary crossing`); (2)
+  the purpose/status check in `check_purpose_authorized` short-circuited the same way — 4 genuine
+  FAILs (the preview's own revoked-connection case and `authorize_dataset_source_copy`'s own
+  revoked-connection/both-simultaneously cases).
+- `uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean (17
+  pre-existing `alembic.op`/`alembic.context` errors in `apps/api/alembic/*` are unrelated to this
+  task, zero new errors). `python3 scripts/validate_spec.py --strict` clean.
+  `product_truth_check.py --fail-on-unwired`: unchanged 22/22 — `proving_symbol` left blank
+  (disclosed "no live caller yet" precedent: FTF-0501, this task's own dependent, does not exist
+  yet). `status.py`: unchanged 85/300 certified, 21 product-true. Regression swept
+  `test_ftf_0402.py`/`test_ftf_0508.py`/`test_ftf_0511.py`/`test_ftf_0512.py`/`test_ftf_0513.py` —
+  zero regressions.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
+  awaiting Control plane L2 review per Law 4.
