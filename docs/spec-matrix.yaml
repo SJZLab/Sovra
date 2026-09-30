@@ -5508,10 +5508,10 @@ FTF-0500C:
   proving_symbol: ''
   proving_test: ''
 FTF-0500D:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dataset source security-boundary preview + audit evidence
-  evidence_hash: ''
+  evidence_hash: bb2ea6ca8a5944587b6a0ef017ec3fc915c6f54b
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
@@ -5576,7 +5576,7 @@ FTF-0500D:
     CI gate step ("FTF-0500D negative-test proof") added to `.github/workflows/ci.yml`
     immediately after the FTF-04A20 step. **Not self-certified (Law 4)** -- independent
     Control-plane L2 review is required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
@@ -7462,10 +7462,10 @@ FTF-1205:
   proving_symbol: ''
   proving_test: ''
 FTF-1206:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Organization policy control
-  evidence_hash: ''
+  evidence_hash: f12c2a973519f26a0e8e98c75227ee85221acd44
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q21, Q22; deps=FTF-0402, FTF-1201 (both
@@ -7502,7 +7502,7 @@ FTF-1206:
     (`if unauthorized_registration or unauthorized_deployment or unauthorized_approvers:` ->
     `if False:`) -- 3 of the negative_acceptance checks genuinely FAILed, bound to this criterion
     ID; reverted byte-identical (md5sum confirmed matching before/after) and reran clean.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1301:
@@ -8869,10 +8869,10 @@ FTF-1806:
   proving_symbol: ''
   proving_test: ''
 FTF-1807:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LiteLLM outage runbook
-  evidence_hash: ''
+  evidence_hash: f317a32e8841b69e15a28912aed9b821e9728deb
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
@@ -8895,7 +8895,7 @@ FTF-1807:
     runbook says so explicitly rather than claiming a wired production incident-response system.
     `proving_symbol` stays blank; `product_truth_check.py`'s product-true count is deliberately
     unchanged.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/documentation/test_ftf_1807.py
 FTF-1808:
@@ -9201,10 +9201,10 @@ FTF-H006:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h006.py
 FTF-H007:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Untrusted source acquisition and complete immutable analysis
-  evidence_hash: ''
+  evidence_hash: 15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3
   implementation_state: IMPLEMENTED
   notes: >-
     kind=audit_hardening; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q25; deps=FTF-04A05,
@@ -9283,7 +9283,7 @@ FTF-H007:
     FTF-1807's own (no new integration job -- no DB/route to integration-test, matching this
     task's own `database_changes` clause). **Not self-certified (Law 4)** -- awaiting independent
     Control-plane L2 review and a real CI run on the opened PR.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h007.py
 FTF-H008:

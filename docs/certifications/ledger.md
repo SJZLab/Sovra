@@ -9692,3 +9692,16 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## Batch certification 2026-09-30 — FTF-0500D, FTF-1206, FTF-1807, FTF-H007
+Validated-by: session https://claude.ai/code/session_01ACetHuRJU42F3aSPrnhToF (independent — that session ID appears in no commit on `main`, so it shares none with PRs #335/#381/#384/#385). Date: 2026-09-30.
+Common evidence: each PR had 38/38 check runs `completed`/`success` on its head, including `gate`. All four suites are script-style (`check()` collects FAILURES; pytest alone does not assert) and CI runs them directly (`.github/workflows/ci.yml` lines 317/319/321 for 1206/1807/H007, and the 0500D step). Every fault injection below was therefore run via `python3 <test file>` and went red; each file was reverted with `git checkout`. Recommendation to the relay (not a blocker): make `check()` raise so `pytest` is also meaningful. Packets re-pulled via `tools/r1_handoff.py packet <id>`; acceptance and negative_acceptance confirmed met. proving_symbol is blank for all four (no live caller yet, disclosed), so product_truth is correctly unchanged. Note: a review subagent initially returned REJECT for FTF-1807 and FTF-H007 solely on pytest vacuity; the certifier overrode it because CI runs the script form and that form reddens under injection.
+
+### FTF-0500D — PR #335, merge commit bb2ea6ca8a5944587b6a0ef017ec3fc915c6f54b
+CI: https://github.com/SJZLab/Sovra/actions/runs/36672941492. Injections: `would_cross_security_boundary` forced False -> 6 failures; purpose-denial disabled -> 5 failures.
+### FTF-1206 — PR #381, merge commit f12c2a973519f26a0e8e98c75227ee85221acd44
+CI: https://github.com/SJZLab/Sovra/actions/runs/36642768943. Injections: widening check and approver check set to `if False` -> 4 failures. Scope disclosed: pure typed shape + enforcement, no DB persistence.
+### FTF-1807 — PR #384, merge commit f317a32e8841b69e15a28912aed9b821e9728deb
+CI: https://github.com/SJZLab/Sovra/actions/runs/36653034751. Injections: runbook TTL claim, fingerprint header and state name altered -> 4 failures.
+### FTF-H007 — PR #385, merge commit 15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3
+CI: https://github.com/SJZLab/Sovra/actions/runs/36663166287. Injections: hook exec-bit, dangerous-call and escaping-symlink detection disabled -> 5 failures. Remains UNWIRED (not yet called by `lock_agent_manifest`); not claimed as a wired gate.

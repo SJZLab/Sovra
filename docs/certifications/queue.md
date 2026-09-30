@@ -20677,3 +20677,10 @@ L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current
   zero regressions.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
   awaiting Control plane L2 review per Law 4.
+
+## 2026-09-30 — Control-plane CERTIFY batch (session https://claude.ai/code/session_01ACetHuRJU42F3aSPrnhToF)
+- **Certified (L2):** FTF-0500D (#335), FTF-1206 (#381), FTF-1807 (#384), FTF-H007 (#385). Certified 97/300 -> 101/300. Evidence in `docs/certifications/ledger.md`.
+- **Still PROVISIONAL — relay action needed:**
+  - **FTF-0212 (PR #231):** could not show the tests can fail. Every TLS-backed test in `tests/tasks/test_ftf_0212.py` early-returns green when `_UPDATE_CA_AVAILABLE` is false (no passwordless `sudo -n`/`update-ca-certificates`), so three fault injections into `real_tool_call_probe.py` all still passed. That is skip-as-pass, against the packet resource gate (unavailable evidence = BLOCKED_EXTERNAL, never skipped). Fix: add in-process tests (mock `guarded_fetch`) covering name-mismatch, invalid-arguments and content-not-read, and fail hard instead of returning when the fixture is unavailable. Also confirm from the CI `gate` log (run 36671299929) that the TLS tests actually executed.
+  - **FTF-04A15 (PR #328):** code, CI and fault injection are fine, but acceptance clause 1 ("index ... and their source version") has no `source_version` field; the docstring defers it to FTF-04A17 composition. Control plane needs the owner/architecture decision on accepting that deferral before certifying; relay should not change anything until then.
+- Recommendation (not a blocker): script-style test files use a non-raising `check()`, so `pytest` cannot fail them; make `check()` assert.
