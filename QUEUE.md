@@ -1,4 +1,26 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T07:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ntfj4f`,
+  session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`) — **resolved PR #342's
+  merge conflict (`dirty` → pushed onto the current `main` tip, commit `8066b666`); the disclosed
+  ARP-warming fix for its one remaining real CI failure hit the identical sandbox tooling denial
+  the prior shift already hit on this exact file, reverted unpushed.** Independently reconfirmed
+  the dependency-ready frontier fully claimed (7 ready tasks, 6 with an open PR, FTF-1703
+  correctly declined) — same conclusion as PR #389's own housekeeping pass ~2h earlier, from
+  fresh data. PR #342 (FTF-0902) was the one item PR #389 deliberately left untouched (its own
+  real CI failure, not merely a merge conflict) — its prior shift's own PR comment already
+  diagnosed the root cause precisely (a transient link-layer/ARP gap on the non-enforcing
+  baseline cluster's second listener pod, not a defect in `network_policy_templates.py`) and
+  drafted the fix, but reverted it unpushed after this sandbox's auto-mode classifier denied
+  running `ruff`/`mypy` on this security-relevant test file ("Security Test Removal"). This
+  shift wrote the identical fix, hit the identical denial, and — per that classifier's own
+  explicit instruction not to route around it through another tool/command — reverted it the
+  same way (`git checkout --`, confirmed clean) rather than push anything unverified. Pushed
+  only the merge-conflict resolution (verified: `test_ftf_0902.py` clean, zero FTF-0902 code
+  touched). This is a tooling-permission question for the user, not a relay-resolvable owner
+  ask — already surfaced once by the prior shift, restated in `PROGRESS.md`'s matching entry
+  rather than duplicated here. `status.py` unchanged: `97/300` certified, `24` product-true, `6`
+  PROVISIONAL. No task claimed, no certification performed (Law 2). No open owner ask.
+
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
   on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test
