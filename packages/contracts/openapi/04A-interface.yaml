@@ -1,24 +1,38 @@
 openapi: 3.1.0
 info:
-  title: Sovra Phase 04A Interface (TargetApplicationConnection)
-  version: 0.1.0
+  title: >-
+    Sovra Phase 04A Interface (TargetApplicationConnection,
+    TargetSourceSnapshot, DiscoveredAgentCandidate, AgentManifest)
+  version: 0.4.0
   description: >-
     Frozen shared component schemas and real live routes for the
     project-scoped TargetApplicationConnection resource (Section 6.8A/
-    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01). `paths` declares exactly the
-    surface this task actually implements and wires into
-    `apps/api/app/main.py` -- create/get/list/edit/revoke of the
-    connection record itself -- and nothing else. It deliberately does not
-    declare a `/snapshots`, `/candidates`, `/manifests`, `/evidence` or
-    `/target-drift` route (the task packet's own abbreviated
-    `api_contract` line): no `TargetSourceSnapshot`/
-    `DiscoveredAgentCandidate`/`AgentManifest`/`ManifestEvidence` entity
-    exists anywhere in this repository yet, and the real GitHub/local-
-    repository connector implementations (Section 7A.1's own
-    `TargetApplicationConnector` Protocol) are FTF-04A02/FTF-04A06,
-    separate dependency-gated later tasks. Whichever later task adds its
-    own real route extends this same file under this same contract-owner
-    lock (shared_lock_required: contracts:04A).
+    7A.1-7A.3/9/45/65-67/77/81, FTF-04A01), the connection-scoped
+    TargetSourceSnapshot resource (Section 6.8B, FTF-04A07), the
+    snapshot-scoped DiscoveredAgentCandidate resource (Section 6.8C,
+    FTF-04A17), and the project-scoped AgentManifest resource (Section
+    6.8D, FTF-04A19). `paths` declares exactly the surface these four
+    tasks actually implement and wire into `apps/api/app/main.py` --
+    create/get/list/edit/revoke of the connection record, create/get/list
+    (no edit/delete -- immutable) of the snapshot record, create/get/list
+    (no edit/delete -- an analysis fact, never mutated) of the candidate
+    record, and create/get/list/update-content/submit-for-review/lock of
+    the manifest record -- and nothing else. It deliberately does not
+    declare an `/evidence` or `/target-drift` route (the task packet's own
+    abbreviated `api_contract` line): no `ManifestEvidence` entity exists
+    anywhere in this repository yet (FTF-04A20, a separate, dependency-
+    gated later task that names FTF-04A19 as *its own* dependency), and
+    the real repository-drift detector is FTF-04A27's own, later job. It
+    also declares no selection/confirmation endpoint for a candidate --
+    FTF-04A18 ("Candidate-selection UI -- no auto-selection") -- and no
+    field-level evidence-provenance endpoint for a manifest (FTF-04A20) or
+    review/edit UI composition (FTF-04A21) -- each a separate,
+    dependency-gated later task. The real GitHub/local-repository
+    connector implementations (Section 7A.1's own
+    `TargetApplicationConnector` Protocol) remain FTF-04A02/FTF-04A06,
+    also separate, dependency-gated later tasks. Whichever later task adds
+    its own real route extends this same file under this same
+    contract-owner lock (shared_lock_required: contracts:04A).
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections:
     parameters:
@@ -174,6 +188,649 @@ paths:
           $ref: '#/components/responses/RoleNotAuthorized'
         '404':
           description: Missing, wrong organization, or wrong project -- identical.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a connection's target source snapshots, oldest first.
+      operationId: listTargetSourceSnapshots
+      responses:
+        '200':
+          description: The connection's target source snapshots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TargetSourceSnapshot'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: connection_id missing or belongs to a different organization -- identical.
+    post:
+      summary: >-
+        Record a new, immutable target source snapshot for this
+        connection. `analysis_status` is never accepted here -- it is
+        always the single Release-1 starting value `not_analyzed`. A
+        `supersedes_snapshot_id` that exists but belongs to a different
+        connection is refused identically to a missing one (this task's
+        own "reassigned to another repository/project" negative_acceptance).
+      operationId: createTargetSourceSnapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetSourceSnapshotCreateRequest'
+      responses:
+        '201':
+          description: The created target source snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetSourceSnapshot'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            connection_id missing/wrong organization, or
+            supersedes_snapshot_id missing/wrong organization/belongs to a
+            different connection -- identical in every case.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots/{snapshot_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one target source snapshot.
+      operationId: getTargetSourceSnapshot
+      responses:
+        '200':
+          description: The target source snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetSourceSnapshot'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different connection than the one named in the path --
+            identical in every case.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots/{snapshot_id}/candidates:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a snapshot's discovered agent candidates (paginated).
+      operationId: listDiscoveredAgentCandidates
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: A page of the snapshot's discovered agent candidates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredAgentCandidatePage'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            connection_id/snapshot_id missing, belongs to a different
+            organization, or snapshot_id belongs to a different connection
+            -- identical in every case.
+    post:
+      summary: >-
+        Record a new discovered agent candidate for this snapshot. Every
+        `*_evidence_json` field is independently nullable -- an honestly
+        unresolved evidence category is `null`, never a fabricated
+        payload (Section 7A.4). `confidence_score`/`discovery_status` are
+        never a calibrated probability or an automatic in-scope selection
+        (this task's own negative_acceptance): `discovery_status` is a
+        closed one-value Release-1 set, and neither field drives any
+        selection/confirmation transition anywhere in this API.
+      operationId: createDiscoveredAgentCandidate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoveredAgentCandidateCreateRequest'
+      responses:
+        '201':
+          description: The created discovered agent candidate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredAgentCandidate'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            connection_id/snapshot_id missing, belongs to a different
+            organization, or snapshot_id belongs to a different connection
+            -- identical in every case.
+        '409':
+          description: >-
+            candidate_key already exists for this snapshot (the same key
+            on a different snapshot succeeds).
+  /api/v1/organizations/{organization_id}/projects/{project_id}/target-connections/{connection_id}/snapshots/{snapshot_id}/candidates/{candidate_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: connection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one discovered agent candidate.
+      operationId: getDiscoveredAgentCandidate
+      responses:
+        '200':
+          description: The discovered agent candidate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredAgentCandidate'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different snapshot than the one named in the path -- identical
+            in every case.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/manifests:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a project's agent manifests, ordered by version.
+      operationId: listAgentManifests
+      responses:
+        '200':
+          description: The project's agent manifests.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentManifest'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit reading
+            this project's manifests (Section 45's widest read baseline --
+            every role Section 45 names).
+        '404':
+          description: project_id missing or belongs to a different organization.
+    post:
+      summary: >-
+        Create a new draft agent manifest at the next version number for
+        this project. `target_source_snapshot_id` must reference a real
+        snapshot whose own connection belongs to this same project
+        (Section 6.8D) -- refused with 409 otherwise.
+      operationId: createAgentManifest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentManifestCreateRequest'
+      responses:
+        '201':
+          description: The created draft agent manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifest'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit creating a
+            manifest for this project (Section 45: "workspace_admin:
+            project administration" -- {workspace_admin, organization_admin}
+            alone).
+        '404':
+          description: >-
+            project_id or target_source_snapshot_id missing, or belongs to
+            a different organization -- identical in every case.
+        '409':
+          description: >-
+            target_source_snapshot_id exists but its own connection
+            belongs to a different project than the one named in the path.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one agent manifest.
+      operationId: getAgentManifest
+      responses:
+        '200':
+          description: The agent manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifest'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit reading
+            this project's manifests.
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case.
+    patch:
+      summary: >-
+        Edit content fields on a draft/review_required manifest.
+        `target_source_snapshot_id` and `version` are never accepted here
+        -- both are fixed at creation.
+      operationId: updateAgentManifestContent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentManifestUpdateContentRequest'
+      responses:
+        '200':
+          description: The updated agent manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifest'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit editing
+            this project's manifests.
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case.
+        '409':
+          description: >-
+            The manifest is locked or superseded -- this task's own
+            negative_acceptance, "Locked manifest mutation ... blocks [it]."
+  /api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}/submit-for-review:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: 'Transition a manifest: draft -> review_required.'
+      operationId: submitAgentManifestForReview
+      responses:
+        '200':
+          description: The transitioned agent manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifest'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit
+            transitioning this project's manifests.
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case.
+        '409':
+          description: The manifest's current status is not draft.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}/lock:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Transition a manifest: review_required -> locked. Requires
+        agent_entrypoint_json/current_model_binding_json/
+        runtime_dependencies_json all non-null (this task's own
+        negative_acceptance, "missing critical evidence/model/runtime
+        tuple blocks activation"); computes manifest_sha256; sets
+        approved_by/approved_at; supersedes any other already-locked
+        manifest for the same project in the same transaction.
+      operationId: lockAgentManifest
+      responses:
+        '200':
+          description: The locked agent manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifest'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit
+            transitioning this project's manifests.
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different project than the one named in the path -- identical
+            in every case.
+        '409':
+          description: >-
+            The manifest's current status is not review_required, or one
+            or more critical fields (agent_entrypoint_json/
+            current_model_binding_json/runtime_dependencies_json) is null.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}/evidence:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a manifest's per-field evidence rows, ordered by creation time.
+      operationId: listManifestEvidence
+      responses:
+        '200':
+          description: The manifest's evidence rows.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManifestEvidence'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit reading
+            this project's manifests (Section 45's widest read baseline,
+            reused directly from FTF-04A19).
+        '404':
+          description: >-
+            manifest_id missing, belongs to a different organization, or
+            belongs to a different project than the one named in the path.
+    post:
+      summary: >-
+        Create a new, immutable evidence row for this manifest. See
+        apps/api/app/target_connectors/manifest_evidence_schema.py's own
+        module docstring for the full per-evidence_type field-shape
+        contract this endpoint enforces.
+      operationId: createManifestEvidence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManifestEvidenceCreateRequest'
+      responses:
+        '201':
+          description: The created evidence row.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestEvidence'
+        '400':
+          description: >-
+            Malformed request body, an unrecognized field_path (does not
+            name a real AgentManifest content field), or a per-
+            evidence_type field-shape violation (this task's own
+            negative_acceptance, including "Fabricated line refs ... are
+            rejected").
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit creating
+            evidence for this project's manifests (reused directly from
+            FTF-04A19: {workspace_admin, organization_admin} alone).
+        '404':
+          description: >-
+            manifest_id missing, belongs to a different organization, or
+            belongs to a different project than the one named in the path.
+        '409':
+          description: >-
+            negative_acceptance: "cross-snapshot evidence ... rejected" --
+            repository_commit_sha does not match the exact commit this
+            manifest's own TargetSourceSnapshot was actually captured at.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/manifests/{manifest_id}/evidence/{evidence_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: evidence_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one manifest evidence row.
+      operationId: getManifestEvidence
+      responses:
+        '200':
+          description: The evidence row.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestEvidence'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: >-
+            The authenticated principal's role does not permit reading
+            this project's manifests.
+        '404':
+          description: >-
+            Missing, belongs to a different organization, or belongs to a
+            different manifest than the one named in the path -- identical
+            in every case.
 components:
   responses:
     NotAuthenticated:
@@ -307,3 +964,411 @@ components:
         - created_at
         - updated_at
       additionalProperties: false
+    TargetSourceSnapshotCaptureMethod:
+      type: string
+      enum: [github_resolved_commit, local_git_commit, local_dirty_snapshot]
+    TargetSourceSnapshotAnalysisStatus:
+      type: string
+      description: >-
+        A closed one-value set for Release 1 -- Section 7A.4's own real
+        analysis pipeline (FTF-04A17) is a separate, later task that
+        records its own results on DiscoveredAgentCandidate rows, never by
+        advancing this field (this table is insert-only).
+      enum: [not_analyzed]
+    TargetSourceSnapshotCreateRequest:
+      type: object
+      properties:
+        commit_sha:
+          type: string
+          description: A real, fully-qualified lowercase-hex git object id (40 or 64 hex chars).
+        branch:
+          type: [string, 'null']
+          description: Nullable -- a real local detached-HEAD capture has no branch name.
+        tree_hash:
+          type: string
+          description: A real, fully-qualified lowercase-hex git object id (40 or 64 hex chars).
+        capture_method:
+          $ref: '#/components/schemas/TargetSourceSnapshotCaptureMethod'
+        source_archive_object_key:
+          type: [string, 'null']
+          description: >-
+            Both this and source_archive_sha256 must be set together or
+            both null; required when capture_method is
+            local_dirty_snapshot (a dirty tree has no other durable
+            content reference).
+        source_archive_sha256:
+          type: [string, 'null']
+          description: 64 lowercase hex characters, or null.
+        supersedes_snapshot_id:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            The prior snapshot this one replaces. Must belong to the same
+            connection -- refused (404) identically to missing otherwise.
+      required: [commit_sha, tree_hash, capture_method]
+      additionalProperties: false
+    TargetSourceSnapshot:
+      type: object
+      description: >-
+        Section 6.8B -- an immutable, connection-scoped source snapshot.
+        No PATCH/DELETE exists for this resource at all.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        target_application_connection_id:
+          type: string
+          format: uuid
+        commit_sha:
+          type: string
+        branch:
+          type: [string, 'null']
+        tree_hash:
+          type: string
+        captured_at:
+          type: string
+          format: date-time
+        capture_method:
+          $ref: '#/components/schemas/TargetSourceSnapshotCaptureMethod'
+        source_archive_object_key:
+          type: [string, 'null']
+        source_archive_sha256:
+          type: [string, 'null']
+        analysis_status:
+          $ref: '#/components/schemas/TargetSourceSnapshotAnalysisStatus'
+        supersedes_snapshot_id:
+          type: [string, 'null']
+          format: uuid
+      required:
+        - id
+        - organization_id
+        - target_application_connection_id
+        - commit_sha
+        - tree_hash
+        - captured_at
+        - capture_method
+        - analysis_status
+      additionalProperties: false
+    DiscoveredAgentCandidateDiscoveryStatus:
+      type: string
+      description: >-
+        A closed one-value set for Release 1 -- Section 6.8C's own record
+        of what an analysis run found, never advanced by this API
+        (FTF-04A18's own selection/confirmation transition is a separate,
+        not-yet-built later task).
+      enum: [candidate]
+    DiscoveredAgentCandidateCreateRequest:
+      type: object
+      properties:
+        candidate_key:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: >-
+            This candidate's real deduplication identity, unique per
+            snapshot -- a second analysis run cannot silently create a
+            duplicate row for the same already-discovered entity.
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        framework_or_runtime:
+          type: [string, 'null']
+          maxLength: 100
+        confidence_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: >-
+            Not a calibrated probability and never used to sort/filter/
+            auto-select a candidate (this task's own negative_acceptance).
+        entrypoint_evidence_json:
+          type: [object, 'null']
+        model_evidence_json:
+          type: [object, 'null']
+        prompt_evidence_json:
+          type: [object, 'null']
+        tool_evidence_json:
+          type: [object, 'null']
+        test_evidence_json:
+          type: [object, 'null']
+        trace_hook_evidence_json:
+          type: [object, 'null']
+        deployment_evidence_json:
+          type: [object, 'null']
+      required: [candidate_key, display_name, confidence_score]
+      additionalProperties: false
+    DiscoveredAgentCandidate:
+      type: object
+      description: >-
+        Section 6.8C -- the read-facing representation. There is no
+        PATCH/DELETE for this resource at all: a candidate record is a
+        fact about what analysis found, never mutated or removed after
+        being recorded.
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        target_source_snapshot_id:
+          type: string
+          format: uuid
+        candidate_key:
+          type: string
+        display_name:
+          type: string
+        framework_or_runtime:
+          type: [string, 'null']
+        confidence_score:
+          type: number
+        discovery_status:
+          $ref: '#/components/schemas/DiscoveredAgentCandidateDiscoveryStatus'
+        entrypoint_evidence_json:
+          type: [object, 'null']
+        model_evidence_json:
+          type: [object, 'null']
+        prompt_evidence_json:
+          type: [object, 'null']
+        tool_evidence_json:
+          type: [object, 'null']
+        test_evidence_json:
+          type: [object, 'null']
+        trace_hook_evidence_json:
+          type: [object, 'null']
+        deployment_evidence_json:
+          type: [object, 'null']
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - organization_id
+        - target_source_snapshot_id
+        - candidate_key
+        - display_name
+        - confidence_score
+        - discovery_status
+        - created_at
+      additionalProperties: false
+    DiscoveredAgentCandidatePage:
+      type: object
+      description: A limit/offset page of discovered agent candidates.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredAgentCandidate'
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+      required: [items, limit, offset, total]
+      additionalProperties: false
+    AgentManifestStatus:
+      type: string
+      description: >-
+        Section 6.8D's own four-value set, read in its own literal listed
+        order as the legal forward chain draft -> review_required ->
+        locked -> superseded -- see apps/api/app/target_connectors/
+        agent_manifest_schema.py's own module docstring. No skip, no
+        reverse, no self-loop.
+      enum: [draft, review_required, locked, superseded]
+    AgentManifestContentFields:
+      type: object
+      description: >-
+        Section 6.8D's own content fields (excludes
+        target_source_snapshot_id, version, status, manifest_sha256,
+        created_by, approved_by, approved_at, created_at -- envelope/audit
+        metadata, not content). Every field is independently nullable: an
+        honestly-undetected/not-yet-authored field is null, never a
+        fabricated payload.
+      properties:
+        agent_name:
+          type: [string, 'null']
+          maxLength: 200
+        agent_entrypoint_json:
+          type: [object, 'null']
+        current_model_binding_json:
+          type: [object, 'null']
+        system_prompt_refs_json:
+          type: [object, 'null']
+        tool_contracts_json:
+          type: [object, 'null']
+        input_contract_json:
+          type: [object, 'null']
+        output_contract_json:
+          type: [object, 'null']
+        mandate_json:
+          type: [object, 'null']
+        forbidden_actions_json:
+          type: [object, 'null']
+        permission_model_json:
+          type: [object, 'null']
+        required_context_json:
+          type: [object, 'null']
+        runtime_dependencies_json:
+          type: [object, 'null']
+        evaluation_harness_json:
+          type: [object, 'null']
+        trace_source_contract_json:
+          type: [object, 'null']
+        deployment_contract_json:
+          type: [object, 'null']
+      additionalProperties: false
+    AgentManifestCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/AgentManifestContentFields'
+        - type: object
+          properties:
+            target_source_snapshot_id:
+              type: string
+              format: uuid
+              description: >-
+                Fixed for this manifest's entire lifetime -- see this
+                task's own schema module docstring for why there is no
+                edit path for this field.
+          required: [target_source_snapshot_id]
+    AgentManifestUpdateContentRequest:
+      $ref: '#/components/schemas/AgentManifestContentFields'
+    AgentManifest:
+      type: object
+      description: >-
+        Section 6.8D -- the read-facing representation of a project's own
+        canonical Agent Manifest.
+      allOf:
+        - $ref: '#/components/schemas/AgentManifestContentFields'
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            organization_id:
+              type: string
+              format: uuid
+            project_id:
+              type: string
+              format: uuid
+            target_source_snapshot_id:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              minimum: 1
+            status:
+              $ref: '#/components/schemas/AgentManifestStatus'
+            manifest_sha256:
+              type: [string, 'null']
+              description: >-
+                Non-null if and only if status is locked or superseded
+                (Section 6.8D: "locking computes manifest_sha256").
+            created_by:
+              type: string
+            approved_by:
+              type: [string, 'null']
+            approved_at:
+              type: [string, 'null']
+              format: date-time
+            created_at:
+              type: string
+              format: date-time
+          required:
+            - id
+            - organization_id
+            - project_id
+            - target_source_snapshot_id
+            - version
+            - status
+            - manifest_sha256
+            - created_by
+            - approved_by
+            - approved_at
+            - created_at
+    ManifestEvidenceType:
+      type: string
+      description: >-
+        Section 6.8E's own literal six-value set -- see apps/api/app/
+        target_connectors/manifest_evidence_schema.py's own module
+        docstring for the full per-value field-shape contract each one
+        implies (DETECTED_EVIDENCE_TYPES/REPO_CITED_EVIDENCE_TYPES/
+        LINE_REF_EVIDENCE_TYPES).
+      enum: [repo_file, repo_symbol, config, test, runtime_probe, user_input]
+    ManifestEvidenceCreateRequest:
+      type: object
+      description: >-
+        Every field except field_path/evidence_type/evidence_json is
+        conditionally required or conditionally forbidden depending on
+        evidence_type -- see ManifestEvidenceType's own description and
+        the schema module's own docstring. A field forbidden for the
+        chosen evidence_type must be omitted or explicitly null.
+      properties:
+        field_path:
+          type: string
+          maxLength: 500
+          description: >-
+            Must name a real AgentManifest content field (its own leading
+            dot-segment, or the whole string if it carries no dot) --
+            negative_acceptance: "unknown values presented as detected are
+            rejected."
+        evidence_type:
+          $ref: '#/components/schemas/ManifestEvidenceType'
+        evidence_json:
+          type: object
+          description: The real, substantive finding or override detail. Never empty.
+        repository_commit_sha:
+          type: [string, 'null']
+          maxLength: 64
+        file_path:
+          type: [string, 'null']
+          maxLength: 1000
+        line_start:
+          type: [integer, 'null']
+          minimum: 1
+        line_end:
+          type: [integer, 'null']
+          minimum: 1
+        symbol:
+          type: [string, 'null']
+          maxLength: 500
+        content_hash:
+          type: [string, 'null']
+          maxLength: 64
+        confidence_score:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+      required: [field_path, evidence_type, evidence_json]
+      additionalProperties: false
+    ManifestEvidence:
+      type: object
+      description: >-
+        Section 6.8E -- the read-facing representation of an
+        AgentManifest's own per-field evidence row. Immutable once written
+        -- there is no update/delete endpoint at all.
+      allOf:
+        - $ref: '#/components/schemas/ManifestEvidenceCreateRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            organization_id:
+              type: string
+              format: uuid
+            agent_manifest_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+          required:
+            - id
+            - organization_id
+            - agent_manifest_id
+            - created_at
