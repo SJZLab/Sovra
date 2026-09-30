@@ -20505,6 +20505,131 @@ awaiting independent Control-plane L2 review -- a certifier shift should
 pick it up next. `FTF-0304` still has two open, unmerged candidate PRs
 (#194/#195) from other sessions -- leave those for their own producer
 sessions or a certifier, do not redo the work.
+## 2026-09-27 — FTF-04A15 ("Agent test/evaluation fixture discovery") — submitted PROVISIONAL
+
+STEP 0.1/0.2: read PROGRESS.md/QUEUE.md/this file fresh; CLAUDE.md.sha256 self-check matched
+`sha256sum CLAUDE.md` directly. `cognee-cli` is not installed in this sandbox (`command not found`)
+— text-search fallback active, disclosed. `git fetch origin main` first returned a stale
+`4657881` tip sharing zero history with this branch's own `c295fcd` HEAD; confirmed this was purely
+a shallow-fetch artifact (same disclosed precedent every prior FTF-04A0x/FTF-04A1x shift has hit),
+not a real history rewrite — `git fetch --unshallow` resolved it, after which `origin/main` and this
+branch's own HEAD were byte-identical.
+
+Checked all 9 open PRs directly via the GitHub API before picking new work: #315/#314 (FTF-0303),
+#313/#311/#308 (FTF-0513), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only),
+#231 (FTF-0212), #195/#194 (FTF-0304) — none overlap with this shift's own eventual pick.
+Recomputed the dependency-ready frontier directly from `spec/tasks.json`'s own per-task
+`dependencies` list cross-checked against `docs/spec-matrix.yaml`'s real per-task
+`certification_state`: 13 tasks came back dependency-ready and `certification_state: NONE`
+(FTF-04A14 dropped off the frontier since its own certification; FTF-04A15/FTF-04A16/FTF-04A19
+newly unblocked by FTF-04A11's own certification). FTF-0212/FTF-0304 excluded (other sessions' own
+open PRs); FTF-0214 excluded (disclosed blocker); FTF-04A02 excluded (keyed external GitHub
+credential, ask-first); FTF-0500A/FTF-0500D excluded (same no-`Dataset`-entity/no-composed-route
+class); FTF-1201/FTF-H004 excluded (real network egress this sandbox lacks); FTF-1703 excluded
+(needs ≥1000 real curated traces). Picked **FTF-04A15** — lowest `docs/TASK_INDEX.md` file-order
+item among the genuinely ready and unclaimed candidates, continuing the same Section 7A.4
+discovery-pipeline family FTF-04A08–FTF-04A14 have been building sequentially. State: `Working:
+FTF-04A15.`
+
+**P:** read `docs/implementation/task-packets/FTF-04A15.md` in full (`tools/r1_handoff.py packet
+FTF-04A15 --plan FINE_TUNING_FACTORY_RELEASE_1.md`), plus the real dependency/precedent modules this
+task's own scope builds on — `apps/api/app/target_connectors/source_analysis_worker.py` (FTF-04A08,
+owns the `SourceFileRef` input shape every detector reuses), `json_yaml_toml_configuration_
+discovery.py` (FTF-04A11, closest structural precedent — pure file-tree classification, no AST), and
+`tool_schema_permission_discovery_evidence_capture.py` (FTF-04A14, closest negative_acceptance
+framing precedent). Section 7A.4's own numbered "Analysis order" names step 9 ("Detect agent
+tests/evaluation fixtures") as this task's own exact, disjoint scope — never re-detecting
+entrypoints/models/prompts/tools/config (FTF-04A08/09/10/11/12/13/14's own already-CERTIFIED jobs)
+and never assembling a `DiscoveredAgentCandidate` row (FTF-04A17's own already-CERTIFIED storage
+schema, a separate composition task).
+
+**E:** delegated the actual engineering (module + test + fault-injection proof + local verification)
+to a background subagent with a fully self-contained brief — exact task contract, the five sibling
+files/tests to mirror, the reuse-first `SourceFileRef` shape, the literal negative_acceptance clause
+with required dedicated tests, and explicit instruction to leave all tracker/CI/git bookkeeping to
+this session. The subagent's finished work was then independently re-verified by this session before
+being trusted, not accepted on its own report alone (Law 4's spirit applied within one shift):
+re-read the full 389-line module and 469-line test file directly; re-ran
+`tests/tasks/test_ftf_04a15.py` from a clean state and confirmed the identical "all checks passed
+(24 test functions run)" output; independently reproduced both fault injections byte-for-byte
+(matching md5sum `93f19456ba68e6ae844a1b57bb507f26` baseline/after-revert for both, and the exact
+same named failures); confirmed via `git status --short` that only the two new files were touched,
+no existing file modified.
+
+Implemented `apps/api/app/target_connectors/agent_test_evaluation_fixture_discovery.py` (path
+refined from the packet's own generic `packages/target-connectors/...` suggestion to this repo's
+real `apps/api/app/target_connectors/*.py` layout, same refinement every prior 04A-family task
+already disclosed). `run_agent_test_evaluation_fixture_discovery` classifies each caller-supplied
+`SourceFileRef` into `python_test` (pytest's own `test_*.py`/`*_test.py`/`conftest.py` convention, or
+a generic `tests`/`test` directory-segment catch-all), `js_ts_test` (`*.test.{ts,tsx,js,jsx}`/
+`*.spec.{ts,tsx,js,jsx}`, or a `__tests__` directory segment), `test_framework_config` (a closed
+filename set, content never parsed — that stays FTF-04A11's own already-CERTIFIED job), or
+`evaluation_fixture_data` (both halves must hold: a `fixtures`/`fixture`/`evals`/`eval`/`golden`
+directory segment AND a closed `.json`/`.yaml`/`.yml`/`.jsonl` extension allowlist), in a fixed,
+disclosed precedence order so the common `tests/fixtures/*.json` shape reports the more specific
+`evaluation_fixture_data` rather than being swallowed by the generic tests-directory catch-all.
+
+The acceptance clause's own "source version" half is honestly not fabricated: this pure function
+never receives a `TargetSourceSnapshot` id/commit SHA (only a `SourceFileRef` sequence), so a real
+source-version value is a future composition task's job (FTF-04A17), not this one's — disclosed in
+the module docstring rather than papered over with a fake value.
+
+negative_acceptance ("Discovering tests never authorizes importing their answers into training or
+certifies test correctness") is met by two independent structural facts, each with a dedicated test:
+(1) this module **never calls `SourceFileRef.read_content()` at all**, for any category, for any
+reason — every classification is decidable from `relative_path`/`size` alone, structurally stronger
+than FTF-04A11's own "read but redact" shape: content that is never read cannot be graded or
+imported, because this module never sees a single byte of it (`test_classification_never_reads_
+content`, a behavioral proof using a `read_content` callable that raises `AssertionError` if ever
+invoked; `test_module_source_never_executes_imports_or_runs_a_subprocess`, an AST-based — not naive
+substring-based, which would false-positive on the module's own docstring prose — assertion that no
+`subprocess`/`importlib` import or `exec(`/`eval(` call exists anywhere in the module); (2) this
+module has zero imports from any dataset/database-schema module and its two evidence dataclasses
+declare no `approved`/`imported`/`dataset_id`-shaped field anywhere (`test_module_has_no_dataset_or_
+database_schema_imports`, `test_evidence_dataclasses_have_no_training_authorization_field`, both
+asserting directly over the module's own AST imports / `__dataclass_fields__` — the absence of such
+a field is itself the proof). This module never constructs a `Dataset`/`DatasetRecord`/
+`DatasetSourceConnection` row — Section 7A.10's own "must not import [fixtures] until the user
+selects the source and allowed purpose" applies directly; discovery recommends, it never itself
+imports.
+
+`ResourceLimits` deliberately keeps only `max_files` (default 5,000), omitting sibling tasks'
+`max_file_bytes`/`max_total_bytes` — there is no content read in this module at all, so those fields
+would bound nothing real; disclosed explicitly in the module docstring.
+
+`tests/tasks/test_ftf_04a15.py`: 24 tests, all pass against the unmodified code. Two independent
+fault injections, both independently reproduced and reverted byte-identical by this session (md5sum
+`93f19456ba68e6ae844a1b57bb507f26` before/after each): (1) added a `read_content()` call on the
+`evaluation_fixture_data` branch — genuine `AssertionError: read_content must never be called for
+'tests/fixtures/customer.json'`, uncaught, propagated out of `main()`; (2) widened
+`_FIXTURE_DATA_EXTENSIONS` to include `.txt` — genuine FAIL ("a non-allowlisted extension (.txt)
+living under a fixtures/ directory is never guessed as fixture data -- both halves of the heuristic
+must hold").
+
+**V:** `uv run ruff check .`/`ruff format --check .` clean repo-wide; `uv run mypy .` clean
+repo-wide (278 files; the previously-disclosed 15 `alembic`-stub errors are the only ones present,
+confirmed pre-existing and unrelated). `pnpm run lint`/`pnpm run format:check` clean repo-wide.
+`validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `20/20`
+(`proving_symbol` left blank, same disclosed "no live route yet" precedent every prior 04A-family
+task already established). `status.py` unchanged `83/300` (Law 2 — this is a submission, not a
+certification). Regression swept `test_ftf_04a09.py`–`test_ftf_04a14.py` (all "all checks passed" —
+this sandbox was itself missing `node_modules/typescript`; `pnpm install --frozen-lockfile`
+materialized it, same disclosed precedent every prior 04A-family task already established) plus `uv
+run pytest tests/unit` (3/3) — zero regressions. `verify_task.py --task FTF-04A15 --stage task`
+reports `BLOCKED` pre-merge, expected per precedent (no merged verification evidence yet).
+
+`docs/spec-matrix.yaml` FTF-04A15 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-04A15 negative-test proof`) added to `.github/workflows/ci.yml`. Opened
+[PR #328](https://github.com/SJZLab/Sovra/pull/328) (branch `claude/wizardly-fermat-x60k9h` →
+`main`), title `[relay] FTF-04A15: Agent test/evaluation fixture discovery`. **Not self-certified
+(Law 4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/this file all updated this shift, before compaction. STEP 4 stop
+condition (a): 1/1 in-flight item (FTF-04A15) is `L1-PROVEN`, no blocking defect found by this
+session's own review — awaiting an independently-triggered Control-plane certifier session and the
+L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
 ## 2026-09-27 — FTF-0500D — Dataset source security-boundary preview + audit evidence
 - **PR:** (opened this shift — see commit below; branch `claude/wizardly-fermat-8phqdi`)
 - **Test:** tests/tasks/test_ftf_0500d.py — 25 test functions, all pass
