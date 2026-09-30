@@ -237,6 +237,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0210.py
       - name: FTF-0211 negative-test proof (Real streaming probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0211.py
+      - name: FTF-0212 negative-test proof (Real tool-call probe, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0212.py
       - name: FTF-0213 negative-test proof (Real structured-output probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0213.py
       - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)
@@ -275,12 +277,16 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a13.py
       - name: FTF-04A14 negative-test proof (Tool/schema/permission discovery + evidence capture, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a14.py
+      - name: FTF-04A15 negative-test proof (Agent test/evaluation fixture discovery, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a15.py
       - name: FTF-04A16 negative-test proof (Runtime trace/deployment contract discovery, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a16.py
       - name: FTF-04A19 negative-test proof (AgentManifest schema/versioning/hash, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a19.py
       - name: FTF-04A20 negative-test proof (ManifestEvidence schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a20.py
+      - name: FTF-0500D negative-test proof (Dataset source security-boundary preview + audit evidence, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0500d.py
       - name: FTF-04A25 negative-test proof (Production-faithful target-agent harness contract, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a25.py
       - name: FTF-04A26 negative-test proof (Isolated real tool-backend adapter contract tests, no DB required)
@@ -309,6 +315,12 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1201.py
       - name: FTF-0304 negative-test proof (Local artifact resolver -- symlink/executable/TOCTOU rejection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0304.py
+      - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1206.py
+      - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
+        run: uv run python3 tests/documentation/test_ftf_1807.py
+      - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
