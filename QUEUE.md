@@ -1,4 +1,15 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
+  **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
+  on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test
+  proof` step); `mergeable_state: clean`. No "Claude Approvals" check in this repo, no open
+  reviews/comments. Merged via `merge_pull_request` (merge commit
+  `15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3`) per the standing "merge on green + L1 doc
+  (PROVISIONAL)" authorization — still PROVISIONAL, not self-certified (Law 4). `status.py`:
+  unchanged `97/300` certified (3rd PROVISIONAL item now pending: FTF-1206, FTF-1807, FTF-H007),
+  `24` product-true unchanged. Restarted the designated branch from the new `main` tip. No open
+  owner ask.
+
 Updated: 2026-09-30T03:15:00Z (scheduled relay shift, branch `claude/wizardly-fermat-l9gppv`,
   session `https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6`) — **submitted FTF-H007
   PROVISIONAL.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Confirmed PR #384
