@@ -1,3 +1,4 @@
+- 2026-09-30 Control-plane CERTIFY: FTF-1807 certified (PR #384, ledger.md); certified 97 -> 98. FTF-1206 cert pending in PR #383; FTF-H007 (PR #385) unmerged.
 # PROGRESS — Sovra
 ## 2026-09-30T00:57:55Z — Scheduled relay shift — submitted FTF-1807 PROVISIONAL
 

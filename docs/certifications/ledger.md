@@ -9692,3 +9692,16 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1807 — LiteLLM outage runbook
+- Criterion ID: FTF-1807
+- PR: https://github.com/SJZLab/Sovra/pull/384 (already merged — the relay's own PROVISIONAL submission)
+- Merge commit: f317a32e8841b69e15a28912aed9b821e9728deb
+- Validated-by: session https://claude.ai/code/session_011ngBN1brTrzvjaSoAjccNV (independent — PR #384's commits carry `Claude-Session: .../session_01MbLYBmQuPKkrykH44wLaFN`, no overlap)
+- Date: 2026-09-30
+- CI: 38/38 check runs `completed`/`success` on the PR head (39ea4b7), including `gate`: https://github.com/SJZLab/Sovra/actions/runs/36653034751
+- Reran `tests/documentation/test_ftf_1807.py` as CI does (`uv run python3 ...`): all checks passed.
+- Own fault injection (Law 1), on the underlying code rather than the doc: disabled the freshness-TTL cutoff in `LastKnownGoodCatalog.is_call_authorized` (`if ... >= freshness_ttl:` -> `if False:`) -> 1 failure: "call is refused once the 5-minute freshness TTL has elapsed with no refresh". Reverted, `git status` clean.
+- Doc-only task (no new production code, per its own `database_changes`/`files` clauses); `proving_symbol` legitimately blank, product_truth unchanged. The runbook's claims are cross-checked against the real CERTIFIED constants/modules.
+- Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1807 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses (no unauthorized cached access after revocation/TTL expiry; no unapproved fallback) confirmed met by the above.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.

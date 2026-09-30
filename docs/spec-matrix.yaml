@@ -8650,10 +8650,10 @@ FTF-1806:
   proving_symbol: ''
   proving_test: ''
 FTF-1807:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LiteLLM outage runbook
-  evidence_hash: ''
+  evidence_hash: f317a32e8841b69e15a28912aed9b821e9728deb
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
@@ -8676,7 +8676,7 @@ FTF-1807:
     runbook says so explicitly rather than claiming a wired production incident-response system.
     `proving_symbol` stays blank; `product_truth_check.py`'s product-true count is deliberately
     unchanged.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/documentation/test_ftf_1807.py
 FTF-1808:

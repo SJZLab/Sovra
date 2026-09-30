@@ -20274,3 +20274,8 @@ FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independe
   tests/documentation/test_ftf_1807.py`; `evidence_hash` left blank pending the real merge commit.
   **Not self-certified (Law 4)** — awaiting independent Control-plane L2 review and a real CI run on
   the opened PR.
+
+## 2026-09-30 — Control-plane CERTIFY pass (session https://claude.ai/code/session_011ngBN1brTrzvjaSoAjccNV)
+- FTF-1807 (PR #384): independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. Certified 97 -> 98.
+- FTF-1206 (PR #381): its certification is already proposed by open PR #383 (independent session, CI green); not duplicated here. I independently re-ran fault injection (disabled registration-namespace widening check -> `tests/tasks/test_ftf_1206.py` run as a script fails 1 check), concurring. Awaiting merge of #383.
+- FTF-H007 (PR #385): still open/unmerged with CI in progress — not certifiable yet; left PROVISIONAL.
