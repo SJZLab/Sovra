@@ -28,8 +28,8 @@ Updated: 2026-09-30T00:57:55Z (scheduled relay shift, branch `claude/wizardly-fe
   reports its own disclosed `BLOCKED_EXTERNAL` in this sandbox, not a regression). Added one
   `gate`-job CI step after FTF-1206's own (no new integration job). `docs/spec-matrix.yaml` FTF-1807
   set to `PROVISIONAL`/`L1-PROVEN`. **Not self-certified (Law 4)** — awaiting independent
-  Control-plane L2 review and a real CI run on the opened PR. **PR:** see next entry once opened.
-  No open owner ask.
+  Control-plane L2 review and a real CI run on the opened PR. **PR:**
+  https://github.com/SJZLab/Sovra/pull/384. No open owner ask.
 
 Updated: 2026-09-29T23:10:00Z (same scheduled shift, branch `claude/wizardly-fermat-6px1ao`) —
   **PR #381 (FTF-1206) confirmed green and merged.** Two real CI runs on this PR (one per push),

@@ -99,10 +99,9 @@ test_ftf_1807.py`; `evidence_hash` left blank pending the real merge commit. **N
 (Law 4)** -- independent Control-plane L2 review and a real CI run on the opened PR are required
 before certification.
 
-Opened PR: (see this shift's own `QUEUE.md`/`docs/certifications/queue.md` entries for the link,
-recorded there once the PR call returns). Subscribing to its GitHub activity immediately after
-opening so CI-red/review events on this PR wake this session per the standing "PRs you created in
-this session are yours" rule.
+Opened PR: https://github.com/SJZLab/Sovra/pull/384 (branch `claude/wizardly-fermat-0rn1af` →
+`main`). Subscribed to its GitHub activity immediately after opening so CI-red/review events on
+this PR wake this session per the standing "PRs you created in this session are yours" rule.
 
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
 compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-1807) is `L1-PROVEN`, no blocking

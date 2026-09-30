@@ -20213,8 +20213,8 @@ FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independe
   PROVISIONAL on `main` — **awaiting independent Control-plane L2 certification.**
 
 ## 2026-09-30T00:57:55Z — FTF-1807 — LiteLLM outage runbook
-- **PR:** opened this shift on branch `claude/wizardly-fermat-0rn1af` → `main` (see `QUEUE.md`'s own
-  latest entry for the link once the PR call returns).
+- **PR:** https://github.com/SJZLab/Sovra/pull/384 (branch `claude/wizardly-fermat-0rn1af` →
+  `main`, open)
 - **Session:** https://claude.ai/code/session_01MbLYBmQuPKkrykH44wLaFN
 - **Dependencies:** FTF-0215, FTF-H001, FTF-H004, FTF-H005 (all CERTIFIED, confirmed before relying
   on them).
