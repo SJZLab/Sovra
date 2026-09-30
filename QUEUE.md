@@ -1,4 +1,36 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T00:57:55Z (scheduled relay shift, branch `claude/wizardly-fermat-0rn1af`,
+  session `https://claude.ai/code/session_01MbLYBmQuPKkrykH44wLaFN`) — **submitted FTF-1807
+  PROVISIONAL.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. `BLOCKER.md` empty;
+  `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh; `main` confirmed current at
+  `08a17a3`. Of the two remaining unclaimed dependency-ready tasks the 19:22Z shift flagged
+  (FTF-1807/FTF-H007 — FTF-0306 already claimed by PR #380, FTF-1206 already submitted/now under
+  Control-plane certification via PR #383), picked **FTF-1807** ("LiteLLM outage runbook") over
+  FTF-H007 (a security-sensitive malicious-repo scanner requiring substantial new production code —
+  too large for one shift). FTF-1807's own contract (`database_changes: "No independent schema
+  change"`, `files` = doc + test only) confirmed the same disclosed-scope-narrowing class as
+  FTF-1206/FTF-0402/FTF-1201.
+
+  Wrote `docs/operations/litellm_outage_runbook.md` (human-readable summary of real,
+  already-CERTIFIED behavior: FTF-0208 revocation/freshness-TTL, FTF-H004's three-check
+  `require_model_access` gate, FTF-0209's bounded-retry anomaly detector, FTF-0215's out-of-order
+  sync guard, FTF-H005's cache-bypass/fingerprint-verified route attestation; discloses no live
+  route/scheduler caller yet, Law 6/7) and `tests/documentation/test_ftf_1807.py` (cross-checks
+  every doc claim against the real imported constants, then re-exercises the real modules directly:
+  revocation/freshness/anomaly/out-of-order/bounded-retry). Real fault injection (Law 1, scoped to
+  this task's own doc file only): mutated the doc's stated freshness-TTL phrase away from the real
+  constant, the fidelity check genuinely failed bound to `[FTF-1807]`, reverted byte-identical,
+  reran clean. `git fetch --unshallow`/`uv sync --all-packages` needed (same shallow-clone artifact
+  prior shifts diagnosed). `ruff`/`mypy`/`validate_spec.py --strict` clean repo-wide;
+  `product_truth_check.py --fail-on-unwired` unchanged `24/24` (disclosed blank `proving_symbol`);
+  `status.py` unchanged `97/300` (Law 2 — submission, not certification). Regression swept the full
+  FTF-1807 dependency chain, zero regressions (the DB-backed access-guard integration test correctly
+  reports its own disclosed `BLOCKED_EXTERNAL` in this sandbox, not a regression). Added one
+  `gate`-job CI step after FTF-1206's own (no new integration job). `docs/spec-matrix.yaml` FTF-1807
+  set to `PROVISIONAL`/`L1-PROVEN`. **Not self-certified (Law 4)** — awaiting independent
+  Control-plane L2 review and a real CI run on the opened PR. **PR:**
+  https://github.com/SJZLab/Sovra/pull/384. No open owner ask.
+
 Updated: 2026-09-29T23:10:00Z (same scheduled shift, branch `claude/wizardly-fermat-6px1ao`) —
   **PR #381 (FTF-1206) confirmed green and merged.** Two real CI runs on this PR (one per push),
   both `completed`/`success`, 38/38 jobs each, `gate` included on both; `mergeable_state: clean` on

@@ -8650,16 +8650,35 @@ FTF-1806:
   proving_symbol: ''
   proving_test: ''
 FTF-1807:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: LiteLLM outage runbook
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
-    FTF-H005
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
+    FTF-H005 (all CERTIFIED, confirmed before relying on them). This task's own `database_changes`
+    clause ("No independent schema change... any required change is a separately claimed migration
+    prerequisite") and empty `shared_lock_required` mean it adds no new production code -- its own
+    `files` list names only `docs/operations/litellm_outage_runbook.md` and
+    `tests/documentation/test_ftf_1807.py`. The runbook is a human-readable summary of real,
+    already-CERTIFIED library behavior (FTF-0208/FTF-0209/FTF-0215/FTF-H004/FTF-H005): revocation
+    (`LastKnownGoodCatalog._apply_revocation`/`is_call_authorized`), the 5-minute freshness-TTL
+    admission cutoff, `require_model_access`'s ownership/connection-revocation/catalog three-check
+    gate, `CatalogAnomalyDetector`'s bounded 3-attempt retry ceiling and acknowledge-never-restores
+    audit trail, `PeriodicSyncWorkflow`'s strict-sequence out-of-order guard (safe routing recovery),
+    and `route_attestation.py`'s real cache-bypass field plus fingerprint-verified identity (this
+    task's own negative_acceptance, "No unauthorized cached access or unapproved external fallback
+    during private outage"). Every numeric/string fact the doc states is read directly from the real
+    imported constants in the test, never hardcoded twice, so the doc cannot silently drift from the
+    real code. Disclosed, not hidden: none of the cited modules has a live route/scheduler caller yet
+    (same "no live caller yet" precedent every one of them already established for itself) -- the
+    runbook says so explicitly rather than claiming a wired production incident-response system.
+    `proving_symbol` stays blank; `product_truth_check.py`'s product-true count is deliberately
+    unchanged.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/documentation/test_ftf_1807.py
 FTF-1808:
   certification_state: NONE
   criticality: MUST
