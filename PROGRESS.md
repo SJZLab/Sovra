@@ -1,4 +1,32 @@
 # PROGRESS — Sovra
+## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
+
+Subscribed to PR #385's own GitHub activity immediately after opening it. A `check_suite.completed`
+event arrived naming an intermediate head (`bf4d25e`, the first of this PR's two pushes); confirmed
+directly via `pull_request_read` (`get`) that the PR's real current head had already advanced to
+`5e11221` (the "record PR link" follow-up commit) before acting. A second `check_suite.completed`
+event named that real current head directly; `get_check_runs` confirmed all **38/38** real jobs
+`completed`/`success`, including the `gate` job (which carries the new `FTF-H007 negative-test
+proof` step) and the three integration jobs (`dataset-source-connection-integration`,
+`target-application-connection-integration`, `secret-manager-integration`) that were still
+`in_progress` on the first check. `pull_request_read` (`get`) confirmed `mergeable_state: clean`.
+This repository runs no "Claude Approvals" check (none present across the 38 check runs) and
+`get_reviews`/`get_comments` were both empty — no open review or comment to address.
+
+Per the standing "Do without asking: ... merge on green + L1 doc (PROVISIONAL)" authorization — this
+is a PROVISIONAL/L1-PROVEN submission, not a certification (Law 4 unaffected: certification still
+requires independent Control-plane L2 review, not performed by this session). Merged via
+`merge_pull_request` (`merge_method: merge`, `expectedHeadSha` pinned to the actual head
+`5e11221529b4604cf05e8aa5e63881e3f8422e91` — merge commit
+`15b2aa8d03b3fd30c1590dcb44ed430c6e2170d3`).
+
+`scripts/status.py` on the new `main` tip: unchanged `97/300` certified (this submission adds a 3rd
+`PROVISIONAL` item, FTF-H007, alongside FTF-1206 and FTF-1807, both still awaiting their own
+independent certification — not a certification), `24` product-true unchanged. Restarted the
+designated branch `claude/wizardly-fermat-l9gppv` from the new `main` tip
+per the already-merged-PR convention (its prior remote tip is now fully contained in `main`'s own
+merge commit). No open owner ask.
+
 ## 2026-09-30T03:15:00Z — Scheduled relay shift — submitted FTF-H007 PROVISIONAL
 
 Session `https://claude.ai/code/session_015T4mqqL99qnLfnuyehUxz6`. STEP 0: `sha256sum CLAUDE.md`
