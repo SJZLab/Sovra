@@ -231,6 +231,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0209.py
       - name: FTF-0215 negative-test proof (Periodic sync workflow, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0215.py
+      - name: FTF-H004 negative-test proof (authorized catalog snapshot + real-gateway left-join/revocation, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h004.py
       - name: FTF-0210 negative-test proof (Real chat probe, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0210.py
       - name: FTF-0211 negative-test proof (Real streaming probe, no DB required)
@@ -281,6 +283,38 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_04a20.py
       - name: FTF-0601 negative-test proof (EvaluationSuite schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0601.py
+      - name: FTF-04A25 negative-test proof (Production-faithful target-agent harness contract, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a25.py
+      - name: FTF-04A26 negative-test proof (Isolated real tool-backend adapter contract tests, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a26.py
+      - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a02.py
+      - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a03_connector.py
+      - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing route-boundary, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a03_routes.py
+      - name: FTF-04A04 negative-test proof (GitHub branch/ref resolver connector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a04_connector.py
+      - name: FTF-04A04 negative-test proof (GitHub branch/ref resolver route-boundary, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a04_routes.py
+      - name: FTF-04A05 negative-test proof (GitHub source snapshot capture connector, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a05.py
+      - name: FTF-04A05 negative-test proof (GitHub source snapshot capture route-boundary, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a05_routes.py
+      - name: FTF-H005 negative-test proof (route attestation -- real cache-bypass + deployment fingerprint, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h005_route_attestation.py
+      - name: FTF-H005 negative-test proof (route pin/drift -- fallback and alias-upstream denial, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h005_route_snapshot.py
+      - name: FTF-1201 negative-test proof (LiteLLM registration capability detection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1201.py
+      - name: FTF-0304 negative-test proof (Local artifact resolver -- symlink/executable/TOCTOU rejection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0304.py
+      - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1206.py
+      - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
+        run: uv run python3 tests/documentation/test_ftf_1807.py
+      - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h007.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
@@ -537,6 +571,51 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real LiteLLM connection CRUD evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0201_litellm_connection_crud.py
+
+  litellm-access-guard-integration:
+    # FTF-H004: real Postgres authorized-access-guard evidence --
+    # require_model_access's own real ownership/status half: two real
+    # organizations with real litellm_connections (one owned+active, one
+    # owned+explicitly-revoked, one foreign), composed with FTF-H003's
+    # already-CERTIFIED authorize_resource_ownership and FTF-0208's
+    # already-CERTIFIED LastKnownGoodCatalog -- cross-tenant/missing
+    # connection IDOR denial (identical reason, no existence oracle), an
+    # explicitly-revoked Factory-level connection denying even a catalog
+    # that still reports the model callable, a real catalog-level
+    # revocation denying even an owned/active connection, and a
+    # never-successfully-discovered catalog denying by default --
+    # tests/integration/test_ftf_h004_access_guard.py. Same real
+    # `services: postgres` container pattern as
+    # litellm-connection-crud-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest FTF-0004/FTF-0102/FTF-0104/FTF-0105/FTF-H003/FTF-0106/FTF-0201 already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh004
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh004"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh004
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real authorized-access-guard evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_h004_access_guard.py
 
   trainable-artifact-schema-api-integration:
     # FTF-0301: real Postgres TrainableArtifact schema/API evidence -- two
@@ -1336,6 +1415,152 @@ jobs:
       - name: Prove the real TargetSourceSnapshot evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a07_target_source_snapshot.py
 
+  github-repository-listing-integration:
+    # FTF-04A03: real Postgres GitHub accessible-repository listing
+    # evidence (Section 6.8A/7A.1-7A.2/9/45/65-67/77/81) -- two real
+    # organizations (each with a real project), a real uvicorn server
+    # proving the organization_admin-only RBAC boundary, the
+    # cross-organization project-ID IDOR case (denied identically to
+    # missing, no audit row for it), a real local HTTPS
+    # `GET /installation/repositories`-shaped GitHub fixture (this repo's
+    # interactive dev sandbox has no route to the public internet -- same
+    # disclosed finding test_ftf_04a02.py/test_ftf_04a03_connector.py
+    # already made), and this task's own real audit evidence: a
+    # successful listing writes a real, queryable audit row whose details
+    # never contain the raw credential, and a denied listing (a real
+    # revoked-credential HTTP 401 from the fixture) writes its own
+    # distinct audit action rather than silently vanishing on rollback (a
+    # real defect this task's own test caught during development -- see
+    # `github_repository_listing_crud.py`'s own module docstring). No
+    # OpenBao needed -- this step never persists a credential. Same real
+    # `services: postgres` container pattern as
+    # target-source-snapshot-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a03
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a03"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a03
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real GitHub accessible-repository listing evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a03_github_repository_listing.py
+
+  github-branch-ref-integration:
+    # FTF-04A04: real Postgres GitHub branch listing/ref-resolution
+    # evidence (Section 6.8A/6.8B/7A.1-7A.2/9/45/65-67/77/81) -- two real
+    # organizations (each with a real project), a real uvicorn server
+    # proving the organization_admin-only RBAC boundary, the
+    # cross-organization project-ID IDOR case (denied identically to
+    # missing, no audit row for it), a real local HTTPS
+    # `GET .../branches` / `GET .../commits/{ref}`-shaped GitHub fixture
+    # (this repo's interactive dev sandbox has no route to the public
+    # internet -- same disclosed finding test_ftf_04a03_connector.py/
+    # test_ftf_04a04_connector.py already made), and this task's own real
+    # negative_acceptance: the resolved commit SHA is proven to be the
+    # fixture's real *current* tip, genuinely distinct from the branch
+    # listing's own stale list-time SHA ("branch advancing between
+    # list/read does not mix commits"), and an unknown ref is denied
+    # (404) with its own distinct audit action rather than a fabricated
+    # success. No OpenBao needed -- this step never persists a credential.
+    # Same real `services: postgres` container pattern as
+    # github-repository-listing-integration (this repo's interactive dev
+    # sandbox has no container-registry egress; that evidence was instead
+    # produced locally against a directly-installed PostgreSQL 16 -- see
+    # this task's docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a04
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a04"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a04
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real GitHub branch listing/ref-resolution evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a04_github_branch_ref.py
+
+  github-source-snapshot-integration:
+    # FTF-04A05: real Postgres GitHub source snapshot capture evidence
+    # (Section 6.8B/7A.1-7A.2/9/45/65-67/77/81) -- two real organizations
+    # (each with a real project and a real TargetApplicationConnection), a
+    # real uvicorn server proving the organization_admin-only RBAC
+    # boundary, a real local HTTPS `GET .../commits/{ref}` +
+    # `GET .../git/commits/{sha}` + `GET .../git/trees/{tree_sha}?recursive=1`
+    # -shaped GitHub fixture (this repo's interactive dev sandbox has no
+    # route to the public internet -- same disclosed finding
+    # test_ftf_04a04_connector.py/test_ftf_04a04_github_branch_ref.py
+    # already made), this task's own real negative_acceptance (a
+    # nonexistent project ID is denied even with a real, valid connection
+    # ID -- proves the router's own project-authorization guard is
+    # independently load-bearing; a cross-organization connection ID is
+    # denied; a real truncated tree listing is refused, never persisted as
+    # a partial snapshot), and a real, durable `TargetSourceSnapshot` row
+    # read back fresh from Postgres, never merely trusted from the
+    # response body. No OpenBao needed -- this step never persists a
+    # credential. Same real `services: postgres` container pattern as
+    # github-branch-ref-integration.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a05
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a05"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a05
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real GitHub source snapshot capture evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a05_github_source_snapshot.py
+
   component-bindings-integration:
     # FTF-R002: real Postgres ComponentBinding/ComponentSyncOutbox evidence
     # (Section 39/45/65/70/77.1/77.3/77.5/77.6) -- two real organizations,
@@ -1477,6 +1702,47 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real model-discovery evidence against the live database and live gateway
         run: uv run python3 tests/integration/test_ftf_0204_v1_models_discovery.py
+
+  litellm-registration-capability-integration:
+    # FTF-1201: real Postgres + real gateway registration-capability
+    # evidence (Section 3/38/45/66/77/81) -- two real organizations, a
+    # real uvicorn server proving the live `GET .../registration-
+    # capability` route end-to-end: a real gateway genuinely reporting a
+    # `proxy_admin` role (management_capable, real observed_role), a
+    # real gateway genuinely reporting the read-only `proxy_admin_viewer`
+    # role (inference_only, never capable -- this task's own
+    # negative_acceptance), the cross-organization IDOR case denied
+    # identically to missing (404), and a revoked connection refused
+    # capability detection (409) --
+    # tests/integration/test_ftf_1201_registration_capability.py. Same
+    # real-ephemeral-CA convention `connection-validation-integration`
+    # above already established.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest already pinned by every prior live-Postgres integration job in this file
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1201
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1201"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1201
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real registration-capability evidence against the live database and live gateway
+        run: uv run python3 tests/integration/test_ftf_1201_registration_capability.py
 
   dependency-scanning-integration:
     # FTF-1506: real vulnerability-feed integration against OSV.dev's
