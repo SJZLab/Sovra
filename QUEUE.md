@@ -1,4 +1,16 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T05:35:00Z (same scheduled shift, branch `claude/wizardly-fermat-sbdaim`) —
+  **PRs #231 (FTF-0212)/#328 (FTF-04A15)/#335 (FTF-0500D) confirmed green and merged** (merge
+  commits `e83a533`/`257cb46`/`bb2ea6c`), each requiring a fresh re-merge against `main` as the
+  prior one landed (all conflicts confined to shared append-only tracking docs, resolved
+  additively, re-validated clean each time — full detail in `PROGRESS.md`). **PR #337 (FTF-0601)
+  stopped, left open/unmerged**: its own CI hit a genuine GitHub Actions billing/spending-limit
+  block (every job's check-run annotation: "recent account payments have failed or your spending
+  limit needs to be increased") on its fourth re-merge, after two real green runs earlier this same
+  shift — not a code defect, confirmed via direct job-annotation inspection before assuming
+  otherwise. Filed as a dated ask in "## Owner actions — current" below (Law 17). Stopping this
+  shift here (STEP 4(e), ask-first item) — no further push attempted under an active billing block.
+
 Updated: 2026-09-30T05:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-sbdaim`,
   session `https://claude.ai/code/session_01F1dGicJPkGihwDxdgKkUpu`) — **no new item claimed; instead
   cleared stale merge-conflicted backlog.** STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`.
@@ -7487,7 +7499,40 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. The GitHub Actions runner-provisioning outage first
+**OPEN 2026-09-30T05:35:00Z — GitHub Actions billing/spending-limit block.** PR #337 (FTF-0601)'s
+own CI run (workflow run `36673924954`, triggered by this shift's own final merge-conflict
+resolution push, commit `fbaf2b3`) failed near-instantly across essentially every job (38 of 39
+completed in ~3 seconds each, `gate` included; the 39th, `github-source-snapshot-integration`,
+never left `queued`). This is **not a code or test defect** — every failed job's own check-run
+annotation reads verbatim: *"The job was not started because recent account payments have failed
+or your spending limit needs to be increased. Please check the 'Billing & plans' section in your
+settings."* Confirmed genuinely new and not a stale/cached signal: the exact same branch
+(`claude/wizardly-fermat-17bf9h`) had three consecutive fully-green real CI runs earlier in this
+same shift (workflow runs `36672476723` at 05:14, `36673169676` at 05:23, both `conclusion:
+success`) — the block appeared for the first time on the very next push, minutes later. Likely
+self-inflicted by this shift's own CI usage: resolving the same four PRs' merge conflicts against
+a fast-moving `main` required repeated full-suite CI re-runs (this PR alone re-ran its ~39-job
+suite four times in one shift) — disclosed here rather than hidden, since it may be the direct
+cause of hitting a real spending limit, not an unrelated platform outage.
+
+**Owner action needed**: check the repository/organization's GitHub Billing & plans settings
+(payment method and/or Actions spending limit) and resolve. Per Law 17, this failure stays visible
+as blocked, not converted to a fabricated pass — PR #337 is left open, unmerged, with its
+conflict-resolution work already pushed and validated locally (ruff/mypy/the task's own test
+suite/`validate_spec.py`/`product_truth_check.py` all clean on this exact head, per this file's own
+entry above); only a real, fresh green CI run on this same head can authorize merging it, per the
+standing "merge on green" rule. No further push attempted this shift — Law 1's "test shown able to
+fail" discipline does not apply to a provider-level billing gate, and retrying under an active
+billing block would only reproduce the identical instant failure, not new evidence. Remove this
+entry the moment the owner resolves the billing issue and a session confirms a fresh, genuinely
+green CI run on PR #337's current head.
+
+Historical, unrelated precedent for the same failure *shape* (also GitHub-Actions-side, also
+resolved by an owner/platform-level fix rather than a repo change) kept below for context — that
+2026-09-21 outage was runner-provisioning (`runner_id: 0`), not billing; this is a distinct root
+cause and a fresh, dated ask.
+
+None currently [historical, superseded by the entry above]. The GitHub Actions runner-provisioning outage first
 found on PR #170 (2026-09-21, escalated to an owner ask the same day)
 and independently reconfirmed on PR #172 (FTF-R016) and PR #176
 (FTF-0202) is now confirmed genuinely cleared: this same certifier

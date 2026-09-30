@@ -1,4 +1,61 @@
 # PROGRESS — Sovra
+## 2026-09-30T05:35:00Z — Same shift — PRs #231/#328/#335 confirmed green and merged; PR #337 stopped on a real GitHub Actions billing block
+
+Continuing the same shift's backlog-clearing work (see the entry directly below). All four stale
+PRs' merge-conflict resolutions were pushed; watched each via a background CI poll against the
+real GitHub check-runs API (not `gh`, which reported `GH_TOKEN` invalid for API auth in this
+sandbox — used direct `curl` with the same token against `api.github.com`, confirmed working).
+
+**#231 (FTF-0212)**: real CI green (38/38) on head `49a85fb`, `mergeable_state: clean`. Merged
+(merge commit `e83a53369d0fdc61c3fbb3f17778a68672b29e93`) per the standing "merge on green + L1 doc
+(PROVISIONAL)" authorization — still PROVISIONAL, not self-certified (Law 4).
+
+**#328 (FTF-04A15)**: merging #231 advanced `main`, reopening a conflict confined to
+`docs/certifications/queue.md`'s append-only log (resolved additively, one more push, re-ran
+ruff/mypy/the task's own test/`validate_spec.py`/`product_truth_check.py`, all clean). Real CI
+green (38/38) on the new head `f15ce5f`, `mergeable_state: clean`. Merged (merge commit
+`257cb4608b4ed0a59beaba1a4ad8e768dfa9def7`).
+
+**#335 (FTF-0500D)**: merging #231 then #328 reopened the same class of conflict twice more (both
+confined to `docs/certifications/queue.md`, resolved identically, re-validated identically clean
+each time). Real CI green (38/38) on the final head `f736981`, `mergeable_state: clean`. Merged
+(merge commit `bb2ea6ca8a5944587b6a0ef017ec3fc915c6f54b`).
+
+**#337 (FTF-0601)**: same repeated-conflict pattern as the merges landed one by one (four total
+re-merges across the shift, each confined to `QUEUE.md`/`PROGRESS.md`/`docs/certifications/
+queue.md`'s append-only logs and, twice, an adjacent-line collision in the `gate` job's step list
+in `.github/workflows/ci.yml` — both resolved additively, `apps/api/app/main.py`'s 20-router wiring
+auto-merged cleanly every time). The third re-merge (head `6b1214e`) reran real CI **green,
+39/39**, confirmed directly. Before that green result could be acted on, `main` had already moved
+again (PR #335 landed), so a fourth, final re-merge was pushed (head `fbaf2b3`) — and **that run
+failed almost every job (38/39) in ~3 seconds each**, `gate` included, the 39th never leaving
+`queued`. Investigated immediately rather than assumed a real regression (Law 1/2): every failed
+job's own check-run annotation reads verbatim *"The job was not started because recent account
+payments have failed or your spending limit needs to be increased"* — a GitHub Actions
+billing/spending-limit block, not a code or test defect. Confirmed this is a genuinely new signal,
+not stale: the same branch had two fully-green real CI runs earlier this same shift (05:14 and
+05:23) before the block first appeared on the very next push (05:33) — likely triggered by this
+shift's own heavy CI usage (this one PR alone re-ran its full ~39-job suite four times chasing a
+fast-moving `main`). Recorded as a dated owner ask in `QUEUE.md`'s "## Owner actions — current"
+(Law 17 — provider failure stays visible as blocked, never converted to success). **PR #337 is
+left open, unmerged** — its conflict-resolution work is pushed and locally validated clean, but
+"merge on green" requires a real, current green CI run, which this billing block makes impossible
+right now. No further push attempted — retrying under an active billing block would only reproduce
+the identical instant failure.
+
+`status.py` after the three real merges: `97/300` certified unchanged (all three are PROVISIONAL
+submissions advancing from open-PR to merged-on-`main`, not certifications — Law 2), `24`
+product-true unchanged for #231/#328, `25` product-true after #335 (still 24, since #335 itself
+carries no live caller — the 25 figure is from #337's own not-yet-merged `build_evaluation_suite_
+router`, which stays off `main`'s own count until #337 itself lands).
+
+STEP 4(e): ask-first item encountered (GitHub Actions billing block, squarely a "money at scale"
+class issue only the owner can resolve) — `QUEUE.md` "Owner actions — current" updated with one
+dated entry, stopping this shift here. Nothing else attempted after this discovery. Designated
+branch `claude/wizardly-fermat-sbdaim` (this entry) stays separate from all four PR branches
+above — no risk of this shift's own tracking-doc PR (#389) colliding with the billing block, since
+it carries no code and was opened before the block appeared.
+
 ## 2026-09-30T05:10:00Z — Scheduled relay shift — frontier exhausted; cleared stale merge-conflict backlog instead
 
 Session `https://claude.ai/code/session_01F1dGicJPkGihwDxdgKkUpu`, branch
