@@ -1,4 +1,61 @@
 # PROGRESS — Sovra
+## 2026-09-30T18:56:10Z — Scheduled relay shift — no relay work possible, outage independently reconfirmed
+
+Session on branch `claude/wizardly-fermat-e314jl` (new branch, did not exist on `origin` at shift
+start). STEP 0.2: `sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256` exactly — no
+mismatch. `cognee-cli` is not installed in this sandbox (`command not found`) — text-search
+fallback active this shift, disclosed per STEP 0.2, same as every prior shift.
+
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` fresh, not
+assumed from any prior session's own summary. `BLOCKER.md` on `main` (`bb2ea6c`, confirmed the
+real current tip both via a `git fetch --unshallow` + explicit `+refs/heads/main:refs/remotes/
+origin/main` refspec fetch and independently via the GitHub API's own `get_commit(sha=main)` —
+matches HEAD exactly, no divergence) still shows no *merged* open blocker — the new outage entry
+added by PR #394 has not landed on `main` yet because that PR itself cannot go green while the
+outage it is reporting is still live (see below).
+
+**Independently recomputed the dependency-ready frontier from first principles**, not trusted from
+any prior shift's own claim: parsed `spec/tasks.json`'s real per-task `dependencies` against
+`docs/spec-matrix.yaml`'s real per-task `certification_state` directly. Result: **7** tasks are
+`certification_state: NONE` with every dependency `CERTIFIED` — FTF-0214, FTF-0306, FTF-0500B,
+FTF-0500C, FTF-0601, FTF-0902, FTF-1703. Cross-checked each against `list_pull_requests` (open):
+FTF-0214 (PR #295, disclosed-blocked), FTF-0306 (PR #380), FTF-0500B (PR #359), FTF-0500C (PR
+#364), FTF-0601 (PR #337), FTF-0902 (PR #342) are all already claimed by an open relay PR;
+FTF-1703 remains correctly declined (needs a real Argilla reviewer workflow that does not exist in
+this repository yet, and its own would-be unblocker FTF-R006 is not dependency-ready either —
+FTF-0516 still `certification_state: NONE`). **Zero genuinely unclaimed tasks** — matches the
+identical conclusion four independent prior shifts already reached today (PRs #389, #390, #392,
+#394).
+
+**Independently reconfirmed the repo-wide GitHub Actions runner-provisioning outage PR #394 (10:57Z)
+already escalated is still live**, rather than trusting its text: fetched the newest workflow run in
+the repository directly (`run #601`, attempt 3, `run_started_at: 2026-09-30T16:53:20Z`, on PR #394's
+own head) and pulled every one of its 38 jobs individually — all `completed`/`failure` within 2-5
+seconds of `started_at`, and the `gate` job's own `get_workflow_job` call confirms `runner_id: 0`,
+`runner_name: ""`, `runner_group_id: 0` — the exact same no-runner-ever-assigned signature as every
+prior confirmation today, now running continuously from ~05:30Z through at least 16:53Z (11h20m+,
+far past this outage class's own 2026-09-21/2026-09-27 "clears within hours" precedent that earlier
+shifts used to justify not escalating sooner).
+
+**No relay task work was possible this shift** — nothing on the frontier is genuinely unclaimed, and
+independently of that, no PR (including a docs-only tracking PR) can be merged on green while the
+outage holds. Rather than open a sixth near-identical tracking PR on top of the five already open
+today (#389, #390, #392, #393, #394) documenting the same two facts, this shift instead posted one
+corroborating comment on PR #394 — the most recent and most complete existing record, with the
+freshest evidence and the three route options already laid out for the owner — with this shift's own
+independently-reproduced numbers, and stopped without opening new tracking-doc churn. `BLOCKER.md`/
+`QUEUE.md` "Owner actions — current" are unchanged on `main` (the ask already exists, on PR #394,
+unmerged, for the structural reason above — not a fresh ask, not something this shift can resolve by
+itself: merging a red PR would be a deviation from every one of today's five prior shifts' own
+conservative precedent, not repeated here without an explicit owner instruction change).
+
+STEP 3: `PROGRESS.md` updated before compaction (this entry). `QUEUE.md` given a matching one-line
+pointer at its own top. `docs/certifications/queue.md` untouched — no submission this shift. STEP 4
+stop condition (b): true blocker (repo-wide CI runner-provisioning outage, already reported with
+full evidence and three route options in PR #394's own `BLOCKER.md` addition) combined with a fully
+claimed dependency-ready frontier. Stopping here. No new owner ask filed (already exists, tracked
+solely on PR #394 per "Owner actions live in ONE place").
+
 ## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
 
 Subscribed to PR #385's own GitHub activity immediately after opening it. A `check_suite.completed`

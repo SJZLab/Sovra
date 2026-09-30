@@ -1,4 +1,18 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T18:56:10Z (scheduled relay shift, branch `claude/wizardly-fermat-e314jl`) —
+  **No relay work possible.** Independently recomputed the dependency-ready frontier from
+  `spec/tasks.json`/`docs/spec-matrix.yaml` directly: 7 ready tasks, all already claimed by an open
+  PR (#295/#380/#359/#364/#337/#342) or correctly declined (FTF-1703, no Argilla reviewer workflow)
+  — matches four prior shifts today. Independently reconfirmed the repo-wide GitHub Actions
+  runner-provisioning outage PR #394 escalated at 10:57Z is still live: run #601 (attempt 3,
+  `run_started_at` 16:53:20Z) — all 38 jobs `runner_id: 0`, completed in 2-5s, now 11h20m+
+  continuous, past the "clears within hours" precedent. Posted a corroborating comment on PR #394
+  (the freshest, most complete existing record) rather than opening a sixth near-identical tracking
+  PR on top of #389/#390/#392/#393/#394. No new owner ask filed — the existing one lives solely on
+  PR #394 per "Owner actions live in ONE place," unmerged because it cannot go green while the
+  outage it reports holds; not resolved by deviating from every prior shift's own precedent of not
+  merging on red. Full detail: `PROGRESS.md`'s matching entry.
+
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
   on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test
