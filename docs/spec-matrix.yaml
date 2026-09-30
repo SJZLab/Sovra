@@ -5508,15 +5508,77 @@ FTF-0500C:
   proving_symbol: ''
   proving_test: ''
 FTF-0500D:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Dataset source security-boundary preview + audit evidence
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
+    (both CERTIFIED, confirmed before relying on them). `database_changes` charters "No
+    independent schema change. Consume frozen contract" -- pure, DB-free
+    `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` composes Section
+    7A.10's own literal "before import, show" field list (source name/type, estimated
+    records/bytes, security classification, requested purpose, retention policy, whether data
+    will leave its current security boundary, expected transformations) via
+    `build_dataset_source_copy_preview`, and this task's own negative_acceptance ("UI warning
+    alone cannot allow forbidden egress; backend checks grant and destination again at import")
+    via a second, independent function, `authorize_dataset_source_copy`, which re-derives both
+    checks from its own arguments and raises rather than trusting any previously built preview.
+    Cross-boundary-import precedent (workers/data cannot import apps/api, per FTF-0506's own
+    disclosed precedent, reused again by FTF-0511/FTF-0512/FTF-0513): FTF-0500's own
+    `security_classification`/`allowed_purposes` enums and FTF-0402's own
+    `SECURITY_PROFILE_LEVELS`/`resolve_effective_security_profile` rule are mirrored locally
+    (`SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS`/`SUPPORTED_PROJECT_SECURITY_PROFILES`/
+    `SUPPORTED_PURPOSES`, `resolve_effective_project_security_profile`), never cross-boundary
+    imported. Two disclosed, narrow design choices where this specification underspecifies (same
+    class of precedent as FTF-0402/FTF-0500's own disclosed enum choices): (1)
+    `MINIMUM_REQUIRED_SECURITY_PROFILE` maps `security_classification` to the minimum project
+    `security_profile` required to receive it (public/internal -> standard, confidential ->
+    zero_egress, restricted -> air_gapped) -- no section of this plan fixes this mapping; (2)
+    `RETENTION_POLICY_STATUS` is a single honest sentinel ("not_yet_configured") rather than a
+    fabricated retention value, since Section 67.4's `DataUseGrant` (the entity that will carry a
+    real retention policy) is a separate, not-yet-built, dependency-gated concept (FTF-0500's own
+    module docstring already discloses this). Path refined to
+    `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` (this repo's real
+    `SOURCE_ROOTS`, FTF-0001/PR #10), not the packet's suggested non-existent
+    `services/training-worker/...` tree, same precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511/
+    FTF-0512/FTF-0513.
+
+    `tests/tasks/test_ftf_0500d.py`: 25 test functions covering the full Section 7A.10 field
+    list on the positive path, the honest (never fabricated, never per-classification-varying)
+    retention sentinel, both `build_dataset_source_copy_preview` blocking paths (purpose denied,
+    revoked connection, security-boundary crossing, both simultaneously) surfaced without ever
+    raising, the effective-profile resolution rule (more restrictive of org/project, and a
+    project may choose stricter than its org's own floor), the closed classification->profile
+    mapping, field validators (unknown classification/profile/purpose, non-negative-int
+    bool-exclusion, non-string transformation entries, empty transformations as a legitimate
+    state), and `authorize_dataset_source_copy`'s own independent re-derivation (raises on purpose
+    denial, revoked connection, boundary crossing, and both simultaneously; succeeds only when
+    both checks pass; and explicitly proven to never read or trust a previously built preview
+    object at all) -- all pass. Two independent, disclosed fault injections, both reverted
+    byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` before/after each): (1) the
+    boundary-crossing check in `authorize_dataset_source_copy` short-circuited to never fire (`if
+    False and ...`) -- 1 genuine FAIL (`authorize_dataset_source_copy raises on a security
+    boundary crossing`); (2) the purpose/status check in `check_purpose_authorized` short-
+    circuited the same way -- 4 genuine FAILs (both the preview's own revoked-connection case and
+    `authorize_dataset_source_copy`'s own revoked-connection/both-simultaneously cases).
+
+    `uv run ruff check .`/`ruff format --check .` clean on both new files; `uv run mypy .` clean
+    (zero new errors). `python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py
+    --fail-on-unwired`: unchanged (this task's own `proving_symbol` stays blank -- FTF-0501,
+    Section 8's first real import surface and this task's own dependent, does not exist yet to
+    call either function; disclosed "no live caller yet" precedent, same class as
+    FTF-0506/FTF-0507/FTF-0508/FTF-0511/FTF-0512/FTF-0513/FTF-1302/FTF-1303/FTF-1304).
+    Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/`test_ftf_0511.py`/`test_ftf_0512.py`/
+    `test_ftf_0513.py` -- zero regressions.
+
+    CI gate step ("FTF-0500D negative-test proof") added to `.github/workflows/ci.yml`
+    immediately after the FTF-04A20 step. **Not self-certified (Law 4)** -- independent
+    Control-plane L2 review is required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
   certification_state: NONE
   criticality: MUST
