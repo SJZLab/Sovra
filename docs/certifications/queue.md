@@ -21056,3 +21056,81 @@ immediately after the FTF-04A20 step, plus a new dedicated `evaluation-suite-int
 (real `services: postgres` container) mirroring `manifest-evidence-integration`'s own pattern.
 **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
 opened PR are required before certification.
+
+## 2026-10-01 — Control-plane L2 review of the 10-item PROVISIONAL backlog (+ FTF-04A06)
+Reviewer: control-plane session `session_01QVznorVMjnmcttUhyDnoGR`. No commit, PR body or comment on
+any reviewed PR carries this session (checked per item, trailers and PR text). Each item got:
+contract re-pulled; CI job log read for the step that actually runs its proving test; local run; at
+least one own fault injection against an acceptance/negative_acceptance clause; product_truth 25/25 and
+validate_spec --strict clean on `d925da1`.
+
+**CERTIFIED (see ledger.md):** FTF-0212 (#231), FTF-04A15 (#328), FTF-0306 (#380).
+
+**NOT CERTIFIED: stay PROVISIONAL, code is merged, relay fixes in a new PR.** Each DoD below is the
+minimum for re-review. CI was green and the proving test really ran in every case below. The
+failures are in contract coverage, not in CI.
+
+- **FTF-H007 (#385): SECURITY.** `scan_local_repository_boundary` → `capture_local_repository` runs
+  `git status` on the untrusted tree. A repo-controlled `core.fsmonitor` command executes during the
+  scan, and the scan still reports `is_safe_to_lock=True`, with no blocking reasons. Reproduced
+  independently. Executable hooks reached via a symlinked `.git/hooks/*` or via
+  `core.hooksPath=<dir>`, and aliased calls (`from os import system`, `import subprocess as sp`),
+  are also reported safe.
+  DoD:
+  (1) every `_run_git` call runs with `-c core.fsmonitor=false -c core.hooksPath=/dev/null` and the
+  env `GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null`. Shared fix with FTF-04A06 below.
+  (2) a `core.fsmonitor`/`core.hooksPath`/`core.sshCommand`/filter-driver setting in the repo config
+  is a blocking finding.
+  (3) a symlinked hook is treated as active.
+  (4) proving-test cases: an fsmonitor execution marker must stay absent and the scan must block;
+  the symlinked-hook and hooksPath cases; one aliased-import case.
+- **FTF-04A06: DECERTIFIED → PROVISIONAL**, same root cause. The fsmonitor command wrote a file into
+  the target working tree during `capture_local_repository`, breaking its negative_acceptance
+  "never edit the target working tree".
+  DoD: the `_run_git` hardening in H007 (1), plus a `test_ftf_04a06.py` case that proves a malicious
+  `core.fsmonitor` neither runs nor alters the tree. One PR may fix both.
+- **FTF-0601 (#337).** The live PATCH path `update_evaluation_suite` assigns `name`,
+  `grading_logic_version` and `reviewer_id` without the `validate_*` calls.
+  - `PATCH {"reviewer_id": ""}` followed by lock succeeds for a `final` suite, so it locks with no
+    real reviewer (§69.1).
+  - `grading_logic_version: 0` returns 500 (IntegrityError) instead of the contract's 400.
+  - `name: ""` is accepted, against OpenAPI `minLength: 1`.
+  DoD: run the validators on update; the lock check rejects an empty or whitespace-only reviewer
+  (and the DB CHECK uses `<> ''`); an integration test for each of the three cases.
+- **FTF-1206 (#381).** The acceptance is "Persist allowed registration/deployment namespaces,
+  approvers and route changes under org policy". What was delivered is in-memory dataclasses and
+  pure functions, with no storage, no API and no caller. `enforce_route_change_authority` discards
+  `grant`.
+  DoD: a persisted, tenant-scoped org-policy record (its own migration task, per the packet's
+  `database_changes` rule; until that exists, mark FTF-1206 BLOCKED_DEPENDENCY rather than done);
+  a route-change check against the granted deployment namespaces.
+- **FTF-0500C (#364).**
+  (a) Changing the module's `SET TRANSACTION ... REPEATABLE READ, READ ONLY` to `READ COMMITTED,
+  READ WRITE` leaves both suites green, because the read-only test re-types the SQL on a raw
+  connection instead of calling the module.
+  (b) The REST path silently accepts a later page that drops the snapshot header (`if observed is
+  not None`), which violates "lost watermark/snapshot blocks consistent import".
+  DoD: an integration assertion through the module that `transaction_read_only=on` and
+  `transaction_isolation=repeatable read` (or that a write is rejected); a missing header after one
+  was seen raises `SourceChangedDuringListingError`, with a test.
+- **FTF-0500B (#359).** Dropping `version_id` from the `manifest_hash` input leaves the suite green,
+  so the "exact version manifest" is unpinned. Unversioned buckets (`VersionId: null`) are accepted
+  without a flag.
+  DoD: a version-sensitivity test (same keys, sizes and ETags, different VersionIds give a different
+  hash); a versioning-disabled source is flagged or refused, with a test. Real MinIO integration is
+  BLOCKED_EXTERNAL-disclosed if not added. The SigV4 fixture stays as the unit layer.
+- **FTF-0500D (#335).** Narrowing the import-time gate to `security_classification == "restricted"`
+  leaves the suite green: a confidential source into a standard project gets `preview.blocked=True`,
+  yet `authorize_dataset_source_copy` allows it. The shipped code is correct; the negative_acceptance
+  is unpinned.
+  DoD: a test across the classification × effective-profile matrix asserting that `authorize_*`
+  raises whenever the preview blocks.
+- **FTF-1807 (#384).** Rewriting the runbook to say revoked access continues until TTL and that
+  external fallback is allowed (the opposite of the negative_acceptance) still passes 35/35. The test
+  matches tokens, not operator guidance.
+  DoD: assert the revocation-is-immediate and no-unapproved-fallback statements and the operator
+  table's effect column; add a fault test that inverts one of them.
+
+Superseded: the earlier, overlapping Control-plane certification PRs #383, #386, #388, #391 and #393
+never merged (outage era) and are closed by this review. Their verdicts are not adopted. Every item
+above was re-verified from scratch.

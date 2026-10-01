@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T07:30:00Z (Control plane, session `session_01QVznorVMjnmcttUhyDnoGR`,
+  branch `claude/zealous-brown-verta8`): **independent L2 review of the 10-item PROVISIONAL
+  backlog. 3 CERTIFIED, 7 NOT CERTIFIED, 1 DECERTIFIED.**
+  - CERTIFIED: FTF-0212, FTF-04A15, FTF-0306.
+  - NOT CERTIFIED (security): FTF-H007. A repo-controlled `core.fsmonitor` runs during the
+    "non-executing" scan.
+  - DECERTIFIED to PROVISIONAL: FTF-04A06. The same flaw edits the target working tree,
+    contrary to its own negative_acceptance.
+  - NOT CERTIFIED: FTF-0601 (a final suite locks with an empty reviewer via PATCH) and FTF-1206
+    (nothing persisted).
+  - NOT CERTIFIED, tests don't catch an injected fault: FTF-0500B, FTF-0500C, FTF-0500D,
+    FTF-1807.
+  `status.py` 97 → 99/300. The frontier is NOT exhausted: see "## Active" items 3–4. Also
+  resolved: FTF-0902's real root cause (kind v0.24.0's kindnet enforces NetworkPolicy, so the
+  baseline is not a non-enforcing cluster) and FTF-1703's implicit FTF-R006 dependency (Active
+  1–2). Watchdog findings dispositioned. One owner ask (branch protection, low urgency).
 Updated: 2026-10-01T02:53:25Z (scheduled relay shift, branch `claude/wizardly-fermat-g0fsmc`) —
   **frontier re-verified exhausted, no new task claimed; closed 3 stale duplicate tracking PRs.**
   `scripts/status.py` jumped to `97/300` certified (from `86/300`) since several Control-plane
@@ -8107,10 +8123,28 @@ this same resolution (doc-only, redundant once this lands).
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
    identity + immutable export), even though `docs/TASK_INDEX.md` does not list it as a
    dependency. Under the default resolution rule the architecture already implies this, so it
-   is not an owner ask. Critical path: FTF-0306 (PROVISIONAL, under certification) → FTF-0510 → FTF-0515 →
+   is not an owner ask. Critical path: FTF-0306 (CERTIFIED 2026-10-01) → FTF-0510 → FTF-0515 →
    FTF-0516 → FTF-R006 → FTF-1703. The relay should not claim FTF-1703 before FTF-R006 is
    CERTIFIED. Synthetic, labelled reference data is explicitly allowed (§55), so no customer
    data ask is needed.
+
+3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
+   `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
+   - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
+     `core.hooksPath=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`). Make
+     risky repo-config keys and symlinked or hooksPath hooks blocking findings. Add tests for each.
+     FTF-04A06 was decertified for this.
+   - **FTF-0601:** add validation on the PATCH path; refuse to lock with an empty reviewer.
+   - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
+     on a later page blocks.
+   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
+   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
+   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.
+   - **FTF-1206:** needs persistence. Claim a separate migration prerequisite first, or mark
+     BLOCKED_DEPENDENCY.
+   These items stay PROVISIONAL. The fix PR for each one is re-reviewed by Control plane.
+4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
+   `docs/spec-matrix.yaml`. FTF-0510 (next on the FTF-1703 path) is now ready.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
