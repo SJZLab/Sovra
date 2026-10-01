@@ -1,4 +1,16 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T09:20:00Z (scheduled relay shift, branch `claude/wizardly-fermat-xa6526`) --
+  **Repo-wide GitHub Actions runner-provisioning outage confirmed still live, escalated as an
+  owner ask** (see "Owner actions -- current" below and `BLOCKER.md`'s matching dated entry for
+  full evidence). Independently recomputed the dependency-ready frontier from `docs/spec-matrix.yaml`
+  + `docs/TASK_INDEX.md` directly: same conclusion three prior shifts today already reached --
+  every ready, not-yet-certified task is either already `PROVISIONAL` (Control plane's to certify,
+  not relay's) or already claimed by an open relay PR, except FTF-1703 which stays correctly
+  declined (needs a real Argilla reviewer workflow that doesn't exist here yet; its own would-be
+  unblocker FTF-R006 isn't dependency-ready either). No relay task work is possible this shift:
+  nothing genuinely unclaimed to pick, and no PR (new or existing) can reach green while the outage
+  holds. Stopping per the ask-first hard-stop rule. No code changed.
+
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
   on the real current head (`5e11221`), `gate` included (carries the new `FTF-H007 negative-test
@@ -7626,12 +7638,27 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. The GitHub Actions runner-provisioning outage first
-found on PR #170 (2026-09-21, escalated to an owner ask the same day)
-and independently reconfirmed on PR #172 (FTF-R016) and PR #176
-(FTF-0202) is now confirmed genuinely cleared: this same certifier
-shift independently ran real, fresh CI on four separate PRs today
-(#159, #160, #161, #167) -- 21/21, 22/22, 23/23, and 23/23 real jobs,
+**2026-09-30 (dated) — Repo-wide GitHub Actions runner-provisioning outage, recurred, now past
+its own "clears within hours" precedent window.** Every check run on every open PR (five relay
+task PRs, three docs-only tracking PRs, four Control-plane certification PRs -- eleven PRs, every
+single job on each) has failed within seconds with `runner_id: 0`/no runner ever assigned since
+~2026-09-30T05:30Z -- confirmed independently this shift on the newest run in the whole repository
+(run #600, PR #393, still failing at 09:10Z) after a prior shift (07:04Z, PR #390) already
+diagnosed the identical signature and chose to wait rather than escalate, per this exact outage
+class's own 2026-09-21/2026-09-27 precedent of self-clearing "within hours." That window has now
+been exceeded (3h37m+ continuous, ten further workflow runs, zero recoveries) with no repo-side
+fix possible (ruled out `.github/workflows/ci.yml`/secrets/runner-label changes as the cause by
+diff against the last known-green run). Full evidence and three route options in `BLOCKER.md`'s
+matching dated entry. **No relay or Control-plane merge is possible while this holds** -- `merge on
+green` cannot be exercised for any PR, including the three already-open frontier-exhausted/
+merge-conflict tracking PRs (#389, #390, #392). Remove this entry the moment a session confirms a
+fresh PR event gets a real `runner_id` again (same resolution bar the 2026-09-21 entry below used).
+
+2026-09-21 (resolved, kept for the resolution-bar precedent the entry above reuses): the
+GitHub Actions runner-provisioning outage first found on PR #170 (2026-09-21, escalated to an
+owner ask the same day) and independently reconfirmed on PR #172 (FTF-R016) and PR #176
+(FTF-0202) was confirmed genuinely cleared: a certifier shift independently ran real, fresh CI on
+four separate PRs that day (#159, #160, #161, #167) -- 21/21, 22/22, 23/23, and 23/23 real jobs,
 every one with a real `runner_id`/`runner_name` and real per-step
 execution timestamps, structurally different from every failing run
 during the outage (`runner_id: 0`, no runner ever assigned). This
@@ -7639,8 +7666,8 @@ directly confirms the resolution bar the original owner-ask entry
 itself set ("a session confirms CI is provisioning runners again on a
 fresh PR event"), independently of PR #178's own earlier claim to the
 same effect. FTF-1302 (PR #170) and FTF-R016 (PR #172), both previously
-reviewed sound but NOT CERTIFIED solely because of this outage, are
-being re-reviewed now with a fresh, genuine CI run each -- see this
+reviewed sound but NOT CERTIFIED solely because of this outage, were
+re-reviewed with a fresh, genuine CI run each -- see this
 file's own top status note and `docs/certifications/queue.md` for the
 full history.
 
