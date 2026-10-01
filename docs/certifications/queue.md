@@ -21223,3 +21223,70 @@ opened PR are required before certification. This entry is the trigger the 2026-
 named ("Do not re-review them until a new relay fix PR for that ID is appended below this line") for
 FTF-H007, FTF-04A06 and FTF-0601 specifically — not for FTF-0500C/FTF-0500B/FTF-0500D/FTF-1807/
 FTF-1206, which remain exactly as that review left them, unchanged, no new relay PR yet.
+
+## 2026-10-01 — FTF-0500C — fix-and-resubmit for the 2026-10-01 L2 findings
+
+Scheduled autonomous relay shift. Next item in the 2026-10-01 review's own priority order after
+FTF-H007/FTF-04A06/FTF-0601 (PR #403, merged). The review's own finding for FTF-0500C (#364):
+
+(a) Changing the module's `SET TRANSACTION ... REPEATABLE READ, READ ONLY` to `READ COMMITTED,
+READ WRITE` leaves both suites green, because the existing read-only test re-types the same two
+`SET` statements on a raw connection instead of calling the module.
+(b) The REST path silently accepts a later page that drops the snapshot header (`if observed is
+not None`), which violates "lost watermark/snapshot blocks consistent import".
+
+**Fix (a).** Added `test_real_read_only_and_isolation_are_set_through_the_module_itself` to
+`tests/integration/test_ftf_0500c_database_api_trace_source.py`. A new `_ReadOnlyProbeConnection`
+(a real `psycopg.Connection` subclass) is handed to `validate_and_preview_postgres_source` itself
+via its own `connect=` parameter; its `execute` override watches for the module's own `SET
+TRANSACTION ISOLATION LEVEL` statement going by and, the instant it does, reads PostgreSQL's own
+real `transaction_read_only`/`transaction_isolation` GUCs back — inside the *same* real
+transaction, so the probe observes exactly what the module's own actual SQL produced, not a
+hand-retyped copy of it. Asserts `transaction_read_only == "on"` and `transaction_isolation ==
+"repeatable read"`. Real fault injection (Law 1), performed directly against the on-disk module:
+replaced the module's own `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` line with
+`SET TRANSACTION ISOLATION LEVEL READ COMMITTED, READ WRITE` — the new test genuinely failed
+(captured GUCs no longer `on`/`repeatable read`), confirming it tests something real; reverted
+byte-identical (md5sum confirmed before/after).
+
+**Fix (b).** `validate_and_preview_rest_trace_source` (`apps/api/app/datasets/
+database_api_trace_source_contract_and_fail_closed_validation.py`) now tracks a
+`snapshot_version_seen` boolean separately from `snapshot_version`'s own value: once a real header
+value has genuinely been observed on an earlier page, *any* later page where the declared
+`snapshot_version_header` is missing (`observed is None`) or differs now raises
+`SourceChangedDuringListingError` — previously `if observed is not None:` skipped the comparison
+entirely for a page that dropped the header, silently accepting it. A page before any header has
+ever been seen still does not raise (nothing to compare against yet), preserving the existing
+"endpoint never sends this header at all" case. New real local-HTTPS-fixture route
+`/dropped-snapshot` (first page carries `ETag: snapshot-v1`, every later page sends no `ETag` at
+all) in `tests/tasks/test_ftf_0500c.py`, with a new proving test
+(`test_rest_connector_catches_a_header_dropped_mid_listing`) and its own disclosed real fault
+injection (`test_disabling_the_dropped_header_check_genuinely_fails_the_assertion`, restoring the
+exact pre-fix guard via `elif observed is not None and observed != snapshot_version:`) — the
+assertion genuinely fails without the fix; reverted byte-identical (md5sum confirmed).
+
+**Full verification, this shift, from the current `origin/main` plus only these files' changes:**
+`uv sync --all-packages`; `uv run ruff check .` / `ruff format --check .` clean (356 files); `uv
+run mypy .` clean (356 files, zero new errors — two stray `type: ignore` comments the first draft
+of the new integration test carried were themselves unused and removed, not suppressed). `python3
+scripts/validate_spec.py --strict` clean. `python3 scripts/product_truth_check.py
+--fail-on-unwired`: unchanged `25/25` (disclosed, no dataset-import composition task calls either
+connector yet — same boundary this task's own entry already established). `python3 scripts/
+status.py`: unchanged `99/300` certified, `24` product-true (Law 2 — a resubmission is not a
+certification). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — zero
+regressions. Both `tests/tasks/test_ftf_0500c.py` (no live Postgres required) and `tests/
+integration/test_ftf_0500c_database_api_trace_source.py` (real, freshly-installed local PostgreSQL
+16, started this shift) ran clean end-to-end, "all checks passed" each. No `.github/workflows/
+ci.yml` change needed — the existing `gate`-job step and the dedicated
+`database-api-trace-source-integration` job already run every file this fix touches; this PR's own
+diff is confined to the one application file plus the two test files and `docs/spec-matrix.yaml`'s
+own FTF-0500C entry.
+
+`docs/spec-matrix.yaml`: FTF-0500C's entry updated with an L2 fix-and-resubmit note describing the
+above; `certification_state` stays `PROVISIONAL` and `proof_state` stays `L1-PROVEN` (Law 2 — this
+submission does not self-certify).
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review's own
+rule names for FTF-0500C specifically — not for FTF-0500B/FTF-0500D/FTF-1807/FTF-1206, which remain
+exactly as that review left them, unchanged, no new relay PR yet.

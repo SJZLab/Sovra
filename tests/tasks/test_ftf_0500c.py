@@ -326,6 +326,23 @@ class _RestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/dropped-snapshot":
+            # A later page that drops the snapshot-version header entirely
+            # once an earlier page carried one -- the 2026-10-01 L2 review's
+            # own finding (`if observed is not None` silently accepted
+            # this). No `extra_headers` on the second-and-later page at all,
+            # not merely a different ETag value.
+            page = _ALL_RECORDS[cursor : cursor + limit]
+            next_cursor = cursor + limit if cursor + limit < len(_ALL_RECORDS) else None
+            if cursor == 0:
+                self._send_json(
+                    {"records": page, "next_cursor": next_cursor},
+                    extra_headers={"ETag": "snapshot-v1"},
+                )
+            else:
+                self._send_json({"records": page, "next_cursor": next_cursor})
+            return
+
         if parsed.path == "/missing-records-field":
             self._send_json({"items": [], "next_cursor": None})
             return
@@ -533,6 +550,87 @@ def test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion() ->
             "fault injection: disabling the real comparison genuinely breaks the assertion "
             "above (proves it was testing something real, not vacuously passing)",
             genuinely_failed_without_the_check,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
+def test_rest_connector_catches_a_header_dropped_mid_listing() -> None:
+    """2026-10-01 L2 review finding: a later page that drops the
+    snapshot-version header entirely (no header at all, not a changed
+    value) once an earlier page carried one is just as much a lost
+    snapshot -- the pre-fix code's own `if observed is not None` guard
+    silently accepted this instead of raising."""
+    if _BASE_URL is None:
+        return
+    try:
+        source_module.validate_and_preview_rest_trace_source(
+            _rest_config("/dropped-snapshot", max_preview_records=1000), policy=_policy()
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a later page dropping the snapshot-version header "
+            "entirely, after an earlier page carried one, is caught",
+            False,
+        )
+    except source_module.SourceChangedDuringListingError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a later page dropping the snapshot-version header "
+            "entirely, after an earlier page carried one, is caught",
+            True,
+        )
+
+
+def test_disabling_the_dropped_header_check_genuinely_fails_the_assertion() -> None:
+    """Law 1, disclosed real fault injection: reverts the fix (restoring the
+    pre-fix `if observed is not None:` guard that silently accepted a
+    dropped header) directly in the module under test, proves the
+    negative-test assertion above genuinely fails without it, then reverts
+    the file byte-identical."""
+    if _BASE_URL is None:
+        return
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "            elif observed != snapshot_version:\n",
+        "            elif observed is not None and observed != snapshot_version:  "
+        "# FTF-0500C fault injection -- pre-fix guard restored\n",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the dropped-header fix was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            source_module.validate_and_preview_rest_trace_source(
+                _rest_config("/dropped-snapshot", max_preview_records=1000), policy=_policy()
+            )
+            genuinely_failed_without_the_fix = True
+        except source_module.SourceChangedDuringListingError:
+            genuinely_failed_without_the_fix = False
+        check(
+            "FTF-0500C",
+            "fault injection: restoring the pre-fix guard genuinely breaks the assertion "
+            "above (proves it was testing something real, not vacuously passing)",
+            genuinely_failed_without_the_fix,
         )
     finally:
         MODULE_PATH.write_text(original)

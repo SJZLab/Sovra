@@ -25941,3 +25941,89 @@ since STEP 4(c)'s stop applies to the specific stuck item, not to other genuinel
 unblocked RELAY-OWNED work already named in `QUEUE.md`'s own "## Active" item 3. Stopping here —
 not picking a new task this shift. No open owner ask (`QUEUE.md` "Owner actions — current"
 unchanged: only the pre-existing, low-urgency branch-protection ask).
+
+## 2026-10-01T14:49:00Z — Scheduled relay shift — FTF-0500C fix-and-resubmit (L2 findings)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no mismatch. Designated
+branch `claude/wizardly-fermat-5s4caj` had no open PR against it (`search_pull_requests` with
+`head:claude/wizardly-fermat-5s4caj` returned zero results, and `git ls-remote origin` found no
+matching ref) — a fresh `git fetch origin main` confirmed the branch's own prior commit
+(`d8e5c9e`) is already `origin/main`'s own tip (PR #403, FTF-H007/FTF-04A06/FTF-0601, merged
+before this shift started), consistent with "if the pull request for your designated branch has
+already been merged, restart from the latest default branch" — reset the local branch to
+`origin/main` before doing any new work, rather than building on stale local history. `BLOCKER.md`
+read in full: one live entry (FTF-0902, formally stuck per STEP 4(c), not this shift's to touch)
+and resolved history only — nothing blocks the relay overall. STEP 0.2: no `cognee-cli` binary —
+text-search fallback declared, same as every prior shift.
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 (Control plane, 2026-10-01) names the priority order
+for the eight items returned NOT CERTIFIED by the 2026-10-01 L2 review: FTF-H007/FTF-04A06/FTF-0601
+were already fixed (PR #403, merged). Next untouched item: **FTF-0500C**. Pulled its real DoD from
+`docs/certifications/queue.md`'s own 2026-10-01 review entry rather than improvising: (a) the
+existing `test_real_read_only_transaction_mode_independently_blocks_a_write` re-types the module's
+own two `SET` statements on a raw connection instead of calling
+`validate_and_preview_postgres_source` itself, so it would stay green even if the module's own
+`SET TRANSACTION` line were weakened; (b) the REST connector's `if observed is not None:` guard
+silently accepts a later page that drops the declared snapshot-version header entirely once an
+earlier page carried one, instead of raising `SourceChangedDuringListingError`.
+
+STEP 2 (PEV): **P** — read `apps/api/app/datasets/
+database_api_trace_source_contract_and_fail_closed_validation.py` in full plus both existing test
+files to confirm the finding was real, not already-fixed: confirmed `if observed is not None:`
+never distinguishes "header not yet established" from "header was established, now missing", and
+confirmed `test_real_read_only_transaction_mode_independently_blocks_a_write` genuinely never calls
+the module (only a hand-retyped copy of its SQL on a separate raw connection).
+
+**E** — (a) `validate_and_preview_rest_trace_source` now tracks a `snapshot_version_seen` boolean
+separately from `snapshot_version`'s own value; once a real header has genuinely been observed, any
+later page where it is missing or differs now raises `SourceChangedDuringListingError` (previously
+only a changed value did). New real-local-HTTPS-fixture route `/dropped-snapshot` in `tests/tasks/
+test_ftf_0500c.py` plus a proving test and a disclosed real fault injection (Law 1) restoring the
+exact pre-fix guard — genuinely fails without the fix, reverted byte-identical (md5sum confirmed).
+(b) Added `test_real_read_only_and_isolation_are_set_through_the_module_itself` to `tests/
+integration/test_ftf_0500c_database_api_trace_source.py`: a new `_ReadOnlyProbeConnection` (a real
+`psycopg.Connection` subclass) is handed to the module itself via its own `connect=` parameter,
+intercepts the module's own `execute()` calls, and the instant it sees the module's own `SET
+TRANSACTION ISOLATION LEVEL` statement go by, reads PostgreSQL's own real `transaction_read_only`/
+`transaction_isolation` GUCs back inside the *same* real transaction — proving what the module's
+own actual SQL produced, not a copy of it. Installed and started a local PostgreSQL 16 cluster (none
+running at shift start: `sudo pg_ctlcluster 16 main start`). Real fault injection (Law 1), performed
+directly against the on-disk module: weakened the real `SET TRANSACTION ISOLATION LEVEL REPEATABLE
+READ, READ ONLY` line to `READ COMMITTED, READ WRITE` — the new test genuinely failed (captured GUCs
+no longer `on`/`repeatable read`); reverted byte-identical (md5sum confirmed before/after).
+
+Caught and fixed two stray `type: ignore` comments in the new integration test's own first draft
+(`mypy . ` flagged them as unused — the override and index accesses type-check cleanly without
+them) before relying on a clean `mypy` run. Caught a `psycopg.connect(..., connection_class=...)`
+mistake in the same first draft (not a valid `connect()` kwarg in this psycopg version) — fixed to
+`_ReadOnlyProbeConnection.connect(...)`, the correct psycopg3 pattern for a custom connection
+subclass — by actually running the integration test against the real local cluster and reading the
+real traceback, not assuming the first draft was correct.
+
+**V** — `uv sync --all-packages` (psycopg/fastapi/etc. not present in a bare `uv run` from the
+workspace root — same "uv sync --all-packages" convention every prior Postgres/apps-api-touching
+shift already used). `uv run ruff check .`/`ruff format --check .` clean (356 files, one
+line-length fix applied in the new integration test). `uv run mypy .` clean (356 files, zero new
+errors after removing the two stray unused ignores). `python3 scripts/validate_spec.py --strict`
+clean (this checkout was not shallow this shift — `git fetch origin main --unshallow` no-op
+confirmed). `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `python3
+scripts/status.py`: unchanged `99/300` certified, `24` product-true (Law 2 — a resubmission is not
+a certification). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — zero
+regressions. Both `tests/tasks/test_ftf_0500c.py` (no live Postgres) and `tests/integration/
+test_ftf_0500c_database_api_trace_source.py` (real local PostgreSQL 16) ran clean end-to-end,
+"all checks passed" each. Confirmed via diff against `origin/main` that `.github/workflows/
+ci.yml` needs zero changes — the existing `gate`-job step and the dedicated
+`database-api-trace-source-integration` job already run every file this fix touches.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500C entry with an L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md`, the trigger the 2026-10-01 review itself
+named for re-review eligibility on this ID. Opened **PR** (`[relay] FTF-0500C: fix L2 findings
+(read-only/isolation assertion + dropped-header detection)`, branch
+`claude/wizardly-fermat-5s4caj` → `main`) — not self-certified (Law 4).
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated
+this shift, before compaction. STEP 4 stop condition (a): 1 item (FTF-0500C) submitted
+L1-PROVEN/PROVISIONAL this shift, awaiting Control-plane L2 certification and the L4 gate — same as
+every other item in the 10-item PROVISIONAL backlog. Stopping here. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged: only the pre-existing, low-urgency branch-protection ask).

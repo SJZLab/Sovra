@@ -80,8 +80,11 @@ Both connectors share this task's own negative_acceptance in full:
     applies to a mid-listing snapshot-version change:
     `SourceChangedDuringListingError` (a subclass of the same
     `LostWatermarkError` family) is raised the instant a later page's
-    snapshot-version header differs from the first page's, rather than
-    silently mixing two different underlying snapshots into one preview.
+    snapshot-version header differs from the first page's -- including a
+    later page that drops the header entirely once an earlier page carried
+    one, which is just as much a lost snapshot as a changed value -- rather
+    than silently mixing two different underlying snapshots into one
+    preview.
 
 This module does not implement Section 8's own file-content import pipeline
 (canonical-schema normalization, PII/duplicate detection) -- the same
@@ -497,6 +500,7 @@ def validate_and_preview_rest_trace_source(
     collected: list[Mapping[str, object]] = []
     cursor: str | None = None
     snapshot_version: str | None = None
+    snapshot_version_seen = False
     truncated = False
     cancelled = False
     page_fetches = 0
@@ -557,16 +561,23 @@ def validate_and_preview_rest_trace_source(
 
         if config.snapshot_version_header:
             observed = _header_lookup(response.headers, config.snapshot_version_header)
-            if observed is not None:
-                if snapshot_version is None:
+            if not snapshot_version_seen:
+                if observed is not None:
                     snapshot_version = observed
-                elif observed != snapshot_version:
-                    raise SourceChangedDuringListingError(
-                        f"the source's own {config.snapshot_version_header!r} header changed "
-                        f"from {snapshot_version!r} to {observed!r} between two pages of the "
-                        "same listing -- the source was mutated mid-listing; refusing to "
-                        "silently mix two different snapshots into one preview"
-                    )
+                    snapshot_version_seen = True
+            elif observed != snapshot_version:
+                # Once a real snapshot-version has been seen on an earlier
+                # page, a later page that drops the header entirely
+                # (`observed is None`) is just as much a lost snapshot as one
+                # that carries a genuinely different value -- both mean this
+                # listing can no longer be trusted to be one consistent
+                # snapshot, so both raise the same way.
+                raise SourceChangedDuringListingError(
+                    f"the source's own {config.snapshot_version_header!r} header changed "
+                    f"from {snapshot_version!r} to {observed!r} between two pages of the "
+                    "same listing -- the source was mutated mid-listing; refusing to "
+                    "silently mix two different snapshots into one preview"
+                )
 
         for record in records:
             if len(collected) >= config.max_preview_records:

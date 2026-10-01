@@ -239,6 +239,126 @@ def test_real_read_only_transaction_mode_independently_blocks_a_write(rw_conninf
         )
 
 
+class _ReadOnlyProbeConnection(psycopg.Connection):
+    """2026-10-01 L2 review finding: the test above proves *a hand-retyped
+    copy* of the connector's own two `SET` statements blocks a write -- it
+    never calls `validate_and_preview_postgres_source` itself, so it would
+    stay green even if the module's own `SET TRANSACTION` line were
+    weakened (e.g. to `READ COMMITTED, READ WRITE`). This connection
+    subclass is handed to the module itself (via its own `connect=`
+    parameter) and intercepts its real `conn.execute(...)` calls: the
+    instant it sees the module's own isolation-setting statement go by, it
+    reads PostgreSQL's own real `transaction_read_only`/
+    `transaction_isolation` GUCs back, inside the *same* real transaction --
+    proving what the module's own actual SQL produced, not a copy of it."""
+
+    captured_read_only: str | None = None
+    captured_isolation: str | None = None
+
+    def execute(self, query, params=None, **kwargs):
+        cur = super().execute(query, params, **kwargs)
+        text = query if isinstance(query, str) else query.as_string(self)
+        if "SET TRANSACTION ISOLATION LEVEL" in text:
+            self.captured_read_only = self.execute("SHOW transaction_read_only").fetchone()[0]
+            self.captured_isolation = self.execute("SHOW transaction_isolation").fetchone()[0]
+        return cur
+
+
+def test_real_read_only_and_isolation_are_set_through_the_module_itself(ro_conninfo: str) -> None:
+    """DoD (2026-10-01 L2 review, FTF-0500C): "an integration assertion
+    through the module that transaction_read_only=on and
+    transaction_isolation=repeatable read" -- calls
+    `validate_and_preview_postgres_source` itself (not a raw re-typed copy
+    of its SQL) and observes the real session's own GUCs the module's own
+    `SET TRANSACTION` statement actually produced."""
+    captured: dict[str, _ReadOnlyProbeConnection] = {}
+
+    def connect(conninfo: str, **kwargs: object) -> _ReadOnlyProbeConnection:
+        conn = _ReadOnlyProbeConnection.connect(conninfo, **kwargs)  # type: ignore[arg-type]
+        captured["conn"] = conn
+        return conn
+
+    result = source_module.validate_and_preview_postgres_source(
+        _config(ro_conninfo, max_preview_records=5), connect=connect
+    )
+    conn = captured.get("conn")
+    check(
+        "FTF-0500C",
+        "sanity: the probe connection was genuinely used and the module's own call "
+        "completed (not a short-circuited error path)",
+        conn is not None and bool(result.rows),
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: calling the module itself (not a hand-retyped copy of its SQL) leaves "
+        "the real session's own transaction_read_only=on",
+        conn is not None and conn.captured_read_only == "on",
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: calling the module itself leaves the real session's own "
+        "transaction_isolation=repeatable read",
+        conn is not None and conn.captured_isolation == "repeatable read",
+    )
+
+    # Real fault injection (Law 1, disclosed): weaken the module's own
+    # isolation statement directly on disk, confirm the two assertions
+    # above genuinely fail without the real fix, then revert byte-identical.
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    weakened = original.replace(
+        'conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")',
+        'conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED, READ WRITE")  '
+        "# FTF-0500C fault injection -- weakened for this check",
+        1,
+    )
+    if weakened == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the module's own SET TRANSACTION line was found to weaken",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(weakened)
+        import importlib
+
+        importlib.reload(source_module)
+        weakened_captured: dict[str, _ReadOnlyProbeConnection] = {}
+
+        def weakened_connect(conninfo: str, **kwargs: object) -> _ReadOnlyProbeConnection:
+            conn = _ReadOnlyProbeConnection.connect(conninfo, **kwargs)  # type: ignore[arg-type]
+            weakened_captured["conn"] = conn
+            return conn
+
+        source_module.validate_and_preview_postgres_source(
+            _config(ro_conninfo, max_preview_records=5), connect=weakened_connect
+        )
+        weak_conn = weakened_captured["conn"]
+        genuinely_failed_without_the_fix = (
+            weak_conn.captured_read_only != "on"
+            or weak_conn.captured_isolation != "repeatable read"
+        )
+        check(
+            "FTF-0500C",
+            "fault injection: weakening the module's own real SET TRANSACTION line genuinely "
+            "breaks the assertions above (proves they were testing something real, not "
+            "vacuously passing)",
+            genuinely_failed_without_the_fix,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
 def test_real_lost_watermark_after_a_genuine_concurrent_delete(
     ro_conninfo: str, rw_conninfo: str
 ) -> None:
@@ -331,6 +451,7 @@ def main() -> int:
         test_real_unknown_table_is_refused_not_fabricated(ro_conninfo)
         test_real_ro_role_write_is_denied_by_database_grants(ro_conninfo)
         test_real_read_only_transaction_mode_independently_blocks_a_write(rw_conninfo)
+        test_real_read_only_and_isolation_are_set_through_the_module_itself(ro_conninfo)
         test_real_lost_watermark_after_a_genuine_concurrent_delete(ro_conninfo, rw_conninfo)
     finally:
         _teardown()
