@@ -8185,12 +8185,13 @@ this same resolution (doc-only, redundant once this lands).
 
 3. **RELAY-OWNED. Do not skip these as "PROVISIONAL, Control plane's to certify".** Eight
    items were reviewed and returned NOT CERTIFIED. Their `certification_state` stays PROVISIONAL
-   only because the code is already merged. **FTF-H007, FTF-04A06, FTF-0601: fix PR opened this
-   shift** (branch `claude/wizardly-fermat-wy0my8`, see `docs/certifications/queue.md`'s matching
-   2026-10-01 entry for full evidence — includes a `test_ftf_04a06.py` case the first
-   fix-and-resubmit attempt had missed). Remaining, still untouched: FTF-0500C, FTF-0500B,
-   FTF-0500D, FTF-1807, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2 findings` PR and
-   append it to `docs/certifications/queue.md` for re-review.
+   only because the code is already merged. **FTF-H007, FTF-04A06, FTF-0601: fixed, PR #403
+   merged.** **FTF-0500C: fix PR opened this shift** (see `docs/certifications/queue.md`'s
+   matching 2026-10-01 entry for full evidence — the read-only-transaction-mode test now goes
+   through the module itself instead of re-implementing its SQL, and a later page that drops the
+   snapshot-version header after one was seen is now caught). Remaining, still untouched:
+   FTF-0500B, FTF-0500D, FTF-1807, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2
+   findings` PR and append it to `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
@@ -8200,7 +8201,7 @@ this same resolution (doc-only, redundant once this lands).
    - **FTF-0601:** add validation on the PATCH path; refuse to lock with an empty reviewer.
      **DONE — fix PR opened this shift, see above.**
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
-     on a later page blocks.
+     on a later page blocks. **DONE — fix PR opened this shift, see above.**
    - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
    - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
    - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.
