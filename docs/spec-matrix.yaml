@@ -5570,16 +5570,64 @@ FTF-0500B:
   proving_symbol: ''
   proving_test: ''
 FTF-0500C:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Database/API/trace source contract and fail-closed validation
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500A,
-    FTF-H006
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
+    FTF-0500A, FTF-H006 (all CERTIFIED). Section 67.1''s own connector table made real for this
+    task''s two remaining source types (the S3/MinIO sibling, FTF-0500B, is a separate,
+    independently-claimed task): apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py::validate_and_preview_postgres_source
+    (real bounded, allowlisted-identifier, parameterized SELECT against a real Postgres source,
+    session placed into READ ONLY + REPEATABLE READ for one real "no writes" + "repeatable
+    snapshot" guarantee, statement_timeout set and independently read back before any row is
+    fetched) and ::validate_and_preview_rest_trace_source (real cursor-paginated REST/agent-trace
+    source, bounded 429 retry honoring Retry-After, a declared snapshot-version header tracked
+    across pages, cooperative cancellation, bounded by max_page_fetches against an endpoint that
+    never ends -- "no arbitrary scripting" is structural: every request is built from typed
+    config fields, never an evaluated expression). This task''s own negative_acceptance
+    ("Unknown database/API contract is unavailable, not a placeholder; lost watermark/snapshot
+    blocks consistent import") is real on both connectors: a genuine Postgres UndefinedTable/
+    UndefinedColumn or a REST response missing the declared records_field raises
+    UnknownSourceContractError (never a fabricated empty result); resuming a Postgres capture
+    re-verifies, inside the same REPEATABLE READ transaction as the subsequent SELECT, that the
+    watermark row still exists (LostWatermarkError otherwise -- proven against a real concurrent
+    delete from a second real connection, not merely asserted), and a REST snapshot-version header
+    that changes mid-listing raises SourceChangedDuringListingError. Real fault injection (Law 1,
+    disclosed) proved both negative-test assertions genuinely fail when their real check is
+    disabled, then reverted the module file byte-identical (md5sum confirmed matching
+    before/after) -- once for the REST snapshot-version comparison (tests/tasks/test_ftf_0500c.py)
+    and once for the Postgres watermark-presence guard against a real database
+    (tests/integration/test_ftf_0500c_database_api_trace_source.py). Real least-privileged
+    Postgres role: a SELECT-only role''s own write is denied by the database''s own grants
+    (psycopg.errors.InsufficientPrivilege), and, independently, this module''s own READ ONLY
+    transaction mode blocks a write from a role that otherwise has write privilege
+    (psycopg.errors.ReadOnlySqlTransaction) -- two independent real mechanisms, not one asserted
+    from the other. Test evidence: tests/tasks/test_ftf_0500c.py (identifier/config validation
+    with a fake connect() that fails the test if ever called for a rejected input, a real local
+    HTTPS REST/trace fixture through the real unmodified outbound_guard TLS path, no live Postgres
+    required) and tests/integration/test_ftf_0500c_database_api_trace_source.py (real, freshly-
+    provisioned local PostgreSQL 16 -- both all clean). uv sync --all-packages; ruff check
+    ./ruff format --check . clean repo-wide (326 files, up from 323); mypy . clean repo-wide (326
+    files, zero new errors). pnpm lint/typecheck/format:check/vitest unaffected (no frontend file
+    touched -- this task is backend-only). validate_spec.py --strict clean (required git fetch
+    --unshallow first -- this sandbox checkout started shallow, same precedent FTF-04A04/FTF-H005
+    already disclosed). product_truth_check.py --fail-on-unwired: unchanged 23/23 -- disclosed,
+    not hidden (same precedent FTF-0500B''s own module already established for a pure connector
+    with no live caller yet): no dataset-import composition task calls either connector yet.
+    proving_symbol left blank. status.py: unchanged 93/300 certified (Law 2 -- this is a
+    submission, not a certification). Regression swept test_ftf_0303.py/test_ftf_04a05.py (no
+    interference). This module does not implement Section 8''s own file-content import pipeline,
+    does not read/write DatasetSourceConnection rows, resolve credential_secret_ref via OpenBao,
+    or expose an HTTP route -- same disclosed, dependency-gated composition-task boundary
+    FTF-0500B''s own module already established for its identical-shaped sibling task. No new
+    database field or entity added (database_changes: "No independent schema change"). Not
+    self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the opened
+    PR are required before certification.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py
 FTF-0500D:
   certification_state: PROVISIONAL
   criticality: MUST

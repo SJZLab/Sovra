@@ -1,4 +1,42 @@
 # PROGRESS — Sovra
+## 2026-10-01T01:14:00Z — Same designated branch, continuation shift — repo-wide GitHub Actions outage RESOLVED, confirmed with real evidence
+
+Continuation of this session's own earlier 2026-09-30T07:00-07:03Z entries below (PR #342 merge-
+conflict fix, PR #390 tracking PR, first disclosure of this outage). A `check_run.completed`
+event arrived on PR #342 nearly 18 hours later for a job (`network-policy-enforcement-
+integration`) that had been stuck since the original push — `get_workflow_job` showed a real
+`runner_id: 1000012646` and real per-step timestamps spanning 3+ minutes of actual `kind`/
+`kubectl`/Calico execution, structurally different from every `runner_id: 0` failure this
+session and the next (`claude/wizardly-fermat-xa6526`, 09:20Z) had hit. Fetched the full
+check-run list for that run (`36681155484`): **38/39 jobs green, `gate` included** — the one
+failure is `network-policy-enforcement-integration` itself, and its real log shows exactly the
+already-diagnosed, pre-existing baseline-cluster ARP timing defect (enforcing/Calico scenario
+fully correct, `{'allowed': True, 'denied': False, 'metadata': False}`; only the baseline
+cluster's `denied` probe failed) — not a new finding, not outage-related, confirming the merge-
+conflict fix pushed earlier introduced zero regressions.
+
+A later shift (`claude/wizardly-fermat-xa6526`, 09:20Z, in between this session's own two visits)
+had independently reconfirmed the same outage was still live 2h+ after this session's own first
+disclosure and escalated it properly to `BLOCKER.md`/`QUEUE.md`'s "Owner actions — current" per
+the 2026-09-21 precedent, after it exceeded this repo's own "clears within hours" bar (3h37m+
+continuous at escalation time). Fetched that entry directly (`git show origin/main:BLOCKER.md`)
+rather than assuming it was still open — confirmed this session's own fresh evidence above meets
+the exact resolution bar that entry set ("a session confirms CI is provisioning runners again on
+a fresh PR event"). Independently re-ran PR #390's own stalled run (`36681644901`) with this new
+justification (the external condition itself changed, not a second "confirm the flake" check of
+the same run) to verify the clearing is repo-wide, not PR #342-specific, before writing the
+resolution into the shared tracking docs.
+
+`BLOCKER.md`'s matching entry marked RESOLVED with this evidence (preserving the original entry
+and its three route options for the record, per this repo's own norm). `QUEUE.md`'s "Owner
+actions — current" emptied back to "None currently," with a resolved-history note cross-
+referencing this entry, matching the exact pattern the 2026-09-21 occurrence used. Posted a
+confirming comment on PR #342 with the real CI result. No task claimed, no certification
+performed, no code changed (Law 2) — this is purely closing out a disclosed external blocker with
+real evidence once it genuinely cleared, not new relay work. Both PR #342 and PR #390 remain
+subscribed/watched for their own next real result (PR #390's fresh re-run, PR #342's
+`mergeable_state` settling and the still-open ARP-warming tooling question).
+
 ## 2026-09-30T09:20:00Z — Scheduled relay shift — CI outage confirmed still live, escalated; no
 ## task work possible
 
@@ -78,6 +116,135 @@ condition (e) (ask-first item -> `QUEUE.md` Owner actions block, stop shift) and
 outage stays visible as blocked, never routed around), this shift stops here rather than opening a
 fourth redundant docs-only tracking PR repeating the same diagnosis three prior shifts already
 made today.
+## 2026-09-30T07:03:00Z — Same shift — fresh GitHub Actions runner-provisioning outage confirmed repo-wide, disclosed, watching
+
+Continuation of the entry directly below (same session). After pushing the two PRs described
+there (#342's merge-conflict fix, #390's tracking doc), both PRs' own real CI runs — and,
+independently, PR #337's most recent run (`fbaf2b3a`, a different session's push around the same
+time) — all failed identically: every job (`gate` included) completed in 2-6 seconds with **zero**
+log content (`get_job_logs` 404) and `runner_id: 0`/`runner_name: ""` on every single job (checked
+directly via `get_workflow_job`, not inferred). This is the exact, previously-documented signature
+of this repo's own GitHub Actions runner-provisioning outage class (see the 2026-09-21/2026-09-27
+entries this file already carries) — a runner was never actually assigned to any job, not a real
+test/build failure, and structurally cannot be caused by any of the three PRs' own diffs (two are
+docs-only; PR #337's touches `apps/api`/tests but fails at the identical `gate`-job level with zero
+log output, the same as the docs-only ones).
+
+Re-ran PR #390's own failed run once (`rerun_workflow_run`) to confirm rather than assume — 
+`run_attempt: 2` reproduced identically (`runner_id: 0`, 3-second completion) a few minutes later.
+Per this repo's own "flake is not a root cause, but a runner-loss case gets one re-run to confirm,
+not more" convention, not re-running again. Posted one comment each on PR #390 and PR #342 naming
+the failing checks, the `runner_id: 0` evidence, and that this is external infrastructure — not
+either PR's own defect and not fixable by any push from inside this repo.
+
+Not filed as a fresh `QUEUE.md` "Owner actions — current" ask, matching this repo's own precedent
+for this exact issue class both prior times it occurred: it previously cleared on its own within
+hours (see this file's own 2026-09-21 and 2026-09-27 entries), and the next shift/check-in is the
+right point to reconfirm rather than assume. PR #390 and PR #342 both stay subscribed/watched.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated (this entry) before compaction. STEP 4 stop condition (b)
+(a true, external blocker — not this repo's code, not resolvable by a further push, already
+confirmed with the one available re-run) — stopping here for this shift. No open owner ask.
+
+## 2026-09-30T07:00:00Z — Scheduled relay shift — resolved PR #342's merge conflict; the disclosed ARP-warming fix hit the same tooling denial as the prior session, reverted unpushed; no owner-ask channel exists for it
+
+Session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh (each exceeds the single-read size limit — read via
+offsets/targeted `grep`, never assumed). Found this session's own designated local branch
+(`claude/wizardly-fermat-ntfj4f`) held a long, divergent local history with no matching remote
+ref at all (`git fetch` for it returned "couldn't find remote ref") — a stale container/session
+artifact unrelated to this repo's real history, not this repo's own state; restarted it clean
+from `origin/main` per the merged-PR convention rather than trusted.
+
+`git fetch origin main` initially returned `f17260c` as tip; re-fetched a second time (same
+stale-fetch artifact prior shifts have also hit) and got the real, newer tip `bb2ea6c` (three
+more merges landed in between: PR #231 FTF-0212, PR #328 FTF-04A15, PR #335 FTF-0500D, all
+housekeeping merge-conflict resolutions from this same morning's PR #389). `scripts/status.py`
+on the real tip: `97/300` certified, `24` product-true, `6` PROVISIONAL (FTF-0212, FTF-04A15,
+FTF-0500D, FTF-1206, FTF-1807, FTF-H007).
+
+STEP 1: recomputed the dependency-ready frontier from first principles (`docs/spec-matrix.yaml`'s
+real `certification_state` joined against `docs/TASK_INDEX.md`'s own structured `Dependencies`
+column, not trusted from any prior shift's cached claim) — 7 tasks dependency-ready and not yet
+`CERTIFIED`/`PROVISIONAL`: FTF-0214, FTF-0306, FTF-0500B, FTF-0500C, FTF-0601, FTF-0902, FTF-1703.
+Checked all 10 open PRs directly: every one of the 7 already has an open PR (#295, #380, #359,
+#364, #337, #342) except FTF-1703, which stays correctly declined (needs a real Argilla review
+workflow that doesn't exist yet; its own would-be unblocker FTF-R006 isn't dependency-ready
+either — `FTF-0516` still `certification_state: NONE`). This independently reconfirms PR #389's
+own "frontier exhausted" finding from ~2 hours earlier, against fresh data.
+
+Rather than log a second "frontier saturated" tracking-only shift, checked each already-claimed
+PR's own real mergeable/CI state directly (PR #389 had already fixed three of the four PRs it
+found stale; explicitly left #342 untouched, citing "a real CI failure unrelated to its merge
+conflict"). Confirmed directly: PR #342 (FTF-0902) was `mergeable_state: dirty` against the new
+`main` tip (its own base sha was 2 merges behind) and its most recent PR comment (this same
+branch's own prior shift, 2026-09-29T17:08Z) already contains a precise, disclosed root cause for
+its one remaining real CI failure (`network-policy-enforcement-integration`): on the
+non-enforcing baseline `kind` cluster only, the *second* of two structurally identical listener
+pods (`denied`) is unreachable from `target` for several seconds after both report Ready — a
+transient link-layer/ARP-resolution gap in the test harness, not a defect in
+`packages/security/network_policy_templates.py` (vindicated by that same CI run's own fully
+correct enforcing-cluster result). That prior shift drafted the fix (warm ARP/routing to both
+destinations symmetrically, on both clusters, strictly before either cluster's own
+`NetworkPolicy` object exists) but reverted it unpushed after this sandbox's own auto-mode
+classifier denied running `ruff`/`mypy` against this specific security-relevant test file
+("Security Test Removal"), per that classifier's own explicit instruction not to route around it.
+
+**This shift's own work, in two parts:**
+
+1. **Merge conflict — resolved and pushed.** `git merge origin/main` into PR #342's own branch
+   (`claude/wizardly-fermat-gwocup`): 3 conflicts, all in this repo's own append-only tracking
+   docs (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` — `.github/workflows/ci.yml`
+   and `docs/spec-matrix.yaml` merged automatically, clean). Resolved each by union, matching
+   each file's own current convention exactly (newest-first top log for `PROGRESS.md`/
+   `QUEUE.md`; `docs/certifications/queue.md`'s conflicting `main`-side block was a strict
+   superset of the `HEAD`-side line, taken wholesale) — no content dropped from either side.
+   Verified with a fresh `uv run python3 tests/tasks/test_ftf_0902.py` ("all checks passed",
+   unchanged) that the merge itself introduced no regression to this task's own no-cluster suite.
+   Pushed the merge commit (`8066b66`) directly to `claude/wizardly-fermat-gwocup` — PR #342's
+   `mergeable_state` was `dirty` before this push (confirmed via `pull_request_read`), now
+   pending GitHub's own recomputation against the identical `main` tip. No production or test
+   file for FTF-0902 itself touched by this part — confirmed via `git diff --stat` against the
+   pre-merge branch tip (28 files changed, all either tracking docs or other tasks' own already-
+   merged work from `main`, zero overlap with this task's own files).
+
+2. **The disclosed ARP-warming fix — attempted, hit the identical tooling denial, reverted
+   unpushed.** Wrote the same fix the prior shift had already drafted and described (a
+   `warm_connectivity(cluster, allowed_ip, denied_ip)` helper calling `probe_tcp` against both
+   listener IPs, result discarded, inserted immediately after `get_pod_ip` for both addresses and
+   strictly before the fake-metadata-service setup / `NetworkPolicy` application in
+   `run_scenario` — same file, same two-line call site, functionally identical to the description
+   already on record). Ran `uv run ruff check`/`ruff format --check` on that one file to verify it
+   before going further: **denied by this sandbox's own auto-mode classifier**, "Security Test
+   Removal," the exact same block the prior shift already hit on this exact file. Per the
+   classifier's own explicit instruction ("should only try to work around this restriction in
+   reasonable ways... do not pursue the same outcome through another tool, interpreter, host,
+   encoding, sub-agent or later turn") — did not retry with a different tool/command shape, did
+   not attempt `mypy` or the full-repo lint sweep as a substitute path, and did not push anything
+   unverified. Reverted the edit via `git checkout --` (confirmed clean, no diff against the
+   pushed merge commit) rather than land a change this session cannot get a clean local
+   verification of.
+
+**Not an owner ask, and not a repeat blocker (Law 1/9 met by inaction, not evasion):** this is the
+same tooling-permission question the prior shift already surfaced directly to the user rather
+than to `QUEUE.md`'s "Owner actions — current" — that section is the Control-plane/relay/owner
+channel for decided, sliced work items, not for a question about this session's own sandboxing
+policy that no in-repo document can resolve either way. Restating it here rather than re-raising
+it a second time in the same place: whether editing
+`tests/integration/test_ftf_0902_network_policy_enforcement.py` specifically should always trip
+this classifier (its own diagnosis: "Security Test Removal") even for a change that only adds a
+pre-policy connectivity warm-up and touches zero assertion/security-check logic remains open,
+answerable only by the user reading this record directly, not by a relay session.
+
+`docs/spec-matrix.yaml`/`scripts/status.py` unchanged this shift (`97/300` certified, `24`
+product-true, `6` PROVISIONAL) — no task claimed, no certification performed (Law 2). STEP 3:
+`PROGRESS.md`/`QUEUE.md` updated before compaction. STEP 4 stop condition (c)-adjacent, same as
+the prior shift's own precedent: a real, disclosed tooling blocker on the one concrete code fix
+this shift attempted, not a blind retry — stopping here rather than attempting a fourth
+diagnostic approach without local verification. PR #342 left open, subscribed, watched; its
+merge-conflict fix is real, independent progress even though the underlying CI defect itself
+stays open. No open owner ask in `QUEUE.md`.
 
 ## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
 
@@ -24771,6 +24938,172 @@ certification.
 
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
 compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A05) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
+## 2026-09-28T19:20:00Z — Scheduled relay shift — FTF-0500C submitted PROVISIONAL
+
+Session `https://claude.ai/code/session_01AzJCVyrxsPiSbQBF9T5XhK`. STEP 0: hash-checked CLAUDE.md
+(`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly). STEP 0.1: read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state — this session's
+own branch (`claude/wizardly-fermat-f9qdmb`) was already at the exact tip of `origin/main`
+(`1256f2a`, carrying PR #362's merge — the prior shift's own FTF-H005 certified/merged; note that
+neither the 14:15 FTF-H005-submission shift nor the 17:11 PR #361 merge-confirmation update
+actually appended to this file despite their own QUEUE.md entries claiming they did — a gap in
+those prior shifts' own STEP 3 discipline, not something this shift retroactively rewrites; noted
+here so it is visible rather than silently repeated). STEP 0.2: no `cognee-cli` installed in this
+environment; text-search fallback used throughout (disclosed, per standing instruction).
+
+STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s real
+`certification_state` (93 CERTIFIED, 2 PROVISIONAL — FTF-04A05 under Control-plane review via PR
+#360, FTF-H005 under Control-plane review via PR #363) joined against `docs/TASK_INDEX.md`'s own
+structured `Dependencies` column: 11 tasks dependency-ready (FTF-0212, FTF-0214, FTF-0304,
+FTF-04A15, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-1201, FTF-1703). Listed all 20
+open PRs directly via the GitHub API (not trusted from this file's own prior tracking prose) and
+checked each frontier ID against every open PR title/head: FTF-0212 (PR #231), FTF-0214 (PR #295,
+disclosed-blocked), FTF-0304 (PRs #194/#195), FTF-04A15 (PR #328), FTF-0500B (PR #359, open,
+unreviewed), FTF-0500D (PR #335, blocked on merge conflict per PR #336's own title), FTF-0601 (PR
+#337), FTF-0902 (PR #342) each already have a live open PR; FTF-1201/FTF-1703 remain
+disclosed-blocked by this sandbox's own genuine real-network-egress / real-curated-trace-volume
+limits, the same finding every prior shift back to at least PR #349 already recorded. **FTF-0500C
+was the sole genuinely unclaimed, unblocked frontier item.**
+
+Task contract pulled via `python3 tools/r1_handoff.py packet FTF-0500C --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`). Dependencies FTF-0500/FTF-0500A/FTF-H006 reconfirmed CERTIFIED
+before relying on them. Read the real dependency chain directly before writing any code: FTF-0500's
+own `dataset_source_connection_schema.py`/`_crud.py` (the "caller resolves the secret, this module
+only ever sees an already-resolved connection" boundary), FTF-H006's own `outbound_guard.py`/
+`url_policy.py` (whose own module docstring already names `FTF-0500C` as an intended future
+caller of `guarded_fetch`, identical to how it already names `FTF-0500B`), and — since FTF-0500B
+(the S3/MinIO sibling task) has its own not-yet-merged open PR #359 — fetched that branch directly
+(`git fetch origin claude/wizardly-fermat-lp04ue`) and read its real
+`s3_minio_source_validation_metadata_preview.py` for the established connector-shape precedent
+(bounded preview, immutable manifest hash, "pure connector, no route, no DatasetSourceConnection
+read/write" scope boundary) rather than inventing a divergent shape for the sibling source types
+this task owns (`database`/`api`/`agent_traces`/`production_conversations`). Confirmed via
+`pull_request_read(get_files)` that PR #359 touches no file this task's own write set overlaps
+(only `s3_minio_source_validation_metadata_preview.py`/`test_ftf_0500b.py`/tracking docs/CI) — no
+merge-conflict risk.
+
+**Implementation** (new file,
+`apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py`):
+Section 67.1's own connector table made real for this task's two source types:
+
+- `validate_and_preview_postgres_source` — a real bounded PostgreSQL connector. Every identifier
+  (`schema`/`table`/each column/`stable_key_column`) is validated against a real Postgres
+  identifier grammar *before* any connection is attempted (`PostgresIdentifierError`) and then
+  embedded via `psycopg.sql.Identifier`, never Python string interpolation — the actual mechanism
+  behind "no user SQL," not merely a disclosed convention. The session is placed into `SET
+  TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` (one real Postgres transaction-mode
+  setting giving both this task's own "no... writes" and "repeatable snapshot" acceptance
+  clauses at once) and a real `statement_timeout` is set and independently read back (`SHOW
+  statement_timeout`) before any row is fetched. Cursor pagination resumes via
+  `resume_after_key`; resuming re-verifies, inside the *same* `REPEATABLE READ` transaction as the
+  subsequent `SELECT`, that the watermark row still exists — `LostWatermarkError` otherwise (this
+  task's own negative_acceptance, made real rather than merely asserted, since the check and the
+  read share one identical database snapshot and cannot be raced by a separate connection's
+  delete landing between them). A genuine `UndefinedTable`/`UndefinedColumn` is caught and
+  re-raised as `UnknownSourceContractError` (this task's own other negative_acceptance half),
+  never silently treated as an empty result.
+- `validate_and_preview_rest_trace_source` — a real bounded, cursor-paginated REST/agent-trace
+  connector via `packages/security/outbound_guard.py`'s `guarded_fetch` (FTF-H006). Bounded
+  pagination (`max_preview_records` and, independently, `max_page_fetches` — the latter bounds a
+  real endpoint that returns a valid next-cursor forever without ever reaching the record cap);
+  a real HTTP 429 is retried a bounded number of times honoring the endpoint's own `Retry-After`
+  header (capped at 30s) before `RateLimitRetriesExhaustedError`; a declared snapshot-version
+  response header (default `ETag`) is tracked across pages and a mid-listing change raises
+  `SourceChangedDuringListingError` (a `LostWatermarkError` subclass — the identical
+  negative_acceptance shape extended to a REST source); a response missing the declared
+  `records_field`, or containing a non-object entry, raises `UnknownSourceContractError`; a
+  cooperative `cancellation_check` callback is checked between real page fetches. "No arbitrary
+  scripting" is structural: every request is built from typed config fields (a fixed cursor
+  query-parameter name and a fixed, caller-approved extra-query-parameter dict), never an
+  evaluated expression or template.
+
+Both connectors return an immutable `manifest_hash` (sha256 over the canonical JSON serialization
+of the exact bounded result), the same "one hash covers the whole manifest" shape FTF-0500B's own
+module already established. This module does not implement Section 8's own file-content import
+pipeline, does not read/write `DatasetSourceConnection` rows or resolve `credential_secret_ref` via
+OpenBao, and exposes no HTTP route — the same disclosed, dependency-gated composition-task
+boundary FTF-0500B's own module docstring already established for its identical-shaped sibling
+task (`database_changes: "No independent schema change"`).
+
+**Real fault injection (Law 1, disclosed), twice, one per connector:**
+
+1. REST snapshot-version check
+   (`tests/tasks/test_ftf_0500c.py::test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion`):
+   temporarily replaced the `elif observed != snapshot_version:` comparison with `elif False:`
+   directly in the module under test, against a real local HTTPS fixture serving a real
+   mid-listing snapshot-version change, and confirmed the negative-test assertion genuinely
+   fails without the real check (the connector call succeeds instead of raising
+   `SourceChangedDuringListingError`), then reverted the file byte-identical (md5sum confirmed
+   matching before/after, `git status` shows no diff on the untracked file) and reran clean.
+2. Postgres watermark-presence guard
+   (`tests/integration/test_ftf_0500c_database_api_trace_source.py::test_real_lost_watermark_after_a_genuine_concurrent_delete`):
+   against a real local PostgreSQL 16, deleted the exact real row at a just-captured watermark
+   from a *second*, independent real connection (genuinely concurrent, not simulated), confirmed
+   `LostWatermarkError` is raised on resume with the real check active, then temporarily disabled
+   the `if resume_after_key is not None: _verify_watermark_present(...)` guard directly in the
+   module under test and confirmed the same resume call genuinely succeeds instead of raising
+   without it, then reverted the file byte-identical (md5sum confirmed matching before/after) and
+   reran clean.
+
+**Test evidence:** `tests/tasks/test_ftf_0500c.py` (no live Postgres required — identifier/config
+validation proven with a fake `connect` that raises `AssertionError` if ever invoked for a
+rejected input, proving rejection happens before any connection attempt; the REST/trace connector
+fully exercised against a real local HTTPS server with a self-signed CA installed into this
+sandbox's own trust store, same convention `test_ftf_04a05.py`/`test_ftf_0500b.py` already
+established, through the real unmodified `outbound_guard.py` TLS path — covers bounded
+pagination, the 429-retry-then-succeed and retry-exhaustion cases, the snapshot-version-change
+negative case plus its own fault injection above, the missing-records-field negative case,
+cooperative cancellation, the `max_page_fetches` bound against a real endpoint that never ends,
+and manifest-hash determinism; 17 checks, all clean).
+`tests/integration/test_ftf_0500c_database_api_trace_source.py` (real, freshly-provisioned local
+PostgreSQL 16 — real bounded cursor pagination covering a real 30-row table exactly once across
+repeated calls, a real non-default `statement_timeout` genuinely accepted, a real unknown-table
+negative case, a real least-privileged `SELECT`-only role's write genuinely denied by the
+database's own grants [`psycopg.errors.InsufficientPrivilege`], this module's own `READ ONLY`
+transaction mode independently blocking a write from a role that otherwise has write privilege
+[`psycopg.errors.ReadOnlySqlTransaction`] — proving the mechanism itself, not merely the role
+grants — and the real lost-watermark case plus its own fault injection above; 6 checks, all
+clean, database/roles dropped in a `finally` block).
+
+`uv sync --all-packages` (installed `psycopg`/`psycopg-binary` — already a pinned
+`apps/api/pyproject.toml` dependency, no new dependency added); `uv run ruff check .`/`ruff format
+--check .` clean repo-wide (326 source files, up from 323); `uv run mypy .` clean repo-wide (326
+files, zero new errors). `pnpm lint`/`typecheck`/`format:check`/`vitest` unaffected (no frontend
+file touched this shift — this task is backend-only). `python3 scripts/validate_spec.py --strict`
+clean (required `git fetch --unshallow` first — this sandbox checkout started shallow, same
+precedent FTF-04A04/FTF-H005 already disclosed). `product_truth_check.py --fail-on-unwired`:
+unchanged `23/23` — disclosed, not hidden (same precedent FTF-0500B's own module already
+established for a pure connector with no live caller yet): no dataset-import composition task
+calls either connector yet; `proving_symbol` left blank. `scripts/status.py`: unchanged `93/300`
+certified (Law 2 — this is a submission, not a certification). Regression swept
+`tests/tasks/test_ftf_0303.py`/`tests/tasks/test_ftf_04a05.py` (no-DB, both clean; PR #359's own
+`test_ftf_0500b.py` is not present on this branch since that PR is not yet merged, so it was not
+in scope for this shift's own regression sweep) — zero regressions.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately
+after FTF-H005's own two steps (`tests/tasks/test_ftf_0500c.py`, no DB required), plus a new
+dedicated `database-api-trace-source-integration` job using the same real `services: postgres`
+container pattern as `manifest-evidence-integration`, with `SOVRA_FTF0500C_ADMIN_DSN` pointing at
+the container's own `sovra_migrate` superuser (the official postgres image's own `POSTGRES_USER`
+is always a real superuser in that container) so the integration test can `CREATE ROLE`/`CREATE
+DATABASE` its own real scratch role/database at runtime and drop them again — verified this exact
+shape works end-to-end by provisioning an equivalent local `sovra_migrate` superuser role directly
+and rerunning the integration test against it before wiring the CI job.
+
+`docs/spec-matrix.yaml` FTF-0500C set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0500c.py,
+tests/integration/test_ftf_0500c_database_api_trace_source.py`; `evidence_hash`/`proving_symbol`
+left blank (same precedent every sibling module-only submission this session already established).
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500C) is `L1-PROVEN`, no blocking
 defect found by this session's own review — awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
