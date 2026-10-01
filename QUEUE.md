@@ -1,4 +1,19 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T06:52:56Z (scheduled relay shift, branch `claude/wizardly-fermat-0hgh9v`) —
+  **frontier re-verified exhausted again, no delta since the immediately-prior shift.** Branch
+  found at the same commit as `origin/main` (`d925da1`, PR #397's merge) — no prior unmerged
+  work of its own. `scripts/status.py` unchanged at `97/300` certified / `24` product-true (no
+  Control-plane certification landed in the gap), but the dependency-ready frontier was still
+  fully recomputed fresh from `docs/spec-matrix.yaml` rather than trusted from this file's own
+  prior narrative (Law 2/5): identical **3** tasks — **FTF-0214** (PR #295, unchanged since
+  2026-09-25), **FTF-0902** (PR #342, head still `c544940`, CI run `36801270474` re-checked
+  fresh and still the same known ARP-timing defect, correctly left untouched per STEP 4(c)),
+  **FTF-1703** (still correctly declined, `FTF-R006`'s own dependency `FTF-0516` still `NONE`).
+  Fresh open-PR sweep: same 7 PRs as before (the two above plus five "Control plane: certify …"
+  batch PRs #383/#386/#388/#391/#393), no new or newly-unclaimed PR, no stale duplicates
+  regrown. `docs/certifications/queue.md`/`QUEUE.md` "## Provisional" both re-read fresh: same
+  10 items await Control-plane L2 certification. No housekeeping action was needed this shift
+  (nothing new accumulated in the gap). No open owner ask.
 Updated: 2026-10-01T02:53:25Z (scheduled relay shift, branch `claude/wizardly-fermat-g0fsmc`) —
   **frontier re-verified exhausted, no new task claimed; closed 3 stale duplicate tracking PRs.**
   `scripts/status.py` jumped to `97/300` certified (from `86/300`) since several Control-plane
