@@ -1,4 +1,21 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T01:14:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ntfj4f`,
+  session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`) — **repo-wide GitHub Actions
+  runner-provisioning outage (open owner ask below, escalated 09:20Z) RESOLVED — confirmed
+  genuinely cleared, meeting the resolution bar the ask itself set.** PR #342's own run
+  (`36681155484`, head `8066b666`) finally reached a real terminal state: `runner_id:
+  1000012646`, a real runner name, real per-step timestamps, a 3+ minute `network-policy-
+  enforcement-integration` job that actually executed (real `kind`+Calico clusters, real
+  `kubectl` output) — structurally different from every `runner_id: 0` failure during the
+  outage. 38/39 jobs green, `gate` included; the one failure is the already-diagnosed,
+  pre-existing baseline-cluster ARP timing defect this thread has tracked since 2026-09-27, not a
+  new or outage-related failure. Independently re-ran PR #390's own stalled run
+  (`36681644901`) with this fresh justification (not a second "confirm the flake" re-run of the
+  same run — new evidence the external condition itself changed) to verify the clearing is
+  repo-wide, not PR #342-specific — see this file's own "Owner actions — current" section, now
+  emptied of this entry, and `BLOCKER.md`'s matching entry, now marked RESOLVED. No code changed
+  this shift beyond the earlier merge-conflict/tracking-doc work already pushed.
+
 Updated: 2026-09-30T09:20:00Z (scheduled relay shift, branch `claude/wizardly-fermat-xa6526`) --
   **Repo-wide GitHub Actions runner-provisioning outage confirmed still live, escalated as an
   owner ask** (see "Owner actions -- current" below and `BLOCKER.md`'s matching dated entry for
@@ -10,6 +27,37 @@ Updated: 2026-09-30T09:20:00Z (scheduled relay shift, branch `claude/wizardly-fe
   unblocker FTF-R006 isn't dependency-ready either). No relay task work is possible this shift:
   nothing genuinely unclaimed to pick, and no PR (new or existing) can reach green while the outage
   holds. Stopping per the ask-first hard-stop rule. No code changed.
+Updated: 2026-09-30T07:03:00Z (same shift) — **fresh GitHub Actions runner-provisioning outage
+  confirmed repo-wide (`runner_id: 0` on every job, zero log content), the same previously-
+  documented issue class (2026-09-21/2026-09-27 entries below).** Hit on PR #390's and PR #342's
+  own pushes from the entry directly below, and independently on PR #337's most recent run — all
+  three fail identically at the `gate`-job level regardless of diff content (two are docs-only).
+  Confirmed with one re-run (`run_attempt: 2` on PR #390's run, identical `runner_id: 0` outcome);
+  not re-running further per this repo's own convention. Posted one status comment each on PR #390
+  and PR #342. Not a fresh owner ask — this issue class has cleared on its own within hours both
+  prior times. Both PRs stay subscribed/watched.
+
+Updated: 2026-09-30T07:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ntfj4f`,
+  session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`) — **resolved PR #342's
+  merge conflict (`dirty` → pushed onto the current `main` tip, commit `8066b666`); the disclosed
+  ARP-warming fix for its one remaining real CI failure hit the identical sandbox tooling denial
+  the prior shift already hit on this exact file, reverted unpushed.** Independently reconfirmed
+  the dependency-ready frontier fully claimed (7 ready tasks, 6 with an open PR, FTF-1703
+  correctly declined) — same conclusion as PR #389's own housekeeping pass ~2h earlier, from
+  fresh data. PR #342 (FTF-0902) was the one item PR #389 deliberately left untouched (its own
+  real CI failure, not merely a merge conflict) — its prior shift's own PR comment already
+  diagnosed the root cause precisely (a transient link-layer/ARP gap on the non-enforcing
+  baseline cluster's second listener pod, not a defect in `network_policy_templates.py`) and
+  drafted the fix, but reverted it unpushed after this sandbox's auto-mode classifier denied
+  running `ruff`/`mypy` on this security-relevant test file ("Security Test Removal"). This
+  shift wrote the identical fix, hit the identical denial, and — per that classifier's own
+  explicit instruction not to route around it through another tool/command — reverted it the
+  same way (`git checkout --`, confirmed clean) rather than push anything unverified. Pushed
+  only the merge-conflict resolution (verified: `test_ftf_0902.py` clean, zero FTF-0902 code
+  touched). This is a tooling-permission question for the user, not a relay-resolvable owner
+  ask — already surfaced once by the prior shift, restated in `PROGRESS.md`'s matching entry
+  rather than duplicated here. `status.py` unchanged: `97/300` certified, `24` product-true, `6`
+  PROVISIONAL. No task claimed, no certification performed (Law 2). No open owner ask.
 
 Updated: 2026-09-30T03:21:00Z (same scheduled shift, branch `claude/wizardly-fermat-l9gppv`) —
   **PR #385 (FTF-H007) confirmed green and merged.** All 38/38 real CI jobs `completed`/`success`
@@ -7748,21 +7796,15 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-**2026-09-30 (dated) — Repo-wide GitHub Actions runner-provisioning outage, recurred, now past
-its own "clears within hours" precedent window.** Every check run on every open PR (five relay
-task PRs, three docs-only tracking PRs, four Control-plane certification PRs -- eleven PRs, every
-single job on each) has failed within seconds with `runner_id: 0`/no runner ever assigned since
-~2026-09-30T05:30Z -- confirmed independently this shift on the newest run in the whole repository
-(run #600, PR #393, still failing at 09:10Z) after a prior shift (07:04Z, PR #390) already
-diagnosed the identical signature and chose to wait rather than escalate, per this exact outage
-class's own 2026-09-21/2026-09-27 precedent of self-clearing "within hours." That window has now
-been exceeded (3h37m+ continuous, ten further workflow runs, zero recoveries) with no repo-side
-fix possible (ruled out `.github/workflows/ci.yml`/secrets/runner-label changes as the cause by
-diff against the last known-green run). Full evidence and three route options in `BLOCKER.md`'s
-matching dated entry. **No relay or Control-plane merge is possible while this holds** -- `merge on
-green` cannot be exercised for any PR, including the three already-open frontier-exhausted/
-merge-conflict tracking PRs (#389, #390, #392). Remove this entry the moment a session confirms a
-fresh PR event gets a real `runner_id` again (same resolution bar the 2026-09-21 entry below used).
+None currently.
+
+2026-09-30 (resolved 2026-10-01T01:14Z): the repo-wide GitHub Actions runner-provisioning outage
+escalated at 09:20Z (past its own "clears within hours" precedent window — 3h37m+ continuous at
+escalation time) is confirmed genuinely cleared: PR #342's own run (`36681155484`) reached a
+real terminal state with a real `runner_id`/`runner_name` and real per-step timestamps,
+structurally different from every `runner_id: 0` failure during the outage — the same resolution
+bar this entry itself set. See `PROGRESS.md`'s/`QUEUE.md`'s own top dated log entry and
+`BLOCKER.md`'s matching RESOLVED entry for the full evidence.
 
 2026-09-21 (resolved, kept for the resolution-bar precedent the entry above reuses): the
 GitHub Actions runner-provisioning outage first found on PR #170 (2026-09-21, escalated to an
