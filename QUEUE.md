@@ -1,4 +1,37 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T01:55:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ll2hsh`) —
+  **drove the PROVISIONAL backlog to green now that the repo-wide CI outage has cleared.**
+  Independently re-confirmed the outage resolution (re-ran PR #394's own stalled workflow,
+  watched it get a real `runner_id` and complete 38/38 green) — corroborates, does not duplicate,
+  the concurrent confirmation already on record in `BLOCKER.md`/this file's own "Owner actions"
+  section via PR #342's terminal run. Re-triggered fresh CI on all five relay-owned PRs that had
+  only ever seen outage-era failures: **merged #337 (FTF-0601), #359 (FTF-0500B), #364
+  (FTF-0500C), #380 (FTF-0306)** on genuine green runs (each needed a merge-conflict resolution —
+  union of both sides' `ci.yml` job blocks and append-only tracking docs — as `main` advanced
+  between merges). **#342 (FTF-0902) left open, not merged** — its one real failure
+  (`network-policy-enforcement-integration`) is the same pre-existing ARP timing defect two prior
+  shifts already root-caused and were blocked from fixing by this sandbox's own tooling denial;
+  this is the 3rd-plus identical confirmation, so per STEP 4(c) this was not retried a 4th time.
+
+  Caught and corrected a process defect within this same shift: after fixing #359's conflict this
+  session initially forgot to actually call the merge API, leaving it open with a stale fix commit
+  — caught via an unexplained `docs/spec-matrix.yaml` readback (`FTF-0500B` showing `NONE` instead
+  of `PROVISIONAL` on a fresh `main` checkout), re-resolved against the now-further-advanced
+  `main`, re-verified green, and merged for real. `docs/spec-matrix.yaml`'s own `PROVISIONAL` set
+  now reads 10 items (`FTF-0212, FTF-0306, FTF-04A15, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601,
+  FTF-1206, FTF-1807, FTF-H007`), all independently re-verified merged from a fresh `origin/main`
+  checkout (`8d13448`), none self-certified. `scripts/status.py`: unchanged `97/300` certified (Law
+  2 — merging a submission is not a certification). `product_truth_check.py --fail-on-unwired`:
+  `25/25` clean. `validate_spec.py --strict`: clean. `.github/workflows/ci.yml`: 41 distinct jobs,
+  no duplicates, parses clean.
+
+  Recomputed the dependency-ready frontier fresh at shift end: unchanged from shift start — every
+  ready task is now either already `PROVISIONAL` (Control plane's to certify) or FTF-0214
+  (disclosed-blocked, PR #295) / FTF-1703 (correctly declined, no Argilla reviewer workflow
+  exists). No new task picked this shift — the work was entirely unsticking the existing
+  PROVISIONAL backlog the outage had frozen. No open owner ask. Full detail in `PROGRESS.md`'s own
+  matching entry.
+
 Updated: 2026-10-01T01:14:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ntfj4f`,
   session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`) — **repo-wide GitHub Actions
   runner-provisioning outage (open owner ask below, escalated 09:20Z) RESOLVED — confirmed
