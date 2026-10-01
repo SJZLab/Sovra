@@ -9219,6 +9219,18 @@ FTF-1807:
     runbook says so explicitly rather than claiming a wired production incident-response system.
     `proving_symbol` stays blank; `product_truth_check.py`'s product-true count is deliberately
     unchanged.
+
+    L2 fix-and-resubmit (2026-10-01): Control-plane review found that rewriting the runbook to say
+    revoked access continues until TTL and that external fallback is allowed (the opposite of the
+    negative_acceptance) still passed 35/35 -- the test matched tokens, not operator guidance. Fixed
+    by adding `_doc_operator_guidance_matches_real_semantics` (parses the real section-7 operator
+    table's own `Effect` column for the revoked-key/silent-reroute rows plus the section 2/6 body
+    prose) and two new fault-injection tests reproducing both named inversions directly, each
+    confirming the old check still passed on the broken doc before confirming the new check catches
+    it, then restoring the file byte-identical. Merged via PR #408 (merge commit `57877a8`). No
+    production code touched; `proving_symbol`/`proof_state` unchanged (Law 2 -- a resubmission is
+    not a certification). **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
+    re-review and this merged PR's own real CI run (41/41 jobs green, `gate` included).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/documentation/test_ftf_1807.py
