@@ -8,7 +8,7 @@ then delete the old one once the new one has fired cleanly.
 | Routine | Schedule (UTC) | Model | Writes |
 |---|---|---|---|
 | Sovra relay | `48 */2 * * *` | claude-sonnet-5 | relay PRs |
-| Sovra certifier | event: PR opened (poke) | default (mid-tier) | ledger/spec-matrix via PR |
+| Sovra certifier | event: PR opened **plus** `18 1-23/2 * * *` (30 min after each relay shift) | default (mid-tier) | ledger/spec-matrix via PR |
 | Sovra watchdog | `40 */4 * * *` | cheapest capable | watchdog-findings.md via PR |
 | Sovra refill & sweep | `20 * * * *` (new) | cheapest capable | QUEUE.md Backlog/Parked via `[QUEUE]` PR |
 | Sovra daily report 08:30 / 19:30 KSA | `30 5 * * *`, `30 16 * * *` | claude-haiku-4-5 | email only |
@@ -76,11 +76,14 @@ no design, no queue reprioritisation.
 GUARD: read CLAUDE.md. Exit if CERTIFIER is not "Control plane (autonomous)". Compare
 `sha256sum CLAUDE.md` with CLAUDE.md.sha256; on a mismatch, report it and exit.
 
-SCOPE: if fired by a PR event, review only that PR, and only if its title starts with
-"[relay]" and docs/certifications/queue.md has a matching submission. Otherwise review
-submissions that are newer than the item's latest Control-plane verdict. Never re-review
-unchanged code an earlier verdict already returned. If nothing qualifies, report "nothing to
-certify" and stop.
+SCOPE: certify only MERGED relay work. Merge = PROVISIONAL, and CI must be green on the
+final head. On every fire, whether scheduled or PR event, scan docs/certifications/queue.md
+for every relay submission whose PR has merged and is newer than that item's latest verdict,
+and review all of them, not just the PR that triggered this run. A PR that is still open is
+only noted as "not ready". The scheduled fire exists because a PR-opened event arrives before
+CI and merge: without it, merged fixes are never revisited (the 2026-10-01 finding). Never
+re-review unchanged code that an earlier verdict already returned. If nothing qualifies,
+report "nothing to certify" and stop.
 
 For each item, follow docs/CONTROL_PLANE_MODES.md CERTIFY exactly:
 1. Independence: compare your session ID with every commit's Claude-Session trailer AND every
