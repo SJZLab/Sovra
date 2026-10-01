@@ -21134,3 +21134,9 @@ failures are in contract coverage, not in CI.
 Superseded: the earlier, overlapping Control-plane certification PRs #383, #386, #388, #391 and #393
 never merged (outage era) and are closed by this review. Their verdicts are not adopted. Every item
 above was re-verified from scratch.
+
+### Certifier status after the 2026-10-01 review: NOTHING PENDING
+FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807 and FTF-1206 are PROVISIONAL
+in `docs/spec-matrix.yaml` but were **returned to the relay NOT CERTIFIED**. Their merged code has not
+changed. Do not re-review them until a new relay fix PR for that ID is appended below this line.
+Re-reviewing unchanged code cannot change the verdict.
