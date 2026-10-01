@@ -61,7 +61,13 @@ from app.auth.audit_event_writer import write_audit_event
 from app.auth.resource_authorization import ResourceAuthorizationError, authorize_resource_ownership
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
-from app.evaluation.evaluation_suite_schema import PURPOSE_FINAL, EvaluationSuite
+from app.evaluation.evaluation_suite_schema import (
+    PURPOSE_FINAL,
+    EvaluationSuite,
+    validate_grading_logic_version,
+    validate_name,
+    validate_reviewer_id_or_none,
+)
 from app.projects.project_schema import Project
 from app.target_connectors.agent_manifest_schema import AgentManifest
 
@@ -306,7 +312,18 @@ def update_evaluation_suite(
     passed (non-`None`) are changed; `agent_manifest_id`/`purpose`/
     `version` are never accepted here -- all three are fixed at creation
     (the same "immutable binding" discipline `agent_manifest_id` itself
-    exists to guarantee)."""
+    exists to guarantee).
+
+    Every field this endpoint can change runs through the same real
+    validator `__init__` already applies at creation -- an L2 finding
+    against an earlier submission: this update path previously assigned
+    `name`/`grading_logic_version`/`reviewer_id` directly, so
+    `grading_logic_version=0` reached the database unchecked (a real
+    `IntegrityError`, surfaced as an opaque 500 instead of a real 400),
+    `name=""` was silently accepted against the schema's own
+    `minLength: 1`, and `reviewer_id=""` passed `lock_evaluation_suite`'s
+    own `is None` check, letting a `final` suite lock with no real
+    reviewer identity (Section 69.1's own independence rule)."""
     suite = _fetch_or_raise(session, context, project_id, suite_id)
     if suite.status != "draft":
         raise EvaluationSuiteLockedError(
@@ -315,11 +332,11 @@ def update_evaluation_suite(
         )
 
     if name is not None:
-        suite.name = name
+        suite.name = validate_name(name)
     if grading_logic_version is not None:
-        suite.grading_logic_version = grading_logic_version
+        suite.grading_logic_version = validate_grading_logic_version(grading_logic_version)
     if reviewer_id is not None:
-        suite.reviewer_id = reviewer_id
+        suite.reviewer_id = validate_reviewer_id_or_none(reviewer_id)
 
     session.flush()
     write_audit_event(
@@ -352,7 +369,7 @@ def lock_evaluation_suite(
     if suite.status != "draft":
         raise EvaluationSuiteLockedError(f"evaluation suite {suite_id} is already {suite.status!r}")
 
-    if suite.reviewer_id is None:
+    if suite.reviewer_id is None or not suite.reviewer_id.strip():
         raise EvaluationSuiteIncompleteError(
             f"evaluation suite {suite_id} has no reviewer_id assigned -- Section 69.1: "
             "'Final suite creator/reviewer is independent of candidate implementer'"

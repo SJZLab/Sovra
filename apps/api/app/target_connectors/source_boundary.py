@@ -82,6 +82,7 @@ from pathlib import Path
 
 from app.target_connectors.local_repository_connector import (
     PathAllowlistError,
+    _run_git,
     capture_local_repository,
     resolve_allowed_root,
 )
@@ -162,6 +163,7 @@ class SourceBoundaryReport:
     escaping_symlinks: tuple[str, ...]
     executable_hooks: tuple[str, ...]
     dangerous_calls: tuple[DangerousCallFinding, ...]
+    dangerous_git_config_keys: tuple[str, ...]
 
     @property
     def tree_complete(self) -> bool:
@@ -171,11 +173,12 @@ class SourceBoundaryReport:
     def is_safe_to_lock(self) -> bool:
         """True only when the tree is complete, every declared submodule/
         LFS path is genuinely resolved on disk, and no unsafe entry (an
-        escaping symlink, an active git hook, or a dangerous dynamic call)
-        was found -- this task's own real "incomplete critical snapshot
-        blocks lock" acceptance, computed, not asserted. A dirty working
-        tree alone never blocks -- Section 7A.3 requires it be "visibly
-        marked," not refused."""
+        escaping symlink, an active git hook, a dangerous dynamic call, or
+        a repo-config key that could make a future git invocation execute
+        a repo-controlled command) was found -- this task's own real
+        "incomplete critical snapshot blocks lock" acceptance, computed,
+        not asserted. A dirty working tree alone never blocks -- Section
+        7A.3 requires it be "visibly marked," not refused."""
         return (
             self.tree_complete
             and not self.inventory.unresolved_submodule_paths
@@ -183,6 +186,7 @@ class SourceBoundaryReport:
             and not self.escaping_symlinks
             and not self.executable_hooks
             and not self.dangerous_calls
+            and not self.dangerous_git_config_keys
         )
 
     @property
@@ -207,6 +211,8 @@ class SourceBoundaryReport:
                 "dangerous dynamic call(s): "
                 f"{[(f.relative_path, f.line, f.reason) for f in self.dangerous_calls]}"
             )
+        if self.dangerous_git_config_keys:
+            reasons.append(f"dangerous git config key(s): {list(self.dangerous_git_config_keys)}")
         return tuple(reasons)
 
 
@@ -215,7 +221,16 @@ def _scan_git_hooks(real_root: Path) -> tuple[str, ...]:
     `<root>/.git/hooks/`. A `*.sample` file is never itself executable by
     git and is excluded by name, not only by its execute bit, since some
     filesystems/archives can carry a stray executable bit on a sample
-    file without it ever being an active hook."""
+    file without it ever being an active hook.
+
+    A symlinked hook counts as active too (FTF-H007): `entry.is_file()`
+    follows symlinks by default, so a hook that is a symlink to an
+    executable file elsewhere was already being read correctly by that
+    call -- the earlier bug was the `entry.is_symlink()` guard immediately
+    before it, which skipped every symlink outright regardless of what it
+    resolved to. `os.stat` (follow-symlinks, never `os.lstat`) is used for
+    the mode check so a symlink's *target* executable bit is what counts,
+    matching what git itself would actually run."""
     hooks_dir = real_root / ".git" / "hooks"
     if not hooks_dir.is_dir():
         return ()
@@ -228,10 +243,10 @@ def _scan_git_hooks(real_root: Path) -> tuple[str, ...]:
     for entry in entries:
         if entry.name.endswith(_SAMPLE_SUFFIX):
             continue
-        if entry.is_symlink() or not entry.is_file():
+        if not entry.is_file():
             continue
         try:
-            mode = entry.stat().st_mode
+            mode = os.stat(entry.path).st_mode
         except OSError:
             continue
         if mode & _EXECUTABLE_BITS:
@@ -239,10 +254,75 @@ def _scan_git_hooks(real_root: Path) -> tuple[str, ...]:
     return tuple(active)
 
 
+_DANGEROUS_GIT_CONFIG_KEY_PATTERN = (
+    r"^(core\.fsmonitor|core\.hookspath|core\.sshcommand|" r"filter\..+\.(clean|smudge|process))$"
+)
+
+
+def _scan_dangerous_git_config(real_root: Path) -> tuple[str, ...]:
+    """Reads (never executes) the repository's own resolved git config for
+    keys that can make an otherwise read-only git invocation execute a
+    repo-controlled command: `core.fsmonitor`/`core.hooksPath`/
+    `core.sshCommand`, or any `filter.<name>.(clean|smudge|process)`
+    driver (FTF-H007's own negative_acceptance -- the presence of such a
+    key is itself a blocking finding, independent of `_run_git`'s own
+    `-c` overrides already neutralizing it for every call this process
+    makes). Uses `_run_git`'s own hardened invocation to do the reading --
+    so this read cannot itself trigger the very commands it is checking
+    for -- rather than a hand-rolled INI parser, which would have to
+    reimplement git's own config precedence/quoting/include-file rules to
+    be correct."""
+    result = _run_git(
+        real_root,
+        "config",
+        "--local",
+        "--get-regexp",
+        _DANGEROUS_GIT_CONFIG_KEY_PATTERN,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return ()
+    keys: list[str] = []
+    for line in result.stdout.splitlines():
+        key = line.split(" ", 1)[0]
+        if key not in keys:
+            keys.append(key)
+    return tuple(sorted(keys))
+
+
 def _call_dotted_name(node: ast.expr) -> tuple[str, str] | None:
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
         return (node.value.id, node.attr)
     return None
+
+
+def _collect_import_aliases(
+    tree: ast.AST,
+) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """A single pass over every `import`/`from ... import` statement in the
+    module (anywhere, not only at true top level -- Python executes a
+    nested import the instant its containing branch runs, same discipline
+    this task's own call walk already applies), building two alias maps
+    the call scan resolves through before comparing against the closed
+    dangerous sets: `import os as o` must be caught via `o.system(...)`
+    exactly as `os.system(...)` is, and `from os import system` (or
+    `... as sc`) must be caught via a bare `system(...)`/`sc(...)` call
+    exactly as `exec(...)` already is. An un-aliased `import os`/
+    `from os import system` is recorded identically to an aliased one
+    (`os` maps to itself; `system` maps to `("os", "system")`), so this one
+    pass covers both the plain and the aliased case with no special-casing."""
+    module_aliases: dict[str, str] = {}
+    from_aliases: dict[str, tuple[str, str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                real_module = alias.name.split(".")[0]
+                bound_name = alias.asname or real_module
+                module_aliases[bound_name] = real_module
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            for alias in node.names:
+                bound_name = alias.asname or alias.name
+                from_aliases[bound_name] = (node.module, alias.name)
+    return module_aliases, from_aliases
 
 
 def _scan_dangerous_python_calls(relative_path: str, source: bytes) -> list[DangerousCallFinding]:
@@ -257,27 +337,46 @@ def _scan_dangerous_python_calls(relative_path: str, source: bytes) -> list[Dang
         # it is simply not a Python AST this scan can inspect further.
         return []
 
+    module_aliases, from_aliases = _collect_import_aliases(tree)
+
     findings: list[DangerousCallFinding] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        if isinstance(node.func, ast.Name) and node.func.id in _DANGEROUS_BARE_CALL_NAMES:
-            findings.append(
-                DangerousCallFinding(
-                    relative_path=relative_path,
-                    line=node.lineno,
-                    reason=f"call to {node.func.id!r}",
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+            if name in _DANGEROUS_BARE_CALL_NAMES:
+                findings.append(
+                    DangerousCallFinding(
+                        relative_path=relative_path,
+                        line=node.lineno,
+                        reason=f"call to {name!r}",
+                    )
                 )
-            )
+                continue
+            resolved_from = from_aliases.get(name)
+            if resolved_from is not None and resolved_from in _DANGEROUS_ATTRIBUTE_CALLS:
+                findings.append(
+                    DangerousCallFinding(
+                        relative_path=relative_path,
+                        line=node.lineno,
+                        reason=(
+                            f"call to {name!r} (from {resolved_from[0]} import "
+                            f"{resolved_from[1]})"
+                        ),
+                    )
+                )
             continue
         dotted = _call_dotted_name(node.func)
-        if dotted is not None and dotted in _DANGEROUS_ATTRIBUTE_CALLS:
+        if dotted is None:
+            continue
+        resolved_dotted = (module_aliases.get(dotted[0], dotted[0]), dotted[1])
+        if resolved_dotted in _DANGEROUS_ATTRIBUTE_CALLS:
+            reason = f"call to {resolved_dotted[0]}.{resolved_dotted[1]}"
+            if resolved_dotted[0] != dotted[0]:
+                reason += f" (as {dotted[0]}.{dotted[1]})"
             findings.append(
-                DangerousCallFinding(
-                    relative_path=relative_path,
-                    line=node.lineno,
-                    reason=f"call to {dotted[0]}.{dotted[1]}",
-                )
+                DangerousCallFinding(relative_path=relative_path, line=node.lineno, reason=reason)
             )
     return findings
 
@@ -319,6 +418,7 @@ def scan_local_repository_boundary(
 
     escaping_symlinks = tuple(e.relative_path for e in inventory.entries if e.escapes_root)
     executable_hooks = _scan_git_hooks(real_root)
+    dangerous_git_config_keys = _scan_dangerous_git_config(real_root)
 
     dangerous: list[DangerousCallFinding] = []
     for entry in inventory.entries:
@@ -332,6 +432,7 @@ def scan_local_repository_boundary(
         escaping_symlinks=escaping_symlinks,
         executable_hooks=executable_hooks,
         dangerous_calls=tuple(dangerous),
+        dangerous_git_config_keys=dangerous_git_config_keys,
     )
 
 

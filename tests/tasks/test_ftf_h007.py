@@ -328,6 +328,169 @@ def test_dirty_working_tree_alone_does_not_block_lock() -> None:
         )
 
 
+def test_core_fsmonitor_config_never_executes_and_blocks_lock() -> None:
+    """A real, documented git feature this task's own finding named
+    directly: `core.fsmonitor` can be set in the repository's own
+    `.git/config` to an arbitrary command git itself runs on every
+    `status`-family call -- exactly what `capture_local_repository`'s own
+    `_git_dirty_signature` makes during every scan. Before the fix, nothing
+    neutralized this; `_run_git` now passes `-c core.fsmonitor=false` on
+    every invocation (highest config precedence, overriding the repo's own
+    value), and this scan's own `_scan_dangerous_git_config` separately
+    reports the key's mere presence as a blocking finding."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker_dir = base / "markers"
+        marker_dir.mkdir()
+        marker = marker_dir / "fsmonitor_executed.marker"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "core.fsmonitor", f"sh -c 'touch {marker}'")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "the repo-controlled core.fsmonitor command was never actually executed",
+            not marker.exists(),
+        )
+        check(
+            "FTF-H007",
+            "core.fsmonitor is reported as a dangerous git config key",
+            "core.fsmonitor" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with a dangerous git config key is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+        check(
+            "FTF-H007",
+            "evaluate_manifest_lock_readiness refuses for a dangerous git config key",
+            _raises(SourceBoundaryUnsafeError, evaluate_manifest_lock_readiness, report),
+        )
+
+
+def test_core_hookspath_config_blocks_lock() -> None:
+    """`core.hooksPath` can redirect git's own hook execution to an
+    attacker-chosen directory -- reported as a blocking finding the same
+    way `core.fsmonitor` is, independent of `_run_git`'s own
+    `-c core.hooksPath=/dev/null` override already neutralizing it for
+    every call this process makes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        evil_hooks_dir = base / "evil-hooks"
+        evil_hooks_dir.mkdir()
+        _run(repo, "config", "core.hooksPath", str(evil_hooks_dir))
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "core.hooksPath is reported as a dangerous git config key",
+            "core.hookspath" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with core.hooksPath set is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
+def test_symlinked_hook_is_treated_as_active() -> None:
+    """Before the fix, `_scan_git_hooks` skipped every `.git/hooks/*`
+    symlink outright (`if entry.is_symlink() or not entry.is_file()`),
+    so a hook that is a symlink to a real executable script was reported
+    safe. A symlinked hook is just as real as a plain executable file --
+    this is the specific case the earlier combined malicious-repository
+    test (`test_malicious_repository_reports_every_finding_without_
+    execution_or_escape`) never covered, since its own `pre-push` hook was
+    a plain file, not a symlink."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+
+        real_script = base / "real_hook_script.sh"
+        real_script.write_text("#!/bin/sh\necho should-never-run\n")
+        real_script.chmod(real_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        hook_path = repo / ".git" / "hooks" / "pre-commit"
+        hook_path.symlink_to(real_script)
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a symlinked hook pointing at a real executable is reported as active",
+            any(h.endswith("pre-commit") for h in report.executable_hooks),
+        )
+        check(
+            "FTF-H007",
+            "a repository with a symlinked active hook is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
+def test_aliased_dangerous_import_is_detected() -> None:
+    """Before the fix, `_scan_dangerous_python_calls` only matched a direct
+    `os.system(...)`/`subprocess.run(...)`-shaped call -- `import os as o`
+    then calling `o.system(...)`, or `from os import system` then calling
+    the bare `system(...)`, evaded detection entirely despite being
+    exactly as dangerous. Both aliasing forms this task's own finding
+    named explicitly are covered in one file so a regression in either
+    specific alias-resolution path is caught."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "plugin.py").write_text(
+            "import os as o\n"
+            "from os import system\n"
+            "import subprocess as sp\n"
+            "\n"
+            "if True:\n"
+            "    o.system('echo one')\n"
+            "    system('echo two')\n"
+            "    sp.run(['echo', 'three'])\n"
+        )
+        _run(repo, "add", "plugin.py")
+        _run(repo, "commit", "--quiet", "-m", "aliased dangerous imports")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "'import os as o' then 'o.system(...)' is detected",
+            any(f.relative_path == "plugin.py" and f.line == 6 for f in report.dangerous_calls),
+        )
+        check(
+            "FTF-H007",
+            "'from os import system' then bare 'system(...)' is detected",
+            any(f.relative_path == "plugin.py" and f.line == 7 for f in report.dangerous_calls),
+        )
+        check(
+            "FTF-H007",
+            "'import subprocess as sp' then 'sp.run(...)' is detected",
+            any(f.relative_path == "plugin.py" and f.line == 8 for f in report.dangerous_calls),
+        )
+        check(
+            "FTF-H007",
+            "a repository with only aliased dangerous imports is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

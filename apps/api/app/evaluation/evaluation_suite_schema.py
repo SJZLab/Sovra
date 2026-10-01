@@ -206,9 +206,15 @@ def validate_grading_logic_version(value: object) -> int:
 
 
 def validate_reviewer_id_or_none(value: object) -> str | None:
+    """`None` means "no reviewer yet" (a real, legal draft state). Anything
+    else must be a real identifier: an empty or whitespace-only string is
+    refused here the same way `None` is accepted, so a caller cannot smuggle
+    "no reviewer" past this check by sending `""` instead of omitting the
+    field (FTF-0601's own negative_acceptance -- a `final` suite locking
+    with no real reviewer)."""
     if value is None:
         return None
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         raise EvaluationSuiteValidationError("reviewer_id must be a non-empty string or null")
     if len(value) > 200:
         raise EvaluationSuiteValidationError("reviewer_id must be at most 200 characters")
@@ -266,9 +272,11 @@ class EvaluationSuite(Base):
             "NOT (purpose = 'final' AND status = 'locked' AND reviewer_id = created_by)",
             name="ck_evaluation_suites_independent_final_reviewer",
         ),
-        # A locked suite must have a real reviewer assigned (any purpose).
+        # A locked suite must have a real, non-empty reviewer assigned (any
+        # purpose) -- `<> ''` closes the real gap `IS NOT NULL` alone left
+        # open (an empty-string reviewer_id satisfies `IS NOT NULL`).
         CheckConstraint(
-            "status <> 'locked' OR reviewer_id IS NOT NULL",
+            "status <> 'locked' OR (reviewer_id IS NOT NULL AND reviewer_id <> '')",
             name="ck_evaluation_suites_reviewer_present_when_locked",
         ),
         ForeignKeyConstraint(
