@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T02:53:25Z (scheduled relay shift, branch `claude/wizardly-fermat-g0fsmc`) —
+  **frontier re-verified exhausted, no new task claimed; closed 3 stale duplicate tracking PRs.**
+  `scripts/status.py` jumped to `97/300` certified (from `86/300`) since several Control-plane
+  certification PRs landed — recomputed the dependency-ready frontier fully fresh given that jump
+  rather than trust prior narrative (Law 2/5): still only **3** dependency-ready `NONE`-state
+  tasks, identical set every immediately-prior shift found — **FTF-0214** (PR #295,
+  disclosed-blocked, unchanged), **FTF-0902** (PR #342, re-checked fresh CI run `36801270474`,
+  still the same known baseline-cluster ARP-timing defect, left untouched per STEP 4(c)'s "never
+  retry a 4th time"), **FTF-1703** (correctly declined, no Argilla reviewer workflow, unchanged).
+  No genuinely unclaimed task exists. Instead, found and closed three open tracking PRs (**#395**,
+  **#392**, **#389**) whose `BLOCKER.md`/`PROGRESS.md`/`QUEUE.md` content duplicated events already
+  fully landed on `main` via commit `b1f2d55` (merged via PR #396) — including #389's own dated
+  GitHub-Actions-billing-block owner ask, confirmed moot since PR #337 merged cleanly and this
+  file's own "Owner actions — current" already read "None currently". Verified via direct diff
+  against `main` before closing each (comments posted on all three explaining why); no tracking
+  content was lost, no code touched. No open owner ask.
 Updated: 2026-10-01T01:55:00Z (scheduled relay shift, branch `claude/wizardly-fermat-ll2hsh`) —
   **drove the PROVISIONAL backlog to green now that the repo-wide CI outage has cleared.**
   Independently re-confirmed the outage resolution (re-ran PR #394's own stalled workflow,

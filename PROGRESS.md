@@ -25676,3 +25676,69 @@ queue.md` unchanged (no new submission, only merges of already-logged submission
 STEP 4 stop condition (a): 0 in-flight L1-PROVEN submissions remain unmerged from this shift's own
 work; 10/300 PROVISIONAL items now await Control-plane L2 certification and the L4 gate. Stopping
 here. No open owner ask (`QUEUE.md` "Owner actions — current" reads "None currently").
+
+## 2026-10-01T02:53:25Z — Scheduled relay shift — frontier re-verified exhausted, closed 3 stale duplicate tracking PRs
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch `claude/wizardly-fermat-g0fsmc` found already at the same commit as `origin/main`
+(`0e3f3a5`, the merge of PR #396) — confirmed via `git merge-base --is-ancestor HEAD origin/main`
+before relying on it, since the branch had no prior unmerged work of its own to lose (the
+"PR already merged, restart from main" case in this session's own operating instructions, except
+here the branch was simply never diverged from `main` to begin with). `BLOCKER.md` read in full:
+no live entry, only the 2026-10-01T01:14Z `RESOLVED` runner-provisioning-outage record kept for
+history. STEP 0.2: no `cognee-cli` binary found on this sandbox — text-search fallback (direct
+`grep`/`yaml.safe_load` reads of `docs/spec-matrix.yaml`/`docs/TASK_INDEX.md`) used for this
+shift's own frontier computation, declared per STEP 0.2.
+
+STEP 1: `scripts/status.py` reads `97/300` certified, `24` product-true — up from the `86/300` the
+immediately-prior shift's own narrative recorded, confirming several Control-plane certification
+PRs landed since. Given that jump, the dependency-ready frontier was recomputed fully fresh rather
+than trusted from any prior shift's claim (Law 2/5): parsed `docs/spec-matrix.yaml`'s own
+`certification_state` per task and each task's `deps=` list from its own `notes` field (all 193
+`NONE`-state tasks parsed cleanly, zero with an unparseable deps field), then computed which
+`NONE`-state tasks have every dependency `CERTIFIED`. Result: only **3** tasks are
+dependency-ready despite the +11 certified-count jump — **FTF-0214**, **FTF-0902**, **FTF-1703** —
+identical to the set every immediately-prior shift already found. Cross-checked against
+`docs/TASK_INDEX.md` directly (`grep`) to confirm no divergence from the `spec-matrix.yaml`-derived
+set.
+
+All three are already fully accounted for, independently re-verified rather than assumed from
+prior narrative:
+- **FTF-0214** — open PR #295 ("blocked -- no live backend surface for stated acceptance"),
+  unchanged since 2026-09-25, still the only CI run on that branch (green, since the PR itself is a
+  disclosed-blocker submission, not a code claim). Left untouched — Control plane/owner's to
+  resolve per its own `BLOCKER.md`-equivalent reasoning in the PR body.
+- **FTF-0902** — open PR #342. Checked its latest real CI run fresh (run `36801270474`, head
+  `c544940a`, `conclusion: failure`) rather than assumed stuck from old narrative alone — still the
+  same `network-policy-enforcement-integration` baseline-cluster ARP-timing defect three
+  immediately-prior shifts already root-caused and were blocked from fixing by this sandbox's own
+  "Security Test Removal" tooling denial. This is a read-only status check, not a retry of the
+  blocked fix action itself — per STEP 4(c) ("stuck — same action, same failure, 3x — never retry a
+  4th time"), left untouched again. Still an open tooling-permission question for the user.
+- **FTF-1703** — correctly declined, unchanged: needs >=1000 real curated training traces this
+  sandbox does not have, and a real Argilla-backed reviewer workflow (Section 77.3) that doesn't
+  exist yet; its own would-be unblocker FTF-R006 is itself not dependency-ready (FTF-0516 still
+  `certification_state: NONE`).
+
+No genuinely new, unclaimed, undeclined task exists this shift either.
+
+**Housekeeping found and done instead of idling:** three open tracking PRs — **#395**, **#392**,
+**#389** — were stale duplicate narrations of events already fully landed and recorded on `main` by
+commit `b1f2d55` (merged via PR #396, read in full at shift start): the runner-provisioning-outage
+resolution (#395), the #359/#364/#380 merge-conflict housekeeping (#392), and a since-cleared
+GitHub Actions billing/spending-limit block plus the #231/#328/#335/#337 merge-conflict housekeeping
+(#389, whose four referenced PRs are now confirmed merged — none appear in the current open-PR
+list, and `docs/spec-matrix.yaml` shows FTF-0212/FTF-04A15/FTF-0500D/FTF-0601 all past `NONE`).
+Verified via `git diff origin/main...pr<N>` on each before acting — no content in any of the three
+was missing from `main`'s current `BLOCKER.md`/`PROGRESS.md`/`QUEUE.md` (in particular, #389's own
+dated billing-block owner ask is confirmed moot: `main`'s current QUEUE.md "Owner actions —
+current" already reads "None currently", and PR #337 itself merged cleanly per `main`'s own
+commit `b1f2d55`). Merging any of the three would have added duplicate historical narration with no
+new evidence to these append-only files — against Law 2 ("never inflate tracker"). Closed all three
+with an explanatory comment on each (not merged, no code touched, no tracking-doc content lost).
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift before compaction; `docs/certifications/
+queue.md` unchanged (no new submission originated this shift). STEP 4: no dependency-ready,
+unclaimed, undeclined task exists to pick (frontier re-verified exhausted independently of the
+certified-count jump); the only relay-actionable item found was the stale-PR cleanup, now done.
+Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" reads "None currently").
