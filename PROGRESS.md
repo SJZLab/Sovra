@@ -25776,3 +25776,61 @@ queue.md` unchanged (no new submission originated this shift). STEP 4: no depend
 unclaimed, undeclined task exists to pick (frontier re-verified exhausted independently of the
 certified-count jump); the only relay-actionable item found was the stale-PR cleanup, now done.
 Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current" reads "None currently").
+
+## 2026-10-01T06:52:56Z — Scheduled relay shift — frontier re-verified exhausted again, no delta
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch `claude/wizardly-fermat-0hgh9v` found at the same commit as `origin/main`
+(`d925da1`, the merge of PR #397, which itself merged the immediately-prior shift's own
+`0e209cd` tracking commit) — confirmed via `git merge-base --is-ancestor HEAD origin/main`
+before relying on it; no prior unmerged work of its own existed on this branch to lose.
+`BLOCKER.md` read in full: no live entry, only resolved history. STEP 0.2: no `cognee-cli`
+binary on this sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: `scripts/status.py` unchanged at `97/300` certified, `24` product-true — no Control-plane
+certification landed since the immediately-prior shift (2026-10-01T02:53:25Z), so this shift did
+not skip a fresh frontier recompute on the assumption nothing moved (Law 2/5): re-parsed
+`docs/spec-matrix.yaml` fully fresh (300 records: 193 `NONE` / 97 `CERTIFIED` / 10
+`PROVISIONAL`), re-extracted each `NONE` task's `deps=` from its own `notes` field, and
+recomputed which have every dependency `CERTIFIED`. Result: the identical **3** tasks as every
+prior shift — **FTF-0214**, **FTF-0902**, **FTF-1703** — independently re-derived from scratch,
+not copied from this file's own prior narrative.
+
+Each re-verified with fresh evidence, not assumed stuck from old narrative:
+- **FTF-0214** — PR #295 unchanged since 2026-09-25 (same CI run `36188990735`, green — a
+  disclosed-blocker submission, not a code claim). No new commits or comments. Left untouched —
+  Control plane/owner's to resolve.
+- **FTF-0902** — PR #342 head still `c544940` (pushed 2026-10-01T01:28:37Z, i.e. before the
+  immediately-prior shift's own 02:53:25Z log entry — confirming no new push happened in
+  between). Re-checked CI run `36801270474` fresh rather than trusted from the prior shift's
+  claim: unchanged, 38/39 green, sole failure still the already-diagnosed baseline-cluster
+  ARP-timing defect in `network-policy-enforcement-integration`. `mergeable_state: dirty`
+  (needs a `main` merge) but that is bookkeeping, not a 4th retry of the blocked
+  "Security Test Removal"-gated fix itself — per STEP 4(c) ("stuck — same action, same
+  failure, 3x — never retry a 4th time") the fix action itself stays untouched. Left as-is;
+  rebasing it onto `main` would not change the outcome (the failure is pre-existing and
+  unrelated to any merge conflict) and was judged not worth a no-op push.
+- **FTF-1703** — still correctly declined: needs >=1000 real curated training traces this
+  sandbox does not have, and a real Argilla-backed reviewer workflow (Section 77.3) that
+  doesn't exist yet; its own would-be unblocker FTF-R006 is itself still not dependency-ready
+  (`FTF-0516` still `certification_state: NONE`, re-checked fresh).
+
+Open-PR sweep (7 total via a fresh `list_pull_requests`, not assumed from the prior shift's
+count): the two frontier PRs above, plus five already-known "Control plane: certify …"
+tracking/batch PRs (`#383`, `#386`, `#388`, `#391`, `#393`) dated 2026-09-29/30 and already
+referenced in `BLOCKER.md`'s resolved outage entry predating the immediately-prior shift. No
+new or newly-unclaimed PR exists, and the three stale duplicates the prior shift closed
+(`#395`, `#392`, `#389`) have not regrown. `docs/certifications/queue.md` tail and `QUEUE.md`
+"## Provisional" section both re-read fresh: the same **10** items await Control-plane L2
+certification (`FTF-0212`, `FTF-0306`, `FTF-04A15`, `FTF-0500B`, `FTF-0500C`, `FTF-0500D`,
+`FTF-0601`, `FTF-1206`, `FTF-1807`, `FTF-H007`) — no new submission originated this shift.
+
+No genuinely new, unclaimed, undeclined task exists. No housekeeping action was needed this
+shift (unlike the immediately-prior shift's stale-PR cleanup) — nothing new accumulated in the
+few minutes/hours since.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift before compaction; `docs/certifications/
+queue.md` unchanged (no new submission). STEP 4 stop condition (a): 0 in-flight L1-PROVEN
+submissions from this shift's own work; the same 10/300 PROVISIONAL items await Control-plane
+L2 certification and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" reads "None currently"; `BLOCKER.md` confirmed to have no live entry).
