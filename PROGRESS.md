@@ -1,4 +1,61 @@
 # PROGRESS — Sovra
+## 2026-10-01T17:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. The designated branch was
+found sitting at the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged
+work of its own, no restart needed. STEP 0.1: read `BLOCKER.md` (one live entry, FTF-0902,
+10:30Z — three real fix attempts already falsified, correctly not retried a fourth time this
+shift), `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (not assumed from training).
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 names four still-NOT-CERTIFIED fix-and-resubmit items
+from the 2026-10-01 L2 review: FTF-0500B/FTF-0500D/FTF-1807/FTF-1206 (FTF-H007/FTF-04A06/FTF-0601
+already fixed via PR #403, FTF-0500C via a same-day fix PR). A fresh `list_pull_requests` sweep
+(not trusted from the file's own stale narrative) found PR #407 already open for FTF-0500B from a
+concurrent/prior shift, not yet reflected in this file. Picked **FTF-1807** — the smallest of the
+three genuinely untouched items (test-only; FTF-1206 needs a persisted org-policy migration first,
+a separate, larger prerequisite per this file's own existing note).
+
+STEP 2 (PEV):
+- **P:** read `tests/documentation/test_ftf_1807.py` and
+  `docs/operations/litellm_outage_runbook.md` directly. The L2 finding: inverting the operator
+  table's revoked-key row and the no-fallback body statement still passes 35/35, because the
+  existing `_doc_matches_real_facts` check only scans for isolated tokens (TTL minutes, retry
+  count, header name, …) anywhere in the doc text, never reads what the operator table's own
+  `Effect` column or the revocation/fallback prose actually claims.
+- **E:** added `_doc_operator_guidance_matches_real_semantics` — a real markdown-table-row parser
+  (`_extract_table_row_effect`) that reads the revoked-key and silent-reroute rows' `Effect`
+  column, plus whitespace/markdown-tolerant checks on the section 2/6 body prose. Added two new
+  fault-injection tests that reproduce the finding directly: each rewrites the real doc text to the
+  exact opposite claim named in the review (access permitted until TTL; fallback treated as
+  equivalent/permitted), **first confirms the old check still returns no problems on the broken
+  doc** (bound to `[FTF-1807]`, proving the gap was real, not hypothetical), **then confirms the
+  new check genuinely fails**, then restores the file byte-identical and re-confirms the check
+  passes again. Caught two of my own bugs before this was clean: the real "does **not** wait"
+  phrase has markdown-bold asterisks around "not", and the real "is never treated as equivalent to
+  the pinned deployment" phrase hard-wraps across two source lines — both needed
+  whitespace/markdown-normalized matching, not a raw substring check, to avoid false negatives on
+  the *unmodified* doc.
+- **V:** `python3 tests/documentation/test_ftf_1807.py` — 7 test functions (was 5), "all checks
+  passed". `uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+  tests/documentation/test_ftf_1807.py` clean. `python3 scripts/validate_spec.py --strict` clean.
+  `python3 scripts/product_truth_check.py --fail-on-unwired`: `25/25`, unchanged. `scripts/status.py`:
+  unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+  No production code changed; no spec-matrix entry touched (this task's own `files` clause names
+  only the doc and this test).
+
+Opened **PR https://github.com/SJZLab/Sovra/pull/408** (`[relay] FTF-1807: fix L2 findings
+(operator guidance semantics, not just tokens)`). Appended the full evidence to
+`docs/certifications/queue.md` and updated `QUEUE.md`'s own top log entry and "## Active" item 3.
+Not self-certified (Law 4) — PR #408 awaits Control-plane L2 re-review and a real CI run before
+`certification_state` can move past PROVISIONAL.
+
+STEP 4: stop condition (a) does not apply (not N/N proven — FTF-0500D/FTF-1206 remain untouched,
+FTF-0902/FTF-1703 remain correctly deferred); no new blocker found; FTF-0902's existing blocker was
+not re-poked a fourth time; no usage-limit stop; no new ask-first item (`QUEUE.md`'s own "Owner
+actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask, nothing
+blocking this shift). Stopping here after a complete PEV cycle on one item, consistent with this
+file's own normal shift cadence.
+
 ## 2026-10-01T07:30:00Z — Control plane (CERTIFY + UNBLOCK), session `session_01QVznorVMjnmcttUhyDnoGR`
 
 OPERATE: `CLAUDE.md` hash matched `CLAUDE.md.sha256`; `BLOCKER.md` had no live entry. CERTIFY:

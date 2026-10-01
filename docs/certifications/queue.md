@@ -21291,3 +21291,63 @@ opened PR are required before certification. This entry is the trigger the 2026-
 named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
 for FTF-0500C specifically — not for FTF-0500B/FTF-0500D/FTF-1807/FTF-1206, which remain exactly as
 that review left them, unchanged, no new relay PR yet.
+
+## 2026-10-01 — FTF-1807 — fix-and-resubmit for the 2026-10-01 L2 finding
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-g8cp6d`. PR
+https://github.com/SJZLab/Sovra/pull/408 (opened off a fresh `main`, same pattern as the
+FTF-H007/FTF-04A06/FTF-0601 fix (PR #403) and the FTF-0500C fix — a new PR rather than reopening
+the original PR #384).
+
+**The L2 finding:** rewriting the runbook to say revoked access continues until TTL and that
+external fallback is allowed (the opposite of the negative_acceptance) still passed 35/35 — the
+test matched tokens, not operator guidance. Read `tests/documentation/test_ftf_1807.py` and
+`docs/operations/litellm_outage_runbook.md` directly first: the existing `_doc_matches_real_facts`
+check only verified that certain tokens (the TTL minutes, the retry count, the fingerprint header
+name, the cache-bypass field, the `SKIPPED_OUT_OF_ORDER` name) appear somewhere in the doc — never
+what the operator table's own `Effect` column, or the revocation/fallback body prose, actually
+claims. No production code is implicated; this task's own `database_changes`/`files` clause names
+only the doc and this test file (unchanged from the original submission).
+
+**Fix:** added `_doc_operator_guidance_matches_real_semantics` to the test. It parses the real
+section-7 `| Signal | Detection | Effect |` operator table (`_extract_table_row_effect`, a small
+real markdown-row parser, not a second hardcoded copy of the table) and checks:
+- the "Key/connection revoked (401/403)" row's `Effect` column states immediate, unconditional
+  refusal and does not say "until" anything;
+- the "Router silently reroutes to a different deployment" row's `Effect` column states the
+  identity stays `UNVERIFIED` and is never claimed equivalent;
+- the section 2 body states revocation does not wait for the freshness TTL ("revocation is a
+  definite signal"), matched markdown-bold-tolerant (the real doc wraps "not" in `**…**`, normalized
+  before comparison);
+- the section 6 body states a reroute "is never treated as equivalent to the pinned deployment"
+  (normalized whitespace-tolerant — the real phrase hard-wraps across two source lines).
+
+**Real fault injection (Law 1), performed directly by this session, reproducing the exact finding
+twice over (both named inversions, not just one):**
+1. `test_fault_injection_inverted_revocation_guidance_is_caught_by_the_semantics_check` — rewrote
+   the real revoked-key table row (`"Immediate, unconditional call refusal (`access_revoked`)"`) to
+   `"Call remains permitted until the 5-minute freshness TTL expires (`access_revoked`)"`, keeping
+   every token the *old* check looks for (`5-minute`, `access_revoked`) intact. Confirmed the old
+   `_doc_matches_real_facts` check genuinely still returns `[]` (no problems) on this broken doc —
+   reproducing, for real, the exact undetected-defect scenario the L2 review described — then
+   confirmed the new semantics check genuinely flags the revoked-key row. Restored the doc file
+   byte-identical afterward (`restored == original` asserted) and re-confirmed the semantics check
+   passes again.
+2. `test_fault_injection_fallback_allowed_claim_is_caught_by_the_semantics_check` — same pattern for
+   the "external fallback is allowed" inversion: rewrote the section 6 "is never treated as
+   equivalent to the pinned deployment" statement to say the opposite ("is treated as equivalent …
+   fallback is permitted"), confirmed the old check still passes, confirmed the new check fails,
+   restored byte-identical.
+
+`python3 tests/documentation/test_ftf_1807.py`: 7 test functions (was 5), all pass, "all checks
+passed". `uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+tests/documentation/test_ftf_1807.py` clean. `python3 scripts/validate_spec.py --strict` clean.
+`python3 scripts/product_truth_check.py --fail-on-unwired`: `25/25`, unchanged. `scripts/status.py`:
+unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review itself
+named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
+for FTF-1807 specifically — not for FTF-0500D/FTF-1206, which remain exactly as that review left
+them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
+`QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix).
