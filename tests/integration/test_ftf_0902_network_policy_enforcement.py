@@ -466,6 +466,35 @@ def run_scenario(cluster: str, install_calico: bool) -> dict[str, bool | str]:
         results["metadata"] = probe_tcp(cluster, METADATA_ADDRESS, 80)
     else:
         results["metadata"] = "BLOCKED_EXTERNAL"
+
+    # Diagnostics only, never a pass/fail input: on a non-enforcing cluster
+    # the `denied` destination is expected to succeed (negative_acceptance).
+    # Two distinct, evidence-based root-cause theories for its real,
+    # reproducible failure here have each been tested for real in CI and
+    # falsified by the result that followed (CI runs 36839582390 and
+    # 36840503380 -- see this task's own docs/certifications/queue.md
+    # entry): pinning `kind` to a version whose `kindnet` does not enforce
+    # NetworkPolicy (ruled out -- still failed identically), and a
+    # symmetric pre-policy warm-up connection to force ARP/route
+    # resolution (ruled out -- also still failed identically, including
+    # after the warm-up connection itself completed quickly). Captured
+    # here rather than guessed at a third time: the real state of the
+    # `denied` pod and cluster at the moment of failure, so whoever looks
+    # at this next (a session with live debugging access, or Control
+    # plane) has real evidence instead of a fourth blind theory.
+    if not install_calico and results.get("denied") is not True:
+        print(f"--- diagnostics: 'denied' pod/cluster state on {cluster!r} after probe failure ---")
+        for diag_args in (
+            ("-n", NAMESPACE, "get", "pod", "denied", "-o", "wide"),
+            ("-n", NAMESPACE, "describe", "pod", "denied"),
+            ("-n", NAMESPACE, "logs", "denied", "--previous"),
+            ("-n", NAMESPACE, "logs", "denied"),
+            ("-n", NAMESPACE, "get", "events", "--sort-by=.lastTimestamp"),
+            ("get", "pods", "-A", "-o", "wide"),
+        ):
+            result = kubectl(cluster, *diag_args, check=False, timeout=30)
+            print(f"+ kubectl {' '.join(diag_args)}\n{result.stdout}{result.stderr}")
+
     return results
 
 

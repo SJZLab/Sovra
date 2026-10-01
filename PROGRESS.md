@@ -25973,3 +25973,42 @@ former, documented why the original fix didn't work rather than silently pushing
 Not self-certified. Awaiting this new push's own real CI run before concluding whether the
 harness-timing theory holds; if it also fails, this becomes a Control-plane design question (a
 3rd distinct, evidence-falsified theory), not a further relay guess, per STEP 4(c).
+
+## 2026-10-01T09:13:00Z — Same shift, continued — PR #402: warm-up theory also falsified; diagnostics added, stopping further blind fixes
+
+Second CI-red event on PR #402, this time on the warm-up fix's own commit (`da57b10`, job
+`110298220036`, run `36840503380`, genuine runner). Read the full log: the warm-up probes to both
+`allowed_ip`/`denied_ip` each completed quickly (~0.1-0.2s, consistent with either a real
+connection or a fast refusal, not a blind 5s timeout) — the warm-up mechanism itself ran as
+designed. Yet the real baseline assertion probe still returned
+`{allowed: True, denied: False, metadata: True}`, the identical signature as every prior run. This
+falsifies the harness-timing ("ARP warm-up") theory with the same directness the kind-pin theory
+was falsified earlier this shift: a warmed connection moments before the real probe did not change
+the outcome.
+
+Two independent, evidence-based theories have now each been implemented for real and each
+falsified by a real CI run, not by guessing: (1) kindnet-version-based enforcement, (2) ARP/route
+warm-up timing. Considered a third candidate (the `nc -l` listener's own respawn-after-one-
+connection loop creating a brief refusal window) but the timing doesn't fit: all 3 retries span
+~14-20s with 7s gaps, far longer than a shell-loop process respawn, which is sub-second -- if that
+were the mechanism, the second or third retry should have succeeded. No further theory was
+confident enough to implement blind as a fourth guess.
+
+Rather than push a third unvalidated fix attempt, added diagnostics-only instrumentation to
+`run_scenario`: on a non-enforcing cluster, if `denied` is not `True`, capture and print
+`kubectl get/describe pod denied`, both `logs denied` and `logs denied --previous` (to catch a
+possible crash-restart), `get events --sort-by=.lastTimestamp`, and `get pods -A -o wide` --
+all while the cluster still exists, before `delete_cluster` runs in the caller's `finally` block.
+This changes no pass/fail logic and cannot affect the test's own verdict; it only makes the next
+failure's real internal state visible instead of a bare boolean. Verified: `ruff`/`mypy` clean,
+`test_ftf_0902.py` 19/19 unchanged, `py_compile` clean.
+
+Pushed and commented on PR #402, explicit that this is diagnostics, not a claimed fix -- the PR is
+expected to stay red on `network-policy-enforcement-integration` until the new logs reveal the
+real cause. Stopping further blind fix attempts on this item per the spirit of STEP 4(c): two
+distinct, well-reasoned theories tested for real and falsified is enough independent evidence that
+guessing further without better information is not productive. The next step is either a session
+with live cluster debugging access, or this diagnostic output feeding a Control-plane root-cause
+pass. `QUEUE.md`'s "## Active" item 1 updated accordingly. No open owner ask -- this stays an
+in-progress PR this session continues to watch, not an ask-first blocker (it is routine CI
+debugging on a task already decided and in scope, not a new architecture/ambiguity question).

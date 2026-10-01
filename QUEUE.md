@@ -8181,11 +8181,25 @@ this same resolution (doc-only, redundant once this lands).
    so it cannot mask real enforcement later) — and pushed it alongside the still-reasonable
    v0.23.0 pin (doesn't hurt, even though it alone wasn't sufficient). `ruff`/`mypy`/
    `test_ftf_0902.py`/`validate_spec.py --strict`/`product_truth_check.py` all clean before
-   push; this session hit no "Security Test Removal"-class tooling denial on this file. Awaiting
-   this next real CI run before treating (c) as resolved — if baseline now reads
-   `{allowed: True, denied: True}`, certify; if `denied` still fails, this is a 3rd distinct,
-   evidence-falsified theory and the item should go to Control plane for a fresh root-cause
-   design pass rather than a 4th relay-side guess (STEP 4(c)).
+   push; this session hit no "Security Test Removal"-class tooling denial on this file.
+
+   **Update (2026-10-01T09:13Z): the warm-up theory is ALSO falsified by real evidence.** PR
+   #402's next run (`36840503380`, job `110298220036`, genuine runner) shows the warm-up probes
+   themselves completed quickly (~0.1-0.2s, consistent with a real connection or a fast refusal)
+   — yet the real assertion probe still returned the identical
+   `{allowed: True, denied: False, metadata: True}` signature. Two independent, evidence-based
+   theories (kindnet-version enforcement; ARP/route warm-up timing) have each been implemented
+   for real and each falsified by a real CI run. A third candidate (the `nc -l` listener's own
+   respawn-after-one-connection gap) doesn't fit the timing either — all 3 retries span ~14-20s
+   with 7s gaps, far longer than a sub-second shell-loop respawn would explain. Rather than guess
+   a 4th time, added diagnostics-only instrumentation (captures `kubectl describe`/`logs`
+   `--previous`/`get events` for the `denied` pod on failure, before cluster teardown) — changes
+   no pass/fail logic, cannot affect the verdict, only makes the next failure's real internal
+   state visible. **Stopping further blind fix attempts here per the spirit of STEP 4(c).** This
+   item now needs either a session with live cluster debugging access, or the new diagnostic
+   output feeding a Control-plane root-cause design pass — not another relay-side guess. PR #402
+   stays open and watched; its own real CI run on the diagnostics push is the next thing to read,
+   not to assume.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer

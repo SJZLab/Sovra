@@ -21210,3 +21210,31 @@ Verified before push: `ruff`/`mypy`/`test_ftf_0902.py` (19/19)/`validate_spec.py
 evidence-falsified theory and this item should move to a Control-plane design pass, not a further
 relay-side guess (STEP 4(c)).** `docs/spec-matrix.yaml`'s FTF-0902 entry is unchanged
 (PROVISIONAL/L1-PROVEN) — not re-claiming a pass that hasn't been observed yet.
+
+## 2026-10-01 (same shift, continued) — FTF-0902 (PR #402): warm-up theory also falsified; diagnostics added, not a fix
+
+PR #402's next real run (job `110298220036`, run `36840503380`, genuine runner) shows the warm-up
+probes themselves completing quickly (~0.1-0.2s) — yet the real assertion probe still returned the
+identical `{allowed: True, denied: False, metadata: True}` baseline signature as every prior run.
+Two independent, evidence-based root-cause theories (kindnet-version enforcement; ARP/route warm-up
+timing) have now each been implemented for real and each falsified by a real CI run, not by
+re-interpretation. A third candidate considered (the `nc -l` listener's respawn-after-one-connection
+gap) doesn't fit either — the failure is sustained across ~14-20s of retries, far longer than a
+sub-second shell-loop respawn would explain.
+
+Rather than push a fourth unvalidated guess, added diagnostics-only instrumentation to
+`run_scenario` (`tests/integration/test_ftf_0902_network_policy_enforcement.py`): on a
+non-enforcing cluster, when `denied` is not `True`, captures and prints `kubectl describe pod
+denied`, `logs denied` and `logs denied --previous` (to catch a possible crash-restart), `get
+events --sort-by=.lastTimestamp`, and `get pods -A -o wide`, all before the cluster is torn down.
+This changes no pass/fail logic and cannot affect the test's own verdict — it only makes the next
+failure's real internal state visible instead of a bare boolean. Verified clean: `ruff`, `mypy`,
+`test_ftf_0902.py` 19/19.
+
+**This is explicitly not a claimed fix.** The PR is expected to stay red on
+`network-policy-enforcement-integration` until the new diagnostic output reveals the real cause.
+Stopping further blind fix attempts on this item — per the spirit of STEP 4(c), two distinct,
+well-reasoned theories tested for real and falsified is sufficient evidence that further guessing
+without better information is not productive. Next step: either a session with live cluster
+debugging access reads the new diagnostics, or this feeds a Control-plane root-cause design pass.
+`docs/spec-matrix.yaml`'s FTF-0902 entry is unchanged (PROVISIONAL/L1-PROVEN).
