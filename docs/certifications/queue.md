@@ -21238,3 +21238,34 @@ well-reasoned theories tested for real and falsified is sufficient evidence that
 without better information is not productive. Next step: either a session with live cluster
 debugging access reads the new diagnostics, or this feeds a Control-plane root-cause design pass.
 `docs/spec-matrix.yaml`'s FTF-0902 entry is unchanged (PROVISIONAL/L1-PROVEN).
+
+## 2026-10-01 (same shift, continued) — FTF-0902 (PR #402): FINAL — three theories falsified, escalated to Control plane
+
+Three distinct, real-evidence-backed root-cause theories for the baseline cluster's `denied`
+probe failure have each been implemented for real and each falsified by a genuine CI run:
+(1) kindnet-version-based NetworkPolicy enforcement (kind v0.23.0 genuinely installed, identical
+failure); (2) pre-policy ARP/route warm-up timing (warm-up succeeded fast, real probe still
+failed); (3) post-`fake-metadata-service`-setup warm-up timing (moved warm-up after the
+hostNetwork disruption, still failed identically).
+
+Solid findings from diagnostics, not guesses: the `denied` pod is healthy (`Running`,
+`Ready: True`, `Restart Count: 0`, no previous terminated container); `nc -l -p 8080` is genuinely
+running inside it; the real probe consistently reports `Connection timed out` — a silently dropped
+packet, never `Connection refused` (which would mean nothing is listening). The same destination
+IS reachable very early in the cluster's lifetime and becomes unreachable later, consistently,
+specific to the *second* same-batch listener pod (`denied`, always probed after `allowed`),
+independent of `kind` version and of warm-up placement. `allowed` and the separately-created,
+hostNetwork `fake-metadata-service` are both always reachable.
+
+This rules out every theory tested so far and points at something below this test's own control —
+most likely a genuine kindnet/Docker-bridge networking quirk specific to this GitHub Actions
+runner class and this exact two-pod-creation pattern, not something fixable by reordering probes
+or pinning CNI versions. Full evidence trail and three concrete suggested next steps (live
+tcpdump/conntrack access; replace the single-shot `nc -l` listener with a real persistent logging
+server; test non-simultaneous pod creation) posted on PR #402
+(https://github.com/SJZLab/Sovra/pull/402#issuecomment-5928664676).
+
+**Status: escalated to Control plane, not resolved.** This is now a design question (what test
+methodology or debugging capability FTF-0902's own CI job needs), not something further relay-side
+guessing can resolve. `docs/spec-matrix.yaml`'s FTF-0902 entry stays `PROVISIONAL`/`L1-PROVEN`,
+not self-certified. PR #402 stays open and subscribed for future activity.

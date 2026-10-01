@@ -8224,6 +8224,22 @@ this same resolution (doc-only, redundant once this lands).
    anchored to a concrete new fact from this PR's own run, not a re-interpretation of the same
    symptom. **If this also fails, stop for real and escalate to Control plane with the full
    evidence trail — no further relay-side iteration.**
+
+   **FINAL (2026-10-01T09:30Z): the 3rd fix also failed, identical signature
+   (`{allowed: True, denied: False, metadata: True}`). Stopping as committed — escalated to
+   Control plane.** Three distinct, real-evidence-backed theories each implemented for real and
+   each falsified by a genuine CI run: kindnet-version enforcement; pre-policy ARP warm-up;
+   post-`fake-metadata-service` warm-up. Solid findings from diagnostics: `denied` pod healthy
+   (no crash/restart), `nc -l` genuinely running, real probe consistently `Connection timed out`
+   (dropped packet, not "nothing listening"), specific to the *second* same-batch listener pod,
+   independent of `kind` version and warm-up placement. Full trail and suggested next steps (live
+   tcpdump/conntrack access; replace the single-shot `nc -l` listener with a real persistent
+   logging server; test non-simultaneous pod creation) posted on PR #402
+   (https://github.com/SJZLab/Sovra/pull/402#issuecomment-5928664676) — not implemented here,
+   this is now a design question needing different tooling or a fresh Control-plane pass, not
+   further relay-side guessing. PR #402 stays open, PROVISIONAL, still subscribed. This blocks
+   only FTF-0902's own kind-pin DoD — not a whole-shift BLOCKER; item 3's eight RELAY-OWNED items
+   remain open and unblocked.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer

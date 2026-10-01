@@ -26055,3 +26055,40 @@ full evidence trail. This is a third fix, but unlike the first two it's anchored
 from this PR's own run, not a re-interpretation of the same symptom -- if it also fails, stopping
 for real this time and escalating to Control plane with the full trail rather than iterating
 further.
+
+## 2026-10-01T09:30:00Z — Same shift, continued — PR #402: 3rd fix also falsified, stopping and escalating as committed
+
+Job `110304795503` (`5e75919`, the reordered-warm-up fix): `baseline (kindnet) results:
+{'allowed': True, 'denied': False, 'metadata': True}` -- unchanged. Moving the warm-up to after
+`fake-metadata-service`'s setup did not help; the verbose probe at that point still reports
+`Connection timed out`.
+
+Three distinct, real-evidence-backed root-cause theories have now each been implemented for real
+and each falsified by a genuine CI run, not by guessing: (1) kindnet-version-based NetworkPolicy
+enforcement, (2) pre-policy ARP/route warm-up timing, (3) post-`fake-metadata-service`-setup
+warm-up timing. What's solid from the diagnostics: the `denied` pod is healthy (no crash/restart),
+`nc -l` genuinely runs, and the real probe consistently gets `Connection timed out` (a dropped
+packet, not "nothing listening") specifically for the second same-batch listener pod, independent
+of `kind` version and warm-up placement, while `allowed` and the separately-created
+`fake-metadata-service` are both always reachable.
+
+Posted a thorough final comment on PR #402 with the full evidence trail and concrete suggested
+next steps for Control plane (live tcpdump/conntrack access; replacing the single-shot `nc -l`
+listener with a real persistent, logging server; testing non-simultaneous pod creation) --
+explicitly not implemented here, since this is now a design question (what test methodology or
+debugging capability is needed), not an execution one a relay session can keep guessing at.
+Stopping further fix attempts on this item, honoring the plan stated in the prior comment. PR #402
+stays open, PROVISIONAL, still subscribed for future activity (merge conflicts, new pushes from
+another session, Control-plane review).
+
+**STEP 3:** `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. **STEP 4 stop condition, this item:** three real, evidence-based fix attempts on
+FTF-0902's one remaining CI failure, each falsified by a genuine CI run -- the relay-executable
+part of this DoD (apply the Control-plane-specified fix, iterate on real evidence) is exhausted;
+what remains needs either different tooling (live cluster debugging) or a fresh Control-plane
+design pass, not further relay-side guessing. This is not a full-shift BLOCKER (other Active items,
+in particular the eight RELAY-OWNED fix-and-resubmit items, remain open and unblocked) -- only
+FTF-0902's own kind-pin DoD is affected, and that is recorded here and in QUEUE.md's own "## Active"
+item 1, not as a separate BLOCKER.md entry, consistent with this repo's own precedent for a single
+disclosed-blocked item (FTF-0214/PR #295) staying in "## Active" rather than halting the whole
+shift. No open owner ask.
