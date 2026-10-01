@@ -149,16 +149,41 @@ class ConcurrentModificationError(LocalRepositoryConnectorError):
 
 
 def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Every invocation is hardened against a repo-controlled config value
+    making this supposedly read-only call execute an arbitrary command
+    (FTF-H007/FTF-04A06): `core.fsmonitor` can be set to a command git
+    itself runs on every `status`-family call (a real, documented git
+    feature, not a hypothetical), and `core.hooksPath` can point hook-style
+    execution at attacker-controlled scripts. `-c` values are highest
+    config precedence, so these override any value the untrusted
+    repository's own `.git/config` sets, regardless of its own content.
+    `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL=/dev/null` additionally stop
+    this process's own ambient system/global git config -- which this
+    untrusted scan has no business reading at all -- from influencing the
+    result."""
     git_binary = shutil.which("git")
     if git_binary is None:
         raise GitCommandError("no 'git' binary found on PATH")
+    env = dict(os.environ)
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
     try:
         return subprocess.run(  # noqa: S603
-            [git_binary, "-C", str(root), *args],
+            [
+                git_binary,
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-C",
+                str(root),
+                *args,
+            ],
             capture_output=True,
             text=True,
             timeout=_SUBPROCESS_TIMEOUT_SECONDS,
             check=False,
+            env=env,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitCommandError(f"git {' '.join(args)} could not be run: {exc}") from exc
