@@ -7225,15 +7225,146 @@ FTF-0901:
   proving_symbol: ''
   proving_test: ''
 FTF-0902:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Network-policy templates
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0005, FTF-0402
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0005, FTF-0402
+    (both CERTIFIED, confirmed before relying on them). Interface owner for phase 09 (Zero-data-egress
+    enforcement) -- no prior task had claimed `packages/contracts/openapi/09-interface.yaml`/
+    `packages/contracts/jsonschema/09-domain.schema.json`; froze both at the declared owner paths this
+    shift, deliberately with zero HTTP paths (this task''s own `database_changes` clause: "No independent
+    schema change. Consume frozen contract" -- no DB table, no live caller, same disclosed blank
+    `proving_symbol` precedent as FTF-04A25/04A26). Many prior relay shifts (see QUEUE.md/PROGRESS.md
+    history back to 2026-09-20) correctly ruled this task out as blocked on "a real enforcing CNI/firewall
+    cluster this sandbox does not have" -- that resource_gate is real for THIS interactive sandbox, but
+    this shift routes the live-enforcement proof through CI (GitHub Actions'' own hosted runner has a real
+    Docker daemon and container-registry egress this sandbox lacks), the same pattern every other
+    Docker-dependent integration job in `.github/workflows/ci.yml` already uses (FTF-0004''s own original
+    disclosed precedent). Path: `packages/security/network_policy_templates.py`.
+
+
+    `NetworkPolicyTemplate` is a frozen, versioned dataclass (namespace/pod_selector/cni_profile/
+    deny_by_default_egress/deny_by_default_ingress/block_metadata_endpoint/ipv6_policy/
+    allowed_internal_endpoints/allow_dns) with two allowed-endpoint shapes -- `CidrEndpoint` (a stable
+    ClusterIP/VIP, `ipaddress.ip_network(strict=True)`-validated) and `PodSelectorEndpoint` (another
+    in-cluster service reached by real Kubernetes namespace+pod selectors, for ephemeral pod IPs).
+    `validate_network_policy_template`/each endpoint''s own `__post_init__` raise a specifically-typed
+    exception per real invariant: `NetworkPolicyDefaultOpenError` (deny_by_default_egress/ingress=False,
+    or a `0.0.0.0/0` wildcard endpoint -- this task''s own negative_acceptance "default-open ... is a
+    release blocker"), `MetadataEndpointExposedError` (block_metadata_endpoint=False, or an endpoint CIDR
+    containing a real cloud-metadata address -- reuses FTF-H006''s own
+    `packages.security.url_policy.is_cloud_metadata_address` as the single source of truth rather than a
+    second, drifting list), `IPv6EscapeError` (an IPv6 endpoint CIDR, or `ipv6_policy` forced to anything
+    but the one closed `"blocked"` value by bypassing the type checker -- "IPv6 escape is a release
+    blocker"), and `MissingExplicitScopingError` ("rejects one missing explicit endpoint scoping":
+    `allowed_internal_endpoints=None`, an empty `pod_selector`, or an endpoint''s own empty
+    `pod_labels`/blank `namespace`). `render_network_policy_manifest` always re-validates internally
+    before rendering the real `networking.k8s.io/v1` NetworkPolicy dict (deny-all ingress, a mandatory
+    kube-dns egress carve-out, one egress rule per allowed endpoint, nothing else); `render_network_policy_yaml`/
+    `manifest_digest` complete the real render/evidence-identity surface.
+
+
+    `tests/tasks/test_ftf_0902.py` (no DB, no cluster, no network egress): 19 test functions covering
+    every negative_acceptance invariant above plus positive/boundary cases (a CIDR immediately adjacent
+    to, but not containing, a real metadata address is accepted; an explicit empty endpoint tuple is a
+    valid, different case from `None`; `render_network_policy_manifest` refuses a template mutated via
+    `object.__setattr__` after construction, not merely at `__post_init__` time; YAML round-trip and
+    digest-sensitivity checks). One disclosed fault injection (Law 1): a literal-text mutation of the
+    real on-disk module removes the `deny_by_default_egress` check -- a fresh subprocess against the
+    mutated module genuinely accepts a default-open template, proving the check load-bearing; the file is
+    restored byte-identical (confirmed by direct bytes comparison). All 19 checks pass against the
+    unmutated module.
+
+
+    The real live-cluster enforcement evidence this task''s own acceptance clause names ("Install and
+    test actual CNI/firewall/DNS/IPv6/metadata restrictions") and its own negative_acceptance
+    ("NetworkPolicy YAML on a nonenforcing cluster is not a pass") is
+    `tests/integration/test_ftf_0902_network_policy_enforcement.py`, run in CI''s dedicated
+    `network-policy-enforcement-integration` job. It stands up two real, disposable single-node `kind`
+    clusters in sequence -- `npt-baseline` (kind''s own default, non-enforcing `kindnet` CNI) and
+    `npt-enforcing` (kind with the default CNI disabled, Calico v3.28.2 installed instead; neither CNI is
+    one of the seven reused components and no architecture doc fixes one, so Calico is picked per
+    CLAUDE.md''s default-resolution rule as the most standard enforcing CNI for exactly this kind-based
+    pattern -- `docs/architecture/REFERENCE_REPOSITORIES.md`''s own Network Policy row already frames
+    "verify enforcement in the installed CNI; a YAML file alone is not proof" without naming one) -- and
+    applies the *identical* rendered manifest to both, proving by real TCP-probe exit code (never a
+    YAML/string assertion) that it is a no-op on the nonenforcing cluster (both an explicitly-allowed and
+    a deliberately-not-allowed internal destination succeed) and genuinely enforces on Calico (the
+    allowed destination stays reachable, the denied one is blocked). A third destination -- the real
+    AWS/GCP/Azure/DigitalOcean cloud-metadata address `169.254.169.254` -- is tested via a real
+    `hostNetwork` pod that binds that exact address on the node and serves real TCP connections, so
+    "blocked by policy" and "merely unreachable" are genuinely distinguishable; this sub-scenario is
+    asserted only when the baseline cluster first proves the fake listener genuinely reachable, and is
+    disclosed `BLOCKED_EXTERNAL` (never converted to a fabricated pass) if that setup itself does not
+    succeed. Real IPv6 pod-network enforcement is disclosed `BLOCKED_EXTERNAL` for this CI job
+    specifically -- kind''s default cluster networking is single-stack IPv4 (this interactive sandbox
+    independently confirmed it has no IPv6 stack at all, per `tests/tasks/test_ftf_h006.py`''s own
+    disclosure), and standing up a genuinely dual-stack kind cluster with verified IPv6 connectivity on a
+    GitHub Actions hosted runner is a materially larger, independently-flaky undertaking this task''s own
+    resource_gate does not require attempting when Release 1''s structural IPv6 guarantee (no code path
+    can ever render an IPv6-allowing egress rule at all) is already proven for real in the no-cluster unit
+    suite above. This CI job''s own real run result (pass/fail per job step, including the disclosed
+    BLOCKED_EXTERNAL sub-scenarios) is this task''s actual acceptance-clause evidence -- see the opening
+    PR''s own CI run for the exact result, not asserted here in advance of that run completing.
+
+
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide (300 source files, zero new errors);
+    `uv run mypy .` clean on every new/changed file (17 pre-existing, unrelated `alembic`-stub errors on
+    untouched files confirmed present identically on `origin/main` via `git stash`, not introduced by this
+    change). `python3 scripts/validate_spec.py --strict` clean. `python3 scripts/verify_task.py --task
+    FTF-0902 --stage task` reports `BLOCKED` (`FTF-0902 has no merged verification evidence yet`) -- exit
+    code 1, expected and disclosed: `spec/verification-map.json`''s own entry is added in a later
+    certifying commit once the implementation commit already exists in history, the same two-commit
+    pattern FTF-0402/FTF-04A26''s own entries already document; not treated as a blocking failure of this
+    submission. `product_truth_check.py --fail-on-unwired` unchanged `22/22` (blank `proving_symbol` --
+    no live dispatcher exists for a pure rendering/validation library, same disclosed precedent as
+    FTF-04A25/04A26). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` (whose own
+    `is_cloud_metadata_address` this task reuses) -- zero regressions.
+
+
+    Second, independent fault injection performed directly during this same shift''s own Verify step
+    (distinct from the one embedded in the test suite above): weakened the metadata-overlap check inside
+    `CidrEndpoint.__post_init__` (`if same_family_and_contained and is_cloud_metadata_address(probe):` ->
+    `if False and ...`) -- 3 genuine FAILs (the exact AWS/GCP/Azure, broad-link-local, and Alibaba
+    metadata-overlap cases), reverted byte-identical (md5sum `1eee70d5e58079e8e8f0ce2d8c7d50ca` confirmed
+    before and after), suite re-ran clean immediately after.
+
+
+    Root-cause correction (2026-10-01, this submission): the one remaining real CI failure on this
+    job (baseline cluster `{allowed: True, denied: False}` -- the non-enforcing contrast cluster not
+    actually enforcing nothing) was previously misdiagnosed across several shifts as a transient
+    ARP-resolution timing gap between two freshly created sibling pods, and a corresponding ARP-warm-up
+    fix was drafted (see this file''s own prior narrative and `docs/certifications/queue.md`). That
+    diagnosis was wrong: `kind` v0.24.0, which the job installed, ships `kindnet` with built-in
+    NetworkPolicy enforcement by default (release notes: "Out-of-the-box support for network policy via
+    sigs.k8s.io/kube-network-policies"), so `npt-baseline` was genuinely enforcing the policy, not
+    failing to let a late-arriving pod through -- deterministic across every retry (CI run `36801270474`,
+    job `110175923748`), which the ARP explanation could not actually account for (a transient condition
+    would not fail 3/3 retries identically every time). The drafted ARP-warm-up fix would not have
+    resolved this. Fix applied: `.github/workflows/ci.yml`''s `network-policy-enforcement-integration`
+    job now installs `kind` v0.23.0 (the last release whose `kindnet` does not enforce NetworkPolicy),
+    with a job comment explaining why the version is pinned; `probe_tcp`''s own docstring in
+    `tests/integration/test_ftf_0902_network_policy_enforcement.py` is corrected to no longer attribute
+    the baseline cluster''s deterministic `denied`-probe failure to the ARP-resolution timing condition
+    (that condition is real and still explains the originally-observed transient single-probe flakiness
+    the retry mechanism itself targets, but never explained the baseline''s 3/3-deterministic failure).
+    No change to `packages/security/network_policy_templates.py` -- the enforcing-cluster result
+    (`{allowed: True, denied: False, metadata: False}`, exactly as expected) already proves it correct;
+    this was a test-harness/CI-pin defect, not a production-code defect. Business-logic and contract
+    files (`network_policy_templates.py`, the two `contracts/09-*` files, `tests/tasks/test_ftf_0902.py`)
+    carried over byte-identical from the original submission (md5sum-confirmed) -- this shift''s own
+    diff is confined to the CI job definition and the one corrected docstring.
+
+
+    Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run
+    (including the `network-policy-enforcement-integration` job on its corrected `kind` pin) on the
+    opened PR before certification. The kind-pin fix is not itself claimed as a pass here -- only this
+    PR''s own real CI run on the pushed head is that evidence.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
   certification_state: NONE
   criticality: MUST

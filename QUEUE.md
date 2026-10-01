@@ -1,4 +1,26 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T08:48:00Z (scheduled relay shift, branch `claude/wizardly-fermat-c06dbx`) —
+  **FTF-0902 kind-pin fix (Active item 1), resubmitted via a new PR superseding #342.** `BLOCKER.md`
+  held no live entry (only the resolved 2026-10-01T01:14Z outage record). `CLAUDE.md.sha256`
+  matched. Picked Active item 1 (first-listed, concrete DoD, retry count reset by Control plane)
+  over item 3's eight-item RELAY-OWNED backlog, since it was listed first and is a single,
+  well-specified fix. Ported PR #342's full diff (byte-identical business logic/contract/unit-test
+  files, md5sum-confirmed) onto this branch rather than pushing to `claude/wizardly-fermat-gwocup`
+  directly — this session's own branch-push restriction only permits pushes to its own designated
+  branch. Applied the Control-plane-specified fix: `kind` pinned v0.24.0 → v0.23.0 in
+  `network-policy-enforcement-integration` (v0.24.0's `kindnet` enforces NetworkPolicy by default,
+  so the "non-enforcing baseline" cluster wasn't; previously misdiagnosed as ARP timing), plus the
+  corrected `probe_tcp` docstring. `docs/spec-matrix.yaml`'s FTF-0902 entry updated to
+  `PROVISIONAL`/`L1-PROVEN` with the root-cause correction recorded (it previously still read
+  `NONE` — PR #342 had never actually landed that part of its own claimed diff). Verified: 19/19
+  unit tests, `ruff`/`mypy` clean, `validate_spec.py --strict` clean (after `git fetch
+  --unshallow`), `product_truth_check.py --fail-on-unwired` unchanged `25/25`, `status.py`
+  unchanged `99/300` (Law 2), zero regressions on `test_ftf_0005.py`/`test_ftf_0402.py`/
+  `test_ftf_h006.py`, `ci.yml` parses clean at 42 jobs. Not self-certified (Law 4) — the kind-pin
+  fix is not claimed as a pass; only this PR's own real CI run is that evidence. PR #342 closed
+  (not merged) with a comment pointing to the new PR, same superseded-PR housekeeping pattern this
+  file's prior entries already used. Full record: `docs/certifications/queue.md`'s matching dated
+  entry. No open owner ask.
 Updated: 2026-10-01T07:30:00Z (Control plane, session `session_01QVznorVMjnmcttUhyDnoGR`,
   branch `claude/zealous-brown-verta8`): **independent L2 review of the 10-item PROVISIONAL
   backlog. 3 CERTIFIED, 7 NOT CERTIFIED, 1 DECERTIFIED.**
@@ -8135,6 +8157,16 @@ this same resolution (doc-only, redundant once this lands).
    kindnet's policy controller on the baseline cluster only. Record the method in the job log.
    Do NOT touch `packages/security/network_policy_templates.py`. The enforcing-cluster result
    already proves it.
+   **Status (2026-10-01T08:48Z, branch `claude/wizardly-fermat-c06dbx`): (a) and (b) done**,
+   delivered via a new PR superseding #342 rather than a push to #342's own branch (this
+   session's branch-push restriction permits pushes only to its own designated branch) — PR
+   #342 closed with a pointer comment, not merged, no content lost. (c) not yet observed: the
+   new PR's own real CI run on `network-policy-enforcement-integration` has not been checked by
+   this shift. Whoever next picks this up should check that PR's real CI result before treating
+   this item as resolved — if baseline reads `{allowed: True, denied: True}` and enforcing reads
+   `{allowed: True, denied: False, metadata: False}`, certify; if baseline still fails, this is a
+   new, different finding to root-cause (the fallback above, not a 4th retry of either prior
+   diagnosis).
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
@@ -8177,6 +8209,15 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-0902** ("Network-policy templates") — PROVISIONAL since the original PR #342
+(2026-09-27); this shift ported that PR's full, byte-identical diff plus the Control-plane-
+specified kind-pin fix onto a new PR (branch `claude/wizardly-fermat-c06dbx` → `main`) that
+supersedes #342 (closed, not merged, no content lost — see this file's own top dated log entry
+and "## Active" item 1's status note). `docs/spec-matrix.yaml` updated to `PROVISIONAL`/
+`L1-PROVEN` with the root-cause correction recorded. Awaiting this new PR's own real CI run on
+`network-policy-enforcement-integration` (not yet observed by this shift) before Control plane
+L2 review.
+
 **FTF-0500C** ("Database/API/trace source contract and fail-closed validation") — submitted
 PROVISIONAL this shift via **PR https://github.com/SJZLab/Sovra/pull/364** (branch
 `claude/wizardly-fermat-f9qdmb` → `main`, still open — merge-conflict-resolved onto current

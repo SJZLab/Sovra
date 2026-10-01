@@ -21140,3 +21140,46 @@ FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807 and FTF
 in `docs/spec-matrix.yaml` but were **returned to the relay NOT CERTIFIED**. Their merged code has not
 changed. Do not re-review them until a new relay fix PR for that ID is appended below this line.
 Re-reviewing unchanged code cannot change the verdict.
+
+## 2026-10-01 — FTF-0902 (PR #342 superseded by a new PR): kind-pin fix, resubmitted PROVISIONAL
+
+Relay-owned fix per this file's own "## Active" item 1 (Control plane, 2026-10-01): PR #342's one
+remaining real CI failure (`network-policy-enforcement-integration`, baseline cluster
+`{allowed: True, denied: False}`) was misdiagnosed across several prior shifts as transient
+ARP-resolution timing. It is not. `kind` v0.24.0, which the job installed, ships `kindnet` with
+built-in NetworkPolicy enforcement by default, so the "non-enforcing baseline" cluster was
+genuinely enforcing — deterministic across all 3 retries (CI run `36801270474`, job
+`110175923748`), which a transient-timing explanation could not account for.
+
+Fix: `.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job now installs `kind`
+v0.23.0 (the last release whose `kindnet` does not enforce NetworkPolicy), with a job comment
+recording why; `probe_tcp`'s docstring in
+`tests/integration/test_ftf_0902_network_policy_enforcement.py` is corrected to stop attributing
+the baseline cluster's deterministic failure to ARP timing (the ARP-timing condition is real and
+still explains the original single-probe transient flakiness the retry mechanism targets, but
+never explained a 3/3-deterministic failure). No change to
+`packages/security/network_policy_templates.py` or the contract files — byte-identical to PR
+#342's own submission (md5sum-confirmed before porting); the enforcing-cluster result
+(`{allowed: True, denied: False, metadata: False}`) already proved that module correct, so this
+was a CI-harness defect, not a production-code one.
+
+PR #342 itself is on branch `claude/wizardly-fermat-gwocup`, which this session's own operating
+instructions do not permit pushing to (branch-scoped push restriction). The fix is therefore
+delivered as a new PR from this session's own designated branch, carrying forward PR #342's full,
+unmodified diff plus this fix; PR #342 is being closed, not merged, with a comment pointing to the
+new PR — no content lost, same housekeeping pattern this file's own prior entries already used for
+superseded PRs.
+
+Verified before pushing: `tests/tasks/test_ftf_0902.py` (19/19, unchanged), `ruff check .`/`ruff
+format --check .` clean repo-wide, `mypy .` clean (358 source files), `validate_spec.py --strict`
+clean (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact —
+same one documented in FTF-0514's own entry above), `product_truth_check.py --fail-on-unwired`
+unchanged `25/25`, `scripts/status.py` unchanged `99/300` certified (Law 2 — a resubmission is not
+a certification). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — zero
+regressions. `ci.yml` parses clean, 42 distinct jobs, no duplicate keys.
+
+**Not self-certified (Law 4).** The kind-pin fix itself is not claimed as a pass here — only a
+real, fresh CI run on this PR's own pushed head (including
+`network-policy-enforcement-integration` actually reaching a green terminal state on the corrected
+baseline cluster) is that evidence. Awaiting independent Control-plane L2 review and that real CI
+run before certification. `docs/spec-matrix.yaml`'s FTF-0902 entry stays `PROVISIONAL`/`L1-PROVEN`.

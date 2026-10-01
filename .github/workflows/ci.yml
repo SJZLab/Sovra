@@ -2083,3 +2083,61 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real EvaluationSuite evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0601_evaluation_suite.py
+
+  network-policy-enforcement-integration:
+    # FTF-0902: real kind+Calico NetworkPolicy enforcement + negative-
+    # acceptance evidence (Section 11-12/65.4/77.5) --
+    # tests/integration/test_ftf_0902_network_policy_enforcement.py. Runs
+    # on GitHub Actions' hosted runner because it has real container-
+    # registry/package-mirror egress (kind node image, Calico manifest/
+    # images) and a real Docker daemon this repo's interactive dev sandbox
+    # does not have (same disclosed FTF-0004-precedent gap every other
+    # Docker-dependent integration job in this file already carries).
+    #
+    # Stands up two real, disposable single-node kind clusters in
+    # sequence -- npt-baseline (kind's own default, non-enforcing kindnet
+    # CNI) and npt-enforcing (kind with the default CNI disabled, Calico
+    # v3.28.2 installed instead) -- applies the identical rendered
+    # packages.security.network_policy_templates manifest to both, and
+    # proves by real TCP probe exit code (never a YAML/string assertion)
+    # that the same policy is a no-op on the nonenforcing cluster (this
+    # task's own negative_acceptance: "NetworkPolicy YAML on a
+    # nonenforcing cluster is not a pass") and genuinely blocks/allows
+    # real traffic on the enforcing one. See that script's own module
+    # docstring for the disclosed, non-fabricated scope narrowing on the
+    # cloud-metadata and IPv6 sub-scenarios.
+    #
+    # kind pinned to v0.23.0, not the newer v0.24.0: v0.24.0's bundled
+    # kindnet ships built-in NetworkPolicy enforcement (release notes:
+    # "Out-of-the-box support for network policy via
+    # sigs.k8s.io/kube-network-policies"), so the "non-enforcing baseline"
+    # cluster this job needs for contrast was not actually non-enforcing
+    # under v0.24.0 -- it deterministically produced
+    # allowed=True/denied=False on the baseline cluster (CI run
+    # 36801270474, job 110175923748), which is enforcement, not the
+    # no-op this job's own negative_acceptance clause requires as a
+    # contrast case. v0.23.0 is the last kind release whose kindnet does
+    # not enforce NetworkPolicy. This was previously misdiagnosed as an
+    # ARP warm-up timing defect; it is not -- see this task's
+    # docs/spec-matrix.yaml notes and docs/certifications/queue.md entry
+    # for the corrected root cause.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Install kind
+        run: |
+          curl -Lo /tmp/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          sudo install -o root -g root -m 0755 /tmp/kind /usr/local/bin/kind
+          kind version
+      - name: Install kubectl
+        run: |
+          curl -Lo /tmp/kubectl https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl
+          sudo install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+          kubectl version --client
+      - name: Prove real kind+Calico NetworkPolicy enforcement + the negative-acceptance contrast
+        run: uv run python3 tests/integration/test_ftf_0902_network_policy_enforcement.py

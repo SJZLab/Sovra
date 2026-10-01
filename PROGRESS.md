@@ -25834,3 +25834,98 @@ queue.md` unchanged (no new submission). STEP 4 stop condition (a): 0 in-flight 
 submissions from this shift's own work; the same 10/300 PROVISIONAL items await Control-plane
 L2 certification and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" reads "None currently"; `BLOCKER.md` confirmed to have no live entry).
+
+## 2026-10-01T08:48:00Z — Scheduled relay shift — FTF-0902 kind-pin fix, resubmitted via new PR superseding #342
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly — no mismatch. `BLOCKER.md` read
+in full: no live entry, only the resolved 2026-10-01T01:14Z runner-provisioning-outage record kept
+for history. Designated branch `claude/wizardly-fermat-c06dbx` found at the same commit as
+`origin/main` (`142efb6`, PR #400's merge) — no prior unmerged work of its own existed on this
+branch to lose. STEP 0.2: no `cognee-cli` binary on this sandbox — text-search fallback declared,
+same as every prior shift.
+
+STEP 1: `QUEUE.md`/`docs/certifications/queue.md` read in full (both exceed the direct-read size
+limit; read via `tail`/`grep`+`offset` instead). A Control-plane commit (`3e57190`, 07:22Z, after
+the immediately-prior 06:52Z relay shift's own narrative) corrected a standing misunderstanding:
+earlier relay shifts had been skipping 8 PROVISIONAL items as "Control plane's to certify" when
+Control plane had actually returned them NOT CERTIFIED and explicitly marked them RELAY-OWNED
+work. `scripts/status.py` read `99/300` certified, `24` product-true — the 2026-10-01 L2 review
+(3 certified, 7 returned NOT CERTIFIED, 1 decertified) had already landed.
+
+Picked **Active item 1 (FTF-0902, PR #342: kind-pin fix)** over item 3's eight-item RELAY-OWNED
+backlog: it is listed first, has a single, fully-specified DoD from Control plane (exact version
+pin, exact docstring correction, exact expected CI result), and its own STEP 4(c) retry count was
+explicitly reset to zero by Control plane as a new route (not a 4th retry of the old ARP-warm-up
+diagnosis).
+
+STEP 2 (PEV):
+**P:** Read PR #342 in full (`pull_request_read`, body + 9 comments) — the real history: three
+genuine code fixes already landed (chmod/sudo install fix, Service-ClusterIP→pod-IP fix, a bounded
+retry for transient ARP flakiness), then a real repo-wide CI-provisioning outage (now resolved),
+then the Control-plane 2026-10-01 root-cause correction (kind v0.24.0's kindnet enforces
+NetworkPolicy by default, so `npt-baseline` was never actually non-enforcing — deterministic across
+all 3 retries, which the ARP-timing theory could never have explained). PR #342's head (`c544940`)
+was 35+ commits stale against current `main` and on branch `claude/wizardly-fermat-gwocup`, which
+this session's own operating instructions do not permit pushing to (branch-scoped push
+restriction: develop only on the designated branch, never push to a different branch without
+explicit permission). Decided to port the PR's full diff onto this session's own branch and open a
+new PR superseding #342, closing #342 with a pointer comment — the same no-content-lost
+housekeeping pattern this repo's own prior shifts already used for stale/superseded PRs (e.g. the
+2026-10-01T02:53:25Z shift's #395/#392/#389 closures).
+
+**E:** `git merge origin/claude/wizardly-fermat-gwocup` produced one real conflict, confined to
+`ci.yml`'s job-list insertion point (two unrelated jobs — FTF-0306's and FTF-0902's — inserted at
+the same point by independent branches); aborted the naive merge once inspection showed the
+auto-merge had actually interleaved two different jobs' `steps:` blocks (not a trivial union), and
+instead appended the clean `network-policy-enforcement-integration` job block (extracted directly
+from the gwocup branch's own `ci.yml`) to the end of the jobs mapping, applying the Control-plane
+fix in the same edit: `kind` download URL `v0.24.0` → `v0.23.0`, plus a new job-comment paragraph
+recording why. Checked out the other 5 implementation/contract/test files from the gwocup branch
+directly (none touched by `main` since, zero conflict). Corrected the `probe_tcp` docstring in
+`tests/integration/test_ftf_0902_network_policy_enforcement.py` per the DoD's part (b): it
+previously attributed the baseline cluster's deterministic 3/3 `denied`-probe failure to the same
+transient ARP-resolution condition that justifies the retry mechanism generally — that condition is
+real (and still explains genuine single-attempt flakiness), but could never explain a failure
+identical on every retry; added a correction paragraph naming the real cause and pointing at the
+CI-job comment. Confirmed via `git diff --stat` against the gwocup branch that the business-logic
+module (`network_policy_templates.py`), both contract files, and the unit-test suite
+(`test_ftf_0902.py`) carried over byte-identical (zero diff) — this shift's own change is confined
+to `ci.yml` and the one corrected docstring, exactly matching the DoD's "Do NOT touch
+`packages/security/network_policy_templates.py`" instruction.
+
+`docs/spec-matrix.yaml`'s FTF-0902 entry was still `certification_state: NONE`/
+`implementation_state: ABSENT` — PR #342's own body claimed a `PROVISIONAL`/`L1-PROVEN` submission,
+but that part of its diff had never actually been part of any merge (the PR itself was never
+merged). Spliced in the full entry from the gwocup branch's own `docs/spec-matrix.yaml` (validated
+as parseable YAML before and after), with an appended root-cause-correction paragraph; deliberately
+did not claim the fix is CI-green (Law 1/17) — the notes text explicitly states "only this PR's own
+real CI run ... is that evidence."
+
+**V:** `tests/tasks/test_ftf_0902.py` — 19/19 passed, unchanged. `uv run ruff check .`/`ruff format
+--check .` — clean, 358 files. `uv run mypy .` — clean, 358 source files (one unrelated
+untyped-function note on `test_ftf_h034.py`, pre-existing). `scripts/validate_spec.py --strict` —
+initially reported 31 stale-commit defects, traced to this sandbox's own pre-existing shallow-clone
+artifact (same class as FTF-0514's own prior disclosure); `git fetch --unshallow` resolved it —
+clean after. `scripts/product_truth_check.py --fail-on-unwired` — unchanged `25/25`.
+`scripts/status.py` — unchanged `99/300` certified / `24` product-true (Law 2 — a resubmission is
+not a certification). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` —
+zero regressions. `.github/workflows/ci.yml` parses clean via direct `yaml.safe_load`: 42 distinct
+jobs (up from 41), `network-policy-enforcement-integration` present with the corrected `kind`
+version and the expected 6 steps.
+
+Not self-certified (Law 4) — this shift's own local verification proves the fix is sound enough to
+submit, not that CI is green; that is this PR's own real run, to be checked by whoever picks this
+up next (relay or Control plane).
+
+Committed and pushed to `claude/wizardly-fermat-c06dbx`; opened a new PR superseding #342 (see this
+shift's own `QUEUE.md`/`docs/certifications/queue.md` entries for the PR link once created) and
+closed #342 with a comment pointing to it, per CLAUDE.md's "merge = PROVISIONAL only" / Law 4 —
+this submission is PROVISIONAL, not self-certified.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before any
+compaction. STEP 4 stop condition (a): this shift's own in-flight work (FTF-0902's kind-pin fix) is
+now pushed and PROVISIONAL, awaiting its own real CI run and independent Control-plane L2
+certification — not yet L1-PROVEN-and-merged-pending-cert in the usual sense since PR #342 itself
+was never merged (only submitted). Stopping here for this item. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged, still reads only the low-urgency branch-protection ask and
+resolved history).
