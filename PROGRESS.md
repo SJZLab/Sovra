@@ -25941,3 +25941,103 @@ since STEP 4(c)'s stop applies to the specific stuck item, not to other genuinel
 unblocked RELAY-OWNED work already named in `QUEUE.md`'s own "## Active" item 3. Stopping here —
 not picking a new task this shift. No open owner ask (`QUEUE.md` "Owner actions — current"
 unchanged: only the pre-existing, low-urgency branch-protection ask).
+
+## 2026-10-01T12:58:15Z — Scheduled relay shift — FTF-0500C fix-and-resubmit (PR #404)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch `claude/wizardly-fermat-ou2dz0` started at the same commit as `origin/main`
+(`d8e5c9e`, the merge of PR #403) — confirmed via `git rev-list --left-right --count
+HEAD...origin/main` (0/0) before relying on it. `BLOCKER.md` read in full at shift start: one
+live entry (FTF-0902, formalized by the immediately-prior shift, a Control-plane design question,
+not an owner ask or a full-shift stop). STEP 0.2: no `cognee-cli` binary on this sandbox — text-
+search fallback declared, same as every prior shift.
+
+STEP 1: `scripts/status.py` read `99/300` certified, unchanged from the immediately-prior shift's
+own closing figure — confirmed independently via a fresh `list_pull_requests` (only 3 open PRs:
+#401 a governance PR explicitly marked "Owner review and merge required, Control plane does not
+merge it" — not relay's to act on, left untouched; #402, the still-open FTF-0902 investigation
+branch; #295, FTF-0214's own declared-blocked submission) and a fresh `git fetch origin main`
+(0/0 ahead/behind the designated branch — PR #403 already merged, confirmed via `pull_request_
+read`, `merged: true`, merged by the owner). `QUEUE.md`'s "## Active" section (its own "RELAY-
+OWNED" item 3) named the next unclaimed fix-and-resubmit target in priority order after FTF-H007/
+FTF-04A06/FTF-0601 (done, PR #403): **FTF-0500C**. Pulled its real DoD fresh from `docs/
+certifications/queue.md`'s 2026-10-01 L2 review entry rather than trusted from `QUEUE.md`'s own
+summary of it (Law 1/2/5).
+
+STEP 2 (PEV): **P** — read `apps/api/app/datasets/database_api_trace_source_contract_and_fail_
+closed_validation.py` in full alongside both test files. Confirmed both review findings by
+inspection before writing any fix: (a) `test_real_read_only_transaction_mode_independently_
+blocks_a_write` re-types the module's own `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ
+ONLY` on a raw connection instead of calling the module — a changed module SQL would leave it
+green; (b) the REST connector's snapshot-version guard (`if observed is not None:`) never compares
+a later page whose header is absent against an earlier page's captured value, silently accepting a
+source that stops sending the header mid-listing.
+
+**E** — started a local PostgreSQL 16 cluster (`pg_ctlcluster 16 main start`, none running at
+shift start) and `uv sync --all-packages` (psycopg/fastapi/sqlalchemy/alembic/etc. not installed
+by a bare `uv sync`, same precedent every prior Postgres-backed task already documented). Fixed
+(b) first: added a `snapshot_version_seen` flag tracked separately from the captured value, so a
+later page whose observed header is `None` after one was already seen now raises `SourceChanged
+DuringListingError` identically to a changed value. Added fixture endpoint `/snapshot-then-missing`
+(ETag on page one, no ETag at all on page two) and a new proving test. Fixed (a): added
+`test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql` to the integration suite — a
+`_SessionSettingsSpyConnection` wraps the real psycopg connection the module itself opens (passed
+as the module's own `connect` parameter, never a parallel connection), observes the module's own
+`SHOW statement_timeout` probe, and reads back `SHOW transaction_read_only`/`SHOW transaction_
+isolation` on that same real session.
+
+**Real fault injection (Law 1), performed directly by this session, not trusted from either fix's
+own claim:** (a) reverted the module's own transaction-mode SQL to `READ COMMITTED, READ WRITE` —
+confirmed the new test genuinely fails both assertions, reproducing for real exactly the
+undetected-defect scenario the review described — then reverted byte-identical (md5sum
+`03526950e8625df4f197fec8580a44cf` before/after) and re-ran clean. (b) extended the existing
+snapshot-version fault-injection test (same single disable line covers both the changed-value and
+the missing-header-after-seen case, since both now go through the same `elif` branch) — confirmed
+the new assertion genuinely fails without the fix, reverted byte-identical, re-ran clean.
+
+`ruff check .` found one real `UP037` (quoted type annotation no longer needed) in the new
+integration-test code; `--fix` plus `ruff format .` (one file reformatted) cleaned it, re-ran both
+suites clean after. `mypy .` found 8 real errors in the new `_SessionSettingsSpyConnection` class
+(a mismatched `__exit__` signature, two unused `type: ignore` comments, two `tuple | None` not-
+indexable errors from unchecked `fetchone()`) — fixed by typing `__exit__` to the real
+`psycopg.Connection.__exit__` signature and guarding both `fetchone()` results before indexing;
+`mypy .` clean after, 356 files, zero remaining errors. `validate_spec.py --strict` clean (`git
+fetch --unshallow` first — this sandbox clones shallow by default, same disclosed precedent prior
+shifts used). `product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `status.py`: unchanged
+`99/300` (Law 2 — a submission, not a certification). Regression swept `test_ftf_0500.py`/
+`test_ftf_0500b.py`/`test_ftf_0303.py`/`test_ftf_h006.py` — zero interference (the `TenantContext
+Error` traceback printed inside `test_ftf_0500.py`'s own stdout is that suite's own disclosed
+negative-test case; confirmed exit 0, "all checks passed", not a regression).
+
+Caught and fixed a real self-inflicted YAML bug before it reached CI: the first `docs/spec-
+matrix.yaml` edit dropped the closing `'` that terminates FTF-0500C's single-quoted `notes` scalar,
+silently absorbing the next several hundred lines (including FTF-0500D's own entry) into one
+unterminated string. `python3 -c "import yaml; yaml.safe_load(...)"` and `validate_spec.py
+--strict` both caught it immediately (`ParserError` at FTF-0500D's own content, not at the actual
+injection site) — fixed by re-adding the closing quote at the true end of the new text, re-
+verified both the YAML parses and `validate_spec.py --strict` passes clean.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500C entry with an L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md`, the trigger the 2026-10-01 review itself
+named for re-review eligibility on this ID. Updated `QUEUE.md`'s own "## Active" item 3 (both
+copies — the file carries two numbered "3." entries from an earlier edit, left as found rather
+than renumbered outside this shift's own scope) marking FTF-0500C done; FTF-0500B/FTF-0500D/
+FTF-1807/FTF-1206 remain the untouched remainder. Opened **PR #404** (`[relay] FTF-0500C: fix L2
+findings (read-only transaction evidence + missing-snapshot-header check)`, branch `claude/
+wizardly-fermat-ou2dz0` → `main`). CI triggered (run `36865350056`, 41 jobs) — left running, not
+waited on inside this shift, same precedent the immediately-prior shift's own PR #403 set (merged
+later, by the owner, once green).
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all
+updated this shift, before compaction. STEP 4 stop condition (a): 0 in-flight L1-PROVEN
+submissions awaiting *this* shift's own further action; FTF-0500C now joins the same 10 PROVISIONAL
+items awaiting Control-plane L2 certification and the L4 gate (99/300 certified, unchanged —
+PR #404 not yet reviewed). Stopping here — not picking a second task this shift. No open owner ask
+(`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-
+protection ask). `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-
+plane design question, not a further guess).
