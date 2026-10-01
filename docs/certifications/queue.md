@@ -20098,6 +20098,116 @@ opened PR are required before certification.
 - **PR:** https://github.com/SJZLab/Sovra/pull/361 (branch `claude/wizardly-fermat-q43eub` →
   `main`, open).
 
+## 2026-09-28 — FTF-0500C — Database/API/trace source contract and fail-closed validation
+
+Scheduled autonomous relay shift. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+queue.md` fresh. `CLAUDE.md.sha256` self-check matched `sha256sum CLAUDE.md` directly. Checked
+GitHub directly: FTF-04A05 (PR #360) and FTF-H005 (PR #363) are both under active Control-plane
+review -- no relay action left there. Recomputed the dependency-ready frontier fresh from
+`docs/spec-matrix.yaml`'s real `certification_state` (93/300 CERTIFIED) joined against
+`docs/TASK_INDEX.md`'s own `Dependencies` column: FTF-0500C's own dependencies (FTF-0500,
+FTF-0500A, FTF-H006) are all genuinely CERTIFIED, and -- unlike every other item on the current
+11-item frontier -- no open PR claims it and it is not disclosed-blocked by a genuine sandbox
+limit (FTF-1201/FTF-1703 remain the only two that are).
+
+Task contract pulled via `python3 tools/r1_handoff.py packet FTF-0500C --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`). Task contract's own exact acceptance clause: "Implement real
+bounded PostgreSQL and paginated REST/trace connectors with snapshot/cursor guarantees."
+negative_acceptance: "Unknown database/API contract is unavailable, not a placeholder; lost
+watermark/snapshot blocks consistent import." `database_changes`: "No independent schema change.
+Consume frozen contract."
+
+Inspected the real dependency chain directly before writing any code: FTF-0500's own
+`dataset_source_connection_schema.py`/`_crud.py` (CERTIFIED, "caller resolves the secret, this
+module only ever sees an already-resolved connection" boundary), FTF-H006's own
+`outbound_guard.py`/`url_policy.py` (CERTIFIED; `url_policy.py`'s own module docstring already
+names `FTF-0500C` as an intended future caller of `guarded_fetch`), and FTF-0500B's own real
+`s3_minio_source_validation_metadata_preview.py` (fetched directly from its own not-yet-merged
+open branch, PR #359, since it establishes the sibling-source-type connector shape this task's
+own two remaining source types should match: bounded preview, immutable `manifest_hash`, "pure
+connector, no route, no `DatasetSourceConnection` read/write" scope). Confirmed via
+`pull_request_read(get_files)` that PR #359 touches no file this task's own write set overlaps --
+no merge-conflict risk.
+
+**Implementation** (new file, `apps/api/app/datasets/database_api_trace_source_contract_and_
+fail_closed_validation.py`): `validate_and_preview_postgres_source` is a real bounded PostgreSQL
+connector -- every identifier (`schema`/`table`/columns/`stable_key_column`) is validated against
+a real Postgres identifier grammar *before* any connection attempt (`PostgresIdentifierError`,
+proven with a fake `connect` that raises `AssertionError` if ever invoked for a rejected input)
+and embedded via `psycopg.sql.Identifier`, never string interpolation -- the actual mechanism
+behind "no user SQL." The session is placed into `REPEATABLE READ, READ ONLY` (one real
+transaction-mode setting satisfying both "no writes" and "repeatable snapshot") and
+`statement_timeout` is set and independently read back before any row is fetched. Resuming via
+`resume_after_key` re-verifies, inside the *same* `REPEATABLE READ` transaction as the subsequent
+`SELECT`, that the watermark row still exists -- `LostWatermarkError` otherwise, proven against a
+real concurrent delete from a second, independent real connection, not merely asserted. A genuine
+`UndefinedTable`/`UndefinedColumn` raises `UnknownSourceContractError`, never a fabricated empty
+result. `validate_and_preview_rest_trace_source` is a real bounded, cursor-paginated REST/
+agent-trace connector via `guarded_fetch` (FTF-H006): bounded by both `max_preview_records` and
+`max_page_fetches` (the latter proven against a real endpoint that returns a valid next-cursor
+forever); a real HTTP 429 is retried a bounded number of times honoring `Retry-After` before
+`RateLimitRetriesExhaustedError`; a declared snapshot-version header (`ETag` by default) is
+tracked across pages and a mid-listing change raises `SourceChangedDuringListingError`; a response
+missing the declared `records_field` raises `UnknownSourceContractError`; a cooperative
+`cancellation_check` is checked between real page fetches. "No arbitrary scripting" is structural
+-- every request is built from typed config fields, never an evaluated expression.
+
+**Real fault injection (Law 1), disclosed, twice:** (1) `tests/tasks/test_ftf_0500c.py` disabled
+the real snapshot-version comparison (`elif observed != snapshot_version:` -> `elif False:`)
+directly in the module under test, against the real local HTTPS fixture's own mid-listing
+snapshot-version change, confirmed the assertion genuinely fails without the real check, reverted
+byte-identical (md5sum confirmed matching before/after). (2)
+`tests/integration/test_ftf_0500c_database_api_trace_source.py` disabled the real
+watermark-presence guard call directly in the module under test, against a real concurrent delete
+of the actual watermark row from a second real Postgres connection, confirmed the resume call
+genuinely succeeds instead of raising without the real check, reverted byte-identical (md5sum
+confirmed matching before/after).
+
+**Test evidence:** `tests/tasks/test_ftf_0500c.py` (no live Postgres required -- identifier/
+config validation with a fake `connect`; the REST/trace connector fully exercised against a real
+local HTTPS server with a self-signed CA installed into this sandbox's own trust store, same
+convention `test_ftf_04a05.py`/`test_ftf_0500b.py` already established, through the real
+unmodified `outbound_guard.py` TLS path -- 17 checks incl. the fault injection above, all clean).
+`tests/integration/test_ftf_0500c_database_api_trace_source.py` (real, freshly-provisioned local
+PostgreSQL 16 -- real bounded cursor pagination covering a real 30-row table exactly once, a real
+non-default `statement_timeout` genuinely accepted, a real unknown-table negative case, a real
+least-privileged role's write denied by the database's own grants
+[`psycopg.errors.InsufficientPrivilege`], this module's own `READ ONLY` transaction mode
+independently blocking a write from a role that otherwise has write privilege
+[`psycopg.errors.ReadOnlySqlTransaction`], and the real lost-watermark case plus its own fault
+injection above -- 6 checks, all clean, database/roles dropped in a `finally` block).
+
+`uv sync --all-packages` (installed the already-pinned `psycopg`/`psycopg-binary`, no new
+dependency); `uv run ruff check .`/`ruff format --check .` clean repo-wide (326 source files, up
+from 323); `uv run mypy .` clean repo-wide (326 files, zero new errors). `pnpm lint`/`typecheck`/
+`format:check`/`vitest` unaffected (no frontend file touched -- backend-only task). `python3
+scripts/validate_spec.py --strict` clean (required `git fetch --unshallow` first -- this sandbox
+checkout started shallow, same precedent FTF-04A04/FTF-H005 already disclosed).
+`product_truth_check.py --fail-on-unwired`: unchanged `23/23` -- disclosed, not hidden (same
+precedent FTF-0500B's own module already established for a pure connector with no live caller
+yet): no dataset-import composition task calls either connector yet; `proving_symbol` left blank.
+`scripts/status.py`: unchanged `93/300` certified (Law 2 -- this is a submission, not a
+certification). Regression swept `test_ftf_0303.py`/`test_ftf_04a05.py` (no-DB) -- zero
+regressions; PR #359's own `test_ftf_0500b.py` is not present on this branch (that PR is not yet
+merged), so it was outside this shift's own regression sweep.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately
+after FTF-H005's own two steps, plus a new dedicated `database-api-trace-source-integration` job
+using the same real `services: postgres` container pattern as `manifest-evidence-integration` --
+verified the exact shape (an official-postgres-image `POSTGRES_USER` is a real superuser able to
+`CREATE ROLE`/`CREATE DATABASE`) works end-to-end locally before wiring the CI job.
+
+`docs/spec-matrix.yaml` FTF-0500C set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0500c.py,
+tests/integration/test_ftf_0500c_database_api_trace_source.py`; `evidence_hash`/`proving_symbol`
+left blank. **Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI
+run on the opened PR are required before certification.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
+- **PR:** https://github.com/SJZLab/Sovra/pull/364 (branch `claude/wizardly-fermat-f9qdmb` →
+  `main`, open).
+
 ## 2026-09-28 — FTF-1201 — LiteLLM registration capability detection
 
 Detects whether a LiteLLM connection's stored credential genuinely holds gateway
@@ -20269,6 +20379,95 @@ run on the opened PR are required before certification.
 
 ## 2026-09-28 — Certifier shift (session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3, webhook PR #369)
 FTF-04A05 (PR #358), FTF-H005 (PR #361), FTF-1201 (PR #366): all three independently reviewed and **CERTIFIED** (L2). Evidence in `ledger.md`. No pending PROVISIONAL items remain. Certified 93 -> 96.
+
+## 2026-09-29 — Relay shift (session https://claude.ai/code/session_01QModAYMWatn12S6SwAx5f5)
+**FTF-0306 — Base model revision/digest resolver — submitted PROVISIONAL.**
+
+Picked from the dependency-ready frontier's own previously-disclosed "four newly-unblocked items
+with no open PR" (FTF-0306, FTF-1206, FTF-1807, FTF-H007 — see this same file's prior entries and
+`QUEUE.md`'s 2026-09-29T19:22:00Z entry). Dependencies FTF-0301/0302/0303/0304/0305 independently
+reconfirmed `certification_state: CERTIFIED` in `docs/spec-matrix.yaml` before claiming this task.
+Task contract pulled via `tools/r1_handoff.py packet FTF-0306`.
+
+`apps/api/app/artifacts/base_model_revision_digest_resolver.py` — a dispatcher/composer over the
+three already-CERTIFIED sibling resolvers (FTF-0302 huggingface, FTF-0303 private_s3, FTF-0304
+local_filesystem — each imported and reused unmodified, never a fourth independent resolution
+implementation), matching the composition role each of their own module docstrings already named
+this task for. `compute_candidate_weights_digest` dispatches by `artifact.source_type` and
+canonically formats each resolver's own real digest as Section 6.7's own `sha256:<64 hex>` shape.
+`verify_or_compute_weights_digest` is the pure, DB-free acceptance core — always recomputes a
+fresh candidate from real resolved bytes and, if the artifact already carries a resolved
+`weights_digest`, requires it to still match, raising `DigestMismatchError` rather than silently
+accepting drift (acceptance clause 1's "compare hashes on every load/resume" made executable, not
+only checked once). `resolve_base_model_digest` is the real DB-touching composition: fetches via
+`artifact_crud.get_artifact`, runs the pure core, and — only the first time, while the row is
+still `registered` — persists through `artifact_crud.update_artifact`/`apply_edits` (already-
+certified write path; no independent schema change, matching this task's own `database_changes`
+contract). A later re-verification of an already-`ready` artifact never calls `update_artifact`
+again (`apply_edits` already refuses a non-`registered` row by design); it records a real
+`trainable_artifact.weights_digest_reverified` audit event instead.
+
+`negative_acceptance` ("Alias/display-name equality or missing files cannot substitute for exact
+revision/digest") enforced by construction — no `display_name`/alias field anywhere in the digest
+computation (proven both directions: identical bytes + different `display_name` → identical
+digest; identical `display_name` + different bytes → different digests) — plus real propagation
+of each sibling resolver's own "no files" error rather than a substituted placeholder digest.
+`private_registry` is a real Section 6.7 `source_type` with no resolver task anywhere in this
+repository's full 300-task index — `UnsupportedSourceTypeError` raised rather than fabricating a
+digest, disclosed in the module's own docstring. No live HTTP route calls this module (same
+disclosed "no live caller yet" precedent already accepted for FTF-0302/0303/0304 themselves — a
+real training/resume worker is this module's own eventual real caller, a later separately
+dependency-gated task).
+
+**Test evidence:** `tests/tasks/test_ftf_0306.py` (no-DB — a real local plain-HTTP path-style S3
+fixture reusing FTF-0303's own real-signature-verification technique, a real local HTTPS
+Hugging-Face-Hub-shaped fixture reusing FTF-0302's own real-CA-trust technique, and a real
+temporary directory for `local_filesystem` — 9 test functions, all clean) plus
+`tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py` (real, freshly-
+provisioned local PostgreSQL 16 — register → accept-license → first-resolve persists for real
+(visible from a brand-new session/transaction) → mark-ready succeeds → a real load/resume
+re-verification against the now-ready row succeeds without touching `apply_edits` → real drifted
+bytes on disk raise `DigestMismatchError`, confirmed never persisted from a fresh
+session/transaction → cross-organization IDOR denied identically to missing — all clean).
+
+**Real fault injection (Law 1), disclosed:** attempted to disable the
+`verify_or_compute_weights_digest` mismatch comparison directly to prove the drift-detection check
+is load-bearing; refused by this sandbox's own Claude Code auto-mode classifier ("Security Test
+Removal") before any test ran. Reverted immediately (confirmed byte-identical via `md5sum` before
+and after); not routed around — the identical sandbox limitation already recorded for FTF-0304's
+own PR #195 fault-injection attempt. Relied instead on this task's own real, independently-
+verified negative case: real bytes on disk actually changing after resolution genuinely raises
+`DigestMismatchError` in both the no-DB and live-Postgres suites (not a hand-constructed
+assertion), and the live-Postgres suite additionally confirms the rejected mismatch never reaches
+the database.
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (331
+source files, up from 329). `uv run mypy .` clean repo-wide (331 files, zero new errors). `python3
+scripts/validate_spec.py --strict` clean (required `git fetch --unshallow` first — this session's
+own checkout started shallow, same precedent every prior shift already disclosed).
+`product_truth_check.py --fail-on-unwired`: unchanged `24/24` (no live route caller, disclosed
+above; `proving_symbol` left blank, matching FTF-0302/0303/0304's own precedent). `scripts/
+status.py`: unchanged `97/300` certified (Law 2 — this is a submission, not a certification).
+Regression swept `test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_0303.py`/`test_ftf_0304.py`/
+`test_ftf_0305.py` (no-DB, all clean) and this task's own new integration suite (real Postgres,
+exercising the full migration chain through FTF-0305's own tables — clean, zero regressions). No
+frontend file touched this shift.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately after
+FTF-0304's own step, plus a new dedicated `base-model-revision-digest-resolver-integration` job
+mirroring `trainable-artifact-schema-api-integration`'s own real `services: postgres` container
+pattern.
+
+`docs/spec-matrix.yaml` FTF-0306 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0306.py,
+tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py`; `evidence_hash` left
+blank pending the real merge commit; `proving_symbol` deliberately left blank (see above). **Not
+self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the opened PR
+are required before certification.
+
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL.
+- **PR:** https://github.com/SJZLab/Sovra/pull/380 (branch `claude/wizardly-fermat-9e7wln` →
+  `main`, open).
 
 ## 2026-09-29T21:30:00Z — FTF-1206 — Organization policy control
 - **PR:** https://github.com/SJZLab/Sovra/pull/381 (branch `claude/wizardly-fermat-6px1ao` →
