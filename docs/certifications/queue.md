@@ -21291,3 +21291,70 @@ opened PR are required before certification. This entry is the trigger the 2026-
 named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
 for FTF-0500C specifically — not for FTF-0500B/FTF-0500D/FTF-1807/FTF-1206, which remain exactly as
 that review left them, unchanged, no new relay PR yet.
+
+## 2026-10-01 — FTF-0500B — fix-and-resubmit for the 2026-10-01 L2 findings
+
+Fixes both real gaps the 2026-10-01 Control-plane L2 review found in
+`apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` (submitted PR #359, still
+PROVISIONAL, code unchanged by that review).
+
+**(a) "Dropping `version_id` from the `manifest_hash` input leaves the suite green, so the 'exact
+version manifest' is unpinned."** Read the shipped module first (Law 1 — inspect before changing):
+`manifest_source` already included `version_id` in the tuple hashed into `manifest_hash`, so the
+real defect was in test coverage, not the module — no test asserted that a listing differing only
+by `VersionId` (same key, size, ETag) produces a different `manifest_hash`, so a regression that
+dropped `version_id` from that tuple would have gone undetected. Fixed by adding
+`test_manifest_hash_changes_when_only_the_version_id_differs` to `tests/tasks/test_ftf_0500b.py`
+(two real listings, identical key/size/ETag, only `VersionId` differs — `v1` vs `v2` — asserts the
+resulting `manifest_hash` values differ). **Real fault injection (Law 1), performed directly by
+this session against the on-disk module:** removed the `"version_id": entry.version_id,` line from
+`manifest_source` and confirmed the new test genuinely fails (the version-differing listings now
+produce an identical, unpinned `manifest_hash`) — reproducing, for real, exactly the
+undetected-defect scenario the review described — then reverted the module file byte-identical and
+re-ran clean (`test_fault_injection_manifest_hash_is_load_bearing_on_version_id`).
+
+**(b) "Unversioned buckets (`VersionId: null`) are accepted without a flag."** A real S3/MinIO
+`ListObjectVersions` response reports the literal string `"null"` as `VersionId` for every entry of
+a bucket that never had object versioning enabled (and for entries created while versioning was
+suspended) — the module had no check for this, so such a source was previewed and hashed as if its
+`VersionId` genuinely pinned a version. Fixed: added `VersioningDisabledError` and a check, applied
+to every real entry in the listing before it is added to the preview or the manifest, that raises
+the instant a real entry's `version_id` equals the literal sentinel `"null"` — refused outright
+(consistent with this module's existing per-violation-raises shape for every other
+negative_acceptance check), not merely flagged in the result. New
+`test_versioning_disabled_source_is_refused` (a real entry with `VersionId` literal `"null"` raises
+`VersioningDisabledError`) plus a disclosed fault injection
+(`test_fault_injection_versioning_disabled_check_is_load_bearing`) confirming the check is
+load-bearing (disabling it lets the unversioned entry through as a fabricated success), reverted
+byte-identical.
+
+`tests/tasks/test_ftf_0500b.py`: 19 test functions (was 15), all pass —
+`python3 tests/tasks/test_ftf_0500b.py` exits 0, "all checks passed". `uv run ruff check .`/`ruff
+format --check .` clean (358 files). `uv run mypy .` clean on both changed files; repo-wide run
+shows the same 26 pre-existing errors (alembic `Module "alembic" has no attribute "op"/"context"`
+stub gaps plus 7 unrelated `Unused "type: ignore"` notes in `test_ftf_0500c.py`/
+`test_ftf_0500c_database_api_trace_source.py`) confirmed byte-for-byte identical on unmodified
+`origin/main` via `git stash` before treating them as pre-existing noise, not a regression.
+`validate_spec.py --strict` clean (after `git fetch --unshallow`, pre-existing shallow-clone sandbox
+artifact — same disclosed precedent prior shifts used). `product_truth_check.py --fail-on-unwired`:
+unchanged `25/25` (`proving_symbol` stays blank — no live caller added by this fix, same disclosed
+precedent the original PR #359 submission established). `status.py`: unchanged `99/300` certified,
+24 product-true (Law 2 — a resubmission is not a certification). Regression swept (after `uv sync
+--all-packages`, since a bare `uv run` environment lacks `sqlalchemy`/`psycopg`, the same disclosed
+precedent prior Postgres-backed shifts documented) `test_ftf_0500.py`/`test_ftf_0303.py`/
+`test_ftf_h006.py`/`test_ftf_0500c.py` — all "all checks passed", zero regressions (the printed
+`TenantContextError` traceback inside `test_ftf_0500.py`'s own stdout is that suite's own disclosed
+negative-test case; confirmed exit 0).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with this L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Opened a new
+PR (branch off current `main`, `[relay] FTF-0500B: fix L2 findings (version-id-sensitive manifest
+hash + versioning-disabled refusal)`) rather than reopening PR #359, same precedent FTF-0500C's own
+fix-and-resubmit (PR #404, merged) and FTF-H007/FTF-04A06/FTF-0601's own fix-and-resubmit (PR #403,
+merged) already established.
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review itself
+named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
+for FTF-0500B specifically — not for FTF-0500D/FTF-1807/FTF-1206, which remain exactly as that
+review left them, unchanged, no new relay PR yet.
