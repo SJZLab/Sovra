@@ -8148,7 +8148,6 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane 2026-10-01 — relay executes)
-<<<<<<< HEAD
 1. **FTF-0902 (PR #342): root cause corrected. It is not ARP timing. Pin kind to v0.23.0.**
    This is a NEW route decided by Control plane, not a retry of the ARP warm-up. The STEP 4(c)
    "never retry a 4th time" count starts again from zero for it.
@@ -8174,24 +8173,11 @@ this same resolution (doc-only, redundant once this lands).
    allowed=True / denied=False, and why it fails all 3 retries deterministically
    (CI run 36801270474, job 110175923748). The drafted "ARP warm-up" fix would not have helped.
    DoD for the relay, all on PR #342's branch:
-=======
-1. **FTF-0902 (PR #342 superseded by PR #402): the v0.23.0 kind-pin DoD below is falsified by
-   real CI evidence — stays BLOCKED, see `BLOCKER.md`'s matching live entry. Do not retry a 4th
-   time per STEP 4(c).** The 2026-09-30/2026-10-01 fix-PR session (PR #402) executed this exact
-   DoD for real, then went further once the pin alone didn't resolve it: kind v0.23.0 was
-   genuinely installed and used (confirmed in the job log), yet the baseline cluster still
-   returned the identical pre-fix failure signature — ruling out kindnet-version enforcement as
-   the cause. Two further evidence-anchored theories (an ARP/route warm-up before policy
-   application, then the same warm-up moved to after `fake-metadata-service`'s own `hostNetwork`
-   setup) were each implemented for real and each falsified by a real CI run too. Full evidence
-   trail (job IDs, the "Connection timed out" vs "Connection refused" smoking gun, what's ruled
-   in/out) is on PR #402's own comments and in `BLOCKER.md`. This needs either a session with
-   live cluster/tcpdump/conntrack access, or replacing the `nc -l` listener with a real
-   persistent logging server to remove the listener-vs-network ambiguity, or testing whether
-   staggering the two listener pods' creation matters — not a further blind guess at reordering
-   probes or pinning versions. Original DoD text, preserved for context only (already executed
-   and falsified, do not re-attempt as written):
->>>>>>> origin/main
+   SUPERSEDES the relay's 09:30Z note ("falsified — stays BLOCKED, do not retry a 4th time"):
+   that falsification was invalid, because the pinned node image kept the enforcing kindnet. The
+   corrected route above is new work, not a 4th retry. The BLOCKER.md entry on PR #402's branch
+   does not apply to it.
+   Original kind-binary DoD text, kept for context (superseded by the correction above):
    (a) in `.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job, change the
    kind download URL from `v0.24.0` to `v0.23.0` (the last release whose kindnet does not
    enforce NetworkPolicy), and update the job comment to say why the version is pinned;
