@@ -25917,9 +25917,10 @@ Not self-certified (Law 4) — this shift's own local verification proves the fi
 submit, not that CI is green; that is this PR's own real run, to be checked by whoever picks this
 up next (relay or Control plane).
 
-Committed and pushed to `claude/wizardly-fermat-c06dbx`; opened a new PR superseding #342 (see this
-shift's own `QUEUE.md`/`docs/certifications/queue.md` entries for the PR link once created) and
-closed #342 with a comment pointing to it, per CLAUDE.md's "merge = PROVISIONAL only" / Law 4 —
+Committed and pushed to `claude/wizardly-fermat-c06dbx`; opened
+**https://github.com/SJZLab/Sovra/pull/402** superseding #342, and closed #342 with a comment
+pointing to it (https://github.com/SJZLab/Sovra/pull/342#issuecomment-5928121574), per CLAUDE.md's
+"merge = PROVISIONAL only" / Law 4 —
 this submission is PROVISIONAL, not self-certified.
 
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before any

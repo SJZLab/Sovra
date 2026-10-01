@@ -8211,12 +8211,12 @@ full history and evidence.
 ## Provisional (awaiting Control plane L2 certification)
 **FTF-0902** ("Network-policy templates") — PROVISIONAL since the original PR #342
 (2026-09-27); this shift ported that PR's full, byte-identical diff plus the Control-plane-
-specified kind-pin fix onto a new PR (branch `claude/wizardly-fermat-c06dbx` → `main`) that
-supersedes #342 (closed, not merged, no content lost — see this file's own top dated log entry
-and "## Active" item 1's status note). `docs/spec-matrix.yaml` updated to `PROVISIONAL`/
-`L1-PROVEN` with the root-cause correction recorded. Awaiting this new PR's own real CI run on
-`network-policy-enforcement-integration` (not yet observed by this shift) before Control plane
-L2 review.
+specified kind-pin fix onto **PR https://github.com/SJZLab/Sovra/pull/402** (branch
+`claude/wizardly-fermat-c06dbx` → `main`), superseding #342 (closed, not merged, no content
+lost — see this file's own top dated log entry and "## Active" item 1's status note).
+`docs/spec-matrix.yaml` updated to `PROVISIONAL`/`L1-PROVEN` with the root-cause correction
+recorded. Awaiting PR #402's own real CI run on `network-policy-enforcement-integration` (not
+yet observed by this shift) before Control plane L2 review.
 
 **FTF-0500C** ("Database/API/trace source contract and fail-closed validation") — submitted
 PROVISIONAL this shift via **PR https://github.com/SJZLab/Sovra/pull/364** (branch

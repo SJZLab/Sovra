@@ -21165,9 +21165,11 @@ was a CI-harness defect, not a production-code one.
 
 PR #342 itself is on branch `claude/wizardly-fermat-gwocup`, which this session's own operating
 instructions do not permit pushing to (branch-scoped push restriction). The fix is therefore
-delivered as a new PR from this session's own designated branch, carrying forward PR #342's full,
-unmodified diff plus this fix; PR #342 is being closed, not merged, with a comment pointing to the
-new PR — no content lost, same housekeeping pattern this file's own prior entries already used for
+delivered as **PR https://github.com/SJZLab/Sovra/pull/402** from this session's own designated
+branch, carrying forward PR #342's full, unmodified diff plus this fix; PR #342 is closed, not
+merged, with a comment pointing to #402
+(https://github.com/SJZLab/Sovra/pull/342#issuecomment-5928121574) — no content lost, same
+housekeeping pattern this file's own prior entries already used for
 superseded PRs.
 
 Verified before pushing: `tests/tasks/test_ftf_0902.py` (19/19, unchanged), `ruff check .`/`ruff
