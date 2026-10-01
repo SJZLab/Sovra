@@ -213,6 +213,81 @@ def test_real_ro_role_write_is_denied_by_database_grants(ro_conninfo: str) -> No
         )
 
 
+class _SessionSettingsSpyConnection:
+    """Wraps a real `psycopg.Connection`, used only as the module's own
+    `connect` callable. After observing the module's own `SHOW
+    statement_timeout` probe (the query it issues immediately after its two
+    `SET` statements), captures `transaction_read_only`/
+    `transaction_isolation` on that *same* real connection/transaction --
+    proving the module's own SQL, not a hand-copied test re-implementation,
+    is what actually sets them. This is the exact gap the 2026-10-01 L2
+    review found: the old version of this test replicated the `SET
+    TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` statement on a
+    raw connection instead of calling the module, so changing the module's
+    own transaction-mode SQL would have left this suite green."""
+
+    def __init__(
+        self, real: psycopg.Connection[tuple[object, ...]], captured: dict[str, str | None]
+    ) -> None:
+        self._real = real
+        self._captured = captured
+
+    def __enter__(self) -> _SessionSettingsSpyConnection:
+        self._real.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> None:
+        self._real.__exit__(exc_type, exc_value, traceback)  # type: ignore[arg-type]
+
+    def transaction(self) -> object:
+        return self._real.transaction()
+
+    def execute(
+        self, query: str, params: tuple[object, ...] | None = None
+    ) -> psycopg.Cursor[tuple[object, ...]]:
+        cur = self._real.execute(query, params) if params is not None else self._real.execute(query)
+        if "SHOW statement_timeout" in query:
+            read_only_row = self._real.execute("SHOW transaction_read_only").fetchone()
+            isolation_row = self._real.execute("SHOW transaction_isolation").fetchone()
+            self._captured["read_only"] = str(read_only_row[0]) if read_only_row else None
+            self._captured["isolation"] = str(isolation_row[0]) if isolation_row else None
+        return cur
+
+
+def test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql(ro_conninfo: str) -> None:
+    """2026-10-01 L2 finding: proves the real session GUCs through the
+    module itself, not a raw re-implementation of its SQL (see
+    `_SessionSettingsSpyConnection`'s own docstring)."""
+    captured: dict[str, str | None] = {"read_only": None, "isolation": None}
+
+    def spy_connect(conninfo: str, autocommit: bool = False) -> _SessionSettingsSpyConnection:
+        return _SessionSettingsSpyConnection(
+            psycopg.connect(conninfo, autocommit=autocommit), captured
+        )
+
+    source_module.validate_and_preview_postgres_source(
+        _config(ro_conninfo),
+        connect=spy_connect,  # type: ignore[arg-type]
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: the module's own SQL (not a test re-implementation) genuinely sets "
+        "transaction_read_only=on on the real session",
+        captured["read_only"] == "on",
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: the module's own SQL (not a test re-implementation) genuinely sets "
+        "transaction_isolation=repeatable read on the real session",
+        captured["isolation"] == "repeatable read",
+    )
+
+
 def test_real_read_only_transaction_mode_independently_blocks_a_write(rw_conninfo: str) -> None:
     """Proves this module's own chosen mechanism (`READ ONLY` transaction
     mode), not merely the least-privileged role's grants: using the
@@ -330,6 +405,7 @@ def main() -> int:
         test_real_statement_timeout_is_genuinely_set_on_the_session(ro_conninfo)
         test_real_unknown_table_is_refused_not_fabricated(ro_conninfo)
         test_real_ro_role_write_is_denied_by_database_grants(ro_conninfo)
+        test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql(ro_conninfo)
         test_real_read_only_transaction_mode_independently_blocks_a_write(rw_conninfo)
         test_real_lost_watermark_after_a_genuine_concurrent_delete(ro_conninfo, rw_conninfo)
     finally:
