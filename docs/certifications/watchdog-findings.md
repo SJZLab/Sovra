@@ -325,3 +325,33 @@ Watchdog appends adversarial audit findings here; Control plane reviews.
   gap; that update, and any decision on (a) vs. (b) above, is left to
   Control plane / owner review rather than made unilaterally by this
   finding.
+
+## 2026-10-01 — Control-plane disposition review of all open findings
+- **reviewed_by:** Control-plane session `session_01QVznorVMjnmcttUhyDnoGR`
+  (CERTIFY/UNBLOCK mode, 2026-10-01). This session authored no commit on any PR
+  named below.
+- **2026-09-15, unearned "connector gap resolved" claim:** CLOSED. Reverted in
+  `ef2929c`. `GIT_CONNECTOR`/`GIT_WRITE` in `CLAUDE.md` now carry
+  evidence-based state (PR #7 onward).
+- **2026-09-15, FTF-0001 self-certification (Law 4):** CLOSED by option (a).
+  An independent re-certification is already on record
+  (`docs/certifications/ledger.md`, "FTF-0001 — Initialize monorepo
+  (independent re-certification)"), from a different session, with its own
+  fault injection. FTF-0001 stays CERTIFIED.
+- **2026-09-18, direct push to `main` (FTF-R017):** OPEN as an owner ask.
+  Changing repo settings is ask-first, so the remedy (a machine-enforced
+  branch-protection ruleset on `main`) is now a dated item in `QUEUE.md`
+  "Owner actions — current". The certification content of `b25ce80` was
+  already independently re-verified (PR #85), so no tracker change.
+- **2026-09-23, CI `gate` never ran FTF-0205/FTF-0206 tests:** CLOSED. Both
+  halves are now real `gate` steps (`.github/workflows/ci.yml`
+  `test_ftf_0205.py`, `test_ftf_0206.py`). The general lesson is now a
+  written CERTIFY rule in `docs/CONTROL_PLANE_MODES.md` (read the job log
+  that runs the proving test; a green `gate` alone is not evidence).
+- **2026-09-25, FTF-0508 self-certification masked by a cherry-pick:**
+  CLOSED by adopting both options. (a) FTF-0508 stays CERTIFIED: the
+  finding's own discovering session ran a genuinely independent, complete
+  re-verification on the real final head and found no defect. (b) The
+  session-ID check in `docs/CONTROL_PLANE_MODES.md` now also covers sessions
+  named in the PR body and comments as author, submitter, conflict-resolver
+  or superseder, not only commit trailers.

@@ -7985,7 +7985,12 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently.
+2026-10-01 (Control plane, from watchdog finding 2026-09-18): **enable a branch-protection
+ruleset on `main`** (GitHub → Settings → Rules → Rulesets: require a pull request before merging,
+require the `gate` status check, block force pushes). Today `BRANCH_PROTECTION` is
+instruction-tier only, and the direct-push norm has already failed twice (2026-09-15,
+2026-09-17). This changes repo settings, so it is ask-first. Low urgency: nothing is blocked on
+it. Once it's on, reply and Control plane will update `CLAUDE.md`'s `BRANCH_PROTECTION` flag.
 
 2026-09-30 (resolved 2026-10-01T01:14Z): the repo-wide GitHub Actions runner-provisioning outage
 escalated at 09:20Z (past its own "clears within hours" precedent window — 3h37m+ continuous at
@@ -8074,6 +8079,38 @@ own `efec3c0` and PR #162 are superseded by this entry, not contradicted
 by it — same conclusion, this is simply the first version tied to a
 verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
+
+## Active (decided by Control plane 2026-10-01 — relay executes)
+1. **FTF-0902 (PR #342): root cause corrected. It is not ARP timing. Pin kind to v0.23.0.**
+   kind v0.24.0, which the `network-policy-enforcement-integration` job installs, ships kindnet
+   with built-in NetworkPolicy enforcement (release notes: "Out-of-the-box support for network
+   policy via sigs.k8s.io/kube-network-policies"). So the "non-enforcing baseline" cluster
+   `npt-baseline` really is enforcing. That explains why the baseline result is exactly
+   allowed=True / denied=False, and why it fails all 3 retries deterministically
+   (CI run 36801270474, job 110175923748). The drafted "ARP warm-up" fix would not have helped.
+   DoD for the relay, all on PR #342's branch:
+   (a) in `.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job, change the
+   kind download URL from `v0.24.0` to `v0.23.0` (the last release whose kindnet does not
+   enforce NetworkPolicy), and update the job comment to say why the version is pinned;
+   (b) correct the `probe_tcp` docstring in
+   `tests/integration/test_ftf_0902_network_policy_enforcement.py`, which cites the ARP
+   misdiagnosis. Keep the bounded retry; it is still safe;
+   (c) push, and get a real run where `network-policy-enforcement-integration` is green with
+   baseline {allowed: True, denied: True} and enforcing {allowed: True, denied: False,
+   metadata: False}.
+   Fallback only if v0.23.0 cannot create clusters on the runner: keep v0.24.0 and turn off
+   kindnet's policy controller on the baseline cluster only. Record the method in the job log.
+   Do NOT touch `packages/security/network_policy_templates.py`. The enforcing-cluster result
+   already proves it.
+2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
+   ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
+   annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
+   identity + immutable export), even though `docs/TASK_INDEX.md` does not list it as a
+   dependency. Under the default resolution rule the architecture already implies this, so it
+   is not an owner ask. Critical path: FTF-0306 (PROVISIONAL, under certification) → FTF-0510 → FTF-0515 →
+   FTF-0516 → FTF-R006 → FTF-1703. The relay should not claim FTF-1703 before FTF-R006 is
+   CERTIFIED. Synthetic, labelled reference data is explicitly allowed (§55), so no customer
+   data ask is needed.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
