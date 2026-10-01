@@ -36,6 +36,14 @@ SOURCE_ROOTS: apps/web, apps/api, workers/training, workers/evaluation,
   real layout (PR #10, dd60cef); see scripts/product_truth_check.py for the
   authoritative list actually used by the gate.
 REPO_VISIBILITY: private (owner-confirmed)
+FRAMEWORK: Groundwork v0.6.10 (owner-confirmed 2026-10-01), adapted to Sovra. Sovra's
+  dependency-ordered docs/TASK_INDEX.md + spec-matrix.yaml is the "Unsliced" list; the
+  Refill & Sweep routine slices the dependency-ready frontier into QUEUE.md "## Backlog".
+CERTIFIER_IDENTITY: same-account (every session pushes as the owner's GitHub account, so
+  independence is proven by Claude-Session trailers + PR text, never by PR author).
+CERTIFIER_TRIGGER_MODE: event (the "Sovra certifier Repo" routine fires on PR opened).
+RELAY_LANES: 1
+DATASTORE_BACKENDS: postgres_rls, s3_identity (scripts/data_exposure_check.py, CI gate).
 CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   sha256sum of this file, one line, no prefix) — do not hardcode a hash value
   in any prompt or doc. CI (.github/workflows/ci.yml) fails the build if
@@ -100,6 +108,10 @@ CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
     production, database, storage, or service data (SPEC.md rule 11).
 17. Provider failure/outage/unknown state stays visible as blocked, pending,
     or failed — never converted to success (SPEC.md rule 13).
+18. SECURE BY DEFAULT — no datastore or storage surface (table, bucket, identity) ships
+    without an explicit, tested access-control check; default is deny. Every Alembic table
+    has ENABLE + FORCE row-level security and a non-allow-all policy
+    (scripts/data_exposure_check.py, merge-blocking).
 
 ## Do without asking
 read/edit non-secret files · run gates · branch/commit/push work branches · open PRs ·
@@ -113,7 +125,9 @@ and customer-facing email bodies
 secrets · destructive data ops · repo settings · force-push · money at scale ·
 new runtime deps · keyed external services · copy in the above-listed owner-approval categories ·
 any of the seven reused components (Axolotl/Inspect AI/MLflow/vLLM/Temporal/LiteLLM/Argilla)
-being swapped, forked, or having its integration form changed from docs/architecture/REFERENCE_REPOSITORIES.md
+being swapped, forked, or having its integration form changed from docs/architecture/REFERENCE_REPOSITORIES.md ·
+creating a datastore surface with no access control or an allow-all policy · disabling or
+widening an existing access-control policy · adding a `DATA-EXPOSURE-REVIEWED` escape marker
 
 Default resolution rule (owner instruction, 2026-09-19, live): before treating any of the above
 as an open ask, check whether docs/architecture/REFERENCE_REPOSITORIES.md, SPEC.md, or
@@ -134,15 +148,33 @@ A stale ask in item history = invisible to the owner and treated as current by t
 
 ## Relay is execution-only
 The relay receives decided, sliced items with DoDs. It does not propose, advise, or design.
-Proposals and design work come from the control plane. If an item's DoD is unclear — and for
-most of the 300 tasks in docs/TASK_INDEX.md, the full acceptance/negative-acceptance/
-verification contract referenced as "Section 85" was not supplied to this scaffold — write
-BLOCKER.md and stop. Do not improvise the DoD.
+Proposals and design work come from the control plane. Every task's real contract comes from
+`python tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
+Each shift, in this order:
+1. Returned work first. Fix every open or returned `[relay]` item before new work: red CI, a
+   merge conflict, a `needs-fix` label, or an item listed NOT CERTIFIED in
+   docs/certifications/queue.md. A PROVISIONAL item that Control plane returned is relay work.
+2. Then the top QUEUE.md "## Active" item, then "## Backlog" in order.
+3. Claim before implementing: push `relay/<item-id>` or open a draft `[relay]` PR first. Skip
+   any item that already has a claim branch or open PR.
+Item-level park, not a full stop: 3 failed attempts on the same item, an unclear DoD, or an
+ask-first need moves that item to QUEUE.md "## Parked" (what failed, what was tried, three
+route options; an ask-first park also gets a dated "Owner actions — current" line). Then take
+the next item in the same shift. BLOCKER.md is only for what stops ALL work: a hash
+mismatch, a systemic CI/config failure, or nothing unparked left.
+
+## Governance PRs (owner-merged)
+A PR touching CLAUDE.md, CLAUDE.md.sha256, .github/workflows/, scripts/ gate scripts,
+docs/CONTROL_PLANE_MODES.md, or routine prompts (docs/operations/routines.md) is titled
+`[GOVERNANCE]`. Control plane opens it; the OWNER reviews and merges it. It is not logged in
+docs/certifications/queue.md.
 
 ## Definition of Done (per criterion)
 □ Test written and shown able to fail (failure output bound to criterion ID)
 □ Test passes — evidence bound (criterion ID, test ID, commit, hash)
 □ product_truth_check passes (live caller · user-visible assertion · fault injection reddens)
+□ data_exposure_check passes for any table/bucket/identity the criterion touches, plus a test
+  that an unauthorized principal cannot read/write outside its scope (Law 18)
 □ PR opened as PROVISIONAL
 □ Appended to docs/certifications/queue.md for Control plane
 □ L2 certified by Control plane — never self-certified

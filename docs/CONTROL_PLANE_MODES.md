@@ -7,7 +7,11 @@ control-plane work (certify, unblock, or routine check-in).
 Prime directive: a producer may generate L1 self-validation evidence but may
 never independently certify, audit, or promote its own work.
 
-## MODE — declare before acting: OPERATE · CERTIFY · UNBLOCK
+Framework: Groundwork v0.6.10, adapted (see CLAUDE.md FRAMEWORK). Routines and their exact
+prompts: docs/operations/routines.md. Control plane leads, orchestrates and governs. It never
+executes queue items itself: it dispatches them to the relay and certifies the results.
+
+## MODE — declare before acting: OPERATE · CERTIFY · UNBLOCK · PARKED · AUDIT · REPORT
 
 ### OPERATE (routine check-in, run this first each session)
 1. Read PROGRESS.md — what did the last relay shift do?
@@ -73,6 +77,25 @@ and read that job's log to confirm the test executed and passed.
    SOURCE_ROOTS) → fix it directly; this is a system change, not something the
    relay can self-correct.
 4. Clear BLOCKER.md. If the fix is architectural, record it in docs/adr/.
+
+### PARKED (item-level, the relay keeps working other items)
+1. Read each QUEUE.md "## Parked" entry: what failed, what was tried, route options.
+2. Pick a route, then move the item back to "## Active" with the ambiguity resolved. If the
+   cause is systemic, treat it as an UNBLOCK.
+3. If an item parked 3+ times: diagnose the root cause before re-queuing it unchanged.
+
+### AUDIT (routine health — run with OPERATE at least daily)
+1. List the routines (list_triggers). Compare against docs/operations/routines.md: same
+   prompts, enabled, last_run SUCCEEDED.
+2. Confirm the relay produced a PR or a park/blocker in its last 2 shifts. A shift that only
+   writes "frontier exhausted" while QUEUE.md Active/Backlog or returned items exist is a
+   finding: fix the queue text or the prompt.
+3. Confirm Backlog depth >= 3. If not, check that the Refill & Sweep routine is running.
+
+### REPORT
+The daily-report routines read PROGRESS.md, QUEUE.md, docs/certifications/{queue,ledger,
+watchdog-findings}.md and BLOCKER.md. They never fabricate a figure. They include queue depth
+(Active/Backlog/Parked) and the open relay PR count with the oldest PR's age.
 
 ## Denominator discipline
 Certified/300 only moves via this CERTIFY procedure with a ledger entry.

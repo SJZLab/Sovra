@@ -8169,6 +8169,16 @@ this same resolution (doc-only, redundant once this lands).
 4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
    `docs/spec-matrix.yaml`. FTF-0510 (next on the FTF-1703 path) is now ready.
 
+## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+1. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
+   2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
+   FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
+(Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
+docs/spec-matrix.yaml. It never invents criteria.)
+
+## Parked (item-level blockers — relay continues other work; Control plane resolves)
+None currently.
+
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
 independently reviewed and CERTIFIED this shift via PR #100 (merge commit
