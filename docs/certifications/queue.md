@@ -21269,3 +21269,61 @@ server; test non-simultaneous pod creation) posted on PR #402
 methodology or debugging capability FTF-0902's own CI job needs), not something further relay-side
 guessing can resolve. `docs/spec-matrix.yaml`'s FTF-0902 entry stays `PROVISIONAL`/`L1-PROVEN`,
 not self-certified. PR #402 stays open and subscribed for future activity.
+
+## 2026-10-01 (same shift, continued) — FTF-H007 + FTF-04A06 and FTF-0601: fixes submitted (PR #402)
+
+Both relay-owned items from this file's own 2026-10-01 L2 review, fixed and submitted via
+**PR https://github.com/SJZLab/Sovra/pull/402** (same PR already open for FTF-0902's own
+investigation on this session's designated branch — a single-branch-per-session constraint, not
+intentional bundling; see that PR's own pinned comment separating the two).
+
+**FTF-H007 + FTF-04A06.** Hardened `_run_git`
+(`apps/api/app/target_connectors/local_repository_connector.py`) with
+`-c core.fsmonitor=false -c core.hooksPath=/dev/null` plus `GIT_CONFIG_NOSYSTEM=1`/
+`GIT_CONFIG_GLOBAL=/dev/null` — closes the real finding (a repo-controlled `core.fsmonitor`
+command executing during a supposedly read-only `git status` scan). Added
+`_scan_dangerous_git_config` (`source_boundary.py`) making the mere presence of
+`core.fsmonitor`/`core.hooksPath`/`core.sshCommand`/`filter.*.*.{clean,smudge,process}` in the
+repo's own config a blocking finding on its own (new `SourceBoundaryReport.
+dangerous_git_config_keys` field). Fixed `_scan_git_hooks`: a symlinked `.git/hooks/*` entry was
+previously skipped outright (`is_symlink()` guard) and reported safe; now the symlink's real
+target executable bit is what counts. Fixed `_scan_dangerous_python_calls`: `import os as o;
+o.system(...)` and `from os import system; system(...)` previously evaded detection; added
+`_collect_import_aliases` resolving both bare-name and attribute calls through real import-alias
+maps before comparing against the closed dangerous sets. Four new real proving tests in
+`tests/tasks/test_ftf_h007.py`, all against real git repos in real temp directories (never
+mocked).
+
+**FTF-0601.** `update_evaluation_suite` previously assigned `name`/`grading_logic_version`/
+`reviewer_id` directly, skipping the same validators `__init__` already applies at creation:
+`grading_logic_version=0` reached the database unchecked (raw `IntegrityError`, an opaque 500
+instead of 400), `name=""` was accepted against the schema's own `minLength: 1`, and
+`reviewer_id=""` passed `lock_evaluation_suite`'s own `is None` check, letting a `final` suite
+lock with no real reviewer. Now calls `validate_name`/`validate_grading_logic_version`/
+`validate_reviewer_id_or_none`; the latter now also refuses a whitespace-only string;
+`lock_evaluation_suite`'s own check does too (defense in depth, not only the PATCH validator).
+New migration `0018_eval_suites_reviewer_fix` (never edits a merged migration): the real DB CHECK
+`ck_evaluation_suites_reviewer_present_when_locked` only tested `IS NOT NULL`, which an empty
+string satisfies — fixed to `IS NOT NULL AND <> ''`. Three new real HTTP-level proving tests plus
+a DB-level raw-INSERT defense-in-depth test in `tests/integration/test_ftf_0601_evaluation_suite.py`.
+
+**Verification, both fixes:** `ruff check .`/`ruff format --check .` clean (359 files), `mypy .`
+clean (359 source files), `test_ftf_h007.py` (incl. 4 new)/`test_ftf_04a06.py`/`test_ftf_0601.py`
+clean, regression swept `test_ftf_04a05.py`/`test_ftf_04a07.py`/`test_ftf_04a09.py` — zero
+regressions. `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired`
+unchanged `25/25`. FTF-0601's new migration and integration suite verified against a real local
+PostgreSQL 16 this sandbox has installed (not Docker-based, same precedent other integration jobs
+in this file already disclose for this sandbox's own lack of container-registry egress): real
+`alembic upgrade head`/`downgrade -1`/`upgrade head` round-trip, real HTTP server, real CHECK
+constraint confirmed live via `\d evaluation_suites`.
+
+**Real, disclosed fault injection (Law 1) for both fixes**, each reverted byte-identical
+(md5sum-confirmed): removing `_run_git`'s `-c` hardening made the `core.fsmonitor` marker
+genuinely execute (1 real failure, exactly as predicted); removing the three validator calls in
+`update_evaluation_suite` genuinely reproduced the original raw `IntegrityError`/500 (4 real
+failures, exactly as predicted, including the exact original `CheckViolation` on
+`ck_evaluation_suites_grading_logic_version_positive`).
+
+**Not self-certified (Law 4).** Awaiting independent Control-plane L2 re-review and a real CI run
+on PR #402's own head before certification. `docs/spec-matrix.yaml` unchanged for either task
+(both already `PROVISIONAL`).

@@ -26160,3 +26160,52 @@ verified sound; this session cannot get it out of its own ephemeral container. S
 item here. FTF-0902 (PR #402) remains open/watched from earlier this shift, independent of this
 blocker. Open owner ask recorded in `QUEUE.md` (low urgency, route option 1 does not need the
 owner at all).
+
+## 2026-10-01T09:53:00Z — Same shift, continued — FTF-H007/FTF-04A06 + FTF-0601 fixes submitted; earlier blocker self-resolved
+
+The sandbox "Security Weaken" classifier block reported in the prior entry cleared on its own
+roughly 15 minutes later, after unrelated legitimate work (committing docs, implementing and
+fully verifying the FTF-0601 fix with a real local PostgreSQL 16 instance). `git add` on the
+exact same previously-denied files succeeded cleanly; a full `ruff check .`/`ruff format --check
+.`/`mypy .` run and every relevant test suite passed. Re-attempted the originally-blocked
+disclosed fault injection via the Edit tool -- allowed this time, genuinely reproduced the
+predicted failure (the `core.fsmonitor` marker was actually created with the hardening removed),
+reverted byte-identical (md5sum-confirmed). Updated `BLOCKER.md` to RESOLVED and removed the
+now-stale `QUEUE.md` "Owner actions" line per Law 2/CLAUDE.md's single-source-of-truth rule --
+route option 1 (a fresh session re-applying the fix) was never needed; the same session's own
+later work unblocked itself.
+
+Also completed FTF-0601 in the same window (found while investigating what else was available
+given the FTF-H007/FTF-04A06 commit was stuck): `update_evaluation_suite` bypassed its own
+field validators on PATCH, letting `grading_logic_version=0` reach the database unchecked (raw
+`IntegrityError`/500 instead of 400), `name=""` pass `minLength: 1`, and `reviewer_id=""` pass
+`lock_evaluation_suite`'s own `is None` check (a `final` suite locking with no real reviewer).
+Fixed by calling the real validators on update, tightening `validate_reviewer_id_or_none` to
+also refuse whitespace-only, hardening `lock_evaluation_suite`'s own check the same way, and a
+new migration (`0018_eval_suites_reviewer_fix` -- a new migration, not an edit to the merged
+`0017_evaluation_suites`, standard migration discipline regardless of certification status)
+fixing the real DB CHECK gap (`IS NOT NULL` alone accepts `''`). Started this sandbox's own
+locally-installed PostgreSQL 16 (not previously running) to verify the migration and the full
+integration suite for real: `alembic upgrade head`/`downgrade -1`/`upgrade head` round-trip
+clean, `\d evaluation_suites` confirms the live, fixed CHECK constraint text, and the full real
+HTTP-level integration suite (3 new PATCH-validation cases plus a DB-level raw-INSERT
+defense-in-depth case) passed end to end. Real fault injection for this fix too (temporarily
+removing the three validator calls): genuinely reproduced the exact original bug (4 real
+failures, including the literal original `CheckViolation` on
+`ck_evaluation_suites_grading_logic_version_positive`), reverted byte-identical.
+
+Both fixes committed together (`b48d87a`) since they landed on this session's one designated
+branch, which already had PR #402 open for FTF-0902's own investigation -- opening a second PR
+from the same branch is not possible, so both new fixes were pushed to PR #402 instead, with its
+title updated and a pinned comment clearly separating the three pieces of work (FTF-0902 still
+open/unresolved; the other two complete and ready for independent L2 review). `QUEUE.md`'s own
+Active item 3 and `docs/certifications/queue.md` both updated with the full verification record.
+
+Stopped the local PostgreSQL instance and dropped the scratch databases/role before finishing,
+leaving no test artifacts behind.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`BLOCKER.md`/`docs/certifications/queue.md` all updated this
+shift, before compaction. STEP 4 stop condition (a): two more RELAY-OWNED items now submitted
+PROVISIONAL, L1-PROVEN, not self-certified, awaiting Control-plane L2 review and PR #402's own
+real CI run. Five RELAY-OWNED items remain unclaimed this shift (FTF-0500C, FTF-0500B, FTF-0500D,
+FTF-1807, FTF-1206). No open owner ask.

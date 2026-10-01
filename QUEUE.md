@@ -8038,16 +8038,6 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-10-01T09:38Z (scheduled relay shift, branch `claude/wizardly-fermat-c06dbx`): **this
-session's own sandbox "Security Weaken" classifier blocked `git add`/`git commit` for a
-verified-clean FTF-H007/FTF-04A06 security fix** — full detail, what was verified, what was
-tried, and three route options in `BLOCKER.md`'s own matching live entry. Low urgency / informal:
-route option 1 (a fresh session re-applies and commits the same fix, fully specified in that
-entry) does not need owner action and is the most likely path; route option 2 (checking whether
-the sandbox classifier has a visible cooldown/log explaining why one denied edit widened to block
-unrelated `git add` calls in the same session) is the only part that's actually the owner's to
-check, and only if the pattern recurs. Remove this line once a fresh session has committed the
-fix (or the owner has confirmed the classifier behavior) — do not leave it stale once resolved.
 2026-10-01 (Control plane, from watchdog finding 2026-09-18): **enable a branch-protection
 ruleset on `main`** (GitHub → Settings → Rules → Rulesets: require a pull request before merging,
 require the `gate` status check, block force pushes). Today `BRANCH_PROTECTION` is
@@ -8266,6 +8256,16 @@ this same resolution (doc-only, redundant once this lands).
    tasks: FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-1206.
    Open each fix as a new `[relay] <ID>: fix L2 findings` PR and append it to
    `docs/certifications/queue.md` for re-review.
+
+   **Status (2026-10-01T09:53Z, branch `claude/wizardly-fermat-c06dbx`): FTF-H007 + FTF-04A06
+   and FTF-0601 done, submitted.** Both fixes (full detail in `docs/certifications/queue.md`'s
+   matching 2026-10-01 entry) pushed to **PR https://github.com/SJZLab/Sovra/pull/402** — the
+   same PR already open for FTF-0902 on this session's own designated branch (a single-branch
+   constraint, not intentional bundling; see that PR's own pinned comment). Real fault injection
+   performed for both (Law 1), each reverted byte-identical. Real local PostgreSQL 16 used to
+   verify FTF-0601's new migration and integration tests end to end. Not self-certified. Five
+   items remain: FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-1206 (FTF-1206 needs a migration
+   prerequisite first, per its own DoD below).
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
