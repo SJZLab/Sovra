@@ -8115,6 +8115,21 @@ this same resolution (doc-only, redundant once this lands).
 1. **FTF-0902 (PR #342): root cause corrected. It is not ARP timing. Pin kind to v0.23.0.**
    This is a NEW route decided by Control plane, not a retry of the ARP warm-up. The STEP 4(c)
    "never retry a 4th time" count starts again from zero for it.
+   **CORRECTION (Control plane, 2026-10-01T11:15Z, after PR #402's real CI runs):** the binary pin
+   alone was not enough and never took effect. The harness pins `NODE_IMAGE =
+   "kindest/node:v1.31.2"` for both clusters, and kind ships kindnet inside the node image. So
+   the baseline still ran a policy-enforcing kindnet. PR #402's own data confirms enforcement:
+   the pre-policy probe to `denied` succeeded, every post-policy probe timed out, and `allowed`
+   and the hostNetwork listener stayed reachable. Corrected DoD (full text on PR #402,
+   comment 5930089145):
+   - give the baseline `kindest/node:v1.30.0` (kind v0.23.0's own default image);
+   - probe `denied` both before and after the policy on the baseline, and fail with "baseline
+     CNI enforces NetworkPolicy" when pre succeeds and post fails;
+   - print the kindnet version in the job log;
+   - drop the post-policy warm-up;
+   - merge main after PR #403 so PR #402 carries only FTF-0902.
+   Fallback: a non-enforcing CNI such as flannel on the baseline. A new route, so the attempt
+   count starts again from zero.
    kind v0.24.0, which the `network-policy-enforcement-integration` job installs, ships kindnet
    with built-in NetworkPolicy enforcement (release notes: "Out-of-the-box support for network
    policy via sigs.k8s.io/kube-network-policies"). So the "non-enforcing baseline" cluster
