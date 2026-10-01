@@ -8113,6 +8113,8 @@ this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane 2026-10-01 — relay executes)
 1. **FTF-0902 (PR #342): root cause corrected. It is not ARP timing. Pin kind to v0.23.0.**
+   This is a NEW route decided by Control plane, not a retry of the ARP warm-up. The STEP 4(c)
+   "never retry a 4th time" count starts again from zero for it.
    kind v0.24.0, which the `network-policy-enforcement-integration` job installs, ships kindnet
    with built-in NetworkPolicy enforcement (release notes: "Out-of-the-box support for network
    policy via sigs.k8s.io/kube-network-policies"). So the "non-enforcing baseline" cluster
@@ -8143,6 +8145,12 @@ this same resolution (doc-only, redundant once this lands).
    CERTIFIED. Synthetic, labelled reference data is explicitly allowed (§55), so no customer
    data ask is needed.
 
+3. **RELAY-OWNED. Do not skip these as "PROVISIONAL, Control plane's to certify".** These eight
+   items were reviewed and returned NOT CERTIFIED. Their `certification_state` stays PROVISIONAL
+   only because the code is already merged. Fixing them is the relay's next work, ahead of new
+   tasks: FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-1206.
+   Open each fix as a new `[relay] <ID>: fix L2 findings` PR and append it to
+   `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
