@@ -20766,3 +20766,61 @@ L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions — current
   zero regressions.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
   awaiting Control plane L2 review per Law 4.
+## 2026-09-27 — FTF-0601 (Evaluation suite schema/API) — submitted PROVISIONAL
+
+Scheduled autonomous relay shift, session `https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm`,
+opened as [PR #337](https://github.com/SJZLab/Sovra/pull/337).
+Dependencies FTF-0401/FTF-04A19/FTF-0405 confirmed genuinely `CERTIFIED` in `docs/spec-matrix.yaml`
+before relying on them. No open PR claimed this task at pick time (checked all open PRs directly
+via the GitHub API first).
+
+Implemented `apps/api/app/evaluation/evaluation_suite_schema.py` (ORM model + validators),
+`evaluation_suite_crud.py` (create/get/list/update/lock through the certified `TenantContext`/
+`authorize_resource_ownership`/`execute_tenant_scoped` composition), `evaluation_suite_routes.py`
+(the live router, gated to `{evaluator, workspace_admin, organization_admin}` write per Section
+45's own literal "evaluator: create/run evaluation, no deployment" sentence — the first task in
+this chain with a dedicated role sentence rather than the generic workspace_admin fallback), the
+real forward Alembic migration `0017_evaluation_suites`, and the new phase-06 contract freeze
+(`packages/contracts/openapi/06-interface.yaml`, `packages/contracts/jsonschema/06-domain.schema.json`,
+`contracts:06` lock).
+
+Acceptance ("Create suite schema with development/final purpose, versioned mandate/runtime
+binding and reviewer role"): `purpose` is a closed two-value enum; `agent_manifest_id` binds a
+suite to one specific, already-`locked` `AgentManifest` row (the manifest itself already carries
+the versioned mandate/runtime tuple — see the schema module's own docstring for why no duplicate
+fields were added); `reviewer_id` plus a real database `CHECK`
+(`ck_evaluation_suites_independent_final_reviewer`) implements Section 69.1's own creator/reviewer
+independence rule for `final`-purpose suites.
+
+Negative_acceptance ("Wrong project/manifest, unversioned grading logic and mixed train/final data
+grants rejected") disclosed and enforced as four distinct conditions — see the schema module's own
+docstring for the full reasoning: manifest/project mismatch or an unlocked manifest refused (409);
+project not owned by caller refused (404); `grading_logic_version` is `NOT NULL`/`>= 1` (no
+default, no way to persist unversioned); `purpose` has no "mixed" value to request at all.
+
+`tests/tasks/test_ftf_0601.py` (no-DB, 20 test functions) and
+`tests/integration/test_ftf_0601_evaluation_suite.py` (real Postgres 16, this producer session's
+own installed cluster — fresh scratch `sovra_migrate` role/`sovra_ftf0601` database) both "all
+checks passed". Full Alembic chain `0001`-`0017` upgrades clean; `0017` alone round-trips
+`downgrade -1` -> `upgrade head` clean. Real database-level defense-in-depth: a raw INSERT with
+`purpose='mixed'` caught by `ck_evaluation_suites_purpose`; a raw INSERT of a locked final suite
+with `reviewer_id == created_by` caught by `ck_evaluation_suites_independent_final_reviewer`;
+`sovra_app` cannot `DELETE` a row directly.
+
+`uv run ruff check .`/`ruff format --check .` clean (297 files, after fixing 24 line-length/
+unused-variable findings this same producer session found and fixed before submission);
+`uv run mypy .` clean (297 files, zero new errors). `python3 scripts/validate_spec.py --strict`
+clean (after `git fetch --unshallow`). `product_truth_check.py --fail-on-unwired`: **23/23** (up
+from 22/22) — `build_evaluation_suite_router` is a real, genuine live caller from
+`apps/api/app/main.py`. `status.py`: unchanged `86/300` certified, `22` product-true (Law 2 — a
+submission, not a certification). Regression swept `test_ftf_04a19.py`/`test_ftf_04a20.py`/
+`test_ftf_1001.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py` — zero regressions.
+
+`docs/spec-matrix.yaml` FTF-0601 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: build_evaluation_suite_router`
+/ `proving_test: tests/tasks/test_ftf_0601.py`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-0601 negative-test proof`) added to `.github/workflows/ci.yml`
+immediately after the FTF-04A20 step, plus a new dedicated `evaluation-suite-integration` job
+(real `services: postgres` container) mirroring `manifest-evidence-integration`'s own pattern.
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
