@@ -8211,6 +8211,19 @@ this same resolution (doc-only, redundant once this lands).
    both pods, plus a verbose `nc -zv` probe for the real error message. Still watching; if this
    doesn't make the cause obvious, escalate to Control plane per the prior update's own plan
    rather than guess a 4th/5th time.
+
+   **Update (2026-10-01T09:27Z): real smoking gun found, 3rd fix pushed.** The verbose probe
+   returned `Connection timed out`, not `Connection refused` — a dropped packet, not "nothing
+   listening"; rules out the bind-failure hypothesis directly. The same IP's *early* warm-up (run
+   before `fake-metadata-service` existed) returned fast, not a timeout — reachability existed
+   early, lost by the real probes. The one thing that changes in between on every run:
+   `fake-metadata-service`'s `hostNetwork` setup (`ip addr add ... dev eth0` on the *node's*
+   interface) — a plausible transient route/ARP disruption trigger. Pushed (`5e75919`): moved the
+   warm-up to run immediately before the real probes instead of before that setup, to test the
+   correlation directly; same discard-the-result safety property. This is a third fix, but
+   anchored to a concrete new fact from this PR's own run, not a re-interpretation of the same
+   symptom. **If this also fails, stop for real and escalate to Control plane with the full
+   evidence trail — no further relay-side iteration.**
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer

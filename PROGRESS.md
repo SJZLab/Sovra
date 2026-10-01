@@ -26029,3 +26029,29 @@ Also noted (not actioned, superseded by this push): one unrelated `dependency-sc
 integration` failure on the same run -- a real OSV API SSL handshake timeout on an unrelated npm
 package, outside this PR's diff. Commented on PR #402 with the full finding. Still not claiming a
 fix; watching the next real run.
+
+## 2026-10-01T09:27:00Z — Same shift, continued — PR #402: real smoking gun found (timeout vs refused), 3rd fix pushed
+
+Deepened diagnostics (`85443fa`, job `110302500012`) gave a concrete new fact rather than another
+inference: `ps`/`/proc/net/tcp` was inconclusive (both `allowed` and `denied` showed empty
+`/proc/net/tcp` despite `allowed` succeeding -- a procfs-via-`kubectl exec` artifact, not
+meaningful), but the verbose `nc -zv` probe was decisive: `Connection timed out`, not `Connection
+refused`. A refused connection means nothing is listening; a timeout means the packet was
+silently dropped in the network path -- rules out the "nc never bound" hypothesis directly.
+
+Cross-referenced timing: the *early* warm-up to the same IP (before `fake-metadata-service`
+existed) returned fast (~0.1s, not a timeout) -- reachability existed early and was lost by the
+real probes. The one thing that changes in between on every run is `fake-metadata-service`'s
+`hostNetwork: true` setup (`ip addr add 169.254.169.254/32 dev eth0` on the node's own interface)
+-- a plausible trigger for a transient route/ARP disruption specific to the one destination not
+freshly re-touched.
+
+Pushed (`5e75919`) a fix anchored to this concrete evidence: moved the warm-up probe to run
+immediately before the real assertion probes (after the NetworkPolicy and
+`fake-metadata-service` already exist) instead of before them, to test the correlation directly.
+Same safety property preserved (discarded result, nothing intervenes before the real probe).
+Verified clean: `ruff`/`mypy`/`test_ftf_0902.py` 19/19/`py_compile`. Commented on PR #402 with the
+full evidence trail. This is a third fix, but unlike the first two it's anchored to a new fact
+from this PR's own run, not a re-interpretation of the same symptom -- if it also fails, stopping
+for real this time and escalating to Control plane with the full trail rather than iterating
+further.
