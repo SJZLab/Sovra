@@ -1229,10 +1229,10 @@ FTF-0211:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0211.py
 FTF-0212:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Real tool-call probe
-  evidence_hash: ceeec8f22c64984ea4428720bfe3495e66f95710
+  evidence_hash: e83a53369d0fdc61c3fbb3f17778a68672b29e93
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-02; scenarios=Q02, Q21; deps=FTF-0201, FTF-0210 (both
@@ -1282,7 +1282,7 @@ FTF-0212:
     from the disclosed FTF-0205/FTF-0206 watchdog finding about a missing gate-wiring step.
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- awaiting independent Control-plane L2 review.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0212.py
 FTF-0213:
@@ -1833,10 +1833,10 @@ FTF-0305:
   proving_symbol: apply_revoke_license
   proving_test: tests/tasks/test_ftf_0305.py
 FTF-0306:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Base model revision/digest resolver
-  evidence_hash: ''
+  evidence_hash: 1dbdd558504d04054026e054ff5ae88e89954222
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0301, FTF-0302,
@@ -1913,7 +1913,7 @@ FTF-0306:
     immediately after FTF-0304's own step, plus a new dedicated
     base-model-revision-digest-resolver-integration job mirroring
     trainable-artifact-schema-api-integration's own real services: postgres container pattern.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 FTF-0307:
@@ -3296,10 +3296,10 @@ FTF-04A05:
   proving_test: tests/tasks/test_ftf_04a05.py, tests/tasks/test_ftf_04a05_routes.py,
     tests/integration/test_ftf_04a05_github_source_snapshot.py
 FTF-04A06:
-  certification_state: CERTIFIED
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Local repository connector with root allowlist/path protections
-  evidence_hash: 249ff0663df74fe25f33f35673a319ea6d728b90
+  evidence_hash: ''
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -3418,7 +3418,7 @@ FTF-04A06:
     met, not merely "tests pass". Merged PR #238, merge commit
     249ff0663df74fe25f33f35673a319ea6d728b90. See
     docs/certifications/ledger.md for the full ledger entry.
-  proof_state: L2-CERTIFIED
+  proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
 FTF-04A07:
@@ -4439,10 +4439,10 @@ FTF-04A14:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a14.py
 FTF-04A15:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Agent test/evaluation fixture discovery
-  evidence_hash: ''
+  evidence_hash: 257cb4608b4ed0a59beaba1a4ad8e768dfa9def7
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06;
@@ -4556,7 +4556,7 @@ FTF-04A15:
 
     **Not self-certified (Law 4)** -- independent Control-plane L2 review and
     a real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a15.py
 FTF-04A16:

@@ -9692,3 +9692,61 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-0212 — Real tool-call probe
+- Criterion ID: FTF-0212
+- PR: https://github.com/SJZLab/Sovra/pull/231 (already merged, the relay's PROVISIONAL submission)
+- Merge commit: e83a53369d0fdc61c3fbb3f17778a68672b29e93 (PR head `49a85fb2`, tree byte-identical to the merge)
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: PR #231's commits carry `session_01LS5QnbqmCmLCXzraHhopd2` (implementation; also named in the PR body) and `session_01F1dGicJPkGihwDxdgKkUpu` (merge-from-main). Neither matches, and the reviewing session appears nowhere in the PR body or comments.
+- Date: 2026-10-01
+- CI: run 36671299929 on head `49a85fb`, 38/38 success on real runners. `gate` job 109746658060 (runner_id 1000011394), step "FTF-0212 negative-test proof". The log shows `tests/tasks/test_ftf_0212.py` → "all checks passed". The live-TLS skip message is absent, so the HTTPS path actually ran.
+- Local: `tests/tasks/test_ftf_0212.py` exit 0 (23 test functions, 63 checks), live TLS path active.
+- Own fault injection (Law 1), distinct from the producer's: in `packages/litellm_client/real_tool_call_probe.py` `_extract_first_tool_call`, added a fallback that parses `message.content` JSON as a tool call. Result: 1 failure, "tool-shaped JSON typed as plain text content is never treated as a real tool call" (negative_acceptance). Reverted, `git status` clean, suite green again.
+- product_truth 25/25; validate_spec --strict clean. proving_symbol is legitimately blank (no live caller yet, same as the sibling FTF-020x probes).
+- Task contract re-pulled via `tools/r1_handoff.py packet FTF-0212`. Acceptance and negative_acceptance are met: only structured `message.tool_calls` is read; TOOL_NAME_MISMATCH, INVALID_TOOL_ARGUMENTS and NO_TOOL_CALL_ISSUED are distinct failed states.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-04A15 — Agent test/evaluation fixture discovery
+- Criterion ID: FTF-04A15
+- PR: https://github.com/SJZLab/Sovra/pull/328 (already merged)
+- Merge commit: 257cb4608b4ed0a59beaba1a4ad8e768dfa9def7 (PR head `f15ce5fe`)
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: PR #328's commits carry `session_01DVico8uFYeurLTvim6CYSh` (implementation and PR body) and `session_01F1dGicJPkGihwDxdgKkUpu` (merges). Neither matches.
+- Date: 2026-10-01
+- CI: run 36672126675 on head `f15ce5f`, 38/38 success. `gate` job 109749185086 (runner_id 1000011599), step "FTF-04A15 negative-test proof". The log shows "all checks passed (24 test functions run)".
+- Local: `tests/tasks/test_ftf_04a15.py` exit 0, 24/24.
+- Own fault injections (Law 1), distinct from the producer's:
+  - (1) Added `approved_for_training: bool = True` to `ClassifiedFixtureEvidence`. Result: 1 failure, the "no approved/imported/dataset_id-shaped field" negative_acceptance check.
+  - (2) Changed `_is_python_test_directory_only` to a substring match. Result: 1 failure, the exact-segment check.
+  - Both reverted, suite green again.
+- product_truth 25/25; proving_symbol legitimately blank (04A-family precedent).
+- Contract re-pulled. Met, with one judged gap. The acceptance clause names "their source version", but the module does not attach a snapshot version. This is accepted: `SourceFileRef` carries no version field, the snapshot binding (`target_source_snapshot_id`) lives in the already-CERTIFIED FTF-04A17 `DiscoveredAgentCandidate`, and the packet forbids schema changes. The gap is disclosed, not faked.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-0306 — Base model revision/digest resolver
+- Criterion ID: FTF-0306
+- PR: https://github.com/SJZLab/Sovra/pull/380 (already merged)
+- Merge commit: 1dbdd558504d04054026e054ff5ae88e89954222 (PR head `4c73c31e`)
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: PR #380's non-merge commits, PR body and PR comments carry `session_01QModAYMWatn12S6SwAx5f5`; its 3 conflict-merge commits have no trailer and touch no FTF-0306 code. No match.
+- Date: 2026-10-01
+- CI: run 36801651310 on head `4c73c31`, 41/41 success.
+  - `gate` job 110177095636 (runner_id 1000013013): the step log shows `test_ftf_0306.py` "all checks passed".
+  - `base-model-revision-digest-resolver-integration` job 110177096176 (runner_id 1000013045): "real Postgres base-model-digest-resolver proof: all checks passed".
+  - Earlier runner_id-0 runs were the documented outage.
+- Local: unit 16/16 (including real local HTTPS for the Hugging Face path); integration 9/9 against freshly migrated Postgres 16.
+- Own fault injections (Law 1). These are the first on record: the producer's attempt was blocked by its sandbox.
+  - (A) `verify_or_compute_weights_digest` returns the stored digest without recomputing. Result: 2 unit failures and 1 integration failure, on "compare hashes on every load/resume" and drifted bytes raising DigestMismatchError.
+  - (B) The local_filesystem digest is derived from `sha256(display_name)`. Result: 3 unit failures and 1 integration failure, on "display-name equality is never a substitute".
+  - Both reverted, both suites green again.
+- product_truth 25/25; proving_symbol legitimately blank (FTF-0302/0303/0304 precedent; the future caller is a training/resume worker).
+- Contract re-pulled; met. Correction for the record: the spec-matrix notes and PR body overstate coverage. The Hugging Face test checks dispatch and re-verification, not byte drift. Drift is proven for local and S3 through the same comparison code path.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-04A06 — Local repository connector — DECERTIFIED to PROVISIONAL (2026-10-01)
+- Criterion ID: FTF-04A06 (previously CERTIFIED, evidence_hash `249ff0663df74fe25f33f35673a319ea6d728b90`)
+- Decided-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. This session authored no FTF-04A06 commit.
+- Evidence, reproduced directly in this session:
+  - `capture_local_repository` runs `git -C <untrusted root> status` (`local_repository_connector.py` `_run_git`). It does not disable `core.fsmonitor`, hooks, or system/global config.
+  - A target repo whose own `.git/config` sets `core.fsmonitor='echo pwned > INJECTED.txt; false'` gets that command executed during capture.
+  - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
+  - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
+- Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.

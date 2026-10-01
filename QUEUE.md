@@ -1,4 +1,20 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T07:30:00Z (Control plane, session `session_01QVznorVMjnmcttUhyDnoGR`,
+  branch `claude/zealous-brown-verta8`): **independent L2 review of the 10-item PROVISIONAL
+  backlog. 3 CERTIFIED, 7 NOT CERTIFIED, 1 DECERTIFIED.**
+  - CERTIFIED: FTF-0212, FTF-04A15, FTF-0306.
+  - NOT CERTIFIED (security): FTF-H007. A repo-controlled `core.fsmonitor` runs during the
+    "non-executing" scan.
+  - DECERTIFIED to PROVISIONAL: FTF-04A06. The same flaw edits the target working tree,
+    contrary to its own negative_acceptance.
+  - NOT CERTIFIED: FTF-0601 (a final suite locks with an empty reviewer via PATCH) and FTF-1206
+    (nothing persisted).
+  - NOT CERTIFIED, tests don't catch an injected fault: FTF-0500B, FTF-0500C, FTF-0500D,
+    FTF-1807.
+  `status.py` 97 → 99/300. The frontier is NOT exhausted: see "## Active" items 3–4. Also
+  resolved: FTF-0902's real root cause (kind v0.24.0's kindnet enforces NetworkPolicy, so the
+  baseline is not a non-enforcing cluster) and FTF-1703's implicit FTF-R006 dependency (Active
+  1–2). Watchdog findings dispositioned. One owner ask (branch protection, low urgency).
 Updated: 2026-10-01T06:52:56Z (scheduled relay shift, branch `claude/wizardly-fermat-0hgh9v`) —
   **frontier re-verified exhausted again, no delta since the immediately-prior shift.** Branch
   found at the same commit as `origin/main` (`d925da1`, PR #397's merge) — no prior unmerged
@@ -8000,7 +8016,12 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently.
+2026-10-01 (Control plane, from watchdog finding 2026-09-18): **enable a branch-protection
+ruleset on `main`** (GitHub → Settings → Rules → Rulesets: require a pull request before merging,
+require the `gate` status check, block force pushes). Today `BRANCH_PROTECTION` is
+instruction-tier only, and the direct-push norm has already failed twice (2026-09-15,
+2026-09-17). This changes repo settings, so it is ask-first. Low urgency: nothing is blocked on
+it. Once it's on, reply and Control plane will update `CLAUDE.md`'s `BRANCH_PROTECTION` flag.
 
 2026-09-30 (resolved 2026-10-01T01:14Z): the repo-wide GitHub Actions runner-provisioning outage
 escalated at 09:20Z (past its own "clears within hours" precedent window — 3h37m+ continuous at
@@ -8089,6 +8110,56 @@ own `efec3c0` and PR #162 are superseded by this entry, not contradicted
 by it — same conclusion, this is simply the first version tied to a
 verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
+
+## Active (decided by Control plane 2026-10-01 — relay executes)
+1. **FTF-0902 (PR #342): root cause corrected. It is not ARP timing. Pin kind to v0.23.0.**
+   kind v0.24.0, which the `network-policy-enforcement-integration` job installs, ships kindnet
+   with built-in NetworkPolicy enforcement (release notes: "Out-of-the-box support for network
+   policy via sigs.k8s.io/kube-network-policies"). So the "non-enforcing baseline" cluster
+   `npt-baseline` really is enforcing. That explains why the baseline result is exactly
+   allowed=True / denied=False, and why it fails all 3 retries deterministically
+   (CI run 36801270474, job 110175923748). The drafted "ARP warm-up" fix would not have helped.
+   DoD for the relay, all on PR #342's branch:
+   (a) in `.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job, change the
+   kind download URL from `v0.24.0` to `v0.23.0` (the last release whose kindnet does not
+   enforce NetworkPolicy), and update the job comment to say why the version is pinned;
+   (b) correct the `probe_tcp` docstring in
+   `tests/integration/test_ftf_0902_network_policy_enforcement.py`, which cites the ARP
+   misdiagnosis. Keep the bounded retry; it is still safe;
+   (c) push, and get a real run where `network-policy-enforcement-integration` is green with
+   baseline {allowed: True, denied: True} and enforcing {allowed: True, denied: False,
+   metadata: False}.
+   Fallback only if v0.23.0 cannot create clusters on the runner: keep v0.24.0 and turn off
+   kindnet's policy controller on the baseline cluster only. Record the method in the job log.
+   Do NOT touch `packages/security/network_policy_templates.py`. The enforcing-cluster result
+   already proves it.
+2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
+   ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
+   annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
+   identity + immutable export), even though `docs/TASK_INDEX.md` does not list it as a
+   dependency. Under the default resolution rule the architecture already implies this, so it
+   is not an owner ask. Critical path: FTF-0306 (CERTIFIED 2026-10-01) → FTF-0510 → FTF-0515 →
+   FTF-0516 → FTF-R006 → FTF-1703. The relay should not claim FTF-1703 before FTF-R006 is
+   CERTIFIED. Synthetic, labelled reference data is explicitly allowed (§55), so no customer
+   data ask is needed.
+
+3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
+   `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
+   - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
+     `core.hooksPath=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`). Make
+     risky repo-config keys and symlinked or hooksPath hooks blocking findings. Add tests for each.
+     FTF-04A06 was decertified for this.
+   - **FTF-0601:** add validation on the PATCH path; refuse to lock with an empty reviewer.
+   - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
+     on a later page blocks.
+   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
+   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
+   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.
+   - **FTF-1206:** needs persistence. Claim a separate migration prerequisite first, or mark
+     BLOCKED_DEPENDENCY.
+   These items stay PROVISIONAL. The fix PR for each one is re-reviewed by Control plane.
+4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
+   `docs/spec-matrix.yaml`. FTF-0510 (next on the FTF-1703 path) is now ready.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was

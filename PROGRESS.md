@@ -1,4 +1,38 @@
 # PROGRESS — Sovra
+## 2026-10-01T07:30:00Z — Control plane (CERTIFY + UNBLOCK), session `session_01QVznorVMjnmcttUhyDnoGR`
+
+OPERATE: `CLAUDE.md` hash matched `CLAUDE.md.sha256`; `BLOCKER.md` had no live entry. CERTIFY:
+re-verified all 10 PROVISIONAL items from scratch in isolated worktrees at `d925da1`. Did not
+adopt the 5 stale, overlapping certification PRs (#383/#386/#388/#391/#393); they are closed as
+superseded. The session-ID check covered commit trailers and PR body and comment text. This
+session appears on none of the reviewed PRs. Each item got: contract re-pulled; the CI job log of
+the step running its own proving test read (all 10 genuinely ran green on real runners); a local
+run; and own fault injections.
+
+- **CERTIFIED:** FTF-0212, FTF-04A15, FTF-0306.
+- **NOT CERTIFIED:**
+  - FTF-H007: security; the fsmonitor execution was reproduced by the certifier directly.
+  - FTF-0601: PATCH bypasses validators; a final suite locks with `reviewer_id=""`; verified in
+    the code.
+  - FTF-1206: the "Persist" requirement was not delivered.
+  - FTF-0500B, FTF-0500C (also a real lost-snapshot-header gap), FTF-0500D, FTF-1807: an injected
+    fault against a named clause left the proving test green (Law 1).
+- **DECERTIFIED:** FTF-04A06. It is the root of the H007 flaw; a malicious `core.fsmonitor`
+  wrote a file into the target working tree during capture. This is the repo's first
+  decertification, done on direct reproduction evidence (Law 2 cuts both ways). Full detail is
+  in the ledger and in `docs/certifications/queue.md`.
+
+UNBLOCK:
+- FTF-0902: the "ARP timing" diagnosis was wrong. kind v0.24.0 ships kindnet with NetworkPolicy
+  enforcement, so the baseline cluster enforces and `denied` fails deterministically. Relay DoD:
+  pin kind v0.23.0.
+- FTF-1703: deferred behind FTF-R006 (§55 "approved" traces plus §77.3 Argilla review
+  ownership), via the default resolution rule, not an owner ask.
+
+Watchdog: all five findings dispositioned. The CERTIFY procedure now also requires PR-body
+session checks and reading the job log of the proving test. `status.py` 99/300 certified, 24
+product-true. product_truth 25/25, validate_spec --strict clean.
+
 ## 2026-10-01T01:14:00Z — Same designated branch, continuation shift — repo-wide GitHub Actions outage RESOLVED, confirmed with real evidence
 
 Continuation of this session's own earlier 2026-09-30T07:00-07:03Z entries below (PR #342 merge-

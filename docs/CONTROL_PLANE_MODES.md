@@ -53,6 +53,16 @@ session ID on that PR. If any match, you are not an independent certifier for
 that PR — say so and stop. State the session-ID comparison explicitly in
 every ledger.md entry, not just a role label.
 
+Commit trailers alone are not enough (watchdog finding 2026-09-25, FTF-0508):
+a cherry-pick or carry-over keeps the original author's trailer. Also compare
+against every session named in the PR body and its comments as the author,
+submitter or conflict-resolver, and against any session that superseded,
+cherry-picked or re-opened the work. Any match means you are not independent.
+
+A green `gate` is not evidence that a given test ran (watchdog finding
+2026-09-23). For step 2, find the CI job/step that invokes the proving test
+and read that job's log to confirm the test executed and passed.
+
 ### UNBLOCK (relay wrote BLOCKER.md)
 1. Read BLOCKER.md: what failed, what was tried, the relay's route options.
 2. Code/logic problem → pick or extend a route option; if it needs an owner
