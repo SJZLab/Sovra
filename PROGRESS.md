@@ -25930,3 +25930,46 @@ certification — not yet L1-PROVEN-and-merged-pending-cert in the usual sense s
 was never merged (only submitted). Stopping here for this item. No open owner ask (`QUEUE.md`
 "Owner actions — current" unchanged, still reads only the low-urgency branch-protection ask and
 resolved history).
+
+## 2026-10-01T09:05:00Z — Same shift, continued — PR #402 CI red: kind-pin theory falsified by real evidence, warm-up fix pushed
+
+PR #402's subscription delivered a real `check_run.completed` failure event for
+`network-policy-enforcement-integration` (job `110295202473`, run `36839582390`). Investigated
+rather than assumed: `get_job_logs` confirmed a genuine runner (`runner_id: 1000013357`, not the
+`runner_id: 0` outage signature) and that `kind v0.23.0 go1.21.10 linux/amd64` was actually
+installed and used (`Install kind` step output). Despite that, the baseline cluster returned
+`{allowed: True, denied: False, metadata: True}` — the exact signature the Control-plane DoD
+attributed to kindnet v0.24.0's default NetworkPolicy enforcement. Since v0.23.0 genuinely does
+not enforce, this falsifies that root-cause theory with direct evidence from this PR's own run,
+not a guess.
+
+Read the full job log timeline: `allowed` (10.244.0.7) and the separately-created
+`fake-metadata-service` (hostNetwork, scheduled *after* `denied`) both connected on their first
+probe attempt; only `denied` (10.244.0.5, same manifest/image as `allowed`, same apply batch)
+failed all 3 retries across ~21s. Recency-of-creation does not explain this (the metadata pod is
+the most recently created of all three and connected instantly). What's common to the one slow
+destination is that it's the *second* of the two same-batch listener pods probed — matching the
+harness-timing theory several shifts on PR #342 drafted before the Control-plane correction (a
+disclosed "ARP warm-up" fix: pre-connect to both destinations, symmetrically, strictly before the
+NetworkPolicy object exists) but never actually landed, each blocked by a different session's own
+local sandbox tooling denial ("Security Test Removal") on edits to this specific file.
+
+This session hit no such denial. Implemented the warm-up for real in
+`tests/integration/test_ftf_0902_network_policy_enforcement.py::run_scenario`: a single,
+discarded-result `probe_tcp(..., attempts=1)` call to both `allowed_ip` and `denied_ip`, inserted
+immediately after both IPs are fetched and strictly before `build_network_policy_yaml`/
+`apply_manifest` for the policy — applied identically on both clusters, so it cannot mask real
+enforcement (no policy object exists yet when it runs). Kept the v0.23.0 kind pin (still a
+reasonable version choice, just not independently sufficient). Verified before pushing: `uv run
+python3 -m py_compile` clean, `ruff check .`/`ruff format --check .` clean, `mypy .` clean (358
+files), `tests/tasks/test_ftf_0902.py` 19/19 unchanged, `validate_spec.py --strict` clean,
+`product_truth_check.py --fail-on-unwired` unchanged `25/25`.
+
+Updated `QUEUE.md`'s "## Active" item 1 status note with the falsified-theory finding and the new
+fix, rather than silently overwriting the prior (wrong) claim — Law 1/17: a disproven hypothesis
+stays visible, not quietly replaced. Committed and pushed to `claude/wizardly-fermat-c06dbx`;
+posted one comment on PR #402 (the CI-red protocol: push a fix or say what's blocking — did the
+former, documented why the original fix didn't work rather than silently pushing a second guess).
+Not self-certified. Awaiting this new push's own real CI run before concluding whether the
+harness-timing theory holds; if it also fails, this becomes a Control-plane design question (a
+3rd distinct, evidence-falsified theory), not a further relay guess, per STEP 4(c).

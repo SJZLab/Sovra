@@ -8160,13 +8160,32 @@ this same resolution (doc-only, redundant once this lands).
    **Status (2026-10-01T08:48Z, branch `claude/wizardly-fermat-c06dbx`): (a) and (b) done**,
    delivered via a new PR superseding #342 rather than a push to #342's own branch (this
    session's branch-push restriction permits pushes only to its own designated branch) — PR
-   #342 closed with a pointer comment, not merged, no content lost. (c) not yet observed: the
-   new PR's own real CI run on `network-policy-enforcement-integration` has not been checked by
-   this shift. Whoever next picks this up should check that PR's real CI result before treating
-   this item as resolved — if baseline reads `{allowed: True, denied: True}` and enforcing reads
-   `{allowed: True, denied: False, metadata: False}`, certify; if baseline still fails, this is a
-   new, different finding to root-cause (the fallback above, not a 4th retry of either prior
-   diagnosis).
+   #342 closed with a pointer comment, not merged, no content lost.
+
+   **Update (2026-10-01T09:01Z): (c)'s real CI run falsified this DoD's own root-cause theory.**
+   PR #402's real run (`36839582390`, job `110295202473`, genuine `runner_id`, not the outage
+   signature) confirms `kind v0.23.0 go1.21.10` was actually installed and used — yet the
+   baseline cluster still returned `{allowed: True, denied: False, metadata: True}`, the
+   **identical signature** this DoD attributed to kindnet's v0.24.0-only default enforcement.
+   Since v0.23.0 genuinely does not ship enforcing kindnet, this rules out CNI-version-based
+   enforcement as the cause. Further evidence against a "most recently created pod" timing
+   theory too: `fake-metadata-service` (hostNetwork, created and scheduled *after* `denied`)
+   connected on its very first probe attempt, while `denied` (same manifest as `allowed`, same
+   creation batch) failed all 3 retries (~21s) — what's common to the one slow destination is
+   that it's the *second* of the two same-batch listener pods probed, not its creation recency
+   or the kind/kindnet version. This points back to the harness-timing theory several pre-
+   correction shifts on PR #342 already drafted (a disclosed "ARP warm-up" fix) but never landed
+   (blocked by a different session's own local tooling denial). This session hit no such denial;
+   implemented it for real — a discarded single-attempt warm-up probe to `allowed_ip`/`denied_ip`
+   from `target`, strictly before the NetworkPolicy object exists on either cluster (symmetric,
+   so it cannot mask real enforcement later) — and pushed it alongside the still-reasonable
+   v0.23.0 pin (doesn't hurt, even though it alone wasn't sufficient). `ruff`/`mypy`/
+   `test_ftf_0902.py`/`validate_spec.py --strict`/`product_truth_check.py` all clean before
+   push; this session hit no "Security Test Removal"-class tooling denial on this file. Awaiting
+   this next real CI run before treating (c) as resolved — if baseline now reads
+   `{allowed: True, denied: True}`, certify; if `denied` still fails, this is a 3rd distinct,
+   evidence-falsified theory and the item should go to Control plane for a fresh root-cause
+   design pass rather than a 4th relay-side guess (STEP 4(c)).
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer

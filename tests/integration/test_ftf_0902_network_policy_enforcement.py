@@ -422,6 +422,24 @@ def run_scenario(cluster: str, install_calico: bool) -> dict[str, bool | str]:
     allowed_ip = get_pod_ip(cluster, NAMESPACE, "allowed")
     denied_ip = get_pod_ip(cluster, NAMESPACE, "denied")
 
+    # Warm both destinations' routes/ARP entries from `target` strictly
+    # *before* any NetworkPolicy object exists on this cluster, applied
+    # identically on both the baseline and enforcing cluster so the timing
+    # stays symmetric (CI run 36839582390's own real, disclosed finding:
+    # with the kind-version root cause ruled out -- the baseline cluster's
+    # `denied` probe failed identically on kind v0.23.0, whose kindnet does
+    # not enforce NetworkPolicy, exactly as it had on v0.24.0 -- while the
+    # `allowed` pod and the separately created, later-scheduled
+    # `fake-metadata-service` pod both connected on their very first
+    # attempt, ruling out "most recently created pod" as the explanation
+    # too; what's common to the one pod that is slow is that it is probed
+    # *second* among the two same-batch listener pods). Each warm-up
+    # connection's own result is discarded -- this cannot turn a real
+    # policy block into a false "allowed" later, because no policy exists
+    # yet when it runs.
+    probe_tcp(cluster, allowed_ip, 8080, attempts=1)
+    probe_tcp(cluster, denied_ip, 8080, attempts=1)
+
     metadata_available = False
     try:
         apply_manifest(

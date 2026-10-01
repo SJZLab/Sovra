@@ -21185,3 +21185,28 @@ real, fresh CI run on this PR's own pushed head (including
 `network-policy-enforcement-integration` actually reaching a green terminal state on the corrected
 baseline cluster) is that evidence. Awaiting independent Control-plane L2 review and that real CI
 run before certification. `docs/spec-matrix.yaml`'s FTF-0902 entry stays `PROVISIONAL`/`L1-PROVEN`.
+
+## 2026-10-01 (same shift, continued) — FTF-0902 (PR #402): kind-pin theory falsified, warm-up fix pushed
+
+PR #402's own real CI run (job `110295202473`, run `36839582390`, genuine `runner_id`) confirms
+`kind v0.23.0` was actually installed, yet the baseline cluster still returned
+`{allowed: True, denied: False, metadata: True}` — identical to the pre-fix signature. This
+falsifies the kindnet-v0.24.0-enforcement root-cause theory with direct evidence, not
+re-interpretation: v0.23.0 genuinely does not enforce NetworkPolicy, so enforcement cannot explain
+a block that persists on it.
+
+Log timeline shows `allowed` and the later-created `fake-metadata-service` both connect on the
+first probe attempt; only `denied` (same manifest/batch as `allowed`) fails all 3 retries. Recency
+of pod creation does not explain this. This matches the harness-timing theory ("ARP warm-up")
+several PR #342 shifts drafted before the Control-plane correction but never landed (blocked each
+time by a different session's own local tooling denial). This session hit no such denial and
+implemented it for real: a discarded single-attempt warm-up probe to both `allowed_ip`/`denied_ip`
+strictly before the NetworkPolicy object exists on either cluster (symmetric — cannot mask real
+enforcement). Kept the v0.23.0 pin (harmless, just not sufficient alone).
+
+Verified before push: `ruff`/`mypy`/`test_ftf_0902.py` (19/19)/`validate_spec.py --strict`/
+`product_truth_check.py` (`25/25`) all clean. Pushed to PR #402; awaiting its next real CI run.
+**If `denied` still fails on the baseline cluster after this fix, that is a 3rd distinct,
+evidence-falsified theory and this item should move to a Control-plane design pass, not a further
+relay-side guess (STEP 4(c)).** `docs/spec-matrix.yaml`'s FTF-0902 entry is unchanged
+(PROVISIONAL/L1-PROVEN) — not re-claiming a pass that hasn't been observed yet.
