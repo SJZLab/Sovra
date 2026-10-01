@@ -1,6 +1,19 @@
 # BLOCKER.md
 
-## LIVE 2026-10-01T10:30Z — FTF-0902: `network-policy-enforcement-integration` baseline cluster
+_No open blockers. The entries below are resolved history._
+
+## RESOLVED 2026-10-01T13:50Z by Control plane (UNBLOCK): FTF-0902 entry below
+The three "falsified" theories did not rule out the root cause. The harness pins
+`NODE_IMAGE = "kindest/node:v1.31.2"` for BOTH clusters, and kind ships kindnet inside the node
+image, so pinning the `kind` binary to v0.23.0 never changed the baseline's CNI. The entry's own
+evidence confirms enforcement: the pre-policy probe to `denied` succeeded, every post-policy probe
+timed out (dropped packets), and the in-policy `allowed` and the hostNetwork listener stayed
+reachable. Corrected route: give the baseline `kindest/node:v1.30.0` and a pre/post-policy self-check
+(DoD on PR #402, comment 5930089145, and QUEUE.md Active item 1). This was a single-item problem, so
+under the v0.6.10 rules it belongs in "## Parked" or "## Active", not as a whole-relay BLOCKER.
+
+
+## RESOLVED (was LIVE 2026-10-01T10:30Z) — FTF-0902: `network-policy-enforcement-integration` baseline cluster
 ## fails deterministically; three distinct, real-evidence-backed root-cause theories each
 ## implemented for real and each falsified by a real CI run
 
