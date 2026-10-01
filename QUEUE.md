@@ -1,4 +1,55 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T18:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-wkzp3g`) —
+  **FTF-0510 (Tokenization analysis) implemented and submitted PROVISIONAL.** STEP 0:
+  `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902,
+  10:30Z) untouched, not retried a 4th time. STEP 0.1: `PROGRESS.md`/this file/
+  `docs/certifications/queue.md` re-read fresh, not assumed. All three RELAY-OWNED
+  fix-and-resubmit items this file's own "## Active" item 3 previously listed as untouched
+  (FTF-0500B/FTF-0500D/FTF-1807) turned out already PR'd by concurrent/prior shifts on a fresh
+  `list_pull_requests` sweep (PR #407/#410/#408, #408 already merged) — only FTF-1206 remains,
+  and it needs a persisted org-policy migration first (this file's own existing note, a larger,
+  separate prerequisite, not a same-shift fix). Recomputed the dependency-ready frontier instead
+  per item 4's own instruction ("Newly dependency-ready … recompute from
+  `docs/spec-matrix.yaml`"): **FTF-0510** (deps FTF-0306/FTF-0500/FTF-0508, all three CERTIFIED)
+  has a real task packet (`tools/r1_handoff.py packet FTF-0510`) with a full acceptance/
+  negative_acceptance contract, so this is not an "improvised DoD" case.
+
+  **New runtime dep decision, disclosed rather than silently added:** this task's acceptance
+  clause ("Tokenize with actual selected tokenizer/template") cannot be met without a real
+  tokenizer/template library, and `workers/data` had zero third-party dependencies before this
+  shift. `docs/architecture/REFERENCE_REPOSITORIES.md`'s own "Model templates" row already names
+  the Hugging Face chat-templating mechanism as the required answer, so this was resolved via
+  CLAUDE.md's own "Default resolution rule" (same precedent FTF-04A11 already used for `pyyaml`)
+  rather than treated as an open owner ask: added `tokenizers` (real fast `tokenizer.json`
+  loading, no torch/tensorflow) and `jinja2` (renders the real `chat_template` string) to
+  `workers/data/pyproject.toml`, not the full `transformers` package.
+
+  Implemented `workers/data/tokenization_analysis.py::analyze_tokenization` — real per-message
+  cumulative token boundaries and a real token-count distribution via `ChatTemplateFastTokenizer`
+  (the real selected model's own resolved tokenizer + chat template, `exact=True`), and
+  `ApproximateAliasTokenizer` (`exact=False`) for the negative_acceptance's "alias-only" case.
+  `TokenizationAnalysisReport.certifies_training_fit` is forced `False` whenever an approximate
+  tokenizer was used, or a conversation's own last message (always the real critical/
+  training-target turn per Section 8.2) would be truncated with no explicit caller-recorded
+  policy, or any row issue exists.
+
+  `tests/tasks/test_ftf_0510.py`: 30 checks, fully hermetic (a real `tokenizers.Tokenizer`
+  trained offline/in-memory, no HF Hub network call). Real fault injection performed directly
+  this shift (Law 1): temporarily no-op'd the module's own exact/truncation-policy certification
+  check — the two matching negative_acceptance tests genuinely FAILed, bound to this criterion
+  ID; reverted byte-identical (md5sum confirmed) and reran clean. Full evidence in
+  `docs/certifications/queue.md`'s matching 2026-10-01 entry, including the "no live caller yet"
+  disclosed scope (same precedent as FTF-0506/0507/0508/0511).
+
+  `uv run ruff check .`/`ruff format --check .` clean (358 files); `uv run mypy .` clean (358
+  files); `uv run pytest tests/unit` 3 passed; `scripts/validate_spec.py --strict`: 31
+  pre-existing `stale_commit` defects confirmed identical on `origin/main` before this change
+  (this sandbox's own shallow git clone, not a new defect — none name FTF-0510);
+  `product_truth_check.py --fail-on-unwired` unchanged `25/25`; `scripts/status.py` unchanged
+  `99/300` certified, 24 product-true (Law 2 — implementation is not certification). Not
+  self-certified (Law 4) — awaits Control-plane L2 review and a real CI run. No open owner ask
+  (this file's own "Owner actions — current" unchanged — only the low-urgency
+  branch-protection ask).
 Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`) —
   **FTF-1807 fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #408.** Branch found at
   the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged work of its
@@ -8220,9 +8271,10 @@ this same resolution (doc-only, redundant once this lands).
    through the module itself instead of re-implementing its SQL, and a later page that drops the
    snapshot-version header after one was seen is now caught). **FTF-0500B: fix PR #407 opened**
    (version-id-sensitive manifest hash + versioning-disabled refusal). **FTF-1807: fix PR #408
-   opened this shift** (operator-guidance semantics check replaces the old token-only check — see
-   `docs/certifications/queue.md`'s matching 2026-10-01 entry). Remaining, still untouched:
-   FTF-0500D, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2
+   opened 2026-10-01, merged.** **FTF-0500D: fix PR #410 opened** (classification x profile
+   matrix test replaces the single-case boundary test). Remaining, still untouched: **FTF-1206**
+   only — needs a persisted org-policy migration first (see below), a larger, separate
+   prerequisite, not a same-shift fix. Open each fix as a new `[relay] <ID>: fix L2
    findings` PR and append it to `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
@@ -8241,7 +8293,10 @@ this same resolution (doc-only, redundant once this lands).
      BLOCKED_DEPENDENCY.
    These items stay PROVISIONAL. The fix PR for each one is re-reviewed by Control plane.
 4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
-   `docs/spec-matrix.yaml`. FTF-0510 (next on the FTF-1703 path) is now ready.
+   `docs/spec-matrix.yaml`. **FTF-0510 (Tokenization analysis, next on the FTF-1703 path):
+   implemented and submitted PROVISIONAL this shift** (branch `claude/wizardly-fermat-wkzp3g`,
+   see this file's own top dated entry and `docs/certifications/queue.md`'s matching 2026-10-01
+   entry for full evidence, including the new `tokenizers`/`jinja2` runtime-dep disclosure).
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was

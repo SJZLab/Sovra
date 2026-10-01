@@ -1,4 +1,81 @@
 # PROGRESS — Sovra
+## 2026-10-01T18:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-wkzp3g`
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. `BLOCKER.md`'s only live entry
+(FTF-0902, 10:30Z) untouched — not retried a 4th time. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh, not assumed from prior context (both exceed single-read
+limits; used targeted `grep`/offsets per this repo's own standing practice).
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 listed FTF-0500B/FTF-0500D/FTF-1807 as still-untouched
+RELAY-OWNED fix-and-resubmit items. A fresh `list_pull_requests` sweep (not trusted from the
+file's own stale narrative, Law 2/5) found all three already PR'd by concurrent/prior shifts:
+PR #407 (FTF-0500B), PR #410 (FTF-0500D, just opened), and PR #408 (FTF-1807, already merged via
+PR #409's tracking confirmation). Only FTF-1206 remains from that list, and it needs a persisted
+org-policy migration first (this file's own existing note — a larger, separate prerequisite, not
+a same-shift fix) — picked it up per item 4's own instruction instead: "Newly dependency-ready …
+recompute from `docs/spec-matrix.yaml`." **FTF-0510** ("Tokenization analysis") has all three
+dependencies (FTF-0306/FTF-0500/FTF-0508) CERTIFIED and a real task packet
+(`tools/r1_handoff.py packet FTF-0510 --plan FINE_TUNING_FACTORY_RELEASE_1.md`) with a full
+acceptance/negative_acceptance contract — not an "improvised DoD" case.
+
+STEP 2 (PEV):
+- **P:** read the packet contract, `docs/architecture/REFERENCE_REPOSITORIES.md`'s "Model
+  templates" row, and the sibling `workers/data/*.py` modules (FTF-0506/0507/0508/0511) for
+  candidate-shape/path/no-DB conventions. Found `workers/data/pyproject.toml` had zero
+  third-party dependencies — this task's own acceptance clause ("Tokenize with actual selected
+  tokenizer/template") cannot be met without a real tokenizer/template library, so this required
+  a genuine new-runtime-dep decision (CLAUDE.md ask-first category). Resolved via CLAUDE.md's
+  own "Default resolution rule" rather than escalating: `REFERENCE_REPOSITORIES.md` already
+  names the Hugging Face chat-templating mechanism as the required answer, and
+  `hugging_face_artifact_resolver.py`'s (FTF-0302) own `_ALLOWED_FILENAME_SUFFIXES` already
+  anticipates fetching `tokenizer.json`/`tokenizer_config.json`/`.model` files for a resolved
+  artifact — confirmed PyPI reachability first, then added `tokenizers` (real fast-tokenizer
+  loading, no torch/tensorflow) and `jinja2` (renders the real `chat_template` string) to
+  `workers/data/pyproject.toml`, documented in the module's own docstring rather than silently
+  added, same precedent FTF-04A11 already used for `pyyaml`. Deliberately did not add the full
+  `transformers` package — unnecessary for exact tokenization + template rendering alone.
+- **E:** wrote `workers/data/tokenization_analysis.py::analyze_tokenization` with
+  `ChatTemplateFastTokenizer` (`exact=True`, real fast tokenizer + real chat template through a
+  sandboxed Jinja2 environment matching Hugging Face's own `apply_chat_template`, including a
+  real `raise_exception` global) and `ApproximateAliasTokenizer` (`exact=False`). Wrote
+  `tests/tasks/test_ftf_0510.py` (30 checks) fully hermetic — a real `tokenizers.Tokenizer`
+  trained offline/in-memory on a tiny fixed corpus, no Hugging Face Hub network call anywhere.
+  **Real fault injection (Law 1), performed directly this shift beyond the committed test file:**
+  temporarily replaced the module's own
+  `if not tokenizer.exact or requires_explicit_truncation_policy: certifies_training_fit = False`
+  line with a no-op; reran the test — exactly the two matching negative_acceptance checks
+  genuinely FAILed (alias-tokenizer certification, unresolved-truncation certification), bound to
+  this criterion ID; reverted byte-identical (`md5sum` confirmed matching before/after,
+  `4e8e9c2436d2662d5fedb8312819ff8f`) and reran clean. Also independently cross-checked the exact
+  backend's own token counts against a manual render+encode performed outside the production
+  module, proving no fabricated count.
+- **V:** `uv sync --all-packages` (confirmed `tokenizers`/`jinja2` install for real). `uv run
+  ruff check .`/`ruff format --check .` clean (358 files). `uv run mypy .` clean (358 files).
+  `uv run pytest tests/unit` — 3 passed. `python3 scripts/validate_spec.py --strict`: 31
+  pre-existing `stale_commit` defects — confirmed identical on `origin/main` before this change
+  via `git stash` + rerun; this sandbox's own git checkout is a shallow clone
+  (`git rev-parse --is-shallow-repository` → `true`), the real cause, not a defect this task
+  introduced; none of the 31 name FTF-0510. `python3 scripts/product_truth_check.py
+  --fail-on-unwired`: unchanged `25/25` (`proving_symbol` deliberately blank — disclosed "no live
+  caller yet" gap, Law 6/7, same precedent as FTF-0506/0507/0508/0511). `scripts/status.py`:
+  unchanged `99/300` certified, 24 product-true (Law 2 — implementation is not certification).
+  Regression-ran the full `workers/data` sibling suite (FTF-0506/0507/0508/0509/0511/0512/0513/
+  0514) plus FTF-0306's own test — all pass, zero regressions. Wired
+  `.github/workflows/ci.yml` with a new `FTF-0510 negative-test proof` step; YAML re-validated
+  (`yaml.safe_load`).
+
+Opened the fix as **PR** (branch `claude/wizardly-fermat-wkzp3g` → `main`, see `QUEUE.md`'s own
+top dated entry for the link once pushed) with full evidence appended to
+`docs/certifications/queue.md`'s matching 2026-10-01 entry. Not self-certified (Law 4) — awaits
+Control-plane L2 review and a real CI run before `certification_state` can move past
+PROVISIONAL.
+
+STEP 4: stop condition (a) does not apply (FTF-1206 remains untouched, correctly deferred behind
+its own migration prerequisite; FTF-0902/FTF-1703 remain correctly deferred); no new blocker
+found; FTF-0902's existing blocker was not re-poked a fourth time; no usage-limit stop; no new
+ask-first item (`QUEUE.md`'s own "Owner actions — current" unchanged — only the pre-existing,
+low-urgency branch-protection ask). Stopping here after a complete PEV cycle on one item.
+
 ## 2026-10-01T17:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. The designated branch was
