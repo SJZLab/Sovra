@@ -1,4 +1,10 @@
 # PROGRESS — Sovra
+## 2026-10-01 — Control plane (CERTIFY), session `session_01Q3XEPfNPnXgvFzQYem4YDX`
+Re-certified FTF-H007, FTF-04A06, FTF-0601 after PR #403: independent session, CI 41/41 on the PR,
+own fault injections (fsmonitor/hooks hardening removed -> both security tests FAIL; validators removed
+-> 4 FTF-0601 FAILs), contract met. Certified 99 -> 102/300. FTF-0500C (PR #405) is open/unmerged and not
+yet certifiable. See ledger.md.
+
 ## 2026-10-01T07:30:00Z — Control plane (CERTIFY + UNBLOCK), session `session_01QVznorVMjnmcttUhyDnoGR`
 
 OPERATE: `CLAUDE.md` hash matched `CLAUDE.md.sha256`; `BLOCKER.md` had no live entry. CERTIFY:

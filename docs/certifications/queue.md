@@ -21290,3 +21290,8 @@ submission does not self-certify).
 opened PR are required before certification. This entry is the trigger the 2026-10-01 review's own
 rule names for FTF-0500C specifically — not for FTF-0500B/FTF-0500D/FTF-1807/FTF-1206, which remain
 exactly as that review left them, unchanged, no new relay PR yet.
+
+### Certifier status, 2026-10-01 (session `session_01Q3XEPfNPnXgvFzQYem4YDX`)
+FTF-H007, FTF-04A06, FTF-0601: **CERTIFIED** (PR #403; see ledger.md). FTF-0500C: PR #405 is open and
+unmerged, so nothing to certify yet; re-review after it merges. FTF-0500B/0500D/1807/1206: unchanged,
+no relay fix PR yet.

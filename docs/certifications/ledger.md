@@ -9750,3 +9750,17 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-H007 / FTF-04A06 / FTF-0601 — RE-CERTIFIED after the 2026-10-01 fix (PR #403)
+- Criterion IDs: FTF-H007 (security), FTF-04A06 (was DECERTIFIED), FTF-0601
+- PR: https://github.com/SJZLab/Sovra/pull/403 (already merged)
+- Merge commit: d8e5c9ee79f6888c59745600d318498bbce45753 (PR head `272ae85`)
+- Validated-by: control-plane session https://claude.ai/code/session_01Q3XEPfNPnXgvFzQYem4YDX. Independent: PR #403's commits carry `session_01Tt961y3SGLdNNmVekj8f3p`; the unrelated PR #405 commit carries `session_01GxpieJszNPFZ5ruxRZvdmG`. No match.
+- Date: 2026-10-01
+- CI: run 36853046067 on PR #403 head, 41/41 check runs success, including `gate` (job 110338969435) and `evaluation-suite-integration` (job 110338970228).
+- Local: `test_ftf_h007.py` and `test_ftf_04a06.py` all checks passed; `test_ftf_0601_evaluation_suite.py` all checks passed against a fresh local Postgres 16 (migrations 0001-0018).
+- Own fault injections (Law 1):
+  - (A) Removed both `-c core.fsmonitor=false -c core.hooksPath=/dev/null` arguments from `_run_git`. Result: `FAIL [FTF-H007] the repo-controlled core.fsmonitor command was never actually executed` and `FAIL [FTF-04A06] a malicious core.fsmonitor command is never actually executed during capture`. Reverted, md5 `7c7b8268a2359cb7b7dabd3e87862ef2` before and after. (A first, invalid injection that set `core.fsmonitor=true` stayed green, as it should: it still overrides the repo's command. It is not counted.)
+  - (B) Replaced the three `validate_*` calls in `update_evaluation_suite` with direct assignment. Result: 4 FAILs in the FTF-0601 integration test. Reverted.
+- Contract (FTF-H007 packet re-pulled; the 2026-10-01 review's DoD checked point by point): `_run_git` hardening, dangerous git-config findings, symlinked-hook handling, aliased-import handling, the 04A06 never-edit-the-tree case, and the 0601 PATCH validators with migration 0018 are all present and proven. met.
+- `validate_spec --strict` clean (after unshallow); product_truth 25/25 (proving_symbol blank for these items, unchanged); `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run. status.py: 102/300 certified.

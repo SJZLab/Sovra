@@ -35,6 +35,11 @@ Updated: 2026-10-01T10:30:00Z (scheduled relay shift, branch `claude/wizardly-fe
   — commented there pointing to the new split-out PR so reviewers don't block the clean
   FTF-H007/FTF-04A06/FTF-0601 portion on the still-open FTF-0902 piece.
 
+Updated: 2026-10-01 (Control plane, session `session_01Q3XEPfNPnXgvFzQYem4YDX`): **re-certified
+  FTF-H007, FTF-04A06, FTF-0601 (PR #403, merge d8e5c9e, CI 41/41, own fault injections red).**
+  `status.py` 99 -> 102/300 certified. Done: those three. FTF-0500C fix is PR #405, still open
+  (not merged), so not certifiable yet. FTF-0500B/0500D/1807/1206 unchanged, awaiting relay fixes.
+
 Updated: 2026-10-01T07:30:00Z (Control plane, session `session_01QVznorVMjnmcttUhyDnoGR`,
   branch `claude/zealous-brown-verta8`): **independent L2 review of the 10-item PROVISIONAL
   backlog. 3 CERTIFIED, 7 NOT CERTIFIED, 1 DECERTIFIED.**
