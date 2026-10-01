@@ -491,6 +491,30 @@ def run_scenario(cluster: str, install_calico: bool) -> dict[str, bool | str]:
             ("-n", NAMESPACE, "logs", "denied"),
             ("-n", NAMESPACE, "get", "events", "--sort-by=.lastTimestamp"),
             ("get", "pods", "-A", "-o", "wide"),
+            # Leading theory after the above ruled out a crash/restart
+            # (0 restarts, Running, empty logs either way since `nc`
+            # doesn't log connections to stdout): the shell's own `while
+            # true` loop never exits even if `nc -l` itself silently fails
+            # to bind -- Kubernetes readiness only checks the container's
+            # PID 1 is alive, not that port 8080 is actually listening.
+            # These confirm or rule that out directly, from inside the pod
+            # and from the real connecting side, rather than inferred.
+            ("-n", NAMESPACE, "exec", "denied", "--", "sh", "-c", "ps; cat /proc/net/tcp"),
+            ("-n", NAMESPACE, "exec", "allowed", "--", "sh", "-c", "ps; cat /proc/net/tcp"),
+            (
+                "-n",
+                NAMESPACE,
+                "exec",
+                "target",
+                "--",
+                "nc",
+                "-z",
+                "-v",
+                "-w",
+                "5",
+                str(denied_ip),
+                "8080",
+            ),
         ):
             result = kubectl(cluster, *diag_args, check=False, timeout=30)
             print(f"+ kubectl {' '.join(diag_args)}\n{result.stdout}{result.stderr}")
