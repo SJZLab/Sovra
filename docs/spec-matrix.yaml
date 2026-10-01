@@ -6559,16 +6559,16 @@ FTF-0520:
   proving_symbol: ''
   proving_test: ''
 FTF-0601:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Evaluation suite schema/API
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0401, FTF-04A19,
     FTF-0405
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  proof_state: L1-PROVEN
+  proving_symbol: build_evaluation_suite_router
+  proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
   certification_state: NONE
   criticality: MUST

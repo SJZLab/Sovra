@@ -1,4 +1,16 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-09-30T09:20:00Z (scheduled relay shift, branch `claude/wizardly-fermat-xa6526`) --
+  **Repo-wide GitHub Actions runner-provisioning outage confirmed still live, escalated as an
+  owner ask** (see "Owner actions -- current" below and `BLOCKER.md`'s matching dated entry for
+  full evidence). Independently recomputed the dependency-ready frontier from `docs/spec-matrix.yaml`
+  + `docs/TASK_INDEX.md` directly: same conclusion three prior shifts today already reached --
+  every ready, not-yet-certified task is either already `PROVISIONAL` (Control plane's to certify,
+  not relay's) or already claimed by an open relay PR, except FTF-1703 which stays correctly
+  declined (needs a real Argilla reviewer workflow that doesn't exist here yet; its own would-be
+  unblocker FTF-R006 isn't dependency-ready either). No relay task work is possible this shift:
+  nothing genuinely unclaimed to pick, and no PR (new or existing) can reach green while the outage
+  holds. Stopping per the ask-first hard-stop rule. No code changed.
+
 Updated: 2026-09-28T19:20:00Z (scheduled relay shift, branch `claude/wizardly-fermat-f9qdmb`) —
   STEP 0: hash-checked CLAUDE.md (`sha256sum CLAUDE.md` matched the committed
   `CLAUDE.md.sha256` directly). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
@@ -1187,6 +1199,116 @@ Previously updated: 2026-09-27 (scheduled autonomous relay shift, session
   (Law 4) — awaiting independent Control-plane L2 review. No open owner ask.
 
 Previously updated: 2026-09-27 (scheduled Control-plane certifier shift, session
+Updated: 2026-09-27 (scheduled autonomous relay shift, session
+  https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm) — submitted **FTF-0601 (Evaluation suite
+  schema/API)** PROVISIONAL, [PR #337](https://github.com/SJZLab/Sovra/pull/337).
+
+  STEP 0: CLAUDE.md.sha256 self-check matched `sha256sum CLAUDE.md` directly. Read
+  PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh (tail sections, given file size) plus
+  `scripts/status.py` (86/300 certified, 22 product-true) directly rather than trusting a stale
+  restatement. This session's own designated branch (`claude/wizardly-fermat-17bf9h`) had already
+  been merged into `main` (no matching remote ref at shift start) — reset to fresh `origin/main`
+  per this session's own git instructions before picking new work.
+
+  Checked all open PRs directly via the GitHub API before picking new work: #336 (Control plane
+  certifying a separate FTF-04A20 duplicate submission, PR #334), #335 (FTF-0500D, in flight), #328
+  (FTF-04A15, in flight), #315/#314 (FTF-0303, NOT CERTIFIED), #313/#311/#308 (FTF-0513, already
+  certified/recorded), #295 (FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only),
+  #231 (FTF-0212), #195/#194 (FTF-0304, duplicate PRs) — none overlap with this shift's own
+  eventual pick.
+
+  Recomputed the dependency-ready frontier directly (`docs/TASK_INDEX.md`'s own dependency column
+  cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state`, via a small
+  one-off script) — 8 tasks came back dependency-ready after excluding CERTIFIED/in-flight-PR
+  tasks: FTF-04A02/FTF-0902/FTF-1201/FTF-H004 (disclosed `BLOCKED_EXTERNAL`/real-network-egress
+  precedents this sandbox already established), FTF-0500A (disclosed no-composed-route blocker,
+  same class PR #295 already found for FTF-0214), FTF-1703 (needs >=1000 real curated traces this
+  sandbox does not have). Picked **FTF-0601 ("Evaluation suite schema/API")** — all three of its
+  own real dependencies (FTF-0401/FTF-04A19/FTF-0405) confirmed `CERTIFIED` directly, no open PR
+  claims it, and it unblocks a dozen downstream MUST-criticality tasks (FTF-0602 through the
+  FTF-06xx evaluation chain).
+
+  Task contract pulled fresh: `python3 tools/r1_handoff.py packet FTF-0601 --plan
+  FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+  FINE_TUNING_FACTORY_RELEASE_1.md` directly).
+
+  Implemented `apps/api/app/evaluation/evaluation_suite_schema.py` (a project-scoped
+  `EvaluationSuite` bound to one specific, already-`locked` `AgentManifest` version — this task's
+  own real "versioned mandate/runtime binding" reading, disclosed in full in the module's own
+  docstring), `evaluation_suite_crud.py` (create/get/list/update/lock through the exact same
+  `TenantContext`/`authorize_resource_ownership`/`execute_tenant_scoped` composition FTF-0201/
+  FTF-0301/FTF-0401/FTF-0404/FTF-1001/FTF-04A07/FTF-04A19 already proved), `evaluation_suite_routes.py`
+  (the live router — gated to `{evaluator, workspace_admin, organization_admin}` write, matching
+  Section 45's own real, specific sentence "evaluator: create/run evaluation, no deployment" / every
+  Section 45 role read), the real forward Alembic migration (`0017_evaluation_suites`), and the new
+  phase-06 contract freeze (`packages/contracts/openapi/06-interface.yaml`,
+  `packages/contracts/jsonschema/06-domain.schema.json`, under a new `contracts:06` lock).
+
+  This task's own compressed negative_acceptance ("Wrong project/manifest, unversioned grading
+  logic and mixed train/final data grants rejected") is disclosed in full, split into four real,
+  independently-enforced conditions, in the schema module's own docstring — see that file for the
+  complete reasoning. Section 69.1's own "Final suite creator/reviewer is independent of candidate
+  implementer" is enforced both at construction and by a real database `CHECK`
+  (`ck_evaluation_suites_independent_final_reviewer`) for `final`-purpose suites specifically —
+  `development`-purpose suites carry no such restriction (Section 69.1 names the rule for the final
+  suite alone).
+
+  `tests/tasks/test_ftf_0601.py`: 20 test functions covering validators,
+  `EvaluationSuite.__init__` structural consistency, and a real, locally-hosted
+  `build_evaluation_suite_router` (real uvicorn server, real local socket) denying an
+  unauthenticated request and a viewer's write (403) before `session_factory` is ever called,
+  while an evaluator's write and read both reach the session layer — all pass, reproduced directly
+  by this same producer session, not merely trusted from a prior run.
+
+  `tests/integration/test_ftf_0601_evaluation_suite.py`: real Postgres 16 evidence (this sandbox's
+  own real sudo/`service postgresql start` access, a fresh scratch `sovra_migrate` role/
+  `sovra_ftf0601` database created for this run). Full Alembic chain `0001` through
+  `0017_evaluation_suites` upgrades clean, and `0017` alone round-trips `downgrade -1` ->
+  `upgrade head` clean. Two real organizations (org1 with two real projects/connections/snapshots/
+  manifests, org2 for the cross-tenant IDOR case), a real uvicorn server bound to the real,
+  distinct, least-privileged `sovra_app` role (confirmed `app_engine.url.username ==
+  APP_ROLE_NAME != owner_engine.url.username`), proving: unauthenticated denial (401), viewer
+  write-denied/read-allowed (403/200), the core cross-tenant IDOR case (404), a 'mixed' purpose
+  value refused (400), `grading_logic_version=0` refused (400), a manifest belonging to a different
+  project refused (409), a not-yet-locked manifest refused (409), a real development suite create
+  (201) with a real incrementing per-project version, locking without a reviewer refused (409),
+  locking with a real reviewer succeeding (200), re-locking/editing an already-locked suite refused
+  (409), a final-purpose suite's self-review locking refused (409) and succeeding once a genuinely
+  distinct reviewer is assigned (200), and three real database-level defense-in-depth proofs (a raw
+  INSERT with `purpose='mixed'` caught by `ck_evaluation_suites_purpose`, a raw INSERT of a locked
+  final suite with `reviewer_id == created_by` caught by
+  `ck_evaluation_suites_independent_final_reviewer`, and a grant-surface proof that `sovra_app`
+  cannot `DELETE` an `evaluation_suites` row directly).
+
+  `uv run ruff check .`/`ruff format --check .` clean repo-wide (297 source files, after fixing 24
+  line-length/unused-variable findings this same producer session found and fixed before
+  submission — disclosed, not hidden); `uv run mypy .` clean repo-wide (297 files, zero new
+  errors). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`
+  resolved the shallow-clone `stale_commit` false positives every prior shift's own history
+  already disclosed). `product_truth_check.py --fail-on-unwired`: **23/23** (up from 22/22) —
+  `build_evaluation_suite_router` (this task's own real `proving_symbol`) is a real, genuine live
+  caller from `apps/api/app/main.py`, confirmed by direct inspection of the diff. `status.py`:
+  unchanged `86/300` certified, `22` product-true (Law 2 — this is a submission, not a
+  certification). Regression swept `test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_1001.py`/
+  `test_ftf_0401.py`/`test_ftf_0404.py`/`test_ftf_0405.py` — zero regressions.
+
+  `docs/spec-matrix.yaml` FTF-0601 set to `certification_state: PROVISIONAL` / `proof_state:
+  L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol:
+  build_evaluation_suite_router` / `proving_test: tests/tasks/test_ftf_0601.py`; `evidence_hash`
+  left blank pending the real merge commit. CI gate step (`FTF-0601 negative-test proof`) added to
+  `.github/workflows/ci.yml` immediately after the FTF-04A20 step, plus a new dedicated
+  `evaluation-suite-integration` job (real `services: postgres` container) mirroring
+  `manifest-evidence-integration`'s own pattern. **Not self-certified (Law 4)** — independent
+  Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+  STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+  compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0601) is `L1-PROVEN`, no blocking
+  defect found by this session's own review — awaiting an independently-triggered Control-plane
+  certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+  current" unchanged, empty).
+
+Prior history:
+Updated: 2026-09-27 (scheduled Control-plane certifier shift, session
   https://claude.ai/code/session_015atcDZbzcrRMTRtWZumvor, triggered by the `pull_request.opened`
   webhook for PR #333) — independently certified **FTF-04A20 (ManifestEvidence schema/API)**.
   Session-ID check: PR #333's sole commit carries `Claude-Session: .../session_01DV6JW7DUe1YfrdLj4LHPNB`
@@ -7670,12 +7792,27 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-None currently. The GitHub Actions runner-provisioning outage first
-found on PR #170 (2026-09-21, escalated to an owner ask the same day)
-and independently reconfirmed on PR #172 (FTF-R016) and PR #176
-(FTF-0202) is now confirmed genuinely cleared: this same certifier
-shift independently ran real, fresh CI on four separate PRs today
-(#159, #160, #161, #167) -- 21/21, 22/22, 23/23, and 23/23 real jobs,
+**2026-09-30 (dated) — Repo-wide GitHub Actions runner-provisioning outage, recurred, now past
+its own "clears within hours" precedent window.** Every check run on every open PR (five relay
+task PRs, three docs-only tracking PRs, four Control-plane certification PRs -- eleven PRs, every
+single job on each) has failed within seconds with `runner_id: 0`/no runner ever assigned since
+~2026-09-30T05:30Z -- confirmed independently this shift on the newest run in the whole repository
+(run #600, PR #393, still failing at 09:10Z) after a prior shift (07:04Z, PR #390) already
+diagnosed the identical signature and chose to wait rather than escalate, per this exact outage
+class's own 2026-09-21/2026-09-27 precedent of self-clearing "within hours." That window has now
+been exceeded (3h37m+ continuous, ten further workflow runs, zero recoveries) with no repo-side
+fix possible (ruled out `.github/workflows/ci.yml`/secrets/runner-label changes as the cause by
+diff against the last known-green run). Full evidence and three route options in `BLOCKER.md`'s
+matching dated entry. **No relay or Control-plane merge is possible while this holds** -- `merge on
+green` cannot be exercised for any PR, including the three already-open frontier-exhausted/
+merge-conflict tracking PRs (#389, #390, #392). Remove this entry the moment a session confirms a
+fresh PR event gets a real `runner_id` again (same resolution bar the 2026-09-21 entry below used).
+
+2026-09-21 (resolved, kept for the resolution-bar precedent the entry above reuses): the
+GitHub Actions runner-provisioning outage first found on PR #170 (2026-09-21, escalated to an
+owner ask the same day) and independently reconfirmed on PR #172 (FTF-R016) and PR #176
+(FTF-0202) was confirmed genuinely cleared: a certifier shift independently ran real, fresh CI on
+four separate PRs that day (#159, #160, #161, #167) -- 21/21, 22/22, 23/23, and 23/23 real jobs,
 every one with a real `runner_id`/`runner_name` and real per-step
 execution timestamps, structurally different from every failing run
 during the outage (`runner_id: 0`, no runner ever assigned). This
@@ -7683,8 +7820,8 @@ directly confirms the resolution bar the original owner-ask entry
 itself set ("a session confirms CI is provisioning runners again on a
 fresh PR event"), independently of PR #178's own earlier claim to the
 same effect. FTF-1302 (PR #170) and FTF-R016 (PR #172), both previously
-reviewed sound but NOT CERTIFIED solely because of this outage, are
-being re-reviewed now with a fresh, genuine CI run each -- see this
+reviewed sound but NOT CERTIFIED solely because of this outage, were
+re-reviewed with a fresh, genuine CI run each -- see this
 file's own top status note and `docs/certifications/queue.md` for the
 full history.
 
@@ -7977,6 +8114,15 @@ Prior history, kept for the record: this paragraph previously named **FTF-04A04*
 branch/ref selector + immutable SHA resolver") as the current pending item; it was independently
 reviewed and CERTIFIED via **PR #353** (merge commit
 `89c0b0ad5aefedf3bfb16ed89bfb3392871af828`) — see "## Done" for the certification summary and
+**FTF-0601** ("Evaluation suite schema/API") — submitted this shift via
+[PR #337](https://github.com/SJZLab/Sovra/pull/337), see this file's own top dated log entry for
+the full evidence. `docs/spec-matrix.yaml`: `certification_state: PROVISIONAL`
+/ `proof_state: L1-PROVEN` / `proving_symbol: build_evaluation_suite_router`. Awaiting independent
+Control-plane L2 review and a real CI run on the opened PR — not self-certified (Law 4).
+
+Prior history, kept for the record: this paragraph previously named FTF-04A20 (ManifestEvidence
+schema/API) as the current pending item; it was independently reviewed and CERTIFIED via PR #333
+(merge commit `7233538c45c604933799bdbc39492ac8c92d826f`) — see
 `docs/certifications/ledger.md`/`docs/certifications/queue.md` for the full history and evidence.
 
 Superseded by the certification above, kept verbatim for the record:
