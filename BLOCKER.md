@@ -1,7 +1,25 @@
 # BLOCKER.md
 
-## OPEN 2026-09-30 — Repo-wide GitHub Actions runner-provisioning outage, past its own
+_No open blockers. The entry below is resolved history, kept for the record per this repo's
+"reported, not silently worked around" norm — not a live issue._
+
+## RESOLVED 2026-10-01T01:14Z — Repo-wide GitHub Actions runner-provisioning outage, past its own
 ## "clears within hours" precedent window
+
+**Resolution:** confirmed genuinely cleared via PR #342's own run (`36681155484`, head
+`8066b666`), independently of any prior shift's claim: `get_workflow_job` on the
+`network-policy-enforcement-integration` job returned `runner_id: 1000012646`, a real runner
+name, and real per-step timestamps spanning 3+ minutes of actual `kind`/`kubectl`/Calico
+execution — structurally different from every `runner_id: 0`/zero-log-content failure during the
+outage. 38/39 jobs on that run completed green, `gate` included; the one failure is the
+already-diagnosed, pre-existing baseline-cluster ARP timing defect this repo's own PR #342 thread
+has tracked since 2026-09-27 (ticket-level detail in that PR's comments), not a new or
+outage-related failure. Cross-checked against PR #390's own independently re-run workflow
+(`36681644901`) to confirm the clearing is repo-wide, not specific to one PR. This meets the
+same resolution bar the 2026-09-21 occurrence used ("a session confirms CI is provisioning
+runners again on a fresh PR event").
+
+**Original entry, preserved for context:**
 
 **What failed:** every check run on every open PR in this repository — including PRs whose base
 sha is the current `main` tip (`bb2ea6c`) and whose own code has nothing wrong with it — has

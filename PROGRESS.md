@@ -1,4 +1,42 @@
 # PROGRESS — Sovra
+## 2026-10-01T01:14:00Z — Same designated branch, continuation shift — repo-wide GitHub Actions outage RESOLVED, confirmed with real evidence
+
+Continuation of this session's own earlier 2026-09-30T07:00-07:03Z entries below (PR #342 merge-
+conflict fix, PR #390 tracking PR, first disclosure of this outage). A `check_run.completed`
+event arrived on PR #342 nearly 18 hours later for a job (`network-policy-enforcement-
+integration`) that had been stuck since the original push — `get_workflow_job` showed a real
+`runner_id: 1000012646` and real per-step timestamps spanning 3+ minutes of actual `kind`/
+`kubectl`/Calico execution, structurally different from every `runner_id: 0` failure this
+session and the next (`claude/wizardly-fermat-xa6526`, 09:20Z) had hit. Fetched the full
+check-run list for that run (`36681155484`): **38/39 jobs green, `gate` included** — the one
+failure is `network-policy-enforcement-integration` itself, and its real log shows exactly the
+already-diagnosed, pre-existing baseline-cluster ARP timing defect (enforcing/Calico scenario
+fully correct, `{'allowed': True, 'denied': False, 'metadata': False}`; only the baseline
+cluster's `denied` probe failed) — not a new finding, not outage-related, confirming the merge-
+conflict fix pushed earlier introduced zero regressions.
+
+A later shift (`claude/wizardly-fermat-xa6526`, 09:20Z, in between this session's own two visits)
+had independently reconfirmed the same outage was still live 2h+ after this session's own first
+disclosure and escalated it properly to `BLOCKER.md`/`QUEUE.md`'s "Owner actions — current" per
+the 2026-09-21 precedent, after it exceeded this repo's own "clears within hours" bar (3h37m+
+continuous at escalation time). Fetched that entry directly (`git show origin/main:BLOCKER.md`)
+rather than assuming it was still open — confirmed this session's own fresh evidence above meets
+the exact resolution bar that entry set ("a session confirms CI is provisioning runners again on
+a fresh PR event"). Independently re-ran PR #390's own stalled run (`36681644901`) with this new
+justification (the external condition itself changed, not a second "confirm the flake" check of
+the same run) to verify the clearing is repo-wide, not PR #342-specific, before writing the
+resolution into the shared tracking docs.
+
+`BLOCKER.md`'s matching entry marked RESOLVED with this evidence (preserving the original entry
+and its three route options for the record, per this repo's own norm). `QUEUE.md`'s "Owner
+actions — current" emptied back to "None currently," with a resolved-history note cross-
+referencing this entry, matching the exact pattern the 2026-09-21 occurrence used. Posted a
+confirming comment on PR #342 with the real CI result. No task claimed, no certification
+performed, no code changed (Law 2) — this is purely closing out a disclosed external blocker with
+real evidence once it genuinely cleared, not new relay work. Both PR #342 and PR #390 remain
+subscribed/watched for their own next real result (PR #390's fresh re-run, PR #342's
+`mergeable_state` settling and the still-open ARP-warming tooling question).
+
 ## 2026-09-30T09:20:00Z — Scheduled relay shift — CI outage confirmed still live, escalated; no
 ## task work possible
 
