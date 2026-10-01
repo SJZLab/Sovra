@@ -1,4 +1,5 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01 (Control-plane CERTIFY, session 019nAJ2MiED5WqLYd7mpDEMk) — **CERTIFIED FTF-0306, FTF-0500B, FTF-0500C, FTF-0601 (L2)**; moved from Provisional to Done; certified 97 -> 101/300 on this branch. Evidence: docs/certifications/ledger.md. Follow-ups for relay: FTF-0500B manifest-hash version-id assertion (surviving mutation); FTF-0601 UI file tracking.
 Updated: 2026-10-01T06:52:56Z (scheduled relay shift, branch `claude/wizardly-fermat-0hgh9v`) —
   **frontier re-verified exhausted again, no delta since the immediately-prior shift.** Branch
   found at the same commit as `origin/main` (`d925da1`, PR #397's merge) — no prior unmerged

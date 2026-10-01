@@ -9692,3 +9692,39 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## 2026-10-01 — Independent CERTIFY batch: FTF-0306, FTF-0500B, FTF-0500C, FTF-0601
+Certifier session: https://claude.ai/code/session_019nAJ2MiED5WqLYd7mpDEMk — independent: no commit on any of PRs #380/#359/#364/#337 carries this session ID. Per-item review and fault injection were run by reviewer subagents of this session in isolated worktrees (all edits reverted, `git status` clean); their reports are summarized below. Each item's task packet was re-pulled via `python3 tools/r1_handoff.py packet <id> --plan FINE_TUNING_FACTORY_RELEASE_1.md` and acceptance/negative_acceptance clauses were checked. `product_truth_check.py --fail-on-unwired`: 25/25 (non-zero; 0500B/0500C/0306 have blank `proving_symbol`, so they claim no wired caller — module is DESIGNED-not-WIRED, disclosed; 0601's `build_evaluation_suite_router` is live in `apps/api/app/main.py`).
+
+## FTF-0306 — Base model revision/digest resolver
+- Criterion ID: FTF-0306
+- PR: https://github.com/SJZLab/Sovra/pull/380 (relay PROVISIONAL submission, merged)
+- Merge commit: 1dbdd558504d04054026e054ff5ae88e89954222
+- CI: 41/41 check runs success on PR head incl. `gate` and the real-Postgres integration job: https://github.com/SJZLab/Sovra/actions/runs/36801651310
+- `tests/tasks/test_ftf_0306.py` all checks passed. Own fault injection: mismatch condition in `verify_or_compute_weights_digest` forced False -> 2 FAILs (byte drift / different pinned object version no longer raise `DigestMismatchError`); reverted clean.
+- Acceptance (digest recomputed from real bytes every load/resume; alias/display name never substitutes) met. Disclosed non-blocking: no `private_registry` resolver; unwired (no training/resume caller yet).
+
+## FTF-0500B — S3/MinIO source validation + metadata preview
+- Criterion ID: FTF-0500B
+- PR: https://github.com/SJZLab/Sovra/pull/359 (merged)
+- Merge commit: 8d134483c95c350c7ab0e0f5d264a423129faec9
+- CI: 41/41 success on PR head incl. `gate`: https://github.com/SJZLab/Sovra/actions/runs/36802632555
+- `tests/tasks/test_ftf_0500b.py` all checks passed (no skips). Own fault injection, 4 of 5 mutations RED: cross-tenant check off, bare `startswith` prefix, blank/root prefix allowed, mid-listing source-change check off; reverted md5-identical.
+- Gaps recorded for the relay (CERTIFIED stands; follow-up hardening, not blocking): (1) mutation "manifest hash drops `version_id`" was NOT caught — add an assertion pinning manifest-hash sensitivity to a version-id-only change; (2) evidence is an S3-shaped SigV4 fixture, not real MinIO/S3 (same precedent as FTF-0303); (3) manifest hash covers only the bounded preview, `truncated` discloses it; (4) bucket versioning enablement not verified; (5) unwired.
+
+## FTF-0500C — Database/API/trace source contract and fail-closed validation
+- Criterion ID: FTF-0500C
+- PR: https://github.com/SJZLab/Sovra/pull/364 (merged)
+- Merge commit: 083413926fd1a20d351d2d1e89fb6e52c23afcc4
+- CI: 40/40 success on PR head incl. `gate` and `database-api-trace-source-integration` (real Postgres service, confirmed not skipped; server log shows the provoked UndefinedTable / permission-denied / read-only-transaction errors): https://github.com/SJZLab/Sovra/actions/runs/36800647097
+- `tests/tasks/test_ftf_0500c.py` all checks passed (needs `SSL_CERT_FILE` unset in this sandbox; CI unaffected). Own fault injection: REST snapshot-version comparison -> `elif False:` -> 2 FAILs; reverted md5-identical (2cc4a65a552ed7ed8bf757862ad9c569). Postgres watermark guard rests on the PR's own disclosed injection plus the green CI integration job (not re-injected by this certifier).
+- Acceptance and negative_acceptance (unknown contract unavailable; lost watermark/snapshot blocks import) met. Unwired pure connector, disclosed.
+
+## FTF-0601 — Evaluation suite schema/API
+- Criterion ID: FTF-0601
+- PR: https://github.com/SJZLab/Sovra/pull/337 (merged)
+- Merge commit: 2d6a8e953471befebc0c8f924112abf0f3d479c7
+- CI: 39/39 success on PR head fbaf2b3 incl. `gate` and `evaluation-suite-integration`: https://github.com/SJZLab/Sovra/actions/runs/36673924954
+- `tests/tasks/test_ftf_0601.py` all checks passed. Own fault injection: grading_logic_version validator disabled -> 3 FAILs; final-suite `reviewer_id == created_by` check disabled -> 1 FAIL (Section 69.1); both reverted, tree clean. Integration suite not run locally (no Postgres start permitted); rests on the green CI job (exits BLOCKED_EXTERNAL if DB env missing, so green = ran).
+- Disclosed: web UI file/spec named in the packet's file list are not in the PR (acceptance text is schema+API); relay to confirm UI is tracked as a separate task.
+- `docs/spec-matrix.yaml` for all four set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.

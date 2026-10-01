@@ -25800,3 +25800,6 @@ queue.md` unchanged (no new submission). STEP 4 stop condition (a): 0 in-flight 
 submissions from this shift's own work; the same 10/300 PROVISIONAL items await Control-plane
 L2 certification and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" reads "None currently"; `BLOCKER.md` confirmed to have no live entry).
+
+## 2026-10-01 — Control-plane CERTIFY
+Session 019nAJ2MiED5WqLYd7mpDEMk certified FTF-0306 (#380), FTF-0500B (#359), FTF-0500C (#364), FTF-0601 (#337) at L2 after independent diff review, CI check, own fault injection and product_truth 25/25. Certified 101/300 on this branch.

@@ -21056,3 +21056,7 @@ immediately after the FTF-04A20 step, plus a new dedicated `evaluation-suite-int
 (real `services: postgres` container) mirroring `manifest-evidence-integration`'s own pattern.
 **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
 opened PR are required before certification.
+
+## 2026-10-01 — CERTIFIED (L2) by independent Control plane: FTF-0306, FTF-0500B, FTF-0500C, FTF-0601
+Session https://claude.ai/code/session_019nAJ2MiED5WqLYd7mpDEMk (no overlap with PRs #380/#359/#364/#337). Evidence in `ledger.md`. Certified 97 -> 101/300 on this branch (open cert PRs #383/#386/#388/#391/#393 cover FTF-0500D/1206/1807/H007 and hold FTF-0212/04A15; counts will reconcile on merge). No PROVISIONAL item of these four remains.
+Relay follow-ups (non-blocking): FTF-0500B add an assertion that the manifest hash changes on a version-id-only change (mutation survived); FTF-0601 confirm the packet's web UI file is tracked as a separate task.
