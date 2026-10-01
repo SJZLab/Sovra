@@ -25834,3 +25834,110 @@ queue.md` unchanged (no new submission). STEP 4 stop condition (a): 0 in-flight 
 submissions from this shift's own work; the same 10/300 PROVISIONAL items await Control-plane
 L2 certification and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" reads "None currently"; `BLOCKER.md` confirmed to have no live entry).
+
+## 2026-10-01T10:30:00Z — Scheduled relay shift — split PR #402's clean fix out, formalized the
+## FTF-0902 blocker
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch `claude/wizardly-fermat-wy0my8` found at the same commit as `origin/main`
+(`142efb6`, the merge of PR #400) — confirmed via `git merge-base --is-ancestor HEAD origin/main`
+before relying on it (an initial combined `git fetch origin main <branch>` silently left
+`origin/main` stale when the branch-ref half of the fetch failed; caught this before trusting any
+diff against it, and re-fetched `main` alone to confirm). `BLOCKER.md` read in full at shift start:
+no live entry at that point, only resolved history. STEP 0.2: no `cognee-cli` binary on this
+sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: `scripts/status.py` reads `99/300` certified (up from the `97/300` the immediately-prior
+shift's own narrative recorded) — a Control-plane L2 review (session `session_01QVznorVMjnmcttUhyDnoGR`,
+`QUEUE.md`'s own top dated entry at shift start) had landed since: CERTIFIED FTF-0212/FTF-04A15/
+FTF-0306, and returned eight items NOT CERTIFIED/DECERTIFIED (FTF-H007, FTF-04A06, FTF-0601,
+FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-1206) with per-item DoDs in
+`docs/certifications/queue.md`'s matching 2026-10-01 entry. `QUEUE.md`'s "## Active" section
+already named this as relay-owned work ahead of any new task pick, so no fresh frontier recompute
+was needed to justify picking it (Law 2/5 — the active item itself was independently confirmed by
+reading the review's own evidence directly, not merely trusted from `QUEUE.md`'s summary of it).
+
+Before starting: a fresh `list_pull_requests` found PR **#402** ("[relay] FTF-0902 +
+FTF-H007/FTF-04A06 + FTF-0601...") already open, created 08:57Z, last updated 09:50Z the same
+day — a very recent, still-in-flight prior shift's own work, not something to duplicate. Read it
+in full before acting: 12 CI runs, 6 PR comments, and the files-changed list. It bundled three
+independent pieces on one branch (a single-branch push constraint that session's own comment
+disclosed): a genuinely exhausted FTF-0902 CI investigation (three distinct, real-evidence-backed
+root-cause theories — kindnet-version enforcement, ARP warm-up before policy, the same warm-up
+after `fake-metadata-service` setup — each implemented for real and each falsified by a real CI
+run, full evidence trail in that PR's own comments), and a complete, verified fix for
+FTF-H007/FTF-04A06/FTF-0601 (confirmed directly: the PR's latest run, 627, shows 41/42 jobs green,
+the sole failure being `network-policy-enforcement-integration`, the already-exhausted FTF-0902
+piece).
+
+STEP 2 (PEV): **P** — read the actual diff of PR #402 against a freshly-fetched `origin/main`
+(not the stale ref from the earlier combined fetch) file by file: confirmed `.github/workflows/
+ci.yml`'s only delta versus current `main` is the new FTF-0902 job (FTF-H007/FTF-0601 already have
+their own CI steps on `main` from their original submissions), and that the FTF-H007/FTF-04A06/
+FTF-0601 code/test/migration files touch nothing FTF-0902-specific. Formed the hypothesis that
+these eight files could be ported cleanly onto this session's own branch without the FTF-0902
+pieces, since this session cannot push to another session's branch
+(`claude/wizardly-fermat-c06dbx`) per its own operating instructions.
+
+**E** — `git checkout pr402-ref -- <8 files>` (migration, two evaluation files, two target-connector
+files, three test files). Did not trust the prior session's own verification claims at face value
+(Law 1/2/5 — a resubmission is not a certification, and a sibling session's own narrative is not
+independent evidence): installed and started a local PostgreSQL 16 cluster (none running at shift
+start), ran both no-DB suites, ran the full Alembic chain `0001`-`0018` upgrade clean plus the
+`0018` `downgrade -1`/`upgrade head` round-trip, ran the real FTF-0601 Postgres integration suite,
+then performed my own fresh, independent fault injections against the on-disk modules (not merely
+re-reading PR #402's own claims): removing `_run_git`'s `-c core.fsmonitor=false -c
+core.hooksPath=/dev/null` hardening reproduced the exact predicted failure in `test_ftf_h007.py`;
+reverting FTF-0601's three validator calls in `update_evaluation_suite` reproduced all four
+predicted failures (the raw 500 `IntegrityError`, both silently-accepted empty strings, the
+unchanged-content check) — both reverted byte-identical (md5sum-confirmed) and both suites re-ran
+clean.
+
+Found one real gap in the original submission while doing this: the 2026-10-01 review's own DoD
+for FTF-04A06 named a specific test case ("a `test_ftf_04a06.py` case that proves a malicious
+`core.fsmonitor` neither runs nor alters the tree") that PR #402 never added — only H007's own test
+file got new cases. Wrote it (`test_malicious_core_fsmonitor_never_executes_and_never_edits_the_
+tree`), and caught a bug in my own first draft before relying on it: the test's own before/after
+`git status` probes must themselves run with `-c core.fsmonitor=false`, or the probe itself
+triggers the malicious hook as a side effect of the test's own instrumentation and falsely blames
+the production code (watched this happen for real on the first draft, fixed the probe, re-confirmed
+the real fault injection still failed for the right reason afterward). `ruff check .`/`ruff format
+--check .` clean (one line-length fix needed and applied in the new test); `mypy .` clean (356
+files; one pre-existing `Unused "type: ignore" comment` note in `test_ftf_04a06.py`, confirmed
+present identically on unmodified `origin/main` via `git stash` before treating it as baseline
+noise, not a regression). `validate_spec.py --strict` clean after `git fetch --unshallow` (this
+sandbox clones shallow by default — the same disclosed precedent prior shifts already used).
+`product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `status.py`: unchanged `99/300`
+certified (Law 2 — a submission, not a certification). Regression swept `test_ftf_0005.py`/
+`test_ftf_0402.py`/`test_ftf_h006.py` — zero regressions.
+
+Updated `docs/spec-matrix.yaml`'s FTF-H007/FTF-04A06/FTF-0601 entries with an L2 fix-and-resubmit
+note each (certification_state stays PROVISIONAL, proof_state stays L1-PROVEN — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md`, the trigger the 2026-10-01 review itself
+named for re-review eligibility on these three IDs specifically (not the remaining five, which this
+shift did not touch). Opened **PR #403** (`[relay] FTF-H007 + FTF-04A06 + FTF-0601: fix L2
+findings (security + validation)`, branch `claude/wizardly-fermat-wy0my8` → `main`) and commented
+on PR #402 pointing reviewers to it so the clean portion isn't blocked on #402's own still-open
+FTF-0902 piece. Did not close or push to PR #402 — only commented (reading-and-linking, not an
+edit to another session's own branch).
+
+**V** — per STEP 4(c) ("stuck — same action, same failure, 3x — never retry a 4th time"), FTF-0902
+itself was not re-attempted: three distinct, real-evidence-backed fix theories had already each
+been implemented for real and each falsified by a real CI run on PR #402, and the full trail was
+already disclosed in that PR's own comments but never formalized in `BLOCKER.md` as STEP 4(c)
+calls for (that session moved on to other RELAY-OWNED work on the same branch instead of writing
+the stop, a single-branch constraint it disclosed but which doesn't substitute for this file).
+Wrote the live `BLOCKER.md` entry this shift: what failed, the three real attempts with job IDs,
+and three concrete route options (live cluster/tcpdump access, replace the `nc -l` listener with a
+real logging server, test staggering the two listener pods' creation) — none of which is an owner
+ask (no secret, destructive op, repo-setting change, new spend, or reused-component swap is
+involved; this is a Control-plane design question).
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+`BLOCKER.md` all updated this shift, before compaction. STEP 4 stop condition (c): FTF-0902 is
+formally stuck, documented in `BLOCKER.md`, not retried. The independent, unblocked
+FTF-H007/FTF-04A06/FTF-0601 work was completed and submitted (PR #403) rather than left idle,
+since STEP 4(c)'s stop applies to the specific stuck item, not to other genuinely separate,
+unblocked RELAY-OWNED work already named in `QUEUE.md`'s own "## Active" item 3. Stopping here —
+not picking a new task this shift. No open owner ask (`QUEUE.md` "Owner actions — current"
+unchanged: only the pre-existing, low-urgency branch-protection ask).

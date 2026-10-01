@@ -1,6 +1,78 @@
 # BLOCKER.md
 
-_No open blockers. The entry below is resolved history, kept for the record per this repo's
+## LIVE 2026-10-01T10:30Z — FTF-0902: `network-policy-enforcement-integration` baseline cluster
+## fails deterministically; three distinct, real-evidence-backed root-cause theories each
+## implemented for real and each falsified by a real CI run
+
+**What failed:** on PR #402 (branch `claude/wizardly-fermat-c06dbx`), the baseline (`npt-baseline`,
+meant to be a non-enforcing contrast cluster) side of `network-policy-enforcement-integration`
+deterministically returns `{allowed: True, denied: False}` — the policy appears to block nothing,
+on every retry, across every fix attempted. This is FTF-0902's own real acceptance-clause evidence
+(Section 11-12/65.4/77.5); without it the task cannot be certified.
+
+**What was tried (all on PR #402, all real CI runs, none a guess left unverified):**
+1. **kindnet-version-based enforcement** (the Control-plane-specified DoD: pin `kind` to v0.23.0,
+   since v0.24.0's bundled kindnet enforces NetworkPolicy by default) — job log confirms
+   `kind v0.23.0` was genuinely installed and used (run `36839582390`, job `110295202473`), yet the
+   baseline cluster returned the identical failure signature. Falsified: v0.23.0's kindnet
+   genuinely does not enforce, so this isn't why `npt-baseline` fails.
+2. **ARP/route warm-up timing, before policy application** — a discarded single-attempt probe to
+   both `allowed_ip`/`denied_ip`, inserted before the `NetworkPolicy` object exists on either
+   cluster (symmetric, cannot mask real enforcement). Job log shows the warm-up itself completed
+   quickly (~0.1-0.2s, a real connection or fast refusal, not a timeout) — the mechanism ran as
+   designed — yet the real assertion probe still failed identically (run `36840503380`, job
+   `110298220036`). Falsified.
+3. **Route/ARP disruption from `fake-metadata-service`'s own `hostNetwork` setup, warm-up moved to
+   after policy application** — anchored to a concrete new fact from deepened diagnostics: the
+   verbose probe reported "Connection timed out" (a silently dropped packet), never "Connection
+   refused" (nothing listening), and the same destination was reachable early (fast, not a
+   timeout) and became unreachable later in the same cluster's lifetime. Moved the warm-up to run
+   immediately before the real probes, after `fake-metadata-service`'s `hostNetwork` setup already
+   ran. Job log: `{allowed: True, denied: False, metadata: True}` unchanged (run `36842540660`, job
+   `110304795503`). Falsified.
+
+Diagnostics ruled out a crash/restart (`denied` pod: `Running`, `Ready: True`, `Restart Count: 0`,
+no previous terminated container) and confirmed `nc -l -p 8080` is genuinely running inside the
+pod (not a silent bind failure). `allowed` and the separately-created `fake-metadata-service`
+(also `hostNetwork`) are both reliably reachable; only `denied` — the second of the two
+near-simultaneous same-batch listener pods — is consistently affected, on every run, independent
+of `kind` version and of warm-up placement. Full job IDs, log excerpts and reasoning for each
+round: PR #402's own comments (five dated comments, 09:05Z-09:30Z).
+
+**Why this is now formalized here rather than left in PR comments:** per STEP 4(c) ("stuck — same
+action, same failure, 3x — never retry a 4th time") three distinct, real-evidence-backed fix
+attempts is the stop condition. The PR #402 session itself recognized this and stopped attempting
+further fixes, but moved directly to other RELAY-OWNED work on the same branch (a single-branch
+push constraint, disclosed in its own PR comment) without writing this file's own stop — this
+entry closes that gap rather than let the condition stay implicit in PR comments only, per Law 1/5
+("reported, not silently worked around").
+
+**Three route options for whoever picks this up next (Control plane design question, not an
+owner ask — nothing here is a secret, a destructive op, a repo-setting change, new spend, or a
+reused-component swap):**
+1. **A session with live cluster/tcpdump/conntrack access** — directly observe the dropped
+   packet's path (`iptables` counters, `conntrack -L`, `tcpdump` on `cni0`/`veth*` on the node)
+   during the failure window, inside the GitHub Actions runner itself while the job is live. Most
+   likely to find the real cause; needs tooling/access this relay sandbox does not have.
+2. **Replace the `busybox nc -l` single-shot-then-respawn listener with a real persistent server**
+   (e.g. a small Python TCP echo server in a `python:3-alpine` image) that actually logs each
+   connection attempt — removes the entire "is it the listener or the network" ambiguity the
+   current diagnostics could not fully resolve, at the cost of a slightly heavier test fixture.
+3. **Test whether the two listener pods' near-simultaneous creation/IP-allocation is itself
+   implicated** — not yet tried: create `denied` and `allowed` several seconds apart instead of
+   back-to-back, see if the deterministic failure follows the pod or the timing.
+
+**No relay-side further iteration on this specific job until one of these is decided or new
+evidence changes the picture.** `docs/spec-matrix.yaml`'s FTF-0902 entry stays `PROVISIONAL`/
+`L1-PROVEN`; not self-certified, not claimed fixed. PR #402 stays open and watched, unchanged by
+this session (this session pushed no code to PR #402's own branch, consistent with "never push to
+a different branch without explicit permission" — the clean, unrelated FTF-H007/FTF-04A06/
+FTF-0601 portion of that PR's own work was instead ported to this session's own branch and
+resubmitted separately; see `QUEUE.md`'s matching top dated entry).
+
+---
+
+_No other open blockers. The entry below is resolved history, kept for the record per this repo's
 "reported, not silently worked around" norm — not a live issue._
 
 ## RESOLVED 2026-10-01T01:14Z — Repo-wide GitHub Actions runner-provisioning outage, past its own

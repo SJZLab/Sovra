@@ -599,6 +599,77 @@ def main() -> None:
         )
         suite1_id = suite1.get("id")
 
+        # -- L2 finding regression (QUEUE.md/docs/certifications/queue.md
+        # 2026-10-01 review): the update path previously assigned
+        # name/grading_logic_version/reviewer_id directly, skipping the
+        # same real validators __init__ already applies at creation. Three
+        # real HTTP-level cases, each against this still-draft suite1,
+        # confirmed to leave the row's own real content unchanged -- not
+        # merely that the HTTP response code looks right.
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite1_id),
+            principal=org1_evaluator,
+            payload={"grading_logic_version": 0},
+        )
+        check(
+            "FTF-0601",
+            "PATCH grading_logic_version=0 is refused as a real 400, not a "
+            "500 from an unhandled database IntegrityError",
+            r.status == 400,
+        )
+
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite1_id),
+            principal=org1_evaluator,
+            payload={"name": ""},
+        )
+        check("FTF-0601", "PATCH name='' is refused (400), not silently accepted", r.status == 400)
+
+        r = _request(
+            base_url,
+            "PATCH",
+            item_path(org1_id, project1_id, suite1_id),
+            principal=org1_evaluator,
+            payload={"reviewer_id": ""},
+        )
+        check(
+            "FTF-0601",
+            "PATCH reviewer_id='' is refused (400) -- an empty string must "
+            "never pass as a real reviewer identity",
+            r.status == 400,
+        )
+
+        r = _request(
+            base_url, "GET", item_path(org1_id, project1_id, suite1_id), principal=org1_evaluator
+        )
+        unchanged = r.json() if r.status == 200 else {}
+        check(
+            "FTF-0601",
+            "none of the three refused PATCH attempts actually changed the "
+            "suite's own real stored content",
+            unchanged.get("grading_logic_version") == 1
+            and unchanged.get("name") == "Golden path suite"
+            and unchanged.get("reviewer_id") is None,
+        )
+
+        # The same reviewer_id='' value must also never let a subsequent
+        # lock succeed, even if some other code path assigned it directly
+        # (defense in depth -- lock_evaluation_suite's own check, not only
+        # the PATCH validator above).
+        r = _request(
+            base_url, "POST", lock_path(org1_id, project1_id, suite1_id), principal=org1_evaluator
+        )
+        check(
+            "FTF-0601",
+            "locking suite1 still fails (409, no real reviewer was ever "
+            "actually persisted by the refused PATCH attempts above)",
+            r.status == 409,
+        )
+
         # -- acceptance: a second suite for the same project gets version 2 --
         r = _request(
             base_url,
@@ -815,6 +886,50 @@ def main() -> None:
                 "negative_acceptance/defense-in-depth: a raw INSERT of a "
                 "locked final suite with reviewer_id == created_by is "
                 "refused directly by ck_evaluation_suites_independent_final_reviewer",
+                True,
+            )
+
+    # -- L2 finding regression, database level: a raw INSERT of a locked
+    # suite with reviewer_id='' (not NULL -- the real gap the old
+    # ck_evaluation_suites_reviewer_present_when_locked CHECK left open,
+    # since '' satisfies IS NOT NULL) is refused directly by the real,
+    # fixed CHECK constraint -- never relying on application code alone.
+    with Session(app_engine) as session:
+        session.execute(
+            text("SELECT set_config('app.current_organization_id', :org_id, true)"),
+            {"org_id": str(org1_id)},
+        )
+        try:
+            session.execute(
+                text(
+                    "INSERT INTO evaluation_suites "
+                    "(organization_id, project_id, agent_manifest_id, version, status, "
+                    "purpose, name, grading_logic_version, created_by, reviewer_id, "
+                    "locked_at) "
+                    "VALUES (:org_id, :project_id, :manifest_id, 97, 'locked', "
+                    "'development', 'raw empty reviewer', 1, 'creator', '', now())"
+                ),
+                {
+                    "org_id": str(org1_id),
+                    "project_id": str(project1_id),
+                    "manifest_id": str(locked_manifest_id),
+                },
+            )
+            session.commit()
+            check(
+                "FTF-0601",
+                "negative_acceptance/defense-in-depth: a raw INSERT of a "
+                "locked suite with reviewer_id='' is refused directly by "
+                "the real, fixed ck_evaluation_suites_reviewer_present_when_locked CHECK",
+                False,
+            )
+        except DBAPIError:
+            session.rollback()
+            check(
+                "FTF-0601",
+                "negative_acceptance/defense-in-depth: a raw INSERT of a "
+                "locked suite with reviewer_id='' is refused directly by "
+                "the real, fixed ck_evaluation_suites_reviewer_present_when_locked CHECK",
                 True,
             )
 

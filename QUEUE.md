@@ -1,4 +1,40 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T10:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-wy0my8`) —
+  **split PR #402's clean, green FTF-H007/FTF-04A06/FTF-0601 fix out from its still-blocked
+  FTF-0902 CI investigation, and opened it as its own PR so it isn't held hostage.** PR #402
+  (a prior shift, same day) bundled three independent pieces on one branch (a single-branch
+  push constraint it disclosed in its own PR comment): a genuinely blocked FTF-0902 CI
+  investigation (3 falsified fix theories, fully evidenced, correctly stopped per STEP 4(c)),
+  and a complete, verified fix for FTF-H007/FTF-04A06/FTF-0601 (41/42 of that PR's own CI jobs
+  green, only `network-policy-enforcement-integration` red). Since this session's own operating
+  instructions bar pushing to another session's branch, ported just the eight non-FTF-0902
+  files (confirmed via `git diff` against fresh `origin/main` that `.github/workflows/ci.yml`
+  needs zero changes for this — the FTF-0902 job is the only new job on #402's branch) onto this
+  session's own branch and independently re-verified every claim from scratch rather than
+  trusting #402's own narrative: ran both no-DB suites and the real-Postgres integration suite,
+  did my own fresh fault injections on both fixes (byte-identical reverts confirmed), full
+  `ruff`/`mypy`/`validate_spec --strict`/`product_truth_check`/`status.py`/regression sweep
+  clean. Found and closed one real gap the original fix left open: the 2026-10-01 review's own
+  DoD for FTF-04A06 named a specific missing test case
+  (`test_ftf_04a06.py` proving a malicious `core.fsmonitor` neither runs nor alters the tree)
+  that PR #402 never added — added it this shift, catching and fixing a bug in my own first
+  draft along the way (the test's own status probe must itself be hardened, or it triggers the
+  malicious hook as a side effect of the test's own instrumentation). Full evidence in
+  `docs/certifications/queue.md`'s matching 2026-10-01 entry.
+
+  **FTF-0902 stays genuinely blocked — not retried a 4th time, formalized in `BLOCKER.md`.**
+  The "Active" item 1 DoD below (pin `kind` to v0.23.0) was already executed for real by PR #402
+  and falsified by real CI evidence, along with two further evidence-anchored theories (ARP/route
+  warm-up, both before and after policy application) — three independent, real-evidence-backed
+  fix attempts, each implemented and each genuinely failed. Per STEP 4(c) ("stuck — same action,
+  same failure, 3x — never retry a 4th time") this session did not attempt a fourth guess; wrote
+  up the full evidence trail and three route options in `BLOCKER.md` instead (this item had not
+  previously been formalized there — PR #402's own session documented it thoroughly in PR
+  comments but moved on to other work without writing the `BLOCKER.md` stop this condition
+  calls for). PR #402 itself stays open, untouched, still the live record of that investigation
+  — commented there pointing to the new split-out PR so reviewers don't block the clean
+  FTF-H007/FTF-04A06/FTF-0601 portion on the still-open FTF-0902 piece.
+
 Updated: 2026-10-01T07:30:00Z (Control plane, session `session_01QVznorVMjnmcttUhyDnoGR`,
   branch `claude/zealous-brown-verta8`): **independent L2 review of the 10-item PROVISIONAL
   backlog. 3 CERTIFIED, 7 NOT CERTIFIED, 1 DECERTIFIED.**
@@ -8112,16 +8148,22 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane 2026-10-01 — relay executes)
-1. **FTF-0902 (PR #342): root cause corrected. It is not ARP timing. Pin kind to v0.23.0.**
-   This is a NEW route decided by Control plane, not a retry of the ARP warm-up. The STEP 4(c)
-   "never retry a 4th time" count starts again from zero for it.
-   kind v0.24.0, which the `network-policy-enforcement-integration` job installs, ships kindnet
-   with built-in NetworkPolicy enforcement (release notes: "Out-of-the-box support for network
-   policy via sigs.k8s.io/kube-network-policies"). So the "non-enforcing baseline" cluster
-   `npt-baseline` really is enforcing. That explains why the baseline result is exactly
-   allowed=True / denied=False, and why it fails all 3 retries deterministically
-   (CI run 36801270474, job 110175923748). The drafted "ARP warm-up" fix would not have helped.
-   DoD for the relay, all on PR #342's branch:
+1. **FTF-0902 (PR #342 superseded by PR #402): the v0.23.0 kind-pin DoD below is falsified by
+   real CI evidence — stays BLOCKED, see `BLOCKER.md`'s matching live entry. Do not retry a 4th
+   time per STEP 4(c).** The 2026-09-30/2026-10-01 fix-PR session (PR #402) executed this exact
+   DoD for real, then went further once the pin alone didn't resolve it: kind v0.23.0 was
+   genuinely installed and used (confirmed in the job log), yet the baseline cluster still
+   returned the identical pre-fix failure signature — ruling out kindnet-version enforcement as
+   the cause. Two further evidence-anchored theories (an ARP/route warm-up before policy
+   application, then the same warm-up moved to after `fake-metadata-service`'s own `hostNetwork`
+   setup) were each implemented for real and each falsified by a real CI run too. Full evidence
+   trail (job IDs, the "Connection timed out" vs "Connection refused" smoking gun, what's ruled
+   in/out) is on PR #402's own comments and in `BLOCKER.md`. This needs either a session with
+   live cluster/tcpdump/conntrack access, or replacing the `nc -l` listener with a real
+   persistent logging server to remove the listener-vs-network ambiguity, or testing whether
+   staggering the two listener pods' creation matters — not a further blind guess at reordering
+   probes or pinning versions. Original DoD text, preserved for context only (already executed
+   and falsified, do not re-attempt as written):
    (a) in `.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job, change the
    kind download URL from `v0.24.0` to `v0.23.0` (the last release whose kindnet does not
    enforce NetworkPolicy), and update the job comment to say why the version is pinned;
@@ -8131,10 +8173,6 @@ this same resolution (doc-only, redundant once this lands).
    (c) push, and get a real run where `network-policy-enforcement-integration` is green with
    baseline {allowed: True, denied: True} and enforcing {allowed: True, denied: False,
    metadata: False}.
-   Fallback only if v0.23.0 cannot create clusters on the runner: keep v0.24.0 and turn off
-   kindnet's policy controller on the baseline cluster only. Record the method in the job log.
-   Do NOT touch `packages/security/network_policy_templates.py`. The enforcing-cluster result
-   already proves it.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
@@ -8145,19 +8183,22 @@ this same resolution (doc-only, redundant once this lands).
    CERTIFIED. Synthetic, labelled reference data is explicitly allowed (§55), so no customer
    data ask is needed.
 
-3. **RELAY-OWNED. Do not skip these as "PROVISIONAL, Control plane's to certify".** These eight
+3. **RELAY-OWNED. Do not skip these as "PROVISIONAL, Control plane's to certify".** Eight
    items were reviewed and returned NOT CERTIFIED. Their `certification_state` stays PROVISIONAL
-   only because the code is already merged. Fixing them is the relay's next work, ahead of new
-   tasks: FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-1206.
-   Open each fix as a new `[relay] <ID>: fix L2 findings` PR and append it to
-   `docs/certifications/queue.md` for re-review.
+   only because the code is already merged. **FTF-H007, FTF-04A06, FTF-0601: fix PR opened this
+   shift** (branch `claude/wizardly-fermat-wy0my8`, see `docs/certifications/queue.md`'s matching
+   2026-10-01 entry for full evidence — includes a `test_ftf_04a06.py` case the first
+   fix-and-resubmit attempt had missed). Remaining, still untouched: FTF-0500C, FTF-0500B,
+   FTF-0500D, FTF-1807, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2 findings` PR and
+   append it to `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
      `core.hooksPath=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`). Make
      risky repo-config keys and symlinked or hooksPath hooks blocking findings. Add tests for each.
-     FTF-04A06 was decertified for this.
+     FTF-04A06 was decertified for this. **DONE — fix PR opened this shift, see above.**
    - **FTF-0601:** add validation on the PATCH path; refuse to lock with an empty reviewer.
+     **DONE — fix PR opened this shift, see above.**
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
      on a later page blocks.
    - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.

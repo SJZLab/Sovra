@@ -3418,6 +3418,35 @@ FTF-04A06:
     met, not merely "tests pass". Merged PR #238, merge commit
     249ff0663df74fe25f33f35673a319ea6d728b90. See
     docs/certifications/ledger.md for the full ledger entry.
+
+    L2 fix-and-resubmit (2026-10-01, shared root cause with FTF-H007, decertified for this): the
+    Control-plane review found the same `_run_git` gap H007 shares, and specifically that a
+    malicious `core.fsmonitor` command wrote a file into the target working tree during
+    `capture_local_repository`, breaking this task's own negative_acceptance ("never edit the
+    target working tree"). Fixed by the identical `_run_git` hardening described on H007's own
+    entry (`-c core.fsmonitor=false -c core.hooksPath=/dev/null` plus
+    `GIT_CONFIG_NOSYSTEM=1`/`GIT_CONFIG_GLOBAL=/dev/null`). Added the
+    `test_ftf_04a06.py` case this task's own DoD specifically named (absent from the first
+    fix-and-resubmit attempt): a real repository with a malicious `core.fsmonitor` set to
+    `sh -c 'touch <marker>'` -- `capture_local_repository` neither lets the marker get created nor
+    changes `git status` output before/after, and still completes a normal, successful capture
+    once the malicious config is neutralized. The test's own before/after `git status` probes are
+    themselves run with `-c core.fsmonitor=false` (a test-harness correctness fix found and applied
+    by this same submission's own session: an unhardened probe would trigger the malicious hook as
+    a side effect of the test's own instrumentation, not of the code under test, and falsely blame
+    the production fix). Real fault injection (Law 1): removing `_run_git`'s `-c` hardening
+    reproduced the exact predicted failure -- the new test genuinely failed with "a malicious
+    core.fsmonitor command is never actually executed during capture" -- then the file was reverted
+    and confirmed byte-identical (md5sum `7c7b8268a2359cb7b7dabd3e87862ef2` before and after) and
+    the suite re-ran clean. `ruff check .`/`ruff format --check .`/`mypy .` clean (356 files; one
+    pre-existing `Unused "type: ignore" comment` note in this same file at an unrelated,
+    untouched line, confirmed present identically on `origin/main` before this change). `validate_
+    spec.py --strict` clean (after `git fetch --unshallow`, a pre-existing shallow-clone sandbox
+    artifact). `product_truth_check.py --fail-on-unwired` unchanged `25/25`. `status.py` unchanged
+    `99/300` certified (Law 2). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
+    `test_ftf_h006.py`/`test_ftf_h007.py`, zero regressions. No `ci.yml` change needed -- the
+    existing `gate`-job step already runs this file. **Not self-certified (Law 4)** -- awaiting
+    independent Control-plane L2 re-review and a real CI run on the opened PR before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
@@ -6719,8 +6748,41 @@ FTF-0601:
   description: Evaluation suite schema/API
   evidence_hash: ''
   implementation_state: IMPLEMENTED
-  notes: kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0401, FTF-04A19,
-    FTF-0405
+  notes: >-
+    kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0401, FTF-04A19,
+    FTF-0405.
+
+    L2 fix-and-resubmit (2026-10-01): Control-plane review found `update_evaluation_suite` assigned
+    `name`/`grading_logic_version`/`reviewer_id` directly on the live PATCH path, bypassing the same
+    `validate_name`/`validate_grading_logic_version`/`validate_reviewer_id_or_none` calls `__init__`
+    already applies at creation -- `grading_logic_version=0` reached the database unchecked (a raw
+    `IntegrityError` surfaced as an opaque 500 instead of the contract's 400), `name=''` was accepted
+    against the OpenAPI schema's own `minLength: 1`, and `reviewer_id=''` passed `lock_evaluation_
+    suite`'s own `is None` check, letting a `final` suite lock with no real reviewer identity
+    (Section 69.1). Fixed: `update_evaluation_suite` now calls all three validators; `validate_
+    reviewer_id_or_none` also now refuses a whitespace-only string; `lock_evaluation_suite`'s own
+    check does too (defense in depth, not only the PATCH validator). New migration `0018_eval_
+    suites_reviewer_fix`: the real database `CHECK` (`ck_evaluation_suites_reviewer_present_when_
+    locked`) only tested `IS NOT NULL`, which an empty string satisfies -- fixed to
+    `IS NOT NULL AND <> ''`. Full Alembic chain `0001`-`0018` upgrades clean against a real local
+    PostgreSQL 16; `0018` alone round-trips `downgrade -1` -> `upgrade head` clean. Three new real
+    HTTP-level proving tests plus a DB-level raw-INSERT defense-in-depth test, all against a real
+    local PostgreSQL 16 -- `tests/integration/test_ftf_0601_evaluation_suite.py` "all checks
+    passed". Real fault injection (Law 1), performed independently by this submission's own
+    session: reverting `update_evaluation_suite`'s three validator calls to direct assignment
+    reproduced the exact predicted failure for real -- 4 genuine FAILs (`grading_logic_version=0`
+    refused as 400 not 500; `name=''` refused; `reviewer_id=''` refused; none of the three refused
+    PATCH attempts changed the suite's stored content) -- then the file was reverted and confirmed
+    byte-identical (md5sum `62344c00e0cd736c1fb18c50a86cf028` before and after) and both suites
+    re-ran clean. `ruff check .`/`ruff format --check .`/`mypy .` clean (356 files).
+    `validate_spec.py --strict` clean (after `git fetch --unshallow`, a pre-existing shallow-clone
+    sandbox artifact). `product_truth_check.py --fail-on-unwired` unchanged `25/25` --
+    `build_evaluation_suite_router` remains the real live caller. `status.py` unchanged `99/300`
+    certified (Law 2). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py`,
+    zero regressions. No `ci.yml` change needed -- the existing `gate`-job step and the existing
+    `evaluation-suite-integration` job already run these files. **Not self-certified (Law 4)** --
+    awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
+    certification.
   proof_state: L1-PROVEN
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
@@ -9486,6 +9548,35 @@ FTF-H007:
     FTF-1807's own (no new integration job -- no DB/route to integration-test, matching this
     task's own `database_changes` clause). **Not self-certified (Law 4)** -- awaiting independent
     Control-plane L2 review and a real CI run on the opened PR.
+
+    L2 fix-and-resubmit (2026-10-01, shared root cause with FTF-04A06): Control-plane review found
+    `local_repository_connector._run_git` ran `git status` on the untrusted tree with no config
+    hardening -- a repo-controlled `core.fsmonitor` command genuinely executed during the scan
+    while `is_safe_to_lock` still reported `True`, and the same gap let a symlinked `.git/hooks/*`
+    entry and an aliased dangerous call (`import os as o; o.system(...)`) both evade detection.
+    Fixed: every `_run_git` invocation now runs with `-c core.fsmonitor=false -c
+    core.hooksPath=/dev/null` plus `GIT_CONFIG_NOSYSTEM=1`/`GIT_CONFIG_GLOBAL=/dev/null` (highest
+    config precedence, overrides the untrusted repo's own `.git/config` regardless of content); a
+    new `_scan_dangerous_git_config` makes the mere presence of `core.fsmonitor`/`core.hooksPath`/
+    `core.sshCommand`/any `filter.*.*.{clean,smudge,process}` key in the repo's own config a
+    blocking finding on its own, independent of the `-c` overrides; `_scan_git_hooks` now follows a
+    symlinked hook to its real target and checks that target's executable bit, instead of skipping
+    symlinks outright; `_scan_dangerous_python_calls` now resolves import aliases so `import os as
+    o`/`from os import system` are caught. Four new proving cases in `test_ftf_h007.py`, all
+    against real git repositories in real temp directories. Real fault injection (Law 1), performed
+    independently by this submission's own session rather than only trusted from the producer:
+    removing `_run_git`'s `-c` hardening (replacing the call with a bare `git -C <root> status`)
+    reproduced the exact predicted failure for real -- `test_ftf_h007.py` genuinely failed with
+    "the repo-controlled core.fsmonitor command was never actually executed" -- then the file was
+    reverted and confirmed byte-identical (md5sum `7c7b8268a2359cb7b7dabd3e87862ef2` before and
+    after) and the suite re-ran clean. `ruff check .`/`ruff format --check .`/`mypy .` clean
+    (356 files). `validate_spec.py --strict` clean (after `git fetch --unshallow`, a pre-existing
+    shallow-clone sandbox artifact unrelated to this change, same disclosed precedent prior shifts
+    already used). `product_truth_check.py --fail-on-unwired` unchanged `25/25`. `status.py`
+    unchanged `99/300` certified (Law 2). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
+    `test_ftf_h006.py`, zero regressions. No `ci.yml` change needed -- the existing `gate`-job step
+    already runs this file. **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
+    re-review and a real CI run on the opened PR before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h007.py
