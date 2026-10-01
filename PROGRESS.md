@@ -26012,3 +26012,20 @@ with live cluster debugging access, or this diagnostic output feeding a Control-
 pass. `QUEUE.md`'s "## Active" item 1 updated accordingly. No open owner ask -- this stays an
 in-progress PR this session continues to watch, not an ask-first blocker (it is routine CI
 debugging on a task already decided and in scope, not a new architecture/ambiguity question).
+
+## 2026-10-01T09:20:00Z — Same shift, continued — PR #402: diagnostics ruled out crash/restart, deepened check pushed
+
+Diagnostics from the prior push (`f6e95be`, job `110300493442`) show the `denied` pod `Running`/
+`Ready: True`/`Restart Count: 0`, `logs --previous` confirms no prior terminated container --
+rules out a crash loop. `kubectl logs denied` is empty but turned out inconclusive on its own:
+`nc` doesn't log connections to stdout regardless of outcome. Leading hypothesis: the pod's
+`while true; do echo ok | nc -l -p 8080; done` loop never exits even if `nc -l` silently fails to
+bind -- Kubernetes readiness only checks the shell (PID 1) is alive, not that the port is actually
+listening, which would explain every observed fact (Running/Ready/0 restarts, empty logs,
+indefinite failure). Pushed (`85443fa`) one more targeted, diagnostics-only check to confirm or
+rule this out directly: `ps`+`/proc/net/tcp` inside both `denied` and `allowed` pods, plus a
+verbose `nc -zv` probe from `target` for the real error message. No pass/fail logic changed.
+Also noted (not actioned, superseded by this push): one unrelated `dependency-scanning-
+integration` failure on the same run -- a real OSV API SSL handshake timeout on an unrelated npm
+package, outside this PR's diff. Commented on PR #402 with the full finding. Still not claiming a
+fix; watching the next real run.

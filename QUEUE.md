@@ -8200,6 +8200,17 @@ this same resolution (doc-only, redundant once this lands).
    output feeding a Control-plane root-cause design pass — not another relay-side guess. PR #402
    stays open and watched; its own real CI run on the diagnostics push is the next thing to read,
    not to assume.
+
+   **Update (2026-10-01T09:20Z): diagnostics ruled out a crash/restart, deepened check pushed.**
+   The `denied` pod shows `Running`/`Ready: True`/`Restart Count: 0`, no previous terminated
+   container — not a crash loop. `kubectl logs denied` empty but inconclusive (`nc` doesn't log
+   connections either way). Leading hypothesis now: the pod's own `while true; do echo ok | nc -l
+   -p 8080; done` loop never exits even if `nc -l` silently fails to bind — k8s readiness only
+   checks the shell is alive, not that the port is listening, which fits every observed fact.
+   Pushed (`85443fa`) one more diagnostics-only check (not a fix): `ps`+`/proc/net/tcp` inside
+   both pods, plus a verbose `nc -zv` probe for the real error message. Still watching; if this
+   doesn't make the cause obvious, escalate to Control plane per the prior update's own plan
+   rather than guess a 4th/5th time.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
