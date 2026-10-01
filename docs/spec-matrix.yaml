@@ -5559,16 +5559,98 @@ FTF-0500A:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0500a.spec.ts
 FTF-0500B:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: S3/MinIO source validation + metadata preview
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500, FTF-0500A,
-    FTF-H006
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: |-
+    kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31;
+    deps=FTF-0500, FTF-0500A, FTF-H006 (all CERTIFIED, confirmed before relying on
+    them). Path refined from the task packet's own generic suggestion
+    (services/training-worker/data/s3_minio_source_validation_metadata_preview.py)
+    to apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py,
+    matching FTF-0500/FTF-0500A's own real apps/api/app/datasets/*.py layout.
+
+    Scope, disclosed not hidden: real, SigV4-signed ListObjectVersions calls
+    (paginated, bounded) against a real S3/MinIO-compatible endpoint, reusing
+    storage_semantics_client.py's own sign_request (FTF-R017, CERTIFIED) for the
+    signing math and packages/security/outbound_guard.py's own guarded_fetch
+    (FTF-H006) for every real socket -- url_policy.py's own module docstring
+    already names this exact task as an intended future caller. Never S3Client's
+    own urllib transport, the same disclosed FTF-0303 precedent. This is a
+    *metadata* preview only (key/version/size/ETag/last-modified) -- no object
+    bytes are ever downloaded; Section 8's own file-content import pipeline
+    (parsing/schema/PII) is a separate, not-yet-dependency-gated task this module
+    does not touch.
+
+    negative_acceptance ("S3 ETag is not assumed SHA; source changes, cross-tenant
+    prefix and overly broad grants are denied") enforced as four independent,
+    disclosed checks: (1) overly broad grant -- a blank or root
+    (""/"/") tenant_key_prefix is refused before any network request
+    (OverlyBroadGrantError); (2) cross-tenant prefix -- every real key the
+    endpoint actually returns is independently re-checked against
+    tenant_key_prefix at a real path-segment boundary (the same
+    _key_within_tenant_prefix boundary-safe logic FTF-0303's own already-CERTIFIED
+    helper established for the org-4/org-42 collision, re-implemented here as this
+    task's own independently-tested copy, not imported) -- refused even when the
+    server itself actually returned the out-of-scope key
+    (CrossTenantPrefixError); (3) source changed during listing -- Section 67.1's
+    own "changes during pagination cannot silently mix versions... show
+    SNAPSHOT_UNSTABLE" made real: this module tracks each real key's own IsLatest
+    version id across pages and refuses (SourceChangedDuringListingError) if a
+    later page reports a different one for a key already seen -- proven against a
+    real two-page listing where the second, independently-served page reports a
+    genuinely different latest version for the same key; (4) ETag-as-hash
+    assumption -- etag_looks_like_content_hash is disclosed, informational-only
+    metadata (true only for a plain 32-hex ETag), never consulted by this module's
+    own validation path or used to derive anything. The returned manifest_hash
+    (sha256 over the canonical JSON of the exact bounded key/version_id/size/etag
+    tuples) is this task's own immutable-manifest acceptance clause made real;
+    proven stable for an identical repeated listing and different for a
+    genuinely different one. Preview is bounded (default 20 records, Section
+    67.2) and discloses truncated=True whenever more real objects exist beyond
+    that bound or beyond the last page fetched, never silently presented as
+    complete. `role`-based (STS) access is out of this task's own scope (static
+    S3Credentials only, the same FTF-0303 "caller resolves the secret" shape) --
+    disclosed, not hidden.
+
+    This module is a pure connector (like FTF-0303): it does not read/write
+    DatasetSourceConnection rows, resolve secret refs via OpenBao, or expose an
+    HTTP route -- those are a separately dependency-gated composition task, out
+    of this task's own `files` list. No independent schema change.
+
+    tests/tasks/test_ftf_0500b.py (no-DB, real local plain-HTTP path-style
+    S3-shaped fixture that independently re-derives the expected SigV4
+    Authorization header and genuinely rejects a wrong-credentials request,
+    proving a real signed round trip): 15 test functions, all pass. Covers the
+    happy path, manifest_hash stability/sensitivity, real two-page pagination,
+    the preview bound and its truncated disclosure, all four negative_acceptance
+    checks (including the cross-tenant sibling-string-collision case and a real
+    server that itself returns an out-of-scope key), a delete-marker
+    non-interference case, wrong-credentials rejection, a real destination-denied
+    policy check, and two disclosed fault injections (Law 1) proving the
+    cross-tenant-prefix and source-changed-during-listing checks are load-bearing
+    -- both reverted byte-identical (md5sum-equivalent file-bytes comparison
+    confirmed matching before/after in the test itself).
+
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide (321 files).
+    `uv run mypy .` clean repo-wide (321 source files). `pnpm run
+    lint`/`typecheck`/`format:check` and `pnpm exec vitest run` unaffected (no
+    frontend file touched). `python3 scripts/validate_spec.py --strict` clean
+    (after `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone
+    artifact). `python3 scripts/product_truth_check.py --fail-on-unwired`
+    unchanged at 23/23 (`proving_symbol` left blank -- no live caller yet, the
+    same disclosed FTF-0303/FTF-0500 precedent). `scripts/status.py` unchanged at
+    93/300 certified (Law 2 -- a submission is not a certification). Regression
+    swept test_ftf_0500.py/test_ftf_0303.py/test_ftf_h006.py -- all "all checks
+    passed", zero regressions.
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real
+    CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0500b.py
 FTF-0500C:
   certification_state: PROVISIONAL
   criticality: MUST

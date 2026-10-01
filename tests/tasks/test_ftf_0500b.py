@@ -1,0 +1,664 @@
+#!/usr/bin/env python3
+"""FTF-0500B -- S3/MinIO source validation + metadata preview (no-DB unit/
+fault tests).
+
+Runnable without any database. Drives a real local, plain-HTTP, path-style
+S3-shaped fixture server that independently re-derives the expected AWS
+Signature Version 4 `Authorization` header (reusing `sign_request`, the
+same real signer under test) and rejects a request whose signature does
+not match -- a genuine signed round trip, not a stub that accepts any
+request. Serves a real `ListObjectVersions`-shaped XML response, including
+real pagination (`IsTruncated`/`NextKeyMarker`/`NextVersionIdMarker`).
+
+Covers this task's own negative_acceptance ("S3 ETag is not assumed SHA;
+source changes, cross-tenant prefix and overly broad grants are denied")
+as four independently-triggered real checks, plus a real destination-
+denied policy check, a real wrong-credentials rejection, real pagination
+across two real pages, and two disclosed fault injections (Law 1).
+
+Run directly: python3 tests/tasks/test_ftf_0500b.py
+"""
+
+from __future__ import annotations
+
+import atexit
+import importlib
+import ipaddress
+import sys
+import threading
+from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+API_ROOT = ROOT / "apps" / "api"
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(API_ROOT))
+
+from packages.security.url_policy import ConnectionPolicy, OutboundPolicyError  # noqa: E402
+
+import app.datasets.s3_minio_source_validation_metadata_preview as s3_preview  # noqa: E402
+from app.services.storage_semantics_client import (  # noqa: E402
+    S3Credentials,
+    S3Endpoint,
+    sign_request,
+)
+
+FAILURES: list[str] = []
+
+
+def check(criterion_id: str, description: str, condition: bool) -> None:
+    if not condition:
+        FAILURES.append(f"FAIL [{criterion_id}] {description}")
+
+
+# -- Real local plain-HTTP path-style S3-shaped fixture ----------------------
+
+_ACCESS_KEY = "AKIA_TEST_ACCESS_KEY"
+_SECRET_KEY = "test-secret-key-do-not-use-in-production"
+_CREDENTIALS = S3Credentials(access_key=_ACCESS_KEY, secret_key=_SECRET_KEY)
+_WRONG_CREDENTIALS = S3Credentials(access_key=_ACCESS_KEY, secret_key="wrong-secret-key")
+_REGION = "us-east-1"
+
+_SINGLE_PART_ETAG = "9e107d9d372bb6826bd81d3542a419d6"  # 32 hex chars
+_MULTIPART_ETAG = f"{_SINGLE_PART_ETAG}-3"  # never a valid hash of anything
+
+REQUEST_LOG: list[str] = []
+
+# bucket -> list of (query-marker-state, page) response specs, consumed by
+# whichever handler function is currently installed for the test in
+# progress (see `_install_pages` below).
+_CURRENT_PAGES: list[bytes] = []
+_PAGE_INDEX = {"value": 0}
+
+
+def _version_entry(
+    key: str, version_id: str, *, is_latest: bool, size: int, etag: str, deleted: bool = False
+) -> str:
+    tag = "DeleteMarker" if deleted else "Version"
+    etag_xml = "" if deleted else f"<ETag>&quot;{etag}&quot;</ETag><Size>{size}</Size>"
+    return (
+        f"<{tag}><Key>{key}</Key><VersionId>{version_id}</VersionId>"
+        f"<IsLatest>{'true' if is_latest else 'false'}</IsLatest>"
+        f"<LastModified>2026-01-01T00:00:00.000Z</LastModified>{etag_xml}</{tag}>"
+    )
+
+
+def _list_versions_xml(
+    *,
+    entries_xml: str,
+    is_truncated: bool = False,
+    next_key_marker: str = "",
+    next_version_id_marker: str = "",
+) -> bytes:
+    truncation_xml = ""
+    if is_truncated:
+        truncation_xml = (
+            f"<NextKeyMarker>{next_key_marker}</NextKeyMarker>"
+            f"<NextVersionIdMarker>{next_version_id_marker}</NextVersionIdMarker>"
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+        "<Name>acme-bucket</Name>"
+        f"<IsTruncated>{'true' if is_truncated else 'false'}</IsTruncated>"
+        f"{truncation_xml}{entries_xml}"
+        "</ListVersionsResult>"
+    ).encode()
+
+
+def _install_pages(pages: list[bytes]) -> None:
+    global _CURRENT_PAGES
+    _CURRENT_PAGES = pages
+    _PAGE_INDEX["value"] = 0
+
+
+def _expected_authorization(method: str, path: str, query: dict[str, str], amz_date: str) -> str:
+    parsed = urlsplit(f"http://placeholder{path}")
+    endpoint = S3Endpoint(scheme="http", host="127.0.0.1", port=_PORT, region=_REGION)
+    now = datetime.strptime(amz_date, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    signed = sign_request(
+        method=method,
+        endpoint=endpoint,
+        credentials=_CREDENTIALS,
+        canonical_uri=parsed.path,
+        query=query,
+        now=now,
+    )
+    return signed.headers["authorization"]
+
+
+class _S3Handler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+    def do_GET(self) -> None:  # noqa: N802
+        REQUEST_LOG.append(self.path)
+        parsed = urlsplit(self.path)
+        query = {k: v[0] for k, v in parse_qs(parsed.query, keep_blank_values=True).items()}
+
+        amz_date = self.headers.get("x-amz-date", "")
+        actual_auth = self.headers.get("authorization", "")
+        expected_auth = (
+            _expected_authorization(self.command, parsed.path, query, amz_date)
+            if amz_date
+            else None
+        )
+        if expected_auth is None or actual_auth != expected_auth:
+            self._respond(403, b'{"Code":"SignatureDoesNotMatch"}')
+            return
+
+        if parsed.path != "/acme-bucket":
+            self._respond(404, b'{"Code":"NoSuchBucket"}')
+            return
+
+        index = _PAGE_INDEX["value"]
+        if index >= len(_CURRENT_PAGES):
+            self._respond(500, b'{"Code":"UnexpectedExtraRequest"}')
+            return
+        body = _CURRENT_PAGES[index]
+        _PAGE_INDEX["value"] += 1
+        self._respond(200, body)
+
+    def _respond(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+
+def _start_server() -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _S3Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    atexit.register(server.shutdown)
+    return server
+
+
+_SERVER = _start_server()
+_PORT = _SERVER.server_address[1]
+
+
+def _endpoint() -> S3Endpoint:
+    return S3Endpoint(scheme="http", host="127.0.0.1", port=_PORT, region=_REGION)
+
+
+def _config(**overrides: object) -> s3_preview.S3MinioSourceConfig:
+    fields: dict[str, object] = {
+        "endpoint": _endpoint(),
+        "credentials": _CREDENTIALS,
+        "bucket": "acme-bucket",
+        "tenant_key_prefix": "org-42/",
+    }
+    fields.update(overrides)
+    return s3_preview.S3MinioSourceConfig(**fields)  # type: ignore[arg-type]
+
+
+def _policy() -> ConnectionPolicy:
+    return ConnectionPolicy(
+        name="test-s3-minio-preview",
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({_PORT}),
+        explicit_private_allowlist=(ipaddress.ip_network("127.0.0.0/8"),),
+    )
+
+
+# -- Tests --------------------------------------------------------------
+
+
+def test_happy_path_lists_and_previews_real_objects() -> None:
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    ) + _version_entry("org-42/b.jsonl", "v1", is_latest=True, size=200, etag=_MULTIPART_ETAG)
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    result = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    check(
+        "FTF-0500B",
+        "acceptance: bucket/prefix are the real resolved values",
+        (result.bucket == "acme-bucket" and result.tenant_key_prefix == "org-42/"),
+    )
+    check(
+        "FTF-0500B",
+        "acceptance: both real objects are returned in the preview",
+        len(result.objects) == 2,
+    )
+    check(
+        "FTF-0500B",
+        "acceptance: the listing is not falsely marked truncated when it is complete",
+        result.truncated is False,
+    )
+    check(
+        "FTF-0500B",
+        "acceptance: an immutable manifest_hash is produced (real sha256 hex digest)",
+        isinstance(result.manifest_hash, str) and len(result.manifest_hash) == 64,
+    )
+    check(
+        "FTF-0500B",
+        "a plain single-part ETag is disclosed as looking like a content hash (informational "
+        "only)",
+        result.objects[0].etag_looks_like_content_hash is True,
+    )
+    check(
+        "FTF-0500B",
+        "a multipart-shaped ETag is disclosed as NOT looking like a content hash",
+        result.objects[1].etag_looks_like_content_hash is False,
+    )
+
+
+def test_manifest_hash_is_stable_for_an_identical_repeated_listing() -> None:
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    )
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    first = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    second = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    check(
+        "FTF-0500B",
+        "acceptance: an identical real listing produces an identical immutable manifest_hash",
+        first.manifest_hash == second.manifest_hash,
+    )
+
+
+def test_manifest_hash_changes_when_the_real_listing_differs() -> None:
+    _install_pages(
+        [
+            _list_versions_xml(
+                entries_xml=_version_entry(
+                    "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                )
+            )
+        ]
+    )
+    first = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    _install_pages(
+        [
+            _list_versions_xml(
+                entries_xml=_version_entry(
+                    "org-42/a.jsonl", "v1", is_latest=True, size=999, etag=_SINGLE_PART_ETAG
+                )
+            )
+        ]
+    )
+    second = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    check(
+        "FTF-0500B",
+        "a genuinely different real listing (different Size) produces a different manifest_hash",
+        first.manifest_hash != second.manifest_hash,
+    )
+
+
+def test_real_pagination_across_two_pages() -> None:
+    page1 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/a.jsonl",
+        next_version_id_marker="v1",
+    )
+    page2 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/b.jsonl", "v1", is_latest=True, size=200, etag=_SINGLE_PART_ETAG
+        )
+    )
+    _install_pages([page1, page2])
+    result = s3_preview.validate_and_preview_s3_minio_source(
+        _config(max_preview_records=20), policy=_policy()
+    )
+    check(
+        "FTF-0500B",
+        "real pagination: both pages are actually requested and both real objects returned",
+        len(result.objects) == 2
+        and {o.key for o in result.objects}
+        == {
+            "org-42/a.jsonl",
+            "org-42/b.jsonl",
+        },
+    )
+    check(
+        "FTF-0500B",
+        "real pagination: exactly two real HTTP requests were made",
+        len(REQUEST_LOG) >= 2,
+    )
+
+
+def test_preview_bound_marks_result_truncated() -> None:
+    entries = "".join(
+        _version_entry(f"org-42/f{i}.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+        for i in range(5)
+    )
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    result = s3_preview.validate_and_preview_s3_minio_source(
+        _config(max_preview_records=3), policy=_policy()
+    )
+    check(
+        "FTF-0500B",
+        "acceptance: the preview is bounded to max_preview_records",
+        len(result.objects) == 3,
+    )
+    check(
+        "FTF-0500B",
+        "acceptance: a listing with more real objects than the preview bound is disclosed as "
+        "truncated, never silently presented as complete",
+        result.truncated is True,
+    )
+
+
+def test_overly_broad_grant_fails_before_any_network_request() -> None:
+    before = len(REQUEST_LOG)
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(tenant_key_prefix=""), policy=_policy()
+        )
+    except s3_preview.OverlyBroadGrantError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: an empty tenant_key_prefix (overly broad grant) fails",
+        raised,
+    )
+    check(
+        "FTF-0500B",
+        "the overly-broad-grant check is applied before any network request is made",
+        len(REQUEST_LOG) == before,
+    )
+
+
+def test_root_prefix_is_also_an_overly_broad_grant() -> None:
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(tenant_key_prefix="/"), policy=_policy()
+        )
+    except s3_preview.OverlyBroadGrantError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a bare root prefix ('/') is also refused as an overly broad grant",
+        raised,
+    )
+
+
+def test_cross_tenant_prefix_is_denied_even_when_the_server_misbehaves() -> None:
+    """A real check independent of the server's own honoring of the
+    request's own `prefix` query parameter -- a non-compliant or
+    compromised endpoint that returns a key outside the requested prefix
+    must still be refused client-side, never trusted."""
+    entries = _version_entry(
+        "org-99/other-tenant.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+    )
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    except s3_preview.CrossTenantPrefixError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a real key outside the connection's own tenant_key_prefix is "
+        "denied, even though the server actually returned it",
+        raised,
+    )
+
+
+def test_cross_tenant_prefix_rejects_sibling_tenant_string_collision() -> None:
+    entries = _version_entry("org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(tenant_key_prefix="org-4"), policy=_policy()
+        )
+    except s3_preview.CrossTenantPrefixError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a tenant-key-prefix string collision (org-4 vs org-42/...) fails "
+        "at a real path-segment boundary, not a bare string-prefix match",
+        raised,
+    )
+
+
+def test_source_changed_during_listing_is_denied() -> None:
+    """Simulates a real concurrent overwrite between two real page
+    fetches of the same listing: page 1 reports `a.jsonl` latest at `v1`,
+    page 2 (a later, real, independent HTTP response) reports the same key
+    latest at a different version `v2` -- the source genuinely changed
+    mid-listing and must be refused (SNAPSHOT_UNSTABLE), never silently
+    resolved."""
+    page1 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/a.jsonl",
+        next_version_id_marker="v1",
+    )
+    page2 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v2", is_latest=True, size=999, etag=_SINGLE_PART_ETAG
+        )
+    )
+    _install_pages([page1, page2])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=20), policy=_policy()
+        )
+    except s3_preview.SourceChangedDuringListingError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a real key whose latest version differs between two real pages "
+        "of the same listing is denied (SNAPSHOT_UNSTABLE), never silently mixed",
+        raised,
+    )
+
+
+def test_delete_marker_is_never_treated_as_a_conflicting_latest_version() -> None:
+    """A delete marker sharing a key with a real prior Version entry must
+    not itself be treated as a second, conflicting 'latest' claim -- only
+    real (non-delete-marker) `IsLatest` entries participate in the
+    change-detection check."""
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    ) + _version_entry("org-42/a.jsonl", "v2", is_latest=True, size=0, etag="", deleted=True)
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    result = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    check(
+        "FTF-0500B",
+        "a delete marker sharing a key with a real Version entry does not falsely trigger "
+        "SourceChangedDuringListingError",
+        len(result.objects) == 2,
+    )
+
+
+def test_wrong_credentials_are_rejected() -> None:
+    entries = _version_entry("org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(credentials=_WRONG_CREDENTIALS), policy=_policy()
+        )
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "a real signature computed with the wrong secret key is genuinely rejected by the "
+        "fixture's own independent signature re-derivation (proving this is a real signed "
+        "request, not an unauthenticated fetch)",
+        raised,
+    )
+
+
+def test_destination_denied_is_a_real_policy_check() -> None:
+    entries = _version_entry("org-42/a.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG)
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    denied = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(), policy=s3_preview.default_s3_minio_preview_policy()
+        )
+    except OutboundPolicyError:
+        denied = True
+    check(
+        "FTF-0500B",
+        "a destination not permitted by policy is denied by a real, live check (production "
+        "default carries no private-address allowlist)",
+        denied,
+    )
+
+
+# -- Fault injection (Law 1): the cross-tenant and source-changed checks are
+# load-bearing, not merely present in source.
+
+_MODULE_PATH = (
+    ROOT / "apps" / "api" / "app" / "datasets" / "s3_minio_source_validation_metadata_preview.py"
+)
+
+
+def test_fault_injection_cross_tenant_prefix_check_is_load_bearing() -> None:
+    original = _MODULE_PATH.read_bytes()
+    target = b"if not _key_within_tenant_prefix(key, prefix):"
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    try:
+        mutated = original.replace(
+            target, b"if False and not _key_within_tenant_prefix(key, prefix):", 1
+        )
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        entries = _version_entry(
+            "org-99/other-tenant.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+        )
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+            no_longer_raises = True
+        except s3_preview.CrossTenantPrefixError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: disabling the cross-tenant-prefix check genuinely lets a "
+            "different tenant's real key through as a fabricated success",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        entries = _version_entry(
+            "org-99/other-tenant.jsonl", "v1", is_latest=True, size=1, etag=_SINGLE_PART_ETAG
+        )
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.CrossTenantPrefixError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the cross-tenant-prefix check genuinely fires again",
+            restored_raises,
+        )
+
+
+def test_fault_injection_source_changed_check_is_load_bearing() -> None:
+    original = _MODULE_PATH.read_bytes()
+    target = b"if previously_seen is not None and previously_seen != version_id:"
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    page1 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+        ),
+        is_truncated=True,
+        next_key_marker="org-42/a.jsonl",
+        next_version_id_marker="v1",
+    )
+    page2 = _list_versions_xml(
+        entries_xml=_version_entry(
+            "org-42/a.jsonl", "v2", is_latest=True, size=999, etag=_SINGLE_PART_ETAG
+        )
+    )
+    try:
+        mutated = original.replace(
+            target,
+            b"if False and previously_seen is not None and previously_seen != version_id:",
+            1,
+        )
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        _install_pages([page1, page2])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=20), policy=_policy()
+            )
+            no_longer_raises = True
+        except s3_preview.SourceChangedDuringListingError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: disabling the source-changed-during-listing check genuinely "
+            "lets a mid-listing mutation through as a fabricated success",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([page1, page2])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=20), policy=_policy()
+            )
+        except s3_preview.SourceChangedDuringListingError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the source-changed-during-listing check genuinely "
+            "fires again",
+            restored_raises,
+        )
+
+
+def main() -> None:
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+
+    if FAILURES:
+        print(f"FTF-0500B S3/MinIO source validation + metadata preview: {len(FAILURES)} failed")
+        for failure in FAILURES:
+            print(f"  {failure}")
+        sys.exit(1)
+
+    print("FTF-0500B S3/MinIO source validation + metadata preview: all checks passed")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

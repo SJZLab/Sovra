@@ -24942,6 +24942,103 @@ defect found by this session's own review — awaiting an independently-triggere
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
 
+## 2026-09-28T15:00:00Z — Scheduled relay shift — FTF-0500B submitted PROVISIONAL
+
+Session `https://claude.ai/code/session_01WXPYTLbfBkkBH2SCwTrrYL`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256`. Read `BLOCKER.md` in full — both entries are resolved
+history, no live blocker. Designated branch `claude/wizardly-fermat-lp04ue` did not yet exist on
+`origin`; created it from `origin/main`'s current head (`f17260c`, which already carries PR
+#358/FTF-04A05 merged).
+
+STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml` (93
+CERTIFIED, 1 PROVISIONAL) joined against `docs/TASK_INDEX.md`'s own `Dependencies` column: 12
+tasks fully dependency-ready. Listed all open PRs and searched PR titles for each of the three
+frontier items with no live open PR (FTF-0500B, FTF-0500C, FTF-H005 — all three newly unblocked
+the same shift FTF-04A05 was picked) — confirmed all three genuinely unclaimed. The other nine
+frontier items each already have a live open PR or remain disclosed-blocked by prior
+sandbox-limit findings — left untouched.
+
+**Working: FTF-0500B** ("S3/MinIO source validation + metadata preview") — first in
+`docs/TASK_INDEX.md`'s own file order among the three unclaimed items. Task contract pulled via
+`tools/r1_handoff.py packet FTF-0500B --plan FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256`
+matched). Dependencies FTF-0500/FTF-0500A/FTF-H006 reconfirmed `CERTIFIED` before relying on them.
+
+New module `apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` (path refined
+from the task packet's own generic suggestion to match FTF-0500/FTF-0500A's own real
+`apps/api/app/datasets/*.py` layout): a real, paginated, bounded `ListObjectVersions` call
+against a real S3/MinIO-compatible endpoint, signed via `storage_semantics_client.py`'s own real
+AWS SigV4 `sign_request` (FTF-R017, CERTIFIED) and dialed exclusively through
+`packages/security/outbound_guard.py`'s own `guarded_fetch` (FTF-H006) — never `S3Client`'s own
+urllib transport, the same disclosed precedent `FTF-0303`'s own `private_s3_artifact_resolver.py`
+already established. A *metadata* preview only (key/version/size/ETag/last-modified) — no object
+bytes are ever downloaded; Section 8's own file-content import pipeline is a separate,
+not-yet-dependency-gated task this module does not touch.
+
+This task's own `negative_acceptance` ("S3 ETag is not assumed SHA; source changes, cross-tenant
+prefix and overly broad grants are denied") is enforced as four independent, disclosed checks:
+(1) overly broad grant — a blank or root `tenant_key_prefix` refused before any network request;
+(2) cross-tenant prefix — every real key the endpoint actually returns is independently
+re-checked at a real path-segment boundary (the same boundary-safe logic `FTF-0303`'s own
+already-CERTIFIED helper established for the `org-4`/`org-42` collision, re-implemented here as
+this task's own independently-tested copy) — refused even when the server itself actually
+returned the out-of-scope key; (3) source changed during listing — Section 67.1's own
+"changes during pagination cannot silently mix versions... show `SNAPSHOT_UNSTABLE`" made real:
+tracks each real key's own `IsLatest` version id across pages and refuses
+(`SourceChangedDuringListingError`) if a later, independently-served page reports a different one
+for a key already seen; (4) ETag-as-hash assumption — `etag_looks_like_content_hash` is
+disclosed, informational-only metadata, never consulted by this module's own validation path. The
+returned `manifest_hash` (sha256 over the canonical JSON of the exact bounded
+key/version_id/size_bytes/etag_raw tuples) is this task's own immutable-manifest acceptance
+clause made real.
+
+`role`-based (STS) access is out of this task's own scope, disclosed not hidden — static
+`S3Credentials` only, the same `FTF-0303`-established "caller resolves the secret" shape. This
+module is a pure connector (like `FTF-0303`): no `DatasetSourceConnection` row access, no OpenBao
+secret resolution, no HTTP route — a separately dependency-gated composition task, out of this
+task's own `files` list. No independent schema change.
+
+**Real fault injection (Law 1), disclosed:** two independent, disclosed fault injections prove
+the cross-tenant-prefix and source-changed-during-listing checks are load-bearing — disabling
+either one (confirmed the file actually changed) let its own real negative case genuinely stop
+raising (a fabricated success), then restored the file byte-identical and confirmed the check
+fires again.
+
+**Test evidence:** `tests/tasks/test_ftf_0500b.py` (no-DB, real local plain-HTTP path-style
+S3-shaped fixture that independently re-derives the expected SigV4 `Authorization` header from
+its own knowledge of the real secret key and genuinely rejects a wrong-credentials request): 15
+test functions, all pass. Covers the happy path, `manifest_hash` stability/sensitivity, real
+pagination across two real pages, the preview bound and its `truncated` disclosure, all four
+`negative_acceptance` checks (incl. the sibling-tenant-string-collision case and a real fixture
+server that itself returns an out-of-scope key), a delete-marker non-interference case,
+wrong-credentials rejection, a real destination-denied policy check, and the two fault injections
+above.
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (321
+files); `uv run mypy .` clean repo-wide (321 source files). `pnpm run
+lint`/`typecheck`/`format:check` and `pnpm exec vitest run` unaffected (no frontend file
+touched). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact). `python3 scripts/product_truth_check.py
+--fail-on-unwired` unchanged at `23/23` (`proving_symbol` left blank — no live caller yet, the
+same disclosed `FTF-0303`/`FTF-0500` precedent). `scripts/status.py` unchanged at `93/300`
+certified (Law 2). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_h006.py` —
+all "all checks passed", zero regressions.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately
+after FTF-04A05's own two steps. No new integration job — this task is DB-free by design, the
+same precedent `FTF-0303` already established.
+
+`docs/spec-matrix.yaml` FTF-0500B set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: ''` (disclosed blank) /
+`proving_test: tests/tasks/test_ftf_0500b.py`; `evidence_hash` left blank pending the real merge
+commit. **Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500B) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-28T19:20:00Z — Scheduled relay shift — FTF-0500C submitted PROVISIONAL
 
 Session `https://claude.ai/code/session_01AzJCVyrxsPiSbQBF9T5XhK`. STEP 0: hash-checked CLAUDE.md
