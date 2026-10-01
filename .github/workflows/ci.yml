@@ -317,6 +317,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1201.py
       - name: FTF-0304 negative-test proof (Local artifact resolver -- symlink/executable/TOCTOU rejection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0304.py
+      - name: FTF-0306 negative-test proof (Base model revision/digest resolver -- dispatch, load/resume drift detection, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0306.py
       - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1206.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
@@ -1926,6 +1928,56 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real ManifestEvidence evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a20_manifest_evidence.py
+
+  base-model-revision-digest-resolver-integration:
+    # FTF-0306: real Postgres Base model revision/digest resolver
+    # evidence -- reuses FTF-0301's own already-CERTIFIED
+    # trainable_artifacts table/migration verbatim (no independent schema
+    # change). This task adds no HTTP route (no live training/resume
+    # caller exists anywhere in this repository yet, the same disclosed
+    # "no live caller yet" precedent already accepted for FTF-0302/0303/
+    # 0304 themselves), so this suite drives the real
+    # base_model_revision_digest_resolver.resolve_base_model_digest
+    # composition directly against a real tenant-scoped session (no
+    # uvicorn server) -- two real organizations, a real registered
+    # local_filesystem artifact resolved for real (weights_digest
+    # genuinely committed, visible from a brand-new session), mark-ready
+    # succeeding once resolved, a real "load/resume" re-verification
+    # against the now-ready row (never touching apply_edits again),
+    # negative_acceptance proven with real drifted bytes on disk raising
+    # DigestMismatchError and confirmed never persisted, and the
+    # cross-organization IDOR case. Same real `services: postgres`
+    # container pattern as trainable-artifact-schema-api-integration
+    # (this repo's interactive dev sandbox has no container-registry
+    # egress; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0306
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0306"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0306
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real Base model revision/digest resolver evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 
   database-api-trace-source-integration:
     # FTF-0500C: real Postgres round-trip evidence for the database source

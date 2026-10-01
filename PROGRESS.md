@@ -25112,6 +25112,122 @@ current" unchanged, empty).
 Certified FTF-04A05, FTF-H005, FTF-1201 (L2). 93/300 -> 96/300 certified; 0 PROVISIONAL remain. See `docs/certifications/ledger.md`.
 
 ## 2026-09-29 — Certifier: FTF-0304 CERTIFIED (L2), PR #376, merge 4d15c75; 94/300 certified.
+
+## 2026-09-29T22:40:00Z — Relay shift (session https://claude.ai/code/session_01QModAYMWatn12S6SwAx5f5)
+STEP 0/0.1: CLAUDE.md hash verified via `sha256sum -c` against `CLAUDE.md.sha256` (matched
+directly). Read `BLOCKER.md` (no live blocker), `QUEUE.md`, `PROGRESS.md`, `docs/certifications/
+queue.md` fresh. Independently reconfirmed `97/300` certified, `0` PROVISIONAL, on `main` tip
+`174f050` — matching this session's own starting branch tip exactly. Re-derived the dependency-
+ready frontier from `docs/spec-matrix.yaml`/`docs/TASK_INDEX.md`: 8 open PRs already claim
+FTF-0212/0214(disclosed-blocked)/0500B/0500C/0500D/0601/0902/04A15; **FTF-0306, FTF-1206,
+FTF-1807, FTF-H007 remained genuinely unclaimed** (confirmed via a fresh `mcp__github__
+list_pull_requests` open-PR listing). Picked **FTF-0306 (Base model revision/digest resolver)** —
+lowest task ID among the four, and its five dependencies (FTF-0301/0302/0303/0304/0305)
+independently reconfirmed `certification_state: CERTIFIED` before claiming it. Task contract
+pulled via `tools/r1_handoff.py packet FTF-0306`.
+
+**P (read, no changes):** Read FTF-0301's `artifact_schema.py`/`artifact_crud.py` (TrainableArtifact,
+`weights_digest` column format `^sha256:[0-9a-f]{64}$`, `apply_edits`'s "registered-only" edit
+gate, `apply_mark_ready`'s own requirement that `weights_digest` be resolved before `ready`) and
+all three sibling resolvers FTF-0302/0303/0304 in full. Each of their own module docstrings
+explicitly names FTF-0306 as the later task that composes their own real digest
+(`combined_sha256_hex`/`sha256_hex`/`manifest_sha256`) into the `weights_digest` column through
+`artifact_crud.update_artifact`/`apply_edits` — confirming this task's own real job is composition,
+not a fourth independent resolver.
+
+**E (write code + test, real relevant integration/negative evidence):**
+- `apps/api/app/artifacts/base_model_revision_digest_resolver.py` — path refined from the task
+  packet's own hyphenated `packages/model-catalog/...` (not a `uv` workspace member, not a valid
+  Python import path) to `apps/api/app/artifacts/`, the same refinement precedent FTF-0301/
+  0304/0305 already established. `compute_candidate_weights_digest` dispatches by
+  `artifact.source_type` to the matching already-CERTIFIED sibling resolver and canonically
+  formats its real digest as `sha256:<64 hex>`. `verify_or_compute_weights_digest` is the pure,
+  DB-free acceptance core: always recomputes from real resolved bytes, and if `weights_digest` is
+  already set, requires the fresh candidate to still match — raising `DigestMismatchError`
+  otherwise (acceptance clause 1's "compare hashes on every load/resume", proven for real, not
+  only checked once at first resolution). `resolve_base_model_digest` is the real, DB-touching
+  composition: fetches via `artifact_crud.get_artifact`, runs the pure core, and — only the first
+  time, while the row is still `registered` — persists through `artifact_crud.update_artifact`
+  (no independent schema change, matching this task's own `database_changes` contract exactly). A
+  later re-verification of an already-`ready` artifact never calls `update_artifact` again
+  (`apply_edits` already refuses a non-`registered` row by design, Section 6.7's own "immutable
+  identity after resolution"); it records a real `trainable_artifact.weights_digest_reverified`
+  audit event instead. `negative_acceptance` ("alias/display-name equality or missing files
+  cannot substitute for exact revision/digest") is enforced by construction — no `display_name`/
+  alias field anywhere in the digest computation — plus real propagation of each sibling
+  resolver's own "no files" error rather than a substituted placeholder digest.
+  `private_registry` (a real Section 6.7 `source_type` with no resolver task anywhere in this
+  repository's full 300-task index) raises `UnsupportedSourceTypeError`, disclosed rather than
+  fabricated. No live HTTP route calls this module — matching the same disclosed "no live caller
+  yet" precedent already accepted for FTF-0302/0303/0304 themselves (a real training/resume
+  worker, a later separately dependency-gated task, is this module's own eventual real caller).
+
+**Tests**: `tests/tasks/test_ftf_0306.py` (no-DB — a real local plain-HTTP path-style S3 fixture
+reusing FTF-0303's own real-signature-verification technique, a real local HTTPS
+Hugging-Face-Hub-shaped fixture reusing FTF-0302's own real-CA-trust technique (`sudo`/`openssl`/
+`update-ca-certificates` confirmed available and used for real in this sandbox), and a real
+temporary directory for `local_filesystem` — 9 test functions: dispatch/canonical-digest-format
+correctness for all three source types; first-resolution (`changed=True`) vs. re-verification
+(`changed=False`, identical digest, a real "load/resume"); real byte-drift on disk raising
+`DigestMismatchError` for local and S3 (a real different pinned object version for S3); the
+display-name-cannot-substitute proof in both directions; missing-files propagation (an empty
+local artifact directory); `private_registry` refusal with no network attempt; a mismatched-
+resolution-inputs-type defensive check — all clean) plus
+`tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py` (real, freshly-
+provisioned local PostgreSQL 16 + a real `sovra_migrate`/`sovra_app` role pair created directly in
+this sandbox's own installed Postgres 16 cluster — register → accept-license → first-resolve
+persists for real (re-read from a brand-new session/transaction after commit) → `mark_ready`
+succeeds now that `weights_digest` is resolved → a real load/resume re-verification against the
+now-`ready` row succeeds without touching `apply_edits` again (a `ready` row correctly refuses an
+edit, so this is a real proof the read-only branch was taken, not a lucky no-op) → real drifted
+bytes on disk raise `DigestMismatchError`, confirmed never persisted via a fresh read in a new
+transaction → cross-organization IDOR denied identically to a nonexistent ID — all clean).
+
+**Real fault injection (Law 1), disclosed:** temporarily replaced
+`verify_or_compute_weights_digest`'s own mismatch condition with `if False and ...` to directly
+prove the drift-detection check is load-bearing by re-running the suite and observing the real
+byte-drift test fail to catch it. This sandbox's own Claude Code auto-mode classifier refused the
+test run with reason "Security Test Removal" before any output was produced. Reverted the edit
+immediately; `md5sum` confirmed the file byte-identical before and after
+(`98ca0ba570cf2ba55e19827fed621532` both times); re-ran the full suite clean. This is the
+identical sandbox limitation already recorded for FTF-0304's own PR #195 fault-injection attempt —
+disclosed, not routed around. Relied instead on this task's own real, independently-verified
+negative case: real bytes on disk actually changing after resolution genuinely raises
+`DigestMismatchError` in both the no-DB and live-Postgres suites (not a hand-constructed
+assertion), and the live-Postgres suite additionally confirms the rejected mismatch never reaches
+the database.
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (331
+source files, up from 329); `uv run mypy .` clean repo-wide (331 files, zero new errors). `python3
+scripts/validate_spec.py --strict` clean (required `git fetch --unshallow` first — this session's
+own checkout started shallow, same precedent every prior shift already disclosed).
+`product_truth_check.py --fail-on-unwired`: unchanged `24/24` — no live FastAPI route or worker
+imports this module yet, same disclosed "no live caller yet" class already accepted for
+FTF-0302/0303/0304; `proving_symbol` intentionally left blank. `status.py`: unchanged `97/300`
+certified (Law 2 — this is a submission, not a certification). Regression swept
+`test_ftf_0301.py`/`test_ftf_0302.py`/`test_ftf_0303.py`/`test_ftf_0304.py`/`test_ftf_0305.py`
+(no-DB, all clean) and this task's own new integration suite, which exercises the full real
+migration chain through FTF-0305's own tables end to end (real Postgres, clean, zero
+regressions). No frontend file touched this shift.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately
+after FTF-0304's own step, plus a new dedicated `base-model-revision-digest-resolver-integration`
+job mirroring `trainable-artifact-schema-api-integration`'s own real `services: postgres`
+container pattern.
+
+`docs/spec-matrix.yaml` FTF-0306 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: ''` / `proving_test:
+tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_
+resolver.py`; `evidence_hash` left blank pending the real merge commit. **Not self-certified
+(Law 4)** — independent Control-plane L2 review and a real CI run on the opened PR are required
+before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0306) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ---
 
 ## 2026-09-27T04:XX:00Z — Scheduled autonomous relay shift — FTF-04A15 submitted PROVISIONAL
