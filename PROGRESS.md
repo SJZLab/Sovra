@@ -24942,6 +24942,172 @@ defect found by this session's own review — awaiting an independently-triggere
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
 
+## 2026-09-28T19:20:00Z — Scheduled relay shift — FTF-0500C submitted PROVISIONAL
+
+Session `https://claude.ai/code/session_01AzJCVyrxsPiSbQBF9T5XhK`. STEP 0: hash-checked CLAUDE.md
+(`sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly). STEP 0.1: read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, no assumed state — this session's
+own branch (`claude/wizardly-fermat-f9qdmb`) was already at the exact tip of `origin/main`
+(`1256f2a`, carrying PR #362's merge — the prior shift's own FTF-H005 certified/merged; note that
+neither the 14:15 FTF-H005-submission shift nor the 17:11 PR #361 merge-confirmation update
+actually appended to this file despite their own QUEUE.md entries claiming they did — a gap in
+those prior shifts' own STEP 3 discipline, not something this shift retroactively rewrites; noted
+here so it is visible rather than silently repeated). STEP 0.2: no `cognee-cli` installed in this
+environment; text-search fallback used throughout (disclosed, per standing instruction).
+
+STEP 1: recomputed the dependency-ready frontier directly from `docs/spec-matrix.yaml`'s real
+`certification_state` (93 CERTIFIED, 2 PROVISIONAL — FTF-04A05 under Control-plane review via PR
+#360, FTF-H005 under Control-plane review via PR #363) joined against `docs/TASK_INDEX.md`'s own
+structured `Dependencies` column: 11 tasks dependency-ready (FTF-0212, FTF-0214, FTF-0304,
+FTF-04A15, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0601, FTF-0902, FTF-1201, FTF-1703). Listed all 20
+open PRs directly via the GitHub API (not trusted from this file's own prior tracking prose) and
+checked each frontier ID against every open PR title/head: FTF-0212 (PR #231), FTF-0214 (PR #295,
+disclosed-blocked), FTF-0304 (PRs #194/#195), FTF-04A15 (PR #328), FTF-0500B (PR #359, open,
+unreviewed), FTF-0500D (PR #335, blocked on merge conflict per PR #336's own title), FTF-0601 (PR
+#337), FTF-0902 (PR #342) each already have a live open PR; FTF-1201/FTF-1703 remain
+disclosed-blocked by this sandbox's own genuine real-network-egress / real-curated-trace-volume
+limits, the same finding every prior shift back to at least PR #349 already recorded. **FTF-0500C
+was the sole genuinely unclaimed, unblocked frontier item.**
+
+Task contract pulled via `python3 tools/r1_handoff.py packet FTF-0500C --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md`). Dependencies FTF-0500/FTF-0500A/FTF-H006 reconfirmed CERTIFIED
+before relying on them. Read the real dependency chain directly before writing any code: FTF-0500's
+own `dataset_source_connection_schema.py`/`_crud.py` (the "caller resolves the secret, this module
+only ever sees an already-resolved connection" boundary), FTF-H006's own `outbound_guard.py`/
+`url_policy.py` (whose own module docstring already names `FTF-0500C` as an intended future
+caller of `guarded_fetch`, identical to how it already names `FTF-0500B`), and — since FTF-0500B
+(the S3/MinIO sibling task) has its own not-yet-merged open PR #359 — fetched that branch directly
+(`git fetch origin claude/wizardly-fermat-lp04ue`) and read its real
+`s3_minio_source_validation_metadata_preview.py` for the established connector-shape precedent
+(bounded preview, immutable manifest hash, "pure connector, no route, no DatasetSourceConnection
+read/write" scope boundary) rather than inventing a divergent shape for the sibling source types
+this task owns (`database`/`api`/`agent_traces`/`production_conversations`). Confirmed via
+`pull_request_read(get_files)` that PR #359 touches no file this task's own write set overlaps
+(only `s3_minio_source_validation_metadata_preview.py`/`test_ftf_0500b.py`/tracking docs/CI) — no
+merge-conflict risk.
+
+**Implementation** (new file,
+`apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py`):
+Section 67.1's own connector table made real for this task's two source types:
+
+- `validate_and_preview_postgres_source` — a real bounded PostgreSQL connector. Every identifier
+  (`schema`/`table`/each column/`stable_key_column`) is validated against a real Postgres
+  identifier grammar *before* any connection is attempted (`PostgresIdentifierError`) and then
+  embedded via `psycopg.sql.Identifier`, never Python string interpolation — the actual mechanism
+  behind "no user SQL," not merely a disclosed convention. The session is placed into `SET
+  TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` (one real Postgres transaction-mode
+  setting giving both this task's own "no... writes" and "repeatable snapshot" acceptance
+  clauses at once) and a real `statement_timeout` is set and independently read back (`SHOW
+  statement_timeout`) before any row is fetched. Cursor pagination resumes via
+  `resume_after_key`; resuming re-verifies, inside the *same* `REPEATABLE READ` transaction as the
+  subsequent `SELECT`, that the watermark row still exists — `LostWatermarkError` otherwise (this
+  task's own negative_acceptance, made real rather than merely asserted, since the check and the
+  read share one identical database snapshot and cannot be raced by a separate connection's
+  delete landing between them). A genuine `UndefinedTable`/`UndefinedColumn` is caught and
+  re-raised as `UnknownSourceContractError` (this task's own other negative_acceptance half),
+  never silently treated as an empty result.
+- `validate_and_preview_rest_trace_source` — a real bounded, cursor-paginated REST/agent-trace
+  connector via `packages/security/outbound_guard.py`'s `guarded_fetch` (FTF-H006). Bounded
+  pagination (`max_preview_records` and, independently, `max_page_fetches` — the latter bounds a
+  real endpoint that returns a valid next-cursor forever without ever reaching the record cap);
+  a real HTTP 429 is retried a bounded number of times honoring the endpoint's own `Retry-After`
+  header (capped at 30s) before `RateLimitRetriesExhaustedError`; a declared snapshot-version
+  response header (default `ETag`) is tracked across pages and a mid-listing change raises
+  `SourceChangedDuringListingError` (a `LostWatermarkError` subclass — the identical
+  negative_acceptance shape extended to a REST source); a response missing the declared
+  `records_field`, or containing a non-object entry, raises `UnknownSourceContractError`; a
+  cooperative `cancellation_check` callback is checked between real page fetches. "No arbitrary
+  scripting" is structural: every request is built from typed config fields (a fixed cursor
+  query-parameter name and a fixed, caller-approved extra-query-parameter dict), never an
+  evaluated expression or template.
+
+Both connectors return an immutable `manifest_hash` (sha256 over the canonical JSON serialization
+of the exact bounded result), the same "one hash covers the whole manifest" shape FTF-0500B's own
+module already established. This module does not implement Section 8's own file-content import
+pipeline, does not read/write `DatasetSourceConnection` rows or resolve `credential_secret_ref` via
+OpenBao, and exposes no HTTP route — the same disclosed, dependency-gated composition-task
+boundary FTF-0500B's own module docstring already established for its identical-shaped sibling
+task (`database_changes: "No independent schema change"`).
+
+**Real fault injection (Law 1, disclosed), twice, one per connector:**
+
+1. REST snapshot-version check
+   (`tests/tasks/test_ftf_0500c.py::test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion`):
+   temporarily replaced the `elif observed != snapshot_version:` comparison with `elif False:`
+   directly in the module under test, against a real local HTTPS fixture serving a real
+   mid-listing snapshot-version change, and confirmed the negative-test assertion genuinely
+   fails without the real check (the connector call succeeds instead of raising
+   `SourceChangedDuringListingError`), then reverted the file byte-identical (md5sum confirmed
+   matching before/after, `git status` shows no diff on the untracked file) and reran clean.
+2. Postgres watermark-presence guard
+   (`tests/integration/test_ftf_0500c_database_api_trace_source.py::test_real_lost_watermark_after_a_genuine_concurrent_delete`):
+   against a real local PostgreSQL 16, deleted the exact real row at a just-captured watermark
+   from a *second*, independent real connection (genuinely concurrent, not simulated), confirmed
+   `LostWatermarkError` is raised on resume with the real check active, then temporarily disabled
+   the `if resume_after_key is not None: _verify_watermark_present(...)` guard directly in the
+   module under test and confirmed the same resume call genuinely succeeds instead of raising
+   without it, then reverted the file byte-identical (md5sum confirmed matching before/after) and
+   reran clean.
+
+**Test evidence:** `tests/tasks/test_ftf_0500c.py` (no live Postgres required — identifier/config
+validation proven with a fake `connect` that raises `AssertionError` if ever invoked for a
+rejected input, proving rejection happens before any connection attempt; the REST/trace connector
+fully exercised against a real local HTTPS server with a self-signed CA installed into this
+sandbox's own trust store, same convention `test_ftf_04a05.py`/`test_ftf_0500b.py` already
+established, through the real unmodified `outbound_guard.py` TLS path — covers bounded
+pagination, the 429-retry-then-succeed and retry-exhaustion cases, the snapshot-version-change
+negative case plus its own fault injection above, the missing-records-field negative case,
+cooperative cancellation, the `max_page_fetches` bound against a real endpoint that never ends,
+and manifest-hash determinism; 17 checks, all clean).
+`tests/integration/test_ftf_0500c_database_api_trace_source.py` (real, freshly-provisioned local
+PostgreSQL 16 — real bounded cursor pagination covering a real 30-row table exactly once across
+repeated calls, a real non-default `statement_timeout` genuinely accepted, a real unknown-table
+negative case, a real least-privileged `SELECT`-only role's write genuinely denied by the
+database's own grants [`psycopg.errors.InsufficientPrivilege`], this module's own `READ ONLY`
+transaction mode independently blocking a write from a role that otherwise has write privilege
+[`psycopg.errors.ReadOnlySqlTransaction`] — proving the mechanism itself, not merely the role
+grants — and the real lost-watermark case plus its own fault injection above; 6 checks, all
+clean, database/roles dropped in a `finally` block).
+
+`uv sync --all-packages` (installed `psycopg`/`psycopg-binary` — already a pinned
+`apps/api/pyproject.toml` dependency, no new dependency added); `uv run ruff check .`/`ruff format
+--check .` clean repo-wide (326 source files, up from 323); `uv run mypy .` clean repo-wide (326
+files, zero new errors). `pnpm lint`/`typecheck`/`format:check`/`vitest` unaffected (no frontend
+file touched this shift — this task is backend-only). `python3 scripts/validate_spec.py --strict`
+clean (required `git fetch --unshallow` first — this sandbox checkout started shallow, same
+precedent FTF-04A04/FTF-H005 already disclosed). `product_truth_check.py --fail-on-unwired`:
+unchanged `23/23` — disclosed, not hidden (same precedent FTF-0500B's own module already
+established for a pure connector with no live caller yet): no dataset-import composition task
+calls either connector yet; `proving_symbol` left blank. `scripts/status.py`: unchanged `93/300`
+certified (Law 2 — this is a submission, not a certification). Regression swept
+`tests/tasks/test_ftf_0303.py`/`tests/tasks/test_ftf_04a05.py` (no-DB, both clean; PR #359's own
+`test_ftf_0500b.py` is not present on this branch since that PR is not yet merged, so it was not
+in scope for this shift's own regression sweep) — zero regressions.
+
+`.github/workflows/ci.yml`: one negative-test-proof step added to the `gate` job immediately
+after FTF-H005's own two steps (`tests/tasks/test_ftf_0500c.py`, no DB required), plus a new
+dedicated `database-api-trace-source-integration` job using the same real `services: postgres`
+container pattern as `manifest-evidence-integration`, with `SOVRA_FTF0500C_ADMIN_DSN` pointing at
+the container's own `sovra_migrate` superuser (the official postgres image's own `POSTGRES_USER`
+is always a real superuser in that container) so the integration test can `CREATE ROLE`/`CREATE
+DATABASE` its own real scratch role/database at runtime and drop them again — verified this exact
+shape works end-to-end by provisioning an equivalent local `sovra_migrate` superuser role directly
+and rerunning the integration test against it before wiring the CI job.
+
+`docs/spec-matrix.yaml` FTF-0500C set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_test: tests/tasks/test_ftf_0500c.py,
+tests/integration/test_ftf_0500c_database_api_trace_source.py`; `evidence_hash`/`proving_symbol`
+left blank (same precedent every sibling module-only submission this session already established).
+**Not self-certified (Law 4)** — independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0500C) is `L1-PROVEN`, no blocking
+defect found by this session's own review — awaiting an independently-triggered Control-plane
+certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged, empty).
+
 ## 2026-09-28 — Certifier shift (session https://claude.ai/code/session_01CtvPJUBC33JiDgQpL41dU3)
 Certified FTF-04A05, FTF-H005, FTF-1201 (L2). 93/300 -> 96/300 certified; 0 PROVISIONAL remain. See `docs/certifications/ledger.md`.
 
