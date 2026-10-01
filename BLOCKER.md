@@ -1,6 +1,6 @@
 # BLOCKER.md
 
-## OPEN 2026-09-30 — Repo-wide GitHub Actions runner-provisioning outage, past its own
+## RESOLVED 2026-10-01 — Repo-wide GitHub Actions runner-provisioning outage, past its own
 ## "clears within hours" precedent window
 
 **What failed:** every check run on every open PR in this repository — including PRs whose base
@@ -68,6 +68,25 @@ There is no genuinely unclaimed, undeclined task to pick even once CI recovers.
 _No further BLOCKER.md entry is needed on the next scheduled fire if this is still unresolved —
 re-check one fresh run first; if still `runner_id: 0`, this entry already covers it and the shift
 should stop immediately rather than re-diagnose a fourth time._
+
+**RESOLUTION (2026-10-01T01:11Z), directly witnessed, meeting this entry's own stated resolution
+bar** ("a session confirms a fresh PR event gets a real `runner_id` again" — the same bar the
+2026-09-21 occurrence used): this producer session's own PR #337 (FTF-0601), stuck red since
+2026-09-30T05:33Z under this exact outage (two attempts, both `runner_id: 0`, both disclosed in a
+PR comment at the time with the one allotted re-run already spent), received a `check_suite.completed`
+event at 2026-10-01T01:10:39Z. Fetched the PR's own check runs directly rather than trusting the
+event alone: all 39 jobs `completed`/`success` on the same head sha (`fbaf2b3a`) that had twice
+failed instantly, this time with real per-step `started_at`/`completed_at` spans (20-30s per job,
+one secret-manager-integration job genuinely taking 5m27s) — structurally identical to the
+2026-09-21 resolution's own evidence bar, not another instant `runner_id: 0` failure. PR #337 was
+merged the same minute (`merged_at: 2026-10-01T01:11:00Z`, `merged_by: samerzakaria`) — a real
+merge on a genuinely green PR, not a bypass.
+
+This directly confirms the outage has cleared, independently of any of the three route options
+above being exercised (no evidence either was — this looks like the same class of self-clearing
+occurrence the 2026-09-21/2026-09-27 precedents already established, just past their own
+"within hours" window this time). Per this entry's own instruction, removing it now; see
+`QUEUE.md`'s "Owner actions — current" for the matching removal.
 
 ## RESOLVED (history) — entries below are old, cleared occurrences of the same outage class and
 prior unrelated blockers, kept for the record per this repo's "reported, not silently worked

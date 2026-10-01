@@ -1,4 +1,14 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-01T01:15:00Z (session https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm,
+  branch `claude/wizardly-fermat-17bf9h`) -- **repo-wide GitHub Actions runner-provisioning
+  outage (escalated 2026-09-30) confirmed RESOLVED.** This session's own PR #337 (FTF-0601),
+  previously stuck red across two attempts under this exact outage, got a real, fully green CI
+  run (39/39 real `runner_id`s, real per-step durations) at 2026-10-01T01:10-01:11Z and was
+  merged the same minute. Updated `BLOCKER.md` (OPEN -> RESOLVED) and this file's own "Owner
+  actions -- current" (removed) with the full before/after evidence. No new task work claimed
+  this update -- doc-only, closing out the outage this session's own PR was blocked by.
+
+Prior history:
 Updated: 2026-09-30T09:20:00Z (scheduled relay shift, branch `claude/wizardly-fermat-xa6526`) --
   **Repo-wide GitHub Actions runner-provisioning outage confirmed still live, escalated as an
   owner ask** (see "Owner actions -- current" below and `BLOCKER.md`'s matching dated entry for
@@ -7748,21 +7758,17 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-**2026-09-30 (dated) — Repo-wide GitHub Actions runner-provisioning outage, recurred, now past
-its own "clears within hours" precedent window.** Every check run on every open PR (five relay
-task PRs, three docs-only tracking PRs, four Control-plane certification PRs -- eleven PRs, every
-single job on each) has failed within seconds with `runner_id: 0`/no runner ever assigned since
-~2026-09-30T05:30Z -- confirmed independently this shift on the newest run in the whole repository
-(run #600, PR #393, still failing at 09:10Z) after a prior shift (07:04Z, PR #390) already
-diagnosed the identical signature and chose to wait rather than escalate, per this exact outage
-class's own 2026-09-21/2026-09-27 precedent of self-clearing "within hours." That window has now
-been exceeded (3h37m+ continuous, ten further workflow runs, zero recoveries) with no repo-side
-fix possible (ruled out `.github/workflows/ci.yml`/secrets/runner-label changes as the cause by
-diff against the last known-green run). Full evidence and three route options in `BLOCKER.md`'s
-matching dated entry. **No relay or Control-plane merge is possible while this holds** -- `merge on
-green` cannot be exercised for any PR, including the three already-open frontier-exhausted/
-merge-conflict tracking PRs (#389, #390, #392). Remove this entry the moment a session confirms a
-fresh PR event gets a real `runner_id` again (same resolution bar the 2026-09-21 entry below used).
+None currently.
+
+2026-10-01 (resolved, kept for the resolution-bar precedent the next occurrence can reuse): the
+2026-09-30 recurrence of the repo-wide GitHub Actions runner-provisioning outage (escalated below
+to `BLOCKER.md` the same day, 3h37m+ continuous at escalation time) was confirmed genuinely
+cleared when this producer session's own PR #337 (FTF-0601) — stuck red across two prior attempts
+under this exact outage, both disclosed in a PR comment at the time — received a real, fully green
+CI run (39/39 jobs, real `runner_id`/per-step timestamps, 20s-5m27s real durations) at
+2026-10-01T01:10-01:11Z and was merged the same minute. This meets the exact resolution bar the
+2026-09-21 occurrence set ("a session confirms a fresh PR event gets a real `runner_id` again").
+Full before/after evidence in `BLOCKER.md`'s matching entry (now marked RESOLVED).
 
 2026-09-21 (resolved, kept for the resolution-bar precedent the entry above reuses): the
 GitHub Actions runner-provisioning outage first found on PR #170 (2026-09-21, escalated to an
