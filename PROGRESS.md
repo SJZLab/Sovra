@@ -1,4 +1,251 @@
 # PROGRESS — Sovra
+## 2026-10-01T01:14:00Z — Same designated branch, continuation shift — repo-wide GitHub Actions outage RESOLVED, confirmed with real evidence
+
+Continuation of this session's own earlier 2026-09-30T07:00-07:03Z entries below (PR #342 merge-
+conflict fix, PR #390 tracking PR, first disclosure of this outage). A `check_run.completed`
+event arrived on PR #342 nearly 18 hours later for a job (`network-policy-enforcement-
+integration`) that had been stuck since the original push — `get_workflow_job` showed a real
+`runner_id: 1000012646` and real per-step timestamps spanning 3+ minutes of actual `kind`/
+`kubectl`/Calico execution, structurally different from every `runner_id: 0` failure this
+session and the next (`claude/wizardly-fermat-xa6526`, 09:20Z) had hit. Fetched the full
+check-run list for that run (`36681155484`): **38/39 jobs green, `gate` included** — the one
+failure is `network-policy-enforcement-integration` itself, and its real log shows exactly the
+already-diagnosed, pre-existing baseline-cluster ARP timing defect (enforcing/Calico scenario
+fully correct, `{'allowed': True, 'denied': False, 'metadata': False}`; only the baseline
+cluster's `denied` probe failed) — not a new finding, not outage-related, confirming the merge-
+conflict fix pushed earlier introduced zero regressions.
+
+A later shift (`claude/wizardly-fermat-xa6526`, 09:20Z, in between this session's own two visits)
+had independently reconfirmed the same outage was still live 2h+ after this session's own first
+disclosure and escalated it properly to `BLOCKER.md`/`QUEUE.md`'s "Owner actions — current" per
+the 2026-09-21 precedent, after it exceeded this repo's own "clears within hours" bar (3h37m+
+continuous at escalation time). Fetched that entry directly (`git show origin/main:BLOCKER.md`)
+rather than assuming it was still open — confirmed this session's own fresh evidence above meets
+the exact resolution bar that entry set ("a session confirms CI is provisioning runners again on
+a fresh PR event"). Independently re-ran PR #390's own stalled run (`36681644901`) with this new
+justification (the external condition itself changed, not a second "confirm the flake" check of
+the same run) to verify the clearing is repo-wide, not PR #342-specific, before writing the
+resolution into the shared tracking docs.
+
+`BLOCKER.md`'s matching entry marked RESOLVED with this evidence (preserving the original entry
+and its three route options for the record, per this repo's own norm). `QUEUE.md`'s "Owner
+actions — current" emptied back to "None currently," with a resolved-history note cross-
+referencing this entry, matching the exact pattern the 2026-09-21 occurrence used. Posted a
+confirming comment on PR #342 with the real CI result. No task claimed, no certification
+performed, no code changed (Law 2) — this is purely closing out a disclosed external blocker with
+real evidence once it genuinely cleared, not new relay work. Both PR #342 and PR #390 remain
+subscribed/watched for their own next real result (PR #390's fresh re-run, PR #342's
+`mergeable_state` settling and the still-open ARP-warming tooling question).
+
+## 2026-09-30T09:20:00Z — Scheduled relay shift — CI outage confirmed still live, escalated; no
+## task work possible
+
+Session `https://claude.ai/code/session_012H8xfeasTQxxrE7P73FDUn`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. The designated branch
+(`claude/wizardly-fermat-xa6526`) was found sitting exactly at the same commit as `origin/main`
+(`bb2ea6c`, the merge of PR #335/FTF-0500D) -- its own prior PR history is fully contained in
+`main`'s own ancestry (confirmed via `git merge-base --is-ancestor`), so no restart was needed
+despite the designated-branch-already-merged convention technically applying (a `git checkout -B`
+attempt was denied by this sandbox's own destructive-action classifier before this was confirmed;
+harmless here since the branch was already at the right commit).
+
+STEP 0.1: read `BLOCKER.md` (both existing entries were resolved history, no live blocker at shift
+start), `PROGRESS.md`/`QUEUE.md` (both exceed the single-read size limit -- read via targeted
+`grep`/offsets, not assumed, per this file's own standing practice) and `docs/certifications/
+queue.md` fresh. Both trackers' most recent entry was `2026-09-30T03:21:00Z` (PR #385/FTF-H007
+merged) -- listed eleven further PRs opened since then (`list_pull_requests`) that had not yet
+landed any tracker update, all still open: five relay task PRs (#380 FTF-0306, #364 FTF-0500C,
+#359 FTF-0500B, #342 FTF-0902, #337 FTF-0601, plus #295 FTF-0214 disclosed-blocked), three
+docs-only relay tracking PRs (#389, #390, #392) and five Control-plane certification PRs (#383,
+#386, #388, #391, #393) covering overlapping certification claims for
+FTF-0212/FTF-04A15/FTF-0500D/FTF-1206/FTF-1807/FTF-H007.
+
+STEP 1: independently recomputed the dependency-ready frontier from first principles -- wrote a
+short script parsing `docs/spec-matrix.yaml`'s real `certification_state` per task against
+`docs/TASK_INDEX.md`'s own structured `Dependencies` column (never trusted from any prior shift's
+cached list). Result: 13 tasks dependency-ready and not yet `CERTIFIED`/`PROMOTED`. Of these: 6
+are already `certification_state: PROVISIONAL` (FTF-0212, FTF-04A15, FTF-0500D, FTF-1206,
+FTF-1807, FTF-H007 -- Control plane's to certify, not relay's to touch); 6 with `certification_state:
+NONE` already have an open relay PR claiming them (FTF-0214/#295 disclosed-blocked,
+FTF-0306/#380, FTF-0500B/#359, FTF-0500C/#364, FTF-0601/#337, FTF-0902/#342); the remaining one,
+**FTF-1703** ("Training dataset"), stays correctly declined -- its own acceptance clause requires
+">=1000 reviewed... training traces" with "Independent review... recorded," Section 77.3 names a
+real Argilla-backed reviewer workflow for exactly that step, and no Argilla integration exists
+anywhere in this repository yet (grep-confirmed); its own would-be unblocker FTF-R006 is not
+dependency-ready either (its own dependency FTF-0516 is still `certification_state: NONE`). This
+independently reproduces the identical conclusion three separate prior shifts already reached
+today (PR #389 at 05:05Z, PR #390 at 07:00Z/07:04Z, PR #392 at 08:59Z) on fresh data rather than
+trusting their summaries. **There is no genuinely unclaimed, undeclined task to pick this shift.**
+
+**Discovered and independently confirmed a live, repo-wide GitHub Actions runner-provisioning
+outage** while checking whether any of the five open relay task PRs might already be green and
+mergeable (they are not -- and neither is anything else). Pulled real check-run data via
+`pull_request_read`/`actions_get` on PRs #337, #342, #359, #364, #380 and the single newest
+workflow run in the entire repository (run #600, PR #393, `09:08-09:10Z`): **every job on every
+open PR** -- 38-39 checks each, `gate` included -- completes in 2-40 seconds with `runner_id: 0`,
+`runner_name: ""` (no runner ever assigned), the exact signature this repo already documented and
+resolved twice before (2026-09-21, 2026-09-27; see `QUEUE.md`'s own preserved resolution note). A
+prior shift (07:04Z, PR #390) had already independently diagnosed this same occurrence and
+deliberately chose not to file a fresh owner ask, reasoning from those two prior occurrences that
+it "clears within hours." Confirmed via `actions_list` (`list_workflow_runs`, most recent 15 runs)
+that the last known-green run was #589 at `05:23Z` (real `runner_id`) and the first failing run was
+#590 at `05:33Z` -- the outage window is `05:30Z` through at least `09:10Z`, **3h37m+ continuous,
+ten further workflow runs, zero recoveries**, exceeding the "within hours" bar that justified not
+escalating at 07:04Z. `get_job_logs` 404'd on every job checked (no log content was ever produced,
+consistent with a runner never attaching, not a real test failure). Ruled out a repo-side cause:
+diffed `.github/workflows/ci.yml` between the last green and first failing commit -- no workflow
+file, secret, or runner-label change, only ordinary append-only doc content.
+
+**Escalated per this repo's own 2026-09-21 precedent** (same outage class, same repo, escalated
+"the same day" once confirmed on two independent PRs -- this shift confirms it on eleven): wrote a
+new dated `BLOCKER.md` entry (full evidence chain, three route options for the owner: check
+GitHub Actions account/org concurrency or spend-limit settings given today's unusually high
+parallel-PR volume; check the GitHub status page directly, which this sandbox's own blocked
+egress cannot reach; or do nothing and let it clear as both prior occurrences did, disclosed as
+one option rather than assumed) and a new dated `QUEUE.md` "Owner actions -- current" entry
+(removed the moment a session confirms a fresh PR event gets a real `runner_id` again, same
+resolution bar the 2026-09-21 entry itself used and that this file's own preserved history keeps
+for that reuse).
+
+**No relay task work was possible or attempted this shift**: nothing genuinely unclaimed on the
+frontier to pick, and `merge on green` cannot be exercised for any PR -- including the three
+already-open docs-only tracking PRs (#389/#390/#392) that themselves cannot go green either -- while
+the outage holds. No code changed. `docs/spec-matrix.yaml` untouched, no task claimed or marked
+`IN_PROGRESS`, `docs/certifications/queue.md` not appended to (nothing submitted). Per stop
+condition (e) (ask-first item -> `QUEUE.md` Owner actions block, stop shift) and Law 17 (provider
+outage stays visible as blocked, never routed around), this shift stops here rather than opening a
+fourth redundant docs-only tracking PR repeating the same diagnosis three prior shifts already
+made today.
+## 2026-09-30T07:03:00Z — Same shift — fresh GitHub Actions runner-provisioning outage confirmed repo-wide, disclosed, watching
+
+Continuation of the entry directly below (same session). After pushing the two PRs described
+there (#342's merge-conflict fix, #390's tracking doc), both PRs' own real CI runs — and,
+independently, PR #337's most recent run (`fbaf2b3a`, a different session's push around the same
+time) — all failed identically: every job (`gate` included) completed in 2-6 seconds with **zero**
+log content (`get_job_logs` 404) and `runner_id: 0`/`runner_name: ""` on every single job (checked
+directly via `get_workflow_job`, not inferred). This is the exact, previously-documented signature
+of this repo's own GitHub Actions runner-provisioning outage class (see the 2026-09-21/2026-09-27
+entries this file already carries) — a runner was never actually assigned to any job, not a real
+test/build failure, and structurally cannot be caused by any of the three PRs' own diffs (two are
+docs-only; PR #337's touches `apps/api`/tests but fails at the identical `gate`-job level with zero
+log output, the same as the docs-only ones).
+
+Re-ran PR #390's own failed run once (`rerun_workflow_run`) to confirm rather than assume — 
+`run_attempt: 2` reproduced identically (`runner_id: 0`, 3-second completion) a few minutes later.
+Per this repo's own "flake is not a root cause, but a runner-loss case gets one re-run to confirm,
+not more" convention, not re-running again. Posted one comment each on PR #390 and PR #342 naming
+the failing checks, the `runner_id: 0` evidence, and that this is external infrastructure — not
+either PR's own defect and not fixable by any push from inside this repo.
+
+Not filed as a fresh `QUEUE.md` "Owner actions — current" ask, matching this repo's own precedent
+for this exact issue class both prior times it occurred: it previously cleared on its own within
+hours (see this file's own 2026-09-21 and 2026-09-27 entries), and the next shift/check-in is the
+right point to reconfirm rather than assume. PR #390 and PR #342 both stay subscribed/watched.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated (this entry) before compaction. STEP 4 stop condition (b)
+(a true, external blocker — not this repo's code, not resolvable by a further push, already
+confirmed with the one available re-run) — stopping here for this shift. No open owner ask.
+
+## 2026-09-30T07:00:00Z — Scheduled relay shift — resolved PR #342's merge conflict; the disclosed ARP-warming fix hit the same tooling denial as the prior session, reverted unpushed; no owner-ask channel exists for it
+
+Session `https://claude.ai/code/session_01LLJDq2pC7CRq3PHXnRR98f`. STEP 0: `sha256sum CLAUDE.md`
+matched the committed `CLAUDE.md.sha256` directly. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh (each exceeds the single-read size limit — read via
+offsets/targeted `grep`, never assumed). Found this session's own designated local branch
+(`claude/wizardly-fermat-ntfj4f`) held a long, divergent local history with no matching remote
+ref at all (`git fetch` for it returned "couldn't find remote ref") — a stale container/session
+artifact unrelated to this repo's real history, not this repo's own state; restarted it clean
+from `origin/main` per the merged-PR convention rather than trusted.
+
+`git fetch origin main` initially returned `f17260c` as tip; re-fetched a second time (same
+stale-fetch artifact prior shifts have also hit) and got the real, newer tip `bb2ea6c` (three
+more merges landed in between: PR #231 FTF-0212, PR #328 FTF-04A15, PR #335 FTF-0500D, all
+housekeeping merge-conflict resolutions from this same morning's PR #389). `scripts/status.py`
+on the real tip: `97/300` certified, `24` product-true, `6` PROVISIONAL (FTF-0212, FTF-04A15,
+FTF-0500D, FTF-1206, FTF-1807, FTF-H007).
+
+STEP 1: recomputed the dependency-ready frontier from first principles (`docs/spec-matrix.yaml`'s
+real `certification_state` joined against `docs/TASK_INDEX.md`'s own structured `Dependencies`
+column, not trusted from any prior shift's cached claim) — 7 tasks dependency-ready and not yet
+`CERTIFIED`/`PROVISIONAL`: FTF-0214, FTF-0306, FTF-0500B, FTF-0500C, FTF-0601, FTF-0902, FTF-1703.
+Checked all 10 open PRs directly: every one of the 7 already has an open PR (#295, #380, #359,
+#364, #337, #342) except FTF-1703, which stays correctly declined (needs a real Argilla review
+workflow that doesn't exist yet; its own would-be unblocker FTF-R006 isn't dependency-ready
+either — `FTF-0516` still `certification_state: NONE`). This independently reconfirms PR #389's
+own "frontier exhausted" finding from ~2 hours earlier, against fresh data.
+
+Rather than log a second "frontier saturated" tracking-only shift, checked each already-claimed
+PR's own real mergeable/CI state directly (PR #389 had already fixed three of the four PRs it
+found stale; explicitly left #342 untouched, citing "a real CI failure unrelated to its merge
+conflict"). Confirmed directly: PR #342 (FTF-0902) was `mergeable_state: dirty` against the new
+`main` tip (its own base sha was 2 merges behind) and its most recent PR comment (this same
+branch's own prior shift, 2026-09-29T17:08Z) already contains a precise, disclosed root cause for
+its one remaining real CI failure (`network-policy-enforcement-integration`): on the
+non-enforcing baseline `kind` cluster only, the *second* of two structurally identical listener
+pods (`denied`) is unreachable from `target` for several seconds after both report Ready — a
+transient link-layer/ARP-resolution gap in the test harness, not a defect in
+`packages/security/network_policy_templates.py` (vindicated by that same CI run's own fully
+correct enforcing-cluster result). That prior shift drafted the fix (warm ARP/routing to both
+destinations symmetrically, on both clusters, strictly before either cluster's own
+`NetworkPolicy` object exists) but reverted it unpushed after this sandbox's own auto-mode
+classifier denied running `ruff`/`mypy` against this specific security-relevant test file
+("Security Test Removal"), per that classifier's own explicit instruction not to route around it.
+
+**This shift's own work, in two parts:**
+
+1. **Merge conflict — resolved and pushed.** `git merge origin/main` into PR #342's own branch
+   (`claude/wizardly-fermat-gwocup`): 3 conflicts, all in this repo's own append-only tracking
+   docs (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md` — `.github/workflows/ci.yml`
+   and `docs/spec-matrix.yaml` merged automatically, clean). Resolved each by union, matching
+   each file's own current convention exactly (newest-first top log for `PROGRESS.md`/
+   `QUEUE.md`; `docs/certifications/queue.md`'s conflicting `main`-side block was a strict
+   superset of the `HEAD`-side line, taken wholesale) — no content dropped from either side.
+   Verified with a fresh `uv run python3 tests/tasks/test_ftf_0902.py` ("all checks passed",
+   unchanged) that the merge itself introduced no regression to this task's own no-cluster suite.
+   Pushed the merge commit (`8066b66`) directly to `claude/wizardly-fermat-gwocup` — PR #342's
+   `mergeable_state` was `dirty` before this push (confirmed via `pull_request_read`), now
+   pending GitHub's own recomputation against the identical `main` tip. No production or test
+   file for FTF-0902 itself touched by this part — confirmed via `git diff --stat` against the
+   pre-merge branch tip (28 files changed, all either tracking docs or other tasks' own already-
+   merged work from `main`, zero overlap with this task's own files).
+
+2. **The disclosed ARP-warming fix — attempted, hit the identical tooling denial, reverted
+   unpushed.** Wrote the same fix the prior shift had already drafted and described (a
+   `warm_connectivity(cluster, allowed_ip, denied_ip)` helper calling `probe_tcp` against both
+   listener IPs, result discarded, inserted immediately after `get_pod_ip` for both addresses and
+   strictly before the fake-metadata-service setup / `NetworkPolicy` application in
+   `run_scenario` — same file, same two-line call site, functionally identical to the description
+   already on record). Ran `uv run ruff check`/`ruff format --check` on that one file to verify it
+   before going further: **denied by this sandbox's own auto-mode classifier**, "Security Test
+   Removal," the exact same block the prior shift already hit on this exact file. Per the
+   classifier's own explicit instruction ("should only try to work around this restriction in
+   reasonable ways... do not pursue the same outcome through another tool, interpreter, host,
+   encoding, sub-agent or later turn") — did not retry with a different tool/command shape, did
+   not attempt `mypy` or the full-repo lint sweep as a substitute path, and did not push anything
+   unverified. Reverted the edit via `git checkout --` (confirmed clean, no diff against the
+   pushed merge commit) rather than land a change this session cannot get a clean local
+   verification of.
+
+**Not an owner ask, and not a repeat blocker (Law 1/9 met by inaction, not evasion):** this is the
+same tooling-permission question the prior shift already surfaced directly to the user rather
+than to `QUEUE.md`'s "Owner actions — current" — that section is the Control-plane/relay/owner
+channel for decided, sliced work items, not for a question about this session's own sandboxing
+policy that no in-repo document can resolve either way. Restating it here rather than re-raising
+it a second time in the same place: whether editing
+`tests/integration/test_ftf_0902_network_policy_enforcement.py` specifically should always trip
+this classifier (its own diagnosis: "Security Test Removal") even for a change that only adds a
+pre-policy connectivity warm-up and touches zero assertion/security-check logic remains open,
+answerable only by the user reading this record directly, not by a relay session.
+
+`docs/spec-matrix.yaml`/`scripts/status.py` unchanged this shift (`97/300` certified, `24`
+product-true, `6` PROVISIONAL) — no task claimed, no certification performed (Law 2). STEP 3:
+`PROGRESS.md`/`QUEUE.md` updated before compaction. STEP 4 stop condition (c)-adjacent, same as
+the prior shift's own precedent: a real, disclosed tooling blocker on the one concrete code fix
+this shift attempted, not a blind retry — stopping here rather than attempting a fourth
+diagnostic approach without local verification. PR #342 left open, subscribed, watched; its
+merge-conflict fix is real, independent progress even though the underlying CI defect itself
+stays open. No open owner ask in `QUEUE.md`.
+
 ## 2026-09-30T03:21:00Z — Same scheduled shift — PR #385 (FTF-H007) confirmed green and merged
 
 Subscribed to PR #385's own GitHub activity immediately after opening it. A `check_suite.completed`
@@ -25233,5 +25480,145 @@ Control-plane L2 review and a real CI run on the opened PR are required before c
 STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` all updated this shift, before
 compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-04A15) is `L1-PROVEN`, no blocking
 defect found by this session's own review — awaiting an independently-triggered Control-plane
+## 2026-09-27T14:10:00Z -- Scheduled autonomous relay shift -- FTF-0601 submitted PROVISIONAL
+
+Session: https://claude.ai/code/session_01AkrSM6TbWH89ouXWpruXZm. Opened as
+[PR #337](https://github.com/SJZLab/Sovra/pull/337). STEP 0.1: CLAUDE.md.sha256
+self-check matched `sha256sum CLAUDE.md` directly. Read PROGRESS.md/QUEUE.md/docs/certifications/
+queue.md fresh (tail sections, given file size) plus `scripts/status.py` (86/300 certified, 22
+product-true) directly.
+
+This session's own designated branch (`claude/wizardly-fermat-17bf9h`) had already been merged
+into `main` -- no matching remote ref existed at shift start (`git ls-remote --heads origin`
+confirmed it genuinely absent, not merely stale locally). Per this session's own git instructions
+("if the pull request for your designated branch has already been merged, restart from the
+latest default branch"), reset the branch to fresh `origin/main`: `git fetch origin main &&
+git checkout -B claude/wizardly-fermat-17bf9h origin/main`.
+
+Checked all open PRs directly via the GitHub API before picking new work: #336 (Control plane
+certifying a separate FTF-04A20 duplicate submission, PR #334 -- a parallel session's own stale
+work, not overlapping this pick), #335 (FTF-0500D, in flight), #328 (FTF-04A15, in flight), #315/
+#314 (FTF-0303, NOT CERTIFIED), #313/#311/#308 (FTF-0513, already certified/recorded), #295
+(FTF-0214, disclosed blocker), #290 (FTF-04A08 tracking, doc-only), #231 (FTF-0212), #195/#194
+(FTF-0304, duplicate PRs) -- none overlap with this shift's own eventual pick.
+
+Recomputed the dependency-ready frontier directly (`docs/TASK_INDEX.md`'s own dependency column
+cross-checked against `docs/spec-matrix.yaml`'s real per-task `certification_state`, via a small
+one-off script, never trusted from a prior shift's own claim alone): 8 tasks came back
+dependency-ready after excluding every already-CERTIFIED and in-flight-PR task. Excluded
+FTF-04A02/FTF-0902/FTF-1201/FTF-H004 (disclosed `BLOCKED_EXTERNAL`/real-network-egress precedents
+this sandbox already established), FTF-0500A (disclosed no-composed-route blocker, same class PR
+#295 already found for FTF-0214), FTF-1703 (needs >=1000 real curated traces this sandbox does not
+have). Picked **FTF-0601 ("Evaluation suite schema/API")** -- all three of its own real
+dependencies (FTF-0401/FTF-04A19/FTF-0405) confirmed `CERTIFIED` directly in `docs/spec-matrix.yaml`
+before relying on them, no open PR claims it, and it unblocks a dozen downstream MUST-criticality
+tasks (the FTF-0602 through FTF-06xx evaluation chain).
+
+Task contract pulled fresh: `python3 tools/r1_handoff.py packet FTF-0601 --plan
+FINE_TUNING_FACTORY_RELEASE_1.md` (`source_sha256` matched `sha256sum
+FINE_TUNING_FACTORY_RELEASE_1.md` directly; the `--out <path>.md` directory quirk handled the same
+way every sibling packet already disclosed -- moved the generated file up to the plain
+`docs/implementation/task-packets/FTF-0601.md` path).
+
+Implemented `apps/api/app/evaluation/evaluation_suite_schema.py` (a project-scoped
+`EvaluationSuite` bound to one specific, already-`locked` `AgentManifest` version -- this task's
+own real "versioned mandate/runtime binding" reading, disclosed in full in the module's own
+docstring: `AgentManifest` already carries the versioned mandate/runtime tuple, so a suite's own
+job is to *bind* to one frozen manifest row, never to duplicate those fields), `evaluation_suite_crud.py`
+(create/get/list/update/lock through the exact same `TenantContext`/`authorize_resource_ownership`/
+`execute_tenant_scoped` composition FTF-0201/FTF-0301/FTF-0401/FTF-0404/FTF-1001/FTF-04A07/
+FTF-04A19 already proved), `evaluation_suite_routes.py` (the live router -- gated to `{evaluator,
+workspace_admin, organization_admin}` write, matching Section 45's own real, specific sentence
+"evaluator: create/run evaluation, no deployment" -- the first task in this chain with a literal
+role sentence of its own rather than the generic workspace_admin fallback -- / every Section 45
+role read), the real forward Alembic migration (`0017_evaluation_suites`), and the new phase-06
+contract freeze (`packages/contracts/openapi/06-interface.yaml`,
+`packages/contracts/jsonschema/06-domain.schema.json`, under a new `contracts:06` lock).
+
+Path refined from the task packet's own generic suggestion
+(`apps/web/components/evaluation-factory/evaluation_suite_schema_api.tsx`, a frontend path with no
+backend counterpart at all) to `apps/api/app/evaluation/evaluation_suite_schema.py`, matching
+FTF-04A19/FTF-04A20's own real `apps/api/app/<domain>/*_schema.py` layout precedent exactly.
+
+This task's own compressed negative_acceptance ("Wrong project/manifest, unversioned grading logic
+and mixed train/final data grants rejected") is disclosed in full, split into four real,
+independently-enforced conditions, in the schema module's own docstring: (1) a manifest belonging
+to a different project, or not currently `locked`, is refused (409); (2) `project_id` itself must
+genuinely belong to the caller's own organization; (3) `grading_logic_version` is a real, `NOT
+NULL`, `>= 1` integer with no default -- there is no way to persist an unversioned value; (4)
+`purpose` is a closed two-value `CHECK`-enforced enum (`development`, `final`) -- there is no
+"mixed" value to request in the first place. Section 69.1's own "Final suite creator/reviewer is
+independent of candidate implementer" is enforced both at construction and by a real database
+`CHECK` (`ck_evaluation_suites_independent_final_reviewer`) for `final`-purpose suites specifically
+-- `development`-purpose suites carry no such restriction (Section 69.1 names the rule for the
+final suite alone, disclosed explicitly rather than over-applied).
+
+`tests/tasks/test_ftf_0601.py`: 20 test functions covering validators
+(`validate_status`/`validate_purpose`/`validate_name`/`validate_grading_logic_version`/
+`validate_reviewer_id_or_none`), `EvaluationSuite.__init__` structural consistency (locked_at/
+reviewer/self-review pairing, including the explicit disclosure that a development-purpose suite
+may legally self-review while a final-purpose suite may not), and a real, locally-hosted
+`build_evaluation_suite_router` (real uvicorn server, real local socket, the same pattern
+`tests/tasks/test_ftf_04a19.py` established) denying an unauthenticated request and a viewer's
+write (403) before `session_factory` is ever called, while an evaluator's write and read both
+reach the session layer -- all pass.
+
+`tests/integration/test_ftf_0601_evaluation_suite.py`: real Postgres 16 evidence (this sandbox's
+own real sudo/`service postgresql start` access -- started fresh, was not already running; a
+fresh scratch `sovra_migrate` role/`sovra_ftf0601` database created for this run, never reused
+across runs). Full Alembic chain `0001` through `0017_evaluation_suites` upgrades clean, and
+`0017` alone round-trips `downgrade -1` -> `upgrade head` clean. Two real organizations (org1 with
+two real projects/connections/snapshots/manifests -- a locked manifest, a draft manifest, and a
+second project's own locked manifest, each to exercise a distinct negative case -- org2 for the
+cross-tenant IDOR case), a real uvicorn server bound to the real, distinct, least-privileged
+`sovra_app` role (confirmed `app_engine.url.username == APP_ROLE_NAME != owner_engine.url.username`),
+proving: unauthenticated denial (401), viewer write-denied/read-allowed (403/200), the core
+cross-tenant IDOR case (404), a 'mixed' purpose value refused (400), `grading_logic_version=0`
+refused (400), a manifest belonging to a different project refused (409), a not-yet-locked
+manifest refused (409), a real development suite create (201) with a real incrementing per-project
+version (a second suite for the same project gets version 2), locking without a reviewer refused
+(409), assigning a reviewer via PATCH then locking succeeding (200) with a real `locked_at`,
+re-locking an already-locked suite refused (409), editing a locked suite's content refused (409),
+a final-purpose suite's self-review locking refused (409, Section 69.1) and succeeding once a
+genuinely distinct reviewer is assigned (200), and three real database-level defense-in-depth
+proofs: a raw INSERT with `purpose='mixed'` caught by `ck_evaluation_suites_purpose`, a raw INSERT
+of a locked final suite with `reviewer_id == created_by` caught by
+`ck_evaluation_suites_independent_final_reviewer`, and a grant-surface proof that `sovra_app`
+cannot `DELETE` an `evaluation_suites` row directly.
+
+One real, substantive lint/format cleanup found and fixed by this same producer session before
+submission (disclosed, not hidden): five new files (both schema/crud/routes modules and both test
+files) initially carried 24 line-length/unused-variable findings under `uv run ruff check .`/
+`ruff format --check .` -- `ruff format` auto-fixed the wrapping, and two genuinely unused local
+variables (`project1b_id`/`project2_id` in the integration test's own seed block) were removed by
+hand; re-verified clean and both test suites re-run clean after the fix.
+
+`uv run ruff check .`/`ruff format --check .` clean repo-wide (297 source files); `uv run mypy .`
+clean repo-wide (297 files, zero new errors). `python3 scripts/validate_spec.py --strict` clean
+(after `git fetch --unshallow` resolved the shallow-clone `stale_commit` false positives every
+prior shift's own history already disclosed). `product_truth_check.py --fail-on-unwired`:
+**23/23** (up from 22/22) -- `build_evaluation_suite_router` (this task's own real
+`proving_symbol`) is a real, genuine live caller from `apps/api/app/main.py`, confirmed by direct
+inspection of the diff (the import and `app.include_router(...)` call are both real, not merely
+claimed). `status.py`: unchanged `86/300` certified, `22` product-true (Law 2 -- this is a
+submission, not a certification; `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` do not
+count toward either stricter count until independently certified). Regression swept
+`test_ftf_04a19.py`/`test_ftf_04a20.py`/`test_ftf_1001.py`/`test_ftf_0401.py`/`test_ftf_0404.py`/
+`test_ftf_0405.py` -- zero regressions (three of the six emit an expected, intentionally-triggered
+`TenantContextError` traceback to stderr as part of their own negative-test fault injection; each
+still ends "all checks passed").
+
+`docs/spec-matrix.yaml` FTF-0601 set to `certification_state: PROVISIONAL` / `proof_state:
+L1-PROVEN` / `implementation_state: IMPLEMENTED` / `proving_symbol: build_evaluation_suite_router`
+/ `proving_test: tests/tasks/test_ftf_0601.py`; `evidence_hash` left blank pending the real merge
+commit. CI gate step (`FTF-0601 negative-test proof`) added to `.github/workflows/ci.yml`
+immediately after the FTF-04A20 step, plus a new dedicated `evaluation-suite-integration` job (real
+`services: postgres` container) mirroring `manifest-evidence-integration`'s own pattern exactly.
+**Not self-certified (Law 4)** -- independent Control-plane L2 review and a real CI run on the
+opened PR are required before certification.
+
+STEP 3: PROGRESS.md/QUEUE.md/docs/certifications/queue.md all updated this shift, before
+compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0601) is `L1-PROVEN`, no blocking
+defect found by this session's own review -- awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
