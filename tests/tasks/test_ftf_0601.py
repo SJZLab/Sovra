@@ -234,6 +234,11 @@ def test_validate_reviewer_id_or_none() -> None:
         "an empty-string reviewer_id is refused",
         _rejects(validate_reviewer_id_or_none, ""),
     )
+    check(
+        "FTF-0601",
+        "a whitespace-only reviewer_id is refused",
+        _rejects(validate_reviewer_id_or_none, "   "),
+    )
 
 
 # -- 2. EvaluationSuite.__init__ structural consistency -------------------

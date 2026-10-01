@@ -329,6 +329,63 @@ def test_symlink_escape_inside_repository_is_refused_and_never_edits_the_tree() 
         )
 
 
+def test_malicious_core_fsmonitor_never_executes_and_never_edits_the_tree() -> None:
+    """L2 finding (2026-10-01, shared root cause with FTF-H007):
+    `capture_local_repository`'s own `_git_dirty_signature` runs `git
+    status` on the untrusted tree during every capture. `core.fsmonitor`
+    is a real, documented git feature letting the repository's own
+    `.git/config` name an arbitrary command git runs on every
+    `status`-family call -- before the fix, nothing neutralized this, so
+    a malicious `core.fsmonitor` command genuinely executed and could
+    edit the target working tree, breaking this task's own
+    negative_acceptance ("never edit the target working tree") even
+    though `capture_local_repository` itself never writes anything.
+    `_run_git` now passes `-c core.fsmonitor=false -c
+    core.hooksPath=/dev/null` on every invocation (highest config
+    precedence, overriding the repository's own value regardless of
+    content)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker_dir = base / "markers"
+        marker_dir.mkdir()
+        marker = marker_dir / "fsmonitor_executed.marker"
+        _init_repo(repo)
+        (repo / "a.txt").write_text("a\n")
+        _run(repo, "add", "a.txt")
+        _run(repo, "commit", "--quiet", "-m", "first")
+        _run(repo, "config", "core.fsmonitor", f"sh -c 'touch {marker}'")
+
+        # The test's own before/after status snapshots must themselves be
+        # hardened the same way production `_run_git` is -- an unhardened
+        # `git status` probe here would trigger the malicious hook itself
+        # (as a side effect of the test's own instrumentation, not of the
+        # code under test) and falsely blame `capture_local_repository`.
+        status_before = _run(
+            repo, "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--untracked-files=all"
+        ).stdout
+        capture = capture_local_repository(repo, [base])
+        status_after = _run(
+            repo, "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--untracked-files=all"
+        ).stdout
+
+        check(
+            "FTF-04A06",
+            "a malicious core.fsmonitor command is never actually executed during capture",
+            not marker.exists(),
+        )
+        check(
+            "FTF-04A06",
+            "a capture with a malicious core.fsmonitor config still never edits the working tree",
+            status_before == status_after,
+        )
+        check(
+            "FTF-04A06",
+            "the capture itself still succeeds normally once the malicious config is neutralized",
+            capture.capture_method == "local_git_commit",
+        )
+
+
 def test_symlink_pointing_inside_root_is_followed_safely() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
