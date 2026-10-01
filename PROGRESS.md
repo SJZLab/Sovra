@@ -25601,3 +25601,78 @@ compaction. STEP 4 stop condition (a): 1/1 in-flight item (FTF-0601) is `L1-PROV
 defect found by this session's own review -- awaiting an independently-triggered Control-plane
 certifier session and the L4 gate. Stopping here. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged, empty).
+
+## 2026-10-01T01:55:00Z — Scheduled relay shift — drove the PROVISIONAL backlog to green
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly. Read
+`BLOCKER.md`/`QUEUE.md`/`PROGRESS.md`/`docs/certifications/queue.md` fresh. Designated branch
+`claude/wizardly-fermat-ll2hsh` did not exist on `origin` at shift start; created it from
+`origin/main`'s current tip.
+
+Found the repo-wide GitHub Actions runner-provisioning outage (escalated 09:20Z via PR #394, which
+this shift also merged) still showing as the latest recorded state in the files read at shift
+start. Independently re-verified from scratch rather than trusting any prior shift's claim: manually
+re-ran PR #394's own stalled workflow run (`36705574175`) via `rerun_workflow_run` and watched it
+progress through real `Set up job`/`checkout`/`Install uv` steps with a real `runner_id` for the
+first time since ~05:30Z the day before, then complete 38/38 green ~8 minutes later. This
+independently corroborates the same conclusion a concurrent session reached the same morning via a
+different PR (#342's own terminal run) — both confirmations are preserved in `BLOCKER.md`/
+`QUEUE.md`'s own "Owner actions" entries, not duplicated here.
+
+With CI confirmed genuinely restored, re-triggered fresh CI on every relay-owned open PR that had
+only ever seen outage-era failures, rather than leaving them stuck: **#337** (FTF-0601), **#342**
+(FTF-0902), **#359** (FTF-0500B), **#364** (FTF-0500C), **#380** (FTF-0306). Four came back
+genuinely green:
+
+- **#337 (FTF-0601)** — 38/38 real jobs green on the first re-run. Merged immediately (merge
+  commit `2d6a8e9`).
+- **#342 (FTF-0902)** — 38/39 real jobs green; the one failure
+  (`network-policy-enforcement-integration`) is the already-diagnosed, pre-existing baseline-cluster
+  ARP timing defect two prior shifts already root-caused and tried to fix (blocked by this
+  sandbox's own "Security Test Removal" tooling denial on that specific test file). This is the
+  third-plus identical finding on this exact PR — per STEP 4(c) ("stuck — same action, same
+  failure 3x — never retry a 4th time"), **left untouched, not merged.** Still a tooling-permission
+  question for the user, already on record from the prior shift that found it.
+- **#359 (FTF-0500B)**, **#364 (FTF-0500C)**, **#380 (FTF-0306)** — each had fallen behind `main`
+  (merge conflicts confined to `.github/workflows/ci.yml`'s gate-step list and the append-only
+  tracking docs, the same conflict class many prior shifts already resolved this way). Resolved
+  each by union (no job step or log content dropped — reconstructed both sides' full job blocks
+  verbatim where `ci.yml`'s own job bodies collided), re-ran the task's own no-DB test plus
+  `validate_spec.py --strict` and a YAML parse check after each resolution, pushed, waited for a
+  fresh genuine CI run, then merged once green. Because each merge advanced `main` again, this had
+  to be repeated in sequence (not parallel) — #359 alone needed three conflict-resolution rounds
+  as #364 and #380 landed in between.
+
+**Process defect found and corrected within this same shift:** after first resolving #359's
+conflict and pushing, this session moved on to #364/#380 without circling back to actually call
+`merge_pull_request` on #359 — leaving it open with a stale, unmerged conflict-resolution commit.
+This was caught by an unexplained discrepancy (`docs/spec-matrix.yaml`'s `FTF-0500B` entry reading
+back as `certification_state: NONE`/`implementation_state: ABSENT` on a fresh `origin/main` checkout,
+when it should have read `PROVISIONAL`/`IMPLEMENTED`) rather than assumed correct — traced to #359
+still being open, re-resolved its now-further-diverged conflict (by then including #364's own merge
+too), re-verified CI green, and merged for real. Lesson applied immediately rather than filed away:
+confirmed every one of this shift's own merges actually landed (`merged: true` in each API response)
+before relying on any of them going forward, and re-read `docs/spec-matrix.yaml` directly from a
+fresh `origin/main` checkout at the end of the shift rather than trusting this file's own narrative.
+
+**Final state, independently re-verified from a fresh `origin/main` checkout (`8d13448`):**
+`scripts/status.py` — `97/300` certified, `24` product-true (unchanged — merging a PROVISIONAL
+submission is not a certification, Law 2). `scripts/product_truth_check.py --fail-on-unwired` —
+`25/25`, clean. `scripts/validate_spec.py --strict` — clean. `docs/spec-matrix.yaml`'s own
+`certification_state: PROVISIONAL` set now reads `{FTF-0212, FTF-0306, FTF-04A15, FTF-0500B,
+FTF-0500C, FTF-0500D, FTF-0601, FTF-1206, FTF-1807, FTF-H007}` — 10 items now genuinely merged and
+awaiting independent Control-plane L2 review, none self-certified. `.github/workflows/ci.yml`
+parses clean, 41 distinct jobs, no duplicates.
+
+Recomputed the dependency-ready frontier fresh at shift end: unchanged from shift start (every
+dependency-ready task is now either already `PROVISIONAL` — Control plane's to certify, not
+relay's — or FTF-0214 (disclosed-blocked, PR #295) or FTF-1703 (correctly declined, no Argilla
+reviewer workflow exists)). No new task was picked this shift; the work was entirely unsticking
+the existing PROVISIONAL backlog the outage had frozen, which is real forward progress even though
+it does not itself move the certified count.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift before compaction; `docs/certifications/
+queue.md` unchanged (no new submission, only merges of already-logged submissions).
+STEP 4 stop condition (a): 0 in-flight L1-PROVEN submissions remain unmerged from this shift's own
+work; 10/300 PROVISIONAL items now await Control-plane L2 certification and the L4 gate. Stopping
+here. No open owner ask (`QUEUE.md` "Owner actions — current" reads "None currently").
