@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-06/domain.schema.json",
+  "title": "Sovra Phase 06 Domain Schema (FTF-0601 — EvaluationSuite schema/API)",
+  "description": "Frozen shared domain schema for the project-scoped EvaluationSuite resource (Section 23-30/69/45/65-67/77/81). Field constraints (lengths, enums) are copied verbatim from the single real enforcing source — apps/api/app/evaluation/evaluation_suite_schema.py (tested in tests/tasks/test_ftf_0601.py) — so this file cannot silently drift from the code that actually validates these shapes.",
+  "$defs": {
+    "EvaluationSuitePurpose": {
+      "type": "string",
+      "enum": ["development", "final"]
+    },
+    "EvaluationSuiteStatus": {
+      "type": "string",
+      "enum": ["draft", "locked"]
+    },
+    "EvaluationSuiteName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "EvaluationSuiteCreateRequest": {
+      "type": "object",
+      "properties": {
+        "agent_manifest_id": { "type": "string", "format": "uuid" },
+        "purpose": { "$ref": "#/$defs/EvaluationSuitePurpose" },
+        "name": { "$ref": "#/$defs/EvaluationSuiteName" },
+        "grading_logic_version": { "type": "integer", "minimum": 1 },
+        "reviewer_id": { "type": ["string", "null"] }
+      },
+      "required": ["agent_manifest_id", "purpose", "name", "grading_logic_version"],
+      "additionalProperties": false
+    },
+    "EvaluationSuiteUpdateRequest": {
+      "type": "object",
+      "description": "Any non-empty subset of the mutable fields. Refused once locked.",
+      "properties": {
+        "name": { "$ref": "#/$defs/EvaluationSuiteName" },
+        "grading_logic_version": { "type": "integer", "minimum": 1 },
+        "reviewer_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "EvaluationSuite": {
+      "type": "object",
+      "description": "Section 23-30/69 — the read-facing representation of a project's own EvaluationSuite, bound to one specific, already-locked AgentManifest version.",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "organization_id": { "type": "string", "format": "uuid" },
+        "project_id": { "type": "string", "format": "uuid" },
+        "agent_manifest_id": { "type": "string", "format": "uuid" },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": { "$ref": "#/$defs/EvaluationSuiteStatus" },
+        "purpose": { "$ref": "#/$defs/EvaluationSuitePurpose" },
+        "name": { "type": "string" },
+        "grading_logic_version": { "type": "integer", "minimum": 1 },
+        "reviewer_id": { "type": ["string", "null"] },
+        "created_by": { "type": "string" },
+        "locked_at": { "type": ["string", "null"], "format": "date-time" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "organization_id",
+        "project_id",
+        "agent_manifest_id",
+        "version",
+        "status",
+        "purpose",
+        "name",
+        "grading_logic_version",
+        "reviewer_id",
+        "created_by",
+        "locked_at",
+        "created_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
