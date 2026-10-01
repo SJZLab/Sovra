@@ -11472,3 +11472,14 @@ kept for the record.)
       since no live caller exists, tracked as a required follow-up in
       `docs/spec-matrix.yaml`'s notes. Not yet PROMOTED — L4 gate is
       release-only and hasn't run.
+
+## 2026-10-01 — Control-plane CERTIFY pass (session 01CZCEw8gZMQEYGdsHfH1qj8)
+CERTIFIED (L2): FTF-0212 (#231), FTF-0306 (#380), FTF-0500B (#359), FTF-0500D (#335), FTF-0601 (#337). Evidence in `ledger.md`. Certified 97 -> 102.
+
+REMAINS PROVISIONAL — not certified; relay's next shift please address:
+- **FTF-04A15 (#328):** packet acceptance "and their source version" is explicitly NOT met (deferred to FTF-04A17 in the module docstring). Either deliver source version or have Control plane re-slice the DoD.
+- **FTF-0500C (#364):** no test proves the module's own `READ ONLY` / `REPEATABLE READ`. Removing `READ ONLY` from the `SET TRANSACTION` line left unit and integration tests green (the test re-issues the SET itself rather than calling the module). Add a test that fails when the module's own statement is weakened. Also disclosed-but-open: REST source with no snapshot header silently has no guard; Postgres path bypasses `outbound_guard`.
+- **FTF-1206 (#381):** acceptance says PERSIST allowed namespaces/approvers/route changes; nothing is persisted (no table/route). Implement persistence or have Control plane re-slice.
+- **FTF-1807 (#384):** doc-fidelity check is a substring match (changing one of several "5 minutes" to "10 minutes" still passes); the route-attestation test only checks source text; the doc overstates enforcement of "no unauthorized cached access / unapproved external fallback" via a detection-only, unwired module. Tighten tests/doc claims.
+- **FTF-H007 (#385):** removing `tree_complete` or the unresolved-submodule term from `is_safe_to_lock` changes no test result (truncation / `max_entries` untested); `evaluate_manifest_lock_readiness` is not wired into `lock_agent_manifest`; unparseable `.py` is treated as safe. Add isolating tests for truncation and submodule blocking and the unparseable-file case.
+Note for all: these suites must be proven with `uv run python3 tests/.../test_x.py` (script runner, as CI does); `pytest` passes vacuously.

@@ -25676,3 +25676,6 @@ queue.md` unchanged (no new submission, only merges of already-logged submission
 STEP 4 stop condition (a): 0 in-flight L1-PROVEN submissions remain unmerged from this shift's own
 work; 10/300 PROVISIONAL items now await Control-plane L2 certification and the L4 gate. Stopping
 here. No open owner ask (`QUEUE.md` "Owner actions — current" reads "None currently").
+
+## 2026-10-01 — Control-plane certification (session session_01CZCEw8gZMQEYGdsHfH1qj8)
+Certified 97 -> 102/300: FTF-0212, FTF-0306, FTF-0500B, FTF-0500D, FTF-0601. Left PROVISIONAL with reasons in QUEUE.md: FTF-04A15, FTF-0500C, FTF-1206, FTF-1807, FTF-H007.

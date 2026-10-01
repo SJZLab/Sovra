@@ -9692,3 +9692,63 @@ PR is not landed by the next certifier shift.
 - product_truth 24/24; `detect_registration_capability` is a real proving_symbol with a non-test caller in `apps/api/app/litellm/connection_routes.py`.
 - Task contract re-pulled via `python3 tools/r1_handoff.py packet FTF-1201 --plan FINE_TUNING_FACTORY_RELEASE_1.md`; acceptance and negative_acceptance clauses confirmed met by the above.
 - `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-0212 — Real tool-call probe
+- Criterion ID: FTF-0212
+- PR: https://github.com/SJZLab/Sovra/pull/231 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: e83a53369d0fdc61c3fbb3f17778a68672b29e93
+- Validated-by: control plane, session https://claude.ai/code/session_01CZCEw8gZMQEYGdsHfH1qj8 (independent — PR #231 commits carry Claude-Session 01LS5QnbqmCmLCXzraHhopd2, 01F1dGicJPkGihwDxdgKkUpu; no overlap, my ID appears on no commit in the repo)
+- Date: 2026-10-01
+- CI: `gate` job and the task's own jobs `success` on the PR head (second parent of the merge commit); ci.yml runs on pull_request only, so no CI run exists on the merge commit itself: https://github.com/SJZLab/Sovra/actions/runs/36671299929
+- Fault injection (Law 1, run with the script runner CI uses, not pytest — these suites are script-style): real_tool_call_probe.py: disabled name-mismatch branch, arguments validation, and content-fallback in turn -> test_ftf_0212.py exit 1 each (named FAILs). Each reverted, tree clean.
+- product_truth_check --fail-on-unwired 25/25. Packet acceptance/negative_acceptance re-read via task packet and confirmed met at the level stated.
+- Disclosed gap carried: unwired library (blank proving_symbol, disclosed); /models/{id}/probe route absent.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0306 — Base model revision/digest resolver
+- Criterion ID: FTF-0306
+- PR: https://github.com/SJZLab/Sovra/pull/380 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: 1dbdd558504d04054026e054ff5ae88e89954222
+- Validated-by: control plane, session https://claude.ai/code/session_01CZCEw8gZMQEYGdsHfH1qj8 (independent — PR #380 commits carry Claude-Session 01QModAYMWatn12S6SwAx5f5 (+3 untrailered merges); no overlap, my ID appears on no commit in the repo)
+- Date: 2026-10-01
+- CI: `gate` job and the task's own jobs `success` on the PR head (second parent of the merge commit); ci.yml runs on pull_request only, so no CI run exists on the merge commit itself: https://github.com/SJZLab/Sovra/actions/runs/36801651310
+- Fault injection (Law 1, run with the script runner CI uses, not pytest — these suites are script-style): base_model_revision_digest_resolver.py: digest compare -> False, fabricated private_registry digest, display_name-derived digest -> exit 1 each; Postgres integration test passed. Each reverted, tree clean.
+- product_truth_check --fail-on-unwired 25/25. Packet acceptance/negative_acceptance re-read via task packet and confirmed met at the level stated.
+- Disclosed gap carried: unwired library (disclosed).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0500B — S3/MinIO source validation + metadata preview
+- Criterion ID: FTF-0500B
+- PR: https://github.com/SJZLab/Sovra/pull/359 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: 8d134483c95c350c7ab0e0f5d264a423129faec9
+- Validated-by: control plane, session https://claude.ai/code/session_01CZCEw8gZMQEYGdsHfH1qj8 (independent — PR #359 commits carry Claude-Session 01WXPYTLbfBkkBH2SCwTrrYL (+3 untrailered merges); no overlap, my ID appears on no commit in the repo)
+- Date: 2026-10-01
+- CI: `gate` job and the task's own jobs `success` on the PR head (second parent of the merge commit); ci.yml runs on pull_request only, so no CI run exists on the merge commit itself: https://github.com/SJZLab/Sovra/actions/runs/36802632555
+- Fault injection (Law 1, run with the script runner CI uses, not pytest — these suites are script-style): s3_minio_source_validation_metadata_preview.py: cross-tenant check, IsLatest change check, empty-prefix guard, md5-etag heuristic each disabled -> exit 1. Each reverted, tree clean.
+- product_truth_check --fail-on-unwired 25/25. Packet acceptance/negative_acceptance re-read via task packet and confirmed met at the level stated.
+- Disclosed gap carried: unwired library; metadata only, no row preview (disclosed).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0500D — Dataset source security-boundary preview + audit evidence
+- Criterion ID: FTF-0500D
+- PR: https://github.com/SJZLab/Sovra/pull/335 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: bb2ea6ca8a5944587b6a0ef017ec3fc915c6f54b
+- Validated-by: control plane, session https://claude.ai/code/session_01CZCEw8gZMQEYGdsHfH1qj8 (independent — PR #335 commits carry Claude-Session 01VNYcLTeDxuSYqxCHADKbp9, 01F1dGicJPkGihwDxdgKkUpu; no overlap, my ID appears on no commit in the repo)
+- Date: 2026-10-01
+- CI: `gate` job and the task's own jobs `success` on the PR head (second parent of the merge commit); ci.yml runs on pull_request only, so no CI run exists on the merge commit itself: https://github.com/SJZLab/Sovra/actions/runs/36672941492
+- Fault injection (Law 1, run with the script runner CI uses, not pytest — these suites are script-style): authorize_dataset_source_copy: boundary-crossing raise disabled -> 1 FAIL; purpose raise disabled -> 5 FAIL. Each reverted, tree clean.
+- product_truth_check --fail-on-unwired 25/25. Packet acceptance/negative_acceptance re-read via task packet and confirmed met at the level stated.
+- Disclosed gap carried: unwired library, no UI/route; classification->profile mapping is disclosed and owner may ratify.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0601 — Evaluation suite schema/API
+- Criterion ID: FTF-0601
+- PR: https://github.com/SJZLab/Sovra/pull/337 (already merged — the relay's PROVISIONAL submission)
+- Merge commit: 2d6a8e953471befebc0c8f924112abf0f3d479c7
+- Validated-by: control plane, session https://claude.ai/code/session_01CZCEw8gZMQEYGdsHfH1qj8 (independent — PR #337 commits carry Claude-Session 01AkrSM6TbWH89ouXWpruXZm, 01F1dGicJPkGihwDxdgKkUpu; no overlap, my ID appears on no commit in the repo)
+- Date: 2026-10-01
+- CI: `gate` job and the task's own jobs `success` on the PR head (second parent of the merge commit); ci.yml runs on pull_request only, so no CI run exists on the merge commit itself: https://github.com/SJZLab/Sovra/actions/runs/36673924954
+- Fault injection (Law 1, run with the script runner CI uses, not pytest — these suites are script-style): validate_grading_logic_version accepts <1, validate_purpose accepts 'mixed', manifest/project mismatch check removed -> exit 1 each; Postgres integration passed. Each reverted, tree clean.
+- product_truth_check --fail-on-unwired 25/25. Packet acceptance/negative_acceptance re-read via task packet and confirmed met at the level stated.
+- Disclosed gap carried: UI files named in packet (evaluation_suite_schema_api.tsx, ftf_0601.spec.ts) absent; Law 6 front-door reachability not addressed here.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
