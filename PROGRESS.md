@@ -1,4 +1,44 @@
 # PROGRESS — Sovra
+## 2026-10-02T19:20:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-76e5x6` — frontier re-confirmed fully claimed again, no new RELAY-OWNED work; nothing done this shift
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-76e5x6` was found already at `origin/main`'s prior tip
+(`6febaee`) with no unmerged work of its own. `BLOCKER.md` read in full: the same two live entries
+as every recent prior shift — **FTF-0902** (three real fix attempts already falsified by real CI,
+a Control-plane design question, not retried a 4th time per STEP 4(c)) and **FTF-1206** (the
+persistence-half scope question, a Control-plane decision, not improvised). STEP 0.2: no
+`cognee-cli` binary on this sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: found one item this shift could act on before re-checking the frontier: PR #419 (the
+immediately-prior shift's own doc-only no-op log entry) was open, green (`CI` run `37022863125`,
+conclusion `success`), and `mergeable_state: clean` — merged it under the standing "merge on green
++ L1 doc (PROVISIONAL)" authorization rather than leaving it to pile up. Rebased this branch onto
+the resulting `main` (`0a77baa`). Re-ran the full STEP 1 frontier check fresh against that new tip
+rather than trusting the just-merged PR's own claim: `scripts/status.py` → `99/300 certified · 24
+product-true`, byte-identical. A fresh `list_pull_requests` sweep found the same three open PRs as
+every recent prior shift and no others: **#402** (FTF-0902's own stuck investigation branch,
+untouched — not a 4th retry), **#401** (`[GOVERNANCE]` PR, explicitly owner-merge-only), and
+**#295** (FTF-0214, already `BLOCKED_DEPENDENCY`). `docs/spec-matrix.yaml` re-checked directly:
+FTF-0510 and FTF-1206 both still read `certification_state: PROVISIONAL` (merged-but-not-yet-
+certified, Law 2 — not a new unblock), FTF-0902 still `proof_state: UNPROVEN`.
+
+STEP 2 (PEV): **P** — hypothesis: nothing has changed since the prior shift's own conclusion that
+no genuinely unclaimed, undeclined RELAY-OWNED item exists. **E/V** — confirmed directly rather than
+assumed: no new PR, no new certification, no status-count delta, no new owner-actionable fact for
+either live `BLOCKER.md` entry. No code, test, or tracking-file change was warranted beyond this log
+and the PR #419 merge above — nothing dependency-ready, unclaimed, and undeclined to execute
+against. Neither blocked item was retried.
+
+STEP 3: this entry and the PR #419 merge are the only changes this shift. `QUEUE.md`'s "## Active"
+section and `docs/certifications/queue.md` need no new append (no new finding, no new submission, no
+new certification to log). `BLOCKER.md`'s two live entries left untouched, neither retried.
+
+STEP 4: stop condition (a) applies — `scripts/status.py` unchanged at `99/300` certified / 24
+product-true; every merged-PROVISIONAL item from the backlog-clearing shifts still awaits
+Control-plane L2 certification and the L4 gate; no genuinely unclaimed RELAY-OWNED item exists. No
+new blocker, no usage-limit stop, no new ask-first item (`QUEUE.md`'s own "Owner actions — current"
+unchanged: only the pre-existing, low-urgency branch-protection ask). Stopping here.
+
 ## 2026-10-02T17:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-u06cpi` — frontier re-confirmed fully claimed, no new RELAY-OWNED work; nothing done this shift
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
