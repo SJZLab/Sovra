@@ -9750,3 +9750,14 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-1807 — LiteLLM outage runbook (fix-and-resubmit)
+- Criterion ID: FTF-1807
+- PR: https://github.com/SJZLab/Sovra/pull/408 (already merged)
+- Merge commit: 57877a86dd65e395e08059e005dd9ec03200aa60
+- Validated-by: control-plane certifier session https://claude.ai/code/session_012TKYGHZbkYfDHp2nqJLDiJ. Independent: PR #408's commits carry `session_01LZK1hcfYaD3hd7DEQd3Qrv`; no match.
+- Date: 2026-10-02
+- CI: run 36910580578 on PR #408 head, 41/41 check runs success (`gate` job 110531921225). Run listing for the merge commit on `main` was not independently pulled; the PR-head run is the evidence.
+- Own fault injection (Law 1): rewrote the runbook's revoked-key row to "Call remains permitted until the 5-minute freshness TTL expires"; the new semantics check failed with the row text quoted. Inverting the "never treated as equivalent" statement was also flagged. Doc restored; suite green again, working tree clean.
+- Contract: packet pulled via r1_handoff; its acceptance is independent review plus relevant negative-test evidence; met.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.

@@ -1,3 +1,4 @@
+2026-10-02 certifier run: FTF-1807 L2-CERTIFIED (see docs/certifications/ledger.md). Certified 100/300.
 # PROGRESS — Sovra
 ## 2026-10-02T00:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`
 

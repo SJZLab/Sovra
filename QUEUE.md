@@ -1,3 +1,4 @@
+Updated: 2026-10-02T06:00:00Z (certifier session_012TKYGHZbkYfDHp2nqJLDiJ) — **FTF-1807 L2-CERTIFIED** (PR #408, 57877a8; CI 41/41, own fault injection reddened the semantics check). Moved to Done. Certified: 99/300 -> 100/300. Other PROVISIONAL items not reviewed this run.
 # QUEUE — Sovra (Model Factory)
 Updated: 2026-10-02T00:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`) —
   **frontier found fully claimed by concurrent shifts; no new PR opened; two GitHub comments

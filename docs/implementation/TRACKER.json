@@ -1851,9 +1851,11 @@
       "blockers": []
     },
     "FTF-1807": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "57877a86dd65e395e08059e005dd9ec03200aa60"
+      ],
       "independent_review": null,
       "blockers": []
     },

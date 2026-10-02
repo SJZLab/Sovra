@@ -21351,3 +21351,7 @@ named ("Do not re-review them until a new relay fix PR for that ID is appended b
 for FTF-1807 specifically — not for FTF-0500D/FTF-1206, which remain exactly as that review left
 them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
 `QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix).
+
+## 2026-10-02 — Control-plane L2 re-review: FTF-1807 CERTIFIED
+Certifier session_012TKYGHZbkYfDHp2nqJLDiJ (independent of session_01LZK1hcfYaD3hd7DEQd3Qrv). Evidence in ledger.md.
+Other PROVISIONAL items (FTF-0500C fix, FTF-0500B #407, FTF-0500D #410/#413, FTF-1206 #412, FTF-0510 #411, etc.) not reviewed this run; PR #414 itself is docs-only and carries nothing to certify.
