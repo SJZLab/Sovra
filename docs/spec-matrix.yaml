@@ -7705,15 +7705,69 @@ FTF-1001:
   proving_symbol: build_model_version_router
   proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Artifact lineage manifest
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0306, FTF-1001
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0306, FTF-1001 (both
+    CERTIFIED, confirmed before relying on them). Path refined from the task packet's own
+    suggested services/serving-controller/vllm/artifact_lineage_manifest.py (services/ does not
+    exist anywhere in this repository, not a uv workspace member) to
+    apps/api/app/artifacts/artifact_lineage_manifest.py, the same refinement precedent
+    FTF-0301/FTF-0304/FTF-0305/FTF-0306/FTF-0307 already established for the identical reason.
+    build_artifact_lineage_manifest is a pure, synchronous, no-I/O composer over an
+    already-fetched ModelVersion (FTF-1001) and an optional already-fetched TrainableArtifact
+    (FTF-0301/FTF-0306) -- never a database query or name-based lookup of its own, matching this
+    task's own database_changes clause ("No independent schema change. Consume frozen contract.")
+    the same way training_capability_classifier.py (FTF-0307) already read that clause. Reports
+    this task's own seven named dimensions independently: base/tokenizer both report the real,
+    already-resolved weights_digest (FTF-0306's own resolvers hash the entire artifact tree,
+    tokenizer files included -- no separate tokenizer-only digest exists in this schema) plus
+    base_model_revision for a full_weight/adapter import, both known=False for an endpoint import
+    (Section 68.1's own "Display unknown parent/training data as unknown"); license from the real
+    TrainableArtifact.license_id/license_accepted_by/license_accepted_at; runtime from the real
+    declared required_python_packages_json when non-empty, else honestly unknown (no
+    ComponentVersionLock/container-digest record exists anywhere in this repository yet, Section
+    77.5 not yet implemented); method from the real, already-validated import_kind
+    (full_weight/adapter) only, no deeper hyperparameter claim; training/data always
+    known=False, "unknown external ancestry" in this task's own acceptance clause's own words,
+    since no TrainingRun or dataset-hash/versioning task exists anywhere in this task's own
+    dependency set -- never fabricated as Factory-trained without a real training record (Law 11).
+    negative_acceptance ("Unknown parent cannot be fabricated; adapter-base mismatch invalidates
+    load/qualification") is two real, raising checks, not descriptive text:
+    ArtifactLineageError when a full_weight/adapter model_version is given no artifact at all, an
+    artifact whose own id does not match model_version.trainable_artifact_id, or an endpoint
+    model_version given a real artifact anyway; AdapterBaseMismatchError when an adapter's own
+    caller-supplied resolved_base_artifact is not status=='ready' or its own base_model_revision
+    does not match the adapter artifact's own declared base_model_revision -- Section 68.1's own
+    "exact base, not same-family guessed weights" rule made executable, the same
+    recompute-and-compare-never-silently-accept-drift discipline FTF-0306's own
+    DigestMismatchError already established. LineageFact itself refuses known=False with a
+    non-None value by construction (__post_init__), so no code path anywhere in this module can
+    silently smuggle a fabricated value under an "unknown" label. `tests/tasks/test_ftf_1002.py`
+    (no DB required, same precedent test_ftf_0307.py already established) proves the acceptance
+    clause's seven dimensions across full_weight/adapter/endpoint imports, every negative path
+    above, LineageFact's own construction-time guard, manifest immutability, and one real fault
+    injection (disabling the base_model_revision compare backing AdapterBaseMismatchError,
+    reverted byte-identical) -- all checks passed on the real, as-built module.
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide (362 files); `uv run mypy .`
+    clean (362 source files, zero errors); `scripts/validate_spec.py --strict` clean (after
+    `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact). Regression
+    swept `test_ftf_0306.py`/`test_ftf_1001.py` (this task's own two dependencies) -- both exit 0,
+    zero regressions (test_ftf_1001.py's own stderr TenantContextError traceback is a pre-existing,
+    disclosed negative-test assertion inside that suite itself, unrelated to this change --
+    confirmed by its own final "all checks passed" line). `scripts/product_truth_check.py
+    --fail-on-unwired`: unchanged 25/25 (proving_symbol left blank -- no live route/worker caller
+    yet, same disclosed "no live caller" precedent FTF-0306/FTF-0307 already established).
+    `scripts/status.py`: unchanged 99/300 certified, 24 product-true (Law 2 -- a submission is not
+    a certification). Added this task's own CI gate step to .github/workflows/ci.yml in the same
+    commit. Not self-certified (Law 4): independent Control-plane L2 review and a real CI run on
+    the opened PR are required before CERTIFIED.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1002.py
 FTF-1003:
   certification_state: NONE
   criticality: MUST

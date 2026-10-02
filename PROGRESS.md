@@ -1,4 +1,118 @@
 # PROGRESS — Sovra
+## 2026-10-02T21:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-61pj77` — implemented and submitted FTF-1002 (Artifact lineage manifest), PROVISIONAL
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+`BLOCKER.md` read in full: the same two live entries every recent prior shift has read — **FTF-0902**
+(three real fix attempts already falsified by real CI, a Control-plane design question, not retried
+a 4th time per STEP 4(c)) and **FTF-1206** (the persistence-half scope question, a Control-plane
+decision, not improvised). `git fetch origin main` confirmed this designated branch
+(`claude/wizardly-fermat-61pj77`) was already at `origin/main`'s tip (`4d4cd42`, PR #423's own merge
+of the immediately-prior `iaofsc` shift's FTF-0307 work) — `git rev-list --left-right --count
+HEAD...origin/main` → `0 0`, no prior unmerged work of its own.
+
+STEP 0.1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` re-read fresh (not assumed from
+any prior context). The immediately-prior shift (`iaofsc`, 2026-10-02T20:30:00Z) had already done a
+full from-scratch dependency-graph recompute and flagged three items: **FTF-0307** (which it
+claimed and which is now merged), **FTF-1002** (Artifact lineage manifest — confirmed genuinely
+dependency-ready, deferred to a future shift rather than rushed), and **FTF-04A18** (flagged as
+needing independent re-verification against a known UI-heavy blocker class, not claimed). Took
+**FTF-1002** this shift. Independently re-confirmed its own two dependencies, FTF-0306 and FTF-1001,
+are both `certification_state: CERTIFIED` in `docs/spec-matrix.yaml` directly, rather than trusting
+the prior shift's own claim.
+
+STEP 1: pulled FTF-1002's real DoD via `python tools/r1_handoff.py packet FTF-1002`. Acceptance:
+"Artifact lineage binds base/tokenizer/training/data/license/runtime/method and records unknown
+external ancestry." Negative_acceptance: "Unknown parent cannot be fabricated; adapter-base
+mismatch invalidates load/qualification." `database_changes`: "No independent schema change.
+Consume frozen contract." `files`: the packet's own suggested `services/serving-controller/vllm/
+artifact_lineage_manifest.py` — confirmed `services/` does not exist anywhere in this repository and
+is not a `uv` workspace member (`ls services` → no such directory), the same class of unimportable
+suggested path FTF-0301/FTF-0304/FTF-0305/FTF-0306/FTF-0307 already refined away from their own
+packets' `packages/model-catalog/...` suggestion. Refined to
+`apps/api/app/artifacts/artifact_lineage_manifest.py`, joining this task's own two real
+dependencies (FTF-0306 `base_model_revision_digest_resolver.py`, FTF-1001
+`model_version_schema.py`), both already under `apps/api/app/`.
+
+STEP 2 (PEV): **P** — read `apps/api/app/artifacts/artifact_schema.py` (`TrainableArtifact`),
+`apps/api/app/artifacts/base_model_revision_digest_resolver.py` (FTF-0306's own real resolver
+composition and its `DigestMismatchError` recompute-and-compare discipline), `apps/api/app/
+model_versions/model_version_schema.py` and `model_version_crud.py` (FTF-1001) before writing any
+code. Confirmed no `TrainingRun`, dataset-hash/versioning, or `ComponentVersionLock` record exists
+anywhere in this repository's schema yet (`grep -rl "training_manifest\|TrainingRun\|dataset_hash\|
+training_config_hash\|container_digest\|library_version"` over `apps/api/app`/`workers/`/
+`packages/` returned nothing) — confirming `training`/`data`/the container-digest half of `runtime`
+must be honestly reported unknown, never fabricated, since this task's own dependency set
+(FTF-0306/FTF-1001 only) carries no real signal for any of them.
+
+**E** — implemented `apps/api/app/artifacts/artifact_lineage_manifest.py::
+build_artifact_lineage_manifest`: a pure, synchronous, no-I/O composer, matching the
+`training_capability_classifier.py` (FTF-0307) precedent for reading this task's own
+`database_changes` clause. Reports the acceptance clause's seven dimensions independently via a
+`LineageFact(known, value, detail)` dataclass whose own `__post_init__` refuses `known=False` with a
+non-`None` value by construction — no code path can smuggle a fabricated value under an "unknown"
+label. `base`/`tokenizer` both report the real, already-resolved `weights_digest` (FTF-0306's own
+resolvers hash the entire artifact tree, tokenizer files included — Section 34's own "immutable
+base-model/tokenizer manifest" read literally) for a `full_weight`/`adapter` import, both
+`known=False` for `endpoint` (Section 68.1: "Display unknown parent/training data as unknown").
+`license` from the real `TrainableArtifact` fields. `runtime` from the real declared
+`required_python_packages_json` when non-empty, else honestly unknown (no `ComponentVersionLock`
+exists yet, Section 77.5). `method` from the real, already-validated `import_kind` only. `training`/
+`data` always `known=False` per the P-phase finding above.
+
+Implemented negative_acceptance as two real, raising checks: `ArtifactLineageError` (no artifact for
+a weight-backed import; an artifact not matching `model_version.trainable_artifact_id`; a real
+artifact supplied for an `endpoint` import) and `AdapterBaseMismatchError` (a caller-supplied
+`resolved_base_artifact` that is not `status == 'ready'`, or whose own `base_model_revision` doesn't
+match the adapter artifact's own declared `base_model_revision` — Section 68.1's "exact base, not
+same-family guessed weights" made executable, the same recompute-and-compare discipline FTF-0306's
+own `DigestMismatchError` already established).
+
+Wrote `tests/tasks/test_ftf_1002.py` (no DB/HTTP/TLS fixture needed — pure/no-I/O, same disclosed
+precedent `test_ftf_0307.py` already established): covers all seven dimensions across
+`full_weight`/`adapter`/`endpoint` imports, every negative path above, `LineageFact`'s own
+construction-time guard, manifest immutability, and (Law 1) one real fault injection — replaced the
+real `if resolved_base_artifact.base_model_revision != artifact.base_model_revision:` guard with
+`if False:` in the on-disk module, ran a subprocess against the mutated module, and confirmed a real
+previously-rejected mismatched adapter/base pairing genuinely passed through uncaught
+(`NO_ERROR_RAISED`) — then restored the module byte-identical (`_MODULE_PATH.write_bytes(original)`,
+confirmed matching). Ran the suite: all checks passed on the real, as-built module both before
+injection and after restoration.
+
+**V** — `uv sync --all-packages` (bare `uv run` lacks `sqlalchemy`, same disclosed precedent prior
+Postgres-backed-task shifts used). `uv run ruff check .` clean; `ruff format --check .` initially
+flagged the new test file, reformatted via `ruff format`, re-verified clean (362 files total). `uv
+run mypy .` clean repo-wide: 362 source files, zero errors. `scripts/validate_spec.py --strict`
+clean (`git fetch --unshallow` first, same disclosed shallow-clone precedent — this also pulled in
+several stale `relay/*`/`watchdog/*` remote-tracking branches from earlier shifts' history, not
+touched). `scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25` (`proving_symbol`
+left blank — no live route/worker caller yet, same disclosed "no live caller" precedent FTF-0306/
+FTF-0307 already established). `scripts/status.py`: unchanged `99/300` certified / 24 product-true
+(Law 2 — a submission is not a certification). Regression swept `test_ftf_0306.py`/`test_ftf_1001.py`
+(this task's own two dependencies) — both exit 0, zero regressions (`test_ftf_1001.py`'s own stderr
+`TenantContextError` traceback is a pre-existing, disclosed negative-test assertion inside that
+suite itself, confirmed by its own final "all checks passed" line, unrelated to this change).
+
+Updated `docs/spec-matrix.yaml`'s FTF-1002 entry (`certification_state: PROVISIONAL`,
+`implementation_state: IMPLEMENTED`, `proof_state: L1-PROVEN`, `proving_test: tests/tasks/
+test_ftf_1002.py`, full evidence in `notes`). Appended a full evidence entry to `docs/
+certifications/queue.md`. Updated `QUEUE.md`'s own top dated entry with the same narrative. Added
+this task's own CI gate step to `.github/workflows/ci.yml` in the same commit. Opened a PR from this
+shift's own designated branch (`claude/wizardly-fermat-61pj77` → `main`), titled per the required
+`[relay] FTF-1002: ...` convention, submitted PROVISIONAL.
+
+**V (certification posture)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 review and a real
+CI run on the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+`.github/workflows/ci.yml` all updated this shift, before compaction.
+
+STEP 4 stop condition (a): FTF-1002 now joins the existing merged-PROVISIONAL backlog awaiting
+Control-plane L2 certification and the L4 gate (`scripts/status.py` unchanged at `99/300` certified
+/ 24 product-true — a submission is not a certification). Neither live `BLOCKER.md` entry (FTF-0902,
+FTF-1206) was retried. No open owner ask beyond the pre-existing, low-urgency branch-protection ask.
+Stopping here.
+
 ## 2026-10-02T20:45:00Z — PR #422 (FTF-0307) merged to `main`
 
 Subscribed to PR #422's activity after opening it. `check_suite.completed` event arrived; verified

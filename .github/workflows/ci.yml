@@ -325,6 +325,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0306.py
       - name: FTF-0307 negative-test proof (Training capability classifier -- fail-closed unknown, real ready-artifact/probe-state evidence, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0307.py
+      - name: FTF-1002 negative-test proof (Artifact lineage manifest -- no fabricated parent, adapter-base mismatch denial, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1002.py
       - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1206.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
