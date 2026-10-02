@@ -1,4 +1,83 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T05:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-pu0up5`) —
+  **frontier re-confirmed fully claimed (same conclusion the immediately-prior q3cg3f shift
+  reached); found and fixed a real, reproducible flaky test instead (FTF-R002), not a new
+  RELAY-OWNED item.** Branch found at the same commit as `origin/main` (`4be41b6`, PR #414's
+  merge — itself the q3cg3f shift's own tracking entry) — confirmed via `git rev-list
+  --left-right --count HEAD...origin/main` (0/0) before relying on it; `sha256sum CLAUDE.md`
+  matched `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902, 10:30Z) untouched, no
+  fourth retry. A fresh `list_pull_requests` + `get_check_runs` sweep on every open PR (not
+  trusted from any prior shift's narrative) confirmed: #407/#410/#411/#413 all green (`gate`
+  success); #413/#410 are the already-flagged FTF-0500D duplicates (Control plane's own triage
+  call, untouched); #412 (FTF-1206)'s own `gate` job genuinely failed (run `36948577882`/job
+  `110656171438`) — the same failure the q3cg3f shift had already flagged via comment without
+  root-causing. Pulled that job's real log (`get_job_logs`): the failing step was
+  `tests/tasks/test_ftf_r002.py`, a file PR #412's own diff never touches — ruled out as
+  "not this PR's own" per the CI-red norm before going further, rather than assumed.
+
+  Root-caused for real rather than re-flagged: `test_job_identity_rejects_tampered_token`'s own
+  tamper construction flipped only the token's *last character*, which lands on a real
+  base64url-encoded SHA-256 signature's unused padding bits (32 % 3 == 2) for a measurable
+  fraction of randomly generated tokens — reproduced directly against the real
+  `sign_worker_job_identity`/`verify_worker_job_identity` functions, 20,000 trials, 329 silent
+  no-op "tampers" (1.6%), each one exactly reproducing PR #412's own CI failure. This is a
+  pre-existing defect in already-`CERTIFIED` FTF-R002's own test code (PR #236, 2026-09-24),
+  latent since certification, not something #412 or any other PR introduced — and since it's a
+  `gate`-level step every PR's own CI run shares, it was a standing ~1.6%+ spurious-failure risk
+  on *every* open and future PR, not just #412's. Fixed by tampering a real decoded signature
+  byte instead of a token character (eliminates the padding-bit edge case entirely — 0/50,000
+  no-ops after the fix); full evidence, real fault injection against the production module
+  (reverted byte-identical), and gate-suite results in `docs/certifications/queue.md`'s matching
+  2026-10-02 entry and `docs/spec-matrix.yaml`'s FTF-R002 notes. `packages/component_contracts/
+  job_identity.py` itself is untouched (confirmed via `git diff`) — this does not reopen FTF-R002's
+  own certification, just repairs a latent flake in its proof. Posted a comment on PR #412 naming
+  the real root cause so Control plane doesn't mistake that PR's own `gate` failure for a defect
+  in its own diff. Opened a new PR (this shift's own branch) with the fix.
+
+  No genuinely unclaimed RELAY-OWNED task exists this shift either (same conclusion the q3cg3f
+  shift already reached, re-verified rather than trusted stale) — FTF-0902/FTF-1703 remain
+  correctly deferred; FTF-1206's persistence-scope `BLOCKER.md` entry (filed by a separate,
+  concurrent shift on PR #412's own branch after this shift's own state snapshot) is untouched,
+  no fourth retry. No open owner ask (`QUEUE.md`'s own "Owner actions — current" unchanged — only
+  the pre-existing, low-urgency branch-protection ask).
+Updated: 2026-10-02T00:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`) —
+  **frontier found fully claimed by concurrent shifts; no new PR opened; two GitHub comments
+  flagging real issues for Control plane.** Branch found at the same commit as `origin/main`
+  (`35b9050`, PR #409's tracking merge) — no prior unmerged work of its own; `sha256sum CLAUDE.md`
+  matched `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902, 10:30Z) untouched, no
+  fourth retry. Picked **FTF-0500D** per "## Active" item 3 (the smaller of the two remaining
+  untouched RELAY-OWNED items) and independently did the full PEV cycle: read the module, found
+  the exact same gap the 2026-10-01 review named, added a classification x profile matrix test,
+  ran a real fault injection (narrowed the module to `security_classification == "restricted"`,
+  confirmed the *old* suite stayed green, confirmed the *new* test genuinely caught it on
+  `confidential`→`standard`), reverted byte-identical (md5sum `2113594afa576abbd248d9e147fd8745`),
+  full `ruff`/`mypy`/`validate_spec --strict`/`product_truth_check`/`status.py`/regression sweep
+  clean — all before opening a PR.
+
+  A fresh `list_pull_requests` sweep (not trusted from this file's own narrative) done *before*
+  pushing found the frontier already fully claimed by concurrent sessions: **#410** and **#413**
+  each independently fix this exact FTF-0500D finding (same root cause, same fault-injection
+  method, same `2113594afa576abbd248d9e147fd8745` module md5sum) — this shift's own independent
+  arrival at the identical fix is strong corroboration both are correct, but a third duplicate PR
+  would only add Control-plane review burden, so none was opened; **discarded this shift's own
+  local changes** (`git checkout --`) rather than keep them uncommitted or push a redundant
+  branch. Posted one comment on #413 cross-referencing #410 for Control-plane triage (does not
+  close either — picking the surviving PR is a review call, not a mechanical "already on main"
+  closure this relay can make unilaterally). **#412** (FTF-1206) and **#411** (FTF-0510) are also
+  already open, covering the remaining two "Active" items (FTF-1206's own persistence question is
+  escalated in that PR's own new `BLOCKER.md` entry on its branch; FTF-0510 was the "newly
+  dependency-ready" item 4). FTF-0902/FTF-1703 remain correctly deferred, untouched.
+
+  **One real issue found and flagged, not fixed (not this shift's branch):** PR #412's own
+  description claims no CI workflow change was needed and cites only local results, but a live
+  check of its head commit shows the real `gate` job actually failed on GitHub Actions (40/41
+  green, `gate` red, run `36948577882`/job `110656171438`) — undisclosed in the PR body. Posted a
+  comment on #412 naming the run/job IDs so Control plane checks before certifying (Law 1/9); not
+  acted on further since this isn't this session's branch and FTF-1206 was correctly not this
+  shift's own claimed item.
+
+  No genuinely unclaimed, undeclined task exists this shift. No open owner ask (this file's own
+  "Owner actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask).
 Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`) —
   **FTF-1807 fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #408.** Branch found at
   the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged work of its
