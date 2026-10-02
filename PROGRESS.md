@@ -1,4 +1,22 @@
 # PROGRESS — Sovra
+## 2026-10-02T23:20:00Z — PR #426 (FTF-04A18) merged to `main`
+
+Subscribed to PR #426's activity after opening it. Two `check_suite.completed` events arrived (the
+first for an earlier, immediately-superseded head `16d43e8`; the second for the real final head
+`ab9f63e` after this shift's own tiny PROGRESS.md/QUEUE.md PR-number follow-up push); verified
+directly (not assumed from the event alone) via `pull_request_read`/`get_check_runs` that all 42
+check runs on the real final head SHA (`ab9f63e`) completed `success`, including `gate` and the
+new `candidate-selection-integration` job, `mergeable_state: clean`, zero pending reviews, zero
+comments (`get_reviews`/`get_comments` both empty). Merged under the standing "merge on green + L1
+doc (PROVISIONAL)" authorization (`CLAUDE.md`'s own "Do without asking" list) — merge commit
+`3088b90287dd95b5568df0b95477ef30db231da9`. `docs/spec-matrix.yaml`'s FTF-04A18 entry is
+intentionally left at `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (Law 2/4 — a
+relay merge is not a certification; independent Control-plane L2 review is still required before
+FTF-04A18 can move to CERTIFIED). `scripts/status.py` unchanged at `99/300` certified / 24
+product-true (confirmed fresh against `origin/main` after `git fetch origin main`). Unsubscribed
+from PR #426's activity feed now that it is merged — the subscription's own "not finished until
+merged or closed" condition is satisfied.
+
 ## 2026-10-02T23:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-2dd8f4` — implemented and submitted FTF-04A18 (Candidate-selection UI — no auto-selection), PROVISIONAL
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly. `BLOCKER.md` read

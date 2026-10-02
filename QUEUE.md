@@ -1,4 +1,14 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T23:20:00Z — **PR #426 (FTF-04A18) merged to `main`** (merge commit
+  `3088b90287dd95b5568df0b95477ef30db231da9`, all 42 check runs on the real final PR head
+  (`ab9f63e`) green, including `gate` and the new `candidate-selection-integration` job,
+  `mergeable_state: clean`, zero pending reviews/comments) — merged under the standing "merge on
+  green + L1 doc (PROVISIONAL)" authorization rather than left to pile up, same as prior shifts'
+  own merges of green PROVISIONAL work. `docs/spec-matrix.yaml`'s FTF-04A18 entry stays
+  `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (Law 2/4 — merging is not
+  certifying; independent Control-plane L2 review still required). `scripts/status.py` unchanged
+  at `99/300` certified (confirmed fresh against `origin/main`). Unsubscribed from PR #426's
+  activity feed now that it is merged.
 Updated: 2026-10-02T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-2dd8f4`) —
   **FTF-04A18 (Candidate-selection UI — no auto-selection) implemented and submitted PROVISIONAL**
   — the item the immediately-prior `61pj77` shift flagged as needing independent re-verification
