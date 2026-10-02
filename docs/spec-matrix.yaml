@@ -7864,6 +7864,49 @@ FTF-1206:
     (`if unauthorized_registration or unauthorized_deployment or unauthorized_approvers:` ->
     `if False:`) -- 3 of the negative_acceptance checks genuinely FAILed, bound to this criterion
     ID; reverted byte-identical (md5sum confirmed matching before/after) and reran clean.
+
+    2026-10-02 fix-and-resubmit for half of the 2026-10-01 L2 finding (full finding in
+    `docs/certifications/queue.md`'s 2026-10-01 entry): the review's second DoD item -- "a
+    route-change check against the granted deployment namespaces" -- is now fixed.
+    `enforce_route_change_authority` previously accepted `grant` only as a type-presence proof
+    (`del grant`) and never actually consulted it: any recognized organization approver could
+    authorize a route change into any namespace in the organization's wider policy, including one
+    this specific project was never granted. `enforce_route_change_authority` now takes a required
+    `target_deployment_namespace` argument and refuses outright (before even checking approval)
+    when it is not already a member of `grant.deployment_namespaces` -- unconditionally, even when
+    the organization's own policy does not require approval at all, since this is a scope check on
+    the project's own grant, never a question organization approval policy answers.
+    `tests/tasks/test_ftf_1206.py` gained `test_enforce_route_change_authority_checks_target_
+    namespace_against_grant` (3 new checks) and every pre-existing `enforce_route_change_authority`
+    call site was updated to pass a real `target_deployment_namespace`. Real fault injection (Law
+    1), performed directly against the on-disk module: disabled the new namespace-membership check
+    (`if target_deployment_namespace not in grant.deployment_namespaces:` -> `if False:`) -- 2
+    genuine FAILs reproducing exactly the finding (an organization-wide namespace this project was
+    never granted was wrongly authorized, with and without approval required); reverted
+    byte-identical (md5sum `53b5c5d400e84186387da293dce30572` confirmed matching before and after)
+    and reran clean. `uv run ruff check`/`ruff format --check`/`mypy .` clean (356 files);
+    `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged 25/25.
+    Regression swept `test_ftf_0402.py`/`test_ftf_1201.py` (both named dependencies) -- zero
+    regressions.
+
+    The review's first DoD item -- "a persisted, tenant-scoped org-policy record (its own
+    migration task, per the packet's `database_changes` rule; until that exists, mark FTF-1206
+    BLOCKED_DEPENDENCY rather than done)" -- is deliberately NOT done by this fix and stays
+    disclosed, not hidden: this task's own packet `files` clause is closed to exactly
+    `packages/litellm-client/organization_policy_control.py` and
+    `tests/tasks/test_ftf_1206.py`, and its own `database_changes` clause explicitly defers any
+    schema to "a separately claimed migration prerequisite" rather than this task's own scope.
+    Checked directly rather than assumed: no task anywhere in the real, fixed 300-task
+    `docs/TASK_INDEX.md` owns an `OrganizationGatewayPolicy`-persistence migration -- FTF-1201
+    (this task's own dependency) explicitly disclaims it too ("No independent schema change...
+    capability is computed fresh per call, never persisted"), and no other FTF-12xx/FTF-R-series
+    entry names one. So "claim a separate migration prerequisite first" has no existing task ID to
+    claim -- inventing a new one, or adding schema outside this task's own closed `files` list, is
+    a Control-plane scope decision, not a relay improvisation of an unclear DoD (CLAUDE.md "Relay
+    is execution-only"). Formalized as a live `BLOCKER.md` entry rather than left implicit. This
+    task's own `certification_state` stays `PROVISIONAL` and this entry stays NOT CERTIFIED on the
+    persistence half until Control plane resolves that scope question; the route-change-against-
+    grant half above is ready for re-review on its own.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py

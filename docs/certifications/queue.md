@@ -21430,6 +21430,83 @@ opened PR are required before certification. This entry is the trigger the 2026-
 itself named ("Do not re-review them until a new relay fix PR for that ID is appended below this
 line") for FTF-0500D specifically — not for FTF-1206, which remains exactly as that review left
 it, unchanged, still needing its own persisted org-policy migration prerequisite first.
+## 2026-10-02 — FTF-1206 — partial fix-and-resubmit for the 2026-10-01 L2 finding (route-change-against-grant half only)
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-f6fqug`. This resolves only the
+second half of the 2026-10-01 L2 finding; the first half (persisted storage) is deliberately not
+attempted this shift and is instead formalized as a live `BLOCKER.md` entry — see below for why.
+
+**The L2 finding (full text in the 2026-10-01 entry above):** "What was delivered is in-memory
+dataclasses and pure functions, with no storage, no API and no caller. `enforce_route_change_
+authority` discards `grant`. DoD: (1) a persisted, tenant-scoped org-policy record ... (2) a
+route-change check against the granted deployment namespaces."
+
+**Fix (DoD item 2 only).** Read `packages/litellm_client/organization_policy_control.py` and
+`tests/tasks/test_ftf_1206.py` directly first: confirmed the finding by inspection — `enforce_
+route_change_authority` took `grant` as a parameter solely to prove a validated grant precedes the
+call (`del grant  # presence-only`), and never checked that the route change's own target
+namespace was inside `grant.deployment_namespaces`. A recognized organization approver could
+therefore authorize rolling a route into any namespace the *organization* allows, even one this
+specific *project* was never granted — a real violation of this task's own negative_acceptance
+("Project-level permission cannot widen gateway management capability or data boundary"), reached
+through the route-change path rather than the permission-request path the existing tests already
+covered.
+
+Added a required `target_deployment_namespace` argument to `enforce_route_change_authority`:
+validated via the module's own `validate_namespace`, then checked for membership in `grant.
+deployment_namespaces` — refused unconditionally, before the approval-policy checks, and even when
+the organization's own policy does not require approval at all (a namespace-scope question is never
+answered by an approval-policy question). Added `test_enforce_route_change_authority_checks_
+target_namespace_against_grant` (3 new checks: a granted namespace is authorized; a same-
+organization but ungranted namespace is refused even with a recognized approver; an ungranted
+namespace is refused even when approval is waived entirely) and updated every pre-existing call
+site in the test file to pass a real `target_deployment_namespace`, since the parameter is now
+required (no silent default that could mask the gap).
+
+**Real fault injection (Law 1), performed directly by this session against the on-disk module:**
+first added the new test with the real fix absent (the call raised `TypeError: unexpected keyword
+argument 'target_deployment_namespace'` — the real pre-fix signature), confirming the new test
+cases are genuinely able to fail before any fix existed. After implementing the fix and confirming
+all checks pass, separately disabled the new namespace-membership check (`if target_deployment_
+namespace not in grant.deployment_namespaces:` → `if False:  # FAULT INJECTION`) — 2 genuine FAILs
+bound to `[FTF-1206]`, reproducing exactly the finding — then reverted the module file
+byte-identical (md5sum `53b5c5d400e84186387da293dce30572` confirmed matching before and after) and
+reran clean.
+
+`python3 tests/tasks/test_ftf_1206.py`: "all checks passed" (22 checks, was 19). `uv run ruff check
+.`/`ruff format --check .` clean (356 files). `uv run mypy .` clean (356 files). `python3
+scripts/validate_spec.py --strict` clean. `python3 scripts/product_truth_check.py
+--fail-on-unwired`: unchanged 25/25 (`proving_symbol` stays blank — no live caller added by this
+fix, same disclosed posture as the original submission). `scripts/status.py`: unchanged `99/300`
+certified (Law 2 — a resubmission is not a certification). Regression swept `test_ftf_0402.py`/
+`test_ftf_1201.py` (both named dependencies) — zero regressions.
+
+**DoD item 1 (persisted storage) deliberately not attempted this shift — disclosed, not silently
+dropped.** This task's own packet `files` clause is closed to exactly
+`packages/litellm-client/organization_policy_control.py` and `tests/tasks/test_ftf_1206.py`, and
+its own `database_changes` clause explicitly defers schema to "a separately claimed migration
+prerequisite," naming a different task as the owner rather than this one. Checked directly rather
+than assumed idle: no task anywhere in the real, fixed 300-task `docs/TASK_INDEX.md` owns an
+`OrganizationGatewayPolicy`-persistence migration — this task's own dependency FTF-1201 explicitly
+disclaims the same persistence ("No independent schema change... capability is computed fresh per
+call, never persisted"), and no other FTF-12xx or FTF-R-series entry names one either. So "claim a
+separate migration prerequisite first" (the review's own first option) has no existing task ID to
+claim; inventing a new one, or adding schema outside this task's own closed `files` list, is a
+Control-plane scope decision this relay shift should not improvise (CLAUDE.md "Relay is
+execution-only... write BLOCKER.md and stop[, do not] improvise the DoD" — narrowed here to just
+the persistence half, since the route-change-against-grant half had a clear, in-scope DoD and was
+completed rather than blocked wholesale). Formalized as a live `BLOCKER.md` entry this shift rather
+than left implicit in this note alone.
+
+`docs/spec-matrix.yaml`'s FTF-1206 entry updated with this fix-and-resubmit note; `certification_
+state` stays `PROVISIONAL` and `proof_state` stays `L1-PROVEN` (Law 2 — this submission does not
+self-certify). Opened a new PR off current `main` rather than reopening #381.
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. Per the 2026-10-01 review's own stated trigger, this
+is now re-review-eligible on the route-change-against-grant half; the persistence half is a
+Control-plane scope question (see `BLOCKER.md`), not something a re-review of this PR's own diff
+can resolve by itself.
 ## 2026-10-02 — FTF-R002 — real, reproducible flaky-test fix (not a new finding against already-certified production code)
 
 Scheduled autonomous relay shift, branch `claude/wizardly-fermat-pu0up5`. Not a fix-and-resubmit
