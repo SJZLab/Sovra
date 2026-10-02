@@ -1,4 +1,12 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T20:45:00Z — **PR #422 (FTF-0307) merged to `main`** (merge commit `74ec07c`,
+  all 41 check runs on the real PR head green, including `gate`, `mergeable_state: clean`, no
+  pending reviews/comments) — merged under the standing "merge on green + L1 doc (PROVISIONAL)"
+  authorization rather than left to pile up, same as prior shifts' own merges of green PROVISIONAL
+  work. `docs/spec-matrix.yaml`'s FTF-0307 entry stays `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN` (Law 2/4 — merging is not certifying; independent Control-plane L2 review
+  still required). `scripts/status.py` unchanged at `99/300` certified. Unsubscribed from PR #422's
+  activity feed now that it is merged.
 Updated: 2026-10-02T20:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-iaofsc`) —
   **found a genuinely unclaimed, undeclined RELAY-OWNED task four consecutive prior "frontier fully
   claimed" shifts had missed: FTF-0307 (Training capability classifier). Implemented and submitted

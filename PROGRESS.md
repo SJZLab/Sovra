@@ -1,4 +1,18 @@
 # PROGRESS — Sovra
+## 2026-10-02T20:45:00Z — PR #422 (FTF-0307) merged to `main`
+
+Subscribed to PR #422's activity after opening it. `check_suite.completed` event arrived; verified
+directly (not assumed from the event alone) that all 41 check runs on the real head SHA
+(`9664604...`) completed `success`, including `gate` (which runs `tests/tasks/test_ftf_0307.py`
+among the full suite), `mergeable_state: clean`, zero pending reviews, zero comments. Merged under
+the standing "merge on green + L1 doc (PROVISIONAL)" authorization (`CLAUDE.md`'s own "Do without
+asking" list) — merge commit `74ec07c`. `docs/spec-matrix.yaml`'s FTF-0307 entry is intentionally
+left at `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (Law 2/4 — a relay merge is not
+a certification; independent Control-plane L2 review is still required before FTF-0307 can move to
+CERTIFIED). `scripts/status.py` unchanged at `99/300` certified / 24 product-true. Unsubscribed from
+PR #422's activity feed now that it is merged — the subscription's own "not finished until merged or
+closed" condition is satisfied.
+
 ## 2026-10-02T20:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-iaofsc` — found and implemented FTF-0307 (Training capability classifier), a genuinely unclaimed task four consecutive prior shifts had missed
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
