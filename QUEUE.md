@@ -1,4 +1,51 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T20:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-iaofsc`) —
+  **found a genuinely unclaimed, undeclined RELAY-OWNED task four consecutive prior "frontier fully
+  claimed" shifts had missed: FTF-0307 (Training capability classifier). Implemented and submitted
+  PROVISIONAL.** STEP 0 clean (`sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`). `BLOCKER.md`'s two
+  live entries (FTF-0902, FTF-1206 persistence) read in full, both untouched, neither retried.
+
+  Rather than trust the prior four shifts' own "no genuinely unclaimed item exists" conclusion
+  (`aulcnj`/`d7wplf`/`u06cpi`/`76e5x6`, all no-op), recomputed the dependency-ready frontier fully
+  from scratch directly against `spec/tasks.json` + `docs/spec-matrix.yaml` (every task whose
+  `certification_state != CERTIFIED` with every one of its own `dependencies` already `CERTIFIED`),
+  rather than only re-checking the same already-known three open PRs and two `BLOCKER.md` entries
+  those shifts each repeated. That walk surfaced three items none of the recent shifts' own narrower
+  checks had named: **FTF-0307** (picked up this shift — see below), **FTF-1002** (Artifact lineage
+  manifest — genuinely dependency-ready too, deferred to a future shift for its own full PEV cycle,
+  not claimed here alongside FTF-0307 in the same shift) and **FTF-04A18** (Candidate-selection UI —
+  almost certainly the same UI-heavy/no-live-backend-surface blocker class PR #295 already
+  established for FTF-0214, but not independently re-verified this shift; flagged, not claimed,
+  for a future shift to confirm before spending a cycle on it).
+
+  **FTF-0307 (Training capability classifier):** implemented
+  `apps/api/app/artifacts/training_capability_classifier.py::classify_training_capability` -- a
+  pure, no-I/O composer over FTF-0207/FTF-0212/FTF-0301 (all CERTIFIED) resolving this task's own
+  acceptance clause into four independently-computed dimensions (access/capability/
+  artifact_availability/role), never letting one gate another (Section 0.12's own orthogonality
+  rule). `tests/tasks/test_ftf_0307.py` (no DB required) proves both the acceptance clause and both
+  negative_acceptance halves, plus two real, reverted, Law-1 fault injections. Full evidence in
+  `docs/spec-matrix.yaml`'s own FTF-0307 entry and `docs/certifications/queue.md`'s matching
+  2026-10-02 entry, including the disclosed scope decision (Section 13's own deeper Axolotl/
+  hardware-profile fields are a separate, later task's job; the alias-to-artifact binding itself
+  belongs to FTF-0308 "Model-to-artifact mapping UI", not yet built, so this module takes it as an
+  explicit caller-supplied parameter rather than inventing a name-based lookup).
+
+  `uv run ruff check .`/`ruff format --check .` clean (360 files); `uv run mypy .` clean (360 source
+  files, zero errors); `scripts/validate_spec.py --strict` clean. Regression swept
+  `test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/`test_ftf_0306.py` (this task's own four
+  dependencies) -- all exit 0, zero regressions. `scripts/product_truth_check.py --fail-on-unwired`:
+  unchanged `25/25`. `scripts/status.py`: unchanged `99/300` certified (Law 2 -- a submission, not a
+  certification). Added this task's own CI gate step to `.github/workflows/ci.yml` in the same
+  commit, learning from the disclosed FTF-0205/FTF-0206 "missing gate-wiring step" finding. Opened a
+  PR from this shift's own designated branch (`claude/wizardly-fermat-iaofsc` -> `main`), submitted
+  PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run
+  are required before certification.
+
+  STEP 4 stop condition (a): FTF-0307 now joins the existing merged-PROVISIONAL backlog awaiting
+  Control-plane L2 certification and the L4 gate. No open owner ask beyond the pre-existing,
+  low-urgency branch-protection ask. Stopping here -- FTF-1002/FTF-04A18 left for a future shift's
+  own full PEV cycle rather than rushed in the same shift.
 Updated: 2026-10-02T13:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-d7wplf`) —
   **frontier re-confirmed fully claimed, byte-identical to the immediately-prior `aulcnj` shift's
   own closing state — no new RELAY-OWNED work, nothing merged or certified since.** Fresh

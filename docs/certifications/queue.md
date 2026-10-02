@@ -21720,3 +21720,58 @@ Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
 `tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
 every open and future PR in this repository (the flake could land on any PR's gate run, not just
 #412's), which is why it was picked up directly rather than left as a comment only.
+
+## 2026-10-02 — FTF-0307 — Training capability classifier
+- **Found newly dependency-ready, previously uncaught:** all four dependencies (FTF-0207, FTF-0212,
+  FTF-0301, FTF-0306) are CERTIFIED, but no prior shift's own "recompute the frontier" sweep had
+  caught this task — the last several shifts' own `docs/TASK_INDEX.md`/`spec-matrix.yaml` recomputes
+  only surfaced FTF-0510. A fresh, from-scratch dependency-graph walk this shift (every task whose
+  `certification_state != CERTIFIED` with every one of its own `dependencies` already `CERTIFIED`)
+  surfaced FTF-0307 (and FTF-1002, deferred to a future shift — see `QUEUE.md`'s matching dated
+  entry) as genuinely unclaimed and undeclined. Confirmed via a fresh `list_pull_requests` sweep and
+  `git ls-remote --heads origin`: no open PR or branch referenced FTF-0307 before this one.
+- **PR:** branch `claude/wizardly-fermat-iaofsc` → `main` (opened this shift).
+- **What was built:** `apps/api/app/artifacts/training_capability_classifier.py::
+  classify_training_capability` — a pure, synchronous, no-I/O composer (this task's own
+  `database_changes` clause) over FTF-0207's `AliasReconciliationResult`, FTF-0212's
+  `ToolCallProbeResult` and FTF-0301's `TrainableArtifact` row. Resolves this task's own acceptance
+  clause ("Classify access, training capability, artifact availability and role independently with
+  dated probe evidence") into four independently-computed dimensions — `access`, `capability`
+  (Section 0.12's own `trainable_open_weight`/`managed_fine_tunable`/`inference_only`/`unknown`
+  enum), `artifact_availability` and `role` (an explicit caller passthrough, never computed here).
+  None of the four gates another (Section 0.12's own orthogonality rule, reapplied here the same way
+  `alias_reconciliation.py` already applied it to its own left join).
+- **Scope, disclosed:** Section 13's own fuller `TrainingCapability` registry schema also names
+  `method_support`/`recommended_precision`/`quantization_support`/GPU-VRAM/`supports_gradient_
+  checkpointing`/`supports_flash_attention`/`zero_egress_compatible` — real Axolotl/hardware facts
+  this task's own four-dependency set carries no signal for; out of scope here (a later, not-yet-
+  dependency-gated task's own job), same disclosed-narrowing precedent FTF-0301/FTF-1001 already
+  established. `TrainingCapability.MANAGED_FINE_TUNABLE` is declared for enum completeness but never
+  returned (no real signal source exists in this dependency chain). Confirmed there is no persisted
+  alias-to-artifact binding anywhere in this repository's schema yet — FTF-0308 ("Model-to-artifact
+  mapping UI") is the real, separate, not-yet-built owner of that binding — so which `TrainableArtifact`
+  corresponds to a given `model_id` is an explicit caller-supplied parameter here, never a name-based
+  lookup this module performs itself.
+- **Test:** `tests/tasks/test_ftf_0307.py` (no DB required — real `TrainableArtifact` ORM instances
+  and real dataclasses; no HTTP/TLS fixture needed since this task is pure/no-I/O, same disclosed
+  precedent FTF-0207/FTF-0306 already established). Covers the acceptance clause's four-dimension-
+  independence requirement directly, plus both negative_acceptance halves ("Inference-only endpoint
+  cannot become trainable by editing name; unknown capability remains blocked").
+- **Real fault injection (Law 1), two vectors, each reverted byte-identical and the suite
+  re-confirmed clean immediately after:** (1) loosened the `ready`-only artifact gate to also accept
+  `registered` — the exact "becomes trainable" negative check genuinely failed for real; (2) loosened
+  the probe-state check to accept any non-null probe outcome (not only real `PROBED`) — the exact
+  "failed probe never classifies as inference_only" negative check genuinely failed for real.
+- **Full verification:** `uv run ruff check .`/`ruff format --check .` clean repo-wide (360 files);
+  `uv run mypy .` clean repo-wide (360 source files, zero errors); `scripts/validate_spec.py --strict`
+  clean. Regression swept `test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/`test_ftf_0306.py`
+  (this task's own four dependencies) — all exit 0, zero regressions.
+  `scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25` (`proving_symbol` left blank
+  — no composing route/UI caller yet, same disclosed "no live caller" precedent FTF-0207/FTF-0301
+  already established; FTF-0308's own future route is the eventual caller). `scripts/status.py`:
+  unchanged `99/300` certified (Law 2 — a submission, not a certification). Added this task's own CI
+  gate step to `.github/workflows/ci.yml` in the same commit as the implementation (learning directly
+  from the disclosed FTF-0205/FTF-0206 "missing gate-wiring step" watchdog finding).
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
+  — independent Control-plane L2 review and a real CI run on the opened PR are required before
+  certification.
