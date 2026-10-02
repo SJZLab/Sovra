@@ -433,6 +433,56 @@ def test_authorize_succeeds_when_both_checks_pass() -> None:
         )
 
 
+def test_authorize_matches_preview_block_across_classification_and_profile_matrix() -> None:
+    # 2026-10-01 L2 finding: narrowing the boundary check inside
+    # `authorize_dataset_source_copy` to only `security_classification ==
+    # "restricted"` left every existing test green -- a confidential source
+    # into a standard project got `preview.blocked=True` from
+    # `build_dataset_source_copy_preview`, yet the narrowed
+    # `authorize_dataset_source_copy` silently allowed it. No single
+    # hand-picked case can pin this; this test walks the full
+    # classification x effective-profile matrix (purpose/connection held
+    # compliant throughout, so only the boundary check is exercised) and
+    # asserts, for every one of the 4 x 3 = 12 combinations, that
+    # `authorize_dataset_source_copy` raises `SecurityBoundaryCrossingError`
+    # exactly when the independently-built preview reports `blocked=True`,
+    # and does not raise when it does not.
+    from workers.data.dataset_source_security_boundary_preview_audit_evidence import (
+        SUPPORTED_PROJECT_SECURITY_PROFILES,
+        SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS,
+    )
+
+    for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+        for profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+            preview = _preview(
+                security_classification=classification,
+                project_security_profile=profile,
+                organization_default_security_profile=profile,
+            )
+            raised: type[BaseException] | None = None
+            try:
+                _authorize(
+                    security_classification=classification,
+                    project_security_profile=profile,
+                    organization_default_security_profile=profile,
+                )
+            except SecurityBoundaryCrossingError as exc:
+                raised = type(exc)
+            case_id = f"classification={classification!r} profile={profile!r}"
+            if preview.blocked:
+                check(
+                    "FTF-0500D",
+                    f"preview.blocked=True must make authorize_* raise ({case_id})",
+                    raised is SecurityBoundaryCrossingError,
+                )
+            else:
+                check(
+                    "FTF-0500D",
+                    f"preview.blocked=False must leave authorize_* silent ({case_id})",
+                    raised is None,
+                )
+
+
 def test_authorize_does_not_read_a_previously_built_preview() -> None:
     # This task's own negative_acceptance in full: "UI warning alone cannot
     # allow forbidden egress; backend checks grant and destination again at

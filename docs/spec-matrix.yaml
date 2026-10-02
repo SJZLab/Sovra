@@ -5867,6 +5867,32 @@ FTF-0500D:
     CI gate step ("FTF-0500D negative-test proof") added to `.github/workflows/ci.yml`
     immediately after the FTF-04A20 step. **Not self-certified (Law 4)** -- independent
     Control-plane L2 review is required before certification.
+
+    **2026-10-02 L2 fix-and-resubmit** (finding: "Narrowing the import-time gate to
+    `security_classification == 'restricted'` leaves the suite green: a confidential source into
+    a standard project gets `preview.blocked=True`, yet `authorize_dataset_source_copy` allows
+    it. The shipped code is correct; the negative_acceptance is unpinned."). Added
+    `test_authorize_matches_preview_block_across_classification_and_profile_matrix` to
+    `tests/tasks/test_ftf_0500d.py`: walks the full 4x3=12 `security_classification` x
+    `project_security_profile` matrix (purpose/connection held compliant throughout) and asserts
+    `authorize_dataset_source_copy` raises `SecurityBoundaryCrossingError` exactly when the
+    independently-built `DatasetSourceCopyPreview.blocked` is `True`, and stays silent exactly
+    when it is `False` -- no single hand-picked case can pin this the way the finding describes.
+    Real fault injection (Law 1), performed directly by this session against the exact finding
+    text: narrowed `authorize_dataset_source_copy`'s own boundary check to `if
+    security_classification == "restricted" and would_cross_security_boundary(...)` -- the new
+    matrix test genuinely failed on `classification='confidential' profile='standard'` (the
+    finding's own named case), while every pre-existing test in the suite stayed green, confirming
+    this is the same undetected gap the review found; reverted the module file byte-identical
+    (md5sum `2113594afa576abbd248d9e147fd8745` before and after, unchanged from the prior entry
+    above) and re-ran clean. `uv run ruff check .`/`ruff format --check .` clean (356 files); `uv
+    run mypy tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict`
+    clean. `product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `scripts/status.py`:
+    unchanged `99/300` certified, 24 product-true (Law 2 -- a resubmission is not a
+    certification). Test-only change (no production module edit survives this PR); regression
+    swept `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_0402.py` -- zero interference. Not
+    self-certified (Law 4) -- independent Control-plane L2 re-review and a real CI run on the
+    opened PR are required before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
