@@ -1,4 +1,33 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T11:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-aulcnj`) —
+  **cleared the entire RELAY-OWNED fix-and-resubmit backlog: rebased and merged 5 PRs
+  (#415/#410/#412/#411/#407), resolving a multi-shift merge-conflict pileup; closed one superseded
+  duplicate tracking PR (#416).** Full narrative in `PROGRESS.md`'s matching dated entry (includes
+  a concurrent-session push collision on #411's own branch, handled by merging rather than
+  force-overwriting, plus a self-caught header-loss bug in one conflict resolution, corrected before
+  pushing).
+
+  **Current real state of "## Active" item 3 (RELAY-OWNED fix-and-resubmit backlog) — now fully
+  cleared from the relay's side:** FTF-H007/FTF-04A06/FTF-0601 (PR #403, merged, prior shift).
+  FTF-0500C (PR #404, merged, prior shift). FTF-1807 (PR #408, merged, prior shift). **FTF-0500D —
+  PR #410, merged this shift.** **FTF-0500B — PR #407, merged this shift.** **FTF-1206 — PARTIALLY
+  fixed, PR #412 merged this shift** (route-change-against-grant half only; the persistence half
+  stays live in `BLOCKER.md` pending a Control-plane scope decision — not something a relay merge
+  resolves). **FTF-0510 — PR #411, merged this shift** (new item, not from the original 2026-10-01
+  review list — a dependency-ready task picked up and implemented by a prior shift, now unstuck from
+  the same merge-conflict pileup as the others). Also merged **PR #415** (FTF-R002, a latent flaky-
+  test repair unrelated to the L2 backlog, found by a prior shift while triaging #412's own CI red).
+
+  All five merges are `PROVISIONAL`/`L1-PROVEN` on `main` (Law 2 — not self-certified, Law 4).
+  `scripts/status.py` unchanged at `99/300` certified / 24 product-true (merging PROVISIONAL work
+  is not certifying it). Recomputed the dependency-ready frontier fresh against final `main`: no
+  new item became genuinely dependency-ready (FTF-0515, next on the FTF-1703 path after FTF-0510,
+  needs FTF-0510 **CERTIFIED**, not merely merged-PROVISIONAL — only Control-plane L2 review moves
+  that bar). FTF-0902 (`BLOCKER.md`, three fix attempts already falsified) and FTF-1703 (blocked on
+  the FTF-R006 chain) remain correctly deferred, untouched, no fourth retry. No genuinely unclaimed,
+  undeclined RELAY-OWNED item exists — reporting this shift's backlog-clearing work complete and
+  awaiting Control-plane L2 certification + the L4 gate on all five merged PRs, per STEP 4(a). No
+  open owner ask beyond the pre-existing, low-urgency branch-protection ask.
 Updated: 2026-10-02T05:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-pu0up5`) —
   **frontier re-confirmed fully claimed (same conclusion the immediately-prior q3cg3f shift
   reached); found and fixed a real, reproducible flaky test instead (FTF-R002), not a new
@@ -8368,49 +8397,50 @@ this same resolution (doc-only, redundant once this lands).
    CERTIFIED. Synthetic, labelled reference data is explicitly allowed (§55), so no customer
    data ask is needed.
 
-3. **RELAY-OWNED. Do not skip these as "PROVISIONAL, Control plane's to certify".** Eight
-   items were reviewed and returned NOT CERTIFIED. Their `certification_state` stays PROVISIONAL
-   only because the code is already merged. **FTF-H007, FTF-04A06, FTF-0601: fixed, PR #403
-   merged.** **FTF-0500C: fix PR opened this shift** (see `docs/certifications/queue.md`'s
-   matching 2026-10-01 entry for full evidence — the read-only-transaction-mode test now goes
-   through the module itself instead of re-implementing its SQL, and a later page that drops the
-   snapshot-version header after one was seen is now caught). **FTF-0500B: fix PR #407 opened**
-   (version-id-sensitive manifest hash + versioning-disabled refusal). **FTF-1807: fix PR #408
-   opened this shift** (operator-guidance semantics check replaces the old token-only check — see
-   `docs/certifications/queue.md`'s matching 2026-10-01 entry). **FTF-0500D: fix PR #410 opened**
-   (classification × profile matrix test). **FTF-1206: PARTIALLY fixed, 2026-10-02** — the
-   route-change-against-grant half of its DoD is done (fix PR opened this shift; see
-   `docs/certifications/queue.md`'s matching 2026-10-02 entry); the persistence half is a
+3. **RELAY-OWNED backlog — CLEARED 2026-10-02 (all fix PRs merged to `main` as PROVISIONAL; none
+   self-certified, Law 4; all await Control-plane L2 re-review, Law 4).** Eight items were reviewed
+   and returned NOT CERTIFIED. Their `certification_state` stays PROVISIONAL only because the code
+   is already merged. **FTF-H007, FTF-04A06, FTF-0601: fixed, PR #403 merged.** **FTF-0500C: fixed,
+   PR #404 merged** (see `docs/certifications/queue.md`'s matching 2026-10-01 entry for full
+   evidence — the read-only-transaction-mode test now goes through the module itself instead of
+   re-implementing its SQL, and a later page that drops the snapshot-version header after one was
+   seen is now caught). **FTF-0500B: fixed, PR #407 merged 2026-10-02** (version-id-sensitive
+   manifest hash + versioning-disabled refusal). **FTF-1807: fixed, PR #408 merged** (operator-
+   guidance semantics check replaces the old token-only check). **FTF-0500D: fixed, PR #410 merged
+   2026-10-02** (classification × profile matrix test). **FTF-1206: PARTIALLY fixed, PR #412 merged
+   2026-10-02** — the route-change-against-grant half of its DoD is done; the persistence half is a
    Control-plane scope decision with no existing task ID to claim, formalized as a live
    `BLOCKER.md` entry rather than improvised — do not re-attempt DoD item 1 without that decision.
-   Open each fix as a new `[relay] <ID>: fix L2
-   findings` PR and append it to `docs/certifications/queue.md` for re-review.
-3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
-   `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
+   Nothing left for the relay to open here; each merged PR is re-reviewed by Control plane.
+3. **Fix-and-resubmit, from the 2026-10-01 L2 review — ALL RELAY-SIDE WORK DONE** (full findings
+   and DoDs in `docs/certifications/queue.md`, 2026-10-01 entry):
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
      `core.hooksPath=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`). Make
      risky repo-config keys and symlinked or hooksPath hooks blocking findings. Add tests for each.
-     FTF-04A06 was decertified for this. **DONE — fix PR opened this shift, see above.**
+     FTF-04A06 was decertified for this. **DONE — PR #403 merged.**
    - **FTF-0601:** add validation on the PATCH path; refuse to lock with an empty reviewer.
-     **DONE — fix PR opened this shift, see above.**
+     **DONE — PR #403 merged.**
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
-     on a later page blocks. **DONE — fix PR opened this shift, see above.**
-   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets. **DONE — fix PR
-     #407 opened, see above.**
-   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`. **DONE — fix PR
-     #410 opened, see above.**
-   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens. **DONE — fix PR
-     #408 opened, see above.**
+     on a later page blocks. **DONE — PR #404 merged.**
+   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets. **DONE — PR #407
+     merged 2026-10-02.**
+   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`. **DONE — PR #410
+     merged 2026-10-02.**
+   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens. **DONE — PR #408
+     merged.**
    - **FTF-1206:** needs persistence. Claim a separate migration prerequisite first, or mark
-     BLOCKED_DEPENDENCY. **PARTIALLY DONE, 2026-10-02 — route-change-against-grant half fixed
-     (fix PR opened this shift); persistence half escalated to `BLOCKER.md` (no task ID in the
-     300-task index owns this migration — a Control-plane scope decision).**
-   These items stay PROVISIONAL. The fix PR for each one is re-reviewed by Control plane.
+     BLOCKED_DEPENDENCY. **PARTIALLY DONE — PR #412 merged 2026-10-02** (route-change-against-grant
+     half fixed); persistence half stays escalated to `BLOCKER.md` (no task ID in the 300-task index
+     owns this migration — a Control-plane scope decision; relay has nothing further to do here
+     until that decision lands).
+   These items stay PROVISIONAL. The merged PR for each one is re-reviewed by Control plane.
 4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
    `docs/spec-matrix.yaml`. **FTF-0510 (Tokenization analysis, next on the FTF-1703 path):
-   implemented and submitted PROVISIONAL this shift** (branch `claude/wizardly-fermat-wkzp3g`,
-   see this file's own top dated entry and `docs/certifications/queue.md`'s matching 2026-10-01
-   entry for full evidence, including the new `tokenizers`/`jinja2` runtime-dep disclosure).
+   implemented, submitted PROVISIONAL, and merged via PR #411 (2026-10-02)** (see this file's own
+   top dated entry and `docs/certifications/queue.md`'s matching 2026-10-01 entry for full evidence,
+   including the new `tokenizers`/`jinja2` runtime-dep disclosure). **Does not yet unblock FTF-0515**
+   — that chain's own "dependency-ready" bar needs FTF-0510 `certification_state: CERTIFIED`, not
+   merely merged-PROVISIONAL; recompute again once Control plane certifies it.
 
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
