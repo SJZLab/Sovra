@@ -26776,3 +26776,6 @@ reviewed). Stopping here — not picking a second task this shift. No open owner
 "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-protection ask).
 `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-plane design
 question, not a further guess).
+
+## 2026-10-02 certifier run (session_01NDWiwGBE9K2tnzGFYeL3WL)
+Certified FTF-H007 + FTF-04A06 (PR #403); status 101/300. Remaining resubmitted items not yet reviewed (see docs/certifications/queue.md).

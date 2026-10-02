@@ -1,4 +1,5 @@
 # QUEUE — Sovra (Model Factory)
+**2026-10-02 certifier update (session_01NDWiwGBE9K2tnzGFYeL3WL):** FTF-H007 and FTF-04A06 L2-CERTIFIED (PR #403, evidence d8e5c9e) — status now `101/300` certified. Still PROVISIONAL / not yet re-reviewed: FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-0510, FTF-1206 (partial).
 Updated: 2026-10-02T13:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-d7wplf`) —
   **frontier re-confirmed fully claimed, byte-identical to the immediately-prior `aulcnj` shift's
   own closing state — no new RELAY-OWNED work, nothing merged or certified since.** Fresh

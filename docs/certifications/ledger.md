@@ -9750,3 +9750,17 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-H007 + FTF-04A06 — re-certified after 2026-10-01 fix-and-resubmit
+- Criterion IDs: FTF-H007, FTF-04A06 (FTF-04A06 had been DECERTIFIED to PROVISIONAL on 2026-10-01)
+- PR: https://github.com/SJZLab/Sovra/pull/403 (already merged); fix commit `272ae85`, merge commit `d8e5c9ee79f6888c59745600d318498bbce45753`
+- Validated-by: control-plane session https://claude.ai/code/session_01NDWiwGBE9K2tnzGFYeL3WL (session_01NDWiwGBE9K2tnzGFYeL3WL). Independent: no commit on the PR carries this session ID (checked recent history).
+- Date: 2026-10-02
+- CI: PR #403 run 36853046067 — `gate` job 110338969435 success, all 41 check runs success.
+- Local: `tests/tasks/test_ftf_h007.py` and `test_ftf_04a06.py` "all checks passed"; validate_spec --strict clean; product_truth 25/25.
+- Own fault injections (Law 1), each reverted byte-identical (git status clean):
+  - (A) removed `-c core.fsmonitor=false -c core.hooksPath=/dev/null` from `_run_git`: H007 and 04A06 each fail ("core.fsmonitor command was never actually executed"). Note: first attempt (fsmonitor=true) was too weak to execute a marker and stayed green — not counted.
+  - (B) made `_scan_dangerous_git_config` return (): 4 H007 failures (dangerous-config key not blocking, core.hooksPath not reported).
+- DoD of the 2026-10-01 review checked against test names/code: (1) hardened `_run_git` + env; (2) dangerous config keys block; (3) symlinked hook active (os.stat follow); (4) fsmonitor marker, symlinked-hook, hooksPath and aliased-import cases present; 04A06 fsmonitor-no-tree-edit case present.
+- Not re-run by me: FTF-0601 (needs real Postgres; stays PROVISIONAL, not reviewed this run).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run. status: 101/300.

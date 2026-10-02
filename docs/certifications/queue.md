@@ -21720,3 +21720,7 @@ Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
 `tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
 every open and future PR in this repository (the flake could land on any PR's gate run, not just
 #412's), which is why it was picked up directly rather than left as a comment only.
+
+## 2026-10-02 — Control-plane L2 re-review (session session_01NDWiwGBE9K2tnzGFYeL3WL)
+- **CERTIFIED:** FTF-H007, FTF-04A06 (PR #403). See ledger.md.
+- **NOT REVIEWED this run (stay PROVISIONAL, unchanged by this run):** FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807, FTF-0510, FTF-1206 (partial fix only per its own entry), plus FTF-R002 note (no state change). Remaining for a next certifier run.

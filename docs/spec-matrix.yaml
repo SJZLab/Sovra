@@ -3296,10 +3296,10 @@ FTF-04A05:
   proving_test: tests/tasks/test_ftf_04a05.py, tests/tasks/test_ftf_04a05_routes.py,
     tests/integration/test_ftf_04a05_github_source_snapshot.py
 FTF-04A06:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local repository connector with root allowlist/path protections
-  evidence_hash: ''
+  evidence_hash: d8e5c9ee79f6888c59745600d318498bbce45753
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -3447,7 +3447,7 @@ FTF-04A06:
     `test_ftf_h006.py`/`test_ftf_h007.py`, zero regressions. No `ci.yml` change needed -- the
     existing `gate`-job step already runs this file. **Not self-certified (Law 4)** -- awaiting
     independent Control-plane L2 re-review and a real CI run on the opened PR before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
 FTF-04A07:
@@ -9702,10 +9702,10 @@ FTF-H006:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h006.py
 FTF-H007:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Untrusted source acquisition and complete immutable analysis
-  evidence_hash: ''
+  evidence_hash: d8e5c9ee79f6888c59745600d318498bbce45753
   implementation_state: IMPLEMENTED
   notes: >-
     kind=audit_hardening; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q25; deps=FTF-04A05,
@@ -9813,7 +9813,7 @@ FTF-H007:
     `test_ftf_h006.py`, zero regressions. No `ci.yml` change needed -- the existing `gate`-job step
     already runs this file. **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
     re-review and a real CI run on the opened PR before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h007.py
 FTF-H008:
