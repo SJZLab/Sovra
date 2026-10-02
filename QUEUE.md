@@ -1,4 +1,12 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T13:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-d7wplf`) —
+  **frontier re-confirmed fully claimed, byte-identical to the immediately-prior `aulcnj` shift's
+  own closing state — no new RELAY-OWNED work, nothing merged or certified since.** Fresh
+  `list_pull_requests` found only the same three open PRs (#402 FTF-0902 stuck/not retried, #401
+  governance/owner-merge-only, #295 FTF-0214 declared blocked); `scripts/status.py` unchanged at
+  `99/300` certified / 24 product-true. Both live `BLOCKER.md` entries (FTF-0902, FTF-1206
+  persistence) untouched — Control-plane decisions, not retried. Full narrative in `PROGRESS.md`'s
+  matching dated entry. No open owner ask beyond the pre-existing, low-urgency branch-protection ask.
 Updated: 2026-10-02T11:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-aulcnj`) —
   **cleared the entire RELAY-OWNED fix-and-resubmit backlog: rebased and merged 5 PRs
   (#415/#410/#412/#411/#407), resolving a multi-shift merge-conflict pileup; closed one superseded

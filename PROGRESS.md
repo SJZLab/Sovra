@@ -1,4 +1,55 @@
 # PROGRESS — Sovra
+## 2026-10-02T13:05:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-d7wplf` — frontier re-confirmed fully claimed, no new RELAY-OWNED work; nothing done this shift
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-d7wplf` found at the same commit as `origin/main`
+(`05fde88`, PR #417's merge, the immediately-prior `aulcnj` shift's own backlog-clearing work) —
+confirmed via `git log`/`git fetch origin` before relying on it; no prior unmerged work of its own.
+`BLOCKER.md` read in full: two live entries unchanged from the prior shift — **FTF-0902**
+(2026-10-01T10:30Z, three real fix attempts already falsified by real CI, a Control-plane design
+question, not retried a 4th time per STEP 4(c)) and **FTF-1206** (2026-10-02, the persistence-half
+scope question, a Control-plane decision, not improvised). STEP 0.2: no `cognee-cli` binary on
+this sandbox (`command not found`) — text-search fallback declared, same as every prior shift.
+
+STEP 1: re-read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh rather than trusted
+from this session's own prior turns (all three exceed the single-read size limit — targeted
+offsets/greps used, confirming both the newest-first narrative sections and docs/certifications/
+queue.md's own append-only tail). A fresh `list_pull_requests` sweep (not assumed from any prior
+shift's narrative) found only three open PRs, matching the immediately-prior shift's own closing
+state exactly: **#402** (FTF-0902's own stuck investigation branch — untouched, not a 4th retry),
+**#401** (`[GOVERNANCE]` PR, explicitly marked owner-merge-only, not relay's to act on), and **#295**
+(FTF-0214, already declared `BLOCKED_DEPENDENCY`, no new information). No new PR from any
+Control-plane certify/review branch is open — the several stale `control-plane/certify-ftf-*` and
+`relay/*` remote branches visible via `git branch -a` have no corresponding open PR and predate
+this session's own read. `scripts/status.py` reads `99/300 certified · 24 product-true` —
+byte-identical to the `aulcnj` shift's own closing figure, confirming nothing has merged or been
+certified since.
+
+STEP 2 (PEV): **P** — formed the hypothesis that the `aulcnj` shift's own STEP 4(a) conclusion
+("no genuinely unclaimed, undeclined RELAY-OWNED item exists; all backlog items merged-PROVISIONAL,
+awaiting Control-plane L2 certification") still holds, rather than assuming it stale. Recomputed the
+dependency-ready frontier's governing facts directly instead of trusting the summary: FTF-0902 stays
+`BLOCKED` (live `BLOCKER.md` entry, three falsified attempts, no new evidence or access this shift
+has that the prior three didn't); FTF-1703 stays deferred (its own FTF-R006→FTF-0516→FTF-0515→
+FTF-0510 chain still needs FTF-0510 `certification_state: CERTIFIED`, and `docs/spec-matrix.yaml`'s
+FTF-0510 entry still reads `PROVISIONAL`/`L1-PROVEN` — merged via PR #411, not yet reviewed);
+FTF-1206's persistence half stays blocked on the live Control-plane scope question (unchanged,
+3 route options already on the table, none decided). **E/V** — no code, test, or tracking-file
+change was warranted: there is nothing dependency-ready, unclaimed, and undeclined to execute
+against, and both live `BLOCKER.md` items are explicitly Control-plane decisions this shift has no
+new standing to resolve. Did not retry either blocked item a further time.
+
+STEP 3: this entry is the only tracking-file update this shift — `QUEUE.md`'s "## Active" section
+and `docs/certifications/queue.md` need no new append (no new finding, no new submission, no new
+certification to log). `BLOCKER.md`'s two live entries left untouched, neither retried.
+
+STEP 4: stop condition (a) applies — `scripts/status.py` unchanged at `99/300` certified / 24
+product-true; every merged-PROVISIONAL item from the backlog-clearing shift (FTF-H007/FTF-04A06/
+FTF-0601/FTF-0500C/FTF-0500B/FTF-0500D/FTF-1807/FTF-1206-partial/FTF-0510/FTF-R002) still awaits
+Control-plane L2 certification and the L4 gate; no genuinely unclaimed RELAY-OWNED item exists. No
+new blocker, no usage-limit stop, no new ask-first item (`QUEUE.md`'s own "Owner actions — current"
+unchanged: only the pre-existing, low-urgency branch-protection ask). Stopping here.
+
 ## 2026-10-02T11:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-aulcnj` — drove the entire RELAY-OWNED fix-and-resubmit backlog (5 PRs) to green and merged, resolving a multi-shift pileup
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no mismatch. Branch found
