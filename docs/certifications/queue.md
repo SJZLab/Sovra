@@ -21431,6 +21431,86 @@ them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migr
   composition is a later, separately dependency-gated task.
 - **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
   awaiting Control plane L2 review per Law 4.
+
+## 2026-10-01 — FTF-0500D — fix-and-resubmit for the 2026-10-01 L2 findings
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-1qb4az`. STEP 0: `sha256sum
+CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: read `BLOCKER.md` (one live entry, FTF-0902,
+three real fix attempts already falsified this shift's own prior day — correctly not retried a
+4th time), `PROGRESS.md`/`QUEUE.md` (both exceed the single-read size limit — read via targeted
+offsets/grep, not assumed) and this file fresh. `QUEUE.md`'s own "Active" item 3 named two
+remaining untouched fix-and-resubmit items: FTF-0500D and FTF-1206 (FTF-1206 needs a persisted
+org-policy migration first, a separate larger prerequisite per that file's own existing note). A
+fresh `list_pull_requests` sweep (not trusted from either file's own narrative alone) confirmed no
+PR was already open for FTF-0500D. Picked **FTF-0500D** — the one genuinely unblocked item left.
+
+Finding being fixed (this file's own 2026-10-01 entry, reproduced above): "Narrowing the
+import-time gate to `security_classification == 'restricted'` leaves the suite green: a
+confidential source into a standard project gets `preview.blocked=True`, yet
+`authorize_dataset_source_copy` allows it. The shipped code is correct; the negative_acceptance is
+unpinned." DoD: "a test across the classification x effective-profile matrix asserting that
+`authorize_*` raises whenever the preview blocks."
+
+**P:** read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+`tests/tasks/test_ftf_0500d.py` directly. Confirmed the finding's own framing is accurate: the
+shipped `authorize_dataset_source_copy` already calls the real, generic
+`would_cross_security_boundary(effective_profile, security_classification)` rank comparison, not a
+literal `security_classification == "restricted"` check — the gap is purely in test coverage.
+Every existing boundary-crossing test (`test_authorize_raises_on_security_boundary_crossing`,
+`test_authorize_raises_on_both_failures_simultaneously`) paired `restricted` with `standard` only
+— the one classification a hypothetical narrowed check would still happen to catch, so the
+original suite could not have noticed a regression to that narrowed form.
+
+**E:** added `_classification_profile_matrix_violations` (a reusable helper iterating every
+`security_classification` x `security_profile` pairing — 4 x 4 = 16 combinations, org default ==
+project profile so the effective profile is just that profile, purpose/connection held compliant
+so only the boundary dimension varies) and
+`test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`, which asserts
+the helper finds zero violations against the real module. Added
+`test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`, which reproduces
+the finding directly against the real on-disk module: temporarily rewrites the exact
+`if would_cross_security_boundary(effective_profile, security_classification):` line in
+`authorize_dataset_source_copy` to the literal `if security_classification == "restricted":` the
+review named, runs the identical matrix check as a fresh, isolated `subprocess` (deliberately
+avoiding any in-process module reload, so the mutation never touches this test process's own
+already-imported functions/exception-class identities — a real risk ruled out after
+tracing CPython's `importlib.reload` semantics: it mutates a module's existing `__dict__` in place
+rather than creating a new one, so a reload-based approach would silently desynchronize every
+other test's `except`-clause exception-class identity from the one `authorize_dataset_source_copy`
+actually raises after a second reload, an entire-suite-crashing risk this subprocess design avoids
+by construction), confirms the original restricted+standard case alone would stay blind under the
+narrowed check, confirms the new matrix check genuinely catches it (the `confidential:standard`
+pairing — a confidential source silently authorized into a standard project despite the preview
+blocking it), then restores the module file byte-identical and re-confirms the matrix check is
+clean again.
+
+**V:** `python3 tests/tasks/test_ftf_0500d.py` — 27 test functions (was 25), "all checks passed".
+`uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+tests/tasks/test_ftf_0500d.py` clean. `git fetch --unshallow` (this sandbox clones shallow by
+default) then `python3 scripts/validate_spec.py --strict` clean. `python3
+scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `python3 scripts/status.py`:
+unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+Regression swept `test_ftf_0402.py` (FTF-0500D's own dependency) — zero regressions.
+`test_ftf_0500.py` could not be run in this sandbox (`apps/api`'s own separate
+`pyproject.toml`/dependency set — `sqlalchemy` not installed — unrelated to this task's pure,
+no-I/O `workers/data` module; disclosed, pre-existing environment gap, not caused by this change,
+and no test file importing this module besides `test_ftf_0500d.py` itself, confirmed via a
+repo-wide grep). No production code changed — the module file is byte-identical before and after
+this fix, confirmed by the fault-injection test's own md5sum assertion (`2113594afa576abbd248d9e147fd8745`
+before and after). No `.github/workflows/ci.yml` change needed — the existing "FTF-0500D
+negative-test proof" step already runs this test file in full. No spec-matrix entry touched
+besides FTF-0500D's own.
+
+`docs/spec-matrix.yaml`'s FTF-0500D entry updated with the full fix-and-resubmit note above;
+`certification_state` stays `PROVISIONAL` and `proof_state` stays `L1-PROVEN` (Law 2 — this
+submission does not self-certify).
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review
+itself named ("Do not re-review them until a new relay fix PR for that ID is appended below this
+line") for FTF-0500D specifically — not for FTF-1206, which remains exactly as that review left
+it, unchanged, still needing its own persisted org-policy migration prerequisite first.
+
 ## 2026-10-02 — FTF-R002 — real, reproducible flaky-test fix (not a new finding against already-certified production code)
 
 Scheduled autonomous relay shift, branch `claude/wizardly-fermat-pu0up5`. Not a fix-and-resubmit
