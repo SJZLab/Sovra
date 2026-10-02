@@ -251,6 +251,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a17.py
+      - name: FTF-04A18 negative-test proof (Candidate-selection role boundary + pure module, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a18.py
       - name: FTF-1503 negative-test proof (CSRF suite, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1503.py
       - name: FTF-0511 negative-test proof (Exact duplicate detector, no DB required)
@@ -2089,3 +2091,53 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real EvaluationSuite evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0601_evaluation_suite.py
+
+  candidate-selection-integration:
+    # FTF-04A18: real Postgres candidate-selection + persisted-audit
+    # evidence (Section 6.8C/6.24/7A.5/45/65-67/77/81) -- one real
+    # organization with a connection, a real superseded snapshot and its
+    # real replacement (supersedes_snapshot_id genuinely set, FTF-04A07's
+    # own real field), one candidate under each, a second organization
+    # for the cross-tenant IDOR case, a real uvicorn server proving the
+    # organization_admin-only RBAC boundary, the cross-tenant IDOR case, a
+    # real stale-snapshot refusal (409) with zero AuditEvent rows left
+    # behind, a missing-candidate refusal (404), a real successful
+    # selection (201) cross-checked against a fresh Postgres read of the
+    # real AuditEvent row it wrote (never only the response body), and a
+    # real grant-surface proof that sovra_app cannot UPDATE
+    # discovered_agent_candidates.discovery_status directly -- confirming
+    # this task's own "no new mutable column, audit row is the real
+    # persistence" design is a real database guarantee, not merely an
+    # omitted route. No OpenBao needed -- this resource carries no
+    # credential. Same real `services: postgres` container pattern as
+    # discovered-agent-candidate-integration (this repo's interactive dev
+    # sandbox has no container-registry egress for a Docker Postgres
+    # image; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a18
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a18"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a18
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real candidate-selection + persisted-audit evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py

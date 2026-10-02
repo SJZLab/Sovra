@@ -4928,16 +4928,122 @@ FTF-04A17:
   proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: "Candidate-selection UI \u2014 no auto-selection"
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A12,
-    FTF-04A13, FTF-04A14, FTF-04A15, FTF-04A16, FTF-04A17
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A12, FTF-04A13, FTF-04A14, FTF-04A15, FTF-04A16, FTF-04A17 (all CERTIFIED, confirmed
+    directly in this file before relying on them).
+
+    Scope decision (resolved without an owner ask, not improvised -- the prior shift's own
+    "almost certainly the same FTF-0214/no-live-backend-surface blocker class" flag was
+    independently re-verified and found NOT to apply): FTF-0214 was blocked because the frozen
+    `02-interface.yaml` contract *explicitly excludes* the catalog/probe route its acceptance
+    needs -- no task owns adding it. This task is different: FTF-04A17's own already-CERTIFIED
+    `/candidates` collection route is a real, live GET surface this task's UI consumes directly,
+    and this task's own `database_changes` clause ("No independent schema change. Consume frozen
+    contract") is genuinely satisfiable, not merely asserted -- `discovered_agent_candidates`
+    itself is immutable by construction (its own migration, 0014_discovered_agent_candidates.py,
+    grants sovra_app SELECT/INSERT only, never UPDATE -- confirmed directly via `\\dp` against a
+    real local Postgres before writing any code, not assumed from the docstring alone), so this
+    task's own real "persisted audit" reading of its acceptance clause ("...requires explicit
+    selected ID with persisted audit") is FTF-0104's own already-CERTIFIED, already-migrated
+    `write_audit_event`/`audit_events` (grants sovra_app INSERT, no migration needed) -- not a
+    new mutable "current selection" column, which the task's own contract forbids and the real
+    database grant makes structurally impossible from this process regardless. This is the
+    default-resolution-rule path: the architecture (Section 6.24's own generic append-only audit
+    trail, already reused by every mutating task in this chain) already fixes what "persisted"
+    means here once the immutability constraint is read literally, so this is not a fresh
+    Control-plane scope question like FTF-1206's -- it is this task's own correct reading of an
+    existing frozen contract.
+
+    Path refined from the task packet's own frontend-only files list
+    (apps/web/components/target-application/candidate_selection_ui_no_auto_selection.tsx +
+    apps/web/tests/ftf_04a18.spec.ts) to also add two real backend files -- the same "packet
+    files is an initial owner-path suggestion, not a cap on what the acceptance clause needs"
+    precedent FTF-04A04's own real github_branch_ref_resolver.py/_crud.py/_routes.py triad
+    already established for an identically-shaped "packet names only a .tsx, but the clause
+    needs a real backend write" task (confirmed via that task's own CERTIFIED spec-matrix notes
+    before relying on the precedent, including its own prior-rejection history for claiming
+    "persist" without a genuine durable write -- re-checked that this task's own persistence
+    claim is likewise genuine, not merely asserted, per the grant-surface proof below):
+    apps/api/app/target_connectors/discovered_agent_candidate_selection.py (pure selection logic:
+    `select_discovered_agent_candidate`) and
+    apps/api/app/target_connectors/discovered_agent_candidate_selection_routes.py (the real
+    POST .../candidates/{candidate_id}/select route, wired into app/main.py as the 20th router
+    in that chain).
+
+    `select_discovered_agent_candidate` reuses FTF-04A07's own CERTIFIED
+    `get_target_source_snapshot` and FTF-04A17's own CERTIFIED `get_discovered_agent_candidate`
+    directly (reuse-first, Section 77.1) to prove the (connection_id, snapshot_id, candidate_id)
+    chain is real and in the caller's own organization before anything else runs -- never
+    re-derived. negative_acceptance half 1 ("Highest score/first result cannot be preselected")
+    is met structurally: `candidate_id` is always a caller-supplied, explicit path argument; no
+    code path in this module or the UI component it backs reads `confidence_score` at all, let
+    alone sorts/filters by it. negative_acceptance half 2 ("stale candidate from prior snapshot
+    is rejected") is `StaleSnapshotCandidateError`, raised (HTTP 409) when a real, *other*
+    snapshot of the same connection already names the requested snapshot_id as the one it
+    supersedes (`target_source_snapshots.supersedes_snapshot_id`, FTF-04A07's own real field,
+    read literally) -- checked against the real database every time, never a client-supplied
+    flag. Acceptance clause 1 is met by writing one real `AuditEvent` row
+    (action=`discovered_agent_candidate.selected`) in the same transaction as the checks above,
+    identical to every prior task's own write-audit-in-the-same-transaction discipline; the
+    response's own `selected_at` is the real audit row's own `created_at`, read back after the
+    actual write, never computed before it.
+
+    apps/web/components/target-application/candidate_selection_ui_no_auto_selection.tsx (UI):
+    renders candidates in the exact backend-returned order (never re-sorted by confidence_score),
+    no option pre-checked/default-selected on load, `handleSelect` always takes an explicit
+    candidateId from a real click.
+
+    Tests: tests/tasks/test_ftf_04a18.py (no DB required -- role-boundary 401/403/pass-through
+    against a real uvicorn server with a MagicMock session_factory proving the role gate denies
+    before any session is opened, same precedent test_ftf_04a04_routes.py already established;
+    plus pure checks on StaleSnapshotCandidateError's real ValueError-subclass binding,
+    CandidateSelectionRecord's frozen-dataclass immutability, and the exact
+    CANDIDATE_SELECTED_ACTION literal the integration test's own audit lookup depends on).
+    tests/integration/test_ftf_04a18_candidate_selection.py (real local PostgreSQL 16: one real
+    organization with a connection, a real superseded snapshot and its real replacement
+    (supersedes_snapshot_id genuinely set), one candidate under each, a second organization for
+    the cross-tenant IDOR case; proves unauthenticated 401, evaluator 403, cross-tenant 404, the
+    real stale-snapshot 409 with zero AuditEvent rows left behind by the refused attempt, a
+    missing-candidate 404, a real successful selection (201) whose response body is cross-checked
+    against a fresh Postgres read of the real AuditEvent row -- organization_id/actor_id/
+    resource_type/resource_id/created_at and details_json's own snapshot/connection references
+    all matching the real request, never only the response body -- and a real grant-surface proof
+    that sovra_app genuinely cannot UPDATE discovered_agent_candidates.discovery_status directly,
+    confirming the "no new mutable column" design is a real database guarantee, not merely an
+    omitted route). apps/web/tests/ftf_04a18.spec.ts (Vitest + React Testing Library + jsdom, real
+    `fetch` call assertions: URL/method/order-preservation/no-pre-selection, a real successful
+    select flow, and the real 409 stale-snapshot surfaced as `error`, never silently confirmed).
+
+    Verification: `uv run ruff check .`/`ruff format --check .` clean (366 files); `uv run mypy .`
+    clean (366 source files, zero errors). `pnpm run typecheck`/`pnpm run lint`/
+    `pnpm run format:check` clean. `pnpm exec vitest run`: 52/52 (full suite, zero regressions).
+    `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+    sandbox's own pre-existing shallow-clone artifact). A real, directly-installed local
+    PostgreSQL 16 cluster (`sudo pg_ctlcluster 16 main start`, this sandbox's own apt-installed
+    cluster, no container-registry egress here) ran the real forward Alembic migration chain and
+    both the new integration test and a full regression sweep of
+    tests/integration/test_ftf_04a17_discovered_agent_candidate.py/
+    test_ftf_04a07_target_source_snapshot.py (this task's own two real dependencies' own
+    integration suites) -- all exit 0, zero regressions. `scripts/product_truth_check.py
+    --fail-on-unwired`: 25/25 -> 26/26 -- `proving_symbol` filled in below (a real, non-test text
+    search hit on `build_discovered_agent_candidate_selection_router` in app/main.py, the same
+    "router really is wired" convention FTF-04A17 already established, not a vacuous 0/0).
+    `scripts/status.py`: unchanged 99/300 certified (Law 2 -- a submission is not a
+    certification). Added this task's own two CI gate steps
+    (`tests/tasks/test_ftf_04a18.py`, no DB) and a dedicated
+    `candidate-selection-integration` job (real `services: postgres` container, same pattern as
+    `discovered-agent-candidate-integration`) to `.github/workflows/ci.yml` in the same commit.
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
+    opened PR are required before certification.
+  proof_state: L1-PROVEN
+  proving_symbol: build_discovered_agent_candidate_selection_router
+  proving_test: tests/tasks/test_ftf_04a18.py
 FTF-04A19:
   certification_state: CERTIFIED
   criticality: MUST

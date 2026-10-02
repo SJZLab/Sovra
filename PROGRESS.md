@@ -1,4 +1,153 @@
 # PROGRESS — Sovra
+## 2026-10-02T23:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-2dd8f4` — implemented and submitted FTF-04A18 (Candidate-selection UI — no auto-selection), PROVISIONAL
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly. `BLOCKER.md` read
+in full: the same two live entries every recent prior shift has read — **FTF-0902** (three real
+fix attempts already falsified by real CI, not retried a 4th time per STEP 4(c)) and **FTF-1206**
+(the persistence-half scope question, a Control-plane decision, not improvised). Designated branch
+(`claude/wizardly-fermat-2dd8f4`) confirmed already at `origin/main`'s tip (`23eece5`, PR #424's own
+merge) via `git rev-list --left-right --count HEAD...origin/main` → `0 0`.
+
+STEP 0.1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` re-read fresh. The immediately-
+prior shift (`61pj77`, 2026-10-02T21:10:00Z) had implemented FTF-1002 and flagged **FTF-04A18** as
+"almost certainly the same UI-heavy/no-live-backend-surface blocker class" FTF-0214 (PR #295)
+already established — flagged, not claimed, pending independent re-verification. A fresh
+`list_pull_requests` sweep found only #421 (Control plane's own L2-certify PR), #402 (FTF-0902),
+#401 (governance), #295 (FTF-0214) open — none overlapping FTF-04A18.
+
+**Blocker-class re-verification.** Confirmed all seven of FTF-04A18's own dependencies (FTF-04A01/
+04A12/04A13/04A14/04A15/04A16/04A17) are `certification_state: CERTIFIED` directly in
+`docs/spec-matrix.yaml` — genuinely dependency-ready, not merely merged-PROVISIONAL. Read
+FTF-0214's own real blocker (PR #295's body, `connection_routes.py`'s own docstring,
+`02-interface.yaml`): a frozen OpenAPI contract that *explicitly excludes* the catalog/probe route
+FTF-0214's acceptance needs, with no task in the 300-task index owning that route — re-confirmed
+still unresolved (FTF-0214 still `certification_state: NONE`). Read FTF-04A18's own full task
+packet (`tools/r1_handoff.py packet FTF-04A18`) and the real, already-CERTIFIED modules it would
+sit on top of (`discovered_agent_candidate_routes.py`, `_crud.py`, `_schema.py`,
+`target_source_snapshot_schema.py`, `audit_event_writer.py`): unlike FTF-0214, a real, live
+`/candidates` GET route already exists and is already wired into `app/main.py` for this task's own
+UI to consume. The one real open question — whether this task's own acceptance clause ("...requires
+explicit selected ID with persisted audit") can be met without violating its own
+`database_changes: "No independent schema change"` clause — was resolved by direct inspection of
+the real database, not assumed: ran `sudo pg_ctlcluster 16 main start`, created a scratch
+`sovra_migrate`/`sovra_app` role pair and database, ran the real forward Alembic migration chain
+(`uv run python -m alembic upgrade head`, clean through `0018`), then `\dp discovered_agent_
+candidates`/`\dp audit_events` directly: `discovered_agent_candidates` grants `sovra_app` SELECT/
+INSERT only (confirmed no UPDATE grant exists at all — a future "selected" column mutation is
+structurally impossible from this process, not merely an omitted route), while `audit_events`
+(FTF-0104, already CERTIFIED and migrated) grants `sovra_app` INSERT. This means "persisted audit"
+read literally — a real, durable `AuditEvent` row, FTF-0104's own already-reused Section 6.24
+mechanism every other mutating task in this chain already writes through — needs no new migration
+at all, unlike FTF-1206's own genuinely-unowned persistence gap. Concluded this is the CLAUDE.md
+default-resolution-rule path (the architecture already fixes the answer once the immutability
+constraint is read literally), not a fresh Control-plane scope question — escalating this to
+`BLOCKER.md` would have been over-cautious, not careful, so it was not escalated.
+
+STEP 1: pulled FTF-04A18's own real DoD via `tools/r1_handoff.py packet FTF-04A18`. Acceptance:
+"UI lists multiple detected agents and requires explicit selected ID with persisted audit."
+Negative_acceptance: "Highest score/first result cannot be preselected; stale candidate from prior
+snapshot is rejected." `files`: the packet's own frontend-only `apps/web/components/target-
+application/candidate_selection_ui_no_auto_selection.tsx` + `apps/web/tests/ftf_04a18.spec.ts`.
+Refined (the same "packet `files` is an initial owner-path suggestion, not a cap on what the
+acceptance clause needs" precedent FTF-04A04's own real `github_branch_ref_resolver.py`/`_crud.py`/
+`_routes.py` triad already established — read that task's own CERTIFIED notes in full first,
+including its own prior-rejection history for claiming "persist" without a genuine durable write,
+to make sure this task's own persistence claim would likewise be genuine) to add two real backend
+files: `apps/api/app/target_connectors/discovered_agent_candidate_selection.py` and
+`discovered_agent_candidate_selection_routes.py`.
+
+STEP 2 (PEV): **P** — read `discovered_agent_candidate_routes.py`/`_crud.py`/`_schema.py`
+(FTF-04A17), `target_source_snapshot_crud.py`/`_schema.py` (FTF-04A07, specifically
+`supersedes_snapshot_id`'s own real "set once, on the new row, pointing at the old one" semantics),
+and `audit_event_writer.py` (FTF-0104) in full before writing any code. Confirmed via the local
+Postgres grant inspection above that this task's own job is real audit persistence, not a new
+mutable column.
+
+**E** — implemented `select_discovered_agent_candidate`: reuses FTF-04A07's own CERTIFIED
+`get_target_source_snapshot` and FTF-04A17's own CERTIFIED `get_discovered_agent_candidate`
+directly (reuse-first, Section 77.1, never re-derived) to prove the real `(connection_id,
+snapshot_id, candidate_id)` chain belongs to the caller's own organization. Added
+`_is_snapshot_superseded`: a real tenant-scoped SELECT checking whether any *other* real snapshot
+of the same connection already names the requested snapshot as the one it supersedes — raises
+`StaleSnapshotCandidateError` (→ HTTP 409) when so, this task's own real "stale candidate from
+prior snapshot is rejected" half, checked against the real database every time, never a
+client-supplied flag. negative_acceptance's other half ("Highest score/first result cannot be
+preselected") is structural: `candidate_id` is always an explicit function/path argument; no code
+path in this module, the route, or the UI component reads `confidence_score` to pick a default.
+Writes one real `AuditEvent` row (`action="discovered_agent_candidate.selected"`,
+`write_audit_event`, FTF-0104) in the same transaction as the checks above — a rollback discards
+the audit row too, never leaving a misleading "it was selected" record. `selected_at` in the
+returned `CandidateSelectionRecord` is that row's own real `created_at`, read back via
+`session.flush()` after the write, never computed before it.
+
+Implemented `discovered_agent_candidate_selection_routes.py`'s real `POST .../candidates/
+{candidate_id}/select` route (`{organization_admin}`-only, same precedent FTF-04A01/04A07/04A17
+already established) and wired `build_discovered_agent_candidate_selection_router` into
+`app/main.py` (20th router in that chain). Implemented
+`candidate_selection_ui_no_auto_selection.tsx`: lists real candidates (GET, FTF-04A17's own route)
+in the exact backend-returned order (never re-sorted by `confidence_score`), nothing pre-checked/
+default-selected on load, `handleSelect` always takes an explicit `candidateId` from a real click,
+POSTs to this task's own real select route, renders the real response's own `selected_at`.
+
+Wrote `tests/tasks/test_ftf_04a18.py` (no DB, same real-uvicorn-server/`MagicMock`-session-factory
+role-boundary precedent `test_ftf_04a04_routes.py` established: 401 unauthenticated, 403 evaluator,
+both confirmed via `session_factory.call_count == 0`; organization_admin passes the gate; plus pure
+checks on `StaleSnapshotCandidateError`'s real `ValueError` binding, `CandidateSelectionRecord`'s
+frozen-dataclass immutability, and the exact `CANDIDATE_SELECTED_ACTION` literal the integration
+test's own audit lookup depends on). Wrote `tests/integration/test_ftf_04a18_candidate_selection.py`
+(real local Postgres 16: one organization with a connection, a real superseded snapshot and its
+real replacement — `supersedes_snapshot_id` genuinely set — each carrying one real candidate, a
+second organization for the cross-tenant IDOR case): proves unauthenticated 401, evaluator 403, the
+core cross-tenant IDOR case 404, the real stale-snapshot refusal 409 **with a direct Postgres
+count-query confirming zero `AuditEvent` rows were left behind** by the refused attempt, a
+missing-candidate 404, a real successful selection (201) cross-checked against a *fresh* Postgres
+read of the real `AuditEvent` row (organization_id/actor_id/resource_type/resource_id/created_at
+and `details_json`'s own snapshot/connection references all matching the real request, never only
+the response body), a real grant-surface proof `sovra_app` genuinely cannot `UPDATE
+discovered_agent_candidates.discovery_status` directly, and a cross-organization candidate_id
+requested through org1's own real path refused 404 (the deeper parent-chain check genuinely runs).
+Wrote `apps/web/tests/ftf_04a18.spec.ts` (Vitest + React Testing Library + jsdom, real mocked-
+`fetch` assertions): URL helpers, real-order rendering with nothing pre-selected, the
+higher-confidence candidate listed but not auto-selected (only an explicit click selects it), and a
+real 409 stale-snapshot response surfaced as `error`, never silently confirmed.
+
+**V** — `uv run ruff check .`/`ruff format --check .` clean (366 files); `uv run mypy .` clean (366
+source files, zero errors). `pnpm run typecheck`/`pnpm run lint`/`pnpm run format:check` clean (via
+`pnpm install` first, same monorepo-root convention every prior frontend task used).
+`pnpm exec vitest run`: 52/52, zero regressions across the full frontend suite. `scripts/
+validate_spec.py --strict` clean (`git fetch --unshallow` first, same disclosed shallow-clone
+precedent prior shifts used). Regression swept `test_ftf_04a17_discovered_agent_candidate.py`/
+`test_ftf_04a07_target_source_snapshot.py` (this task's own two real backend dependencies) and
+`test_ftf_0104.py` (the audit-event-writer dependency this task's own persistence claim rests on)
+— all exit 0, zero regressions. `scripts/product_truth_check.py --fail-on-unwired`: **25/25 →
+26/26** — `proving_symbol` filled in to `build_discovered_agent_candidate_selection_router`, a
+real, non-test text-search hit in `app/main.py` (the same "router really is wired" convention
+FTF-04A17 already established, not a vacuous 0/0). `scripts/status.py`: unchanged `99/300`
+certified / 24 product-true (Law 2 — a submission is not a certification).
+
+Updated `docs/spec-matrix.yaml`'s FTF-04A18 entry (`certification_state: PROVISIONAL`,
+`implementation_state: IMPLEMENTED`, `proof_state: L1-PROVEN`, `proving_symbol` and `proving_test`
+filled in, full evidence in `notes`). Appended a full evidence entry to `docs/certifications/
+queue.md`. Updated `QUEUE.md`'s own top dated entry with the same narrative. Added this task's own
+two CI changes (`tests/tasks/test_ftf_04a18.py` gate step + a dedicated
+`candidate-selection-integration` job, real `services: postgres` container) to
+`.github/workflows/ci.yml` in the same commit. Opened a PR from this shift's own designated branch
+(`claude/wizardly-fermat-2dd8f4` → `main`), titled `[relay] FTF-04A18: Candidate-selection UI — no
+auto-selection`, submitted PROVISIONAL.
+
+**V (certification posture)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 review and a real
+CI run on the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+`.github/workflows/ci.yml` all updated this shift, before compaction.
+
+STEP 4 stop condition (a): FTF-04A18 now joins the existing merged-PROVISIONAL backlog awaiting
+Control-plane L2 certification and the L4 gate (`scripts/status.py` unchanged at `99/300` certified
+/ 24 product-true — a submission is not a certification). Neither live `BLOCKER.md` entry
+(FTF-0902, FTF-1206) was retried. No open owner ask beyond the pre-existing, low-urgency
+branch-protection ask. Stopping here.
+
 ## 2026-10-02T21:08:00Z — PR #424 (FTF-1002) merged to `main`
 
 Subscribed to PR #424's activity after opening it. A `check_suite.completed` event arrived;

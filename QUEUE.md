@@ -1,4 +1,75 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-2dd8f4`) —
+  **FTF-04A18 (Candidate-selection UI — no auto-selection) implemented and submitted PROVISIONAL**
+  — the item the immediately-prior `61pj77` shift flagged as needing independent re-verification
+  against the known FTF-0214 (PR #295)/no-live-backend-surface blocker class before being claimed.
+
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Both live `BLOCKER.md` entries
+  (FTF-0902, FTF-1206) read in full, untouched, neither retried. Designated branch confirmed
+  already at `origin/main`'s tip (`23eece5`, PR #424's own merge) via `git rev-list --left-right
+  --count HEAD...origin/main` → `0 0`.
+
+  STEP 0.1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` re-read fresh. Open PRs
+  re-swept (`list_pull_requests`): only #421 (Control plane's own L2-certify PR), #402 (FTF-0902,
+  BLOCKER.md-tracked), #401 (governance, owner-merge-only), #295 (FTF-0214, declared blocked) —
+  none overlap FTF-04A18.
+
+  **Blocker-class re-verification (resolved, not an owner ask):** all seven of FTF-04A18's own
+  dependencies (FTF-04A01/04A12/04A13/04A14/04A15/04A16/04A17) confirmed `certification_state:
+  CERTIFIED` directly in `docs/spec-matrix.yaml` — genuinely dependency-ready. Independently
+  re-checked whether FTF-04A18 falls into FTF-0214's own blocker class (a frozen contract that
+  *explicitly excludes* the route the acceptance clause needs, with no task owning it). It does
+  not: FTF-04A17's own already-CERTIFIED `/candidates` route is a real, live GET surface this
+  task's own UI consumes directly, and this task's own `database_changes` clause ("No independent
+  schema change") is genuinely satisfiable — confirmed directly against a real local Postgres 16
+  cluster (`\dp discovered_agent_candidates`/`\dp audit_events`) *before* writing any code:
+  `discovered_agent_candidates` grants `sovra_app` SELECT/INSERT only (no UPDATE — a future
+  "selected" column mutation is structurally impossible, not merely undeclared), while
+  `audit_events` (FTF-0104, already CERTIFIED/migrated) grants `sovra_app` INSERT — so this task's
+  own real "persisted audit" reading of its acceptance clause needs no new migration at all. This
+  is the CLAUDE.md default-resolution-rule path, not a fresh Control-plane scope question like
+  FTF-1206's.
+
+  Pulled the real DoD via `tools/r1_handoff.py packet FTF-04A18`. Path refined from the packet's
+  own frontend-only `files` list to also add two real backend files (the same "packet `files` is
+  an initial owner-path suggestion" precedent FTF-04A04's own real connector/crud/routes triad
+  already established): `apps/api/app/target_connectors/discovered_agent_candidate_selection.py`
+  (pure selection logic, reusing FTF-04A07's/FTF-04A17's own CERTIFIED fetch-and-authorize helpers
+  directly) and `discovered_agent_candidate_selection_routes.py` (the real `POST .../candidates/
+  {candidate_id}/select` route, wired into `app/main.py`). negative_acceptance half 1 ("Highest
+  score/first result cannot be preselected") is structural (explicit path argument only, no
+  confidence-based sort anywhere); half 2 ("stale candidate from prior snapshot is rejected") is
+  `StaleSnapshotCandidateError` (409) checked against the real `supersedes_snapshot_id` chain.
+  Acceptance clause 1 ("...persisted audit") is one real `AuditEvent` row written in the same
+  transaction as the checks, `selected_at` read back from that row's own real `created_at`.
+  `apps/web/components/target-application/candidate_selection_ui_no_auto_selection.tsx`: renders
+  candidates in real backend order, nothing pre-selected, explicit click required.
+
+  Tests: `tests/tasks/test_ftf_04a18.py` (no DB, role-boundary + pure-module checks),
+  `tests/integration/test_ftf_04a18_candidate_selection.py` (real local Postgres 16: stale-snapshot
+  409 with zero `AuditEvent` rows left behind, a real successful selection cross-checked against a
+  fresh Postgres read of the real audit row, cross-tenant/missing-candidate 404s, a real
+  grant-surface proof `sovra_app` cannot `UPDATE discovery_status`), `apps/web/tests/
+  ftf_04a18.spec.ts` (Vitest/RTL/jsdom, real mocked-fetch assertions). Full evidence in `docs/
+  spec-matrix.yaml`'s own FTF-04A18 entry and `docs/certifications/queue.md`'s matching 2026-10-02
+  entry.
+
+  `uv run ruff check .`/`ruff format --check .`/`uv run mypy .` clean (366 files/zero errors).
+  `pnpm run typecheck`/`lint`/`format:check` clean; `pnpm exec vitest run`: 52/52, zero regressions.
+  `scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`). Regression swept
+  `test_ftf_04a17_discovered_agent_candidate.py`/`test_ftf_04a07_target_source_snapshot.py`/
+  `test_ftf_0104.py` (this task's own real dependencies) — all exit 0, zero regressions.
+  `scripts/product_truth_check.py --fail-on-unwired`: **25/25 → 26/26** (`proving_symbol` filled in
+  — a real, non-test caller of `build_discovered_agent_candidate_selection_router` in
+  `app/main.py`). `scripts/status.py`: unchanged `99/300` certified / 24 product-true (Law 2 — a
+  submission is not a certification). Added this task's own CI gate step and a dedicated
+  `candidate-selection-integration` job to `.github/workflows/ci.yml` in the same commit. Opened a
+  PR from this shift's own designated branch, titled `[relay] FTF-04A18: ...`, submitted
+  PROVISIONAL, not self-certified (Law 4).
+
+  STEP 4 stop condition (a): FTF-04A18 now joins the existing merged-PROVISIONAL backlog awaiting
+  Control-plane L2 certification and the L4 gate. Neither live `BLOCKER.md` entry was retried. No
+  open owner ask beyond the pre-existing, low-urgency branch-protection ask. Stopping here.
 Updated: 2026-10-02T21:08:00Z — **PR #424 (FTF-1002) merged to `main`** (merge commit
   `1177f56a60a593fbe80a7cedddde31b69abb4e5a`, all 41 check runs on the real PR head green,
   including `gate`, `mergeable_state: clean`, zero pending reviews/comments) — merged under the
