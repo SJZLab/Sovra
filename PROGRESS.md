@@ -26497,3 +26497,84 @@ PR #404 not yet reviewed). Stopping here — not picking a second task this shif
 (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-
 protection ask). `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-
 plane design question, not a further guess).
+
+## 2026-10-01T16:54:04Z — Scheduled relay shift — FTF-0500B fix-and-resubmit (PR #407)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch `claude/wizardly-fermat-6a4y4k` started at the same commit as `origin/main`
+(`0bd9486`, the merge of PR #404) — confirmed via `git fetch origin main --force` and `git
+rev-list --left-right --count HEAD...origin/main` (0/0) before relying on it. `BLOCKER.md` read in
+full at shift start: one live entry (FTF-0902, a Control-plane design question, not an owner ask or
+a full-shift stop — not retried this shift, per STEP 4(c)). STEP 0.2: no `cognee-cli` binary on
+this sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: confirmed via a fresh `list_pull_requests` that PR #403 and #404 (the immediately-prior
+shift's own fix-and-resubmit PRs) are both merged — only #401 (governance, owner's to merge), #402
+(the still-open, formally-stuck FTF-0902 investigation branch) and #295 (FTF-0214, declared
+blocked) remain open. `QUEUE.md`'s "## Active" item 3 named the next unclaimed fix-and-resubmit
+target in priority order after FTF-H007/FTF-04A06/FTF-0601/FTF-0500C (all done): **FTF-0500B**.
+Pulled its real DoD fresh from `docs/certifications/queue.md`'s 2026-10-01 L2 review entry rather
+than trusted from `QUEUE.md`'s own summary of it (Law 1/2/5): "(a) dropping `version_id` from the
+`manifest_hash` input leaves the suite green... (b) unversioned buckets (`VersionId: null`) are
+accepted without a flag."
+
+STEP 2 (PEV): **P** — read
+`apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` in full. Found the real
+defect for (a) was narrower than it first looked: `manifest_source` already included `version_id`
+in the hashed tuple — the gap was in test coverage, not the module, matching the review's own
+wording ("leaves the suite green", not "the manifest is actually unpinned"). (b) had no code at
+all: no check anywhere for a real entry's `version_id` being the literal string `"null"` (a real
+S3/MinIO `ListObjectVersions` response's own sentinel for "versioning never enabled/suspended").
+
+**E** — (a) added `test_manifest_hash_changes_when_only_the_version_id_differs` to
+`tests/tasks/test_ftf_0500b.py` (two real listings, identical key/size/ETag, only `VersionId`
+differs, asserts the hashes differ). (b) added `VersioningDisabledError` to the module and a check,
+applied to every real entry before it is added to the preview or the manifest, that raises the
+instant `version_id == "null"` — refused outright, matching this module's existing
+per-violation-raises shape for every other negative_acceptance check (never a silent flag in the
+result). New `test_versioning_disabled_source_is_refused`.
+
+**Real fault injection (Law 1), performed directly by this session against the on-disk module:**
+(a) removed the `"version_id": entry.version_id,` line from `manifest_source` — confirmed the new
+test genuinely fails (version-differing listings now produce an identical, unpinned
+`manifest_hash`), reproducing for real exactly the undetected-defect scenario the review described
+— then reverted byte-identical and re-ran clean
+(`test_fault_injection_manifest_hash_is_load_bearing_on_version_id`). (b) disabled the new
+`version_id == _UNVERSIONED_SENTINEL` check — confirmed an unversioned entry (`VersionId: "null"`)
+is genuinely let through as a fabricated success — then reverted byte-identical and re-ran clean
+(`test_fault_injection_versioning_disabled_check_is_load_bearing`).
+
+`uv run ruff check .`/`ruff format --check .` clean (358 files). `uv run mypy .` clean on both
+changed files; repo-wide run shows the same 26 pre-existing errors (alembic `Module "alembic" has
+no attribute "op"/"context"` stub gaps plus 7 unrelated `Unused "type: ignore"` notes in
+`test_ftf_0500c.py`/`test_ftf_0500c_database_api_trace_source.py`) — confirmed byte-for-byte
+identical on unmodified `origin/main` via `git stash` before treating them as pre-existing noise,
+not a regression. `validate_spec.py --strict` clean (`git fetch --unshallow` first — this sandbox
+clones shallow by default, same disclosed precedent prior shifts used). `product_truth_check.py
+--fail-on-unwired`: unchanged `25/25`. `status.py`: unchanged `99/300` certified, 24 product-true
+(Law 2 — a resubmission is not a certification). Regression swept (after `uv sync --all-packages`,
+since a bare `uv run` environment lacks `sqlalchemy`/`psycopg`, same disclosed Postgres-backed-task
+precedent) `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_h006.py`/`test_ftf_0500c.py` — all "all
+checks passed", zero regressions.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with an L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md`, the trigger the 2026-10-01 review itself
+named for re-review eligibility on this ID. Updated `QUEUE.md`'s own "## Active" item 3 (both
+numbered "3." copies, left as found per the prior shift's own disclosed note) marking FTF-0500B
+done; FTF-0500D/FTF-1807/FTF-1206 remain the untouched remainder. Opened **PR #407** (`[relay]
+FTF-0500B: fix L2 findings (version-id-sensitive manifest hash + versioning-disabled refusal)`,
+branch `claude/wizardly-fermat-6a4y4k` → `main`).
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all
+updated this shift, before compaction. STEP 4 stop condition (a): 0 in-flight L1-PROVEN submissions
+awaiting *this* shift's own further action; FTF-0500B now joins the same backlog awaiting
+Control-plane L2 certification and the L4 gate (99/300 certified, unchanged — PR #407 not yet
+reviewed). Stopping here — not picking a second task this shift. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged: only the pre-existing, low-urgency branch-protection ask).
+`BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-plane design
+question, not a further guess).

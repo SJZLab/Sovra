@@ -5677,6 +5677,40 @@ FTF-0500B:
 
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real
     CI run on the opened PR are required before certification.
+
+    2026-10-01 L2 fix-and-resubmit (certification_state stays PROVISIONAL,
+    proof_state stays L1-PROVEN -- Law 2). The 2026-10-01 Control-plane L2 review
+    found two real gaps: (a) dropping version_id from the manifest_hash input left
+    the suite green (the "exact version manifest" acceptance clause was unpinned);
+    (b) an unversioned bucket (real literal VersionId "null") was accepted without
+    a flag. Fixed: (a) manifest_hash was already keyed on version_id in the
+    shipped code, but no test proved it -- added
+    test_manifest_hash_changes_when_only_the_version_id_differs (same key/size/
+    ETag, only VersionId differs, hash must differ) plus a disclosed fault
+    injection (Law 1) that removes version_id from the manifest_hash input,
+    confirms the new test genuinely fails (an identical-looking but unpinned
+    manifest_hash), then reverts the module file byte-identical. (b) added
+    VersioningDisabledError, raised the instant any real entry in the listing
+    reports the literal VersionId "null" (a real S3/MinIO ListObjectVersions
+    response's own sentinel for "this bucket never had object versioning
+    enabled", also returned for entries created while versioning was suspended)
+    -- refused before being added to the preview or the manifest, not merely
+    flagged in the result. New test_versioning_disabled_source_is_refused plus a
+    disclosed fault injection (Law 1) confirming the check is load-bearing,
+    reverted byte-identical. tests/tasks/test_ftf_0500b.py: 19 test functions
+    (was 15), all pass. `uv run ruff check .`/`ruff format --check .` clean
+    repo-wide (358 files). `uv run mypy .` clean on both changed files (26
+    pre-existing, unrelated alembic-stub/mypy-environment errors confirmed
+    byte-for-byte identical on unmodified origin/main via `git stash`, not a
+    regression). `python3 scripts/validate_spec.py --strict` clean (after `git
+    fetch --unshallow`, same disclosed shallow-clone precedent). `python3
+    scripts/product_truth_check.py --fail-on-unwired` unchanged 25/25.
+    `scripts/status.py` unchanged 99/300 certified, 24 product-true (Law 2 -- a
+    resubmission is not a certification). Regression swept
+    test_ftf_0500.py/test_ftf_0303.py/test_ftf_h006.py/test_ftf_0500c.py -- zero
+    regressions (ran after `uv sync --all-packages`, since a bare `uv run`
+    environment lacks sqlalchemy/psycopg, the same disclosed precedent prior
+    shifts already documented).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500b.py

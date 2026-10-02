@@ -289,6 +289,189 @@ def test_manifest_hash_changes_when_the_real_listing_differs() -> None:
     )
 
 
+def test_manifest_hash_changes_when_only_the_version_id_differs() -> None:
+    """Same key, same size, same ETag -- only VersionId differs. The
+    manifest must still change, or it is not really pinning an exact
+    version (this task's own negative_acceptance)."""
+    _install_pages(
+        [
+            _list_versions_xml(
+                entries_xml=_version_entry(
+                    "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                )
+            )
+        ]
+    )
+    first = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    _install_pages(
+        [
+            _list_versions_xml(
+                entries_xml=_version_entry(
+                    "org-42/a.jsonl", "v2", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                )
+            )
+        ]
+    )
+    second = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    check(
+        "FTF-0500B",
+        "negative_acceptance: an identical key/size/ETag listing whose VersionId alone differs "
+        "produces a different manifest_hash -- the manifest is pinned to the exact version, not "
+        "merely to key/size/ETag",
+        first.manifest_hash != second.manifest_hash,
+    )
+
+
+def test_fault_injection_manifest_hash_is_load_bearing_on_version_id() -> None:
+    """Dropping `version_id` from the `manifest_hash` input must make the
+    test above genuinely fail, not merely look correct."""
+    original = _MODULE_PATH.read_bytes()
+    target = b'            "version_id": entry.version_id,\n'
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    try:
+        mutated = original.replace(target, b"", 1)
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+
+        _install_pages(
+            [
+                _list_versions_xml(
+                    entries_xml=_version_entry(
+                        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                    )
+                )
+            ]
+        )
+        first = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        _install_pages(
+            [
+                _list_versions_xml(
+                    entries_xml=_version_entry(
+                        "org-42/a.jsonl", "v2", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                    )
+                )
+            ]
+        )
+        second = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        check(
+            "FTF-0500B",
+            "fault injection: dropping version_id from the manifest_hash input genuinely lets a "
+            "different-version listing produce an identical (unpinned) manifest_hash",
+            first.manifest_hash == second.manifest_hash,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages(
+            [
+                _list_versions_xml(
+                    entries_xml=_version_entry(
+                        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                    )
+                )
+            ]
+        )
+        first = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        _install_pages(
+            [
+                _list_versions_xml(
+                    entries_xml=_version_entry(
+                        "org-42/a.jsonl", "v2", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+                    )
+                )
+            ]
+        )
+        second = s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        check(
+            "FTF-0500B",
+            "after restoring the file, a VersionId-only difference genuinely changes the "
+            "manifest_hash again",
+            first.manifest_hash != second.manifest_hash,
+        )
+
+
+def test_versioning_disabled_source_is_refused() -> None:
+    """A real S3/MinIO source that never had object versioning enabled
+    reports the literal string VersionId `null` for every entry -- this
+    task's own 'exact version manifest' cannot be made real against such a
+    source, so it must be refused, not silently accepted."""
+    entries = _version_entry(
+        "org-42/a.jsonl", "null", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    )
+    _install_pages([_list_versions_xml(entries_xml=entries)])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    except s3_preview.VersioningDisabledError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: a real literal VersionId of 'null' (versioning disabled or "
+        "suspended on the source bucket) is refused",
+        raised,
+    )
+
+
+def test_fault_injection_versioning_disabled_check_is_load_bearing() -> None:
+    original = _MODULE_PATH.read_bytes()
+    target = b"if version_id == _UNVERSIONED_SENTINEL:"
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    entries = _version_entry(
+        "org-42/a.jsonl", "null", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    )
+    try:
+        mutated = original.replace(target, b"if False and version_id == _UNVERSIONED_SENTINEL:", 1)
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+            no_longer_raises = True
+        except s3_preview.VersioningDisabledError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: disabling the versioning-disabled check genuinely lets an "
+            "unversioned (literal 'null' VersionId) source through as a fabricated success",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.VersioningDisabledError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the versioning-disabled check genuinely fires again",
+            restored_raises,
+        )
+
+
 def test_real_pagination_across_two_pages() -> None:
     page1 = _list_versions_xml(
         entries_xml=_version_entry(
