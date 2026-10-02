@@ -1,4 +1,71 @@
 # PROGRESS — Sovra
+## 2026-10-02T00:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Branch sitting at the same commit as
+`origin/main` (`35b9050`, PR #409's tracking merge) — no prior unmerged work of its own. STEP 0.1:
+read `BLOCKER.md` (one live entry, FTF-0902, 2026-10-01T10:30Z — untouched, no fourth retry),
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh.
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 named two still-untouched RELAY-OWNED fix-and-resubmit
+items after the prior shift's FTF-1807 fix: FTF-0500D and FTF-1206. Picked **FTF-0500D**
+(test-only, vs. FTF-1206's own persisted-migration prerequisite).
+
+STEP 2 (PEV) — performed in full, independently, before discovering the duplication below:
+- **P:** read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+  `tests/tasks/test_ftf_0500d.py`. Confirmed the 2026-10-01 L2 finding directly: the shipped
+  `authorize_dataset_source_copy` boundary check is genuinely unconditional already (a
+  test-coverage gap, not a live defect) — the existing suite only ever drove it with
+  `security_classification="restricted"`.
+- **E:** added a classification x project-profile matrix test (12 combinations) asserting
+  `authorize_dataset_source_copy` raises `SecurityBoundaryCrossingError` exactly when the
+  preview's own `would_cross_security_boundary` says so. **Real fault injection (Law 1):** scripted
+  a mutation of the live module to the exact narrowed form the review named
+  (`security_classification == "restricted" and ...`); the *old* suite stayed green (35/35,
+  reproducing the finding for real); the *new* test genuinely failed on `confidential`→`standard`
+  (`raised=False, expected=True`); reverted byte-identical (md5sum
+  `2113594afa576abbd248d9e147fd8745` before/after).
+- **V:** `python3 tests/tasks/test_ftf_0500d.py` clean (26 functions, was 25). `ruff`/`ruff
+  format --check`/`mypy` clean. `validate_spec.py --strict` clean (after `git fetch --unshallow`,
+  same disclosed shallow-clone precedent prior shifts used). `product_truth_check.py
+  --fail-on-unwired` unchanged `25/25`. `scripts/status.py` unchanged `99/300` certified.
+  Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/`test_ftf_0511.py`/`test_ftf_0512.py`/
+  `test_ftf_0513.py` — zero regressions (`test_ftf_0500.py` independently reproduced failing
+  identically on unmodified `origin/main`, pre-existing missing-`sqlalchemy` environment gap, not
+  a regression).
+
+**Before pushing or opening a PR**, ran a fresh `list_pull_requests` sweep (this repo's own
+established precedent — never trust the queue file's narrative over a live GitHub check) and found
+the frontier already fully claimed by concurrent sessions that ran during/after this shift's own
+read of `QUEUE.md`:
+- **#410** (2026-10-01T20:58:28Z) and **#413** (2026-10-02T03:17:45Z) each independently fix the
+  identical FTF-0500D finding — same root cause, same fault-injection method, same production-module
+  md5sum (`2113594afa576abbd248d9e147fd8745`) confirmed byte-identical before/after in both. This
+  shift's own independently-performed fix reached the exact same conclusion, which is strong
+  corroboration both PRs are correct — but opening a third duplicate would only cost Control plane
+  a redundant review. **Discarded this shift's own local changes** (`git checkout --` on all five
+  touched files) rather than push a redundant branch. Posted one comment on #413 cross-referencing
+  #410 so Control plane can pick the surviving PR (a review/triage call, not a mechanical "already
+  on main" closure this relay makes unilaterally).
+- **#412** (FTF-1206) and **#411** (FTF-0510) are also already open, covering both remaining
+  "Active" items. FTF-1206's own persistence question is escalated in that PR's own branch
+  `BLOCKER.md` entry. FTF-0902/FTF-1703 remain correctly deferred, untouched by this shift.
+
+**One real issue found and flagged, not fixed:** PR #412's own description claims no CI workflow
+change was needed, citing only local results — but a live `get_check_runs` on its head commit
+(`d489936`) shows the real `gate` job actually failed on GitHub Actions (40/41 green, `gate` red,
+run `36948577882`, job `110656171438`), undisclosed in the PR body. Posted a comment on #412
+naming the run/job IDs (Law 1/9 — gate-weakening is watched) rather than silently noting it only
+here. Not pushed to or otherwise acted on — not this session's branch, and FTF-1206 was correctly
+not this shift's own claimed item.
+
+STEP 4: no genuinely unclaimed, undeclined task exists this shift — equivalent to stop condition
+(a)'s "frontier exhausted" posture, though arrived at only after independently completing a full
+PEV cycle rather than by a stale-queue check alone. No new blocker (FTF-0902's stayed untouched;
+FTF-1206's own blocker is that PR's own branch's business, not duplicated here). No usage-limit
+stop. No new ask-first item (`QUEUE.md`'s own "Owner actions — current" unchanged — only the
+pre-existing, low-urgency branch-protection ask). Nothing committed or pushed to this shift's own
+branch beyond this log entry and `QUEUE.md`'s matching entry.
+
 ## 2026-10-01T17:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. The designated branch was

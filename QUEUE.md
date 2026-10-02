@@ -1,4 +1,42 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T00:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`) —
+  **frontier found fully claimed by concurrent shifts; no new PR opened; two GitHub comments
+  flagging real issues for Control plane.** Branch found at the same commit as `origin/main`
+  (`35b9050`, PR #409's tracking merge) — no prior unmerged work of its own; `sha256sum CLAUDE.md`
+  matched `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902, 10:30Z) untouched, no
+  fourth retry. Picked **FTF-0500D** per "## Active" item 3 (the smaller of the two remaining
+  untouched RELAY-OWNED items) and independently did the full PEV cycle: read the module, found
+  the exact same gap the 2026-10-01 review named, added a classification x profile matrix test,
+  ran a real fault injection (narrowed the module to `security_classification == "restricted"`,
+  confirmed the *old* suite stayed green, confirmed the *new* test genuinely caught it on
+  `confidential`→`standard`), reverted byte-identical (md5sum `2113594afa576abbd248d9e147fd8745`),
+  full `ruff`/`mypy`/`validate_spec --strict`/`product_truth_check`/`status.py`/regression sweep
+  clean — all before opening a PR.
+
+  A fresh `list_pull_requests` sweep (not trusted from this file's own narrative) done *before*
+  pushing found the frontier already fully claimed by concurrent sessions: **#410** and **#413**
+  each independently fix this exact FTF-0500D finding (same root cause, same fault-injection
+  method, same `2113594afa576abbd248d9e147fd8745` module md5sum) — this shift's own independent
+  arrival at the identical fix is strong corroboration both are correct, but a third duplicate PR
+  would only add Control-plane review burden, so none was opened; **discarded this shift's own
+  local changes** (`git checkout --`) rather than keep them uncommitted or push a redundant
+  branch. Posted one comment on #413 cross-referencing #410 for Control-plane triage (does not
+  close either — picking the surviving PR is a review call, not a mechanical "already on main"
+  closure this relay can make unilaterally). **#412** (FTF-1206) and **#411** (FTF-0510) are also
+  already open, covering the remaining two "Active" items (FTF-1206's own persistence question is
+  escalated in that PR's own new `BLOCKER.md` entry on its branch; FTF-0510 was the "newly
+  dependency-ready" item 4). FTF-0902/FTF-1703 remain correctly deferred, untouched.
+
+  **One real issue found and flagged, not fixed (not this shift's branch):** PR #412's own
+  description claims no CI workflow change was needed and cites only local results, but a live
+  check of its head commit shows the real `gate` job actually failed on GitHub Actions (40/41
+  green, `gate` red, run `36948577882`/job `110656171438`) — undisclosed in the PR body. Posted a
+  comment on #412 naming the run/job IDs so Control plane checks before certifying (Law 1/9); not
+  acted on further since this isn't this session's branch and FTF-1206 was correctly not this
+  shift's own claimed item.
+
+  No genuinely unclaimed, undeclined task exists this shift. No open owner ask (this file's own
+  "Owner actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask).
 Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`) —
   **FTF-1807 fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #408.** Branch found at
   the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged work of its
