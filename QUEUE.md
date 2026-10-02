@@ -8221,8 +8221,13 @@ this same resolution (doc-only, redundant once this lands).
    snapshot-version header after one was seen is now caught). **FTF-0500B: fix PR #407 opened**
    (version-id-sensitive manifest hash + versioning-disabled refusal). **FTF-1807: fix PR #408
    opened this shift** (operator-guidance semantics check replaces the old token-only check — see
-   `docs/certifications/queue.md`'s matching 2026-10-01 entry). Remaining, still untouched:
-   FTF-0500D, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2
+   `docs/certifications/queue.md`'s matching 2026-10-01 entry). **FTF-0500D: fix PR #410 opened**
+   (classification × profile matrix test). **FTF-1206: PARTIALLY fixed, 2026-10-02** — the
+   route-change-against-grant half of its DoD is done (fix PR opened this shift; see
+   `docs/certifications/queue.md`'s matching 2026-10-02 entry); the persistence half is a
+   Control-plane scope decision with no existing task ID to claim, formalized as a live
+   `BLOCKER.md` entry rather than improvised — do not re-attempt DoD item 1 without that decision.
+   Open each fix as a new `[relay] <ID>: fix L2
    findings` PR and append it to `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
@@ -8234,11 +8239,16 @@ this same resolution (doc-only, redundant once this lands).
      **DONE — fix PR opened this shift, see above.**
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
      on a later page blocks. **DONE — fix PR opened this shift, see above.**
-   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
-   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
-   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.
+   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets. **DONE — fix PR
+     #407 opened, see above.**
+   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`. **DONE — fix PR
+     #410 opened, see above.**
+   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens. **DONE — fix PR
+     #408 opened, see above.**
    - **FTF-1206:** needs persistence. Claim a separate migration prerequisite first, or mark
-     BLOCKED_DEPENDENCY.
+     BLOCKED_DEPENDENCY. **PARTIALLY DONE, 2026-10-02 — route-change-against-grant half fixed
+     (fix PR opened this shift); persistence half escalated to `BLOCKER.md` (no task ID in the
+     300-task index owns this migration — a Control-plane scope decision).**
    These items stay PROVISIONAL. The fix PR for each one is re-reviewed by Control plane.
 4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
    `docs/spec-matrix.yaml`. FTF-0510 (next on the FTF-1703 path) is now ready.
