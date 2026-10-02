@@ -230,24 +230,37 @@ def enforce_route_change_authority(
     grant: ProjectGatewayGrant,
     *,
     actor: str,
+    target_deployment_namespace: str,
     bypass_requested: bool = False,
 ) -> None:
     """Section 38.5/38.6: a real production route/session-affinity change may
-    proceed only when the organization's own policy is actually satisfied.
-    Raises `RouteChangeNotAuthorizedError` if the organization requires
-    approval and either (a) the caller asks to bypass that requirement
-    outright, or (b) `actor` is not one of the organization's own recognized
-    approvers -- checked against the organization's own real `approvers` set,
-    never merely against the project's own (already-narrower-or-equal, per
+    proceed only when the organization's own policy is actually satisfied
+    AND the change targets a namespace this specific project was actually
+    granted. Raises `RouteChangeNotAuthorizedError` if:
+    (1) `target_deployment_namespace` is not already a member of `grant`'s
+    own `deployment_namespaces` -- checked first, and unconditionally (even
+    when the organization does not require approval at all), since this is
+    a scope check on *this project's own grant*, never a question the
+    organization's approval policy answers. A recognized approver, or an
+    organization that waives approval entirely, authorizes a route change
+    *within the project's own already-granted namespaces* -- neither widens
+    what namespace it may be rolled into. This is what makes `grant` load-
+    bearing rather than a type-presence-only parameter;
+    (2) the organization requires approval and either (a) the caller asks to
+    bypass that requirement outright, or (b) `actor` is not one of the
+    organization's own recognized approvers -- checked against the
+    organization's own real `approvers` set, never merely against the
+    project's own (already-narrower-or-equal, per
     `enforce_project_gateway_permission_request`) grant, since a project
-    cannot be trusted to enumerate its own valid approvers. When an
-    organization's policy does not require approval at all
-    (`route_change_requires_approval=False`), any actor is authorized and a
-    bypass request is moot. `grant` is accepted (not merely `org_policy`) so
-    a caller cannot invoke this without first having produced a real,
-    already-validated grant -- proving the two checks are always composed in
-    the same order a real route-change request would perform them."""
-    del grant  # presence-only: proves a validated grant precedes this call
+    cannot be trusted to enumerate its own valid approvers."""
+    validate_namespace(target_deployment_namespace)
+    if target_deployment_namespace not in grant.deployment_namespaces:
+        raise RouteChangeNotAuthorizedError(
+            f"{target_deployment_namespace!r} is not a deployment namespace this "
+            "project's own grant includes -- a route change may never target a "
+            "namespace outside what this project was actually granted, "
+            "regardless of organization approval policy"
+        )
     if not org_policy.route_change_requires_approval:
         return
     if bypass_requested:

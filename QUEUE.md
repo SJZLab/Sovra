@@ -129,6 +129,32 @@ Updated: 2026-10-01T18:40:00Z (scheduled relay shift, branch `claude/wizardly-fe
   self-certified (Law 4) — awaits Control-plane L2 review and a real CI run. No open owner ask
   (this file's own "Owner actions — current" unchanged — only the low-urgency
   branch-protection ask).
+Updated: 2026-10-01T18:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-1qb4az`) —
+  **FTF-0500D fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #410.** `sha256sum
+  CLAUDE.md` matched `CLAUDE.md.sha256`; branch found sitting exactly at `origin/main` tip
+  (`35b9050`, PR #409's merge) — no prior unmerged work of its own, no restart needed.
+  `BLOCKER.md`'s only live entry (FTF-0902) untouched, no fourth retry attempted. Of "## Active"
+  item 3's two remaining untouched fix-and-resubmit items (FTF-0500D/FTF-1206), a fresh
+  `list_pull_requests` sweep (not trusted from this file's own narrative alone) confirmed no PR
+  was already open for FTF-0500D — picked it as the one genuinely unblocked item left (FTF-1206
+  still needs its own persisted org-policy migration prerequisite first).
+
+  The L2 finding: narrowing the import-time gate to `security_classification == "restricted"`
+  left the suite green, since every boundary-crossing test paired `restricted` with `standard`
+  only; a confidential source into a standard project would have been silently authorized despite
+  `preview.blocked=True`. The shipped module was already correct — only the test coverage was
+  unpinned. Added `test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`
+  (checks all 16 classification x profile pairings, not just one) and a fault-injection test that
+  reproduces the finding against the real on-disk module in an isolated subprocess, confirms the
+  original single-case test would stay blind to it, confirms the new matrix test catches it, then
+  restores the module byte-identical. `tests/tasks/test_ftf_0500d.py`: 27 checks (was 25), all
+  passed. `ruff`/`mypy`/`validate_spec.py --strict` clean; `product_truth_check.py`: unchanged
+  25/25; `status.py`: unchanged 99/300 certified, 24 product-true (Law 2). No production code
+  changed. Full evidence in `docs/certifications/queue.md`'s matching 2026-10-01 FTF-0500D entry
+  and `docs/spec-matrix.yaml`'s own FTF-0500D entry. Not self-certified (Law 4) — independent
+  Control-plane L2 review and a real CI run on the opened PR are required before certification.
+  No open owner ask (`QUEUE.md` "Owner actions — current" unchanged, empty).
+
 Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`) —
   **FTF-1807 fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #408.** Branch found at
   the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged work of its
@@ -8350,10 +8376,14 @@ this same resolution (doc-only, redundant once this lands).
    through the module itself instead of re-implementing its SQL, and a later page that drops the
    snapshot-version header after one was seen is now caught). **FTF-0500B: fix PR #407 opened**
    (version-id-sensitive manifest hash + versioning-disabled refusal). **FTF-1807: fix PR #408
-   opened 2026-10-01, merged.** **FTF-0500D: fix PR #410 opened** (classification x profile
-   matrix test replaces the single-case boundary test). Remaining, still untouched: **FTF-1206**
-   only — needs a persisted org-policy migration first (see below), a larger, separate
-   prerequisite, not a same-shift fix. Open each fix as a new `[relay] <ID>: fix L2
+   opened this shift** (operator-guidance semantics check replaces the old token-only check — see
+   `docs/certifications/queue.md`'s matching 2026-10-01 entry). **FTF-0500D: fix PR #410 opened**
+   (classification × profile matrix test). **FTF-1206: PARTIALLY fixed, 2026-10-02** — the
+   route-change-against-grant half of its DoD is done (fix PR opened this shift; see
+   `docs/certifications/queue.md`'s matching 2026-10-02 entry); the persistence half is a
+   Control-plane scope decision with no existing task ID to claim, formalized as a live
+   `BLOCKER.md` entry rather than improvised — do not re-attempt DoD item 1 without that decision.
+   Open each fix as a new `[relay] <ID>: fix L2
    findings` PR and append it to `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
@@ -8365,11 +8395,16 @@ this same resolution (doc-only, redundant once this lands).
      **DONE — fix PR opened this shift, see above.**
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
      on a later page blocks. **DONE — fix PR opened this shift, see above.**
-   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
-   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
-   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.
+   - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets. **DONE — fix PR
+     #407 opened, see above.**
+   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`. **DONE — fix PR
+     #410 opened, see above.**
+   - **FTF-1807:** make the runbook test assert the guidance itself, not tokens. **DONE — fix PR
+     #408 opened, see above.**
    - **FTF-1206:** needs persistence. Claim a separate migration prerequisite first, or mark
-     BLOCKED_DEPENDENCY.
+     BLOCKED_DEPENDENCY. **PARTIALLY DONE, 2026-10-02 — route-change-against-grant half fixed
+     (fix PR opened this shift); persistence half escalated to `BLOCKER.md` (no task ID in the
+     300-task index owns this migration — a Control-plane scope decision).**
    These items stay PROVISIONAL. The fix PR for each one is re-reviewed by Control plane.
 4. **Newly dependency-ready** after FTF-0212/FTF-04A15/FTF-0306 were certified: recompute from
    `docs/spec-matrix.yaml`. **FTF-0510 (Tokenization analysis, next on the FTF-1703 path):
