@@ -131,9 +131,11 @@ filled in, full evidence in `notes`). Appended a full evidence entry to `docs/ce
 queue.md`. Updated `QUEUE.md`'s own top dated entry with the same narrative. Added this task's own
 two CI changes (`tests/tasks/test_ftf_04a18.py` gate step + a dedicated
 `candidate-selection-integration` job, real `services: postgres` container) to
-`.github/workflows/ci.yml` in the same commit. Opened a PR from this shift's own designated branch
+`.github/workflows/ci.yml` in the same commit. Opened
+**[PR #426](https://github.com/SJZLab/Sovra/pull/426)** from this shift's own designated branch
 (`claude/wizardly-fermat-2dd8f4` → `main`), titled `[relay] FTF-04A18: Candidate-selection UI — no
-auto-selection`, submitted PROVISIONAL.
+auto-selection`, submitted PROVISIONAL. Subscribed to PR #426's activity to watch CI through to
+green.
 
 **V (certification posture)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/
 `proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 review and a real

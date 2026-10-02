@@ -63,9 +63,10 @@ Updated: 2026-10-02T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fe
   — a real, non-test caller of `build_discovered_agent_candidate_selection_router` in
   `app/main.py`). `scripts/status.py`: unchanged `99/300` certified / 24 product-true (Law 2 — a
   submission is not a certification). Added this task's own CI gate step and a dedicated
-  `candidate-selection-integration` job to `.github/workflows/ci.yml` in the same commit. Opened a
-  PR from this shift's own designated branch, titled `[relay] FTF-04A18: ...`, submitted
-  PROVISIONAL, not self-certified (Law 4).
+  `candidate-selection-integration` job to `.github/workflows/ci.yml` in the same commit. Opened
+  **[PR #426](https://github.com/SJZLab/Sovra/pull/426)** from this shift's own designated branch,
+  titled `[relay] FTF-04A18: Candidate-selection UI — no auto-selection`, submitted PROVISIONAL,
+  not self-certified (Law 4). Subscribed to PR #426's activity to watch CI through to green.
 
   STEP 4 stop condition (a): FTF-04A18 now joins the existing merged-PROVISIONAL backlog awaiting
   Control-plane L2 certification and the L4 gate. Neither live `BLOCKER.md` entry was retried. No
