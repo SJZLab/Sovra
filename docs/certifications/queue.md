@@ -21351,3 +21351,62 @@ named ("Do not re-review them until a new relay fix PR for that ID is appended b
 for FTF-1807 specifically — not for FTF-0500D/FTF-1206, which remain exactly as that review left
 them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
 `QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix).
+
+## 2026-10-02 — FTF-0500D — fix-and-resubmit for the 2026-10-01 L2 finding
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-fh94z0`. PR
+https://github.com/SJZLab/Sovra/pull/413 (opened off a fresh `main`, same pattern as the
+FTF-H007/FTF-04A06/FTF-0601 fix (PR #403), the FTF-0500C fix (PR #404) and the FTF-1807 fix
+(PR #408) — a new PR rather than reopening the original PR #335).
+
+**The L2 finding:** narrowing the import-time gate in `authorize_dataset_source_copy` to only
+fire when `security_classification == "restricted"` left `tests/tasks/test_ftf_0500d.py` fully
+green, even though `build_dataset_source_copy_preview` independently reports `blocked=True` for
+other classifications too (named case: a confidential source into a `standard`-profile project).
+The shipped production code (`workers/data/dataset_source_security_boundary_preview_audit_evidence.py`)
+is already correct — `would_cross_security_boundary` is evaluated unconditionally — the gap is
+purely in test coverage: no existing test exercised `authorize_dataset_source_copy`'s boundary
+check at any classification other than `restricted`, so a narrowing mutation at that one
+hard-coded value would have shipped undetected.
+
+**Fix:** added `test_authorize_matches_preview_block_across_classification_and_profile_matrix` to
+`tests/tasks/test_ftf_0500d.py`. For every one of the 4 (`security_classification`) x 3
+(`project_security_profile`, used as both org default and project profile so it is also the
+effective profile) = 12 combinations, with purpose/connection held compliant throughout so only
+the boundary check is exercised, it builds the independent preview and asserts
+`authorize_dataset_source_copy` raises `SecurityBoundaryCrossingError` exactly when
+`preview.blocked` is `True`, and stays silent exactly when it is `False`. No production code
+changed — the review's own verdict was that the shipped module is correct.
+
+**Real fault injection (Law 1), performed directly by this session, reproducing the exact finding:**
+narrowed the module's own check from `if would_cross_security_boundary(effective_profile,
+security_classification):` to `if security_classification == "restricted" and
+would_cross_security_boundary(effective_profile, security_classification):`. Confirmed the new
+matrix test genuinely failed, specifically on `classification='confidential' profile='standard'`
+— the finding's own named case — while every pre-existing test in the 26-function suite stayed
+green (reproducing, for real, the exact undetected-defect scenario the review described). Reverted
+the module file byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` before and after,
+unchanged from the prior FTF-0500D submission's own recorded hash) and re-ran clean.
+
+`uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict` clean (after
+`git fetch --unshallow`, same disclosed precedent prior shifts used). `python3
+scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25` (`proving_symbol` stays
+blank — no live caller added by this fix). `python3 scripts/status.py`: unchanged `99/300`
+certified, 24 product-true (Law 2 — a resubmission is not a certification). Regression swept
+`test_ftf_0500.py` (needed `uv sync --all-packages` first — sqlalchemy/psycopg not installed by a
+bare `uv sync`, same precedent every prior Postgres-adjacent task already documented; the printed
+`TenantContextError` traceback inside its own stdout is that suite's own disclosed negative-test
+case, confirmed exit 0), `test_ftf_0500b.py`, `test_ftf_0402.py` — zero interference.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500D entry with this L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2).
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review
+itself named ("Do not re-review them until a new relay fix PR for that ID is appended below this
+line") for FTF-0500D specifically — not for FTF-1206, which remains exactly as that review left
+it, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
+`QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix; marking
+it `BLOCKED_DEPENDENCY` per that DoD's own instruction is left to the next shift rather than
+scope-creeping a second item into this one).

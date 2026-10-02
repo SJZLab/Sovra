@@ -26098,3 +26098,94 @@ PR #404 not yet reviewed). Stopping here — not picking a second task this shif
 (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-
 protection ask). `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-
 plane design question, not a further guess).
+
+## 2026-10-02T00:00:00Z — Scheduled relay shift — FTF-0500D fix-and-resubmit (PR #413)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch `claude/wizardly-fermat-fh94z0` started at the same commit as `origin/main`
+(`35b9050`, the merge of PR #409 recording FTF-1807's own merge) — confirmed via `git merge-base
+HEAD origin/main` landing on `origin/main`'s own tip before relying on it. `BLOCKER.md` read in
+full at shift start: one live entry (FTF-0902, formalized 2026-10-01T10:30Z, a Control-plane
+design question, not an owner ask or a full-shift stop) — untouched this shift, no fourth retry
+attempted. STEP 0.2: no `cognee-cli` binary on this sandbox — text-search fallback declared, same
+as every prior shift.
+
+STEP 1: Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` (all too large for a full
+read — read each file's top "Status"/"Owner actions"/"Active"/"Provisional" sections and tailed
+the most recent dated entries instead, per this file's own established precedent). `QUEUE.md`'s
+own top "Updated:" entry (17:10Z, FTF-1807 fix PR #408) is strictly newer than this file's own
+prior tail entry (FTF-0500C, 12:58:15Z) — confirms `QUEUE.md` as the more current source for
+"## Active" item 3's real remaining-work state: of the three originally-untouched RELAY-OWNED
+fix-and-resubmit items (FTF-0500D/FTF-1807/FTF-1206), that shift picked FTF-1807, leaving
+FTF-0500D and FTF-1206 as the two genuinely remaining. Picked **FTF-0500D** — the smaller,
+test-only fix (its own L2 finding: "the shipped code is correct; the negative_acceptance is
+unpinned") — over FTF-1206, which needs a Control-plane decision on claiming a separate
+persisted-migration prerequisite task first, or marking it `BLOCKED_DEPENDENCY` per its own DoD;
+left untouched rather than scope-creeped into this same shift.
+
+STEP 2 (PEV):
+
+**P** — read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+`tests/tasks/test_ftf_0500d.py` in full, plus the 2026-10-01 L2 review's own FTF-0500D finding in
+`docs/certifications/queue.md` (line ~21122): narrowing the import-time gate in
+`authorize_dataset_source_copy` to only fire for `security_classification == "restricted"` left
+the existing 25-function suite green, even though the independently-built
+`DatasetSourceCopyPreview` reports `blocked=True` for other classifications too (confidential
+into a standard-profile project is the named case) — the shipped module is correct
+(`would_cross_security_boundary` is evaluated unconditionally in the real code), only the test
+coverage pinning this negative_acceptance clause was missing: no existing test exercised the
+boundary check at any classification other than `restricted`.
+
+**E** — added `test_authorize_matches_preview_block_across_classification_and_profile_matrix` to
+`tests/tasks/test_ftf_0500d.py`: walks the full `security_classification` (4) x
+`project_security_profile` (3) = 12-combination matrix (using the same profile for both org
+default and project, so it is also the effective profile; purpose/connection held compliant
+throughout so only the boundary check is exercised) and asserts `authorize_dataset_source_copy`
+raises `SecurityBoundaryCrossingError` exactly when the independently-built preview's `blocked` is
+`True`, and stays silent exactly when it is `False`.
+
+**Real fault injection (Law 1), performed directly by this session, reproducing the exact finding
+text:** confirmed the baseline suite passes clean first, then narrowed the module's own check from
+`if would_cross_security_boundary(effective_profile, security_classification):` to `if
+security_classification == "restricted" and would_cross_security_boundary(effective_profile,
+security_classification):`. The new matrix test genuinely failed, specifically on
+`classification='confidential' profile='standard'` — the finding's own named case — while every
+other test in the suite (including the pre-existing `restricted`-only boundary tests) stayed
+green, reproducing for real the exact undetected-defect scenario the review described. Reverted
+the module file byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` confirmed before and
+after, matching the hash already on record from the original FTF-0500D submission) and re-ran
+clean. No production code survives this PR's diff — test-only, consistent with the review's own
+verdict that the shipped module is correct.
+
+`uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict` clean (after
+`git fetch --unshallow` — this sandbox clones shallow by default, same disclosed precedent prior
+shifts used). `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`
+(`proving_symbol` stays blank — no live caller added by this fix). `python3 scripts/status.py`:
+unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+Regression swept `test_ftf_0500.py` (needed `uv sync --all-packages` first — sqlalchemy/psycopg
+not installed by a bare `uv sync`, same precedent every prior Postgres-adjacent task already
+documented; the printed `TenantContextError` traceback inside its own stdout is that suite's own
+disclosed negative-test case, confirmed exit 0), `test_ftf_0500b.py`, `test_ftf_0402.py` — zero
+interference.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500D entry with an L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md` (the trigger the 2026-10-01 review itself
+named for re-review eligibility on this ID). Updated `QUEUE.md`'s own top log, "## Active" item 3,
+and "## Provisional" section. Opened **PR #413** (`[relay] FTF-0500D: fix L2 findings
+(classification x profile matrix test)`, branch `claude/wizardly-fermat-fh94z0` → `main`).
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real
+CI run on the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all
+updated this shift, before compaction. STEP 4 stop condition (a): 0 in-flight L1-PROVEN
+submissions awaiting *this* shift's own further action; FTF-0500D now joins the same backlog of
+items awaiting Control-plane L2 certification and the L4 gate (99/300 certified, unchanged —
+PR #413 not yet reviewed). Stopping here — not picking a second task this shift (FTF-1206 remains
+the one genuinely untouched RELAY-OWNED item, left for the next shift per its own larger-scope
+DoD). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing,
+low-urgency branch-protection ask). `BLOCKER.md`'s live FTF-0902 entry untouched, not retried
+(STEP 4(c) — a Control-plane design question, not a further guess).

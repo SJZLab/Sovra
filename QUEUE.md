@@ -1,4 +1,37 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T00:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-fh94z0`) —
+  **FTF-0500D fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #413.** `sha256sum
+  CLAUDE.md` matched the committed `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902,
+  10:30Z the prior day) is untouched, no fourth retry attempted. Of the two still-untouched
+  "RELAY-OWNED" fix-and-resubmit items from "## Active" item 3 (FTF-0500D/FTF-1206), picked
+  **FTF-0500D** as the smaller, test-only fix (vs. FTF-1206's own persisted-migration
+  prerequisite, which needs a Control-plane decision on claiming a separate migration task first
+  or marking it `BLOCKED_DEPENDENCY`, left for a future shift rather than scope-creeped into this
+  one).
+
+  The L2 finding: narrowing `authorize_dataset_source_copy`'s boundary check to only fire for
+  `security_classification == "restricted"` left the existing 25-function suite green, even
+  though the independently-built preview reports `blocked=True` for other classifications too
+  (e.g. confidential into a standard-profile project) — the shipped code was already correct, the
+  negative_acceptance just wasn't pinned by a test. Added
+  `test_authorize_matches_preview_block_across_classification_and_profile_matrix` to
+  `tests/tasks/test_ftf_0500d.py`: walks the full classification x effective-profile matrix (4x3)
+  and asserts `authorize_*` raises exactly when the preview blocks. Real fault injection (Law 1):
+  reproduced the exact narrowing the finding describes, confirmed the new test genuinely fails on
+  the finding's own named case (`confidential`/`standard`) while every other test stays green,
+  then reverted the module byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` before/after,
+  matching the hash already on record from the original submission). No production code changed.
+  Full evidence in `docs/certifications/queue.md`'s matching 2026-10-02 entry.
+
+  `uv run ruff check .`/`ruff format --check .` clean (356 files); `uv run mypy
+  tests/tasks/test_ftf_0500d.py` clean; `validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` unchanged `25/25`; `scripts/status.py` unchanged
+  `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification). Regression
+  swept `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_0402.py` — zero interference (needed `uv
+  sync --all-packages` first for `test_ftf_0500.py`'s sqlalchemy/psycopg imports, same precedent
+  every prior Postgres-adjacent task already documented). Not self-certified (Law 4) — PR #413
+  awaits Control-plane L2 re-review and a real CI run. No open owner ask (this file's own "Owner
+  actions — current" unchanged — only the low-urgency branch-protection ask, nothing blocking).
 Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`) —
   **FTF-1807 fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #408.** Branch found at
   the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged work of its
@@ -8220,10 +8253,14 @@ this same resolution (doc-only, redundant once this lands).
    through the module itself instead of re-implementing its SQL, and a later page that drops the
    snapshot-version header after one was seen is now caught). **FTF-0500B: fix PR #407 opened**
    (version-id-sensitive manifest hash + versioning-disabled refusal). **FTF-1807: fix PR #408
-   opened this shift** (operator-guidance semantics check replaces the old token-only check — see
-   `docs/certifications/queue.md`'s matching 2026-10-01 entry). Remaining, still untouched:
-   FTF-0500D, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2
-   findings` PR and append it to `docs/certifications/queue.md` for re-review.
+   opened** (operator-guidance semantics check replaces the old token-only check — see
+   `docs/certifications/queue.md`'s matching 2026-10-01 entry). **FTF-0500D: fix PR #413 opened
+   this shift** (classification x effective-profile matrix test — see `docs/certifications/
+   queue.md`'s matching 2026-10-02 entry). Remaining, still untouched:
+   FTF-1206. Open its fix as a new `[relay] <ID>: fix L2
+   findings` PR and append it to `docs/certifications/queue.md` for re-review — or, per its own
+   DoD, mark it `BLOCKED_DEPENDENCY` first if a persisted org-policy migration task is not claimed
+   first.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
@@ -8235,7 +8272,8 @@ this same resolution (doc-only, redundant once this lands).
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
      on a later page blocks. **DONE — fix PR opened this shift, see above.**
    - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
-   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
+   - **FTF-0500D:** test the classification × profile matrix on `authorize_*`. **DONE — fix PR
+     #413 opened this shift, see above.**
    - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.
    - **FTF-1206:** needs persistence. Claim a separate migration prerequisite first, or mark
      BLOCKED_DEPENDENCY.
@@ -8251,6 +8289,13 @@ independently reviewed and CERTIFIED this shift via PR #100 (merge commit
 full history and evidence.
 
 ## Provisional (awaiting Control plane L2 certification)
+**FTF-0500D** ("Dataset source security-boundary preview + audit evidence") — fix-and-resubmit
+for the 2026-10-01 L2 finding, submitted via **PR https://github.com/SJZLab/Sovra/pull/413**
+(branch `claude/wizardly-fermat-fh94z0` → `main`, open). Full evidence in this file's own top
+dated log entry and `docs/certifications/queue.md`'s matching 2026-10-02 entry; original
+submission details below (superseded by this fix for re-review purposes, not contradicted —
+the original module code is unchanged, only test coverage was added).
+
 **FTF-0500C** ("Database/API/trace source contract and fail-closed validation") — submitted
 PROVISIONAL this shift via **PR https://github.com/SJZLab/Sovra/pull/364** (branch
 `claude/wizardly-fermat-f9qdmb` → `main`, still open — merge-conflict-resolved onto current
