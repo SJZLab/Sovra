@@ -3296,10 +3296,10 @@ FTF-04A05:
   proving_test: tests/tasks/test_ftf_04a05.py, tests/tasks/test_ftf_04a05_routes.py,
     tests/integration/test_ftf_04a05_github_source_snapshot.py
 FTF-04A06:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Local repository connector with root allowlist/path protections
-  evidence_hash: ''
+  evidence_hash: d8e5c9ee79f6888c59745600d318498bbce45753
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -3447,7 +3447,7 @@ FTF-04A06:
     `test_ftf_h006.py`/`test_ftf_h007.py`, zero regressions. No `ci.yml` change needed -- the
     existing `gate`-job step already runs this file. **Not self-certified (Law 4)** -- awaiting
     independent Control-plane L2 re-review and a real CI run on the opened PR before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
 FTF-04A07:
@@ -5588,10 +5588,10 @@ FTF-0500A:
   proving_symbol: ''
   proving_test: apps/web/tests/ftf_0500a.spec.ts
 FTF-0500B:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: S3/MinIO source validation + metadata preview
-  evidence_hash: ''
+  evidence_hash: 07d912b44947ea75cd53f9ebe35748c0ad1bc41f
   implementation_state: IMPLEMENTED
   notes: |-
     kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31;
@@ -5711,14 +5711,14 @@ FTF-0500B:
     regressions (ran after `uv sync --all-packages`, since a bare `uv run`
     environment lacks sqlalchemy/psycopg, the same disclosed precedent prior
     shifts already documented).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500b.py
 FTF-0500C:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Database/API/trace source contract and fail-closed validation
-  evidence_hash: ''
+  evidence_hash: 0bd94864c30b835c000d3bb3d2651272249f0839
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
     FTF-0500A, FTF-H006 (all CERTIFIED). Section 67.1''s own connector table made real for this
@@ -5829,14 +5829,14 @@ FTF-0500C:
     -- zero interference (the printed `TenantContextError` traceback inside `test_ftf_0500.py`''s
     own output is that suite''s own disclosed negative-test case, confirmed exit 0, "all checks
     passed"). Not self-certified (Law 4).'
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py
 FTF-0500D:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dataset source security-boundary preview + audit evidence
-  evidence_hash: ''
+  evidence_hash: e4dba6eed50b6981d44f1cd13f04aa03a47e4e53
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
@@ -5939,7 +5939,7 @@ FTF-0500D:
     already runs `tests/tasks/test_ftf_0500d.py` in full. **Not self-certified (Law 4)** --
     independent Control-plane L2 re-review and a real CI run on the opened PR are required before
     certification; `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
@@ -6372,10 +6372,10 @@ FTF-0509:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0509.py
 FTF-0510:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Tokenization analysis
-  evidence_hash: ''
+  evidence_hash: 384ce8c90e4f0ff5476168e7e1bce14b3923d5fd
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0306, FTF-0500,
@@ -6429,7 +6429,7 @@ FTF-0510:
     downloaded tokenizer files (FTF-0302's own file-fetch plumbing is not wired to this module --
     a later, separately dependency-gated composition task). proving_symbol left blank
     accordingly (Law 6/7); product_truth_check.py's product-true count is unchanged.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0510.py
 FTF-0511:
@@ -6924,10 +6924,10 @@ FTF-0520:
   proving_symbol: ''
   proving_test: ''
 FTF-0601:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Evaluation suite schema/API
-  evidence_hash: ''
+  evidence_hash: d8e5c9ee79f6888c59745600d318498bbce45753
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0401, FTF-04A19,
@@ -6964,7 +6964,7 @@ FTF-0601:
     `evaluation-suite-integration` job already run these files. **Not self-certified (Law 4)** --
     awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
     certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
@@ -9358,10 +9358,10 @@ FTF-1806:
   proving_symbol: ''
   proving_test: ''
 FTF-1807:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: LiteLLM outage runbook
-  evidence_hash: ''
+  evidence_hash: 57877a86dd65e395e08059e005dd9ec03200aa60
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-15; scenarios=Q30, Q34; deps=FTF-0215, FTF-H001, FTF-H004,
@@ -9396,7 +9396,7 @@ FTF-1807:
     production code touched; `proving_symbol`/`proof_state` unchanged (Law 2 -- a resubmission is
     not a certification). **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
     re-review and this merged PR's own real CI run (41/41 jobs green, `gate` included).
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/documentation/test_ftf_1807.py
 FTF-1808:
@@ -9702,10 +9702,10 @@ FTF-H006:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h006.py
 FTF-H007:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Untrusted source acquisition and complete immutable analysis
-  evidence_hash: ''
+  evidence_hash: d8e5c9ee79f6888c59745600d318498bbce45753
   implementation_state: IMPLEMENTED
   notes: >-
     kind=audit_hardening; requirements=AF-09, AF-11; scenarios=Q03, Q04, Q25; deps=FTF-04A05,
@@ -9813,7 +9813,7 @@ FTF-H007:
     `test_ftf_h006.py`, zero regressions. No `ci.yml` change needed -- the existing `gate`-job step
     already runs this file. **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
     re-review and a real CI run on the opened PR before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h007.py
 FTF-H008:

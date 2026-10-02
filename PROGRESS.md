@@ -1,4 +1,13 @@
 # PROGRESS — Sovra
+## 2026-10-02T17:30:00Z — Certifier run (session `session_01PEvFPCRw3uPx1BKr2QprVV`), triggered by PR #420 open
+
+Queue held eight merged-PROVISIONAL fix-and-resubmit items (the 2026-10-01 "NOTHING PENDING" line was
+superseded by the relay's resubmissions). Independence confirmed (no commit carries this session ID).
+CERTIFIED after own fault injection, local runs (real PostgreSQL 16 for FTF-0601/FTF-0500C) and CI
+check on the merged tree: FTF-H007, FTF-04A06, FTF-0601, FTF-0500B, FTF-0500C, FTF-0500D, FTF-1807,
+FTF-0510. NOT certified: FTF-1206 (persistence half of the 2026-10-01 DoD still open, `BLOCKER.md`).
+`status.py` 99 -> 107/300; `product_truth_check` 25/25; `validate_spec --strict` clean. Evidence:
+`docs/certifications/ledger.md` 2026-10-02 entry.
 ## 2026-10-02T19:20:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-76e5x6` — frontier re-confirmed fully claimed again, no new RELAY-OWNED work; nothing done this shift
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.

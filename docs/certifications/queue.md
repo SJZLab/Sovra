@@ -21720,3 +21720,11 @@ Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
 `tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
 every open and future PR in this repository (the flake could land on any PR's gate run, not just
 #412's), which is why it was picked up directly rather than left as a comment only.
+
+### Certifier status after the 2026-10-02 review (session_01PEvFPCRw3uPx1BKr2QprVV)
+CERTIFIED (see ledger.md): FTF-H007, FTF-04A06, FTF-0601, FTF-0500B, FTF-0500C, FTF-0500D, FTF-1807, FTF-0510.
+**FTF-1206 stays PROVISIONAL/L1-PROVEN, NOT certified.** PR #412 fixed the route-change-against-grant
+half (verified in the diff and CI), but the 2026-10-01 DoD's first item, a persisted tenant-scoped
+org-policy record (its own migration task), is still absent, and the acceptance text says "Persist...".
+The relay's own `BLOCKER.md` entry already records this as a Control-plane scope decision. Do not
+re-review until a PR adds persistence or Control plane changes the DoD. NOTHING ELSE PENDING.

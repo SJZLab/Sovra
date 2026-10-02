@@ -9750,3 +9750,51 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## 2026-10-02 — L2 review of the fix-and-resubmit batch (FTF-H007, FTF-04A06, FTF-0601, FTF-0500B, FTF-0500C, FTF-0500D, FTF-1807, FTF-0510)
+Certifier session: https://claude.ai/code/session_01PEvFPCRw3uPx1BKr2QprVV (scheduled certifier routine, fired by PR #420's open event). Independence: no commit on any of the PRs below carries this session ID (`git log origin/main` trailers grepped, 0 matches); the relay sessions that authored them each carry a different `session_01…` ID, and the 2026-10-01 reviewer session (`session_01QVznorVMjnmcttUhyDnoGR`) authored none of the fixes.
+Method for every item: contract and the 2026-10-01 DoD re-read; proving test run locally on current `main` (`0a77baa` + PR #420, doc-only); own fault injection against the on-disk module/doc, reverted byte-identical (`git status` clean after each); CI re-checked on the merged tree (PR #420's `gate` and all 40 integration jobs green, run 37036944475, which is `main` plus one PROGRESS.md line; the per-PR runs named below were also green). `product_truth_check` 25/25 with `proving_symbol` blank for these items (precedent: no live caller yet, disclosed in each spec-matrix note); `validate_spec --strict` clean.
+
+### FTF-H007 — Local repository source boundary scan
+- Criterion ID: FTF-H007 · PR: https://github.com/SJZLab/Sovra/pull/403 · Merge commit: d8e5c9ee79f6888c59745600d318498bbce45753 · CI: PR #403 run on branch `claude/wizardly-fermat-wy0my8` green, plus the current-main run above.
+- DoD check (2026-10-01 items 1–4): `_run_git` hardening present (`-c core.fsmonitor=false -c core.hooksPath=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`); dangerous-config scan; symlinked-hook and aliased-import cases present in `tests/tasks/test_ftf_h007.py`. Local: exit 0, "all checks passed".
+- Own fault injections: (1) removed the two `-c` args from `_run_git` → `test_ftf_h007.py` FAIL "repo-controlled core.fsmonitor command was never actually executed". (2) forced `dangerous_git_config_keys = ()` in `source_boundary.py` → 5 FAILs (core.fsmonitor/core.hooksPath reported, not-safe-to-lock, readiness refusal). Both reverted.
+- Evidence hash = merge commit.
+
+### FTF-04A06 — Local repository connector
+- Criterion ID: FTF-04A06 · PR #403 (same merge commit d8e5c9ee79f6888c59745600d318498bbce45753).
+- DoD check: same `_run_git` hardening plus `test_malicious_core_fsmonitor_never_executes_and_never_edits_the_tree`. Local: exit 0.
+- Own fault injection: injection (1) above → `test_ftf_04a06.py` FAIL "a malicious core.fsmonitor command is never actually executed during capture". Reverted. Supersedes the 2026-10-01 DECERTIFIED entry above.
+
+### FTF-0601 — EvaluationSuite CRUD
+- Criterion ID: FTF-0601 · PR #403 (merge commit d8e5c9ee79f6888c59745600d318498bbce45753); migration `0018_eval_suites_reviewer_fix.py`.
+- Local: `tests/integration/test_ftf_0601_evaluation_suite.py` against a fresh real PostgreSQL 16 cluster, alembic 0001→0018 clean, "all checks passed". The CI `evaluation-suite-integration` job is green.
+- Own fault injection: replaced the three `validate_*` calls in `update_evaluation_suite` with direct assignment → 4 FAILs (`grading_logic_version=0` not a 400, `name=''` accepted, `reviewer_id=''` accepted, stored content changed). Reverted, suite green again from a fresh DB.
+
+### FTF-0500C — Database/API/trace source contract
+- Criterion ID: FTF-0500C · PR: https://github.com/SJZLab/Sovra/pull/404 · Merge commit: 0bd94864c30b835c000d3bb3d2651272249f0839.
+- Local: `tests/tasks/test_ftf_0500c.py` and the real-Postgres `tests/integration/test_ftf_0500c_database_api_trace_source.py` both pass (5/5 repeat runs).
+- Own fault injections: (1) snapshot comparison `elif observed != snapshot_version:` → `elif False:` → 3 FAILs incl. the dropped-header case. (2) module SQL `REPEATABLE READ, READ ONLY` → `READ COMMITTED, READ WRITE` → integration FAILs on transaction_read_only and transaction_isolation. Both reverted. (One run directly after a restore showed the injected result; 5 further clean runs all passed, so I attribute that to a stale `.pyc` from my own same-second edit, not to flakiness.)
+
+### FTF-0500B — S3/MinIO source validation and metadata preview
+- Criterion ID: FTF-0500B · PR: https://github.com/SJZLab/Sovra/pull/407 · Merge commit: 07d912b44947ea75cd53f9ebe35748c0ad1bc41f.
+- Local: `tests/tasks/test_ftf_0500b.py` exit 0.
+- Own fault injections: (1) deleted `"version_id"` from `manifest_source` → version-sensitivity negative_acceptance FAIL. (2) `if version_id == _UNVERSIONED_SENTINEL:` → `if False:` → the literal-`null` refusal FAIL. Both reverted. The 2026-10-01 DoD allowed real MinIO to stay BLOCKED_EXTERNAL; the SigV4 fixture remains the unit layer, as that review stated.
+
+### FTF-0500D — Dataset source security-boundary preview and audit evidence
+- Criterion ID: FTF-0500D · PR: https://github.com/SJZLab/Sovra/pull/410 · Merge commit: e4dba6eed50b6981d44f1cd13f04aa03a47e4e53.
+- Local: `tests/tasks/test_ftf_0500d.py` exit 0.
+- Own fault injection: narrowed the import-time gate to `security_classification == "restricted" and would_cross_security_boundary(...)` → matrix test FAIL "classification='confidential' profile='standard': preview.would_cross_security_boundary=True but authorize raised=False". Reverted.
+
+### FTF-1807 — LiteLLM outage runbook
+- Criterion ID: FTF-1807 · PR: https://github.com/SJZLab/Sovra/pull/408 · Merge commit: 57877a86dd65e395e08059e005dd9ec03200aa60.
+- Local: `tests/documentation/test_ftf_1807.py` exit 0.
+- Own fault injections: (1) operator-table revoked-key Effect cell rewritten to "Calls continue until the freshness TTL expires" → FAIL naming the row. (2) section 6 "unapproved external fallback" clause rewritten to "external fallback is allowed" → FAIL on the verbatim negative_acceptance check. Both reverted.
+
+### FTF-0510 — Tokenization analysis (first L2 review)
+- Criterion ID: FTF-0510 · PR: https://github.com/SJZLab/Sovra/pull/411 · Merge commit: 384ce8c90e4f0ff5476168e7e1bce14b3923d5fd.
+- Contract re-pulled via `tools/r1_handoff.py packet FTF-0510` (`docs/implementation/task-packets/FTF-0510.md`). Acceptance 1 (actual tokenizer/template, distribution, complete conversation boundaries): met. `ChatTemplateFastTokenizer` renders a real `tokenizers.Tokenizer` with the declared `chat_template` through Jinja2; the test builds a real BPE tokenizer in memory; per-message cumulative boundaries and p50/p90/p99 are reported. Negative_acceptance (truncated critical turn needs explicit policy; alias-only tokenizer cannot certify): met, checked below. Empty batch is refused rather than vacuously certified.
+- CI: `FTF-0510 negative-test proof` step is wired in `ci.yml` and the `gate` job is green.
+- Local: `tests/tasks/test_ftf_0510.py` exit 0.
+- Own fault injections: (1) certification check → `if False:` → both negative_acceptance tests FAIL. (2) drop `not tokenizer.exact` → alias-only FAIL. (3) drop the truncation-policy term → truncated-turn FAIL. All reverted.
+- Notes for the record, not blockers: (a) the packet's suggested path `services/training-worker/data/…` was refined to `workers/data/…` (this repo's SOURCE_ROOTS; same precedent as FTF-0506–0511). (b) New runtime deps `tokenizers` and `jinja2` were resolved by the CLAUDE.md default-resolution rule against REFERENCE_REPOSITORIES.md's model-template row; the owner can overrule this, and it is recorded in the PR body. (c) `proving_symbol` is blank: no live caller exists yet, so product-truth does not cover this item.

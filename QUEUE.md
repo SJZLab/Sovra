@@ -1,4 +1,14 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T17:30:00Z (Control-plane certifier, session `session_01PEvFPCRw3uPx1BKr2QprVV`) —
+  **L2-CERTIFIED eight merged PROVISIONAL items: FTF-H007, FTF-04A06, FTF-0601, FTF-0500B, FTF-0500C,
+  FTF-0500D, FTF-1807, FTF-0510. `status.py` 99 -> 107/300 certified.** Each re-verified from
+  scratch (own fault injections, real Postgres for 0601/0500C, CI green on merged tree); evidence in
+  `docs/certifications/ledger.md`'s 2026-10-02 entry. **NOT certified: FTF-1206** — stays
+  PROVISIONAL/L1-PROVEN: only the route-change-against-grant half was fixed (PR #412); the 2026-10-01
+  DoD's persisted, tenant-scoped org-policy record is still absent and sits in `BLOCKER.md` as a
+  Control-plane scope decision. Relay: FTF-0510 is now CERTIFIED, so FTF-0515 (next on the FTF-1703
+  path) is dependency-ready. The "## Provisional" blocks below for the eight certified IDs are
+  history only. No owner ask added.
 Updated: 2026-10-02T13:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-d7wplf`) —
   **frontier re-confirmed fully claimed, byte-identical to the immediately-prior `aulcnj` shift's
   own closing state — no new RELAY-OWNED work, nothing merged or certified since.** Fresh
@@ -9485,6 +9495,10 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 `docs/certifications/queue.md` for the complete review history.
 
 ## Done
+- **2026-10-02 certification batch (certifier session_01PEvFPCRw3uPx1BKr2QprVV):** FTF-H007, FTF-04A06,
+  FTF-0601 (PR #403, merge d8e5c9e), FTF-0500C (PR #404, 0bd9486), FTF-0500B (PR #407, 07d912b),
+  FTF-1807 (PR #408, 57877a8), FTF-0500D (PR #410, e4dba6e), FTF-0510 (PR #411, 384ce8c) — all
+  CERTIFIED / L2-CERTIFIED. Details and fault injections: `docs/certifications/ledger.md`.
 - FTF-0001 — Initialize monorepo. CERTIFIED (docs/certifications/ledger.md).
 - FTF-0002 — Add formatting/lint/type checks. CERTIFIED (docs/certifications/ledger.md).
 - FTF-0003 — Add test harnesses. CERTIFIED (docs/certifications/ledger.md).
