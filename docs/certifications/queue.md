@@ -21430,6 +21430,86 @@ opened PR are required before certification. This entry is the trigger the 2026-
 itself named ("Do not re-review them until a new relay fix PR for that ID is appended below this
 line") for FTF-0500D specifically — not for FTF-1206, which remains exactly as that review left
 it, unchanged, still needing its own persisted org-policy migration prerequisite first.
+
+## 2026-10-01 — FTF-0510 — Tokenization analysis
+- **PR:** opened this shift, branch `claude/wizardly-fermat-wkzp3g` → `main` (see this repo's
+  own `QUEUE.md` top dated entry for the matching narrative).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0510 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  (`docs/implementation/task-packets/FTF-0510.md`). Dependencies FTF-0306/FTF-0500/FTF-0508 all
+  CERTIFIED, confirmed via `docs/spec-matrix.yaml` before relying on them.
+- **New runtime dependencies, disclosed (CLAUDE.md "new runtime deps" ask-first category,
+  resolved via CLAUDE.md's own "Default resolution rule" rather than silently added):**
+  `workers/data/pyproject.toml` adds `tokenizers>=0.20.3,<0.21` and `jinja2>=3.1.4,<3.2`.
+  `docs/architecture/REFERENCE_REPOSITORIES.md`'s own "Model templates" row names
+  `https://huggingface.co/docs/transformers/en/chat_templating` as the required mechanism for
+  "Training and serving must share the qualified serialization contract" — that mechanism is a
+  real Hugging Face fast tokenizer (`tokenizer.json`, already one of FTF-0302's own
+  `_ALLOWED_FILENAME_SUFFIXES` for a resolved `huggingface` `TrainableArtifact`) plus a Jinja2
+  `chat_template` string (`tokenizer_config.json`). `tokenizers`+`jinja2` render that real
+  mechanism directly, with no torch/tensorflow backend and without the full `transformers`
+  package. No architecture doc names a different tokenization/templating library. Same
+  precedent FTF-04A11 already used promoting `pyyaml` to a real `apps/api` runtime dependency,
+  documented in this task's own module docstring, not silently added.
+- **Delivered:** `workers/data/tokenization_analysis.py::analyze_tokenization`. This task's own
+  acceptance clause ("Tokenize with actual selected tokenizer/template, report distribution and
+  complete conversation boundaries") is met by `ChatTemplateFastTokenizer` (`exact=True`) — a
+  real fast tokenizer plus the real selected model's own chat template, rendered through a
+  sandboxed Jinja2 environment matching Hugging Face's own `apply_chat_template` mechanism
+  (including a real `raise_exception` global, which real production templates — e.g. Meta
+  Llama 3's own published template — call to reject a malformed conversation) — real per-message
+  cumulative token boundaries (re-render+re-encode each growing prefix) and a real
+  `TokenDistribution` (min/max/mean/p50/p90/p99, nearest-rank, no numpy added).
+- **negative_acceptance** ("Any truncated critical turn requires explicit policy; alias-only
+  approximate tokenizer cannot certify training fit") is met by
+  `TokenizationAnalysisReport.certifies_training_fit`: forced `False` whenever any conversation
+  used `ApproximateAliasTokenizer` (`exact=False` — a real tokenizer, just not the pinned one,
+  same "alias/display-name … cannot substitute for exact" discipline FTF-0306's own
+  negative_acceptance already established for weight digests), or `total_token_count` exceeds
+  `max_sequence_length` with no explicit, non-empty `truncation_policy` entry for that
+  conversation's own `batch_position` (Section 8.2's own "missing assistant outcome" blocking
+  error means a clean record's own last message is always the real critical/training-target
+  turn, so this reduces to a direct, real comparison, not a guessed overlap calculation), or any
+  row carries a `TokenizationAnalysisIssue`.
+- **Test:** `tests/tasks/test_ftf_0510.py` — 30 checks, fully hermetic (a real
+  `tokenizers.Tokenizer` trained offline/in-memory on a tiny fixed corpus; no Hugging Face Hub
+  network call anywhere in the test or in the production module).
+- **Evidence — shown able to fail (Law 1):**
+  1. The test file's own fault-injection functions
+     (`_buggy_certifies_training_fit_ignoring_exact_flag`,
+     `_buggy_never_requires_explicit_policy`) reproduce each negative_acceptance gap inline and
+     are asserted to disagree with the real production report.
+  2. Performed directly by this session, beyond the committed test file: temporarily replaced
+     this module's own `if not tokenizer.exact or requires_explicit_truncation_policy:
+     certifies_training_fit = False` line with a no-op. Reran `tests/tasks/test_ftf_0510.py` —
+     exactly the two matching negative_acceptance checks genuinely FAILed
+     (`negative_acceptance: the real production report correctly refuses to certify training
+     fit for an alias-only approximate tokenizer`; `negative_acceptance: an unresolved truncated
+     critical turn refuses to certify training fit`), bound to this criterion ID. Reverted
+     byte-identical (`md5sum` confirmed matching before/after: `4e8e9c2436d2662d5fedb8312819ff8f`)
+     and reran clean.
+  3. `test_exact_tokenizer_matches_real_manual_render_and_encode` independently reproduces the
+     real template render + real encode outside the production module and asserts the counts
+     match exactly — proves `analyze_tokenization`'s own token counts are not fabricated.
+- **Verification run this shift:** `uv run ruff check .` / `uv run ruff format --check .` clean
+  (358 files). `uv run mypy .` clean (358 source files). `uv run pytest tests/unit` — 3 passed.
+  `python3 scripts/validate_spec.py --strict`: 31 pre-existing `stale_commit` defects, confirmed
+  present identically on `origin/main` before this change (`git stash` + rerun) — this sandbox's
+  own git checkout is a shallow clone (`git rev-parse --is-shallow-repository` → `true`), which
+  is the real cause (early squash-merge commit SHAs do not resolve locally), not a defect this
+  task introduced; none of the 31 names FTF-0510. `python3 scripts/product_truth_check.py
+  --fail-on-unwired`: unchanged `25/25` (`proving_symbol` deliberately left blank — disclosed "no
+  live caller yet" gap, Law 6/7). `scripts/status.py`: unchanged `99/300` certified, `24`
+  product-true. Regression-ran the full `workers/data` sibling suite
+  (FTF-0506/0507/0508/0509/0511/0512/0513/0514) and FTF-0306's own test — all pass, zero
+  regressions.
+- **Disclosed gap (same "no live caller yet" precedent as FTF-0506/0507/0508/0511/1302/1303/1304):**
+  no dataset-import pipeline route exists yet in this repository to call `analyze_tokenization`
+  with a real resolved `TrainableArtifact`'s own downloaded `tokenizer.json`/
+  `tokenizer_config.json` — FTF-0302's own file-fetch plumbing is not wired to this module; that
+  composition is a later, separately dependency-gated task.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
+  awaiting Control plane L2 review per Law 4.
 ## 2026-10-02 — FTF-1206 — partial fix-and-resubmit for the 2026-10-01 L2 finding (route-change-against-grant half only)
 
 Scheduled autonomous relay shift, branch `claude/wizardly-fermat-f6fqug`. This resolves only the

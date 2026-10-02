@@ -6338,16 +6338,66 @@ FTF-0509:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0509.py
 FTF-0510:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tokenization analysis
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0306, FTF-0500,
-    FTF-0508
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0306, FTF-0500,
+    FTF-0508 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
+    own suggested services/training-worker/data/tokenization_analysis.py to
+    workers/data/tokenization_analysis.py (this repo's real SOURCE_ROOTS, FTF-0001/PR #10 --
+    no services/ tree exists), same precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511.
+
+    New runtime deps, disclosed (CLAUDE.md "Default resolution rule," same precedent FTF-04A11
+    used for pyyaml): workers/data/pyproject.toml adds tokenizers (loads a real Hugging Face
+    fast tokenizer.json, already one of FTF-0302's own _ALLOWED_FILENAME_SUFFIXES, no
+    torch/tensorflow needed) and jinja2 (renders the real tokenizer_config.json chat_template
+    string -- the exact mechanism docs/architecture/REFERENCE_REPOSITORIES.md's own "Model
+    templates" row names). No architecture doc names an alternative.
+
+    Built for real: analyze_tokenization (workers/data/tokenization_analysis.py) tokenizes an
+    already-normalized candidate batch with a real ConversationTokenizer backend.
+    ChatTemplateFastTokenizer (exact=True) loads the real selected base model's own resolved
+    tokenizer.json + chat_template via a sandboxed Jinja2 environment (matching Hugging Face's
+    own apply_chat_template mechanism, including a real raise_exception global many production
+    templates call). ApproximateAliasTokenizer (exact=False) is a real tokenizer too, just not
+    the pinned one. Acceptance ("Tokenize with actual selected tokenizer/template, report
+    distribution and complete conversation boundaries") is met by real per-message cumulative
+    token boundaries (re-render+re-encode each growing prefix through the same real
+    template/tokenizer) and a real TokenDistribution (min/max/mean/p50/p90/p99, nearest-rank,
+    no numpy added).
+
+    negative_acceptance ("Any truncated critical turn requires explicit policy; alias-only
+    approximate tokenizer cannot certify training fit") is met by
+    TokenizationAnalysisReport.certifies_training_fit: forced False whenever any conversation
+    used exact=False, or total_token_count exceeds max_sequence_length with no explicit,
+    non-empty truncation_policy entry for that batch_position (Section 8.2's own "missing
+    assistant outcome" blocking error means a clean record's own last message is always the
+    real critical/training-target turn, so this reduces to a direct, real comparison -- no
+    guessed overlap arithmetic), or any row issue exists. A row that cannot be tokenized
+    (empty/malformed messages, or a genuine Jinja2 template rejection) is reported as a
+    TokenizationAnalysisIssue, never silently dropped or retried with a guessed substitute.
+
+    tests/tasks/test_ftf_0510.py: 30 checks, fully hermetic (a real tokenizers.Tokenizer trained
+    offline/in-memory on a tiny fixed corpus -- no Hugging Face Hub network call anywhere).
+    Real fault injection (Law 1, disclosed): temporarily removed this module's own
+    `if not tokenizer.exact or requires_explicit_truncation_policy: certifies_training_fit =
+    False` check -- both matching negative_acceptance tests genuinely FAILed, bound to this
+    criterion ID; reverted byte-identical (md5sum confirmed matching before/after) and reran
+    clean. The test file's own exact-tokenizer total_token_count is additionally cross-checked
+    against an independent manual render+encode of the same conversation, outside the
+    production module, proving no fabricated count.
+
+    Disclosed gap, same "no live caller yet" precedent as FTF-0506/0507/0508/0511/1302/1303/1304:
+    no dataset-import route exists yet to call this with a real resolved TrainableArtifact's own
+    downloaded tokenizer files (FTF-0302's own file-fetch plumbing is not wired to this module --
+    a later, separately dependency-gated composition task). proving_symbol left blank
+    accordingly (Law 6/7); product_truth_check.py's product-true count is unchanged.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0510.py
 FTF-0511:
   certification_state: CERTIFIED
   criticality: MUST
