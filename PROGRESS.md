@@ -253,6 +253,74 @@ usage-limit stop; no new ask-first item (`QUEUE.md`'s own "Owner actions — cur
 only the pre-existing, low-urgency branch-protection ask). Stopping here after a complete PEV cycle
 on the genuinely actionable portion of one item, consistent with this file's own normal shift
 cadence.
+## 2026-10-01T18:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1qb4az`
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. The designated branch was
+found sitting exactly at the same commit as `origin/main` (`35b9050`, PR #409's own merge
+confirmation of PR #408/FTF-1807) — no prior unmerged work of its own, no restart needed. STEP
+0.1: read `BLOCKER.md` (one live entry, FTF-0902, unchanged, three real fix attempts already
+falsified a prior shift — correctly not retried a fourth time), `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh (both trackers exceed the single-read size limit — read via
+targeted offsets/grep, not assumed from training or prior context).
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 named two remaining untouched fix-and-resubmit items
+from the 2026-10-01 L2 review: FTF-0500D and FTF-1206 (FTF-1206 needs a persisted org-policy
+migration first, a separate larger prerequisite per that file's own existing note). A fresh
+`list_pull_requests` sweep (not trusted from either file's own stale narrative) confirmed no PR
+was already open for FTF-0500D. Picked **FTF-0500D** — the one genuinely unblocked item left.
+
+STEP 2 (PEV):
+- **P:** read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+  `tests/tasks/test_ftf_0500d.py` directly. The L2 finding: narrowing the import-time gate inside
+  `authorize_dataset_source_copy` to `security_classification == "restricted"` leaves the whole
+  suite green, because every existing boundary-crossing test paired `restricted` with `standard`
+  only — the one classification a narrowed check still happens to catch. The shipped module was
+  already correct (it calls the real, generic `would_cross_security_boundary` rank comparison, not
+  a literal classification string); only the negative_acceptance test coverage was unpinned, per
+  the review's own framing.
+- **E:** added `_classification_profile_matrix_violations` (checks every `security_classification`
+  x `security_profile` pairing — 16 combinations, org default == project profile, purpose/
+  connection held compliant) and `test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`,
+  asserting zero violations against the real module. Added
+  `test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`: temporarily
+  rewrites the exact boundary-check line in the real on-disk module to the literal narrowed form
+  the review described, runs the identical matrix check in a fresh, isolated `subprocess`
+  (deliberately avoiding `importlib.reload`, which would have mutated the module's shared
+  `__dict__` in place and silently desynchronized every other test's `except`-clause exception
+  identity from what the module actually raises after a second reload — an entire-suite-crashing
+  risk ruled out by tracing CPython's reload semantics before writing this, not discovered by
+  trial and error), **confirms the original restricted+standard case alone stays blind to the
+  gap**, **confirms the new matrix check genuinely catches it** (the real `confidential:standard`
+  violation — a confidential source silently authorized into a standard project despite the
+  preview blocking it), then restores the module file byte-identical and re-confirms the matrix
+  check is clean again.
+- **V:** `python3 tests/tasks/test_ftf_0500d.py` — 27 test functions (was 25), "all checks
+  passed". `uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+  tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict` clean (after
+  `git fetch --unshallow` — this sandbox clones shallow by default).
+  `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`.
+  `scripts/status.py`: unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is
+  not a certification). Regression swept `test_ftf_0402.py` (FTF-0500D's own dependency) — zero
+  regressions. `test_ftf_0500.py` could not be run in this sandbox (`apps/api`'s own separate
+  `pyproject.toml`/dependency set — `sqlalchemy` not installed — a disclosed, pre-existing
+  environment gap unrelated to this task's pure, no-I/O `workers/data` module; confirmed via a
+  repo-wide grep that no test file besides `test_ftf_0500d.py` itself imports this module). No
+  production code changed; no other spec-matrix entry touched (this task's own `files` clause
+  names only the module and this test, and the module is byte-identical before/after, confirmed
+  by the fault-injection test's own md5sum assertion).
+
+Opened **PR https://github.com/SJZLab/Sovra/pull/410** (`[relay] FTF-0500D: fix L2 findings
+(classification x profile matrix test replaces the single-case boundary test)`). Appended the full
+evidence to `docs/certifications/queue.md` and updated `QUEUE.md`'s own top log entry and
+"## Active" item 3. Not self-certified (Law 4) — PR #410 awaits Control-plane L2 re-review and a
+real CI run before `certification_state` can move past PROVISIONAL.
+
+STEP 4: stop condition (a) does not apply (not N/N proven — FTF-1206 remains untouched,
+FTF-0902/FTF-1703 remain correctly deferred); no new blocker found; FTF-0902's existing blocker was
+not re-poked a fourth time; no usage-limit stop; no new ask-first item (`QUEUE.md`'s own "Owner
+actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask, nothing
+blocking this shift). Stopping here after a complete PEV cycle on one item, consistent with this
+file's own normal shift cadence.
 
 ## 2026-10-01T17:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`
 

@@ -20,11 +20,35 @@ is covered by `test_authorize_raises_on_purpose_denied`,
 `test_authorize_does_not_read_a_previously_built_preview` (the independent
 re-derivation this negative_acceptance names literally).
 
+2026-10-01 L2 review finding, fixed here: narrowing the real boundary
+check inside `authorize_dataset_source_copy` to a literal
+`security_classification == "restricted"` test (instead of the real
+`would_cross_security_boundary(effective_profile, security_classification)`
+rank comparison) left the whole suite above green, because every
+existing boundary-crossing test used `restricted` paired with
+`standard` -- the one classification that check still happens to catch.
+A confidential source into a standard project would have been silently
+authorized despite `preview.blocked=True`, with no test to notice.
+`test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`
+closes this: every `security_classification` x `security_profile`
+pairing (16 combinations) is checked, not just the one pairing the
+original suite happened to exercise.
+`test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`
+reproduces the finding directly against the real on-disk module in an
+isolated subprocess (so this test process's own already-imported
+functions/exception classes are never touched by the mutation): it
+narrows the real module's boundary check exactly as the review
+described, confirms the original single-case test is genuinely blind to
+it, confirms the new matrix check genuinely catches it, then restores
+the module file byte-identical.
+
 Run directly: python3 tests/tasks/test_ftf_0500d.py
 """
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,7 +58,9 @@ sys.path.insert(0, str(ROOT))
 from workers.data.dataset_source_security_boundary_preview_audit_evidence import (  # noqa: E402
     MINIMUM_REQUIRED_SECURITY_PROFILE,
     RETENTION_POLICY_STATUS,
+    SUPPORTED_PROJECT_SECURITY_PROFILES,
     SUPPORTED_PURPOSES,
+    SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS,
     DatasetSourceCopyAuthorizationError,
     DatasetSourceCopyPreview,
     DatasetSourceSecurityBoundaryError,
@@ -456,6 +482,189 @@ def test_authorize_does_not_read_a_previously_built_preview() -> None:
             "a denial for different inputs still raises even though an unrelated preview passed",
             False,
         )
+
+
+def _classification_profile_matrix_violations() -> list[str]:
+    """For every `security_classification` x `security_profile` pairing
+    (org default == project profile, so the effective profile is just
+    that profile) -- with purpose/connection held compliant, so only the
+    boundary dimension is exercised -- assert that
+    `authorize_dataset_source_copy` raises `SecurityBoundaryCrossingError`
+    exactly when the independently-computed preview's own
+    `would_cross_security_boundary` says it should. Returns a list of
+    human-readable violation descriptions (empty when the invariant holds
+    everywhere)."""
+    violations: list[str] = []
+    for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+        for profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+            preview = build_dataset_source_copy_preview(
+                source_display_name="matrix",
+                source_type="upload",
+                security_classification=classification,
+                connection_status="active",
+                allowed_purposes=["training"],
+                requested_purpose="training",
+                organization_default_security_profile=profile,
+                project_security_profile=profile,
+                manifest=_manifest(),
+            )
+            raised = False
+            try:
+                authorize_dataset_source_copy(
+                    security_classification=classification,
+                    connection_status="active",
+                    allowed_purposes=["training"],
+                    requested_purpose="training",
+                    organization_default_security_profile=profile,
+                    project_security_profile=profile,
+                )
+            except SecurityBoundaryCrossingError:
+                raised = True
+            if preview.would_cross_security_boundary != raised:
+                violations.append(
+                    f"classification={classification!r} profile={profile!r}: "
+                    f"preview.would_cross_security_boundary="
+                    f"{preview.would_cross_security_boundary} but authorize raised={raised}"
+                )
+    return violations
+
+
+def test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix() -> None:
+    violations = _classification_profile_matrix_violations()
+    check(
+        "FTF-0500D",
+        "authorize_dataset_source_copy raises SecurityBoundaryCrossingError in exactly the "
+        f"(classification, profile) pairs the preview marks would_cross_security_boundary -- "
+        f"violations: {violations}",
+        violations == [],
+    )
+
+
+_MATRIX_FAULT_INJECTION_CHECK_SCRIPT = """
+import sys
+sys.path.insert(0, "__ROOT__")
+from workers.data.dataset_source_security_boundary_preview_audit_evidence import (
+    SUPPORTED_PROJECT_SECURITY_PROFILES,
+    SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS,
+    SecurityBoundaryCrossingError,
+    SourceCopyManifest,
+    authorize_dataset_source_copy,
+    build_dataset_source_copy_preview,
+)
+
+violations = []
+for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+    for profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+        preview = build_dataset_source_copy_preview(
+            source_display_name="matrix",
+            source_type="upload",
+            security_classification=classification,
+            connection_status="active",
+            allowed_purposes=["training"],
+            requested_purpose="training",
+            organization_default_security_profile=profile,
+            project_security_profile=profile,
+            manifest=SourceCopyManifest(
+                estimated_bytes=1, estimated_records=1, expected_transformations=()
+            ),
+        )
+        raised = False
+        try:
+            authorize_dataset_source_copy(
+                security_classification=classification,
+                connection_status="active",
+                allowed_purposes=["training"],
+                requested_purpose="training",
+                organization_default_security_profile=profile,
+                project_security_profile=profile,
+            )
+        except SecurityBoundaryCrossingError:
+            raised = True
+        if preview.would_cross_security_boundary != raised:
+            violations.append(f"{classification}:{profile}")
+print("VIOLATIONS=" + ",".join(violations))
+"""
+
+
+def _run_matrix_check_subprocess() -> list[str]:
+    """Runs the exact same matrix invariant as
+    `_classification_profile_matrix_violations` but as a fresh, isolated
+    subprocess that imports the real on-disk module from scratch -- used
+    by the fault-injection test below so a temporary on-disk mutation of
+    the production module never touches this test process's own already
+    -imported functions/exception classes."""
+    script = _MATRIX_FAULT_INJECTION_CHECK_SCRIPT.replace("__ROOT__", str(ROOT))
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"matrix check subprocess failed (exit {result.returncode}): {result.stderr}"
+        )
+    for line in result.stdout.splitlines():
+        if line.startswith("VIOLATIONS="):
+            payload = line[len("VIOLATIONS=") :]
+            return [item for item in payload.split(",") if item]
+    raise RuntimeError(f"matrix check subprocess produced no VIOLATIONS= line: {result.stdout!r}")
+
+
+def test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test() -> None:
+    import workers.data.dataset_source_security_boundary_preview_audit_evidence as _module
+
+    module_path = Path(_module.__file__)
+    original_bytes = module_path.read_bytes()
+    original_hash = hashlib.md5(original_bytes).hexdigest()
+
+    target_line = (
+        "    if would_cross_security_boundary(effective_profile, security_classification):"
+    )
+    narrowed_line = '    if security_classification == "restricted":'
+    original_text = original_bytes.decode("utf-8")
+    check(
+        "FTF-0500D",
+        "the exact boundary-check line this fault injection narrows exists exactly once in the "
+        "real on-disk module before injection",
+        original_text.count(target_line) == 1,
+    )
+    mutated_text = original_text.replace(target_line, narrowed_line, 1)
+
+    try:
+        module_path.write_text(mutated_text, encoding="utf-8")
+
+        narrowed_violations = _run_matrix_check_subprocess()
+        check(
+            "FTF-0500D",
+            "[L2 finding, reproduced] the original suite's own single restricted+standard case "
+            "alone would still pass under the injected classification=='restricted' narrowing "
+            "(restricted always raises under the narrowed check, masking the real gap)",
+            "restricted:standard" not in narrowed_violations,
+        )
+        check(
+            "FTF-0500D",
+            "[L2 finding, reproduced] the classification x profile matrix test genuinely catches "
+            f"the injected narrowing (a confidential source into a standard project is silently "
+            f"authorized despite the preview blocking it); violations found: {narrowed_violations}",
+            "confidential:standard" in narrowed_violations,
+        )
+    finally:
+        module_path.write_bytes(original_bytes)
+        restored_hash = hashlib.md5(module_path.read_bytes()).hexdigest()
+        check(
+            "FTF-0500D",
+            "the module file is restored byte-identical after fault injection",
+            restored_hash == original_hash,
+        )
+
+    clean_violations = _run_matrix_check_subprocess()
+    check(
+        "FTF-0500D",
+        f"the matrix check is clean again once the fault is reverted; "
+        f"violations: {clean_violations}",
+        clean_violations == [],
+    )
 
 
 def main() -> None:
