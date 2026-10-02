@@ -1,5 +1,106 @@
 # PROGRESS — Sovra
-## 2026-10-02T05:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-pu0up5` — real flaky-test root-cause + fix (FTF-R002), surfaced while triaging PR #412's own CI red
+## 2026-10-02T11:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-aulcnj` — drove the entire RELAY-OWNED fix-and-resubmit backlog (5 PRs) to green and merged, resolving a multi-shift pileup
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no mismatch. Branch found
+at the same commit as `origin/main` (`4be41b6`, PR #414's merge) — no prior unmerged work of its
+own; pushed it to `origin` for the first time this shift (it had never been pushed — `git fetch`
+for it 404'd), per the git-operations instructions. `BLOCKER.md` read in full: two live entries
+(FTF-0902, 2026-10-01T10:30Z, three real fix attempts already falsified — untouched, not retried a
+fourth time; FTF-1206's persistence-scope question, filed by PR #412's own branch) — neither
+retried or touched beyond what's below. STEP 0.2: no `cognee-cli` binary — text-search fallback,
+same as every prior shift.
+
+STEP 1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` read fresh (all three exceed the
+single-read size limit — targeted offsets/grep used). A fresh `list_pull_requests` sweep (not
+trusted from any prior shift's narrative) found the real, current state: every item in "## Active"
+item 3 (the RELAY-OWNED fix-and-resubmit backlog) already had a fully-evidenced, CI-green PR open
+from a prior shift — **#415** (FTF-R002 flake fix), **#410** (FTF-0500D), **#412** (FTF-1206,
+route-change-against-grant half), **#411** (FTF-0510), **#407** (FTF-0500B) — but every one of
+them except #415 was `mergeable_state: dirty` against the now-much-advanced `main`, because four
+separate prior shifts had each opened a fix PR off a different, now-stale `main` tip and none had
+been merged. This is not a "nothing to do" frontier-exhausted state (the immediately-prior q3cg3f/
+pu0up5 shifts' own conclusion) — it is a backlog of fully-proven, Control-plane-re-review-eligible
+work stuck behind merge-conflict friction, which "merge on green + L1 doc (PROVISIONAL)" (this
+file's own "Do without asking" list) is exactly the relay's job to clear.
+
+STEP 2 (PEV, repeated once per PR, each as its own cycle — not mixed):
+
+**#415 (FTF-R002):** already clean against current main (`11c9a96`'s predecessor), all 41 checks
+green including `gate`. Verified the PR's own evidence trail (Law 1 fault injection, doc updates)
+was complete and genuinely present in its diff before trusting it — merged directly.
+
+**#410 (FTF-0500D), #412 (FTF-1206), #411 (FTF-0510), #407 (FTF-0500B):** each was `dirty`. For
+each, in turn: created a worktree off the PR's own existing branch, merged the then-current `main`
+into it (`git merge origin/main`), resolved the resulting conflicts — every single one was confined
+to the four append-only tracker files (`PROGRESS.md`, `QUEUE.md`, `docs/certifications/queue.md`,
+`docs/spec-matrix.yaml`) each prior shift appends its own dated entry to; zero conflicts in any
+production code or test file across all four rebases. Resolved each by chronological
+interleaving (reconstructing which shift's entry predates which from real PR `created_at`
+timestamps, not file position) so the merged tracker reads as one coherent timeline rather than an
+arbitrarily-ordered merge; where one shift's own status-summary paragraph was simply superseded by
+a later shift's more-complete rewrite of the same paragraph (QUEUE.md's "## Active" item 3 own
+running status line gets rewritten this way by nearly every shift), kept the newer, more complete
+version and discarded the stale duplicate rather than concatenating both. After each resolution,
+re-ran the *full* verification suite from scratch (not trusted from the original PR's own stale
+claims) before pushing: the PR's own task test file, `ruff check`/`format --check`, `mypy` on the
+changed files, `validate_spec.py --strict`, `product_truth_check.py --fail-on-unwired` (unchanged
+25/25 throughout), `scripts/status.py` (unchanged 99/300 certified throughout — Law 2, a rebase is
+not a certification), and every regression-sweep test the original PR's own body named (including,
+for #407, `uv sync --all-packages` to restore the `apps/api`/Postgres-backed dependency set this
+sandbox doesn't install by default). Zero regressions, zero test changes, across all four rebases —
+confirmed by `git diff` on production/test files showing no change beyond what the original PR
+itself already contained.
+
+**Concurrent-session collision, handled rather than silently overwritten:** mid-shift, pushing the
+#411 (FTF-0510) rebase was rejected (`fetch first`) — a second, independent relay shift had pushed
+its own rebase of the identical branch (`claude/wizardly-fermat-wkzp3g`) in the few minutes since
+this shift's own fetch, merging `main` only as of the *previous* merge (#410) rather than the
+current one (#410+#412). Rather than force-push over their work, fetched their commit, merged it
+into this shift's own further-ahead rebase, and diffed their unique content against the base to
+confirm it added nothing this shift's own rebase didn't already independently contain (both
+sessions pulled the identical canonical FTF-0500D tracker text from `main` — not a coincidence,
+a shared source) before resolving the merge by keeping this shift's complete version. First attempt
+at the `docs/certifications/queue.md` conflict resolution (a blanket "keep head" regex) accidentally
+ate two section headers (`## 2026-10-02 — FTF-1206 —…` and `## 2026-10-01 — FTF-0510 —…`) while
+their bodies survived — caught by a post-resolution `grep` sanity check against the pre-merge
+commit's own headers (not assumed clean because the diff looked small), re-did that one file's
+resolution with `git merge-file` directly against the three real blobs instead of a line-oriented
+regex, verified headers restored, re-ran the full suite again, then pushed clean.
+
+Merged all five, in dependency-safe order (each merge was verified still-green and still based on
+the just-advanced `main` immediately before merging, via a fresh `get_check_runs`/`get` call, not
+assumed from the rebase step): **#415 → #410 → #412 → #411 → #407**. `main` now carries all five as
+`PROVISIONAL`/`L1-PROVEN` (Law 2 — a merge is not a certification); nothing here was self-certified
+(Law 4) — every one of these five awaits independent Control-plane L2 re-review, same as when each
+was first opened.
+
+**Closed PR #416** (a sixth, independent concurrent shift's own docs-only "frontier exhausted"
+tracking PR, base `4be41b6`) — its own narrative (describing #410/#411/#412 as unmergeably `dirty`
+and #415 as clean-but-unmerged) is now entirely superseded by the real outcome above; its own
+`PROGRESS.md`/`QUEUE.md` edits would conflict with and duplicate this shift's own, so closed with a
+comment pointing to this entry rather than merged, per this repo's own "closed 3 stale duplicate
+tracking PRs" precedent (2026-10-01T02:53:25Z entry, below). No code or evidence lost — everything
+it flagged is captured in the merged history.
+
+STEP 3 (this entry, before compaction): `scripts/status.py` unchanged at `99/300` certified / 24
+product-true on current `main` (`07d912b`) — Law 2, five PROVISIONAL merges are not five new
+certifications. `sha256sum CLAUDE.md` re-confirmed clean on the final `main` tip before writing
+this. `BLOCKER.md`'s two live entries (FTF-0902, FTF-1206-persistence) both untouched, neither
+retried.
+
+STEP 4: stop condition (a) applies — recomputed the dependency-ready frontier fresh against the
+final `main`: FTF-0902 stays correctly BLOCKED (do not retry a 4th time, per the live `BLOCKER.md`
+entry); FTF-1703 stays correctly deferred (its own FTF-R006 dependency chain is still not
+CERTIFIED); FTF-1206's remaining DoD half stays correctly blocked on the live Control-plane scope
+question; FTF-0510 does not yet unblock FTF-0515 (that chain's own "dependency-ready" bar is
+CERTIFIED, not merely merged-PROVISIONAL, and none of today's five merges moved any
+`certification_state` past PROVISIONAL — only Control-plane L2 review can do that). No genuinely
+unclaimed, undeclined RELAY-OWNED item exists. Reporting this backlog-clearing work complete and
+**awaiting Control-plane L2 certification and the L4 gate** for all five merged PRs, per stop
+condition (a). No new blocker, no usage-limit stop, no new ask-first item (`QUEUE.md`'s own "Owner
+actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask). Stopping
+here.
+
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
 Designated branch found at the same commit as `origin/main` (`4be41b6`, PR #414's merge, the
