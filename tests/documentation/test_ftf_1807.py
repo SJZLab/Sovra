@@ -44,6 +44,7 @@ Run directly: python3 tests/documentation/test_ftf_1807.py
 
 from __future__ import annotations
 
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -144,7 +145,15 @@ def _normalize_whitespace(text: str) -> str:
 def _doc_matches_real_facts(raw_doc_text: str) -> list[str]:
     """Returns a list of unmet claims (empty means the doc is fully
     grounded). A real, callable function so fault injection below can
-    prove it actually discriminates a wrong doc from a right one."""
+    prove it actually discriminates a wrong doc from a right one.
+
+    This only checks that certain tokens/phrases are *present somewhere* in
+    the doc -- it does not read what the doc says those tokens mean. A
+    rewrite that keeps every token intact but inverts the operator guidance
+    (e.g. "revoked access continues until TTL" instead of "immediate
+    refusal") passes this check untouched; see
+    `_doc_operator_guidance_matches_real_semantics` below for the check that
+    catches that."""
     doc_text = _normalize_whitespace(raw_doc_text)
     problems = []
     if _expected_ttl_phrase() not in doc_text:
@@ -157,6 +166,66 @@ def _doc_matches_real_facts(raw_doc_text: str) -> list[str]:
         problems.append("cache-bypass field missing/wrong")
     if SyncCycleStatus.SKIPPED_OUT_OF_ORDER.name not in doc_text:
         problems.append("SKIPPED_OUT_OF_ORDER status missing")
+    return problems
+
+
+def _extract_table_row_effect(raw_doc_text: str, signal_prefix: str) -> str | None:
+    """Parses section 7's `| Signal | Detection | Effect |` operator table
+    and returns the `Effect` column text for the first row whose `Signal`
+    column starts with `signal_prefix`, or None if no such row exists."""
+    for line in raw_doc_text.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        if cells[0].startswith(signal_prefix):
+            return cells[2]
+    return None
+
+
+def _doc_operator_guidance_matches_real_semantics(raw_doc_text: str) -> list[str]:
+    """Returns unmet operator-guidance claims (empty means the doc is fully
+    grounded). Unlike `_doc_matches_real_facts`, this reads the *meaning* of
+    the revocation-is-immediate and no-unapproved-fallback statements --
+    specifically the operator table's own Effect column, per the 2026-10-01
+    L2 finding -- so a rewrite that inverts the guidance while leaving every
+    other token untouched is caught."""
+    problems = []
+
+    revoked_effect = _extract_table_row_effect(raw_doc_text, "Key/connection revoked (401/403)")
+    if revoked_effect is None:
+        problems.append("operator table: no row for 'Key/connection revoked (401/403)'")
+    elif "immediate" not in revoked_effect.lower() or "until" in revoked_effect.lower():
+        problems.append(
+            "operator table: revoked-key row does not state immediate, "
+            f"unconditional refusal (reads: {revoked_effect!r})"
+        )
+
+    reroute_effect = _extract_table_row_effect(
+        raw_doc_text, "Router silently reroutes to a different deployment"
+    )
+    if reroute_effect is None:
+        problems.append("operator table: no row for the silent-reroute signal")
+    elif (
+        "unverified" not in reroute_effect.lower()
+        or "never claimed equivalent" not in reroute_effect.lower()
+    ):
+        problems.append(
+            "operator table: silent-reroute row does not state identity stays "
+            f"UNVERIFIED and is never claimed equivalent (reads: {reroute_effect!r})"
+        )
+
+    normalized = _normalize_whitespace(raw_doc_text).lower().replace("**", "")
+    if (
+        "does not wait for the freshness ttl to elapse first" not in normalized
+        or "revocation is a definite signal" not in normalized
+    ):
+        problems.append("revocation-is-immediate body statement (section 2) missing/weakened")
+    if "never treated as equivalent to the pinned deployment" not in normalized:
+        problems.append("no-unapproved-fallback body statement (section 6) missing/weakened")
+
     return problems
 
 
@@ -182,6 +251,17 @@ def test_doc_facts_are_grounded_in_real_constants():
         catalog_anomaly_detector.DEFAULT_RETRY_CEILING == 3
         and periodic_sync_workflow.DEFAULT_RETRY_CEILING
         is catalog_anomaly_detector.DEFAULT_RETRY_CEILING,
+    )
+
+
+def test_operator_guidance_states_immediate_revocation_and_no_fallback():
+    doc_text = DOC_PATH.read_text(encoding="utf-8")
+    problems = _doc_operator_guidance_matches_real_semantics(doc_text)
+    check(
+        "FTF-1807",
+        f"operator guidance states revocation-is-immediate and no-unapproved-fallback, "
+        f"not just matching tokens (unmet: {problems})",
+        problems == [],
     )
 
 
@@ -398,6 +478,123 @@ def test_fault_injection_wrong_ttl_claim_is_caught_by_the_fidelity_check():
         "FTF-1807",
         "after restore, the real check passes again",
         post_restore_problems == [],
+    )
+
+
+def test_fault_injection_inverted_revocation_guidance_is_caught_by_the_semantics_check():
+    """Reproduces the exact 2026-10-01 L2 finding: rewriting the operator
+    table's revoked-key row to say access continues until the TTL expires
+    (the opposite of the real negative_acceptance) while leaving every
+    token the old `_doc_matches_real_facts` check looks for untouched."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    real_row = (
+        "| Key/connection revoked (401/403) | `DiscoveryState.INVALID_TOKEN` | "
+        "Immediate, unconditional call refusal (`access_revoked`) |"
+    )
+    check(
+        "FTF-1807",
+        "the real revoked-key operator-table row is present (fault-injection precondition)",
+        real_row in original,
+    )
+    inverted_row = (
+        "| Key/connection revoked (401/403) | `DiscoveryState.INVALID_TOKEN` | "
+        "Call remains permitted until the 5-minute freshness TTL expires (`access_revoked`) |"
+    )
+    broken = original.replace(real_row, inverted_row)
+    check(
+        "FTF-1807",
+        "the fault-injection replacement actually changed the doc",
+        broken != original,
+    )
+
+    try:
+        DOC_PATH.write_text(broken, encoding="utf-8")
+        reread = DOC_PATH.read_text(encoding="utf-8")
+        check(
+            "FTF-1807",
+            "the OLD token-only check does NOT catch the inverted guidance (every "
+            "token it looks for -- '5 minutes', 'access_revoked' -- is still present, "
+            "proving the 2026-10-01 L2 gap was real)",
+            _doc_matches_real_facts(reread) == [],
+        )
+        semantics_problems = _doc_operator_guidance_matches_real_semantics(reread)
+        check(
+            "FTF-1807",
+            "the NEW semantics check genuinely FAILS on the inverted revoked-key "
+            "guidance, proving it is load-bearing",
+            any("revoked-key row" in p for p in semantics_problems),
+        )
+    finally:
+        DOC_PATH.write_text(original, encoding="utf-8")
+
+    restored = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "the runbook file itself was restored byte-identical, never left mutated",
+        restored == original,
+    )
+    check(
+        "FTF-1807",
+        "after restore, the semantics check passes again",
+        _doc_operator_guidance_matches_real_semantics(restored) == [],
+    )
+
+
+def test_fault_injection_fallback_allowed_claim_is_caught_by_the_semantics_check():
+    """Reproduces the second half of the same L2 finding: rewriting section 6
+    to say an unverified reroute is treated as equivalent to the pinned
+    deployment (i.e. external fallback is allowed), the opposite of this
+    task's own negative_acceptance."""
+    original = DOC_PATH.read_text(encoding="utf-8")
+    # The real phrase hard-wraps across two lines in the markdown source, so
+    # this matches it the same whitespace-tolerant way the semantics check
+    # itself does, rather than a raw (line-sensitive) substring search.
+    real_phrase_normalized = "is never treated as equivalent to the pinned deployment"
+    check(
+        "FTF-1807",
+        "the real no-fallback body statement is present (fault-injection precondition)",
+        real_phrase_normalized in _normalize_whitespace(original).lower(),
+    )
+    broken = re.sub(
+        r"is\s+never\s+treated\s+as\s+equivalent\s+to\s+the\s+pinned\s+deployment",
+        "is treated as equivalent to the pinned deployment, since route attestation "
+        "is advisory only and fallback is permitted",
+        original,
+    )
+    check(
+        "FTF-1807",
+        "the fault-injection replacement actually changed the doc",
+        broken != original,
+    )
+
+    try:
+        DOC_PATH.write_text(broken, encoding="utf-8")
+        reread = DOC_PATH.read_text(encoding="utf-8")
+        check(
+            "FTF-1807",
+            "the OLD token-only check does NOT catch the inverted fallback claim "
+            "(every token it looks for is still present elsewhere in the doc)",
+            _doc_matches_real_facts(reread) == [],
+        )
+        semantics_problems = _doc_operator_guidance_matches_real_semantics(reread)
+        check(
+            "FTF-1807",
+            "the NEW semantics check genuinely FAILS on the inverted fallback claim",
+            any("no-unapproved-fallback body statement" in p for p in semantics_problems),
+        )
+    finally:
+        DOC_PATH.write_text(original, encoding="utf-8")
+
+    restored = DOC_PATH.read_text(encoding="utf-8")
+    check(
+        "FTF-1807",
+        "the runbook file itself was restored byte-identical, never left mutated",
+        restored == original,
+    )
+    check(
+        "FTF-1807",
+        "after restore, the semantics check passes again",
+        _doc_operator_guidance_matches_real_semantics(restored) == [],
     )
 
 

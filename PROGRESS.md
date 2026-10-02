@@ -1,4 +1,218 @@
 # PROGRESS — Sovra
+## 2026-10-02T05:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-pu0up5` — real flaky-test root-cause + fix (FTF-R002), surfaced while triaging PR #412's own CI red
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch found at the same commit as `origin/main` (`4be41b6`, PR #414's merge, the
+q3cg3f shift's own tracking commit) — confirmed via `git rev-list --left-right --count
+HEAD...origin/main` (0/0) before relying on it; no prior unmerged work of its own to lose.
+`BLOCKER.md` read in full: one live entry (FTF-0902, 2026-10-01T10:30Z — three real fix attempts
+already falsified, correctly not retried a fourth time). STEP 0.2: no `cognee-cli` binary on this
+sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh rather than assumed.
+The immediately-prior shift (q3cg3f, 2026-10-02T00:00Z) had already concluded the RELAY-OWNED
+frontier was fully claimed (FTF-0500D duplicated by #410/#413, FTF-1206 covered by #412, FTF-0510
+by #411) and flagged — but not root-caused — that #412's own `gate` job was genuinely red on
+GitHub Actions despite its own PR body claiming no CI issue. Did not trust that flag secondhand:
+ran a fresh `list_pull_requests` + `pull_request_read(get_check_runs)` sweep across every open PR
+myself. Confirmed: #407/#410/#411/#413 all green (`gate` conclusion `success`); #412 (FTF-1206)
+`gate` genuinely `failure` (run `36948577882`, job `110656171438`). Pulled that job's real log via
+`get_job_logs` rather than guessing from the summary: the failing step was
+`uv run python3 tests/tasks/test_ftf_r002.py`, reporting `1 failed — FAIL [FTF-R002] a
+bit-flipped/tampered token fails signature verification`. Checked PR #412's own `get_files` diff
+directly: it touches `BLOCKER.md`/`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/
+`docs/spec-matrix.yaml`/`packages/litellm_client/organization_policy_control.py`/
+`tests/tasks/test_ftf_1206.py` only — `tests/tasks/test_ftf_r002.py` and
+`packages/component_contracts/job_identity.py` are untouched by that PR's own diff. Ruled out
+"this PR's own defect" by inspection, per the CI-red root-cause norm, before treating it as
+something else's problem.
+
+STEP 2 (PEV):
+- **P:** read `tests/tasks/test_ftf_r002.py`'s `test_job_identity_rejects_tampered_token` and
+  `packages/component_contracts/job_identity.py`'s `sign_worker_job_identity`/
+  `verify_worker_job_identity` directly. Found the tamper construction
+  (`token[:-4] + ("A" if token[-1] != "A" else "B") + token[-3:]`) replaces the character at
+  position -4 based on a decision made from position -1, then re-appends the original last 3
+  characters unchanged — already suspicious. Formed the hypothesis: the signature half of the
+  token is a base64url-encoded 32-byte SHA-256 digest; 32 % 3 == 2, so the final encoded sextet
+  carries only 16 of its 18 available bits, meaning its low 2 bits are unused padding, not digest
+  data — a character change landing there can decode back to the identical bytes, a silent no-op
+  tamper.
+- **E/V (hypothesis test, real functions, no mocks):** ran the actual `mint_worker_job_identity`/
+  `sign_worker_job_identity`/`verify_worker_job_identity` in a loop, reproducing the exact original
+  tamper construction 20,000 times with fresh random UUIDs each time: 329 no-ops (1.6%), each one
+  a token `verify_worker_job_identity` wrongly accepted — reproducing, for real, PR #412's own
+  observed CI failure (Law 1, failure bound to FTF-R002 before any fix existed). Locally
+  re-ran `tests/tasks/test_ftf_r002.py` itself 10× — passed every time (consistent with a ~1.6%+
+  per-run flake, not a deterministic failure, which is why it hadn't been caught before and why
+  it wouldn't necessarily reproduce again on a bare re-run). Tried the minimal fix first
+  (guarantee `tampered != token` by always changing the literal last character) — re-ran the same
+  20,000-trial loop: still 3,173 misses (6.3%), *worse*, proving the bug is about which *bits* a
+  character change reaches, not merely whether the string differs. Fixed properly: added
+  `_tamper_signature_byte` to `tests/tasks/test_ftf_r002.py` — decodes the real signature bytes,
+  flips one full byte (`signature[0] ^= 0xFF`), re-encodes. Re-ran the 50,000-trial loop against
+  the fix: 0 no-ops, 0 missed tampers.
+- **Real fault injection (Law 1), against the on-disk production module:** disabled the real
+  signature check in `packages/component_contracts/job_identity.py`
+  (`if not hmac.compare_digest(signature, expected_signature):` → `if False and not
+  hmac.compare_digest(...):`) — 2 genuine FAILs (the tampered-token check and the wrong-signing-key
+  check), confirming the fixed test still catches a real broken verifier; reverted byte-identical
+  (md5sum `fbfc6b8a297f32c844530886e8b02d2c` confirmed matching before and after) — confirmed via
+  `git diff` that this file carries zero changes in the final result.
+
+`uv run python3 tests/tasks/test_ftf_r002.py` × 10: "all checks passed" every time. `uv run ruff
+check tests/tasks/test_ftf_r002.py` found one real `E501` (line too long) on the first draft of
+the fix; `ruff format` reformatted it, both clean after. `uv run mypy tests/tasks/test_ftf_r002.py`
+clean. `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+sandbox's own pre-existing shallow-clone artifact). `python3 scripts/product_truth_check.py
+--fail-on-unwired`: unchanged `25/25`. `scripts/status.py`: unchanged `99/300` certified, 24
+product-true (Law 2 — a test-only flake fix is not a new certification). Regression swept
+`test_ftf_r001.py`/`test_ftf_r002.py` itself, 5× each — zero regressions.
+
+Appended a full evidence entry to `docs/certifications/queue.md` (not a fix-and-resubmit for a
+Control-plane finding — FTF-R002 is already `CERTIFIED`/`L2-CERTIFIED`; this documents a
+latent-flake repair for the record). Added a note to `docs/spec-matrix.yaml`'s existing FTF-R002
+entry describing the fix; `certification_state`/`proof_state` left exactly as the 2026-09-24
+CERTIFY review set them (production code untouched). Updated `QUEUE.md`'s own dated log (new
+top entry) explaining why no new RELAY-OWNED item was claimed and what was fixed instead. Posted
+one GitHub comment on PR #412 naming the real root cause (job/run IDs, the padding-bit mechanism,
+the 1.6%/20,000-trial reproduction) so Control plane does not mistake that PR's own `gate` failure
+for a defect in FTF-1206's own diff — not acted on further since #412 is not this shift's own
+branch. Opened a new PR off this shift's own branch (`claude/wizardly-fermat-pu0up5`) with the
+fix.
+
+STEP 4: stop condition (a) does not strictly apply (this wasn't an N/N-proven RELAY-OWNED item —
+FTF-0902/FTF-1703 remain correctly deferred, and the RELAY-OWNED fix-and-resubmit list was already
+fully claimed before this shift started). Treated as a complete, independent PEV cycle on a real
+defect found during due-diligence triage of another PR's CI red, consistent with "run gates" being
+something this relay does without asking. No new owner ask (`QUEUE.md`'s own "Owner actions —
+current" unchanged — only the pre-existing, low-urgency branch-protection ask). `BLOCKER.md`'s live
+FTF-0902 entry untouched, not retried. Stopping here after this one complete cycle.
+
+## 2026-10-02T00:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Branch sitting at the same commit as
+`origin/main` (`35b9050`, PR #409's tracking merge) — no prior unmerged work of its own. STEP 0.1:
+read `BLOCKER.md` (one live entry, FTF-0902, 2026-10-01T10:30Z — untouched, no fourth retry),
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh.
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 named two still-untouched RELAY-OWNED fix-and-resubmit
+items after the prior shift's FTF-1807 fix: FTF-0500D and FTF-1206. Picked **FTF-0500D**
+(test-only, vs. FTF-1206's own persisted-migration prerequisite).
+
+STEP 2 (PEV) — performed in full, independently, before discovering the duplication below:
+- **P:** read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+  `tests/tasks/test_ftf_0500d.py`. Confirmed the 2026-10-01 L2 finding directly: the shipped
+  `authorize_dataset_source_copy` boundary check is genuinely unconditional already (a
+  test-coverage gap, not a live defect) — the existing suite only ever drove it with
+  `security_classification="restricted"`.
+- **E:** added a classification x project-profile matrix test (12 combinations) asserting
+  `authorize_dataset_source_copy` raises `SecurityBoundaryCrossingError` exactly when the
+  preview's own `would_cross_security_boundary` says so. **Real fault injection (Law 1):** scripted
+  a mutation of the live module to the exact narrowed form the review named
+  (`security_classification == "restricted" and ...`); the *old* suite stayed green (35/35,
+  reproducing the finding for real); the *new* test genuinely failed on `confidential`→`standard`
+  (`raised=False, expected=True`); reverted byte-identical (md5sum
+  `2113594afa576abbd248d9e147fd8745` before/after).
+- **V:** `python3 tests/tasks/test_ftf_0500d.py` clean (26 functions, was 25). `ruff`/`ruff
+  format --check`/`mypy` clean. `validate_spec.py --strict` clean (after `git fetch --unshallow`,
+  same disclosed shallow-clone precedent prior shifts used). `product_truth_check.py
+  --fail-on-unwired` unchanged `25/25`. `scripts/status.py` unchanged `99/300` certified.
+  Regression swept `test_ftf_0402.py`/`test_ftf_0508.py`/`test_ftf_0511.py`/`test_ftf_0512.py`/
+  `test_ftf_0513.py` — zero regressions (`test_ftf_0500.py` independently reproduced failing
+  identically on unmodified `origin/main`, pre-existing missing-`sqlalchemy` environment gap, not
+  a regression).
+
+**Before pushing or opening a PR**, ran a fresh `list_pull_requests` sweep (this repo's own
+established precedent — never trust the queue file's narrative over a live GitHub check) and found
+the frontier already fully claimed by concurrent sessions that ran during/after this shift's own
+read of `QUEUE.md`:
+- **#410** (2026-10-01T20:58:28Z) and **#413** (2026-10-02T03:17:45Z) each independently fix the
+  identical FTF-0500D finding — same root cause, same fault-injection method, same production-module
+  md5sum (`2113594afa576abbd248d9e147fd8745`) confirmed byte-identical before/after in both. This
+  shift's own independently-performed fix reached the exact same conclusion, which is strong
+  corroboration both PRs are correct — but opening a third duplicate would only cost Control plane
+  a redundant review. **Discarded this shift's own local changes** (`git checkout --` on all five
+  touched files) rather than push a redundant branch. Posted one comment on #413 cross-referencing
+  #410 so Control plane can pick the surviving PR (a review/triage call, not a mechanical "already
+  on main" closure this relay makes unilaterally).
+- **#412** (FTF-1206) and **#411** (FTF-0510) are also already open, covering both remaining
+  "Active" items. FTF-1206's own persistence question is escalated in that PR's own branch
+  `BLOCKER.md` entry. FTF-0902/FTF-1703 remain correctly deferred, untouched by this shift.
+
+**One real issue found and flagged, not fixed:** PR #412's own description claims no CI workflow
+change was needed, citing only local results — but a live `get_check_runs` on its head commit
+(`d489936`) shows the real `gate` job actually failed on GitHub Actions (40/41 green, `gate` red,
+run `36948577882`, job `110656171438`), undisclosed in the PR body. Posted a comment on #412
+naming the run/job IDs (Law 1/9 — gate-weakening is watched) rather than silently noting it only
+here. Not pushed to or otherwise acted on — not this session's branch, and FTF-1206 was correctly
+not this shift's own claimed item.
+
+STEP 4: no genuinely unclaimed, undeclined task exists this shift — equivalent to stop condition
+(a)'s "frontier exhausted" posture, though arrived at only after independently completing a full
+PEV cycle rather than by a stale-queue check alone. No new blocker (FTF-0902's stayed untouched;
+FTF-1206's own blocker is that PR's own branch's business, not duplicated here). No usage-limit
+stop. No new ask-first item (`QUEUE.md`'s own "Owner actions — current" unchanged — only the
+pre-existing, low-urgency branch-protection ask). Nothing committed or pushed to this shift's own
+branch beyond this log entry and `QUEUE.md`'s matching entry.
+
+## 2026-10-01T17:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. The designated branch was
+found sitting at the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged
+work of its own, no restart needed. STEP 0.1: read `BLOCKER.md` (one live entry, FTF-0902,
+10:30Z — three real fix attempts already falsified, correctly not retried a fourth time this
+shift), `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh (not assumed from training).
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 names four still-NOT-CERTIFIED fix-and-resubmit items
+from the 2026-10-01 L2 review: FTF-0500B/FTF-0500D/FTF-1807/FTF-1206 (FTF-H007/FTF-04A06/FTF-0601
+already fixed via PR #403, FTF-0500C via a same-day fix PR). A fresh `list_pull_requests` sweep
+(not trusted from the file's own stale narrative) found PR #407 already open for FTF-0500B from a
+concurrent/prior shift, not yet reflected in this file. Picked **FTF-1807** — the smallest of the
+three genuinely untouched items (test-only; FTF-1206 needs a persisted org-policy migration first,
+a separate, larger prerequisite per this file's own existing note).
+
+STEP 2 (PEV):
+- **P:** read `tests/documentation/test_ftf_1807.py` and
+  `docs/operations/litellm_outage_runbook.md` directly. The L2 finding: inverting the operator
+  table's revoked-key row and the no-fallback body statement still passes 35/35, because the
+  existing `_doc_matches_real_facts` check only scans for isolated tokens (TTL minutes, retry
+  count, header name, …) anywhere in the doc text, never reads what the operator table's own
+  `Effect` column or the revocation/fallback prose actually claims.
+- **E:** added `_doc_operator_guidance_matches_real_semantics` — a real markdown-table-row parser
+  (`_extract_table_row_effect`) that reads the revoked-key and silent-reroute rows' `Effect`
+  column, plus whitespace/markdown-tolerant checks on the section 2/6 body prose. Added two new
+  fault-injection tests that reproduce the finding directly: each rewrites the real doc text to the
+  exact opposite claim named in the review (access permitted until TTL; fallback treated as
+  equivalent/permitted), **first confirms the old check still returns no problems on the broken
+  doc** (bound to `[FTF-1807]`, proving the gap was real, not hypothetical), **then confirms the
+  new check genuinely fails**, then restores the file byte-identical and re-confirms the check
+  passes again. Caught two of my own bugs before this was clean: the real "does **not** wait"
+  phrase has markdown-bold asterisks around "not", and the real "is never treated as equivalent to
+  the pinned deployment" phrase hard-wraps across two source lines — both needed
+  whitespace/markdown-normalized matching, not a raw substring check, to avoid false negatives on
+  the *unmodified* doc.
+- **V:** `python3 tests/documentation/test_ftf_1807.py` — 7 test functions (was 5), "all checks
+  passed". `uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+  tests/documentation/test_ftf_1807.py` clean. `python3 scripts/validate_spec.py --strict` clean.
+  `python3 scripts/product_truth_check.py --fail-on-unwired`: `25/25`, unchanged. `scripts/status.py`:
+  unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+  No production code changed; no spec-matrix entry touched (this task's own `files` clause names
+  only the doc and this test).
+
+Opened **PR https://github.com/SJZLab/Sovra/pull/408** (`[relay] FTF-1807: fix L2 findings
+(operator guidance semantics, not just tokens)`). Appended the full evidence to
+`docs/certifications/queue.md` and updated `QUEUE.md`'s own top log entry and "## Active" item 3.
+Not self-certified (Law 4) — PR #408 awaits Control-plane L2 re-review and a real CI run before
+`certification_state` can move past PROVISIONAL.
+
+STEP 4: stop condition (a) does not apply (not N/N proven — FTF-0500D/FTF-1206 remain untouched,
+FTF-0902/FTF-1703 remain correctly deferred); no new blocker found; FTF-0902's existing blocker was
+not re-poked a fourth time; no usage-limit stop; no new ask-first item (`QUEUE.md`'s own "Owner
+actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask, nothing
+blocking this shift). Stopping here after a complete PEV cycle on one item, consistent with this
+file's own normal shift cadence.
+
 ## 2026-10-01T07:30:00Z — Control plane (CERTIFY + UNBLOCK), session `session_01QVznorVMjnmcttUhyDnoGR`
 
 OPERATE: `CLAUDE.md` hash matched `CLAUDE.md.sha256`; `BLOCKER.md` had no live entry. CERTIFY:
