@@ -1,4 +1,47 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T21:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-61pj77`) —
+  **FTF-1002 (Artifact lineage manifest) implemented and submitted PROVISIONAL** — the item the
+  immediately-prior `iaofsc` shift flagged as genuinely dependency-ready but deferred. STEP 0:
+  `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. `BLOCKER.md`'s two live entries read in full,
+  both untouched, neither retried: **FTF-0902** (three real fix attempts already falsified by real
+  CI, a Control-plane design question, not retried a 4th time per STEP 4(c)) and **FTF-1206** (the
+  persistence-half scope question, a Control-plane decision, not improvised). Designated branch
+  found already at `origin/main`'s tip (`4d4cd42`, PR #423's merge) via `git rev-list --left-right
+  --count HEAD...origin/main` → `0 0` — no prior unmerged work of its own.
+
+  Confirmed FTF-1002's own two dependencies (FTF-0306, FTF-1001) are both `certification_state:
+  CERTIFIED` in `docs/spec-matrix.yaml` directly before relying on them — genuinely
+  dependency-ready, not merely merged-PROVISIONAL. Pulled the real DoD via `tools/r1_handoff.py
+  packet FTF-1002`. Path refined from the packet's own suggested `services/serving-controller/
+  vllm/artifact_lineage_manifest.py` (`services/` does not exist anywhere in this repository, not
+  a `uv` workspace member) to `apps/api/app/artifacts/artifact_lineage_manifest.py`, joining this
+  task's own two dependencies, the same refinement precedent FTF-0301/FTF-0304/FTF-0305/FTF-0306/
+  FTF-0307 already established.
+
+  Implemented `build_artifact_lineage_manifest` — a pure, no-I/O composer over an already-fetched
+  `ModelVersion` and optional `TrainableArtifact`, reporting this task's own seven named dimensions
+  (base/tokenizer/training/data/license/runtime/method) independently, `training`/`data` always
+  honestly `known=False` since no TrainingRun or dataset-versioning task exists in this task's own
+  dependency set (never fabricated as Factory-trained, Law 11). `tests/tasks/test_ftf_1002.py` (no
+  DB required) proves the acceptance clause and both negative_acceptance halves
+  (`ArtifactLineageError` for a fabricated/mismatched parent, `AdapterBaseMismatchError` for an
+  adapter whose declared base doesn't match a caller-resolved base artifact — Section 68.1's own
+  "exact base, not same-family guessed weights" made executable), plus one real, reverted fault
+  injection disabling the base-revision compare. Full evidence in `docs/spec-matrix.yaml`'s own
+  FTF-1002 entry and `docs/certifications/queue.md`'s matching 2026-10-02 entry.
+
+  `uv sync --all-packages` then `uv run ruff check .`/`ruff format --check .` clean (362 files);
+  `uv run mypy .` clean (362 source files, zero errors); `scripts/validate_spec.py --strict` clean
+  (after `git fetch --unshallow`). Regression swept `test_ftf_0306.py`/`test_ftf_1001.py` (this
+  task's own two dependencies) — both exit 0, zero regressions. `scripts/product_truth_check.py
+  --fail-on-unwired`: unchanged `25/25`. `scripts/status.py`: unchanged `99/300` certified / 24
+  product-true (Law 2 — a submission is not a certification). Added this task's own CI gate step
+  to `.github/workflows/ci.yml` in the same commit. Opened a PR from this shift's own designated
+  branch, titled `[relay] FTF-1002: ...`, submitted PROVISIONAL, not self-certified (Law 4).
+
+  STEP 4 stop condition (a): FTF-1002 now joins the existing merged-PROVISIONAL backlog awaiting
+  Control-plane L2 certification and the L4 gate. Neither live `BLOCKER.md` entry was retried. No
+  open owner ask beyond the pre-existing, low-urgency branch-protection ask. Stopping here.
 Updated: 2026-10-02T20:45:00Z — **PR #422 (FTF-0307) merged to `main`** (merge commit `74ec07c`,
   all 41 check runs on the real PR head green, including `gate`, `mergeable_state: clean`, no
   pending reviews/comments) — merged under the standing "merge on green + L1 doc (PROVISIONAL)"
