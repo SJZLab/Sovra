@@ -26216,3 +26216,6 @@ PR #404 not yet reviewed). Stopping here — not picking a second task this shif
 (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-
 protection ask). `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-
 plane design question, not a further guess).
+
+## 2026-10-02 certifier run
+L2-CERTIFIED FTF-H007 + FTF-04A06 (PR #403); status 101/300. FTF-0601/0500C/1807 re-review still pending (see docs/certifications/queue.md).

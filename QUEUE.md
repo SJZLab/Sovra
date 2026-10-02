@@ -85,7 +85,7 @@ Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fe
   `uv run ruff check .`/`ruff format --check .` clean (356 files); `uv run mypy
   tests/documentation/test_ftf_1807.py` clean; `validate_spec.py --strict` clean;
   `product_truth_check.py --fail-on-unwired` unchanged `25/25`; `scripts/status.py` unchanged
-  `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification). Not
+  `101/300` certified, 24 product-true (Law 2 — a resubmission is not a certification). Not
   self-certified (Law 4) — PR #408 awaits Control-plane L2 re-review and a real CI run. No open
   owner ask (this file's own "Owner actions — current" unchanged — only the low-urgency
   branch-protection ask, nothing blocking).
@@ -11717,3 +11717,5 @@ kept for the record.)
       since no live caller exists, tracked as a required follow-up in
       `docs/spec-matrix.yaml`'s notes. Not yet PROMOTED — L4 gate is
       release-only and hasn't run.
+
+- 2026-10-02: FTF-H007, FTF-04A06 moved to Done (CERTIFIED, 101/300). FTF-0601/0500C/1807 fix PRs await re-review.
