@@ -1917,16 +1917,83 @@ FTF-0306:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 FTF-0307:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Training capability classifier
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
-    FTF-0306
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
+    FTF-0306 (all four CERTIFIED, confirmed before relying on them). Path refined from the task
+    packet's own hyphenated packages/model-catalog/... (not a uv workspace member, not even a valid
+    Python import path) to apps/api/app/artifacts/, the same refinement precedent FTF-0301/FTF-0304/
+    FTF-0305/FTF-0306 already established for this exact contract_owner (FTF-0301).
+
+    This task was independently recomputed as genuinely dependency-ready this shift -- all four
+    dependencies have been CERTIFIED since FTF-0306 (2026-10-01), but no prior shift's own frontier
+    recompute had caught it (`docs/TASK_INDEX.md`/QUEUE.md's prior "newly dependency-ready" sweeps
+    only named FTF-0510). No open PR, branch or BLOCKER.md entry referenced FTF-0307 before this one
+    (confirmed via a fresh `list_pull_requests`/`git ls-remote` sweep before claiming it).
+
+    apps/api/app/artifacts/training_capability_classifier.py::classify_training_capability is a pure,
+    synchronous, no-I/O composer (this task's own database_changes clause -- "No independent schema
+    change. Consume frozen contract.") over FTF-0207's AliasReconciliationResult, FTF-0212's
+    ToolCallProbeResult and FTF-0301's TrainableArtifact row, resolving this task's own acceptance
+    clause ("Classify access, training capability, artifact availability and role independently with
+    dated probe evidence") into four independently-computed dimensions -- access (real reconciled-set
+    membership), capability (Section 0.12's own trainable_open_weight/managed_fine_tunable/
+    inference_only/unknown enum), artifact_availability (a direct TrainableArtifact.status mapping)
+    and role (an explicit caller passthrough, never computed here, per Section 0.12's own "explicitly
+    assigned role"). None of the four gates another, reapplying Section 0.12's own orthogonality rule
+    ("An endpoint can be inference-only and still be the production baseline") as this module's own
+    defense-in-depth boundary, the same independently-computed-dimensions discipline
+    alias_reconciliation.py (FTF-0207) already applied to its own left join.
+
+    Scope decision, disclosed (same class of narrowing FTF-0301/FTF-1001's own notes already applied):
+    Section 13's own fuller TrainingCapability registry schema also names method_support/
+    recommended_precision/quantization_support/min_gpu_vram_gb/recommended_gpu_vram_gb/
+    supports_gradient_checkpointing/supports_flash_attention/zero_egress_compatible -- real Axolotl/
+    hardware-profile facts this task's own four-dependency set carries no signal for at all; declaring
+    them here would be an unearned "placeholder endpoint" (Law 11). TrainingCapability.
+    MANAGED_FINE_TUNABLE is declared for Section 0.12's own enum completeness but this module never
+    returns it -- no task in this dependency chain proves a gateway-managed fine-tuning capability.
+    There is also no persisted alias-to-artifact binding anywhere in this repository's schema yet
+    (confirmed: FTF-0308 "Model-to-artifact mapping UI" is the actual, separate, not-yet-built owner
+    of that binding) -- which TrainableArtifact, if any, corresponds to a given model_id is therefore
+    an explicit caller-supplied parameter, never a name-based lookup this module performs itself.
+
+    negative_acceptance ("Inference-only endpoint cannot become trainable by editing name; unknown
+    capability remains blocked") is enforced by construction: capability is decided solely from
+    artifact.status (only "ready" qualifies -- "registered"/"archived" do not) and probe.state (only
+    the exact ToolCallProbeState.PROBED qualifies -- every failure/timeout/rejection state does not);
+    no display-name/alias-string field is ever read by the decision. Absent both, capability fails
+    closed to UNKNOWN. tests/tasks/test_ftf_0307.py (no DB required, real TrainableArtifact ORM
+    instances and real dataclasses, no HTTP/TLS fixture needed since this task is pure/no-I/O, same
+    disclosed precedent FTF-0207/FTF-0306 already established) proves both halves plus the four-
+    dimension-independence acceptance clause. Real fault injection (Law 1, disclosed), two vectors,
+    each reverted byte-identical and the suite re-confirmed clean immediately after: (1) loosened the
+    ready-only artifact gate to also accept "registered" -- the exact "becomes trainable" negative
+    check genuinely failed for real; (2) loosened the probe-state check to accept any non-null probe
+    outcome -- the exact "failed probe never classifies as inference_only" negative check genuinely
+    failed for real.
+
+    uv run ruff check .//ruff format --check . clean repo-wide (360 files); uv run mypy . clean
+    repo-wide (360 source files, zero errors). scripts/validate_spec.py --strict clean. Regression
+    swept test_ftf_0207.py/test_ftf_0212.py/test_ftf_0301.py/test_ftf_0306.py (this task's own four
+    dependencies) -- all exit 0, zero regressions. scripts/product_truth_check.py --fail-on-unwired:
+    unchanged 25/25 (proving_symbol left blank -- this task is a pure classifier with no composing
+    route/UI caller yet, same disclosed "no live caller" precedent FTF-0207/FTF-0301 already
+    established; FTF-0308's own future route is the eventual caller). scripts/status.py: unchanged
+    99/300 certified (Law 2 -- this is a submission, not a certification). Added this task's own CI
+    gate step to .github/workflows/ci.yml in the same commit as the implementation, learning directly
+    from the disclosed FTF-0205/FTF-0206 "missing gate-wiring step" watchdog finding FTF-0212's own
+    notes already cite.
+
+    Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
   certification_state: NONE
   criticality: MUST

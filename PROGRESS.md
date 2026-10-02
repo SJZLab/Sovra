@@ -1,4 +1,119 @@
 # PROGRESS — Sovra
+## 2026-10-02T20:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-iaofsc` — found and implemented FTF-0307 (Training capability classifier), a genuinely unclaimed task four consecutive prior shifts had missed
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+`BLOCKER.md` read in full: the same two live entries as every recent prior shift — **FTF-0902**
+(three real fix attempts already falsified by real CI, a Control-plane design question, not
+retried a 4th time per STEP 4(c)) and **FTF-1206** (the persistence-half scope question, a
+Control-plane decision, not improvised). STEP 0.2: no `cognee-cli` binary on this sandbox —
+text-search fallback declared, same as every prior shift. `git fetch origin main` confirmed this
+designated branch (`claude/wizardly-fermat-iaofsc`) is exactly at `origin/main`'s tip (`0643e5b`,
+`git rev-list --left-right --count HEAD...origin/main` → `0 0`) — no prior unmerged work of its own.
+
+STEP 1: the four immediately-prior shifts (`aulcnj`, `d7wplf`, `u06cpi`, `76e5x6`) each concluded
+"no genuinely unclaimed RELAY-OWNED item exists" — but each one's own check only re-verified the
+same three already-known open PRs (#402 FTF-0902, #401 governance, #295 FTF-0214) and the two
+`BLOCKER.md` entries, never a full from-scratch dependency-graph recompute. Did that recompute
+directly: parsed `spec/tasks.json` + `docs/spec-matrix.yaml` and listed every task whose
+`certification_state != CERTIFIED` with every one of its own `dependencies` already `CERTIFIED`.
+This surfaced 14 dependency-ready items, three of which no recent shift's own narrower check had
+named at all: **FTF-0307** (Training capability classifier), **FTF-1002** (Artifact lineage
+manifest) and **FTF-04A18** (Candidate-selection UI). Cross-checked `QUEUE.md`/`docs/
+certifications/queue.md`/`BLOCKER.md` directly (not trusted from memory) for any prior mention of
+any of the three — found none for FTF-0307/FTF-1002 beyond a single 2026-09-22 note predicting
+FTF-1002 would become ready "once FTF-1001 CERTIFIED" (now true, never acted on since). Confirmed
+via a fresh `list_pull_requests` sweep and `git ls-remote --heads origin` (grep false-positived on
+a commit SHA substring for "1002" — verified by re-grepping branch names only) that no open PR or
+branch references any of the three.
+
+Read FTF-0307's own real task packet (`tools/r1_handoff.py packet FTF-0307`) and its four real
+dependency modules (`alias_reconciliation.py` FTF-0207, `real_tool_call_probe.py` FTF-0212,
+`artifact_schema.py` FTF-0301, `base_model_revision_digest_resolver.py` FTF-0306) before writing
+any code. Chose FTF-0307 over FTF-1002 for this shift (lower task number, more directly tied to
+Section 0.12's own capability/availability/role orthogonality rule already referenced by multiple
+already-certified sibling modules' own docstrings as "a later task's job"). Left FTF-1002 for a
+future shift's own full PEV cycle rather than rushing two implementations into one shift, and
+flagged FTF-04A18 as needing independent re-verification against the same UI-heavy/no-live-
+backend-surface blocker class PR #295 already established for FTF-0214, rather than assuming it
+without checking.
+
+STEP 2 (PEV): **P** — read Section 0.12 (capability/availability/role, three independent
+dimensions), Section 13 (the fuller `TrainingCapability` registry schema) and Section 68.1 of
+FTF-0307's own packet, plus FTF-0301/FTF-1001's own docstrings (both independently disclose
+capability classification as "a later, separate concern" -- this task). Confirmed no persisted
+alias-to-artifact binding exists anywhere in this repository's schema yet — `docs/spec-matrix.
+yaml`'s own FTF-0308 ("Model-to-artifact mapping UI") is the real, separate, not-yet-built owner
+of that binding — so designed `classify_training_capability` to take the `TrainableArtifact`, if
+any, as an explicit caller-supplied parameter, never a name-based lookup performed internally
+(directly enforcing this task's own negative_acceptance "cannot become trainable by editing name"
+by construction, not by a runtime string check).
+
+**E** — implemented `apps/api/app/artifacts/training_capability_classifier.py::
+classify_training_capability`: a pure, synchronous, no-I/O composer over `AliasReconciliationResult`
+(access), `ToolCallProbeResult` (capability's `inference_only` evidence), `TrainableArtifact`
+(capability's `trainable_open_weight` evidence, plus `artifact_availability`/`artifact_id`/
+`license_approved`) and an explicit `assigned_role` passthrough — the four dimensions this task's
+own acceptance clause names, each computed independently, never gating another (Section 0.12's own
+orthogonality rule, reapplied the same way `alias_reconciliation.py` already applied it to its own
+left join). Disclosed, scoped out: Section 13's own deeper Axolotl/hardware-profile fields
+(`method_support`/precision/quantization/GPU VRAM/gradient-checkpointing/flash-attention) have no
+real signal anywhere in this task's own four-dependency set; `TrainingCapability.
+MANAGED_FINE_TUNABLE` is declared for Section 0.12's own enum completeness but never returned, for
+the same reason. Wrote `tests/tasks/test_ftf_0307.py` (no DB/HTTP/TLS fixture needed — this task is
+pure/no-I/O, same disclosed precedent `test_ftf_0207.py`/`test_ftf_0306.py` already established)
+covering the acceptance clause's four-dimension independence directly and both negative_acceptance
+halves. Ran it: all checks passed on the real, as-built module. Per Law 1 ("nothing proven until
+test shown able to fail"), ran two real fault injections against the real on-disk module, each
+reverted byte-identical and the suite re-confirmed clean immediately after: (1) loosened the
+`ready`-only artifact gate to also accept `registered` — the "becomes trainable" negative check
+genuinely failed for real; (2) loosened the probe-state check to accept any non-null probe outcome
+— the "failed probe never classifies as inference_only" negative check genuinely failed for real.
+
+**V** — `uv sync --all-packages` (bare `uv run` lacks `sqlalchemy`, same disclosed precedent prior
+Postgres-backed-task shifts used). `uv run ruff check .`/`ruff format --check .` clean repo-wide
+(360 files, after auto-fixing this task's own new files' import order/line length). `uv run mypy .`
+(from repo root, matching the `[tool.mypy]` config's own `packages.*`/`app.*` resolution — a bare
+`apps/api`-rooted invocation cannot resolve `packages.*` imports, a dead end correctly abandoned
+rather than persisted with) clean repo-wide: 360 source files, zero errors. `scripts/
+validate_spec.py --strict` clean (`git fetch --unshallow` first, same disclosed shallow-clone
+precedent). `scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25` (`proving_symbol`
+left blank — no composing route/UI caller yet, same disclosed "no live caller" precedent FTF-0207/
+FTF-0301 already established). `scripts/status.py`: unchanged `99/300` certified, 24 product-true
+(Law 2 — a submission is not a certification). Regression swept `test_ftf_0207.py`/
+`test_ftf_0212.py`/`test_ftf_0301.py`/`test_ftf_0306.py` (this task's own four dependencies) — all
+exit 0 (`test_ftf_0212.py`'s own stderr traceback is a pre-existing, benign closed-socket log from
+its own threaded test server, unrelated to this change; confirmed by checking its own exit code and
+final "all checks passed" line). `python3 scripts/verify_task.py --task FTF-0307 --stage task`
+reports `BLOCKED` ("no merged verification evidence yet") — expected and disclosed, not a defect:
+`spec/verification-map.json` only covers the earliest ~32 tasks; every later already-CERTIFIED
+sibling task (confirmed directly: neither FTF-0306's nor FTF-0212's own `docs/spec-matrix.yaml`
+notes mention this tool at all) relies on its own `.github/workflows/ci.yml` gate step instead,
+which this shift added in the same commit (learning directly from the disclosed FTF-0205/FTF-0206
+"missing gate-wiring step" finding FTF-0212's own notes cite).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0307 entry (`certification_state: PROVISIONAL`,
+`implementation_state: IMPLEMENTED`, `proof_state: L1-PROVEN`, `proving_test: tests/tasks/
+test_ftf_0307.py`, full evidence in `notes`). Appended a full evidence entry to `docs/
+certifications/queue.md`. Updated `QUEUE.md`'s own top dated entry with the same narrative plus
+the FTF-1002/FTF-04A18 findings for a future shift. Opened a PR from this shift's own designated
+branch (`claude/wizardly-fermat-iaofsc` → `main`), titled per the required `[relay] FTF-0307: ...`
+convention, submitted PROVISIONAL.
+
+**V (certification posture)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+`proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 review and a real
+CI run on the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+`.github/workflows/ci.yml` all updated this shift, before compaction.
+
+STEP 4 stop condition (a): 0 in-flight L1-PROVEN submissions awaiting *this* shift's own further
+action; FTF-0307 now joins the existing merged-PROVISIONAL backlog awaiting Control-plane L2
+certification and the L4 gate (`scripts/status.py` unchanged at `99/300` certified / 24
+product-true — a submission is not a certification). Stopping here — not picking up FTF-1002 or
+re-verifying FTF-04A18 in the same shift, both left disclosed for a future shift rather than rushed.
+Neither live `BLOCKER.md` entry (FTF-0902, FTF-1206) was retried. No open owner ask beyond the
+pre-existing, low-urgency branch-protection ask.
+
 ## 2026-10-02T19:20:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-76e5x6` — frontier re-confirmed fully claimed again, no new RELAY-OWNED work; nothing done this shift
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
