@@ -445,9 +445,11 @@
       "blockers": []
     },
     "FTF-04A06": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "d8e5c9ee79f6888c59745600d318498bbce45753"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -703,23 +705,29 @@
       "blockers": []
     },
     "FTF-0500B": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "07d912b44947ea75cd53f9ebe35748c0ad1bc41f"
+      ],
       "independent_review": null,
       "blockers": []
     },
     "FTF-0500C": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "0bd94864c30b835c000d3bb3d2651272249f0839"
+      ],
       "independent_review": null,
       "blockers": []
     },
     "FTF-0500D": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "e4dba6eed50b6981d44f1cd13f04aa03a47e4e53"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -880,9 +888,11 @@
       "blockers": []
     },
     "FTF-0601": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "d8e5c9ee79f6888c59745600d318498bbce45753"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -1851,9 +1861,11 @@
       "blockers": []
     },
     "FTF-1807": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "57877a86dd65e395e08059e005dd9ec03200aa60"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -1949,9 +1961,11 @@
       "blockers": []
     },
     "FTF-H007": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "d8e5c9ee79f6888c59745600d318498bbce45753"
+      ],
       "independent_review": null,
       "blockers": []
     },

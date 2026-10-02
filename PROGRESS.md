@@ -26730,3 +26730,6 @@ reviewed). Stopping here — not picking a second task this shift. No open owner
 "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-protection ask).
 `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-plane design
 question, not a further guess).
+
+## 2026-10-02 — Control-plane L2 review (session_01VHJQf4s23LHLrc56ocgBuh)
+Certified 7: FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807. Rejected (stay PROVISIONAL): FTF-0510 (percentile off-by-rank + untested), FTF-1206 (persistence half). Details in docs/certifications/queue.md and ledger.md.

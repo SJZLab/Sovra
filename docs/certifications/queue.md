@@ -21720,3 +21720,15 @@ Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
 `tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
 every open and future PR in this repository (the flake could land on any PR's gate run, not just
 #412's), which is why it was picked up directly rather than left as a comment only.
+
+## 2026-10-02 — Control-plane L2 review of the 2026-10-01 fix-and-resubmit batch
+Reviewer: control-plane session `session_01VHJQf4s23LHLrc56ocgBuh` (triggered by PR #418 open). Independence: no commit on origin/main carries this session ID. Reviewed on origin/main 05fde88.
+
+**CERTIFIED (see ledger.md):** FTF-H007, FTF-04A06, FTF-0601 (#403); FTF-0500C (#404); FTF-0500B (#407); FTF-0500D (#410); FTF-1807 (#408).
+
+**NOT CERTIFIED — stay PROVISIONAL, relay fixes in a new PR:**
+- **FTF-0510 (#411).** `workers/data/tokenization_analysis.py::_percentile` is not nearest-rank (round() with banker's rounding, not ceil): n=5,p50 gives 2 (should be 3); n=7,p90 gives 6 (should be 7). Tail percentiles are understated while docstring/spec-matrix claim nearest-rank. The test only asserts `p50 in totals`; mutating `p90` to `totals[0]` stays green.
+  DoD: rank = ceil(p*n/100); exact-value tests for p50/p90/p99 including the n=5 and n=7 cases; confirm CI gate env installs `tokenizers` and `jinja2` (needed by the test). The negative_acceptance half (inexact tokenizer / missing truncation policy) was verified sound.
+- **FTF-1206 (#412).** Route-change-against-grant half verified fixed. Persistence half (acceptance clause 1, "persist ... under org policy") still undelivered: module is pure dataclasses/functions, no storage/migration/API. BLOCKER.md scope decision still open. DoD unchanged from 2026-10-01: persisted tenant-scoped org-policy record (own migration task) or mark BLOCKED_DEPENDENCY; Control-plane scope decision required.
+
+### Certifier status: NOTHING PENDING for relay-submitted items beyond the two above (returned to relay / blocked on Control-plane decision).

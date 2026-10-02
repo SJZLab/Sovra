@@ -9750,3 +9750,27 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-H007 + FTF-04A06 + FTF-0601 — L2 CERTIFIED (PR #403, fix-and-resubmit)
+- Criterion IDs: FTF-H007, FTF-04A06, FTF-0601
+- PR: https://github.com/SJZLab/Sovra/pull/403 (merged); merge commit d8e5c9ee79f6888c59745600d318498bbce45753 (fix commit 272ae85)
+- Validated-by: control-plane session https://claude.ai/code/session_01VHJQf4s23LHLrc56ocgBuh. Independent: no commit on origin/main carries this session ID. Verification fanned out to read-only worktree subagents of this session; every injection reverted.
+- Date: 2026-10-02
+- CI: run 36853046067 on PR head 272ae85, success (41 jobs, 0 non-success), including the FTF-H007/04A06/0601 negative-test proof steps and job `evaluation-suite-integration`. Link: https://github.com/SJZLab/Sovra/actions/runs/36853046067
+- H007/04A06: all four DoD points of the 2026-10-01 review met (hardened `_run_git`; dangerous git-config keys block; symlinked hooks active; aliased imports). Own injections on origin/main 05fde88: removing the two `-c` flags reddened H007 and 04A06 fsmonitor tests; dropping the config key from `is_safe_to_lock` reddened 3 H007 checks; reverting symlink/alias handling reddened 4. Noted gaps (non-blocking): no direct test of core.sshCommand/filter.* keys; bare `system()` alias only covered indirectly.
+- 0601: static review confirms validators on PATCH, strip-based lock check, migration 0018 (CHECK `<> ''`), integration test per case. Unit injection (loosening whitespace validator) reddened; PATCH/DB-CHECK proof relies on the CI integration job, which was green (no local Postgres credentials for a local integration injection). Gap (non-blocking): no whitespace-only reviewer integration case.
+- product_truth 25/25, validate_spec --strict clean.
+
+## FTF-0500C + FTF-0500B — L2 CERTIFIED (PRs #404, #407)
+- Criterion IDs: FTF-0500C (merge 0bd94864c30b835c000d3bb3d2651272249f0839), FTF-0500B (merge 07d912b44947ea75cd53f9ebe35748c0ad1bc41f)
+- Validated-by: control-plane session https://claude.ai/code/session_01VHJQf4s23LHLrc56ocgBuh (independent, as above)
+- Date: 2026-10-02
+- Verified on origin/main 05fde88 with real local PostgreSQL 16 (nothing skipped). 0500C: changing the module's SET TRANSACTION to READ COMMITTED/READ WRITE reddened the integration test (2 checks); `observed is not None` header-drop regression reddened 2 unit checks. 0500B: dropping version_id from manifest_hash reddened 4 checks; disabling the unversioned-"null" refusal reddened 4. Packets' negative_acceptance intact. Non-blocking: empty VersionId not flagged; no real MinIO integration (permitted by the review).
+- product_truth 25/25, validate_spec --strict clean.
+
+## FTF-0500D + FTF-1807 — L2 CERTIFIED (PRs #410, #408)
+- Criterion IDs: FTF-0500D (merge e4dba6eed50b6981d44f1cd13f04aa03a47e4e53), FTF-1807 (PR #408 squash 57877a86dd65e395e08059e005dd9ec03200aa60)
+- Validated-by: control-plane session https://claude.ai/code/session_01VHJQf4s23LHLrc56ocgBuh (independent, as above)
+- Date: 2026-10-02
+- 0500D: classification×profile matrix test added; narrowing the gate to "restricted" reddened 3 checks (confidential/standard mismatch reported). 1807: operator-guidance semantics test; 3 own runbook rewrites (revocation until TTL, fallback permitted, removed "not") each reddened it. Limits (non-blocking): matrix compares two outputs of one helper; 1807 checks fixed phrases.
+- product_truth 25/25, validate_spec --strict clean.

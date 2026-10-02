@@ -1,4 +1,9 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02 (Control-plane certifier, session_01VHJQf4s23LHLrc56ocgBuh) — **CERTIFIED 7**: FTF-H007,
+  FTF-04A06, FTF-0601, FTF-0500C, FTF-0500B, FTF-0500D, FTF-1807 (moved to Done). **RETURNED TO RELAY (stay PROVISIONAL):**
+  FTF-0510 (#411: `_percentile` not nearest-rank, p50/p90/p99 untested — use ceil(p*n/100), add exact-value tests,
+  ensure gate env has `tokenizers`/`jinja2`) and FTF-1206 (#412: persistence half still undelivered; needs Control-plane
+  scope decision per BLOCKER.md). See docs/certifications/queue.md "2026-10-02 — Control-plane L2 review".
 Updated: 2026-10-02T13:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-d7wplf`) —
   **frontier re-confirmed fully claimed, byte-identical to the immediately-prior `aulcnj` shift's
   own closing state — no new RELAY-OWNED work, nothing merged or certified since.** Fresh
