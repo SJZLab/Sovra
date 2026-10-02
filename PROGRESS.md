@@ -1,5 +1,51 @@
 # PROGRESS — Sovra
-## 2026-10-02T13:05:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-d7wplf` — frontier re-confirmed fully claimed, no new RELAY-OWNED work; nothing done this shift
+## 2026-10-02T17:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-u06cpi` — frontier re-confirmed fully claimed, no new RELAY-OWNED work; nothing done this shift
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-u06cpi` found at the same commit as `origin/main`
+(`6febaee`, PR #418's merge, the immediately-prior `d7wplf` shift's own no-op close) — confirmed
+via `git fetch origin` + `git rev-list --left-right --count HEAD...origin/main` (0/0) before
+relying on it; no prior unmerged work of its own. `BLOCKER.md` read in full: the same two live
+entries, unchanged — **FTF-0902** (2026-10-01T10:30Z, three real fix attempts already falsified by
+real CI, a Control-plane design question, not retried a 4th time per STEP 4(c)) and **FTF-1206**
+(2026-10-02, the persistence-half scope question, a Control-plane decision, not improvised).
+STEP 0.2: no `cognee-cli` binary on this sandbox (`command not found`) — text-search fallback
+declared, same as every prior shift.
+
+STEP 1: re-read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/certifications/
+ledger.md` fresh (all exceed the single-read size limit — targeted head/tail/grep reads used, not
+trusted from any prior turn's summary). A fresh `list_pull_requests` sweep found only the same
+three open PRs the immediately-prior shift closed with: **#402** (FTF-0902's own stuck
+investigation branch — untouched, not a 4th retry), **#401** (`[GOVERNANCE]` PR, explicitly
+owner-merge-only), **#295** (FTF-0214, already `BLOCKED_DEPENDENCY`). No new PR opened by any
+Control-plane certify/review session since the last shift. `scripts/status.py` reads `99/300
+certified · 24 product-true` — byte-identical to the `d7wplf` shift's own closing figure.
+`docs/certifications/ledger.md`'s tail shows no certification newer than FTF-0306/the FTF-04A06
+decertification already reflected in the prior shift's own narrative. `docs/spec-matrix.yaml`
+checked directly for the two items namable as "maybe now unblocked": FTF-0510 and FTF-1206 both
+still read `certification_state: PROVISIONAL` — neither has been L2-certified since the last shift,
+so FTF-1703's own FTF-0510→FTF-0515→FTF-0516→FTF-R006 chain stays un-dependency-ready and FTF-1206's
+persistence half stays blocked exactly as `BLOCKER.md` describes.
+
+STEP 2 (PEV): **P** — hypothesis: nothing has changed since the `d7wplf` shift's own conclusion
+("no genuinely unclaimed, undeclined RELAY-OWNED item exists; all backlog items merged-PROVISIONAL,
+awaiting Control-plane L2 certification"), confirmed rather than assumed via the fresh checks above
+(identical PR set, identical status figure, identical PROVISIONAL states on the two watched IDs,
+zero commits landed on `main` since `6febaee`). **E/V** — no code, test, or tracking-file change is
+warranted: there is nothing dependency-ready, unclaimed, and undeclined to execute against, and both
+live `BLOCKER.md` items remain explicit Control-plane decisions this shift has no new standing to
+resolve. Neither blocked item retried.
+
+STEP 3: this entry is the only tracking-file update this shift — `QUEUE.md`'s "## Active" section
+and `docs/certifications/queue.md` need no new append (no new finding, no new submission, no new
+certification to log). `BLOCKER.md`'s two live entries left untouched, neither retried.
+
+STEP 4: stop condition (a) applies — `scripts/status.py` unchanged at `99/300` certified / 24
+product-true; every merged-PROVISIONAL item from the earlier backlog-clearing shift (FTF-H007/
+FTF-04A06/FTF-0601/FTF-0500C/FTF-0500B/FTF-0500D/FTF-1807/FTF-1206-partial/FTF-0510/FTF-R002) still
+awaits Control-plane L2 certification and the L4 gate; no genuinely unclaimed RELAY-OWNED item
+exists. No new blocker, no usage-limit stop, no new ask-first item (`QUEUE.md`'s own "Owner actions
+— current" unchanged: only the pre-existing, low-urgency branch-protection ask). Stopping here.
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
 Designated branch `claude/wizardly-fermat-d7wplf` found at the same commit as `origin/main`
