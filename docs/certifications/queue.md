@@ -21853,3 +21853,19 @@ entry — same relay/Control-plane separation every prior entry in this file obs
 - **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
   — independent Control-plane L2 review and a real CI run on the opened PR are required before
   certification.
+
+## 2026-10-02 — Control-plane L2 review of FTF-1002 (PR #424, merge 1177f56) — NOT CERTIFIED
+Reviewer: control-plane session `session_01HbFitWFRsVhyDWiTHGzM81`. Independent: the only commit session on the PR is
+`session_019KdJK8ZpPZ3nJxiE51NRbD`. CI: all 41 check runs green on the PR head incl. `gate`
+(run 37063975409). Local run of `tests/tasks/test_ftf_1002.py` passes; own fault injection (parent-id
+check replaced with `if False:`) reddens "cannot fabricate a parent" — the test can fail. Reverted.
+**Stays PROVISIONAL.** Contract gaps (CI is not the problem):
+1. **Adapter base mislabelled.** For `adapter`, `base`/`tokenizer` report the *adapter's own*
+   `weights_digest` as the base fact (`known=True`). That is not the base's digest — a fabricated parent.
+2. **Mismatch guard is opt-in.** `resolved_base_artifact` defaults to None; an adapter with none gets a
+   manifest with no base check at all, so "adapter-base mismatch invalidates load/qualification" holds
+   only if a caller volunteers the base. DoD: adapter without a resolved ready base → base `known=False`
+   (or raise); base fact carries the *base* artifact's digest.
+3. **No live caller (Law 7) and no real integration** — acceptance requires "real relevant integration
+   evidence"; only a pure unit test exists. Wire into a load/qualification path or mark UNWIRED/blocked.
+4. Add tests for 1–2 (adapter with no base; base digest ≠ adapter digest).

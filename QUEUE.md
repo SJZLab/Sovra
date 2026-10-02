@@ -1,4 +1,5 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T21:30:00Z — Control-plane L2 review of FTF-1002 (session session_01HbFitWFRsVhyDWiTHGzM81): **NOT CERTIFIED, stays PROVISIONAL.** Relay fixes: adapter base/tokenizer facts report the adapter's own digest; resolved_base_artifact optional so mismatch guard is opt-in; no live caller/integration. Details in docs/certifications/queue.md. Certified count unchanged (99/300).
 Updated: 2026-10-02T21:08:00Z — **PR #424 (FTF-1002) merged to `main`** (merge commit
   `1177f56a60a593fbe80a7cedddde31b69abb4e5a`, all 41 check runs on the real PR head green,
   including `gate`, `mergeable_state: clean`, zero pending reviews/comments) — merged under the
