@@ -10041,6 +10041,32 @@ FTF-R002:
     credentials, direct vendor DB writes, fake health after dependency outage) both genuinely met.
     No blocking defect found. Merged PR #236 (merge commit
     d257254c78678e978533190b327d4d8758fb3914) into main.
+
+    2026-10-02 flaky-test fix, found while diagnosing an unrelated PR's (#412) real `gate`
+    job failure: `test_job_identity_rejects_tampered_token`'s own tamper construction flipped only
+    the token's *last character* -- the final base64url sextet of a 32-byte SHA-256 signature
+    encodes only 16 of its 18 available bits (32 % 3 == 2), so its low 2 bits are unused encoding
+    padding, not digest data. Flipping that character is therefore a silent no-op (decodes back to
+    the identical signature bytes) for a measurable fraction of randomly generated tokens --
+    reproduced directly, 20,000 trials of the real `sign_worker_job_identity`/
+    `verify_worker_job_identity` functions: 329 no-ops (1.6%), each one making
+    `verify_worker_job_identity` wrongly accept the "tampered" token and the check genuinely fail.
+    This is a test-construction defect, not a production signing/verification defect -- `hmac.
+    compare_digest` itself is unaffected; the test merely sometimes failed to actually tamper
+    anything. Fixed by decoding the signature, XORing one real byte (`signature[0] ^= 0xFF`), and
+    re-encoding -- unconditionally changes the compared bytes; reconfirmed 0/50,000 no-ops after
+    the fix. Real fault injection (Law 1), performed directly against the on-disk module: disabled
+    the real signature check (`hmac.compare_digest(...)` call short-circuited to `False and ...`)
+    -- 2 genuine FAILs (this check and the wrong-signing-key check); reverted byte-identical
+    (md5sum `fbfc6b8a297f32c844530886e8b02d2c` confirmed matching before/after) and reran clean.
+    `ruff check`/`ruff format --check`/`mypy` clean; `validate_spec.py --strict` clean;
+    `product_truth_check.py --fail-on-unwired` unchanged 25/25; `status.py` unchanged 99/300
+    certified (Law 2 -- a test-only fix is not a new certification). Regression swept
+    `test_ftf_r001.py`/`test_ftf_r002.py` itself, 5x each, clean. Test-only change
+    (`tests/tasks/test_ftf_r002.py`); `packages/component_contracts/job_identity.py` untouched on
+    disk (confirmed byte-identical pre/post this fix, not just pre/post the fault injection) --
+    `certification_state`/`proof_state` stay as already certified above; this is a latent-flake
+    repair of already-certified evidence, not a reopened certification.
   proof_state: L2-CERTIFIED
   proving_symbol: build_component_binding_router
   proving_test: tests/tasks/test_ftf_r002.py

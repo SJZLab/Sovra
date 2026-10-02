@@ -21351,3 +21351,70 @@ named ("Do not re-review them until a new relay fix PR for that ID is appended b
 for FTF-1807 specifically — not for FTF-0500D/FTF-1206, which remain exactly as that review left
 them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
 `QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix).
+
+## 2026-10-02 — FTF-R002 — real, reproducible flaky-test fix (not a new finding against already-certified production code)
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-pu0up5`. Not a fix-and-resubmit
+for a Control-plane L2 finding — FTF-R002 is already `CERTIFIED`/`L2-CERTIFIED` (PR #236). This
+was found as a side effect while diagnosing **PR #412**'s (FTF-1206) real `gate` job failure (run
+`36948577882`/job `110656171438`): the failing step was `test_ftf_r002.py`, a file PR #412's own
+diff never touches — ruled out as "not this PR's own" before going further, per CLAUDE.md's CI-red
+root-cause norm, rather than assumed.
+
+**Root cause, confirmed directly against the real functions, not assumed:**
+`test_job_identity_rejects_tampered_token` constructed its "tampered" token by flipping only the
+*last character* of the whole `<payload_b64>.<signature_b64>` wire string
+(`token[:-4] + ("A" if token[-1] != "A" else "B") + token[-3:]` — itself a second latent bug, since
+the replacement character landed at position -4 while the decision of *which* letter to use was
+based on `token[-1]`, and the original last 3 characters were reappended unchanged). The real
+signature is a base64url-encoded 32-byte SHA-256 digest; 32 % 3 == 2, so the final encoded sextet
+carries only 16 of its 18 available bits — its low 2 bits are unused encoding padding, not digest
+data. Flipping a token character that lands on those padding bits decodes back to the *identical*
+signature bytes, making the "tamper" a silent no-op. Reproduced directly against the real
+`sign_worker_job_identity`/`verify_worker_job_identity` functions (not simulated): 20,000 trials,
+329 no-ops (1.6%) — each one a token `verify_worker_job_identity` wrongly accepted, reproducing
+exactly PR #412's own observed CI failure (`FAIL [FTF-R002] a bit-flipped/tampered token fails
+signature verification`). This is a defect in the *test's own tamper construction*, not in
+production signing/verification — `hmac.compare_digest` itself was never the problem.
+
+**Fix:** added `_tamper_signature_byte` to `tests/tasks/test_ftf_r002.py` — decodes the real
+signature, flips one full decoded byte (`signature[0] ^= 0xFF`), re-encodes. Changing any one of
+32 real digest bytes unconditionally changes what `hmac.compare_digest` compares, eliminating the
+padding-bit edge case entirely. Reconfirmed directly: 50,000 trials, 0 no-ops, 0 missed tampers
+(the single-character version of the fix — guaranteeing `tampered != token` but still flipping a
+token *character* rather than a decoded byte — was tried first and *still* showed a 6.3% miss
+rate across 50,000 trials, confirming the padding-bit issue is about which bits a character change
+reaches, not merely whether the string changes; this is why the real fix operates on decoded
+bytes, not characters).
+
+**Real fault injection (Law 1), performed directly against the on-disk production module:**
+disabled the real signature check in `packages/component_contracts/job_identity.py`
+(`if not hmac.compare_digest(signature, expected_signature):` → `if False and not
+hmac.compare_digest(...):`) — 2 genuine FAILs (`a bit-flipped/tampered token fails signature
+verification` and `a token verified with the wrong signing key is refused`), confirming the fixed
+test still genuinely detects a real broken verifier; reverted byte-identical (md5sum
+`fbfc6b8a297f32c844530886e8b02d2c` confirmed matching before and after) and reran clean —
+`packages/component_contracts/job_identity.py` is untouched by this fix on disk, confirmed via
+`git diff` showing zero changes to that file.
+
+`uv run python3 tests/tasks/test_ftf_r002.py` × 10 runs: "all checks passed" every time (was
+previously observed to intermittently fail). `uv run ruff check .`/`ruff format --check .` clean.
+`uv run mypy tests/tasks/test_ftf_r002.py` clean. `python3 scripts/validate_spec.py --strict`
+clean. `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`.
+`scripts/status.py`: unchanged `99/300` certified, 24 product-true (Law 2 — a test-only flake fix
+is not a new certification). Regression swept `test_ftf_r001.py`/`test_ftf_r002.py` itself, 5×
+each — zero regressions.
+
+**Why this isn't a reopened certification:** FTF-R002's own production code
+(`packages/component_contracts/job_identity.py`) is untouched; only the test's own tamper
+construction (a latent, now-fixed defect in how the test proves its own claim) changed.
+`certification_state`/`proof_state` in `docs/spec-matrix.yaml` stay exactly as the 2026-09-24
+CERTIFY review left them — this entry documents a latent-flake repair for the record, not a
+request to re-review FTF-R002 itself. Posted a comment on PR #412 (whose own `gate` failure first
+surfaced this) naming the real root cause, so Control plane does not mistake that PR's own CI
+failure for a defect in its own diff.
+
+Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
+`tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
+every open and future PR in this repository (the flake could land on any PR's gate run, not just
+#412's), which is why it was picked up directly rather than left as a comment only.

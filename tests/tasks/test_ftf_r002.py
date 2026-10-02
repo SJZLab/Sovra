@@ -48,6 +48,7 @@ Run directly: python3 tests/tasks/test_ftf_r002.py
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import http.client
 import socket
@@ -557,6 +558,27 @@ def test_job_identity_sign_verify_round_trip() -> None:
     )
 
 
+def _tamper_signature_byte(token: str) -> str:
+    # Flips a real byte of the *decoded* signature, not a character of the
+    # base64url text. A urlsafe-base64-encoded SHA-256 digest (32 bytes) has
+    # a final sextet whose low bits are unused encoding padding, not digest
+    # data (32 % 3 == 2, so the last encoded group carries only 16 of its
+    # 18 available bits) -- flipping a token *character* there (as an
+    # earlier version of this test did, token[-1] or token[-4]) can, for a
+    # fraction of randomly generated tokens, decode back to the exact same
+    # signature bytes, making the "tamper" a silent no-op and this check
+    # flaky (observed for real: ~1.6%-6.3% of tokens across 20k-50k trials,
+    # depending on which character was flipped). Flipping a decoded byte
+    # instead is unconditional: changing any one of 32 real digest bytes
+    # always changes what `hmac.compare_digest` compares against.
+    payload_b64, signature_b64 = token.rsplit(".", 1)
+    padding = "=" * (-len(signature_b64) % 4)
+    signature = bytearray(base64.urlsafe_b64decode(signature_b64 + padding))
+    signature[0] ^= 0xFF
+    tampered_signature_b64 = base64.urlsafe_b64encode(bytes(signature)).rstrip(b"=").decode("ascii")
+    return f"{payload_b64}.{tampered_signature_b64}"
+
+
 def test_job_identity_rejects_tampered_token() -> None:
     now = datetime.now(UTC)
     identity = mint_worker_job_identity(
@@ -571,11 +593,12 @@ def test_job_identity_rejects_tampered_token() -> None:
     )
     key = b"a-real-signing-key"
     token = sign_worker_job_identity(identity, signing_key=key)
-    tampered = token[:-4] + ("A" if token[-1] != "A" else "B") + token[-3:]
+    tampered = _tamper_signature_byte(token)
     check(
         "FTF-R002",
         "a bit-flipped/tampered token fails signature verification",
-        _rejects(verify_worker_job_identity, tampered, signing_key=key, now=now),
+        tampered != token
+        and _rejects(verify_worker_job_identity, tampered, signing_key=key, now=now),
     )
 
 
