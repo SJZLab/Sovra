@@ -3,7 +3,27 @@ name = "sovra-worker-data"
 version = "0.0.0"
 description = "Sovra data/review worker (Argilla-backed)"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    # FTF-0510: real tokenization against the actual selected base-model
+    # tokenizer/template (Section 8.1 step 9). `tokenizers` loads a real
+    # Hugging Face fast-tokenizer `tokenizer.json` (already one of
+    # FTF-0302's own `_ALLOWED_FILENAME_SUFFIXES` for a resolved
+    # `huggingface` TrainableArtifact -- apps/api/app/artifacts/
+    # hugging_face_artifact_resolver.py) with no torch/tensorflow backend
+    # needed. `jinja2` renders that same resolved artifact's own
+    # `tokenizer_config.json["chat_template"]` string -- this is the exact
+    # mechanism docs/architecture/REFERENCE_REPOSITORIES.md's own "Model
+    # templates" row names (https://huggingface.co/docs/transformers/en/
+    # chat_templating is Jinja2-templated chat formatting; the full
+    # `transformers` package is not needed just to render that template and
+    # tokenize with the already-resolved fast tokenizer). No architecture
+    # doc names a different templating/tokenization library, so this is the
+    # "Default resolution rule" (CLAUDE.md) applied to a new runtime dep,
+    # documented here rather than silently added -- same precedent FTF-04A11
+    # already used promoting `pyyaml` to a real apps/api runtime dependency.
+    "tokenizers>=0.20.3,<0.21",
+    "jinja2>=3.1.4,<3.2",
+]
 
 [tool.uv]
 package = false
