@@ -21224,6 +21224,134 @@ named ("Do not re-review them until a new relay fix PR for that ID is appended b
 FTF-H007, FTF-04A06 and FTF-0601 specifically — not for FTF-0500C/FTF-0500B/FTF-0500D/FTF-1807/
 FTF-1206, which remain exactly as that review left them, unchanged, no new relay PR yet.
 
+## 2026-10-01 — FTF-0500C — fix-and-resubmit for the 2026-10-01 L2 findings
+
+Fixes both real gaps the 2026-10-01 Control-plane L2 review found in
+`apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py`
+(submitted PR #364, still PROVISIONAL, code unchanged by that review).
+
+**(a) Read-only transaction mode: proven only by a test re-implementation, not through the
+module.** `test_real_read_only_transaction_mode_independently_blocks_a_write` re-typed the
+module's own `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` statement on a raw
+connection instead of calling `validate_and_preview_postgres_source` — changing the module's own
+SQL to `READ COMMITTED, READ WRITE` left both test suites green. Fixed by adding
+`test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql` to
+`tests/integration/test_ftf_0500c_database_api_trace_source.py`: a `_SessionSettingsSpyConnection`
+wraps the real psycopg connection the module itself opens (supplied as the module's own `connect`
+parameter — never a second, parallel connection), observes the module's own `SHOW
+statement_timeout` probe (the query it issues immediately after its two `SET` statements), and on
+that same real connection/transaction reads back `SHOW transaction_read_only`/`SHOW
+transaction_isolation`. **Real fault injection (Law 1), performed directly by this session:**
+reverted the module's own transaction-mode SQL to `READ COMMITTED, READ WRITE` and confirmed the
+new test genuinely fails both assertions (`read_only != "on"`, `isolation != "repeatable read"`) —
+reproducing, for real, exactly the undetected-defect scenario the review described — then reverted
+the module file byte-identical (md5sum `03526950e8625df4f197fec8580a44cf` before and after) and
+re-ran clean. The pre-existing raw-SQL test is kept (still real, independent evidence that a role
+with write privilege is blocked by the transaction mode itself, not only by its own grants) but is
+no longer the sole evidence for the module's own SQL.
+
+**(b) REST connector: a later page that drops the snapshot-version header after one was seen was
+silently accepted.** The guard `if observed is not None:` treated a missing header as "nothing to
+compare" rather than the same mid-listing inconsistency a changed value is — violating this task's
+own "lost watermark/snapshot blocks consistent import" negative_acceptance. Fixed: a
+`snapshot_version_seen` flag is now tracked separately from the captured value, so a later page
+whose observed header is `None` after one was already seen raises `SourceChangedDuringListingError`
+identically to a changed value (an endpoint that never sends the header at all, on any page, still
+has no check applied — unchanged, disclosed behavior). New fixture endpoint
+`/snapshot-then-missing` in `tests/tasks/test_ftf_0500c.py` sends `ETag: snapshot-v1` on page one
+and no `ETag` header at all on page two; new test
+`test_rest_connector_catches_a_missing_snapshot_header_after_one_was_seen` proves it raises.
+**Real fault injection (Law 1):** extended the existing snapshot-version fault-injection test (same
+disable line, `elif observed != snapshot_version:` → `elif False:`, which covers both the
+changed-value and the missing-header-after-seen case since both go through that one branch) —
+confirmed the new assertion genuinely fails without the fix, then reverted byte-identical and
+re-ran clean.
+
+`uv sync --all-packages`; `ruff check .`/`ruff format --check .`/`mypy .` clean (356 files, zero
+new errors after one `UP037` quote-removal and one format pass on the new integration-test code).
+`validate_spec.py --strict` clean (after `git fetch --unshallow`, pre-existing shallow-clone
+sandbox artifact — same disclosed precedent prior shifts used). `product_truth_check.py
+--fail-on-unwired`: unchanged `25/25` (`proving_symbol` stays blank — no live caller added by this
+fix). `status.py`: unchanged `99/300` certified (Law 2 — a resubmission is not a certification).
+Both suites re-run clean end to end: `tests/tasks/test_ftf_0500c.py` (no live DB) and
+`tests/integration/test_ftf_0500c_database_api_trace_source.py` (real local PostgreSQL 16,
+freshly provisioned this shift). Regression swept `test_ftf_0500.py`/`test_ftf_0500b.py`/
+`test_ftf_0303.py`/`test_ftf_h006.py` — zero interference (the printed `TenantContextError`
+traceback inside `test_ftf_0500.py`'s own stdout is that suite's own disclosed negative-test case;
+confirmed exit 0, "all checks passed").
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500C entry with this L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Opened a new
+PR (branch off current `main`, `[relay] FTF-0500C: fix L2 findings (read-only transaction evidence
++ missing-snapshot-header check)`) rather than reopening PR #364, consistent with how the
+FTF-H007/FTF-04A06/FTF-0601 fix (PR #403, merged) handled its own prior PROVISIONAL submission.
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review itself
+named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
+for FTF-0500C specifically — not for FTF-0500B/FTF-0500D/FTF-1807/FTF-1206, which remain exactly as
+that review left them, unchanged, no new relay PR yet.
+
+## 2026-10-01 — FTF-1807 — fix-and-resubmit for the 2026-10-01 L2 finding
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-g8cp6d`. PR
+https://github.com/SJZLab/Sovra/pull/408 (opened off a fresh `main`, same pattern as the
+FTF-H007/FTF-04A06/FTF-0601 fix (PR #403) and the FTF-0500C fix — a new PR rather than reopening
+the original PR #384).
+
+**The L2 finding:** rewriting the runbook to say revoked access continues until TTL and that
+external fallback is allowed (the opposite of the negative_acceptance) still passed 35/35 — the
+test matched tokens, not operator guidance. Read `tests/documentation/test_ftf_1807.py` and
+`docs/operations/litellm_outage_runbook.md` directly first: the existing `_doc_matches_real_facts`
+check only verified that certain tokens (the TTL minutes, the retry count, the fingerprint header
+name, the cache-bypass field, the `SKIPPED_OUT_OF_ORDER` name) appear somewhere in the doc — never
+what the operator table's own `Effect` column, or the revocation/fallback body prose, actually
+claims. No production code is implicated; this task's own `database_changes`/`files` clause names
+only the doc and this test file (unchanged from the original submission).
+
+**Fix:** added `_doc_operator_guidance_matches_real_semantics` to the test. It parses the real
+section-7 `| Signal | Detection | Effect |` operator table (`_extract_table_row_effect`, a small
+real markdown-row parser, not a second hardcoded copy of the table) and checks:
+- the "Key/connection revoked (401/403)" row's `Effect` column states immediate, unconditional
+  refusal and does not say "until" anything;
+- the "Router silently reroutes to a different deployment" row's `Effect` column states the
+  identity stays `UNVERIFIED` and is never claimed equivalent;
+- the section 2 body states revocation does not wait for the freshness TTL ("revocation is a
+  definite signal"), matched markdown-bold-tolerant (the real doc wraps "not" in `**…**`, normalized
+  before comparison);
+- the section 6 body states a reroute "is never treated as equivalent to the pinned deployment"
+  (normalized whitespace-tolerant — the real phrase hard-wraps across two source lines).
+
+**Real fault injection (Law 1), performed directly by this session, reproducing the exact finding
+twice over (both named inversions, not just one):**
+1. `test_fault_injection_inverted_revocation_guidance_is_caught_by_the_semantics_check` — rewrote
+   the real revoked-key table row (`"Immediate, unconditional call refusal (`access_revoked`)"`) to
+   `"Call remains permitted until the 5-minute freshness TTL expires (`access_revoked`)"`, keeping
+   every token the *old* check looks for (`5-minute`, `access_revoked`) intact. Confirmed the old
+   `_doc_matches_real_facts` check genuinely still returns `[]` (no problems) on this broken doc —
+   reproducing, for real, the exact undetected-defect scenario the L2 review described — then
+   confirmed the new semantics check genuinely flags the revoked-key row. Restored the doc file
+   byte-identical afterward (`restored == original` asserted) and re-confirmed the semantics check
+   passes again.
+2. `test_fault_injection_fallback_allowed_claim_is_caught_by_the_semantics_check` — same pattern for
+   the "external fallback is allowed" inversion: rewrote the section 6 "is never treated as
+   equivalent to the pinned deployment" statement to say the opposite ("is treated as equivalent …
+   fallback is permitted"), confirmed the old check still passes, confirmed the new check fails,
+   restored byte-identical.
+
+`python3 tests/documentation/test_ftf_1807.py`: 7 test functions (was 5), all pass, "all checks
+passed". `uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+tests/documentation/test_ftf_1807.py` clean. `python3 scripts/validate_spec.py --strict` clean.
+`python3 scripts/product_truth_check.py --fail-on-unwired`: `25/25`, unchanged. `scripts/status.py`:
+unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review itself
+named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
+for FTF-1807 specifically — not for FTF-0500D/FTF-1206, which remain exactly as that review left
+them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
+`QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix).
+
 ## 2026-10-01T13:40Z — Control-plane L2 re-review of PR #403 (FTF-H007, FTF-04A06, FTF-0601): NOT CERTIFIED, returned to relay (round 2)
 Reviewer: control-plane session `session_01QVznorVMjnmcttUhyDnoGR`. Independent: PR #403's commit carries
 `session_01Tt961y3SGLdNNmVekj8f3p`, and the fix was ported from PR #402, whose commits carry

@@ -326,6 +326,22 @@ class _RestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/snapshot-then-missing":
+            page = _ALL_RECORDS[cursor : cursor + limit]
+            next_cursor = cursor + limit if cursor + limit < len(_ALL_RECORDS) else None
+            if cursor == 0:
+                self._send_json(
+                    {"records": page, "next_cursor": next_cursor},
+                    extra_headers={"ETag": "snapshot-v1"},
+                )
+            else:
+                # A later page that simply stops sending the header
+                # entirely, rather than sending a changed value -- the
+                # 2026-10-01 L2 review's own finding: the original
+                # `if observed is not None:` guard silently accepted this.
+                self._send_json({"records": page, "next_cursor": next_cursor})
+            return
+
         if parsed.path == "/missing-records-field":
             self._send_json({"items": [], "next_cursor": None})
             return
@@ -494,10 +510,38 @@ def test_rest_connector_catches_a_real_snapshot_version_change_mid_listing() -> 
         )
 
 
+def test_rest_connector_catches_a_missing_snapshot_header_after_one_was_seen() -> None:
+    """2026-10-01 L2 finding: the original `if observed is not None:` guard
+    silently accepted a later page that simply stopped sending the
+    snapshot-version header after an earlier page carried one -- treated as
+    "nothing to compare" instead of the same mid-listing inconsistency a
+    changed value is. `/snapshot-then-missing` sends `ETag: snapshot-v1` on
+    page one and no `ETag` header at all on page two."""
+    if _BASE_URL is None:
+        return
+    try:
+        source_module.validate_and_preview_rest_trace_source(
+            _rest_config("/snapshot-then-missing", max_preview_records=1000), policy=_policy()
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real later page that drops the snapshot-version header "
+            "after an earlier page carried one is caught, not silently accepted",
+            False,
+        )
+    except source_module.SourceChangedDuringListingError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real later page that drops the snapshot-version header "
+            "after an earlier page carried one is caught, not silently accepted",
+            True,
+        )
+
+
 def test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion() -> None:
     """Law 1, disclosed real fault injection: temporarily disables the
     snapshot-version comparison directly in the module under test, proves
-    the negative-test assertion above genuinely fails without it, then
+    both negative-test assertions above genuinely fail without it, then
     reverts the file byte-identical."""
     if _BASE_URL is None:
         return
@@ -530,9 +574,24 @@ def test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion() ->
             genuinely_failed_without_the_check = False
         check(
             "FTF-0500C",
-            "fault injection: disabling the real comparison genuinely breaks the assertion "
-            "above (proves it was testing something real, not vacuously passing)",
+            "fault injection: disabling the real comparison genuinely breaks the changed-value "
+            "assertion above (proves it was testing something real, not vacuously passing)",
             genuinely_failed_without_the_check,
+        )
+        try:
+            result = source_module.validate_and_preview_rest_trace_source(
+                _rest_config("/snapshot-then-missing", max_preview_records=1000), policy=_policy()
+            )
+            missing_header_genuinely_failed_without_the_check = True
+            _ = result
+        except source_module.SourceChangedDuringListingError:
+            missing_header_genuinely_failed_without_the_check = False
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real comparison genuinely breaks the "
+            "missing-header-after-seen assertion above too (proves it was testing something "
+            "real, not vacuously passing)",
+            missing_header_genuinely_failed_without_the_check,
         )
     finally:
         MODULE_PATH.write_text(original)

@@ -1,4 +1,71 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T00:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`) —
+  **frontier found fully claimed by concurrent shifts; no new PR opened; two GitHub comments
+  flagging real issues for Control plane.** Branch found at the same commit as `origin/main`
+  (`35b9050`, PR #409's tracking merge) — no prior unmerged work of its own; `sha256sum CLAUDE.md`
+  matched `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902, 10:30Z) untouched, no
+  fourth retry. Picked **FTF-0500D** per "## Active" item 3 (the smaller of the two remaining
+  untouched RELAY-OWNED items) and independently did the full PEV cycle: read the module, found
+  the exact same gap the 2026-10-01 review named, added a classification x profile matrix test,
+  ran a real fault injection (narrowed the module to `security_classification == "restricted"`,
+  confirmed the *old* suite stayed green, confirmed the *new* test genuinely caught it on
+  `confidential`→`standard`), reverted byte-identical (md5sum `2113594afa576abbd248d9e147fd8745`),
+  full `ruff`/`mypy`/`validate_spec --strict`/`product_truth_check`/`status.py`/regression sweep
+  clean — all before opening a PR.
+
+  A fresh `list_pull_requests` sweep (not trusted from this file's own narrative) done *before*
+  pushing found the frontier already fully claimed by concurrent sessions: **#410** and **#413**
+  each independently fix this exact FTF-0500D finding (same root cause, same fault-injection
+  method, same `2113594afa576abbd248d9e147fd8745` module md5sum) — this shift's own independent
+  arrival at the identical fix is strong corroboration both are correct, but a third duplicate PR
+  would only add Control-plane review burden, so none was opened; **discarded this shift's own
+  local changes** (`git checkout --`) rather than keep them uncommitted or push a redundant
+  branch. Posted one comment on #413 cross-referencing #410 for Control-plane triage (does not
+  close either — picking the surviving PR is a review call, not a mechanical "already on main"
+  closure this relay can make unilaterally). **#412** (FTF-1206) and **#411** (FTF-0510) are also
+  already open, covering the remaining two "Active" items (FTF-1206's own persistence question is
+  escalated in that PR's own new `BLOCKER.md` entry on its branch; FTF-0510 was the "newly
+  dependency-ready" item 4). FTF-0902/FTF-1703 remain correctly deferred, untouched.
+
+  **One real issue found and flagged, not fixed (not this shift's branch):** PR #412's own
+  description claims no CI workflow change was needed and cites only local results, but a live
+  check of its head commit shows the real `gate` job actually failed on GitHub Actions (40/41
+  green, `gate` red, run `36948577882`/job `110656171438`) — undisclosed in the PR body. Posted a
+  comment on #412 naming the run/job IDs so Control plane checks before certifying (Law 1/9); not
+  acted on further since this isn't this session's branch and FTF-1206 was correctly not this
+  shift's own claimed item.
+
+  No genuinely unclaimed, undeclined task exists this shift. No open owner ask (this file's own
+  "Owner actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask).
+Updated: 2026-10-01T17:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`) —
+  **FTF-1807 fix-and-resubmit for the 2026-10-01 L2 finding, opened as PR #408.** Branch found at
+  the same commit as `origin/main` (`0bd9486`, PR #404's merge) — no prior unmerged work of its
+  own; `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`; `BLOCKER.md`'s only live
+  entry (FTF-0902, 10:30Z) is untouched by this shift, no fourth retry attempted. Of the three
+  still-untouched "RELAY-OWNED" fix-and-resubmit items from "## Active" item 3
+  (FTF-0500D/FTF-1807/FTF-1206), a concurrent/prior shift had already opened PR #407 for
+  FTF-0500B (not yet reflected in this file's own prior entry, found via a fresh `list_pull_requests`
+  sweep rather than trusted stale) — picked **FTF-1807** next as the smallest, most tractable of
+  the remaining three (test-only, no new production code or migration, vs. FTF-1206's own
+  persisted-migration prerequisite).
+
+  The L2 finding: rewriting the runbook to say revoked access continues until TTL and that external
+  fallback is allowed still passed 35/35 — the test matched tokens, not operator guidance. Added
+  `_doc_operator_guidance_matches_real_semantics` to `tests/documentation/test_ftf_1807.py`,
+  parsing the real section-7 operator table's own `Effect` column for the revoked-key and
+  silent-reroute rows, plus the section 2/6 body prose — not scanning for isolated tokens. Two new
+  fault-injection tests (Law 1) reproduce both named inversions directly: each rewrites the real doc
+  text to the opposite claim, proves the *old* token check still passes on the broken doc (the real
+  gap), proves the *new* semantics check correctly fails, then restores the file byte-identical.
+  Full evidence in `docs/certifications/queue.md`'s matching 2026-10-01 entry.
+
+  `uv run ruff check .`/`ruff format --check .` clean (356 files); `uv run mypy
+  tests/documentation/test_ftf_1807.py` clean; `validate_spec.py --strict` clean;
+  `product_truth_check.py --fail-on-unwired` unchanged `25/25`; `scripts/status.py` unchanged
+  `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification). Not
+  self-certified (Law 4) — PR #408 awaits Control-plane L2 re-review and a real CI run. No open
+  owner ask (this file's own "Owner actions — current" unchanged — only the low-urgency
+  branch-protection ask, nothing blocking).
 Updated: 2026-10-01T10:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-wy0my8`) —
   **split PR #402's clean, green FTF-H007/FTF-04A06/FTF-0601 fix out from its still-blocked
   FTF-0902 CI investigation, and opened it as its own PR so it isn't held hostage.** PR #402
@@ -8199,12 +8266,16 @@ this same resolution (doc-only, redundant once this lands).
 
 3. **RELAY-OWNED. Do not skip these as "PROVISIONAL, Control plane's to certify".** Eight
    items were reviewed and returned NOT CERTIFIED. Their `certification_state` stays PROVISIONAL
-   only because the code is already merged. **FTF-H007, FTF-04A06, FTF-0601: fix PR opened this
-   shift** (branch `claude/wizardly-fermat-wy0my8`, see `docs/certifications/queue.md`'s matching
-   2026-10-01 entry for full evidence — includes a `test_ftf_04a06.py` case the first
-   fix-and-resubmit attempt had missed). Remaining, still untouched: FTF-0500C, FTF-0500B,
-   FTF-0500D, FTF-1807, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2 findings` PR and
-   append it to `docs/certifications/queue.md` for re-review.
+   only because the code is already merged. **FTF-H007, FTF-04A06, FTF-0601: fixed, PR #403
+   merged.** **FTF-0500C: fix PR opened this shift** (see `docs/certifications/queue.md`'s
+   matching 2026-10-01 entry for full evidence — the read-only-transaction-mode test now goes
+   through the module itself instead of re-implementing its SQL, and a later page that drops the
+   snapshot-version header after one was seen is now caught). **FTF-0500B: fix PR #407 opened**
+   (version-id-sensitive manifest hash + versioning-disabled refusal). **FTF-1807: fix PR #408
+   opened this shift** (operator-guidance semantics check replaces the old token-only check — see
+   `docs/certifications/queue.md`'s matching 2026-10-01 entry). Remaining, still untouched:
+   FTF-0500D, FTF-1206. Open each fix as a new `[relay] <ID>: fix L2
+   findings` PR and append it to `docs/certifications/queue.md` for re-review.
 3. **Fix-and-resubmit, from the 2026-10-01 L2 review** (full findings and DoDs in
    `docs/certifications/queue.md`, 2026-10-01 entry). Priority order:
    - **FTF-H007 + FTF-04A06 (security, one PR):** harden `_run_git` (`core.fsmonitor=false`,
@@ -8214,7 +8285,7 @@ this same resolution (doc-only, redundant once this lands).
    - **FTF-0601:** add validation on the PATCH path; refuse to lock with an empty reviewer.
      **DONE — fix PR opened this shift, see above.**
    - **FTF-0500C:** add a module-level read-only/isolation assertion; a missing snapshot header
-     on a later page blocks.
+     on a later page blocks. **DONE — fix PR opened this shift, see above.**
    - **FTF-0500B:** add a version_id-sensitivity test; flag unversioned buckets.
    - **FTF-0500D:** test the classification × profile matrix on `authorize_*`.
    - **FTF-1807:** make the runbook test assert the guidance itself, not tokens.

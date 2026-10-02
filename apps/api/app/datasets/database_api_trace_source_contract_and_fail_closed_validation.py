@@ -497,6 +497,7 @@ def validate_and_preview_rest_trace_source(
     collected: list[Mapping[str, object]] = []
     cursor: str | None = None
     snapshot_version: str | None = None
+    snapshot_version_seen = False
     truncated = False
     cancelled = False
     page_fetches = 0
@@ -557,16 +558,24 @@ def validate_and_preview_rest_trace_source(
 
         if config.snapshot_version_header:
             observed = _header_lookup(response.headers, config.snapshot_version_header)
-            if observed is not None:
-                if snapshot_version is None:
+            if not snapshot_version_seen:
+                if observed is not None:
                     snapshot_version = observed
-                elif observed != snapshot_version:
-                    raise SourceChangedDuringListingError(
-                        f"the source's own {config.snapshot_version_header!r} header changed "
-                        f"from {snapshot_version!r} to {observed!r} between two pages of the "
-                        "same listing -- the source was mutated mid-listing; refusing to "
-                        "silently mix two different snapshots into one preview"
-                    )
+                    snapshot_version_seen = True
+            elif observed != snapshot_version:
+                # Catches both a changed value and a later page that drops
+                # the header entirely (`observed is None`) after an earlier
+                # page carried one -- a source that stops declaring its own
+                # snapshot version mid-listing is exactly as inconsistent as
+                # one that changes it, and silently falling back to "no
+                # check" here would defeat the lost-watermark guarantee for
+                # any source whose header is merely intermittent.
+                raise SourceChangedDuringListingError(
+                    f"the source's own {config.snapshot_version_header!r} header changed "
+                    f"from {snapshot_version!r} to {observed!r} between two pages of the "
+                    "same listing -- the source was mutated mid-listing; refusing to "
+                    "silently mix two different snapshots into one preview"
+                )
 
         for record in records:
             if len(collected) >= config.max_preview_records:
