@@ -1,4 +1,55 @@
 # PROGRESS — Sovra
+## 2026-10-02T09:04:23Z — Scheduled relay shift, branch `claude/wizardly-fermat-n0zqfw`
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. Branch found at the same
+commit as `origin/main` (`4be41b6`, PR #414's tracking merge) — no prior unmerged work of its own,
+no restart needed. STEP 0.1: read `BLOCKER.md` (one live entry, FTF-0902, 2026-10-01T10:30Z —
+untouched, no fourth retry this shift), `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`
+fresh, not assumed from prior context.
+
+STEP 1: `QUEUE.md`'s own "## Active" still names FTF-0902 (BLOCKED, do-not-retry-4th-time),
+FTF-1703 (correctly deferred, dependency chain unmet), and item 3's RELAY-OWNED fix-and-resubmit
+set (FTF-0500D, FTF-1206) plus item 4's FTF-0510. A fresh `list_pull_requests` sweep (not trusted
+from this file's own narrative) found every one of these already has an open PR from a concurrent
+session, all opened/updated since the prior shift's own log entry:
+- **#410** (FTF-0500D) — unchanged from the prior shift's own finding.
+- **#412** (FTF-1206) — updated `2026-10-02T07:00:12Z`, now carries its own branch-local
+  `BLOCKER.md` entry for the persistence-scope question (its own text: a Control-plane scope
+  decision, not an owner ask, not a STEP 4(c) retry).
+- **#411** (FTF-0510) — unchanged from the prior shift's own finding.
+- **#415** (new, not in `QUEUE.md`'s own "Active" list) — `[relay] FTF-R002: fix flaky
+  tampered-token test` — a concurrent session found and fixed a real flaky test in already-CERTIFIED
+  FTF-R002 while triaging #412's own CI failure: `test_job_identity_rejects_tampered_token`'s tamper
+  construction flipped only the token's last base64url character, which (since `32 % 3 == 2`) can
+  land entirely in encoding-padding bits, silently no-opping the "tamper" ~1.6% of the time —
+  reproduced directly (329/20,000 real no-ops), fixed by flipping a full decoded signature byte
+  instead (0/50,000 after). Root-causes #412's own real `gate` failure (run `36948577882`, job
+  `110656171438`, flagged by the prior shift) as a shared-test-infrastructure flake, not a defect in
+  #412's own diff — confirmed by independently re-checking #412's `get_check_runs` this shift:
+  `gate` is still the one `failure` among 41 jobs, consistent with this diagnosis.
+
+Checked `mergeable_state` and CI on all four before deciding there was nothing left to claim:
+`#410`/`#411`/`#412` are each `mergeable_state: "dirty"` (merge-conflicted against `main` now that
+it has advanced past their shared base `35b9050` via #414) — not mergeable regardless of CI
+content, and not this session's branches to rebase (none of the four belong to this session; "never
+push to a different branch without explicit permission" applies). `#415` is `mergeable_state:
+"clean"` against the current `main` tip with all 41 checks green (including `gate`), but is a
+different concurrent session's own PR opened minutes before this shift's own check
+(`2026-10-02T06:59:57Z`) whose own body says its tracking-file updates are still pending — left
+unmerged rather than cut that session off mid-shift or merge work this session did not independently
+verify end to end.
+
+**No genuinely unclaimed, undeclined task exists this shift** — the same "frontier fully claimed by
+concurrent shifts" conclusion the immediately prior shift reached, reconfirmed independently rather
+than assumed from its narrative. Nothing committed or pushed to this shift's own branch beyond this
+log entry and `QUEUE.md`'s matching entry.
+
+STEP 4: no new blocker (FTF-0902's stayed untouched, not retried a fourth time; FTF-1206's own
+blocker lives on PR #412's own branch, not duplicated here since FTF-1206 was correctly not this
+shift's own claimed item). No usage-limit stop. No new ask-first item (`QUEUE.md`'s own "Owner
+actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask). Stopping
+here — equivalent to the "frontier exhausted" posture, same as the prior shift.
+
 ## 2026-10-02T00:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`
 
 STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. Branch sitting at the same commit as

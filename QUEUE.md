@@ -1,4 +1,27 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T09:04:23Z (scheduled relay shift, branch `claude/wizardly-fermat-n0zqfw`) —
+  **frontier re-confirmed fully claimed by concurrent shifts; no new PR opened.** Branch found at
+  the same commit as `origin/main` (`4be41b6`, PR #414's tracking merge); `sha256sum CLAUDE.md`
+  matched `CLAUDE.md.sha256`; `BLOCKER.md`'s only live entry (FTF-0902, 10:30Z) untouched, no fourth
+  retry. A fresh `list_pull_requests` sweep found every "## Active" item already covered: **#410**
+  (FTF-0500D, unchanged), **#412** (FTF-1206, updated 07:00:12Z, now carries its own branch-local
+  `BLOCKER.md` persistence-scope entry), **#411** (FTF-0510, unchanged). **#412`'s own real `gate`
+  failure the prior shift flagged (run `36948577882`/job `110656171438`) is now root-caused by a new
+  PR, **#415** (`[relay] FTF-R002: fix flaky tampered-token test`): a concurrent session found
+  `test_job_identity_rejects_tampered_token`'s single-last-character tamper can land entirely in
+  base64 encoding-padding bits (32-byte digest, `32 % 3 == 2`), silently no-opping ~1.6% of the time
+  — reproduced directly (329/20,000), fixed, 0/50,000 after. Re-checked #412's `get_check_runs` this
+  shift: `gate` is still the one real `failure` among 41 jobs, consistent with this being a shared
+  CI-infrastructure flake rather than a defect in #412's own diff.
+
+  `#410`/`#411`/`#412` are each `mergeable_state: "dirty"` against the now-advanced `main` (past
+  #414) — not mergeable regardless of CI content, and not this session's own branches to rebase.
+  `#415` is `mergeable_state: "clean"` with all 41 checks green, but is a different concurrent
+  session's PR opened minutes before this shift's own check, whose own body says its tracking-file
+  updates are still pending — left unmerged rather than cut that session off mid-shift.
+
+  No genuinely unclaimed, undeclined task exists this shift. No open owner ask (this file's own
+  "Owner actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask).
 Updated: 2026-10-02T00:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q3cg3f`) —
   **frontier found fully claimed by concurrent shifts; no new PR opened; two GitHub comments
   flagging real issues for Control plane.** Branch found at the same commit as `origin/main`
