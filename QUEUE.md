@@ -1,4 +1,12 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02T21:08:00Z — **PR #424 (FTF-1002) merged to `main`** (merge commit
+  `1177f56a60a593fbe80a7cedddde31b69abb4e5a`, all 41 check runs on the real PR head green,
+  including `gate`, `mergeable_state: clean`, zero pending reviews/comments) — merged under the
+  standing "merge on green + L1 doc (PROVISIONAL)" authorization rather than left to pile up, same
+  as the immediately-prior shift's own merge of PR #422. `docs/spec-matrix.yaml`'s FTF-1002 entry
+  stays `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (Law 2/4 — merging is not
+  certifying; independent Control-plane L2 review still required). `scripts/status.py` unchanged
+  at `99/300` certified. Unsubscribed from PR #424's activity feed now that it is merged.
 Updated: 2026-10-02T21:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-61pj77`) —
   **FTF-1002 (Artifact lineage manifest) implemented and submitted PROVISIONAL** — the item the
   immediately-prior `iaofsc` shift flagged as genuinely dependency-ready but deferred. STEP 0:

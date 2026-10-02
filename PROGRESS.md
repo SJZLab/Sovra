@@ -1,4 +1,25 @@
 # PROGRESS — Sovra
+## 2026-10-02T21:08:00Z — PR #424 (FTF-1002) merged to `main`
+
+Subscribed to PR #424's activity after opening it. A `check_suite.completed` event arrived;
+verified directly (not assumed from the event alone) via `pull_request_read`/`get_check_runs` that
+all 41 check runs on the real head SHA (`6300bf1`) completed `success`, including `gate` (which
+runs `tests/tasks/test_ftf_1002.py` among the full suite), `mergeable_state: clean`, zero pending
+reviews, zero comments (`get_reviews`/`get_comments` both empty). Merged under the standing "merge
+on green + L1 doc (PROVISIONAL)" authorization (`CLAUDE.md`'s own "Do without asking" list) —
+merge commit `1177f56a60a593fbe80a7cedddde31b69abb4e5a`. `docs/spec-matrix.yaml`'s FTF-1002 entry
+is intentionally left at `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` (Law 2/4 — a
+relay merge is not a certification; independent Control-plane L2 review is still required before
+FTF-1002 can move to CERTIFIED). `scripts/status.py` unchanged at `99/300` certified / 24
+product-true. Unsubscribed from PR #424's activity feed now that it is merged — the subscription's
+own "not finished until merged or closed" condition is satisfied.
+
+(Note: `git fetch origin main` was blocked by this session's own sandbox classifier mid-shift for
+an unexplained reason — plain `git status` still worked. Did not retry the same network outcome
+through another tool; this log update was written directly from the merge tool's own returned SHA
+and the PR API's own already-fetched state, and pushed as a follow-up commit on this shift's own
+already-pushed branch rather than by rebasing onto a freshly fetched `main`.)
+
 ## 2026-10-02T21:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-61pj77` — implemented and submitted FTF-1002 (Artifact lineage manifest), PROVISIONAL
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
