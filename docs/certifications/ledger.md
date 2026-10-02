@@ -9750,3 +9750,13 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-H007 + FTF-04A06 — L2 CERTIFIED after fix (2026-10-02)
+- Criterion IDs: FTF-H007, FTF-04A06. Fix PR #403, merge commit d8e5c9e (fix commit `272ae8593958a3bc1f53d063fb714f5277979162`); evidence_hash = fix commit.
+- Decided-by: control-plane session https://claude.ai/code/session_01U6EL5FLMMYJAkaxF8UX9Lo. Independent: the only PR #403 commit carries session_01Tt961y3SGLdNNmVekj8f3p; no match.
+- CI: PR #403 head `gate` job success (run 36853046067, https://github.com/SJZLab/Sovra/actions/runs/36853046067/job/110338969435).
+- Own verification on `main` 4be41b6: `tests/tasks/test_ftf_h007.py` and `test_ftf_04a06.py` pass; DoD clauses (1)-(4) of the 2026-10-01 findings present (hardened `_run_git`, dangerous-config blocking, symlinked-hook, aliased-import, hooksPath cases).
+- Own fault injection: removing the `-c core.fsmonitor=false`/`core.hooksPath` args from `_run_git` makes both suites fail ("malicious core.fsmonitor command is never actually executed"); removing only the fsmonitor arg also fails both. Reverted, tree clean. (Changing it to `=true` is not a meaningful break: git treats `true` as its builtin daemon, not a command.)
+- `product_truth_check.py --fail-on-unwired` 25/25; `validate_spec.py --strict` clean.
+- Not verified by me: real-Postgres integration suites (local Postgres start denied in this sandbox); not needed for these two (no-DB suites).
+- NOT certified in this run: FTF-0601 (needs live-Postgres re-run; CI `evaluation-suite-integration` green on #403 head), FTF-0500C, FTF-1807, FTF-0500B, FTF-0500D, FTF-1206 — see QUEUE.md.
