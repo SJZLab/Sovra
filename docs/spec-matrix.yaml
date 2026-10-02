@@ -5901,6 +5901,44 @@ FTF-0500D:
     CI gate step ("FTF-0500D negative-test proof") added to `.github/workflows/ci.yml`
     immediately after the FTF-04A20 step. **Not self-certified (Law 4)** -- independent
     Control-plane L2 review is required before certification.
+
+    **2026-10-01 L2 fix-and-resubmit.** Finding: narrowing the real boundary check inside
+    `authorize_dataset_source_copy` to a literal `security_classification == "restricted"` test
+    (instead of the real `would_cross_security_boundary(effective_profile,
+    security_classification)` rank comparison) left the whole suite above green, because every
+    existing boundary-crossing test paired `restricted` with `standard` -- the one classification
+    that narrowed check still happens to catch; a confidential source into a standard project
+    would have been silently authorized despite `preview.blocked=True`, with no test to notice.
+    The shipped module itself was already correct (uses the real rank comparison, not a literal
+    classification string) -- only the negative_acceptance test coverage was unpinned, per the
+    review's own framing. Fixed by adding
+    `test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`
+    (`tests/tasks/test_ftf_0500d.py`), which checks every `security_classification` x
+    `security_profile` pairing (16 combinations, org default == project profile so the effective
+    profile is just that profile) rather than only the one pairing the original suite exercised,
+    and `test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`, which
+    reproduces the finding directly: narrows the real on-disk module's boundary check exactly as
+    described, runs the check in an isolated subprocess (so the mutation never touches this test
+    process's own already-imported functions/exception classes), confirms the original
+    restricted+standard case alone would stay blind to the gap, confirms the new matrix check
+    genuinely catches it (`confidential:standard` violation), then restores the module file
+    byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` confirmed before and after).
+
+    `tests/tasks/test_ftf_0500d.py`: 27 test functions (was 25), "all checks passed". `uv run
+    ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+    tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict` clean.
+    `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `scripts/
+    status.py`: unchanged `99/300` certified, 24 product-true (Law 2 -- a resubmission is not a
+    certification). No production code changed (the module file is byte-identical before and
+    after this fix, confirmed by the fault-injection test's own md5sum assertion); no
+    spec-matrix entry touched besides this one. Regression swept `test_ftf_0402.py` -- zero
+    regressions (`test_ftf_0500.py` could not be run in this sandbox -- `apps/api`'s own separate
+    `pyproject.toml`/dependency set, unrelated to this task's pure `workers/data` module, is not
+    installed here; disclosed, pre-existing environment gap, not caused by this change). No
+    `.github/workflows/ci.yml` change needed -- the existing "FTF-0500D negative-test proof" step
+    already runs `tests/tasks/test_ftf_0500d.py` in full. **Not self-certified (Law 4)** --
+    independent Control-plane L2 re-review and a real CI run on the opened PR are required before
+    certification; `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
@@ -7860,6 +7898,49 @@ FTF-1206:
     (`if unauthorized_registration or unauthorized_deployment or unauthorized_approvers:` ->
     `if False:`) -- 3 of the negative_acceptance checks genuinely FAILed, bound to this criterion
     ID; reverted byte-identical (md5sum confirmed matching before/after) and reran clean.
+
+    2026-10-02 fix-and-resubmit for half of the 2026-10-01 L2 finding (full finding in
+    `docs/certifications/queue.md`'s 2026-10-01 entry): the review's second DoD item -- "a
+    route-change check against the granted deployment namespaces" -- is now fixed.
+    `enforce_route_change_authority` previously accepted `grant` only as a type-presence proof
+    (`del grant`) and never actually consulted it: any recognized organization approver could
+    authorize a route change into any namespace in the organization's wider policy, including one
+    this specific project was never granted. `enforce_route_change_authority` now takes a required
+    `target_deployment_namespace` argument and refuses outright (before even checking approval)
+    when it is not already a member of `grant.deployment_namespaces` -- unconditionally, even when
+    the organization's own policy does not require approval at all, since this is a scope check on
+    the project's own grant, never a question organization approval policy answers.
+    `tests/tasks/test_ftf_1206.py` gained `test_enforce_route_change_authority_checks_target_
+    namespace_against_grant` (3 new checks) and every pre-existing `enforce_route_change_authority`
+    call site was updated to pass a real `target_deployment_namespace`. Real fault injection (Law
+    1), performed directly against the on-disk module: disabled the new namespace-membership check
+    (`if target_deployment_namespace not in grant.deployment_namespaces:` -> `if False:`) -- 2
+    genuine FAILs reproducing exactly the finding (an organization-wide namespace this project was
+    never granted was wrongly authorized, with and without approval required); reverted
+    byte-identical (md5sum `53b5c5d400e84186387da293dce30572` confirmed matching before and after)
+    and reran clean. `uv run ruff check`/`ruff format --check`/`mypy .` clean (356 files);
+    `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged 25/25.
+    Regression swept `test_ftf_0402.py`/`test_ftf_1201.py` (both named dependencies) -- zero
+    regressions.
+
+    The review's first DoD item -- "a persisted, tenant-scoped org-policy record (its own
+    migration task, per the packet's `database_changes` rule; until that exists, mark FTF-1206
+    BLOCKED_DEPENDENCY rather than done)" -- is deliberately NOT done by this fix and stays
+    disclosed, not hidden: this task's own packet `files` clause is closed to exactly
+    `packages/litellm-client/organization_policy_control.py` and
+    `tests/tasks/test_ftf_1206.py`, and its own `database_changes` clause explicitly defers any
+    schema to "a separately claimed migration prerequisite" rather than this task's own scope.
+    Checked directly rather than assumed: no task anywhere in the real, fixed 300-task
+    `docs/TASK_INDEX.md` owns an `OrganizationGatewayPolicy`-persistence migration -- FTF-1201
+    (this task's own dependency) explicitly disclaims it too ("No independent schema change...
+    capability is computed fresh per call, never persisted"), and no other FTF-12xx/FTF-R-series
+    entry names one. So "claim a separate migration prerequisite first" has no existing task ID to
+    claim -- inventing a new one, or adding schema outside this task's own closed `files` list, is
+    a Control-plane scope decision, not a relay improvisation of an unclear DoD (CLAUDE.md "Relay
+    is execution-only"). Formalized as a live `BLOCKER.md` entry rather than left implicit. This
+    task's own `certification_state` stays `PROVISIONAL` and this entry stays NOT CERTIFIED on the
+    persistence half until Control plane resolves that scope question; the route-change-against-
+    grant half above is ready for re-review on its own.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py

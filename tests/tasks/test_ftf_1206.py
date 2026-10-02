@@ -275,13 +275,26 @@ def test_enforce_route_change_authority() -> None:
     check(
         "FTF-1206",
         "a recognized organization approver is authorized",
-        _accepts(enforce_route_change_authority, org_policy, grant, actor="user:jane") is None,
+        _accepts(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-production",
+        )
+        is None,
     )
     check(
         "FTF-1206",
         "an actor outside the organization's own approvers is denied, even if "
         "the actor string is otherwise well-formed",
-        _rejects(enforce_route_change_authority, org_policy, grant, actor="user:outsider"),
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor="user:outsider",
+            target_deployment_namespace="factory-production",
+        ),
     )
     check(
         "FTF-1206",
@@ -292,6 +305,7 @@ def test_enforce_route_change_authority() -> None:
             grant,
             actor="user:jane",
             bypass_requested=True,
+            target_deployment_namespace="factory-production",
         ),
     )
 
@@ -310,8 +324,72 @@ def test_enforce_route_change_authority() -> None:
             no_approval_policy,
             grant,
             actor="user:anyone",
+            target_deployment_namespace="factory-production",
         )
         is None,
+    )
+
+
+def test_enforce_route_change_authority_checks_target_namespace_against_grant() -> None:
+    # Section 38.5/38.6 + this task's own negative_acceptance: a route change
+    # is a change *into a specific deployment namespace*. A recognized
+    # organization approver authorizing a route change does not, on its own,
+    # authorize rolling that route into a namespace this specific project was
+    # never actually granted -- `grant` must be consulted, not merely
+    # accepted as a type-presence proof and then discarded.
+    org_policy = _policy()
+    grant = enforce_project_gateway_permission_request(
+        org_policy,
+        ProjectGatewayPermissionRequest(
+            registration_namespaces=frozenset(),
+            deployment_namespaces=frozenset({"factory-production"}),
+            approvers=frozenset({"user:jane"}),
+        ),
+    )
+
+    check(
+        "FTF-1206",
+        "a route change into the project's own granted deployment namespace, "
+        "by a recognized approver, is authorized",
+        _accepts(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-production",
+        )
+        is None,
+    )
+    check(
+        "FTF-1206",
+        "negative_acceptance: a recognized organization approver cannot route "
+        "a change into a namespace this project's own grant never included, "
+        "even though the namespace belongs to the same organization's wider "
+        "policy",
+        _rejects(
+            enforce_route_change_authority,
+            org_policy,
+            grant,
+            actor="user:jane",
+            target_deployment_namespace="factory-staging-production-not-granted",
+        ),
+    )
+    check(
+        "FTF-1206",
+        "an organization-wide namespace the project never requested or was "
+        "granted is refused even when approval is not required at all",
+        _rejects(
+            enforce_route_change_authority,
+            OrganizationGatewayPolicy(
+                allowed_registration_namespaces=frozenset({"factory-candidates"}),
+                allowed_deployment_namespaces=frozenset({"factory-production", "factory-eu"}),
+                approvers=frozenset(),
+                route_change_requires_approval=False,
+            ),
+            grant,
+            actor="user:anyone",
+            target_deployment_namespace="factory-eu",
+        ),
     )
 
 

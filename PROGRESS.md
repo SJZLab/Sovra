@@ -155,6 +155,172 @@ FTF-1206's own blocker is that PR's own branch's business, not duplicated here).
 stop. No new ask-first item (`QUEUE.md`'s own "Owner actions — current" unchanged — only the
 pre-existing, low-urgency branch-protection ask). Nothing committed or pushed to this shift's own
 branch beyond this log entry and `QUEUE.md`'s matching entry.
+## 2026-10-02 — Scheduled relay shift, branch `claude/wizardly-fermat-f6fqug` — FTF-1206 partial fix-and-resubmit + BLOCKER.md scope escalation
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+Designated branch found at the same commit as `origin/main` (`35b9050`, PR #409's merge, itself the
+tracking commit for PR #408/FTF-1807) — confirmed via `git merge-base --is-ancestor HEAD
+origin/main` before relying on it; no prior unmerged work of its own to lose. `BLOCKER.md` read in
+full: one live entry (FTF-0902, 2026-10-01T10:30Z — three real fix attempts already falsified,
+correctly not retried a fourth time). STEP 0.2: no `cognee-cli` binary on this sandbox — text-search
+fallback declared, same as every prior shift.
+
+STEP 1: a fresh `list_pull_requests` (not trusted from this file's own stale narrative, which still
+read "remaining, untouched: FTF-0500D, FTF-1206" from the 2026-10-01T17:10Z entry below) found
+**FTF-0510** (PR #411, FTF-1703's critical-path task), **FTF-0500D** (PR #410, fix-and-resubmit)
+and **FTF-0500B** (PR #407, fix-and-resubmit) already open from concurrent/prior shifts not yet
+reflected in this file. `scripts/status.py` unchanged `99/300` certified — no new Control-plane
+certification landed since the last recorded review. Of `QUEUE.md`'s own "## Active" item 3
+fix-and-resubmit list, the only genuinely untouched item left was **FTF-1206**.
+
+Pulled FTF-1206's real DoD fresh (not trusted from `QUEUE.md`'s own summary): the 2026-10-01 L2
+review (`docs/certifications/queue.md`) named two DoD items — (1) a persisted, tenant-scoped
+org-policy record, with an explicit fallback ("until that exists, mark FTF-1206 BLOCKED_DEPENDENCY
+rather than done"); (2) a route-change check against the granted deployment namespaces.
+
+STEP 2 (PEV):
+- **P:** read `packages/litellm_client/organization_policy_control.py` and
+  `tests/tasks/test_ftf_1206.py` directly. Confirmed DoD item 2 by inspection: `enforce_route_
+  change_authority` accepted `grant` only as a type-presence proof (`del grant`) and never checked
+  that a route change's own target namespace was inside `grant.deployment_namespaces` — a
+  recognized organization approver could authorize routing into any namespace the organization's
+  wider policy allowed, including one this specific project was never granted. For DoD item 1,
+  pulled the task's real packet via `tools/r1_handoff.py packet FTF-1206` and confirmed: its own
+  `files` clause is closed to exactly the one module and its one test file, and its own
+  `database_changes` clause explicitly defers schema to "a separately claimed migration
+  prerequisite" naming a different task as owner. Checked `docs/TASK_INDEX.md` directly (not
+  assumed): no task anywhere in the real, fixed 300-task index owns an `OrganizationGatewayPolicy`
+  persistence migration — FTF-1206's own dependency FTF-1201 explicitly disclaims the identical
+  persistence in its own certified notes, and no other FTF-12xx/FTF-R entry claims it either.
+  Concluded DoD item 1 cannot be attempted without either exceeding this task's own closed `files`
+  scope or inventing a new task ID outside the 300-task index — both Control-plane scope decisions,
+  not something to improvise (CLAUDE.md "Relay is execution-only ... do not improvise the DoD").
+  Scoped this shift to DoD item 2 only, formalizing item 1 as a `BLOCKER.md` entry instead of
+  silently dropping it or guessing.
+- **E:** added `test_enforce_route_change_authority_checks_target_namespace_against_grant` to
+  `tests/tasks/test_ftf_1206.py` first, calling the not-yet-existing `target_deployment_namespace`
+  keyword — ran it and got a real `TypeError: unexpected keyword argument` (the actual pre-fix
+  signature), binding the failure to this criterion before writing any fix. Updated every
+  pre-existing `enforce_route_change_authority` call site in the same file to also pass a real
+  `target_deployment_namespace` (the parameter is now required, no silent default that could mask
+  the gap). Then fixed `enforce_route_change_authority` in the production module: added the
+  required `target_deployment_namespace` parameter, validated via the module's own
+  `validate_namespace`, and refused outright — before the approval-policy checks, and even when the
+  organization's own policy does not require approval at all — when it is not already a member of
+  `grant.deployment_namespaces`.
+- **V:** `python3 tests/tasks/test_ftf_1206.py` — "all checks passed" (22 checks, was 19). **Real
+  fault injection (Law 1)**, performed directly against the on-disk module: disabled the new check
+  (`if target_deployment_namespace not in grant.deployment_namespaces:` → `if False:`) — 2 genuine
+  FAILs reproducing exactly the finding; reverted byte-identical (md5sum
+  `53b5c5d400e84186387da293dce30572` confirmed matching before and after) and reran clean. Caught
+  and corrected a real mistake mid-shift: the first revert used `git checkout --
+  <file>`, which restored from the (still-uncommitted) index/HEAD and silently wiped out the fix
+  itself, not just the injection — caught immediately by `grep`-checking for `target_deployment_
+  namespace` in the restored file, re-applied the fix, confirmed the md5sum matched the pre-
+  injection fixed state, then staged the real fix via `git add` before repeating the fault
+  injection so a future revert could never again regress past the committed fix. `uv run ruff check
+  .`/`ruff format --check .` clean (356 files). `uv run mypy .` clean (356 files).
+  `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's
+  own pre-existing shallow-clone artifact). `python3 scripts/product_truth_check.py
+  --fail-on-unwired`: unchanged 25/25. `scripts/status.py`: unchanged `99/300` certified (Law 2 — a
+  resubmission is not a certification). Regression swept `test_ftf_0402.py`/`test_ftf_1201.py`
+  (both named dependencies) — zero regressions.
+
+Updated `docs/spec-matrix.yaml`'s FTF-1206 entry with this fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md`. Added a new live `BLOCKER.md` entry (ahead of
+the existing FTF-0902 one) laying out the DoD-item-1 scope gap and three route options for
+whoever/whatever resolves it (add a new task to the 300-task index; widen FTF-1206's own file scope
+to add the migration directly, same precedent as FTF-0601's own `0018` migration; or have
+Control plane override the review's own DoD item 1 for this task specifically) — explicitly not an
+owner ask (no secret/destructive-op/repo-setting/spend/component-swap involved) and not a STEP 4(c)
+stuck-retry (no fix attempt was made and failed; this is a scope question raised before attempting
+one). Updated `QUEUE.md`'s own "## Active" item 3 (both numbered copies, left un-renumbered as prior
+shifts found them) to mark FTF-0500B/FTF-0500D/FTF-1807 as done (already-open PRs #407/#410/#408 not
+yet reflected there) and FTF-1206 as partially done with a pointer to the new `BLOCKER.md` entry.
+
+Opened **PR https://github.com/SJZLab/Sovra/pull/412** (`[relay] FTF-1206: fix L2 findings
+(route-change-against-grant check)`, branch `claude/wizardly-fermat-f6fqug` → `main`). Not
+self-certified (Law 4) — independent Control-plane L2 re-review and a real CI run are required
+before certification.
+
+STEP 4: stop condition (a) does not apply (not N/N proven — FTF-0902/FTF-1703 remain correctly
+deferred, and FTF-1206's own persistence half stays open pending a Control-plane scope decision);
+a new scope question was found and formalized in `BLOCKER.md` rather than silently worked around,
+but this is not a full-shift stop (STEP 4(b)/(c)) since it blocks only one DoD item of one task, not
+this shift's ability to act — the in-scope half of the same task was completed in full; no
+usage-limit stop; no new ask-first item (`QUEUE.md`'s own "Owner actions — current" unchanged —
+only the pre-existing, low-urgency branch-protection ask). Stopping here after a complete PEV cycle
+on the genuinely actionable portion of one item, consistent with this file's own normal shift
+cadence.
+## 2026-10-01T18:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1qb4az`
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256`. The designated branch was
+found sitting exactly at the same commit as `origin/main` (`35b9050`, PR #409's own merge
+confirmation of PR #408/FTF-1807) — no prior unmerged work of its own, no restart needed. STEP
+0.1: read `BLOCKER.md` (one live entry, FTF-0902, unchanged, three real fix attempts already
+falsified a prior shift — correctly not retried a fourth time), `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh (both trackers exceed the single-read size limit — read via
+targeted offsets/grep, not assumed from training or prior context).
+
+STEP 1: `QUEUE.md`'s own "## Active" item 3 named two remaining untouched fix-and-resubmit items
+from the 2026-10-01 L2 review: FTF-0500D and FTF-1206 (FTF-1206 needs a persisted org-policy
+migration first, a separate larger prerequisite per that file's own existing note). A fresh
+`list_pull_requests` sweep (not trusted from either file's own stale narrative) confirmed no PR
+was already open for FTF-0500D. Picked **FTF-0500D** — the one genuinely unblocked item left.
+
+STEP 2 (PEV):
+- **P:** read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+  `tests/tasks/test_ftf_0500d.py` directly. The L2 finding: narrowing the import-time gate inside
+  `authorize_dataset_source_copy` to `security_classification == "restricted"` leaves the whole
+  suite green, because every existing boundary-crossing test paired `restricted` with `standard`
+  only — the one classification a narrowed check still happens to catch. The shipped module was
+  already correct (it calls the real, generic `would_cross_security_boundary` rank comparison, not
+  a literal classification string); only the negative_acceptance test coverage was unpinned, per
+  the review's own framing.
+- **E:** added `_classification_profile_matrix_violations` (checks every `security_classification`
+  x `security_profile` pairing — 16 combinations, org default == project profile, purpose/
+  connection held compliant) and `test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`,
+  asserting zero violations against the real module. Added
+  `test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`: temporarily
+  rewrites the exact boundary-check line in the real on-disk module to the literal narrowed form
+  the review described, runs the identical matrix check in a fresh, isolated `subprocess`
+  (deliberately avoiding `importlib.reload`, which would have mutated the module's shared
+  `__dict__` in place and silently desynchronized every other test's `except`-clause exception
+  identity from what the module actually raises after a second reload — an entire-suite-crashing
+  risk ruled out by tracing CPython's reload semantics before writing this, not discovered by
+  trial and error), **confirms the original restricted+standard case alone stays blind to the
+  gap**, **confirms the new matrix check genuinely catches it** (the real `confidential:standard`
+  violation — a confidential source silently authorized into a standard project despite the
+  preview blocking it), then restores the module file byte-identical and re-confirms the matrix
+  check is clean again.
+- **V:** `python3 tests/tasks/test_ftf_0500d.py` — 27 test functions (was 25), "all checks
+  passed". `uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+  tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict` clean (after
+  `git fetch --unshallow` — this sandbox clones shallow by default).
+  `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`.
+  `scripts/status.py`: unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is
+  not a certification). Regression swept `test_ftf_0402.py` (FTF-0500D's own dependency) — zero
+  regressions. `test_ftf_0500.py` could not be run in this sandbox (`apps/api`'s own separate
+  `pyproject.toml`/dependency set — `sqlalchemy` not installed — a disclosed, pre-existing
+  environment gap unrelated to this task's pure, no-I/O `workers/data` module; confirmed via a
+  repo-wide grep that no test file besides `test_ftf_0500d.py` itself imports this module). No
+  production code changed; no other spec-matrix entry touched (this task's own `files` clause
+  names only the module and this test, and the module is byte-identical before/after, confirmed
+  by the fault-injection test's own md5sum assertion).
+
+Opened **PR https://github.com/SJZLab/Sovra/pull/410** (`[relay] FTF-0500D: fix L2 findings
+(classification x profile matrix test replaces the single-case boundary test)`). Appended the full
+evidence to `docs/certifications/queue.md` and updated `QUEUE.md`'s own top log entry and
+"## Active" item 3. Not self-certified (Law 4) — PR #410 awaits Control-plane L2 re-review and a
+real CI run before `certification_state` can move past PROVISIONAL.
+
+STEP 4: stop condition (a) does not apply (not N/N proven — FTF-1206 remains untouched,
+FTF-0902/FTF-1703 remain correctly deferred); no new blocker found; FTF-0902's existing blocker was
+not re-poked a fourth time; no usage-limit stop; no new ask-first item (`QUEUE.md`'s own "Owner
+actions — current" unchanged — only the pre-existing, low-urgency branch-protection ask, nothing
+blocking this shift). Stopping here after a complete PEV cycle on one item, consistent with this
+file's own normal shift cadence.
 
 ## 2026-10-01T17:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-g8cp6d`
 
