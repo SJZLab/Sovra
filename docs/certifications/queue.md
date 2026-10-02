@@ -21720,3 +21720,31 @@ Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
 `tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
 every open and future PR in this repository (the flake could land on any PR's gate run, not just
 #412's), which is why it was picked up directly rather than left as a comment only.
+
+## 2026-10-02 — Control-plane L2 re-review of the fix-and-resubmit PRs (session_01HNr6CddEUref5mZp6x5rri)
+Independent: no commit on `origin/main` carries this session ID. Triggered by PR #417 (docs-only relay
+tracker PR, no item of its own). Per item: contract re-pulled, CI `gate` log read, local run, own fault injection.
+Full evidence for certified items is in `ledger.md`.
+
+**CERTIFIED:** FTF-0601 (#403), FTF-0510 (#411), FTF-0500C (#404), FTF-0500D (#410), FTF-1807 (#408).
+Certified 99 -> 104/300.
+
+**NOT CERTIFIED — stay PROVISIONAL; relay fixes in a new PR:**
+- **FTF-H007 and FTF-04A06 (SECURITY).** PR #403 fixed fsmonitor/hooksPath/symlinked hooks/aliases (my injections
+  confirm those tests go red), but a repo-controlled `filter.<name>.clean` driver STILL EXECUTES during
+  `scan_local_repository_boundary` -> `capture_local_repository` (`git status`). I reproduced it directly:
+  `.gitattributes` `*.txt filter=evil`, `filter.evil.clean="sh -c 'touch MARK; cat'"`, `a.txt` touched (same size,
+  stat-dirty): `is_safe_to_lock=False` but MARK was created. The scan blocks the lock but only after running
+  attacker code; for 04A06 this violates "never edit the target working tree". The 2026-10-01 DoD named filter
+  drivers as a hazard but no test covers execution.
+  DoD: (1) check for dangerous config keys before any git call that can run a filter and refuse without executing, or
+  neutralize filters in every `_run_git` (e.g. `-c filter.<name>.clean=` is not enough generically; prefer
+  pre-scan of `.git/config` and refusing, or running status with a config that disables attributes/filters);
+  (2) proving tests in `test_ftf_h007.py` and `test_ftf_04a06.py`: a `filter.*.clean` marker must stay absent and
+  the scan must block.
+- **FTF-0500B (#407).** Code evidence is good (VersionId-sensitive manifest hash and literal `"null"` refusal both
+  go red under injection). Missing: the 2026-10-01 DoD said real MinIO integration is added OR disclosed
+  BLOCKED_EXTERNAL; neither is present in the queue.md fix entry, PR #407 body, or spec-matrix entry.
+  DoD: add the one-line BLOCKED_EXTERNAL disclosure (docs only); optionally also refuse an empty/missing VersionId.
+- **FTF-1206.** Only the route-change-against-grant half is done; persistence is a live `BLOCKER.md` item
+  (Control-plane scope decision). Not reviewable until that lands.

@@ -9750,3 +9750,44 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-0601 — Evaluation suite schema/API (re-certified after 2026-10-01 fix)
+- Criterion ID: FTF-0601; fix PR #403, merge commit d8e5c9ee79f6888c59745600d318498bbce45753 (fix commit 272ae85)
+- Validated-by: control-plane session https://claude.ai/code/session_01HNr6CddEUref5mZp6x5rri (session ID session_01HNr6CddEUref5mZp6x5rri). Independent: no commit on origin/main carries this session ID. Review done with read-only reviewer subagents plus my own spot checks; fault injections restored, worktrees clean.
+- Date: 2026-10-02
+- CI: run 36853046067, `gate` job 110338969435 success (test_ftf_0601.py ran); `evaluation-suite-integration` job 110338970228 success (migration 0018 CHECK rejected reviewer_id='' on real Postgres).
+- Local: no-DB test and real-Postgres integration test pass.
+- Own fault injections: (1) reverted PATCH validators -> 3 integration failures (grading_logic_version=0 IntegrityError instead of 400, reviewer_id='' accepted, refused PATCHes changed suite); (2) removed .strip() -> "a whitespace-only reviewer_id is refused" failed.
+- product_truth 25/25; proving_symbol build_evaluation_suite_router is the live PATCH caller. Contract DoD met.
+
+## FTF-0510 — Tokenization analysis
+- Criterion ID: FTF-0510; PR #411, merge commit 384ce8c90e4f0ff5476168e7e1bce14b3923d5fd
+- Validated-by: control-plane session https://claude.ai/code/session_01HNr6CddEUref5mZp6x5rri (session ID session_01HNr6CddEUref5mZp6x5rri). Independent: no commit on origin/main carries this session ID. Review done with read-only reviewer subagents plus my own spot checks; fault injections restored, worktrees clean.
+- Date: 2026-10-02
+- CI: run 37000112651 on PR head 514ef17 (no push CI on main for the merge commit), `gate` job 110815626837 success, test_ftf_0510.py ran.
+- Own fault injections: dropped `not tokenizer.exact` -> negative_acceptance (alias-only approximate tokenizer refused) failed; `truncated_critical_turn=False` -> 3 checks failed.
+- Non-blocking: no test pins the exact max_sequence_length+1 boundary. proving_symbol blank (unit-level, disclosed); this is L2 only, not wired/product-true.
+
+## FTF-0500C — Database/API trace source (re-certified after 2026-10-01 fix)
+- Criterion ID: FTF-0500C; PR #404, merge commit 0bd94864c30b835c000d3bb3d2651272249f0839
+- Validated-by: control-plane session https://claude.ai/code/session_01HNr6CddEUref5mZp6x5rri (session ID session_01HNr6CddEUref5mZp6x5rri). Independent: no commit on origin/main carries this session ID. Review done with read-only reviewer subagents plus my own spot checks; fault injections restored, worktrees clean.
+- Date: 2026-10-02
+- CI: run 36865463876, `gate` job 110379755274 success; `database-api-trace-source-integration` job 110379756821 ran on real Postgres 16 ("cannot execute INSERT in a read-only transaction").
+- Own fault injection: restored old `elif observed is not None and observed != snapshot_version` -> "a real later page that drops the snapshot-version header ... is caught" failed. Read-only-mode DoD reviewed in code and CI only (not reproducible in my sandbox DB).
+- Residual (outside DoD): header absent on page 1 and first present on page 2 is still accepted. proving_symbol blank, L2 only.
+
+## FTF-0500D — Dataset source security-boundary preview (re-certified after 2026-10-01 fix)
+- Criterion ID: FTF-0500D; PR #410, merge commit e4dba6eed50b6981d44f1cd13f04aa03a47e4e53
+- Validated-by: control-plane session https://claude.ai/code/session_01HNr6CddEUref5mZp6x5rri (session ID session_01HNr6CddEUref5mZp6x5rri). Independent: no commit on origin/main carries this session ID. Review done with read-only reviewer subagents plus my own spot checks; fault injections restored, worktrees clean.
+- Date: 2026-10-02
+- CI: run 36997942290, `gate` job 110808853055 success (0500D step ran).
+- Own fault injection: narrowed authorize_dataset_source_copy gate to restricted-only -> matrix test failed ("classification='confidential' profile='standard': preview.would_cross_security_boundary=True but authorize raised=False").
+- Test-only fix, 16-pair classification x profile matrix. proving_symbol blank, L2 only.
+
+## FTF-1807 — LiteLLM outage runbook (re-certified after 2026-10-01 fix)
+- Criterion ID: FTF-1807; PR #408, merge commit 57877a86dd65e395e08059e005dd9ec03200aa60
+- Validated-by: control-plane session https://claude.ai/code/session_01HNr6CddEUref5mZp6x5rri (session ID session_01HNr6CddEUref5mZp6x5rri). Independent: no commit on origin/main carries this session ID. Review done with read-only reviewer subagents plus my own spot checks; fault injections restored, worktrees clean.
+- Date: 2026-10-02
+- CI: run 36910580578, `gate` job 110531921225 success (FTF-1807 step ran).
+- Own fault injections (3): revoked-key row weakened, section 6 allows external fallback, section 2 waits for TTL -> each failed the matching semantic check.
+- Test-only fix. L2 only.

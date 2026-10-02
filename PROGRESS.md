@@ -1,4 +1,9 @@
 # PROGRESS — Sovra
+## 2026-10-02 — Control-plane CERTIFY run (session_01HNr6CddEUref5mZp6x5rri)
+Certified FTF-0601, FTF-0510, FTF-0500C, FTF-0500D, FTF-1807 (99 -> 104/300). Held PROVISIONAL with DoD in
+`docs/certifications/queue.md`: FTF-H007/FTF-04A06 (filter-driver execution, reproduced), FTF-0500B (disclosure
+gap), FTF-1206 (BLOCKER.md). Evidence in `docs/certifications/ledger.md`.
+
 ## 2026-10-02T11:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-aulcnj` — drove the entire RELAY-OWNED fix-and-resubmit backlog (5 PRs) to green and merged, resolving a multi-shift pileup
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no mismatch. Branch found

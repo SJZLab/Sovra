@@ -1,4 +1,9 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-02 (Control-plane CERTIFY run, session_01HNr6CddEUref5mZp6x5rri) — **certified FTF-0601,
+  FTF-0510, FTF-0500C, FTF-0500D, FTF-1807 (Certified 99 -> 104/300).** NOT certified, relay action needed:
+  **FTF-H007 + FTF-04A06** (a `filter.*.clean` driver still executes during the scan — reproduced; see
+  `docs/certifications/queue.md` 2026-10-02 entry for DoD), **FTF-0500B** (missing BLOCKED_EXTERNAL MinIO
+  disclosure, docs only), **FTF-1206** (stays PROVISIONAL, BLOCKER.md).
 Updated: 2026-10-02T11:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-aulcnj`) —
   **cleared the entire RELAY-OWNED fix-and-resubmit backlog: rebased and merged 5 PRs
   (#415/#410/#412/#411/#407), resolving a multi-shift merge-conflict pileup; closed one superseded
