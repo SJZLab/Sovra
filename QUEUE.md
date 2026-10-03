@@ -1,4 +1,15 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T00:52:22Z (scheduled relay shift, branch `claude/wizardly-fermat-mwgk2j`) —
+  **tracking-only: fresh frontier recompute confirms no genuinely unclaimed task exists.** Parsed
+  `docs/spec-matrix.yaml` directly (not trusted from prior prose): of 189 `ABSENT`/`NONE` tasks,
+  exactly 3 have every dependency `CERTIFIED` — FTF-0214 (declared blocked, PR #295), FTF-0902
+  (stuck, `BLOCKER.md`, not retried per STEP 4(c)), FTF-1703 (deferred — its FTF-R006 path is not
+  yet certified, FTF-0510 still PROVISIONAL). A fresh `list_pull_requests` found the same four
+  open PRs as every recent prior shift (#421 Control-plane L2-certify, #402 FTF-0902, #401
+  governance, #295 FTF-0214) — none new. `status.py` unchanged `99/300` certified. No open owner
+  ask beyond the pre-existing low-urgency branch-protection item below. Full detail:
+  `PROGRESS.md`'s matching entry.
+
 Updated: 2026-10-02T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-2dd8f4`) —
   **FTF-04A18 (Candidate-selection UI — no auto-selection) implemented and submitted PROVISIONAL**
   — the item the immediately-prior `61pj77` shift flagged as needing independent re-verification
