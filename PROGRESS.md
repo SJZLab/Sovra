@@ -1,4 +1,54 @@
 # PROGRESS — Sovra
+## 2026-10-03T15:05:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-bsn24h` — merged PR #435 (concurrent tracking-only shift, green), no new relay-actionable task found
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-bsn24h` started already even with `origin/main`'s then
+tip (`44f806e`, PR #433's own merge). STEP 0.1: `PROGRESS.md`/`QUEUE.md`'s live "Owner actions —
+current"/"Active"/"Provisional" sections, `BLOCKER.md` in full, and `docs/certifications/queue.md`'s
+tail re-read fresh this shift. STEP 0.2: `cognee-cli` still not present in this sandbox
+(`command not found`, exit 1) — text-search fallback (`Grep`/direct reads/a small Python parse of
+`docs/spec-matrix.yaml`) declared, same as every prior shift.
+
+**Independent frontier recompute** (own script parsing `docs/spec-matrix.yaml`'s `notes: deps=...`
+field directly, not trusted from prior prose): of 300 tasks, 201 are not `CERTIFIED`; of those, 33
+have every dependency `CERTIFIED`, but all but two are already `PROVISIONAL` (merged, awaiting
+Control-plane L2 certification — not relay's to re-submit, Law 4) or `NONE` with an already-declared
+blocking/deferral reason from a prior shift's own investigation (re-confirmed unchanged: FTF-0214
+still has no composed catalog/probe route or `Project`↔`LiteLLMConnection` binding; FTF-1703 still
+needs the FTF-R006/FTF-0515/FTF-0516 chain, all still `NONE`/`ABSENT`, and FTF-0510 is still
+`PROVISIONAL` not `CERTIFIED`). Same conclusion as every shift since 2026-10-02T23:10Z.
+
+**Found via a fresh `list_pull_requests`:** a concurrent relay shift had already opened **PR #435**
+("[relay] tracking-only: frontier recompute confirms no unclaimed task", branch
+`claude/wizardly-fermat-cvwjlo`, opened 14:52:28Z) reaching this exact same conclusion independently,
+alongside two Control-plane L2-certify PRs already in flight — **#421** (FTF-H007/FTF-04A06/FTF-0601/
+FTF-0500B/C/D/FTF-1807/FTF-0510) and **#434** (FTF-0307/FTF-1002/FTF-04A18/FTF-0902), both doc/status-
+only, no production code, explicitly not relay's to merge per standing precedent — and the two
+long-standing non-actionable PRs **#402** (FTF-0902's historical falsified-attempts record, left open
+by its own author) and **#401** (governance, owner-merge-only). Rather than open a third duplicate
+tracking-only PR with identical content, verified PR #435 directly: diff is `PROGRESS.md`/`QUEUE.md`
+only, `mergeable_state: clean`, all 43/43 check runs `completed`/`success` including `gate`. Per
+CLAUDE.md "Do without asking: ... merge on green" and this repo's own established precedent of one
+relay shift merging another's open green tracking/fix PR (PR #403/#404/#407/#408/#410/#412/#430's own
+history), merged **PR #435** (merge commit `41e515e35a01485b8f3e4ae3b2dd63eac9f32fb2`). Reset this
+shift's own designated branch onto the new `main` tip (safe: zero unique commits beforehand).
+
+`uv run python scripts/status.py` post-merge: unchanged `99/300` certified / 24 product-true (Law 2
+— a docs-only merge is not a certification). `product_truth_check.py --fail-on-unwired`: unchanged
+`26/26`. `BLOCKER.md`'s one live entry (FTF-1206 — a Control-plane scope decision on where the
+`OrganizationGatewayPolicy` persistence migration should live) read in full, unchanged, not retried
+(STEP 4(c) — a Control-plane design question, not a further relay guess). `QUEUE.md`'s "Owner actions
+— current" re-read in full: unchanged, only the pre-existing low-urgency branch-protection ask.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; no `docs/spec-matrix.yaml` or
+`docs/certifications/queue.md` change (nothing certified or newly submitted this shift — this shift's
+own action was verifying and merging another session's already-correct tracking PR). STEP 4 stop
+condition: **(a)** no genuinely unclaimed, undeclined task exists on the current dependency-ready
+frontier; every dependency-ready `PROVISIONAL` item awaits Control-plane L2 certification (now in
+flight via PR #421/#434), not relay re-submission. Stopping here.
+
+---
+
 ## 2026-10-03T14:51:32Z — Scheduled relay shift, branch `claude/wizardly-fermat-cvwjlo` — tracking-only, frontier recompute confirms no unclaimed task; new Control-plane certify PR #434 noted
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
