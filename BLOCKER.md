@@ -59,7 +59,7 @@ persistence half (the route-change-against-grant half is independently re-review
 made without this decision — that would be exactly the improvisation CLAUDE.md's "Relay is
 execution-only" rule exists to prevent.
 
-## LIVE 2026-10-01T10:30Z — FTF-0902: `network-policy-enforcement-integration` baseline cluster
+## RESOLVED 2026-10-03 — FTF-0902: `network-policy-enforcement-integration` baseline cluster
 ## fails deterministically; three distinct, real-evidence-backed root-cause theories each
 ## implemented for real and each falsified by a real CI run
 
@@ -128,6 +128,26 @@ this session (this session pushed no code to PR #402's own branch, consistent wi
 a different branch without explicit permission" — the clean, unrelated FTF-H007/FTF-04A06/
 FTF-0601 portion of that PR's own work was instead ported to this session's own branch and
 resubmitted separately; see `QUEUE.md`'s matching top dated entry).
+
+**RESOLUTION (2026-10-03):** this entry went stale the moment it was written — Control plane posted a
+corrected root-cause diagnosis and a new DoD directly on PR #402 (comment, 2026-10-01T11:08:10Z, ~38
+minutes after this entry's own timestamp above), explicitly stating "this is a new route, so the
+3-attempt count starts fresh." That correction sat unactioned for 2 days: every relay shift since
+(2026-10-01T12:58Z through 2026-10-03T04:51Z, several "tracking-only, frontier saturated" entries in
+`PROGRESS.md`) read only this file's own summary and never re-checked PR #402's live comment thread for
+a Control-plane update, so each one's own "FTF-0902 stuck, not retried" conclusion was correct about
+*this entry* but stale about the real, current state of the task. A 2026-10-03 shift found the
+correction by reading PR #402's comments directly via the GitHub API, confirmed no commit or shift had
+acted on it since, and executed Control plane's own posted DoD on a fresh branch off current `main`
+(not a push onto PR #402's own branch, consistent with "never push to a different branch without
+explicit permission") — see `docs/certifications/queue.md`'s matching 2026-10-03 entry and
+`docs/spec-matrix.yaml`'s FTF-0902 entry for the full fix (a per-cluster node-image split plus a
+self-checking pre/post-policy probe on the baseline cluster, replacing the three falsified theories
+above). Not self-certified (Law 4) — the fix is submitted PROVISIONAL, awaiting a real CI run on the
+newly opened PR and independent Control-plane L2 review before certification. **Lesson for future
+shifts, not yet enforced by tooling:** a `BLOCKER.md` entry can go stale the moment Control plane
+replies on the PR thread it names; re-reading that PR's own live comments before trusting this file's
+summary is cheap and should be habitual, not just done once a gap is already suspected.
 
 ---
 

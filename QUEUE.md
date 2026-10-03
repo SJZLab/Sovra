@@ -1,4 +1,29 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T07:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-zlrayr`) —
+  **FTF-0902 unstuck: found a 2-day-stale `BLOCKER.md` entry, executed Control plane's own posted DoD.**
+  Five consecutive prior "tracking-only, frontier saturated" shifts all correctly read `BLOCKER.md`'s
+  own FTF-0902 entry as live and did not retry it per STEP 4(c) — but that entry (written
+  2026-10-01T10:30Z) predates a Control-plane comment posted directly on PR #402 38 minutes later
+  (2026-10-01T11:08:10Z) that diagnosed the real root cause (kind's default CNI ships inside the node
+  *image*, not the binary PR #402's own round-1 fix pinned) and posted a corrected DoD, explicitly
+  stating "this is a new route, so the 3-attempt count starts fresh." No shift since had re-read PR
+  #402's own live comments to catch this — this shift did, via the GitHub API, confirmed nothing had
+  acted on it, and executed it: `tests/integration/test_ftf_0902_network_policy_enforcement.py` now
+  creates `npt-baseline` with node image `kindest/node:v1.30.0` (genuinely non-enforcing kindnet) and
+  `npt-enforcing` with `kindest/node:v1.31.2` (unchanged, Calico), added a self-checking pre/post-policy
+  probe on the baseline cluster so a wrong node-image choice fails with its own distinct message instead
+  of a generic one, and removed the now-superseded post-policy warm-up. `packages/security/
+  network_policy_templates.py` and the two `contracts/09-*` files are untouched (byte-identical to PR
+  #402's own branch) — Control plane's own note: the Calico result already proves that module correct.
+  Full evidence: `docs/certifications/queue.md`'s 2026-10-03 FTF-0902 entry, `docs/spec-matrix.yaml`'s
+  FTF-0902 entry, `BLOCKER.md`'s matching RESOLVED entry, `PROGRESS.md`'s matching entry. Opened
+  **PR https://github.com/SJZLab/Sovra/pull/430** — PR #402 itself is untouched (a different
+  session's branch) and stays open as the historical record of the three round-1 falsified
+  attempts. Not self-certified (Law 4) — awaiting a real CI run on the new PR and independent
+  Control-plane L2 review.
+  `status.py`: unchanged `99/300` certified (Law 2 — a submission is not a certification). No open owner
+  ask beyond the pre-existing low-urgency branch-protection item below.
+
 Updated: 2026-10-03T04:51:37Z (scheduled relay shift, branch `claude/wizardly-fermat-wv6tsr`) —
   **tracking-only: fresh frontier recompute (independently re-derived from `docs/TASK_INDEX.md`'s own
   dependency column, not copied from prior prose) confirms no genuinely unclaimed task exists — same
@@ -8589,31 +8614,21 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane 2026-10-01 — relay executes)
-1. **FTF-0902 (PR #342 superseded by PR #402): the v0.23.0 kind-pin DoD below is falsified by
-   real CI evidence — stays BLOCKED, see `BLOCKER.md`'s matching live entry. Do not retry a 4th
-   time per STEP 4(c).** The 2026-09-30/2026-10-01 fix-PR session (PR #402) executed this exact
-   DoD for real, then went further once the pin alone didn't resolve it: kind v0.23.0 was
-   genuinely installed and used (confirmed in the job log), yet the baseline cluster still
-   returned the identical pre-fix failure signature — ruling out kindnet-version enforcement as
-   the cause. Two further evidence-anchored theories (an ARP/route warm-up before policy
-   application, then the same warm-up moved to after `fake-metadata-service`'s own `hostNetwork`
-   setup) were each implemented for real and each falsified by a real CI run too. Full evidence
-   trail (job IDs, the "Connection timed out" vs "Connection refused" smoking gun, what's ruled
-   in/out) is on PR #402's own comments and in `BLOCKER.md`. This needs either a session with
-   live cluster/tcpdump/conntrack access, or replacing the `nc -l` listener with a real
-   persistent logging server to remove the listener-vs-network ambiguity, or testing whether
-   staggering the two listener pods' creation matters — not a further blind guess at reordering
-   probes or pinning versions. Original DoD text, preserved for context only (already executed
-   and falsified, do not re-attempt as written):
-   (a) in `.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job, change the
-   kind download URL from `v0.24.0` to `v0.23.0` (the last release whose kindnet does not
-   enforce NetworkPolicy), and update the job comment to say why the version is pinned;
-   (b) correct the `probe_tcp` docstring in
-   `tests/integration/test_ftf_0902_network_policy_enforcement.py`, which cites the ARP
-   misdiagnosis. Keep the bounded retry; it is still safe;
-   (c) push, and get a real run where `network-policy-enforcement-integration` is green with
-   baseline {allowed: True, denied: True} and enforcing {allowed: True, denied: False,
-   metadata: False}.
+1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
+   directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
+   see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
+   (`kindnet`) inside the node *image*, not the binary — round-1's fix pinned only the binary to
+   v0.23.0 while the node image stayed `kindest/node:v1.31.2` (built by `kind` >=0.24, whose kindnet
+   enforces NetworkPolicy by default), so the pin never took effect. Corrected DoD (b)-(d), executed
+   this shift on a fresh branch off `main` (not a push onto PR #402's own branch): (b) split the node
+   image per cluster — `npt-baseline` now uses `kindest/node:v1.30.0` (genuinely non-enforcing),
+   `npt-enforcing` keeps `kindest/node:v1.31.2` + Calico; (c) added a self-checking pre/post-policy
+   probe on the baseline cluster (`denied` must be reachable before the policy exists; if it's then
+   unreachable after, that's its own explicit "baseline CNI enforces NetworkPolicy" failure, not a
+   generic one) plus a printed `kindnet` image for the job log; (d) removed the now-superseded
+   post-policy warm-up. (e) fallback (keep v1.31.2 + swap CNI to flannel) not needed unless this PR's
+   own CI run shows v1.30.0 failing to boot. Not self-certified (Law 4) — awaiting the real CI run on
+   the newly opened PR and independent Control-plane L2 review.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
