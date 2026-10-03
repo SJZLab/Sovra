@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-09/domain.schema.json",
+  "title": "Sovra Phase 09 Domain Schemas (FTF-0902 — Network-policy templates)",
+  "description": "Frozen shared domain schema for the NetworkPolicyTemplate value object (Section 11-12/65.4/77.5). Field constraints (closed enums, non-empty requirements) are copied verbatim from the single real enforcing source — packages/security/network_policy_templates.py (tested in tests/tasks/test_ftf_0902.py) — so this file cannot silently drift from the code that actually validates and renders these shapes. This phase declares no HTTP paths yet (see 09-interface.yaml's own module description); this schema exists so a future in-repository caller, or a future HTTP surface, validates a serialized template against the same frozen shape this task's own module enforces at runtime, never a second, independently re-derived one.",
+  "$defs": {
+    "Protocol": {
+      "type": "string",
+      "enum": ["TCP", "UDP"]
+    },
+    "Port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "PortRule": {
+      "type": "object",
+      "description": "One explicit (protocol, port) pair. There is no 'all ports' representation anywhere in this contract.",
+      "properties": {
+        "protocol": { "$ref": "#/$defs/Protocol" },
+        "port": { "$ref": "#/$defs/Port" }
+      },
+      "required": ["protocol", "port"],
+      "additionalProperties": false
+    },
+    "Cidr": {
+      "type": "string",
+      "description": "A strict (no host bits set) IPv4 CIDR. IPv6 is never a valid value here — Release 1 ships no supported way to allow any IPv6 destination (this task's own negative_acceptance: \"IPv6 escape is a release blocker\"). A network with prefix length 0 (0.0.0.0/0) is refused as default-open."
+    },
+    "CidrEndpoint": {
+      "type": "object",
+      "description": "An explicitly allowed internal destination named by CIDR — for a real internal service reached by a stable ClusterIP/VIP. Never permitted to contain a real cloud-metadata address (169.254.169.254/32, 100.100.100.200/32) — checked by packages.security.url_policy.is_cloud_metadata_address, this contract's own single source of truth for that identity, reused rather than re-derived.",
+      "properties": {
+        "kind": { "const": "cidr" },
+        "description": { "type": "string", "minLength": 1 },
+        "cidr": { "$ref": "#/$defs/Cidr" },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PortRule" },
+          "minItems": 1
+        }
+      },
+      "required": ["kind", "description", "cidr", "ports"],
+      "additionalProperties": false
+    },
+    "PodSelectorEndpoint": {
+      "type": "object",
+      "description": "An explicitly allowed internal destination named by Kubernetes' own namespace+pod selectors — for another in-cluster service reached by real pod-to-pod networking, where a stable CIDR does not exist because pod IPs are ephemeral. pod_labels must be non-empty: an empty Kubernetes podSelector matches every pod in the namespace, which is never an explicit scoping (this task's own negative_acceptance: \"rejects one missing explicit endpoint scoping\").",
+      "properties": {
+        "kind": { "const": "pod_selector" },
+        "description": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "minLength": 1 },
+        "pod_labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "minProperties": 1
+        },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PortRule" },
+          "minItems": 1
+        }
+      },
+      "required": ["kind", "description", "namespace", "pod_labels", "ports"],
+      "additionalProperties": false
+    },
+    "AllowedInternalEndpoint": {
+      "oneOf": [
+        { "$ref": "#/$defs/CidrEndpoint" },
+        { "$ref": "#/$defs/PodSelectorEndpoint" }
+      ]
+    },
+    "CniProfile": {
+      "type": "string",
+      "enum": ["calico", "cilium"],
+      "description": "The real, enforcing CNI this template's rendered NetworkPolicy is qualified against — see tests/integration/test_ftf_0902_network_policy_enforcement.py, which qualifies the 'calico' profile against a real kind cluster. Neither CNI is one of the seven reused components (Section 77.1); this is an infrastructure choice this task's own architecture docs leave open, resolved per CLAUDE.md's default-resolution rule (docs/architecture/REFERENCE_REPOSITORIES.md's own Network Policy row: \"Verify enforcement in the installed CNI; a YAML file alone is not proof\")."
+    },
+    "Ipv6Policy": {
+      "type": "string",
+      "enum": ["blocked"],
+      "description": "A closed one-value set for Release 1 — see packages/security/network_policy_templates.py's own module docstring. There is no 'allowed' value: this task's own negative_acceptance (\"IPv6 escape is a release blocker\") is met structurally, not merely by a runtime check on a wider enum."
+    },
+    "NetworkPolicyTemplate": {
+      "type": "object",
+      "description": "One project/tenant-scoped network-policy template — the exact, frozen shape packages/security/network_policy_templates.py's own NetworkPolicyTemplate dataclass implements and tests/tasks/test_ftf_0902.py tests.",
+      "properties": {
+        "schema_version": { "type": "integer", "minimum": 1 },
+        "template_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "organization_id": { "type": "string", "minLength": 1 },
+        "project_id": { "type": ["string", "null"] },
+        "namespace": { "type": "string", "minLength": 1 },
+        "pod_selector": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "minProperties": 1,
+          "description": "Must be non-empty — an empty Kubernetes podSelector matches every pod in the namespace, which is never an explicit scoping."
+        },
+        "cni_profile": { "$ref": "#/$defs/CniProfile" },
+        "deny_by_default_egress": {
+          "const": true,
+          "description": "Always true. This task's own negative_acceptance: \"default-open ... is a release blocker\" — false is refused, never accepted as a lesser-restrictive configuration."
+        },
+        "deny_by_default_ingress": {
+          "const": true,
+          "description": "Always true — Section 12: \"Kubernetes qualification must prove the CNI enforces ingress and egress\", not egress alone."
+        },
+        "block_metadata_endpoint": {
+          "const": true,
+          "description": "Always true — Section 65.4's metadata carve-out is mandatory, never optional."
+        },
+        "ipv6_policy": { "$ref": "#/$defs/Ipv6Policy" },
+        "allowed_internal_endpoints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AllowedInternalEndpoint" },
+          "description": "Required (may be an explicit empty array for a genuinely closed workload) — a template that has not explicitly set this at all (absent/null in a serialized form) is refused (this task's own negative_acceptance: \"rejects one missing explicit endpoint scoping\")."
+        },
+        "allow_dns": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, the rendered manifest carries a mandatory kube-dns egress rule (UDP/TCP 53 to the real kube-system/kube-dns labels) so the workload can still resolve internal service names."
+        }
+      },
+      "required": [
+        "schema_version",
+        "template_id",
+        "organization_id",
+        "namespace",
+        "pod_selector",
+        "cni_profile",
+        "deny_by_default_egress",
+        "deny_by_default_ingress",
+        "block_metadata_endpoint",
+        "ipv6_policy",
+        "allowed_internal_endpoints"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

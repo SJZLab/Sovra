@@ -21964,3 +21964,86 @@ observes)
 - **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
   — independent Control-plane L2 review and a real CI run on the opened PR are required before
   certification.
+
+## 2026-10-03 — FTF-0902 — corrected node-image fix, executing Control plane's own posted DoD (new 3-attempt budget)
+
+- **What this is:** FTF-0902 ("Network-policy templates") was never merged — its whole implementation
+  (`packages/security/network_policy_templates.py`, the two `contracts/09-*` files,
+  `tests/tasks/test_ftf_0902.py`, `tests/integration/test_ftf_0902_network_policy_enforcement.py`, the
+  `network-policy-enforcement-integration` CI job) has lived only on PR #402's own branch
+  (`claude/wizardly-fermat-c06dbx`) since 2026-09-30. PR #402's own session tried three distinct,
+  real-evidence-backed fix theories for the baseline cluster's deterministic enforcement signature, each
+  implemented for real and each falsified by a real CI run (kind-binary-version pin; a pre-policy
+  ARP/route warm-up; the same warm-up moved to after `fake-metadata-service`'s own `hostNetwork` setup —
+  full trail: PR #402 comments, jobs 110295202473/110298220036/110304795503). That session then stopped
+  per STEP 4(c) and formalized the stop in `BLOCKER.md`.
+- **Why this is a fresh attempt, not a 4th on the same falsified theory:** Control plane itself then
+  posted a corrected root-cause diagnosis and a new DoD directly on PR #402 (comment,
+  2026-10-01T11:08:10Z), explicitly stating "this is a new route, so the 3-attempt count starts fresh."
+  That comment sat unactioned for 2 days — every relay shift since 2026-10-01T10:30Z (when the live
+  `BLOCKER.md` entry was written, *before* Control plane's 11:08:10Z correction) kept reading only
+  `BLOCKER.md`'s own stale entry and never re-checked PR #402's own comments for a Control-plane update,
+  so the saturated-frontier conclusion every "tracking-only" shift since has recorded was itself stale on
+  this one point. This shift found it by directly reading PR #402's live comment thread via the GitHub
+  API rather than trusting `BLOCKER.md`'s summary, confirmed no later commit or shift had acted on it,
+  and is executing it now — this is exactly what CLAUDE.md's "Relay is execution-only" rule calls for
+  once Control plane has decided and sliced the DoD, not relay improvisation.
+- **Root cause (Control plane's own diagnosis, confirmed by re-reading PR #402's own evidence):** `kind`
+  ships its default CNI (`kindnet`) *inside the node image*, not the `kind` binary. PR #402's round-1 fix
+  pinned the binary to v0.23.0 but left the node image at `kindest/node:v1.31.2` for both clusters — a
+  v1.31.2 image is built by `kind` >=0.24, whose bundled `kindnet` enforces NetworkPolicy by default
+  (`kube-network-policies`), independent of which binary created the cluster. The two further warm-up
+  theories were falsified because the real symptom (pre-policy warm-up succeeds quickly; every probe
+  after the policy exists times out — a dropped packet, not a refusal; the allowed, in-ipBlock
+  destination always succeeds; the hostNetwork metadata listener stays reachable since
+  kube-network-policies does not police host-destined traffic) is exactly the signature of real
+  enforcement, which no route/ARP disruption theory could explain (a transient disruption would not
+  single out one specific policy-excluded pod, deterministically, on every run).
+- **Fix implemented this shift, per Control plane's own posted DoD (b)-(d) (step (a), "merge main into
+  this branch," is moot here since this is a fresh branch off current `main` rather than a push onto PR
+  #402's own branch — a different session's branch, not this session's to push to):**
+  - (b) `tests/integration/test_ftf_0902_network_policy_enforcement.py`: split the single `NODE_IMAGE`
+    constant into `NODE_IMAGE_BASELINE = "kindest/node:v1.30.0"` (the node image `kind` v0.23.0 itself
+    defaults to) and `NODE_IMAGE_ENFORCING = "kindest/node:v1.31.2"` (unchanged); `kind_cluster_config`/
+    `create_cluster`/`run_scenario` all now take an explicit `node_image` parameter instead of a single
+    module-level constant.
+  - (c) Added a self-checking methodology to `run_scenario`: on the baseline cluster only, `denied` is
+    probed once before the `NetworkPolicy` object exists (must succeed, or the run fails fast with a
+    distinct "probe methodology broken" message) and the existing post-policy assertion probe serves as
+    the "after" half. If pre succeeds and post fails, this raises a distinct `ScenarioFailure` ("baseline
+    CNI enforces NetworkPolicy ...") instead of folding into the generic negative_acceptance failure
+    message. Added `print_kindnet_image` — prints the baseline cluster's own `kindnet` DaemonSet image to
+    the job log directly, so a future image-tag/rollout mismatch is visible without re-diagnosing blind.
+  - (d) Removed the round-1 post-policy warm-up (commit `5e75919` on PR #402) and its now-obsolete
+    comment block — it was never the fix and only blurred the methodology, per Control plane's own
+    instruction.
+  - (e) not invoked: no fallback is needed unless this shift's own real CI run shows `kindest/node:v1.30.0`
+    failing to boot on the runner, which is not yet known — if that happens, the documented fallback
+    (keep `v1.31.2` for the baseline, swap its CNI for flannel) is Control plane's own next step, not
+    assumed here in advance of evidence.
+  - `.github/workflows/ci.yml`: added the `network-policy-enforcement-integration` job (identical steps
+    to PR #402's own job — `kind` v0.23.0 binary, `kubectl` v1.31.0 — since the fix is in the test
+    script's own per-cluster node image, not the CI job's tooling versions) with an updated job comment
+    explaining the corrected root cause. `packages/security/network_policy_templates.py` and the two
+    `contracts/09-*` files are carried over byte-identical from PR #402's own branch (confirmed via
+    `git show` + direct diff) — untouched, per Control plane's own note that the Calico result already
+    proves that module correct.
+- **Verification:** `uv run ruff check .`/`ruff format --check .` clean (369 files, zero new errors);
+  `uv run mypy .` clean on every new/changed file, zero errors. `uv run python3 tests/tasks/test_ftf_0902.py`
+  — 19/19 checks pass (no DB, no cluster — pure template/validation suite, unaffected by this shift's
+  own integration-script-only diff). `python3 scripts/validate_spec.py --strict` clean (after
+  `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+  `product_truth_check.py --fail-on-unwired`: `26/26` unchanged (blank `proving_symbol` — no live
+  dispatcher exists for a pure rendering/validation library, same disclosed FTF-04A25/04A26 precedent).
+  `scripts/status.py`: unchanged `99/300` certified (Law 2 — a submission is not a certification).
+  Regression swept `tests/tasks/test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — all "all
+  checks passed", zero regressions. The live-cluster integration job itself cannot be run inside this
+  interactive sandbox (no Docker daemon/container-registry egress, same disclosed FTF-0004 precedent) —
+  its real result on this PR's own CI run is this task's actual acceptance-clause evidence for the
+  corrected methodology, not asserted here in advance of that run completing.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4) —
+  independent Control-plane L2 review and a real CI run on the opened PR (including the corrected
+  `network-policy-enforcement-integration` job) are required before certification. PR #402 itself is
+  untouched by this shift (a different session's branch) and stays open as the historical record of the
+  three round-1 falsified attempts; this shift's own PR is a fresh branch off current `main` carrying
+  only the corrected fix.

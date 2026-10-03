@@ -1,4 +1,104 @@
 # PROGRESS — Sovra
+## 2026-10-03T07:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-zlrayr` — FTF-0902 unstuck (stale BLOCKER.md entry found, Control plane's own posted DoD executed)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-zlrayr` confirmed already at `origin/main`'s real tip
+(`cb6effc`, PR #429's merge) via `git fetch origin main --force` + `git rev-list --left-right
+--count HEAD...origin/main` (0/0) — nothing to rebase.
+
+`BLOCKER.md` read in full at shift start: the same two live entries every recent prior shift has
+read — FTF-1206 (Control-plane scope decision, not retried) and FTF-0902 (three real fix attempts
+on PR #402, each falsified by real CI, "not retried a 4th time per STEP 4(c)"). Rather than take
+that at face value a sixth time running, re-read PR #402's own live comment thread directly via the
+GitHub API (not trusted from `BLOCKER.md`'s own summary, Law 1/5) to confirm it was still accurate.
+It was not: Control plane itself posted a corrected root-cause diagnosis and a new DoD directly on
+PR #402 (comment, 2026-10-01T11:08:10Z — 38 minutes after `BLOCKER.md`'s own entry was written),
+explicitly stating "this is a new route, so the 3-attempt count starts fresh." No commit or shift
+since (five consecutive "tracking-only, frontier saturated" shifts, 2026-10-01T12:58Z through
+2026-10-03T04:51Z) had acted on it or even mentioned it — each one read only `BLOCKER.md`'s own
+stale summary and never re-checked PR #402's live comments for a Control-plane reply.
+
+STEP 0.1/STEP 1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` re-read fresh. A fresh
+`list_pull_requests` confirmed the same four open PRs every recent shift has recorded (#421, #402,
+#401, #295), none new; a subagent cross-check against the GitHub API confirmed `origin/main`'s real
+HEAD (`cb6effc`) matches local `HEAD` exactly and that PR #402 itself was untouched by any commit
+since 2026-10-01T11:08:10Z. `scripts/status.py`: `99/300` certified, 24 product-true, unchanged.
+
+Per CLAUDE.md's "Relay is execution-only ... The relay receives decided, sliced items with DoDs. It
+does not propose, advise, or design" — Control plane's own posted comment on PR #402 is exactly
+such a decided, sliced DoD (steps (a)-(e), with an explicit fresh 3-attempt budget), not relay
+improvisation. Claimed this instead of re-confirming the stale saturated-frontier conclusion a sixth
+time.
+
+STEP 2 (PEV): **P** — read PR #402's own full diff (`git diff 142efb6..origin/claude/wizardly-
+fermat-c06dbx --stat`) to separate FTF-0902's own untouched files from the FTF-H007/FTF-04A06/
+FTF-0601 portion already merged separately via PR #403 (confirmed byte-identical against current
+`main` via direct `diff`). Read `tests/integration/test_ftf_0902_network_policy_enforcement.py` and
+`.github/workflows/ci.yml`'s `network-policy-enforcement-integration` job in full to understand the
+exact mechanism Control plane's comment described (the node-image-vs-binary distinction) before
+writing any fix.
+
+**E** — this session's own designated branch cannot push to PR #402's own branch
+(`claude/wizardly-fermat-c06dbx`, a different session's branch — "never push to a different branch
+without explicit permission"), so Control plane's DoD step (a) ("merge main into this branch") is
+moot here; instead ported FTF-0902's own untouched files (`packages/security/
+network_policy_templates.py`, the two `contracts/09-*` files, `tests/tasks/test_ftf_0902.py`,
+`tests/integration/test_ftf_0902_network_policy_enforcement.py`) onto a fresh branch off current
+`main`, confirmed byte-identical to PR #402's own branch via `git show`+`diff` before editing
+anything. Implemented DoD (b): split the single `NODE_IMAGE` constant into
+`NODE_IMAGE_BASELINE = "kindest/node:v1.30.0"` and `NODE_IMAGE_ENFORCING = "kindest/node:v1.31.2"`;
+threaded an explicit `node_image` parameter through `kind_cluster_config`/`create_cluster`/
+`run_scenario` instead of one module-level constant. DoD (c): added a pre-policy probe of `denied`
+on the baseline cluster only (raises a distinct "probe methodology broken" `ScenarioFailure` if it's
+already unreachable before any policy exists), reused the existing post-policy assertion probe as
+the "after" half, and raise a distinct `ScenarioFailure` ("baseline CNI enforces NetworkPolicy ...")
+if pre succeeds and post fails — never folded into the generic negative_acceptance failure message.
+Added `print_kindnet_image` (prints the baseline cluster's own `kindnet` DaemonSet image to the job
+log). DoD (d): removed the round-1 post-policy warm-up (`5e75919`) and its comment block. DoD (e)
+not invoked (no evidence yet that `kindest/node:v1.30.0` fails to boot — only a real CI run can show
+that). Updated `.github/workflows/ci.yml`: added the `network-policy-enforcement-integration` job
+(same tooling-version steps as PR #402's own job) with an updated comment explaining the corrected
+root cause, inserted after the existing `evaluation-suite-integration` job. Updated the module
+docstring and `probe_tcp`'s own docstring in the integration script to describe the corrected
+root-cause history (two misdiagnoses, each falsified, before the real node-image/kindnet mismatch).
+
+Verified: `uv run ruff check .`/`ruff format --check .` clean (369 files, zero new errors); `uv run
+mypy .` clean on every new/changed file. `uv run python3 tests/tasks/test_ftf_0902.py` — 19/19
+checks pass (no DB, no cluster — this shift's own diff never touches this file or the production
+module). `python3 scripts/validate_spec.py --strict` clean (`git fetch --unshallow` first — this
+sandbox clones shallow by default, same disclosed precedent prior shifts used).
+`product_truth_check.py --fail-on-unwired`: `26/26` unchanged (blank `proving_symbol`, same
+disclosed FTF-04A25/04A26 precedent — no live dispatcher for this pure library). `status.py`:
+unchanged `99/300` (Law 2 — a submission is not a certification). Regression swept
+`test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — all "all checks passed", zero
+regressions. The live-cluster integration job itself cannot be run inside this interactive sandbox
+(no Docker daemon/container-registry egress, same disclosed FTF-0004 precedent) — its real result on
+this PR's own CI run is this task's actual acceptance-clause evidence, not asserted here in advance.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0902 entry (`certification_state: PROVISIONAL`,
+`implementation_state: IMPLEMENTED`, `proof_state: L1-PROVEN`, `proving_test:
+tests/tasks/test_ftf_0902.py`) with the full round-2 root-cause-correction narrative. Appended a
+full evidence entry to `docs/certifications/queue.md`. Updated `BLOCKER.md`'s FTF-0902 entry from
+`LIVE` to `RESOLVED`, with the full explanation of why it went stale and what fixed it (including an
+explicit note for future shifts: re-read a named PR's own live comments before trusting this file's
+summary, since Control plane can and did reply there without this file being updated to match).
+Updated `QUEUE.md`'s top "Updated:" log and its own "## Active" item 1. Opened **PR** (branch
+`claude/wizardly-fermat-zlrayr` → `main`) — see this shift's own push/PR-open step for the number;
+CI triggered, left running, not waited on inside this shift (same precedent prior fix-and-resubmit
+shifts set for `network-policy-enforcement-integration`'s own ~25-minute runtime).
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`;
+independent Control-plane L2 re-review and a real CI run on the opened PR (including the corrected
+`network-policy-enforcement-integration` job itself) are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+`BLOCKER.md` all updated this shift, before compaction. STEP 4 stop condition (a): 0 in-flight
+L1-PROVEN submissions awaiting *this* shift's own further action beyond watching the new PR's CI;
+FTF-0902 now joins the backlog awaiting Control-plane L2 certification and the L4 gate. Stopping
+here — not picking a second task this shift. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged: only the pre-existing, low-urgency branch-protection ask). `BLOCKER.md`'s
+remaining live entry (FTF-1206, a Control-plane scope decision) untouched, not retried.
+
 ## 2026-10-03T04:51:37Z — Scheduled relay shift, branch `claude/wizardly-fermat-wv6tsr` — tracking-only, no genuinely unclaimed task exists (STEP 4a)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
