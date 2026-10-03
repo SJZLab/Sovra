@@ -82,9 +82,9 @@ full evidence entry to `docs/certifications/queue.md`. Updated `BLOCKER.md`'s FT
 `LIVE` to `RESOLVED`, with the full explanation of why it went stale and what fixed it (including an
 explicit note for future shifts: re-read a named PR's own live comments before trusting this file's
 summary, since Control plane can and did reply there without this file being updated to match).
-Updated `QUEUE.md`'s top "Updated:" log and its own "## Active" item 1. Opened **PR** (branch
-`claude/wizardly-fermat-zlrayr` → `main`) — see this shift's own push/PR-open step for the number;
-CI triggered, left running, not waited on inside this shift (same precedent prior fix-and-resubmit
+Updated `QUEUE.md`'s top "Updated:" log and its own "## Active" item 1. Opened **PR
+https://github.com/SJZLab/Sovra/pull/430** (branch `claude/wizardly-fermat-zlrayr` → `main`); CI
+triggered, left running, not waited on inside this shift (same precedent prior fix-and-resubmit
 shifts set for `network-policy-enforcement-integration`'s own ~25-minute runtime).
 
 **V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`;

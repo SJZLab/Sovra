@@ -16,10 +16,11 @@ Updated: 2026-10-03T07:00:00Z (scheduled relay shift, branch `claude/wizardly-fe
   network_policy_templates.py` and the two `contracts/09-*` files are untouched (byte-identical to PR
   #402's own branch) — Control plane's own note: the Calico result already proves that module correct.
   Full evidence: `docs/certifications/queue.md`'s 2026-10-03 FTF-0902 entry, `docs/spec-matrix.yaml`'s
-  FTF-0902 entry, `BLOCKER.md`'s matching RESOLVED entry, `PROGRESS.md`'s matching entry. Opened a PR
-  (see `PROGRESS.md` for the number once pushed) — PR #402 itself is untouched (a different session's
-  branch) and stays open as the historical record of the three round-1 falsified attempts. Not
-  self-certified (Law 4) — awaiting a real CI run on the new PR and independent Control-plane L2 review.
+  FTF-0902 entry, `BLOCKER.md`'s matching RESOLVED entry, `PROGRESS.md`'s matching entry. Opened
+  **PR https://github.com/SJZLab/Sovra/pull/430** — PR #402 itself is untouched (a different
+  session's branch) and stays open as the historical record of the three round-1 falsified
+  attempts. Not self-certified (Law 4) — awaiting a real CI run on the new PR and independent
+  Control-plane L2 review.
   `status.py`: unchanged `99/300` certified (Law 2 — a submission is not a certification). No open owner
   ask beyond the pre-existing low-urgency branch-protection item below.
 
