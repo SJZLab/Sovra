@@ -1917,10 +1917,10 @@ FTF-0306:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 FTF-0307:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Training capability classifier
-  evidence_hash: ''
+  evidence_hash: 74ec07c60f4ed2a2af65df2467191d5bb8fa0ec7
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
@@ -1991,7 +1991,7 @@ FTF-0307:
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:

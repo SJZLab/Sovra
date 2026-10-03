@@ -21964,3 +21964,6 @@ observes)
 - **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
   — independent Control-plane L2 review and a real CI run on the opened PR are required before
   certification.
+
+### Certifier status 2026-10-03 (session_011LfVKN21ysF42b9G6qGey1)
+FTF-0307 CERTIFIED (ledger.md). Pending, not reviewed this run: FTF-1002, FTF-04A18, FTF-0510 and the 2026-10-01 resubmissions.

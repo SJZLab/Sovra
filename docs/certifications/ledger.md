@@ -9750,3 +9750,15 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-0307 — Training capability classifier
+- Criterion ID: FTF-0307
+- PR: https://github.com/SJZLab/Sovra/pull/422 (already merged, the relay's PROVISIONAL submission)
+- Merge commit: 74ec07c60f4ed2a2af65df2467191d5bb8fa0ec7 (PR head `966460427ccacd37b8e6b2a1edc118ac97be6d89`)
+- Validated-by: control-plane session https://claude.ai/code/session_011LfVKN21ysF42b9G6qGey1. Independent: PR #422's only commit and its body carry `session_011etrzJ3hJRPuBg4sUcsVvv` (the later log commit on the branch carries the same session). No match with the reviewing session; the reviewing session appears nowhere in the PR body.
+- Date: 2026-10-03
+- CI: run 37051736618 on head `9664604`, conclusion success (follow-up log commit run 37052850403 also success). CI step at ci.yml:329 invokes `uv run python3 tests/tasks/test_ftf_0307.py`. Job log not re-read line by line in this review.
+- Local: `uv sync --all-packages` then `tests/tasks/test_ftf_0307.py` exit 0, "all checks passed".
+- Own fault injection (Law 1), distinct from the producer's: (1) replaced the `probe.state is PROBED` condition with `elif True:` → exit 1; (2) loosened the READY gate to accept any non-NONE artifact status → exit 1 ("archived artifact never classifies as trainable_open_weight"). Reverted, `git status` clean, suite green again.
+- product_truth 26/26 (proving_symbol blank; no live caller yet, disclosed by the producer). Contract: capability decided only from artifact.status==ready and probe.state==PROBED, never from name; unknown fails closed, so negative_acceptance is met.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.

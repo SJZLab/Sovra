@@ -1,4 +1,8 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03 (Control-plane CERTIFY run, session_011LfVKN21ysF42b9G6qGey1) — **FTF-0307 (PR #422,
+  merge 74ec07c) CERTIFIED L2**; see docs/certifications/ledger.md. Certified: 99 -> 100/300. Moved to Done.
+  Still PROVISIONAL and not yet reviewed this run: FTF-1002 (#424), FTF-04A18, FTF-0510 and the 2026-10-01
+  fix-and-resubmits (H007/04A06/0601/0500B/0500C/0500D/1807, 1206 partial).
 Updated: 2026-10-03T04:51:37Z (scheduled relay shift, branch `claude/wizardly-fermat-wv6tsr`) —
   **tracking-only: fresh frontier recompute (independently re-derived from `docs/TASK_INDEX.md`'s own
   dependency column, not copied from prior prose) confirms no genuinely unclaimed task exists — same

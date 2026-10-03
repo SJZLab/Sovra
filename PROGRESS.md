@@ -1,4 +1,8 @@
 # PROGRESS — Sovra
+Updated: 2026-10-03 (Control-plane CERTIFY run, session_011LfVKN21ysF42b9G6qGey1) — **FTF-0307 (PR #422,
+  merge 74ec07c) CERTIFIED L2**; see docs/certifications/ledger.md. Certified: 99 -> 100/300. Moved to Done.
+  Still PROVISIONAL and not yet reviewed this run: FTF-1002 (#424), FTF-04A18, FTF-0510 and the 2026-10-01
+  fix-and-resubmits (H007/04A06/0601/0500B/0500C/0500D/1807, 1206 partial).
 ## 2026-10-03T04:51:37Z — Scheduled relay shift, branch `claude/wizardly-fermat-wv6tsr` — tracking-only, no genuinely unclaimed task exists (STEP 4a)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
