@@ -1,4 +1,19 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T04:51:37Z (scheduled relay shift, branch `claude/wizardly-fermat-wv6tsr`) —
+  **tracking-only: fresh frontier recompute (independently re-derived from `docs/TASK_INDEX.md`'s own
+  dependency column, not copied from prior prose) confirms no genuinely unclaimed task exists — same
+  frontier as every one of the four immediately-prior shifts.** Of 189 tasks with
+  `certification_state: NONE`, exactly 3 have every dependency `CERTIFIED` — FTF-0214 (declared
+  blocked, PR #295), FTF-0902 (stuck, `BLOCKER.md`, not retried per STEP 4(c)), FTF-1703 (deferred —
+  FTF-0510 still PROVISIONAL, FTF-0515/0516/FTF-R006 still `NONE`). A fresh `list_pull_requests` found
+  the same four open PRs as every recent prior shift (#421 Control-plane L2-certify — still open, base
+  now several commits behind `main`, not relay's to touch; #402 FTF-0902; #401 governance; #295
+  FTF-0214) — none new. `status.py` unchanged `99/300` certified / 24 product-true. Confirmed via the
+  GitHub API directly that `origin/main`'s real HEAD (`3e920cf`, PR #428's merge) matches local `HEAD`
+  exactly — this shift's designated branch starts already even with `main`. No open owner ask beyond
+  the pre-existing low-urgency branch-protection item below. Full detail: `PROGRESS.md`'s matching
+  entry.
+
 Updated: 2026-10-03T02:50:31Z (scheduled relay shift, branch `claude/wizardly-fermat-z4ek8n`) —
   **tracking-only: fresh frontier recompute (independently re-derived, not copied) confirms no
   genuinely unclaimed task exists, same frontier as the immediately-prior shift two hours earlier.**
