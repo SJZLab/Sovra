@@ -1,4 +1,43 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T10:52:37Z (scheduled relay shift, branch `claude/wizardly-fermat-6g8b99`) —
+  **tracking-only: fresh frontier recompute (independently re-derived from `docs/spec-matrix.yaml` +
+  `docs/TASK_INDEX.md`'s own dependency column, plus a direct re-pull of both standing items' real
+  task packets via `tools/r1_handoff.py`, not copied from prior prose) confirms no genuinely
+  unclaimed task exists — same frontier every shift since 2026-10-02T23:10Z has found.** STEP 0:
+  `sha256sum CLAUDE.md` matches `CLAUDE.md.sha256`. STEP 0.2: no `cognee-cli` in this environment —
+  text-search fallback declared. Designated branch confirmed already even with `origin/main`'s real
+  tip (`f09ee4f740b68113593d730bf8474b8e594bfa22`, PR #431's own merge) via `git rev-list
+  --left-right --count origin/main...claude/wizardly-fermat-6g8b99` → `0 0`.
+
+  Parsed `docs/spec-matrix.yaml` directly (deps extracted from each task's own `notes` field, not
+  trusted from any prior shift's summary): of 201 non-`CERTIFIED` tasks, exactly 2 have every
+  declared dependency `CERTIFIED` — **FTF-0214** and **FTF-1703**. Both independently re-verified
+  against their own real task packets this shift, not just re-read from history:
+  - **FTF-0214** (Model catalog UI, PR #295): re-confirmed `apps/api/app/litellm/connection_routes.py`
+    still has no `/models/{id}/probe` or composed catalog route (only `/validate`, `/models`,
+    `/registration-capability` exist) and its own module docstring still disclaims adding one as a
+    Law-11 placeholder; `apps/api/app/projects/` still has no `Project`↔`LiteLLMConnection` binding
+    for the acceptance clause's "explicit project selection." Unchanged since PR #295 — still
+    correctly declared blocked, not retried.
+  - **FTF-1703** (Training dataset): pulled the real packet fresh (`tools/r1_handoff.py packet
+    FTF-1703`) — its own declared `dependencies` (`FTF-0506`, `FTF-1701`, `FTF-1702`) are all
+    genuinely `CERTIFIED`, but its acceptance clause ("Independent review... recorded") needs a real
+    reviewer workflow that only `FTF-R006` (Argilla integration) would provide, and `FTF-R006` is
+    still `certification_state: NONE` (`implementation_state: ABSENT`) with its own dependency
+    `FTF-0516` also still `NONE` — confirmed directly in `docs/spec-matrix.yaml`, not inferred.
+    Attempting this task now without that infrastructure would mean fabricating "independent review"
+    evidence, forbidden by Law 11. Correctly deferred, unchanged.
+
+  A fresh `list_pull_requests` found the same four open PRs as every recent prior shift — #421
+  (Control-plane's own L2-certify PR, not relay's), #402 (FTF-0902's historical record, left open by
+  its own author, untouched per "never push to a different branch without explicit permission"),
+  #401 (governance, owner-merge-only), #295 (FTF-0214, declared blocked) — none new, none
+  relay-actionable. `BLOCKER.md`'s one live entry (FTF-1206, a Control-plane scope decision) read in
+  full and not retried, consistent with every shift since 2026-10-02. `scripts/status.py`: unchanged
+  `99/300` certified / 24 product-true (Law 2 — a submission is not a certification). No open owner
+  ask beyond the pre-existing low-urgency branch-protection item below. Full detail: `PROGRESS.md`'s
+  matching entry.
+
 Updated: 2026-10-03T07:15:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3yo67x`) —
   **merged PR #430 (FTF-0902's corrected node-image fix) — real CI went fully green (43/43,
   including the previously-stuck `network-policy-enforcement-integration` job), `main` now carries

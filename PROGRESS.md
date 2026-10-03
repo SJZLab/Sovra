@@ -1,4 +1,62 @@
 # PROGRESS — Sovra
+## 2026-10-03T10:52:37Z — Scheduled relay shift, branch `claude/wizardly-fermat-6g8b99` — tracking-only, frontier recompute confirms no unclaimed task
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-6g8b99` confirmed already even with `origin/main`'s real
+tip (`f09ee4f`, PR #431's own merge) via `git rev-list --left-right --count
+origin/main...claude/wizardly-fermat-6g8b99` → `0 0`. STEP 0.1: `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` re-read fresh (not assumed from prior turns of this session). STEP
+0.2: `cognee-cli` not present in this sandbox (`command not found`) — text-search fallback
+(`Grep`/direct file reads) declared, same as every prior shift.
+
+**Independent frontier recompute.** Parsed `docs/spec-matrix.yaml` directly with a small script
+(deps extracted from each task's own `notes: deps=...` field, cross-checked against
+`docs/TASK_INDEX.md`'s own dependency column for the two candidates below — both matched exactly,
+no discrepancy): of 300 tasks, 201 are not `CERTIFIED`; of those, exactly two have every declared
+dependency `CERTIFIED` — **FTF-0214** and **FTF-1703**. Re-verified both against their own real
+task packets and current repository code this shift, rather than trusting prior shifts' summaries:
+
+- **FTF-0214** (Model catalog UI, declared blocked on PR #295, 2026-09-25): re-read
+  `apps/api/app/litellm/connection_routes.py` directly — still only `/validate`, `GET .../models`
+  (bare discovery, FTF-0204) and `/registration-capability` (FTF-1201) are live; no composed
+  catalog/probe route and no `/models/{id}/probe` exist, and the module's own docstring still
+  disclaims adding either as a Law-11 placeholder until some task's own declared file scope claims
+  it (confirmed none does: FTF-0207/0208/0209/0210 are certified as pure no-I/O logic with zero HTTP
+  surface — re-confirmed FTF-0210, "Real chat probe", is `CERTIFIED` but, like its siblings, has no
+  route of its own). Also re-grepped `apps/api/app/projects/` directly — still no
+  `Project`↔`LiteLLMConnection` binding for the acceptance clause's "explicit project selection."
+  Both gaps unchanged since PR #295. Correctly still declared blocked; not retried (STEP 4(b) — a
+  true blocker, not a failed attempt to iterate on).
+- **FTF-1703** (Training dataset): pulled the real packet fresh (`tools/r1_handoff.py packet
+  FTF-1703 --plan FINE_TUNING_FACTORY_RELEASE_1.md`) rather than trusting history — its own declared
+  `dependencies` (`FTF-0506`, `FTF-1701`, `FTF-1702`) are genuinely `CERTIFIED` in
+  `docs/spec-matrix.yaml`, confirming it as dependency-ready by the formal graph. But its acceptance
+  clause (">=1000 reviewed... traces", "Independent review... recorded") needs a real reviewer
+  workflow that only `FTF-R006` ("Integrate internal Argilla review, reviewer identity and immutable
+  export") would provide, and `FTF-R006` is still `certification_state: NONE` /
+  `implementation_state: ABSENT` with its own dependency `FTF-0516` also still `NONE` — confirmed
+  directly in `docs/spec-matrix.yaml`, not inferred from packet prose alone. Implementing this task
+  now, without that infrastructure, would mean fabricating "independent review" evidence to satisfy
+  the acceptance clause — exactly the fake integration Law 11 forbids. Correctly deferred; unchanged.
+
+A fresh `list_pull_requests` call found the same four open PRs as every shift since
+2026-10-02T23:10Z: #421 (Control-plane's own L2-certify PR — not relay's to touch), #402 (FTF-0902's
+historical record of its three falsified round-1 attempts, left open by its own author per "never
+push to a different branch without explicit permission," untouched), #401 (governance,
+owner-merge-only), #295 (FTF-0214, declared blocked, unchanged). None are new, none are
+relay-actionable this shift. `BLOCKER.md`'s one live entry (FTF-1206 — a Control-plane scope
+decision on where the `OrganizationGatewayPolicy` persistence migration should live) read in full
+and left untouched — a scope question for Control plane, not a further relay guess. `uv run python
+scripts/status.py`: unchanged `99/300` certified / 24 product-true (Law 2 — a submission is not a
+certification).
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; no `docs/spec-matrix.yaml`
+or `docs/certifications/queue.md` change (nothing certified or submitted this shift — tracking
+only). STEP 4 stop condition: no genuinely unclaimed, undeclined task exists on the current
+dependency-ready frontier (same as the five immediately-prior shifts); the six dependency-ready
+`PROVISIONAL` tasks await Control-plane certification, not relay re-submission. No open owner ask
+beyond the pre-existing low-urgency branch-protection item in `QUEUE.md`.
+
 ## 2026-10-03T07:15:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-3yo67x` — merged PR #430 (FTF-0902 corrected fix, real green CI), frontier otherwise unchanged
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
