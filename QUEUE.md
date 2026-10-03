@@ -1,4 +1,24 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T07:15:00Z (scheduled relay shift, branch `claude/wizardly-fermat-3yo67x`) —
+  **merged PR #430 (FTF-0902's corrected node-image fix) — real CI went fully green (43/43,
+  including the previously-stuck `network-policy-enforcement-integration` job), `main` now carries
+  `FTF-0902` as `PROVISIONAL`/`L1-PROVEN`, awaiting Control-plane L2 review, same as every other
+  merged fix-and-resubmit in this repo.** Independently verified before merging: Control plane's own
+  posted comment on PR #402 (2026-10-01T11:08:10Z, confirmed real via direct `get_comments`) gave a
+  corrected root-cause DoD and explicitly reset the 3-attempt budget; PR #430 executed it on a fresh
+  branch and its CI/diff/tracking-file claims all checked out independently (not taken on faith).
+  Merged via `merge_pull_request` with `expectedHeadSha` pinned to the PR's real head (`81acaf1`),
+  merge commit `498bdb1`. Rebased this shift's branch onto the new `main` and recomputed the
+  frontier fresh from `docs/spec-matrix.yaml`: `FTF-0902` is no longer `NONE` (now 13 `PROVISIONAL`,
+  up from 12); the only remaining dependency-ready `NONE` items are the same two every recent shift
+  has found — FTF-0214 (declared blocked, PR #295) and FTF-1703 (deferred, `FTF-0510` still
+  `PROVISIONAL` not `CERTIFIED`) — neither changed. No genuinely unclaimed relay-actionable task
+  exists this shift. Open PRs re-swept post-merge: #421 (Control-plane L2-certify, not relay's),
+  #402 (left open by PR #430's own author as the historical record of the three falsified round-1
+  attempts — correct, untouched), #401 (governance, owner-merge-only), #295 (FTF-0214, unchanged) —
+  none need further relay action. No open owner ask beyond the pre-existing low-urgency
+  branch-protection item below. Full detail: `PROGRESS.md`'s matching entry.
+
 Updated: 2026-10-03T07:00:00Z (scheduled relay shift, branch `claude/wizardly-fermat-zlrayr`) —
   **FTF-0902 unstuck: found a 2-day-stale `BLOCKER.md` entry, executed Control plane's own posted DoD.**
   Five consecutive prior "tracking-only, frontier saturated" shifts all correctly read `BLOCKER.md`'s

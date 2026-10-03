@@ -1,4 +1,77 @@
 # PROGRESS — Sovra
+## 2026-10-03T07:15:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-3yo67x` — merged PR #430 (FTF-0902 corrected fix, real green CI), frontier otherwise unchanged
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch confirmed identical to `origin/main`'s then-tip (`cb6effc`, PR #429's merge) via
+`git rev-list --left-right --count origin/main...origin/claude/wizardly-fermat-3yo67x` → `0 0` —
+nothing to rebase before starting.
+
+STEP 0.1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` re-read fresh
+(these files exceed the Read tool's size cap — read via targeted `tail`/`grep`/offset reads of the
+top/most-recent entries and the live "Owner actions — current" and "Active"/"BLOCKER" sections
+specifically, not assumed from prior context). Independently re-derived the frontier straight from
+`docs/spec-matrix.yaml` (parsed `deps=` out of each task's own `notes` field, not copied from prior
+shifts' prose): of 189 `NONE` tasks, exactly 3 had every dependency `CERTIFIED` —
+**FTF-0214** (declared blocked, PR #295, no live backend surface), **FTF-0902** (per `BLOCKER.md`,
+stuck after three falsified fix attempts, "not retried a 4th time"), **FTF-1703** (deferred — its
+FTF-R006 path needs FTF-0510 `CERTIFIED`, still only `PROVISIONAL`). Same frontier as every one of
+the five immediately-prior shifts.
+
+**Found new since the last log entry (04:51:37Z):** `list_pull_requests` showed a fifth open PR,
+**#430** ("[relay] FTF-0902: corrected node-image fix, executing Control plane's own posted DoD"),
+opened 07:02:35Z by a shift that ran between the last logged shift and this one. Read its body and
+diff directly rather than trusting the PR description at face value: it claims Control plane itself
+posted a corrected root-cause diagnosis and a fresh DoD as a comment on PR #402
+(2026-10-01T11:08:10Z, 38 minutes after `BLOCKER.md`'s own "stuck" entry was written), explicitly
+stating "this is a new route, so the 3-attempt count starts fresh" — independently confirmed by
+reading PR #402's own comment thread directly via `pull_request_read`/`get_comments` (the comment is
+real, verbatim, and matches). Checked PR #430's own CI directly (`get_check_runs`, 43/43 completed,
+all `success`, including the job that had failed on every prior attempt —
+`network-policy-enforcement-integration` — and the `gate` job itself) and its `mergeable_state`
+(`clean`). Diffed PR #430's branch against the pre-merge `main` tip to confirm its own tracking-file
+claims were real, not asserted: `BLOCKER.md`'s FTF-0902 entry retitled `LIVE` → `RESOLVED` with a
+dated resolution note, `docs/certifications/queue.md` carries a new 2026-10-03 entry, `QUEUE.md`/
+`PROGRESS.md` carry matching dated entries, `docs/spec-matrix.yaml`'s FTF-0902 entry moved
+`NONE`/`UNPROVEN` → `PROVISIONAL`/`L1-PROVEN` with the full corrected-fix narrative. This is real,
+independently-verified work by a different session, not a self-report taken on faith.
+
+Per CLAUDE.md's own "Do without asking: ... merge on green + L1 doc (PROVISIONAL)" and this repo's
+own established practice (many prior shifts have picked up another session's open, green PR and
+merged it — e.g. PR #403/#404/#407/#408/#410/#412's own history in `QUEUE.md`), merged **PR #430**
+(merge commit `498bdb1`, `expectedHeadSha` checked against the PR's real head `81acaf1` to avoid a
+stale merge). Not self-certified (Law 4) — the merge makes FTF-0902 `PROVISIONAL` on `main`, same as
+every other merged fix-and-resubmit in this repo; independent Control-plane L2 review and
+certification is still required and not performed here.
+
+Rebased this shift's own designated branch onto the new `main` tip (`498bdb1`) via `git reset
+--hard origin/main` (safe: the branch carried zero unique commits beforehand, confirmed via
+`git log --oneline origin/main..origin/claude/wizardly-fermat-3yo67x` returning empty before the
+reset). Recomputed the frontier against the post-merge `docs/spec-matrix.yaml`: `FTF-0902` is now
+`PROVISIONAL` (13 provisional total, up from 12) and no longer appears in the `NONE` frontier.
+`FTF-0214` and `FTF-1703` are unchanged (still correctly blocked/deferred with live, accurate
+reasons) — confirmed `FTF-0510` is still `PROVISIONAL` (not yet `CERTIFIED`), so `FTF-1703` stays
+correctly deferred. **No further genuinely unclaimed, relay-actionable task exists this shift.**
+
+Re-swept open PRs after the merge: **#421** (Control plane's own L2-certify PR — not relay's to
+touch), **#402** (PR #430's own author left this open intentionally as the historical record of the
+three falsified round-1 attempts — correct per that PR's own stated reasoning, left untouched),
+**#401** (governance, owner-merge-only), **#295** (FTF-0214, declared blocked, unchanged). No PR
+needs further relay action this shift.
+
+`QUEUE.md`'s "## Owner actions — current" re-read in full: unchanged — only the pre-existing,
+low-urgency branch-protection ask (2026-10-01, ask-first repo-settings change, nothing blocked on
+it). No new owner ask raised this shift.
+
+STEP 4 stop condition: **(a)** — the only three dependency-ready items are each already correctly
+blocked/deferred/provisional with a live, independently-reconfirmed reason; the one genuinely new
+development this shift (PR #430) has been merged as PROVISIONAL and now awaits Control-plane L2
+certification like every other merged fix-and-resubmit in this repo. Stopping here. No open owner
+ask beyond the pre-existing low-urgency branch-protection item. `status.py`: `99/300` certified
+unchanged by this shift's own action (a merge is not a certification, Law 2) — Control plane's own
+next L2 pass is what can move that count, for FTF-0902 among others.
+
+---
+
 ## 2026-10-03T07:00:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-zlrayr` — FTF-0902 unstuck (stale BLOCKER.md entry found, Control plane's own posted DoD executed)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
