@@ -1,4 +1,19 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T02:50:31Z (scheduled relay shift, branch `claude/wizardly-fermat-z4ek8n`) —
+  **tracking-only: fresh frontier recompute (independently re-derived, not copied) confirms no
+  genuinely unclaimed task exists, same frontier as the immediately-prior shift two hours earlier.**
+  Parsed `docs/spec-matrix.yaml` directly: of 189 `ABSENT`/`NONE` tasks, exactly 3 have every
+  dependency `CERTIFIED` — FTF-0214 (declared blocked, PR #295), FTF-0902 (stuck, `BLOCKER.md`, not
+  retried per STEP 4(c)), FTF-1703 (deferred — FTF-0510 still PROVISIONAL, FTF-0515/0516/FTF-R006
+  still ABSENT). A fresh `list_pull_requests` found the same four open PRs as every recent prior
+  shift (#421 Control-plane L2-certify, #402 FTF-0902, #401 governance, #295 FTF-0214) — none new.
+  `status.py` unchanged `99/300` certified / 24 product-true. Also resolved a false alarm: a local
+  `git fetch origin main` reported a stale old tip due to this sandbox's shallow clone; the GitHub
+  API confirms `origin/main`'s real HEAD matches local `HEAD` exactly (`9149412`, PR #427) — no
+  actual history loss or force-push, just a shallow-fetch artifact. No open owner ask beyond the
+  pre-existing low-urgency branch-protection item below. Full detail: `PROGRESS.md`'s matching
+  entry.
+
 Updated: 2026-10-03T00:52:22Z (scheduled relay shift, branch `claude/wizardly-fermat-mwgk2j`) —
   **tracking-only: fresh frontier recompute confirms no genuinely unclaimed task exists.** Parsed
   `docs/spec-matrix.yaml` directly (not trusted from prior prose): of 189 `ABSENT`/`NONE` tasks,

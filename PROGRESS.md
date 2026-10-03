@@ -1,4 +1,77 @@
 # PROGRESS — Sovra
+## 2026-10-03T02:50:31Z — Scheduled relay shift, branch `claude/wizardly-fermat-z4ek8n` — tracking-only, no genuinely unclaimed task exists (STEP 4a)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+`BLOCKER.md` read in full: the same two live entries every recent prior shift has read —
+**FTF-1206** (persistence-half scope question, no task in the 300-task index owns the migration,
+a Control-plane scope decision, not improvised) and **FTF-0902** (three real fix attempts already
+falsified by real CI, not retried a 4th time per STEP 4(c)). Neither retried this shift.
+Designated branch (`claude/wizardly-fermat-z4ek8n`) confirmed already at `origin/main`'s real tip:
+a local `git fetch origin main` initially reported a far-older tip (`bb2ea6c`, PR #335) because
+this sandbox's clone is shallow — cross-checked directly against the GitHub API
+(`list_commits`/`list_branches`) rather than trusted, which confirmed `origin/main`'s real HEAD is
+`9149412` (PR #427's merge), identical to local `HEAD`. No actual divergence or history loss —
+a shallow-clone artifact, not a repo-state problem; noting this so a future shift doesn't
+misdiagnose the same shallow-fetch symptom as a force-push/history-loss incident.
+
+STEP 0.2: no `cognee-cli` binary on this sandbox (`command not found`) — text-search/direct-file-read
+fallback active, same as every prior shift; disclosed.
+
+STEP 0.1/STEP 1: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` re-read fresh (not trusted
+from any prior summary; `docs/certifications/queue.md` is 841.6KB, read via targeted offsets, not
+in full). `scripts/status.py`: re-ran fresh — `99/300` certified, 24 product-true, unchanged from
+the immediately-prior shift. A fresh `list_pull_requests` (state=open) found exactly the same four
+open PRs every recent prior shift has recorded, no new ones: **#421** (Control plane's own
+L2-certify PR for the FTF-H007/FTF-04A06/FTF-0601/FTF-0500B/C/D/FTF-1807/FTF-0510 backlog — still
+open, not relay's to act on), **#402** (FTF-0902's own stuck investigation branch,
+BLOCKER.md-tracked, not touched), **#401** (governance, "Owner review and merge required, Control
+plane does not merge it," not relay's), **#295** (FTF-0214, declared blocked — no live backend
+surface for its stated acceptance).
+
+Recomputed the dependency-ready frontier from first principles rather than trusting any prior
+shift's own prose: wrote a one-off script parsing `docs/spec-matrix.yaml` directly (the file is a
+top-level dict keyed by task ID, each with `implementation_state`/`certification_state`/`notes`;
+`deps=` parsed out of each task's own `notes` field via regex) and computed, for every task with
+`implementation_state: ABSENT` and `certification_state: NONE` (189 such tasks), whether every one
+of its own declared dependencies is itself `certification_state: CERTIFIED`. Exactly **three**
+tasks satisfy this: **FTF-0214**, **FTF-0902**, **FTF-1703** — identical to the frontier every
+recent prior shift has already recomputed, none new. All three are already accounted for and
+genuinely not relay's to claim:
+
+- **FTF-0214** — declared blocked (PR #295): its frozen `02-interface.yaml` OpenAPI contract
+  explicitly excludes the catalog/probe route its acceptance clause needs, and no task in the
+  300-task index owns that route. Re-confirmed unchanged this shift (`certification_state: NONE`
+  still) — not re-litigated further.
+- **FTF-0902** — stuck per `BLOCKER.md`'s live entry: three distinct, real-evidence-backed
+  root-cause theories each implemented for real on PR #402 and each falsified by a real CI run.
+  Per STEP 4(c), no fourth attempt made this shift.
+- **FTF-1703** — deferred: directly re-checked its transitive dependency chain in
+  `docs/spec-matrix.yaml` (`FTF-0510 → FTF-0515 → FTF-0516 → FTF-R006 → FTF-1703`). FTF-0510 is
+  still `implementation_state: IMPLEMENTED` / `certification_state: PROVISIONAL` (merged via PR
+  #411, awaiting the Control-plane review PR #421 above); FTF-0515/FTF-0516/FTF-R006 are all still
+  `ABSENT`/`NONE`. Not dependency-ready. Not claimed.
+
+No other `PROVISIONAL`/merged-but-uncertified item (FTF-0307, FTF-1002, FTF-04A18, and the eight
+items in PR #421's own backlog) has any relay-side action left — each is already submitted and
+awaiting independent Control-plane L2 review and the L4 gate (Law 4: producer never certifies own
+work). Certifying or merging PR #421 is a Control-plane action, not a relay one, and this session
+did not touch it.
+
+**Conclusion: no genuinely unclaimed, undeclined, dependency-ready task exists this shift** — the
+same saturated-frontier conclusion recorded by this file's own prior "tracking-only" entries,
+independently re-derived rather than copied. No code changed. This is a documentation-only update
+recording the fresh recompute, per STEP 3's "before any compaction" requirement.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; `docs/certifications/
+queue.md` unchanged (no new evidence this shift — nothing certified or submitted).
+`docs/spec-matrix.yaml` unchanged. STEP 4 stop condition (a): every in-flight `L1-PROVEN`/
+`PROVISIONAL` submission has no relay action left, and the dependency-ready frontier is fully
+saturated by existing declared blockers (FTF-0214, FTF-0902) or a not-yet-ready transitive
+dependency (FTF-1703) — awaiting Control-plane certification (PR #421) and the L4 gate. Stopping
+here. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged — only the pre-existing,
+low-urgency branch-protection ask). `BLOCKER.md`'s two live entries (FTF-0902, FTF-1206) untouched,
+neither retried.
+
 ## 2026-10-03T00:52:22Z — Scheduled relay shift, branch `claude/wizardly-fermat-mwgk2j` — tracking-only, no genuinely unclaimed task exists (STEP 4a)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
