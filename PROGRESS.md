@@ -1,4 +1,65 @@
 # PROGRESS — Sovra
+## 2026-10-03T20:51:44Z — Scheduled relay shift, branch `claude/wizardly-fermat-23ux84` — merged PR #437 (prior shift's own tracking-only PR, green), independently re-confirmed frontier saturated, no new relay-actionable task found
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-23ux84` started already even with `origin/main`'s real tip
+(`924e0a8`, PR #436's merge) — confirmed via `git fetch origin main` + `git rev-list --left-right
+--count origin/main...HEAD` (`0 0`) before relying on it. STEP 0.1: `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md`/`BLOCKER.md` all re-read fresh this shift. STEP 0.2: no `cognee-cli`
+binary in this sandbox (`command not found`) — text-search fallback declared, same as every prior
+shift.
+
+A `list_pull_requests`-equivalent sweep (via a dedicated recon subagent, cross-checked directly
+against the GitHub API for the PR this shift acted on) found 6 open PRs: **#437** ("[relay]
+tracking-only: merged PR #436, no new relay-actionable task", branch `claude/wizardly-fermat-sxyusk`)
+— new since the immediately-prior (18:54:42Z) shift's own entry, a doc-only (`PROGRESS.md`/
+`QUEUE.md` only, +84/-1) tracking PR. Independently verified before merging, not trusted: pulled the
+real diff (`get_diff` — confirmed only those two files changed, no production code, no
+`spec-matrix.yaml`/`certifications/queue.md` touched), `mergeable_state: clean`, base `main` at the
+then-current real tip (`924e0a8`), and all 43/43 check runs individually enumerated via
+`get_check_runs` (3 pages) — every one `status: completed`/`conclusion: success`, including a job
+literally named `gate`. **Merged it** (`merge_pull_request`, `expectedHeadSha` pinned to the PR's
+real head `cfa83fe4`, merge commit `0b05c4a`) rather than leave a fifth tracking PR open, matching
+the standing precedent this exact chain has followed every time (PRs #430/#431/#432/#433/#435/#436
+each merged the same way). The other 5 open PRs are unchanged from every recent shift's own
+findings: **#434** and **#421** (Control plane's own L2-certify PRs, doc/status-only, not relay's to
+merge), **#402** (FTF-0902's historical record of its three falsified round-1 attempts, left open by
+its own author, untouched), **#401** (governance, owner-merge-only), **#295** (FTF-0214, declared
+blocked).
+
+STEP 1: after merging #437, fast-forwarded this shift's own branch onto the new `main`
+(`git fetch origin main` + `git merge --ff-only origin/main` — working tree was already clean,
+confirmed via `git status` first). **Independent frontier recompute**, not copied from any prior
+shift's prose: wrote a fresh Python script parsing `docs/spec-matrix.yaml` directly (via its real
+top-level task-id→task dict shape, not assumed), extracting each task's own `notes` field for
+`deps=...` mentions and checking which non-`CERTIFIED` tasks have every dependency
+`certification_state: CERTIFIED`. Of 300 tasks, 201 are not `CERTIFIED`; the heuristic flagged
+FTF-0214/FTF-0500B/FTF-0510/FTF-0601/FTF-0902/FTF-1703/FTF-1807 as dependency-satisfied, but five of
+those seven are already `PROVISIONAL` (submitted, awaiting Control-plane L2 review — not relay's to
+redo); the only two genuinely `NONE` (unclaimed) are **FTF-0214** and **FTF-1703** — the identical
+frontier every shift since 2026-10-02T23:10Z has found. Both re-verified directly against real code,
+not re-read from history: `grep`'d `apps/api/app/litellm/connection_routes.py` directly — its own
+module docstring still disclaims a composed `/models/{id}/probe` catalog route as a Law-11
+placeholder (only `/validate`, `/models`, `/registration-capability` exist); `apps/api/app/projects/`
+(`project_crud.py`/`project_schema.py`/`project_routes.py`) still has no `LiteLLMConnection` mention
+at all beyond a doc comment — no `Project`↔`LiteLLMConnection` binding exists, confirming FTF-0214
+stays correctly blocked. `docs/spec-matrix.yaml` directly: `FTF-R006`/`FTF-0516` both still
+`certification_state: NONE`/`implementation_state: ABSENT`, `FTF-0510` still `PROVISIONAL` (not
+`CERTIFIED`) — FTF-1703's acceptance-review dependency chain remains unsatisfied, correctly deferred.
+
+`python3 scripts/status.py`: unchanged `99/300` certified / 24 product-true (Law 2 — a docs-only
+merge is not a certification; neither open certify PR is merged yet). `BLOCKER.md` read in full: its
+one live entry (FTF-1206 — a Control-plane scope decision on where the `OrganizationGatewayPolicy`
+persistence migration should live) is unchanged; `docs/certifications/queue.md`'s tail has no new
+Control-plane activity on it since the entry was written. Left untouched, not retried. No open owner
+ask beyond the pre-existing low-urgency branch-protection item in `QUEUE.md`.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction. STEP 4 stop condition (a):
+frontier fully saturated (both dependency-ready items correctly declined, same as every shift since
+2026-10-02T23:10Z), no new relay-actionable PR exists beyond the one just merged, and the one real
+action available this shift (merging #437) is done. Stopping here. `BLOCKER.md`'s live FTF-1206
+entry untouched, not retried (a Control-plane scope decision, not a further guess).
+
 ## 2026-10-03T18:54:42Z — Scheduled relay shift, branch `claude/wizardly-fermat-sxyusk` — merged PR #436 (prior shift's own tracking-only PR, green), re-verified FTF-0902's BLOCKER.md resolution isn't stale, no new relay-actionable task found
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.

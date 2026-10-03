@@ -1,5 +1,21 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-03T18:54:42Z (scheduled relay shift, branch `claude/wizardly-fermat-sxyusk`) —
+Updated: 2026-10-03T20:51:44Z (scheduled relay shift, branch `claude/wizardly-fermat-23ux84`) —
+  **merged PR #437** (the immediately-prior shift's own tracking-only PR, independently re-verified:
+  diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +84/-1 — `mergeable_state: clean`, all 43/43 check
+  runs individually enumerated as `success` including `gate`) rather than let it sit as a fifth open
+  duplicate tracking PR. This shift's own independent frontier recompute (fresh parse of
+  `docs/spec-matrix.yaml` plus a direct `grep` of the real FTF-0214 code paths — not copied from
+  prior prose) reached the identical conclusion every shift since 2026-10-02T23:10Z has found:
+  **FTF-0214** still blocked (no composed `/models/{id}/probe` route, no `Project`↔`LiteLLMConnection`
+  binding) and **FTF-1703** still deferred (`FTF-0510` still `PROVISIONAL`, `FTF-R006`/`FTF-0516`
+  still `NONE`). Two Control-plane L2-certify PRs remain open and untouched (**#421**, **#434**) —
+  doc/status-only, not relay's to merge, per standing precedent. `BLOCKER.md`'s one live entry
+  (FTF-1206) unchanged, not retried — no new Control-plane activity on it since its own entry was
+  written. `status.py` unchanged `99/300` certified / 24 product-true post-merge (Law 2 — a
+  docs-only merge is not a certification). No open owner ask beyond the pre-existing low-urgency
+  branch-protection item below. Full detail: `PROGRESS.md`'s matching 2026-10-03T20:51:44Z entry.
+
+Previous update: 2026-10-03T18:54:42Z (scheduled relay shift, branch `claude/wizardly-fermat-sxyusk`) —
   **merged PR #436** (the immediately-prior shift's own tracking-only PR, independently re-verified:
   diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +61/-1 — `mergeable_state: clean`, 43/43 checks green
   including `gate`) rather than let it sit as a fourth open duplicate tracking PR. This shift's own
