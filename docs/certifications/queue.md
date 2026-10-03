@@ -22047,3 +22047,32 @@ observes)
   untouched by this shift (a different session's branch) and stays open as the historical record of the
   three round-1 falsified attempts; this shift's own PR is a fresh branch off current `main` carrying
   only the corrected fix.
+
+## 2026-10-03 — Control-plane L2 review (partial): FTF-0307, FTF-1002, FTF-04A18, FTF-0902 — NONE CERTIFIED
+Reviewer: control-plane session `session_01SuyNfT9S8xAKXCi2K6E8Jg` (triggered by PR #435 open, a tracking-only
+PR). Independence: that ID appears in no commit trailer of PRs #422, #424/#425, #426, #430. PR bodies/comments
+were not re-read for named sessions this run. No ledger entry, no spec-matrix change (nothing certified).
+Done for each: PR files read; CI check runs on PR #430's head (run 37105061804, 43 jobs, all success) and the
+`gate` log confirm `test_ftf_0307`, `test_ftf_1002`, `test_ftf_04a18` steps actually ran and printed "all checks
+passed"; local reruns pass; `product_truth_check.py --fail-on-unwired` 26/26 (proving_symbol blank for 0307/1002/0902).
+
+- **FTF-0307: NOT CERTIFIED.** Own fault injections: (A) UNKNOWN fallback replaced by INFERENCE_ONLY → 3 failures (good).
+  (B) access match loosened to prefix → suite still green (injection may not discriminate; inconclusive).
+  (C) `license_approved = True` unconditionally → suite still green. The license-approval flag has no negative test.
+  DoD: add a case where a ready artifact has `license_accepted_at=None` and assert `license_approved is False`.
+- **FTF-1002: NOT CERTIFIED.** Four fault injections (adapter-base check off, fabricated `training` fact, artifact-id
+  mismatch check off, endpoint+artifact allowed) each redden the suite — the negative_acceptance is well pinned.
+  Gaps vs the contract: acceptance #2 requires "real relevant integration" evidence and none exists (pure function, no
+  caller); `training` and `data` are always unknown, so "binds base/tokenizer/training/data" is only partly met; the
+  packet's `files` list names `services/serving-controller/vllm/...` but the module is in `apps/api/app/artifacts/`.
+  DoD: state the divergence and the missing-integration disclosure (BLOCKED_EXTERNAL/DEPENDENCY on FTF-1001 data) in
+  the spec-matrix notes, or add a real caller + integration test.
+- **FTF-04A18: NOT CERTIFIED (not completed).** Router `build_discovered_agent_candidate_selection_router` is wired in
+  `main.py` and the unit/CI steps pass, but I ran no fault injection on it, and
+  `candidate_selection_ui_no_auto_selection.tsx` is imported by nothing except its own spec (Laws 6/7: UI
+  reachability from `/` unproven). Left for the next certifier run.
+- **FTF-0902: NOT CERTIFIED (not completed).** CI job `network-policy-enforcement-integration` passed on #430's head
+  (log: calico enforcing cluster, metadata sub-scenario blocked). Not reproducible here (no Docker), so no own fault
+  injection; the log shows a Calico cluster, whereas the relay's note describes a kindnet/node-image design —
+  reconcile the note with what the job actually runs before certification.
+Not reviewed this run: FTF-0510, FTF-R002 and the 2026-10-01 fix-and-resubmits (H007, 04A06, 0601, 1206, 0500B/C/D, 1807).
