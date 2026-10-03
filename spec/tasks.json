@@ -1688,8 +1688,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "74ec07c60f4ed2a2af65df2467191d5bb8fa0ec7"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -3189,8 +3191,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "3088b90287dd95b5568df0b95477ef30db231da9"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -7790,8 +7794,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "498bdb1eae0e5b853b14c4bff948cdc3175f16b7"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
@@ -8250,8 +8256,10 @@
     },
     {
       "required": true,
-      "status": "NOT_STARTED",
-      "evidence": [],
+      "status": "CERTIFIED",
+      "evidence": [
+        "1177f56a60a593fbe80a7cedddde31b69abb4e5a"
+      ],
       "ready": false,
       "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
       "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",

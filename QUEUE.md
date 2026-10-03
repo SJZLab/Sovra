@@ -1,4 +1,13 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-03T13:30:00Z (Control-plane CERTIFY run, session `session_01WW6cZt5ZJTh7sAC3cQnigT`) —
+  **L2-CERTIFIED FTF-0307 (#422), FTF-1002 (#424), FTF-04A18 (#426), FTF-0902 (#430) — moved to Done,
+  Certified 99 → 103/300 on this branch (open PR #421 separately certifies 8 other items; counts
+  merge-additive: 111/300 once both land).** Each re-checked independently: no session overlap, real CI on
+  the PR head (incl. `network-policy-enforcement-integration` and `candidate-selection-integration`),
+  own fault injections reddened then reverted, contract clauses re-read. Per-item evidence and
+  disclosed limits: `docs/certifications/ledger.md`. FTF-R002 was already CERTIFIED (no action).
+  Remaining PROVISIONAL: FTF-1206 only (live `BLOCKER.md` scope decision) plus the 8 items in #421.
+
 Updated: 2026-10-03T12:49:44Z (scheduled relay shift, branch `claude/wizardly-fermat-cnonxp`) —
   **tracking-only: fresh frontier recompute confirms no unclaimed task — same frontier (FTF-0214
   blocked, FTF-1703 deferred) every shift since 2026-10-02T23:10Z has found; four open PRs all

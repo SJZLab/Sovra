@@ -9750,3 +9750,65 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-0307 — Training capability classifier
+- Criterion ID: FTF-0307
+- PR: https://github.com/SJZLab/Sovra/pull/422 (already merged)
+- Merge commit: 74ec07c60f4ed2a2af65df2467191d5bb8fa0ec7 (PR head `966460427ccacd37b8e6b2a1edc118ac97be6d89`)
+- Validated-by: control-plane session https://claude.ai/code/session_01WW6cZt5ZJTh7sAC3cQnigT. Independent: PR #422's commits carry `session_011etrzJ3hJRPuBg4sUcsVvv`; this session appears on no commit of it, and no other PR #422 session matches.
+- Date: 2026-10-03
+- CI: run 37051736618 on PR head `9664604`, success (the base-merge shows no code difference). `gate` job 110986527876: step "FTF-0307 negative-test proof" success. CI ran on the PR head, not the merge commit itself (same basis as earlier ledger entries).
+- Local: `tests/tasks/test_ftf_0307.py` all checks passed.
+- Own fault injections (Law 1), both reverted byte-identical:
+  - (A) A `PROBED` probe classified as `trainable_open_weight`: failed "no artifact + a real successful probe classifies inference_only" and the module's own fault-injection check.
+  - (B) The fall-through default `UNKNOWN` changed to `INFERENCE_ONLY`: failed the timeout / connection_refused / tool_name_mismatch / invalid_token "never classifies as inference_only" checks.
+- product_truth 26/26; proving_symbol legitimately blank (pure no-I/O library; same precedent as FTF-0306).
+- Contract re-pulled (`r1_handoff.py packet`). Acceptance met: access/capability/artifact_availability/role are computed from independent inputs, and probe time is carried as `evidence_probed_at`. Negative acceptance met: no name field is read, and unknown stays `UNKNOWN`. Limits for the record: `MANAGED_FINE_TUNABLE` is never returned, and the artifact-to-model binding is a caller input. Both are disclosed in the module docstring.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-1002 — Artifact lineage manifest
+- Criterion ID: FTF-1002
+- PR: https://github.com/SJZLab/Sovra/pull/424 (already merged)
+- Merge commit: 1177f56a60a593fbe80a7cedddde31b69abb4e5a (PR head `6300bf14c15d69726adf869de0badfadf1d8ea10`)
+- Validated-by: control-plane session https://claude.ai/code/session_01WW6cZt5ZJTh7sAC3cQnigT. Independent: PR #424's commits carry `session_019KdJK8ZpPZ3nJxiE51NRbD`; this session appears on no commit of it.
+- Date: 2026-10-03
+- CI: run 37063975409 on PR head `6300bf1`, success. `gate` job 111027095107: step "FTF-1002 negative-test proof" success. CI ran on the PR head, not the merge commit.
+- Local: `tests/tasks/test_ftf_1002.py` all checks passed.
+- Own fault injections (Law 1), all reverted byte-identical:
+  - (A) The adapter/base `base_model_revision` comparison disabled: failed "a real adapter/base revision mismatch is refused".
+  - (B) The `artifact.id != model_version.trainable_artifact_id` check disabled: failed "a caller cannot fabricate a parent other than the one actually linked".
+  - (C) `training` reported `known=True`: failed "training is unknown external ancestry, never fabricated".
+- product_truth 26/26; proving_symbol legitimately blank (pure no-I/O composer).
+- Contract re-pulled. Acceptance met: base/tokenizer/training/data/license/runtime/method are reported, and unknown ancestry is `known=False, value=None`. Negative acceptance met for a supplied `resolved_base_artifact`. Limit for the record, in the relay's own favor of disclosure: the mismatch check runs only when the caller supplies `resolved_base_artifact`, and `tokenizer` reuses the combined artifact digest, since no separate tokenizer digest column exists. The future load/qualification caller must pass the resolved base.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-04A18 — Candidate-selection UI — no auto-selection
+- Criterion ID: FTF-04A18
+- PR: https://github.com/SJZLab/Sovra/pull/426 (already merged, squash)
+- Merge commit: 3088b90287dd95b5568df0b95477ef30db231da9 (PR head `ab9f63e4915d238eb68ba11176f1bee153a0f373`)
+- Validated-by: control-plane session https://claude.ai/code/session_01WW6cZt5ZJTh7sAC3cQnigT. Independent: PR #426's commits and body carry `session_01HvQVJC7HCKhofagfsmtyz4`; this session appears on no commit of it.
+- Date: 2026-10-03
+- CI: run 37076334037 on PR head `ab9f63e`, success. `gate` job 111066972263: steps "TypeScript unit tests (FTF-0003)" and "FTF-04A18 negative-test proof" success. `candidate-selection-integration` job 111066972733 (real `services: postgres`), step "Prove the real candidate-selection + persisted-audit evidence against the live database" success. CI ran on the PR head, not the merge commit.
+- Local, against a real PostgreSQL 16 with a freshly created database: `tests/integration/test_ftf_04a18_candidate_selection.py` all checks passed; `tests/tasks/test_ftf_04a18.py` passed; vitest `apps/web/tests/ftf_04a18.spec.ts` 4/4.
+- Own fault injections (Law 1), all reverted byte-identical:
+  - (A) The superseded-snapshot check disabled: the integration test failed on the stale 409 and on "no AuditEvent left behind".
+  - (B) The `write_audit_event` call replaced with a stub: the integration test failed on "a real valid selection succeeds (201)" and on the response naming the real candidate.
+  - (C) The UI auto-selecting the first candidate after load: the vitest test "the higher-confidence candidate is rendered but not auto-selected; only an explicit click selects it" failed.
+- product_truth 26/26 with `proving_symbol` `build_discovered_agent_candidate_selection_router`; the router is mounted in `app/main.py`.
+- Contract re-pulled; both acceptance clauses and both negative_acceptance clauses met. Limit for the record (Law 6): the `.tsx` component is exercised only by its own spec and is not mounted on any page. `apps/web` has no page shell yet, and the sibling certified `target-application` UI components share this status. The backend route behind it is live and wired.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.
+
+## FTF-0902 — Network-policy templates
+- Criterion ID: FTF-0902
+- PR: https://github.com/SJZLab/Sovra/pull/430 (already merged)
+- Merge commit: 498bdb1eae0e5b853b14c4bff948cdc3175f16b7 (PR head `81acaf15784ecae1ac36fab507073be91920eb8c`)
+- Validated-by: control-plane session https://claude.ai/code/session_01WW6cZt5ZJTh7sAC3cQnigT. Independent: PR #430's commits carry `session_019Uj1Fm9fHKSz5bxEQRFpjv`; the carried-over PR #402 work carries `session_01KZxZHc4ojav3uVpzn37571`. This session appears on neither.
+- Date: 2026-10-03
+- CI: run 37105061804 on PR head `81acaf1`, 43 checks. Job `network-policy-enforcement-integration` 111151835291 success. Its log (read directly) shows the baseline cluster `{'allowed': True, 'denied': True, 'metadata': True}` (non-enforcing, so not a pass) and the Calico enforcing cluster `{'allowed': True, 'denied': False, 'metadata': False}`, ending "FTF-0902 network-policy enforcement integration: all checks passed". The log was read as a tail of the job, which included the baseline result line.
+- Local: `tests/tasks/test_ftf_0902.py` all checks passed; `validate_spec.py --strict` clean (after `git fetch --unshallow`).
+- Own fault injections (Law 1), both reverted byte-identical:
+  - (A) The IPv6 CIDR refusal disabled: failed "an endpoint naming an IPv6 cidr is refused".
+  - (B) The `deny_by_default_ingress=False` refusal disabled: failed "deny_by_default_ingress=False is refused".
+- product_truth 26/26; proving_symbol legitimately blank (pure rendering/validation library; FTF-04A25/04A26 precedent).
+- Contract re-pulled. Acceptance met: a real enforcing CNI (Calico) proves allowed/denied/metadata behaviour. Negative acceptance met: the non-enforcing baseline is detected and not counted as a pass, and default-open and IPv6 endpoints are refused at template validation. Limit for the record: IPv6 is proven at template level only, since the cluster scenario is IPv4.
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit; `sync_certified_status()` run.

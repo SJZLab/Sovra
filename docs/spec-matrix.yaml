@@ -1917,10 +1917,10 @@ FTF-0306:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 FTF-0307:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Training capability classifier
-  evidence_hash: ''
+  evidence_hash: 74ec07c60f4ed2a2af65df2467191d5bb8fa0ec7
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
@@ -1991,7 +1991,7 @@ FTF-0307:
 
     Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a
     real CI run on the opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
@@ -4928,10 +4928,10 @@ FTF-04A17:
   proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: "Candidate-selection UI \u2014 no auto-selection"
-  evidence_hash: ''
+  evidence_hash: 3088b90287dd95b5568df0b95477ef30db231da9
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
@@ -5041,7 +5041,7 @@ FTF-04A18:
     `discovered-agent-candidate-integration`) to `.github/workflows/ci.yml` in the same commit.
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
     opened PR are required before certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_discovered_agent_candidate_selection_router
   proving_test: tests/tasks/test_ftf_04a18.py
 FTF-04A19:
@@ -7641,10 +7641,10 @@ FTF-0901:
   proving_symbol: ''
   proving_test: ''
 FTF-0902:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Network-policy templates
-  evidence_hash: ''
+  evidence_hash: 498bdb1eae0e5b853b14c4bff948cdc3175f16b7
   implementation_state: IMPLEMENTED
   notes: 'kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0005, FTF-0402
     (both CERTIFIED, confirmed before relying on them). Interface owner for phase 09 (Zero-data-egress
@@ -7730,7 +7730,7 @@ FTF-0902:
     (including the corrected `network-policy-enforcement-integration` job) on the opened PR before
     certification. The node-image fix is not itself claimed as a pass here -- only that PR''s own real CI
     run on the pushed head is that evidence.'
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
@@ -7894,10 +7894,10 @@ FTF-1001:
   proving_symbol: build_model_version_router
   proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Artifact lineage manifest
-  evidence_hash: ''
+  evidence_hash: 1177f56a60a593fbe80a7cedddde31b69abb4e5a
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0306, FTF-1001 (both
@@ -7954,7 +7954,7 @@ FTF-1002:
     a certification). Added this task's own CI gate step to .github/workflows/ci.yml in the same
     commit. Not self-certified (Law 4): independent Control-plane L2 review and a real CI run on
     the opened PR are required before CERTIFIED.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1002.py
 FTF-1003:

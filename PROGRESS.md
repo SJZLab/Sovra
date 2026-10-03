@@ -1,4 +1,12 @@
 # PROGRESS — Sovra
+## 2026-10-03T13:30:00Z — Control-plane CERTIFY run (session `session_01WW6cZt5ZJTh7sAC3cQnigT`), PR #433 trigger
+
+PR #433 itself is relay tracking-only (nothing to certify). Pending-PROVISIONAL sweep found four unreviewed
+merged items: FTF-0307, FTF-1002, FTF-04A18, FTF-0902. All four certified (see `docs/certifications/ledger.md`);
+status.py 103/300. Open PR #421 (another certifier session) covers 8 further items; merge conflicts in
+ledger/QUEUE/PROGRESS between the two are expected and additive. FTF-1206 stays PROVISIONAL (BLOCKER.md).
+Postgres 16 started locally for the 04A18 integration fault injection; nothing left in the repo.
+
 ## 2026-10-03T12:49:44Z — Scheduled relay shift, branch `claude/wizardly-fermat-cnonxp` — tracking-only, frontier recompute confirms no unclaimed task
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.

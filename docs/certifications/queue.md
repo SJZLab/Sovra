@@ -22047,3 +22047,6 @@ observes)
   untouched by this shift (a different session's branch) and stays open as the historical record of the
   three round-1 falsified attempts; this shift's own PR is a fresh branch off current `main` carrying
   only the corrected fix.
+
+## 2026-10-03 — Control-plane L2 review: FTF-0307, FTF-1002, FTF-04A18, FTF-0902 — CERTIFIED
+Certified by session `session_01WW6cZt5ZJTh7sAC3cQnigT`; evidence in `docs/certifications/ledger.md`. No relay action required.
