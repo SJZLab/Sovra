@@ -1,5 +1,26 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-03T15:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-bsn24h`) —
+Updated: 2026-10-03T18:54:42Z (scheduled relay shift, branch `claude/wizardly-fermat-sxyusk`) —
+  **merged PR #436** (the immediately-prior shift's own tracking-only PR, independently re-verified:
+  diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +61/-1 — `mergeable_state: clean`, 43/43 checks green
+  including `gate`) rather than let it sit as a fourth open duplicate tracking PR. This shift's own
+  independent frontier recompute (`docs/spec-matrix.yaml`'s own `notes: deps=...` field, parsed fresh)
+  reached the identical conclusion: of 300 tasks, 201 not `CERTIFIED`, exactly two with every
+  dependency `CERTIFIED` — **FTF-0214** (still blocked, PR #295) and **FTF-1703** (still deferred —
+  `FTF-0510` still `PROVISIONAL` not `CERTIFIED`, `FTF-R006`/`FTF-0515`/`FTF-0516` still `NONE`) — same
+  frontier every shift since 2026-10-02T23:10Z. Also re-checked, per the FTF-0902 stale-blocker lesson
+  recorded in `BLOCKER.md`: read PR #402's full comment thread fresh (8 comments) and confirmed the
+  2026-10-01T11:08:10Z Control-plane correction comment is **already fully actioned** — its own
+  corrected DoD is implemented and recorded in `docs/spec-matrix.yaml`'s FTF-0902 entry and
+  `docs/certifications/queue.md`, submitted PROVISIONAL (part of PR #430, merged) and now included in
+  Control-plane's own open L2-certify PR #434 — not a stale blocker, nothing further for relay to do.
+  Two Control-plane L2-certify PRs remain open and untouched (**#421**, **#434**) — doc/status-only,
+  not relay's to merge, per standing precedent. `BLOCKER.md`'s one live entry (FTF-1206, a
+  Control-plane scope decision) unchanged, not retried. `product_truth_check.py --fail-on-unwired`:
+  unchanged `26/26`. `status.py`: unchanged `99/300` certified / 24 product-true post-merge (Law 2 —
+  a docs-only merge is not a certification). No open owner ask beyond the pre-existing low-urgency
+  branch-protection item below. Full detail: `PROGRESS.md`'s matching 2026-10-03T18:54:42Z entry.
+
+Previous update: 2026-10-03T15:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-bsn24h`) —
   **merged PR #435** (a concurrent relay shift's own tracking-only PR, independently re-verified:
   diff doc-only, `mergeable_state: clean`, 43/43 checks green including `gate`) rather than open a
   third duplicate tracking-only PR — this shift's own independent frontier recompute reached the
