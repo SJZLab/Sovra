@@ -1,4 +1,56 @@
 # PROGRESS — Sovra
+## 2026-10-03T12:49:44Z — Scheduled relay shift, branch `claude/wizardly-fermat-cnonxp` — tracking-only, frontier recompute confirms no unclaimed task
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-cnonxp` confirmed already even with `origin/main`'s real
+tip (`99c9da1`) via `git rev-list --left-right --count origin/main...HEAD` → `0 0` — nothing to
+rebase before starting. STEP 0.1: `PROGRESS.md`/`QUEUE.md`'s live "Owner actions — current"/
+"Active"/"Provisional" sections, `BLOCKER.md`, and `docs/certifications/queue.md`'s tail re-read
+fresh this shift (not assumed from prior turns). STEP 0.2: `cognee-cli` still not present in this
+sandbox (`command not found`) — text-search fallback (`Grep`/direct reads/a small Python parse of
+`docs/spec-matrix.yaml`) declared, same as every prior shift.
+
+**Independent frontier recompute.** Parsed `docs/spec-matrix.yaml` directly (deps extracted from
+each task's own `notes: deps=...` field): of 300 tasks, 201 are not `CERTIFIED`; of those, exactly
+two have every declared dependency `CERTIFIED` — **FTF-0214** and **FTF-1703** — the identical
+frontier as every shift since 2026-10-02T23:10Z. Re-verified both against current repository state
+rather than trusting prior summaries:
+
+- **FTF-0214**: re-grepped `apps/api/app/litellm/connection_routes.py` directly — still only
+  `/validate`, bare `GET .../models` discovery, and `/registration-capability` are live; the
+  module's own docstring still disclaims a composed catalog/probe route as a Law-11 placeholder
+  until some task's declared file scope claims it. Re-grepped `apps/api/app/projects/` for any
+  `LiteLLMConnection` reference — zero matches, confirming still no `Project`↔connection binding for
+  the acceptance clause's "explicit project selection." Correctly still declared blocked (PR #295,
+  unchanged).
+- **FTF-1703**: re-checked `docs/spec-matrix.yaml` directly — `FTF-0510` is `PROVISIONAL`/
+  `L1-PROVEN` (merged-but-not-certified, not `CERTIFIED`), and `FTF-0515`/`FTF-0516`/`FTF-R006` are
+  all still `NONE`/`ABSENT`/`UNPROVEN`. The FTF-R006 (Argilla review) dependency this task's real
+  acceptance clause needs is unchanged and unmet. Correctly still deferred.
+
+A fresh `list_pull_requests` call found the identical four open PRs as every shift since
+2026-10-02T23:10Z, none with new activity since last checked: **#421** (Control plane's own L2-
+certify PR — not relay's to touch, `updated_at` unchanged), **#402** (FTF-0902's historical record
+of its three falsified round-1 attempts, left open by its own author, `updated_at` unchanged since
+Control plane's 2026-10-01T11:08:10Z comment), **#401** (governance, owner-merge-only, unchanged),
+**#295** (FTF-0214, declared blocked, unchanged). None are new, none are relay-actionable this
+shift. `BLOCKER.md` read in full: its one live entry (FTF-1206 — a Control-plane scope decision on
+where the `OrganizationGatewayPolicy` persistence migration should live) is unchanged and left
+untouched — a scope question for Control plane, confirmed via `docs/spec-matrix.yaml` that
+`FTF-1206` is still `PROVISIONAL`/`L1-PROVEN`, not resolved. `docs/certifications/queue.md`'s tail
+re-read — no entry newer than the already-logged 2026-10-03 FTF-0902 corrected-fix submission.
+`uv run python scripts/status.py`: unchanged `99/300` certified / 24 product-true (Law 2 — a
+submission is not a certification).
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction; no `docs/spec-matrix.yaml`
+or `docs/certifications/queue.md` change (nothing certified or submitted this shift — tracking
+only). STEP 4 stop condition: **(a)** no genuinely unclaimed, undeclined task exists on the current
+dependency-ready frontier (same as the six immediately-prior shifts); the dependency-ready
+`PROVISIONAL` tasks await Control-plane L2 certification, not relay re-submission. No open owner
+ask beyond the pre-existing low-urgency branch-protection item in `QUEUE.md`. Stopping here.
+
+---
+
 ## 2026-10-03T10:52:37Z — Scheduled relay shift, branch `claude/wizardly-fermat-6g8b99` — tracking-only, frontier recompute confirms no unclaimed task
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
