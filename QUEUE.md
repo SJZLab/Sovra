@@ -1,9 +1,15 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-03T12:49:44Z (scheduled relay shift, branch `claude/wizardly-fermat-cnonxp`) —
-  **tracking-only: fresh frontier recompute confirms no unclaimed task — same frontier (FTF-0214
-  blocked, FTF-1703 deferred) every shift since 2026-10-02T23:10Z has found; four open PRs all
-  unchanged since last check; `BLOCKER.md`'s one live entry (FTF-1206) unchanged. Full detail:
-  `PROGRESS.md`'s matching 2026-10-03T12:49:44Z entry.**
+Updated: 2026-10-03T14:51:32Z (scheduled relay shift, branch `claude/wizardly-fermat-cvwjlo`) —
+  **tracking-only: fresh frontier recompute (independently re-derived from `docs/spec-matrix.yaml`'s
+  own `notes` dependency field, not copied from prior prose) confirms no unclaimed task — same
+  frontier (FTF-0214 blocked, FTF-1703 deferred) every shift since 2026-10-02T23:10Z has found. One
+  new development since the immediately-prior shift: Control plane opened **PR #434**
+  ("L2 certify FTF-0307, FTF-1002, FTF-04A18, FTF-0902") at 12:58:31Z, alongside the already-open
+  **PR #421** (L2 certify FTF-H007/FTF-04A06/FTF-0601/FTF-0500B/C/D/FTF-1807/FTF-0510). Both are
+  Control plane's own L2-certify PRs (doc/status-only, no production code) — not relay's to merge,
+  same standing precedent every prior shift has applied to #421; merging/reconciling them is
+  Control plane's own next step. `BLOCKER.md`'s one live entry (FTF-1206) unchanged, not retried.
+  Full detail: `PROGRESS.md`'s matching 2026-10-03T14:51:32Z entry.
 
 Previous update: 2026-10-03T10:52:37Z (scheduled relay shift, branch `claude/wizardly-fermat-6g8b99`) —
   **tracking-only: fresh frontier recompute (independently re-derived from `docs/spec-matrix.yaml` +

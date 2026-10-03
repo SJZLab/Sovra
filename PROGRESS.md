@@ -1,4 +1,52 @@
 # PROGRESS — Sovra
+## 2026-10-03T14:51:32Z — Scheduled relay shift, branch `claude/wizardly-fermat-cvwjlo` — tracking-only, frontier recompute confirms no unclaimed task; new Control-plane certify PR #434 noted
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+Designated branch `claude/wizardly-fermat-cvwjlo` confirmed already even with `origin/main`'s real
+tip (`44f806e`) — local `git fetch origin main` reported a stale `bb2ea6c` tip (this sandbox's own
+shallow-clone artifact, same disclosed precedent 2026-10-03T02:50:31Z and `BLOCKER.md` already
+recorded), so the real tip was confirmed directly via the GitHub API (`list_commits` on `main`) and
+matched local `HEAD` exactly (`44f806e`) — no actual divergence. STEP 0.1: `PROGRESS.md`/`QUEUE.md`'s
+live sections, `BLOCKER.md`, and `docs/certifications/queue.md`'s tail re-read fresh this shift (not
+assumed from prior turns). STEP 0.2: `cognee-cli` still not present in this sandbox — text-search
+fallback (direct reads/a small Python parse of `docs/spec-matrix.yaml`) declared, same as every
+prior shift.
+
+**Independent frontier recompute.** Parsed `docs/spec-matrix.yaml` directly with a small script
+(deps extracted from each task's own `notes: deps=...` field, every non-`CERTIFIED` task confirmed
+to carry a `deps=` field so none could be silently missed): of 300 tasks, 201 are not `CERTIFIED`;
+of those, exactly two have every declared dependency `CERTIFIED` — **FTF-0214** and **FTF-1703** —
+the identical frontier as every shift since 2026-10-02T23:10Z. Both re-verified unchanged (FTF-0214:
+still blocked, PR #295; FTF-1703: still deferred on FTF-R006/FTF-0515/FTF-0516 all `NONE`/`ABSENT`,
+`FTF-0510` still `PROVISIONAL` not `CERTIFIED`).
+
+A fresh `list_pull_requests` found five open PRs — one new since the immediately-prior
+(12:49:44Z) shift: **PR #434** ("Control plane: L2 certify FTF-0307, FTF-1002, FTF-04A18,
+FTF-0902"), opened 12:58:31Z, doc/status-only (7 files, +126/-28, no production code or test
+touched per its own diff stats), base `44f806e` (current `main` tip), `mergeable_state: clean`.
+Alongside the already-open **PR #421** (L2 certify FTF-H007/FTF-04A06/FTF-0601/FTF-0500B/C/D/
+FTF-1807/FTF-0510, open since 2026-10-02T17:09Z). Both are Control plane's own L2-certify PRs —
+not relay's to merge, the same standing precedent every prior shift has applied to #421
+specifically (merging/reconciling the two, including the additive conflicts PR #434's own body
+discloses against #421, is Control plane's own next step, not an execution-only relay action).
+The other two open PRs are unchanged: **#402** (FTF-0902's historical record of its three
+falsified round-1 attempts, left open by its own author), **#401** (governance, owner-merge-only).
+**#295** (FTF-0214) makes five. None are new relay-actionable work.
+
+`BLOCKER.md` read in full: its one live entry (FTF-1206 — a Control-plane scope decision on where
+the `OrganizationGatewayPolicy` persistence migration should live) is unchanged, left untouched, not
+retried. `python3 scripts/product_truth_check.py --fail-on-unwired`: `26/26` (unchanged from PR
+#434's own claimed figure — independently re-run, not taken on faith). `python3 scripts/status.py`:
+unchanged `99/300` certified / 24 product-true (Law 2 — neither open certify PR is merged yet, so no
+count change is expected). No open owner ask beyond the pre-existing low-urgency
+branch-protection item in `QUEUE.md`.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md` updated this shift, before compaction. STEP 4 stop condition:
+frontier fully saturated (both dependency-ready items correctly declined, same as every shift since
+2026-10-02T23:10Z) and no relay-actionable PR exists — nothing to claim or implement this shift.
+Stopping here. `BLOCKER.md`'s live FTF-1206 entry untouched, not retried (a Control-plane scope
+decision, not a further guess).
+
 ## 2026-10-03T12:49:44Z — Scheduled relay shift, branch `claude/wizardly-fermat-cnonxp` — tracking-only, frontier recompute confirms no unclaimed task
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
