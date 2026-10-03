@@ -1,5 +1,15 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-03T14:51:32Z (scheduled relay shift, branch `claude/wizardly-fermat-cvwjlo`) —
+Updated: 2026-10-03T15:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-bsn24h`) —
+  **merged PR #435** (a concurrent relay shift's own tracking-only PR, independently re-verified:
+  diff doc-only, `mergeable_state: clean`, 43/43 checks green including `gate`) rather than open a
+  third duplicate tracking-only PR — this shift's own independent frontier recompute reached the
+  identical conclusion (FTF-0214 blocked, FTF-1703 deferred, same as every shift since
+  2026-10-02T23:10Z). Two Control-plane L2-certify PRs remain open and untouched (**#421**, **#434**)
+  — doc/status-only, not relay's to merge, per standing precedent. `BLOCKER.md`'s one live entry
+  (FTF-1206) unchanged, not retried. `status.py` unchanged `99/300` post-merge (Law 2 — a docs-only
+  merge is not a certification). Full detail: `PROGRESS.md`'s matching 2026-10-03T15:05:00Z entry.
+
+Previous update: 2026-10-03T14:51:32Z (scheduled relay shift, branch `claude/wizardly-fermat-cvwjlo`) —
   **tracking-only: fresh frontier recompute (independently re-derived from `docs/spec-matrix.yaml`'s
   own `notes` dependency field, not copied from prior prose) confirms no unclaimed task — same
   frontier (FTF-0214 blocked, FTF-1703 deferred) every shift since 2026-10-02T23:10Z has found. One
