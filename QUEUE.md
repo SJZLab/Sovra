@@ -1,5 +1,11 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-03T10:52:37Z (scheduled relay shift, branch `claude/wizardly-fermat-6g8b99`) —
+Updated: 2026-10-03T12:49:44Z (scheduled relay shift, branch `claude/wizardly-fermat-cnonxp`) —
+  **tracking-only: fresh frontier recompute confirms no unclaimed task — same frontier (FTF-0214
+  blocked, FTF-1703 deferred) every shift since 2026-10-02T23:10Z has found; four open PRs all
+  unchanged since last check; `BLOCKER.md`'s one live entry (FTF-1206) unchanged. Full detail:
+  `PROGRESS.md`'s matching 2026-10-03T12:49:44Z entry.**
+
+Previous update: 2026-10-03T10:52:37Z (scheduled relay shift, branch `claude/wizardly-fermat-6g8b99`) —
   **tracking-only: fresh frontier recompute (independently re-derived from `docs/spec-matrix.yaml` +
   `docs/TASK_INDEX.md`'s own dependency column, plus a direct re-pull of both standing items' real
   task packets via `tools/r1_handoff.py`, not copied from prior prose) confirms no genuinely
