@@ -22208,3 +22208,60 @@ an edit of the line the producer wrote. Record the clause-to-test mapping in the
   - point `proving_test` at the catching tests;
   - surface network errors.
   Law 6: the same disclosed precedent as FTF-04A04 is accepted for now.
+
+## 2026-10-04T13:20Z — [relay] FTF-0500C: fix L2 round-3 findings (snapshot-header tri-state, SNAPSHOT_UNSTABLE, repeated-cursor refusal, non-unique stable-key detection, statement_timeout_ms=0 test)
+Fixes all five findings from the 2026-10-04T11:00Z Control-plane L2 review (five-subagent review of merged PR #404),
+per the new relay DoD rule ("each acceptance and negative_acceptance clause gets a test that a clause-level fault
+turns red, including at least one additive fault"). Full clause-to-test mapping recorded in
+`docs/spec-matrix.yaml`'s FTF-0500C entry (this round's own "L2 fix-and-resubmit (2026-10-04, round 3)" note) --
+summarized here:
+
+1. **Snapshot-version header absent on page one, present later** -- was silently adopted as the listing's version.
+   Fixed with a tri-state `snapshot_version_initialized` flag (distinct from "value is None"). Test:
+   `test_rest_connector_catches_a_header_that_appears_only_on_a_later_page` (new `/header-appears-late` fixture).
+2. **A declared snapshot header that never appears across a real multi-page listing** -- returned a quiet success
+   instead of Section 67.1's own required SNAPSHOT_UNSTABLE. New `SnapshotUnstableError`, raised post-loop when the
+   header was declared, never observed, and more than one page was fetched. Tests:
+   `test_rest_connector_blocks_a_multipage_listing_that_never_sends_the_declared_header` (new
+   `/multipage-no-snapshot-header` fixture) +
+   `test_disabling_the_snapshot_unstable_check_genuinely_fails_the_assertion` (additive fault, reverted
+   byte-identical).
+3. **A repeated cursor duplicated records into the preview**, bounded only by `max_page_fetches`. Fixed: raise
+   `SourceUnavailableError` the instant a page's own `next_cursor` equals the cursor just used. Tests:
+   `test_rest_connector_refuses_a_repeating_cursor_rather_than_duplicating_records` (new `/repeating-cursor`
+   fixture) + `test_disabling_the_repeated_cursor_check_genuinely_produces_duplicates` (additive fault --
+   disabling it reproduces 20 real duplicate copies of one record, not merely un-asserts a line; reverted
+   byte-identical).
+4. **A non-unique Postgres `stable_key_column` silently skips/drops rows** on a resumed capture, worst when a tied
+   group straddles the `LIMIT` cutoff. Fixed: fetch one extra lookahead row (`max_preview_records + 1`); raise new
+   `NonUniqueStableKeyError` on either an intra-page duplicate or a lookahead-row/last-row key match (the boundary
+   case). `truncated` is now derived from whether that extra row existed, fixing a latent over-report at an exact
+   table-end boundary too. Tests, against a new real `dup_key_records` fixture table:
+   `test_real_non_unique_stable_key_within_one_page_is_refused`,
+   `test_real_non_unique_stable_key_split_across_a_page_boundary_is_refused`, and
+   `test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through` (additive fault -- disabling it proves a
+   real two-call resumed capture permanently skips id=3; reverted byte-identical).
+5. **`statement_timeout_ms=0` was never tested** even though the real read-back check already covers it. No code
+   change needed; added `test_real_statement_timeout_ms_zero_is_refused` and
+   `test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero` (additive fault, reverted
+   byte-identical).
+
+Also applied (disclosed, not independently reported as defects): URL-encoded `_build_page_url`'s query
+keys/values (`urllib.parse.quote`) -- proven via a real HTTPS round trip with a deliberately unsafe cursor value
+(new `/url-unsafe-cursor` fixture); simplified the REST `truncated` exit logic, fixing an under-report when the cap
+landed exactly at a page's natural end (proven via `/pages` with `max_preview_records=10`, two even 5-record
+pages); paired the Postgres connector's `except OSError` with `except psycopg.Error` so any other real psycopg
+error (e.g. `OperationalError`) is wrapped as `SourceUnavailableError` instead of propagating raw.
+
+**Verification:** `uv run ruff check .`/`ruff format --check .` clean. `uv run mypy .` clean repo-wide (370 source
+files, zero errors). `python3 scripts/validate_spec.py --strict` clean (`git fetch --unshallow` first, this
+sandbox's own pre-existing shallow-clone artifact; also directly confirmed the new `docs/spec-matrix.yaml` prose
+parses with `yaml.safe_load` before trusting it, per this repo's own 2026-10-01 YAML-unterminated-quote lesson).
+`product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `99/301` certified (Law 2 --
+a resubmission is not a certification). Both suites re-run clean end to end against a real, freshly-started local
+PostgreSQL 16 (`pg_ctlcluster 16 main start`): `tests/tasks/test_ftf_0500c.py` and
+`tests/integration/test_ftf_0500c_database_api_trace_source.py`. Regression swept `test_ftf_0500.py`/
+`test_ftf_0500b.py`/`test_ftf_h006.py` -- zero interference.
+
+**State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified (Law 4) --
+independent Control-plane L2 review and a real CI run on the opened PR are required before certification.

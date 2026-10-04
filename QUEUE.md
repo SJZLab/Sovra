@@ -1,5 +1,56 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-04T08:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-artau8`) —
+Updated: 2026-10-04T13:50:00Z (scheduled relay shift, branch `claude/wizardly-fermat-goeiru`) —
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly, no mismatch. `BLOCKER.md` read in
+  full: no live entries (all resolved history). STEP 1: fast-forwarded this branch onto `origin/main`
+  (picked up PR #446 — Control plane's own 2026-10-04T11:00Z L2 review returning 9 merged submissions
+  NOT CERTIFIED — and PR #447 — Control plane reorganizing this file's own "## Active" returned-work
+  list — both merged before this shift started real work, per STEP 1 "fix every open or returned
+  `[relay]` item before new work"). Picked **FTF-0500C** from the "## Active" item 0 returned list
+  (disclosed order deviation recorded directly on that item: no item in the list had an open PR yet,
+  so the strict stated order would have started at FTF-H007+FTF-04A06; this shift completed FTF-0500C
+  instead — not skipped out of neglect).
+
+  STEP 2 (PEV): **P** — read the 2026-10-04T11:00Z review's five FTF-0500C findings directly against
+  `apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py` before any
+  change. **E** — fixed all five (REST snapshot-version tri-state tracking so a header absent on page
+  one then present later is caught; new `SnapshotUnstableError` when a declared header never appears
+  across a real multi-page listing per §67.1's own SNAPSHOT_UNSTABLE requirement; a repeated REST
+  cursor now raises instead of duplicating records; a new one-row-lookahead `NonUniqueStableKeyError`
+  for Postgres, catching both an intra-page duplicate key and a tied pair split exactly across a
+  `LIMIT` boundary; and the untested-but-already-correct `statement_timeout_ms=0` case now has a real
+  test) plus three disclosed "recommended" hardenings (URL-encoded cursor/query values via
+  `urllib.parse.quote`; a `truncated`-flag under-report fixed at an exact page-boundary cap; the
+  Postgres connector's `except OSError` paired with `except psycopg.Error` so any other real psycopg
+  error is wrapped, not left raw). Every new/changed check has a disclosed, byte-identical-reverted
+  real fault-injection test (Law 1) proving it is load-bearing — full clause-to-test mapping in
+  `docs/certifications/queue.md`'s "2026-10-04T13:20Z" entry and `docs/spec-matrix.yaml`'s FTF-0500C
+  entry (round-3 note). **V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a
+  real CI run on the opened PR are required before certification.
+
+  Verification this shift: real local PostgreSQL 16 started (`pg_ctlcluster 16 main start`, this
+  sandbox's own directly-installed cluster, same precedent every prior Postgres-backed FTF-0500C shift
+  used). `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean; `uv run mypy .`
+  clean repo-wide (370 source files, zero errors). `python3 scripts/validate_spec.py --strict` clean
+  (`git fetch --unshallow` first, this sandbox's own pre-existing shallow-clone artifact) — also
+  directly confirmed the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load` before
+  trusting it, per this repo's own 2026-10-01 unterminated-quote lesson. `product_truth_check.py
+  --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `99/301` certified (Law 2 — a
+  resubmission is not a certification). Both `tests/tasks/test_ftf_0500c.py` and
+  `tests/integration/test_ftf_0500c_database_api_trace_source.py` re-run clean end to end. Regression
+  swept `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` — zero interference (the printed
+  `TenantContextError` traceback inside `test_ftf_0500.py`'s own output is that suite's own disclosed
+  negative-test case, confirmed exit 0, "all checks passed").
+
+  STEP 3: this file, `docs/certifications/queue.md`, `docs/spec-matrix.yaml` and `PROGRESS.md` all
+  updated this shift, before compaction. STEP 4 stop condition (a): FTF-0500C now stays PROVISIONAL,
+  joining the same backlog awaiting Control-plane L2 certification and the L4 gate. Stopping here —
+  one item per shift, per this list's own rule; **FTF-H007 + FTF-04A06 and FTF-0601 remain the
+  top-priority items for the next shift**, disclosed above rather than silently reordered. No open
+  owner ask beyond the pre-existing low-urgency branch-protection item below. `BLOCKER.md` unchanged
+  (no live entries).
+
+Previous update: 2026-10-04T08:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-artau8`) —
   **merged PR #442** (the immediately-prior shift's own tracking-only PR, independently re-verified:
   diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +77/-7 — `mergeable_state: clean`, 43/43 checks
   green including `gate`) rather than leave a second tracking PR open. This shift's own independent
@@ -8813,6 +8864,14 @@ this same resolution (doc-only, redundant once this lands).
    test that a clause-level fault turns red, including an additive fault such as an early return or an
    extra allow rule. Skip any item that already has an open `[relay]` PR. "Frontier saturated" is NOT
    a valid shift outcome while this list is non-empty.
+   **Order deviation, disclosed (2026-10-04T13:50Z shift):** at shift start no item in this list had an
+   open `[relay]` PR (`list_pull_requests` showed only #444 tracking-only, #402 historical/superseded,
+   #295 FTF-0214-blocked), so the strict order would have started at FTF-H007+FTF-04A06. This shift
+   instead completed **FTF-0500C** (4th in the stated order) — see `docs/certifications/queue.md`'s
+   "2026-10-04T13:20Z" entry for the full fix (all five round-3 findings, plus the recommended hardening)
+   and this file's own top dated log entry. **FTF-H007 + FTF-04A06 and FTF-0601 remain untouched by this
+   shift and are the top-priority items for the next one** — not skipped out of neglect, disclosed here
+   per this repo's "reported, not silently worked around" norm rather than silently reordered.
 1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
    directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
    see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
@@ -8884,11 +8943,20 @@ this same resolution (doc-only, redundant once this lands).
    merely merged-PROVISIONAL; recompute again once Control plane certifies it.
 
 ## Returned 2026-10-04 (relay-owned, highest priority; one PR per item)
-FTF-0902, FTF-0500B, FTF-0500C, FTF-0500D, FTF-1807, FTF-0510, FTF-0307, FTF-1002 and FTF-04A18, plus the round-2
+FTF-0902, FTF-0500B, FTF-0500D, FTF-1807, FTF-0510, FTF-0307, FTF-1002 and FTF-04A18, plus the round-2
 items below (FTF-H007, FTF-04A06, FTF-0601). Exact DoDs are in docs/certifications/queue.md, entries
 "2026-10-04T11:00Z" and "2026-10-01T13:40Z". **New rule for every item:** each acceptance and negative_acceptance
 clause gets a test that a clause-level fault turns red, including at least one additive fault (an early return or an
 extra allow rule), not only an edit of your own line. List the clause-to-test mapping in the submission entry.
+
+**FTF-0500C: fixed this shift (2026-10-04T13:50Z), PR opened — all five round-3 findings** (snapshot-header
+tri-state tracking, SNAPSHOT_UNSTABLE on a header that never appears across a multi-page listing, repeated-cursor
+refusal, non-unique Postgres stable-key detection via a one-row lookahead, and the untested statement_timeout_ms=0
+case), plus recommended hardening (URL-encoded cursor/query values, a truncated-flag under-report fix, broader
+psycopg error wrapping). Full clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-04T13:20Z" entry
+and `docs/spec-matrix.yaml`'s FTF-0500C entry. Not self-certified (Law 4) — awaiting Control-plane L2 re-review and
+a real CI run. Removed from this list's own remaining-work set above; the merged PR is Control plane's own next
+step to re-review, same as every other item in this list.
 
 ## Returned round 2 (2026-10-01T13:40Z — relay-owned, highest priority)
 FTF-H007 + FTF-04A06 (filter drivers, config includes, unpinned hardening) and FTF-0601 (reviewer

@@ -120,6 +120,22 @@ def _provision() -> tuple[str, str]:
         conn.execute(f"GRANT SELECT ON source_schema.records TO {_RO_ROLE}")
         conn.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON source_schema.records TO {_RW_ROLE}")
         conn.execute(f"REVOKE INSERT, UPDATE, DELETE ON source_schema.records FROM {_RO_ROLE}")
+        # 2026-10-04 L2 finding: a real table whose declared stable_key_column
+        # (`group_key`) is genuinely not unique -- `id` stays the real
+        # PRIMARY KEY (so insert order/identity is unambiguous), but the
+        # column this module is asked to paginate on has duplicates,
+        # including one pair positioned exactly so a small `max_preview_
+        # records` cuts between two rows sharing a key (id=2/id=3, both
+        # group_key=20).
+        conn.execute(
+            "CREATE TABLE source_schema.dup_key_records ("
+            "id BIGINT PRIMARY KEY, group_key BIGINT NOT NULL, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.dup_key_records (id, group_key, name) VALUES "
+            "(1, 10, 'a'), (2, 20, 'b'), (3, 20, 'c'), (4, 30, 'd')"
+        )
+        conn.execute(f"GRANT SELECT ON source_schema.dup_key_records TO {_RO_ROLE}")
 
     host_and_port = db_dsn.split("@", 1)[1].split("/", 1)[0]
     ro_conninfo = f"postgresql://{_RO_ROLE}:{_RO_PASSWORD}@{host_and_port}/{_TEST_DB}"
@@ -389,6 +405,214 @@ def test_real_lost_watermark_after_a_genuine_concurrent_delete(
         )
 
 
+def _dup_key_config(ro_conninfo: str, **overrides: object) -> source_module.PostgresSourceConfig:
+    base: dict[str, object] = {
+        "conninfo": ro_conninfo,
+        "schema": "source_schema",
+        "table": "dup_key_records",
+        "columns": ("id", "group_key", "name"),
+        "stable_key_column": "group_key",
+    }
+    base.update(overrides)
+    return source_module.PostgresSourceConfig(**base)  # type: ignore[arg-type]
+
+
+def test_real_non_unique_stable_key_within_one_page_is_refused(ro_conninfo: str) -> None:
+    """2026-10-04 L2 finding: `dup_key_records` has group_key values
+    10, 20, 20, 30 (ids 1-4). With max_preview_records=3, the real fetched
+    page itself (ids 1-3, group_key 10/20/20) already contains a duplicate
+    key -- caught without needing the lookahead row at all."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _dup_key_config(ro_conninfo, max_preview_records=3)
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real duplicate stable-key value within one fetched page "
+            "is refused, not silently paginated on",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real duplicate stable-key value within one fetched page "
+            "is refused, not silently paginated on",
+            True,
+        )
+
+
+def test_real_non_unique_stable_key_split_across_a_page_boundary_is_refused(
+    ro_conninfo: str,
+) -> None:
+    """2026-10-04 L2 finding: with max_preview_records=2, the real returned
+    page (ids 1-2, group_key 10/20) has no duplicate *within* it -- the tied
+    group_key=20 pair (ids 2 and 3) is split exactly at the LIMIT cutoff.
+    Only the one-row lookahead catches this; a `>`-comparison resume from
+    group_key=20 would otherwise permanently skip id=3 (still group_key=20,
+    not `> 20`)."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _dup_key_config(ro_conninfo, max_preview_records=2)
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real duplicate stable-key value split exactly across a "
+            "page boundary is refused, not silently paginated past (which would skip the "
+            "remaining tied row on resume)",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real duplicate stable-key value split exactly across a "
+            "page boundary is refused, not silently paginated past (which would skip the "
+            "remaining tied row on resume)",
+            True,
+        )
+
+
+def test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through(
+    ro_conninfo: str,
+) -> None:
+    """Law 1, disclosed real fault injection: disables the new non-unique-
+    key detection directly in the module under test, proves a real resumed
+    capture genuinely skips id=3 without it (the actual silent-skip defect
+    this check exists to prevent), then reverts the file byte-identical."""
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "if len(key_values) != len(set(key_values)) or split_at_boundary:",
+        "if False:  # FTF-0500C fault injection -- disabled for this check",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the non-unique-key check line was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            first = source_module.validate_and_preview_postgres_source(
+                _dup_key_config(ro_conninfo, max_preview_records=2)
+            )
+            second = source_module.validate_and_preview_postgres_source(
+                _dup_key_config(ro_conninfo, max_preview_records=2),
+                resume_after_key=first.next_watermark,
+            )
+            seen_ids = {row.values[0] for row in first.rows} | {
+                row.values[0] for row in second.rows
+            }
+            # Without the check: first call returns group_key 10/20 (id=2,
+            # next_watermark=20); resuming with `WHERE group_key > 20`
+            # permanently skips id=3 (group_key=20, not > 20) -- id=3 is
+            # genuinely missing from every page this capture will ever
+            # return.
+            genuinely_skipped_id_3 = 3 not in seen_ids
+        except source_module.NonUniqueStableKeyError:
+            genuinely_skipped_id_3 = False
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real non-unique-key check genuinely reproduces the "
+            "defect (id=3 is silently skipped by a real resumed capture), proving the check "
+            "was load-bearing",
+            genuinely_skipped_id_3,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
+def test_real_statement_timeout_ms_zero_is_refused(ro_conninfo: str) -> None:
+    """2026-10-04 L2 finding: `statement_timeout_ms=0` means "no timeout" to
+    Postgres itself (`SHOW statement_timeout` reports back the literal
+    string `"0"`) -- the existing read-back check already compares against
+    that exact literal, but was never actually exercised by a real test."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _config(ro_conninfo, statement_timeout_ms=0)
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real statement_timeout_ms=0 (Postgres's own 'no timeout' "
+            "value) is refused, never silently run unbounded",
+            False,
+        )
+    except source_module.SourceUnavailableError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real statement_timeout_ms=0 (Postgres's own 'no timeout' "
+            "value) is refused, never silently run unbounded",
+            True,
+        )
+
+
+def test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(
+    ro_conninfo: str,
+) -> None:
+    """Law 1, disclosed real fault injection: disables the statement_timeout
+    read-back check directly in the module under test, proves the
+    assertion above genuinely fails (a real unbounded session is silently
+    accepted) without it, then reverts the file byte-identical."""
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        'if observed_timeout is None or observed_timeout[0] == "0":',
+        "if False:  # FTF-0500C fault injection -- disabled for this check",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the statement_timeout read-back check line was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            result = source_module.validate_and_preview_postgres_source(
+                _config(ro_conninfo, statement_timeout_ms=0)
+            )
+            genuinely_failed_without_the_check = True
+            _ = result
+        except source_module.SourceUnavailableError:
+            genuinely_failed_without_the_check = False
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real statement_timeout read-back check genuinely "
+            "breaks the assertion above (proves it was testing something real)",
+            genuinely_failed_without_the_check,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
 def main() -> int:
     if not _admin_available():
         print(
@@ -408,6 +632,11 @@ def main() -> int:
         test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql(ro_conninfo)
         test_real_read_only_transaction_mode_independently_blocks_a_write(rw_conninfo)
         test_real_lost_watermark_after_a_genuine_concurrent_delete(ro_conninfo, rw_conninfo)
+        test_real_non_unique_stable_key_within_one_page_is_refused(ro_conninfo)
+        test_real_non_unique_stable_key_split_across_a_page_boundary_is_refused(ro_conninfo)
+        test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through(ro_conninfo)
+        test_real_statement_timeout_ms_zero_is_refused(ro_conninfo)
+        test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(ro_conninfo)
     finally:
         _teardown()
 
