@@ -1,10 +1,12 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-04T03:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-vl5gwu`) —
-  **merged PR #440** (the immediately-prior shift's own tracking-only PR, independently re-verified:
-  diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +84/-1 — `mergeable_state: clean`, 43/43 checks
+Updated: 2026-10-04T05:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-91c50w`) —
+  **merged PR #441** (the immediately-prior shift's own tracking-only PR, independently re-verified:
+  diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +85/-1 — `mergeable_state: clean`, 43/43 checks
   green including `gate`) rather than leave a second tracking PR open. This shift's own independent
-  frontier recompute (`docs/spec-matrix.yaml`'s own `notes: deps=...` field, parsed fresh) reached
-  the identical conclusion: of 300 tasks, 201 not `CERTIFIED`, exactly two with every dependency
+  frontier recompute (`docs/spec-matrix.yaml`'s own `notes: deps=...` field, parsed fresh — a first
+  script pass used a wrong `deps=\[...\]` regex, caught by inspecting real `notes` strings before
+  trusting the output, fixed to the real `deps=FTF-xxxx, ...`/`deps=none` shape) reached the
+  identical conclusion: of 300 tasks, 201 not `CERTIFIED`, exactly two with every dependency
   `CERTIFIED` and still `certification_state: NONE` — **FTF-0214** (still blocked, PR #295, no
   composed `/models/{id}/probe` route or `Project`↔`LiteLLMConnection` binding) and **FTF-1703**
   (still deferred — `FTF-0510` still `PROVISIONAL` not `CERTIFIED`, `FTF-R006`/`FTF-0515`/`FTF-0516`
@@ -15,9 +17,9 @@ Updated: 2026-10-04T03:10:00Z (scheduled relay shift, branch `claude/wizardly-fe
   stale-blocker lesson) — unchanged, no new Control-plane activity. `status.py`: unchanged `99/300`
   certified / 24 product-true post-merge (Law 2 — a docs-only merge is not a certification). No open
   owner ask beyond the pre-existing low-urgency branch-protection item below. Full detail:
-  `PROGRESS.md`'s matching 2026-10-04T03:10:00Z entry.
+  `PROGRESS.md`'s matching 2026-10-04T05:40:00Z entry.
 
-Previous update: 2026-10-04T00:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-icudox`) —
+Previous update: 2026-10-04T03:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-vl5gwu`) —
   **merged PR #439** (the immediately-prior shift's own tracking-only PR, independently re-verified:
   diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +84/-1 — `mergeable_state: clean`, 43/43 checks
   green including `gate`) rather than leave a second tracking PR open. This shift's own independent
