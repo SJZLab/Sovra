@@ -1,0 +1,40 @@
+{
+  "_comment": "Release 1 task addendum (owner-approved 2026-10-04, ADR docs/adr/0002-task-addendum-ftf-1206a.md). spec/tasks.json stays the frozen 300-task source for tools/r1_handoff.py; this file is the contract for the one owner-approved addition. Denominator: 301.",
+  "required": true,
+  "status": "NOT_STARTED",
+  "evidence": [],
+  "ready": false,
+  "id": "FTF-1206A",
+  "title": "Organization gateway policy persistence (migration prerequisite for FTF-1206)",
+  "kind": "retained_feature",
+  "dependencies": ["FTF-0104", "FTF-1201", "FTF-H003"],
+  "amends": {"FTF-1206": {"dependencies_add": ["FTF-1206A"]}},
+  "sections": "3,6,38,65,66,71,77,81",
+  "requirements": ["CAP-02"],
+  "qualification_scenarios": ["Q21", "Q22"],
+  "security": "Apply tenant, purpose, privacy, least privilege, secret redaction and signed resource identity; no effect authorized solely by a UI control or model answer.",
+  "observability": "Structured content-free state/error/timing/cost events with task/job/request identity; no fabricated counters. Evidence contains actual commands, exit codes and expected test counts.",
+  "resource_gate": "Real Postgres 16 for integration evidence; unavailable required evidence is BLOCKED_EXTERNAL, never skipped.",
+  "database_changes": "Own forward Alembic migration for this resource (next number in the serialized chain): tenant/composite constraints, ENABLE + FORCE row-level security with a non-allow-all tenant_isolation policy, app role granted SELECT/INSERT/UPDATE only, and upgrade/downgrade tests per Sections 6/65/71.",
+  "api_contract": "Internal store consumed by FTF-1206's organization_policy_control; no new public route in this task.",
+  "files": [
+    "apps/api/alembic/versions/<next>_organization_gateway_policies.py",
+    "apps/api/app/litellm/organization_gateway_policy_store.py",
+    "tests/tasks/test_ftf_1206a.py",
+    "tests/integration/test_ftf_1206a_org_gateway_policy.py"
+  ],
+  "acceptance": [
+    "Persist per-organization gateway policy (allowed registration namespaces, allowed deployment namespaces, approvers) plus an append-only route-change record, tenant-scoped under RLS, with every mutation audited through FTF-0104's writer in the same transaction.",
+    "Independent review, exact merged commit, real relevant integration and negative-test evidence recorded."
+  ],
+  "negative_acceptance": [
+    "Cross-tenant read or write is denied (a foreign-tenant ID behaves identically to a missing one); a project-level principal cannot widen the organization policy; the app role cannot DELETE or UPDATE route-change history; no allow-all RLS policy (scripts/data_exposure_check.py passes)."
+  ],
+  "verification_commands": [
+    "python scripts/validate_spec.py --strict",
+    "python scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure",
+    "uv run python3 tests/tasks/test_ftf_1206a.py",
+    "uv run python3 tests/integration/test_ftf_1206a_org_gateway_policy.py"
+  ],
+  "contract_owner": "FTF-1201"
+}

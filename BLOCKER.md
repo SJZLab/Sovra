@@ -1,6 +1,16 @@
 # BLOCKER.md
 
-## LIVE 2026-10-02 — FTF-1206: no task in the fixed 300-task index owns the `OrganizationGatewayPolicy`
+_No open blockers. The entries below are resolved history._
+
+## RESOLVED 2026-10-04 by owner decision (option 1): FTF-1206 entry below
+The owner approved adding FTF-1206A (Organization gateway policy persistence) as a Release 1
+addendum. Its contract is `spec/addenda/FTF-1206A.json` (ADR `docs/adr/0002-task-addendum-ftf-1206a.md`),
+and the denominator is now 301. FTF-1206's persistence half now depends on FTF-1206A, which is first
+in QUEUE.md "## Backlog". FTF-1206's route-change-against-grant half stays independently
+re-reviewable.
+
+
+## RESOLVED (was LIVE 2026-10-02) — FTF-1206: no task in the fixed 300-task index owns the `OrganizationGatewayPolicy`
 ## persistence migration the 2026-10-01 L2 review's own DoD requires — Control-plane scope decision
 
 **What this is not:** not an owner ask (no secret, destructive op, repo-setting change, new spend,

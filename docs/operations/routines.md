@@ -39,7 +39,8 @@ STEP 3 — claim. Push branch `relay/<item-id>` and open a DRAFT PR titled
 "[relay] <ID>: <description>" before writing code.
 
 STEP 4 — contract. Run `python tools/r1_handoff.py packet <ID> --plan
-FINE_TUNING_FACTORY_RELEASE_1.md`. The packet's acceptance/negative_acceptance plus any
+FINE_TUNING_FACTORY_RELEASE_1.md`. For an owner-approved addendum task (ID present in
+spec/addenda/, e.g. FTF-1206A), read the contract from `spec/addenda/<ID>.json` instead. The packet's acceptance/negative_acceptance plus any
 Control-plane DoD in QUEUE.md or docs/certifications/queue.md is the DoD. Do not improvise.
 
 STEP 5 — PEV, never mixed. P: read the code and form a hypothesis, no changes yet. E: write the
