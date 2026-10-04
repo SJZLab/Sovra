@@ -22265,3 +22265,67 @@ PostgreSQL 16 (`pg_ctlcluster 16 main start`): `tests/tasks/test_ftf_0500c.py` a
 
 **State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified (Law 4) --
 independent Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+## 2026-10-04T13:45Z — Control-plane L2 review: FTF-0500C (#448, merge 53865d2) — NOT CERTIFIED, returned to relay
+
+**Independence.** Certifier session `session_01QVznorVMjnmcttUhyDnoGR`. Producer session (commit 141a1a9 trailer and
+PR body) `session_01S4wdwY9Q7jp8g5o1tEZ6tZ`. No other session is named on the PR. No match, so this review is
+independent.
+
+**CI evidence read.** Run 37197939203 on head 141a1a9:
+- Job `database-api-trace-source-integration` (111423559137): `uv run python3
+  tests/integration/test_ftf_0500c_database_api_trace_source.py`, then "all checks passed" against a real
+  PostgreSQL 16.15.
+- Job `gate` (111423558968): runs `tests/tasks/test_ftf_0500c.py`. The "live TLS-backed REST/trace connector checks
+  are skipped" disclosure is absent, so the REST checks really ran.
+
+**Held.**
+- Finding 1 (late header). Six probes were all refused. These included v1→absent, absent→present on page 3,
+  trailing space, and weak vs strong ETag. An additive and a subtractive fault both turned RED.
+- Finding 2 (SNAPSHOT_UNSTABLE). Additive and subtractive faults turned RED.
+- URL encoding. Nine hostile cursors round-trip, including `&`, `#`, `/`, space, unicode, `%41` and `+`. Faults
+  turned RED.
+- REST `truncated`. A fault turned RED.
+- Lookahead tie detection for integer and numeric keys, including a tie beyond page 1, detected on resume. Faults
+  F1, F2, F3 and F7 turned RED.
+
+**Defects (reproduced by independent verifiers):**
+1. **Cursor cycle duplicates records (finding 3 not fixed).** Line 675 compares only against the cursor just used.
+   Fixture: page None→[1] next "A"; page A→[2] next "B"; page B→[3] next "A"; constant ETag; default
+   `max_preview_records=20`. The call **returns success** with records `[1,2,3,2,3,2,3,…]` (20 records) and
+   `truncated=True`. A longer cycle ends at the generic `max_page_fetches` error instead of the repeated-cursor
+   refusal.
+2. **statement_timeout guard fails open on a SQL_ASCII source database.** psycopg returns `SHOW statement_timeout` as
+   `b'0'`, and line 353 compares it with `"0"`. Result: `statement_timeout_ms=0` is ACCEPTED, so the query is
+   unbounded. On a SQL_ASCII cluster the relay's own integration test fails 3 checks. CI is green only because its
+   image is UTF8. Customer source databases are not guaranteed to be UTF8.
+3. **Silent row loss on keys Python equality does not match.** Each case loses rows without any error:
+   - NULL keys (1, 2, NULL, NULL), n=2: the capture is [1, 2], so both NULL rows are lost. A single NULL is also
+     lost.
+   - float8 NaN (1, NaN, NaN): the second NaN row is dropped.
+   - A non-deterministic ICU collation (`und-u-ks-level2`; citext behaves the same) with a, b, B, c: row 'B' is
+     dropped.
+4. **Raw `TypeError`** escapes the module's error family for an unhashable key type (e.g. `int[]`, from
+   `set(key_values)`).
+5. **Unpinned claims.**
+   - Postgres `truncated` from the lookahead: fault F4 reverted it to `len(fetched) >= max` and both suites stayed
+     **GREEN**.
+   - The new `except psycopg.Error` clause: fault F6 deleted it entirely and both suites stayed **GREEN**. The only
+     connection-failure test uses a fake `OSError`.
+
+**DoD (round 4).** Fix each defect above, with a test per defect that the matching fault turns RED:
+- (1) Track every cursor used, seeded with each cursor before its fetch. Refuse any `str(next_cursor)` already seen
+  with `SourceUnavailableError`. Add an A→B→A fixture under the default cap.
+- (2) Reject `statement_timeout_ms` that is not a positive `int` (also reject `bool`) before connecting. Normalise
+  the read-back: decode bytes, or compare `current_setting('statement_timeout')` in SQL. Add a test using a
+  SQL_ASCII database or a bytes read-back.
+- (3) Fail closed on NULL, NaN and non-deterministic-collation keys. Preferred: do the tie check in Postgres itself,
+  e.g. `SELECT count(*) … WHERE key IS NOT DISTINCT FROM <last_key>` plus a NULL-key refusal. Python equality is
+  not a valid proxy. Each of the three gets a real-Postgres test.
+- (4) Wrap `TypeError` in the module's error family, with a test.
+- (5) Add a Postgres exact-boundary `truncated=False` test so F4 turns red, and a real psycopg error test
+  (permission denied on an ungranted table) so F6 turns red.
+
+Optional: treat an empty snapshot header value (`ETag: ""`) as absent for SNAPSHOT_UNSTABLE.
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. FTF-0500C stays in QUEUE.md "## Active" item 0.
