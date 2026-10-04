@@ -22803,3 +22803,54 @@ confirmed equal before/after), both suites re-ran clean. Regression swept the fu
 `docs/spec-matrix.yaml`. Not self-certified (Law 4) -- awaiting independent Control-plane L2 re-review and a real
 CI run on the opened PR. Per QUEUE.md "## Active" item 0's own stated order, FTF-0601 (0c) is next, then FTF-0500C
 round 5 (0c2) and FTF-0500B round 4 (0c3).
+
+## 2026-10-04T22:55Z — Control-plane L2 review: FTF-H007 + FTF-04A06 round 3 (#457, merge 1ab0710) — NOT CERTIFIED, returned to relay (round 4: tests only + one fix)
+
+**Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producer session (commits a3b63f3 and d1f90b2,
+plus the PR body) is `session_01JBoQqXch9QfM7KnEwx7BYi`. No match, so this review is independent.
+
+**CI evidence read.** In gate job 111539112929, the `test_ftf_04a06.py` step printed "FTF-04A06 local repository connector
+tests: all checks passed" and the `test_ftf_h007.py` step printed "FTF-H007 source boundary tests: all checks passed". The
+test diff removes no security test: the stubbed env-isolation test is replaced by two tests that use the real code path.
+
+**Runtime protection: HOLDS.** An independent verifier tested with inert `touch` markers on two hosts: the real host,
+and a neutral host with an empty `GIT_CONFIG_SYSTEM`. No marker was created at baseline in any probe. These cases are all
+refused before any `git status` (confirmed with a `subprocess.run` spy) and the scan blocks:
+- a plain gitlink or a registered submodule;
+- a nested submodule;
+- an index-only gitlink.
+Repo config does not override `--ignore-submodules=all`, tested with `submodule.recurse`, `status.submoduleSummary`,
+`diff.ignoreSubmodules=none` and `submodule.<n>.ignore=none`. Round-2 include, includeIf and worktree blocking still holds.
+Process and smudge pins are RED, keys with spaced subsections are reported untruncated, a non-1 exit fails closed, and
+nested `.git/modules/*/hooks` are reported.
+
+**Defects (the tests are not load-bearing; Law 1):**
+1. **F4.** Removing `core.hooksPath` from `_SAFETY_CONFIG_OVERRIDES` leaves both suites **GREEN**. In production, a repo
+   `core.hooksPath` with an executable `post-index-change` hook then **executes**, and the marker is created.
+   `test_fault_injection_hookspath_override_is_load_bearing` is positive-only: it flips the constant itself. No test runs
+   the DEFAULT constants against an executable hook and asserts the marker is absent.
+2. **F1.** Removing `--ignore-submodules=all` leaves both suites GREEN. The gitlink pre-scan refuses before status runs,
+   and the only flag test is positive-only.
+3. **F5.** Removing `GIT_CONFIG_GLOBAL` isolation leaves both suites GREEN.
+4. **F6.** Removing `GIT_CONFIG_NOSYSTEM` is RED only on a host whose `/etc/gitconfig` has `filter.lfs`. It is GREEN on a
+   neutral host.
+5. **`filter.x.required` alone, with a same-size stat-dirty file** (rewrite identical content and `touch` it):
+   `scan_local_repository_boundary` raises `GitCommandError` ("clean filter 'evil' failed") instead of reporting the
+   key. The source comment claiming that a plain status does not fail in this case is wrong. This fails closed, with
+   no execution, but the round-3 DoD item is unmet.
+
+**DoD (round 4).** Add a NEGATIVE test with the default, unmodified constants and the attack material present. Each must
+turn RED under its fault, under the CI script runner, on BOTH a host with LFS config and a neutral host (set
+`GIT_CONFIG_SYSTEM` to an empty file inside the test).
+- (1) F4: a repo `core.hooksPath` pointing at an executable `post-index-change` → `touch` hook, plus a stat-dirty tracked
+  file. Run capture and assert no marker.
+- (2) F1: stub only `_scan_populated_gitlinks` to return `()`, populate a submodule filter, keep the flag, run capture,
+  and assert no marker.
+- (3) F5: point an ambient `GIT_CONFIG_GLOBAL` at a temp file defining a filter or fsmonitor `touch` command. Capture of
+  a clean repo must succeed with no marker and no refusal.
+- (4) F6: the same, using an ambient `GIT_CONFIG_SYSTEM` set to the test's own file, independent of the host.
+- (5) `filter.<x>.required`: report it as a blocking key, or catch the status failure and report it. Add a same-size
+  stat-dirty test, and correct the comment.
+No production change is expected except (5).
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md item 0b stays first.
