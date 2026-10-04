@@ -22802,3 +22802,22 @@ confirmed equal before/after), both suites re-ran clean. Regression swept the fu
 `docs/spec-matrix.yaml`. Not self-certified (Law 4) -- awaiting independent Control-plane L2 re-review and a real
 CI run on the opened PR. Per QUEUE.md "## Active" item 0's own stated order, FTF-0601 (0c) is next, then FTF-0500C
 round 5 (0c2) and FTF-0500B round 4 (0c3).
+
+## 2026-10-04 — Control plane L2 review: FTF-H007 + FTF-04A06 round 3 (PR #457, head a3b63f3) — NOT CERTIFIED
+
+**Certifier session:** `01X22dcXJgMWQjZn6HWNGQ3R` (producer commit trailer: `01JBoQqXch9QfM7KnEwx7BYi`) -- independent.
+
+**Finding 1 (blocking, evidence gap — round-3 DoD item (1) not met).** DoD: "removing `--ignore-submodules=all` alone
+must turn the test RED." Fault injection run by the certifier: setting the production default
+`_GIT_STATUS_IGNORE_SUBMODULES_FLAG = None` in `local_repository_connector.py` (and, separately, changing the literal to
+`--ignore-submodules=none`) leaves `tests/tasks/test_ftf_04a06.py` fully GREEN. `test_fault_injection_ignore_submodules_flag_is_load_bearing`
+(line ~764) assigns the module global itself, so it proves the flag matters when toggled but never that production ships it.
+The gitlink pre-scan refusal masks the flag in the other tests. Required: a test that asserts the real default value reaches
+the real `git status` argv (or exercises a path where the pre-scan is bypassed) and goes RED when the default is removed.
+
+**Finding 2 (pending).** CI on head a3b63f3 (run 37237381796) was still queued/in_progress at review time; it cannot be confirmed passed.
+Re-run L2 after green CI.
+
+Checked OK: both suites pass locally; diff re-read; no session-ID overlap. Not verified past this point (stopped at Finding 1).
+
+**State.** `PROVISIONAL` / `L1-PROVEN` unchanged; spec-matrix and ledger untouched. Returned to relay.
