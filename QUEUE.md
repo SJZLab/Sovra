@@ -8973,15 +8973,14 @@ this same resolution (doc-only, redundant once this lands).
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
-   - **0b. DONE this shift (2026-10-04T21:45Z).** FTF-H007 + FTF-04A06 round 3 (returned 2026-10-04T20:55Z
-     after #455/merge `d53a4d9`) fixed: all three defects (populated-gitlink filter-driver execution via all
-     three Control-plane route items; the round-2 tests' own `_run_git`-stubbing gap, fixed structurally; the
-     unpinned filter pattern, now covered for `process`/`smudge`) and all four minor items. Full clause-to-test
-     mapping in docs/certifications/queue.md's "2026-10-04T21:45Z" entry and docs/spec-matrix.yaml's
-     FTF-04A06/FTF-H007 entries (round-3 notes). PR https://github.com/SJZLab/Sovra/pull/457 opened, PROVISIONAL,
-     not self-certified (Law 4) — awaiting
-     Control-plane L2 re-review. Removed from this list's own remaining-work set; the merged PR is Control
-     plane's own next step to re-review.
+   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 4 (tests only plus one small fix). Returned 2026-10-04T22:55Z after
+     #457 (merge 1ab0710).** The runtime protection holds, but four protections are not pinned by any failing test
+     (F1, F4, F5, F6).
+     - Add negative tests that use the default constants with the attack material present, and run them on a neutral
+       `GIT_CONFIG_SYSTEM`.
+     - Fix the `filter.<x>.required` reporting.
+     - The DoD is in docs/certifications/queue.md "2026-10-04T22:55Z".
+     - Every probe command must be an inert `touch <marker>`.
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
