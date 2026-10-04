@@ -85,6 +85,21 @@ def _version_entry(
     )
 
 
+def _version_entry_custom_version_id(
+    key: str, version_id_xml: str, *, is_latest: bool, size: int, etag: str
+) -> str:
+    """Like `_version_entry`, but takes the raw `<VersionId>...</VersionId>`
+    XML fragment (or `""` to omit the element entirely) instead of a plain
+    version id string -- needed to construct the missing/blank/case/
+    whitespace `VersionId` edge cases `_version_entry` cannot express."""
+    return (
+        f"<Version><Key>{key}</Key>{version_id_xml}"
+        f"<IsLatest>{'true' if is_latest else 'false'}</IsLatest>"
+        f"<LastModified>2026-01-01T00:00:00.000Z</LastModified>"
+        f"<ETag>&quot;{etag}&quot;</ETag><Size>{size}</Size></Version>"
+    )
+
+
 def _list_versions_xml(
     *,
     entries_xml: str,
@@ -422,9 +437,249 @@ def test_versioning_disabled_source_is_refused() -> None:
     )
 
 
+def test_missing_or_blank_version_id_is_refused_as_versioning_disabled() -> None:
+    """A real `ListObjectVersions` entry with no `<VersionId>` element at
+    all, or an empty one, is exactly as unversioned as the literal `"null"`
+    sentinel -- both must be refused, not silently accepted into the
+    'exact version' manifest."""
+    for label, version_id_xml in (
+        ("omitted entirely", ""),
+        ("present but empty", "<VersionId></VersionId>"),
+    ):
+        entries = _version_entry_custom_version_id(
+            "org-42/a.jsonl", version_id_xml, is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+        )
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        raised = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.VersioningDisabledError:
+            raised = True
+        check(
+            "FTF-0500B",
+            f"negative_acceptance: a VersionId {label} is refused as versioning-disabled, "
+            "not accepted into the manifest",
+            raised,
+        )
+
+
+def test_version_id_case_and_whitespace_variants_of_null_are_refused() -> None:
+    """The real sentinel is the literal `'null'`, but a non-compliant
+    server (or one with trailing whitespace in its XML text node) must not
+    slip past a bare `==` check -- refused case/whitespace-insensitively."""
+    for variant in ("NULL", "Null", " null ", "\tnull\n"):
+        entries = _version_entry_custom_version_id(
+            "org-42/a.jsonl",
+            f"<VersionId>{variant}</VersionId>",
+            is_latest=True,
+            size=100,
+            etag=_SINGLE_PART_ETAG,
+        )
+        _install_pages([_list_versions_xml(entries_xml=entries)])
+        raised = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.VersioningDisabledError:
+            raised = True
+        check(
+            "FTF-0500B",
+            f"negative_acceptance: a VersionId of {variant!r} (case/whitespace variant of the "
+            "null sentinel) is refused",
+            raised,
+        )
+
+
+def test_error_root_response_is_refused_not_treated_as_empty_listing() -> None:
+    """A real S3/MinIO-compatible endpoint can return HTTP 200 with an
+    `<Error>` root instead of a `<ListVersionsResult>` -- this must be
+    refused, never silently parsed as a valid, empty, complete listing."""
+    error_body = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b"<Error><Code>InternalError</Code>"
+        b"<Message>synthetic fault for FTF-0500B</Message></Error>"
+    )
+    _install_pages([error_body])
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: an HTTP-200 response with an <Error> root is refused, never "
+        "treated as a successful empty listing",
+        raised,
+    )
+
+
+def test_stuck_pagination_without_advancing_marker_is_refused() -> None:
+    """IsTruncated=true with no real advance in either pagination marker
+    is a protocol defect this module must refuse outright -- never loop
+    forever re-requesting the identical page, and never silently return
+    duplicate copies of it as the bounded preview."""
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    )
+    _install_pages(
+        [
+            _list_versions_xml(
+                entries_xml=entries,
+                is_truncated=True,
+                next_key_marker="",
+                next_version_id_marker="",
+            )
+        ]
+    )
+    before = len(REQUEST_LOG)
+    raised = False
+    try:
+        s3_preview.validate_and_preview_s3_minio_source(
+            _config(max_preview_records=20), policy=_policy()
+        )
+    except s3_preview.SourceUnavailableError:
+        raised = True
+    check(
+        "FTF-0500B",
+        "negative_acceptance: IsTruncated=true without an advancing pagination marker is "
+        "refused, rather than looped forever or returned as duplicate preview rows",
+        raised,
+    )
+    check(
+        "FTF-0500B",
+        "the stuck-pagination check fires immediately after the first page -- exactly one "
+        "request is made, never an unbounded retry loop",
+        len(REQUEST_LOG) - before == 1,
+    )
+
+
+def test_fault_injection_error_root_check_is_load_bearing_additive() -> None:
+    """Additive-fault variant required by the 2026-10-04 relay DoD rule: a
+    careless future edit that adds an early `return` for the `<Error>`
+    branch (not merely a negated condition) must still be caught by this
+    test."""
+    original = _MODULE_PATH.read_bytes()
+    target = b'    if _local_tag(root.tag) == "Error":\n'
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    error_body = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b"<Error><Code>InternalError</Code>"
+        b"<Message>synthetic fault for FTF-0500B</Message></Error>"
+    )
+    try:
+        additive_fault = target + b"        return [], False, None, None\n"
+        mutated = original.replace(target, additive_fault, 1)
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        _install_pages([error_body])
+        no_longer_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+            no_longer_raises = True
+        except s3_preview.SourceUnavailableError:
+            no_longer_raises = False
+        check(
+            "FTF-0500B",
+            "fault injection: an additive early-return bypass of the <Error>-root check "
+            "genuinely lets an HTTP-200 <Error> response through as a fabricated, "
+            "empty-but-successful listing",
+            no_longer_raises,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([error_body])
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(_config(), policy=_policy())
+        except s3_preview.SourceUnavailableError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the <Error>-root check genuinely fires again",
+            restored_raises,
+        )
+
+
+def test_fault_injection_stuck_pagination_check_is_load_bearing() -> None:
+    original = _MODULE_PATH.read_bytes()
+    target = b"if new_key_marker == key_marker and new_version_id_marker == version_id_marker:"
+    check(
+        "FTF-0500B",
+        "fault injection target snippet is present in the real source",
+        target in original,
+    )
+    entries = _version_entry(
+        "org-42/a.jsonl", "v1", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
+    )
+    stuck_page = _list_versions_xml(
+        entries_xml=entries, is_truncated=True, next_key_marker="", next_version_id_marker=""
+    )
+    try:
+        mutated = original.replace(
+            target,
+            b"if False and new_key_marker == key_marker and "
+            b"new_version_id_marker == version_id_marker:",
+            1,
+        )
+        check("FTF-0500B", "fault injection actually changed the file", mutated != original)
+        _MODULE_PATH.write_bytes(mutated)
+        importlib.reload(s3_preview)
+        # Bounded by the fixture's own fixed page list (not by the module):
+        # with the check disabled, the connector keeps requesting a "next"
+        # page that never exists, instead of stopping after page one.
+        _install_pages([stuck_page])
+        before = len(REQUEST_LOG)
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=20), policy=_policy()
+            )
+        except s3_preview.SourceUnavailableError:
+            pass
+        check(
+            "FTF-0500B",
+            "fault injection: disabling the stuck-pagination check genuinely lets the "
+            "connector attempt further requests past the first non-advancing page, instead "
+            "of refusing immediately",
+            len(REQUEST_LOG) - before > 1,
+        )
+    finally:
+        _MODULE_PATH.write_bytes(original)
+        importlib.reload(s3_preview)
+        check(
+            "FTF-0500B",
+            "the module file is restored byte-identical after fault injection",
+            _MODULE_PATH.read_bytes() == original,
+        )
+        _install_pages([stuck_page])
+        before = len(REQUEST_LOG)
+        restored_raises = False
+        try:
+            s3_preview.validate_and_preview_s3_minio_source(
+                _config(max_preview_records=20), policy=_policy()
+            )
+        except s3_preview.SourceUnavailableError:
+            restored_raises = True
+        check(
+            "FTF-0500B",
+            "after restoring the file, the stuck-pagination check genuinely fires again, "
+            "after exactly one request",
+            restored_raises and len(REQUEST_LOG) - before == 1,
+        )
+
+
 def test_fault_injection_versioning_disabled_check_is_load_bearing() -> None:
     original = _MODULE_PATH.read_bytes()
-    target = b"if version_id == _UNVERSIONED_SENTINEL:"
+    target = b"if not normalized_version_id or normalized_version_id == _UNVERSIONED_SENTINEL:"
     check(
         "FTF-0500B",
         "fault injection target snippet is present in the real source",
@@ -434,7 +689,12 @@ def test_fault_injection_versioning_disabled_check_is_load_bearing() -> None:
         "org-42/a.jsonl", "null", is_latest=True, size=100, etag=_SINGLE_PART_ETAG
     )
     try:
-        mutated = original.replace(target, b"if False and version_id == _UNVERSIONED_SENTINEL:", 1)
+        mutated = original.replace(
+            target,
+            b"if False and (not normalized_version_id or "
+            b"normalized_version_id == _UNVERSIONED_SENTINEL):",
+            1,
+        )
         check("FTF-0500B", "fault injection actually changed the file", mutated != original)
         _MODULE_PATH.write_bytes(mutated)
         importlib.reload(s3_preview)
