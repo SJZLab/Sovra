@@ -8914,7 +8914,7 @@ this same resolution (doc-only, redundant once this lands).
 ## Active (decided by Control plane — relay executes, top first)
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
-   - **0a. PR #449 (FTF-0500B) had RED CI — fixed 2026-10-04T19:05Z, superseding PR opened.** Real root cause
+   - **0a. PR #449 (FTF-0500B) had RED CI — fixed 2026-10-04T19:05Z, superseding PR #453 opened.** Real root cause
      (read from the real `s3-minio-versioned-source-integration` job log, not assumed): the test's own
      `_policy()` `explicit_private_allowlist` only allowlisted `127.0.0.0/8` (IPv4), but the GitHub Actions
      runner's `getaddrinfo("localhost")` also returns the IPv6 loopback `::1`, which

@@ -54,7 +54,7 @@ Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500c.py`/`test
 regressions (the printed `TenantContextError` traceback inside `test_ftf_0500.py`'s own stdout is that suite's
 own disclosed negative-test case).
 
-Opened PR #<pending> (title `[relay] FTF-0500B: fix red CI — IPv6 loopback allowlist (supersedes #449)`) against
+Opened PR #453 (title `[relay] FTF-0500B: fix red CI — IPv6 loopback allowlist (supersedes #449)`) against
 `main` from `claude/wizardly-fermat-6z9pma`. Closed PR #449 (unmerged, no content lost — same branch-restriction
 pattern PR #402 established) with a comment pointing to the new PR. Subscribed to the new PR's activity to drive
 its own CI to green, per this repo's PR-stewardship rules.
