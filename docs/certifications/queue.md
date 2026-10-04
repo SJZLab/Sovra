@@ -22676,3 +22676,78 @@ zero regressions. No `ci.yml` change needed — the existing `gate`-job steps al
 both tasks in `docs/spec-matrix.yaml`. Independent Control-plane L2 re-review and a real CI run on the opened PR are
 required before certification. Per QUEUE.md "## Active" item 0's own stated order, FTF-0601 (0c) is next, then
 FTF-0500C round 5 (0c2) and FTF-0500B round 4 (0c3).
+
+## 2026-10-04T20:55Z — Control-plane L2 review: FTF-H007 + FTF-04A06 round 2 (#455, merge d53a4d9) — NOT CERTIFIED, returned to relay (round 3)
+
+**Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producer session (commit 455e57c trailer
+and PR body) is `session_0187FXHSrtMiXSSLzkhaD8Ch`. No other session is named on the PR. No match, so this review is
+independent.
+
+**CI evidence read.** In gate job 111514567280, the step `uv run python3 tests/tasks/test_ftf_04a06.py` printed "FTF-04A06
+local repository connector tests: all checks passed", and the step `uv run python3 tests/tasks/test_ftf_h007.py` printed
+"FTF-H007 source boundary tests: all checks passed".
+
+**Held (independent verifier, every probe command an inert `touch <marker>`):**
+- `filter.x.clean`, `process` and `smudge` are refused before any `git status`, and no marker is created. The same holds
+  when the key is set via:
+  - an absolute or relative `include.path`;
+  - `includeIf` with `gitdir:`, `onbranch:` or `hasconfig:`;
+  - `.git/config.worktree` (format v0 and v1) or a linked worktree's `config.worktree`;
+  - case variants, or a dotted or spaced subsection.
+- `core.fsmonitor` reached via any include or worktree scope blocks lock readiness.
+- Thirteen other repo-controlled command keys do not run under capture: textconv, diff/merge drivers, pager, askPass,
+  editor, sshCommand, alternateRefsCommand, gpg.program, credential.helper, sequence.editor, pager.status, and
+  untrackedCache.
+- The scan itself executes nothing.
+- An unparseable config fails closed at `rev-parse`.
+- Faults F1 (early return), F2 (`--local`), F3 (pre-scan after status) and F5e (fsmonitor override removed) turn RED.
+- The production diff weakens nothing. `source_boundary._scan_dangerous_git_config` was moved, not removed.
+
+**Defects:**
+1. **Code execution via a submodule filter driver (blocking, security).** The pre-scan reads only the superproject
+   config. `git status` recurses into populated submodules and loads each submodule's own config. The `-c` overrides
+   reach the child, but a filter driver does not. Repro (both variants):
+   - the superproject records gitlink `sub`;
+   - `sub/.gitattributes` has `* filter=x`;
+   - `sub/.git/config` (or `.git/modules/sub/config` for a registered submodule) sets `filter.x.clean = touch <marker>`;
+   - `sub/a.txt` is stat-dirty.
+   Then `capture_local_repository` → **marker created**, `OK:local_dirty_snapshot`. `scan_local_repository_boundary`
+   reports `dangerous_git_config_keys=()` and `is_safe_to_lock=True`.
+2. **Two security pins are not load-bearing.**
+   - **F5a:** removing `("core.hooksPath","/dev/null")` leaves both suites **GREEN**. With that mutation applied, a
+     default `.git/hooks/post-index-change` and a `core.hooksPath` hook **both execute** during capture.
+   - **F5c:** removing `GIT_CONFIG_GLOBAL` leaves them GREEN.
+   - **F5b/F5d:** these turn RED only by accident, because the host's `/etc/gitconfig` defines `filter.lfs.*`.
+   Root cause: both "load-bearing" tests swap `_run_git` for a stub and never exercise the real constants.
+3. **The filter pattern is unpinned.** Narrowing it to `clean` only (F4a/F4b) leaves both suites GREEN. With that
+   mutation applied, a `filter.x.process` driver **executes** during capture. No test uses a process or smudge driver.
+
+Minor:
+- A `[filter "a.b c"]` key is reported truncated, because the output is split on the first space.
+- The scan returns `()` on ANY non-zero exit; it should do so only on exit 1 ("no match").
+- `filter.x.required` alone makes the boundary scan raise `GitCommandError` instead of reporting.
+- Nested `.git/modules/*/hooks` are not reported.
+
+**Control-plane decision (route for defect 1).** Submodules are out of scope for an untrusted-source capture. Do all
+three of the following:
+- (i) Run every `git status`/working-tree git call with `--ignore-submodules=all` plus `-c submodule.recurse=false`.
+- (ii) Make `scan_local_repository_boundary` report any gitlink (mode 160000 in `HEAD^{tree}` or the index) or any
+  `.gitmodules` file as a blocking finding (`submodules_present`), so `is_safe_to_lock=False`.
+- (iii) Make `capture_local_repository` refuse a tree with a populated gitlink before any status call. Reading a
+  gitlink is pure plumbing, e.g. `git ls-files -s` / `ls-tree -r HEAD`, filtered on mode 160000.
+Submodule dirtiness is not needed for this task's contract.
+
+**DoD (round 3).** Every test runs through the real code path, with no `_run_git` stub. Each is shown RED first, then
+GREEN, and runs under the CI script runner (`python3 tests/tasks/...`), not pytest:
+- (1) A submodule-filter repo (plain gitlink and registered submodule): the marker is never created, capture is refused,
+  and the boundary is blocking. Also test (i) alone: removing `--ignore-submodules=all` must turn the test RED.
+- (2) A real hook (`.git/hooks/post-index-change` and a `core.hooksPath` hook, each touching a marker). Removing the
+  hooksPath override must turn the test RED, because the marker then appears.
+- (3) A real env-isolation test that sets `GIT_CONFIG_GLOBAL` to a temp file defining a filter or fsmonitor marker
+  command. Removing the isolation must turn the test RED regardless of the host's `/etc/gitconfig`. Use
+  `GIT_CONFIG_SYSTEM` similarly for NOSYSTEM.
+- (4) `process` and `smudge` driver tests, so that narrowing the pattern turns RED.
+- (5) Fix the minor items: parse keys correctly (use `--null`), return `()` only on exit 1 and fail closed otherwise,
+  report rather than raise on `filter.x.required`, and report nested `.git/modules/*/hooks`.
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md "## Active" item 0b stays first.
