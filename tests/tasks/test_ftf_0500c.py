@@ -305,7 +305,13 @@ class _RestHandler(BaseHTTPRequestHandler):
 
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
-        cursor = int(query.get("cursor", ["0"])[0])
+        try:
+            cursor = int(query.get("cursor", ["0"])[0])
+        except ValueError:
+            # Non-integer cursors (e.g. /repeating-cursor's "stuck",
+            # /url-unsafe-cursor's own value) are handled by their own path
+            # branch below, which never reads this integer form.
+            cursor = 0
         limit = int(query.get("limit", ["5"])[0])
 
         if parsed.path == "/pages":
@@ -344,6 +350,60 @@ class _RestHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/missing-records-field":
             self._send_json({"items": [], "next_cursor": None})
+            return
+
+        if parsed.path == "/header-appears-late":
+            # 2026-10-04 L2 finding: the inverse of /snapshot-then-missing --
+            # page one carries no ETag at all, and a later page starts
+            # sending one. Equally inconsistent as a changed value or a
+            # dropped header; the original tri-state-less tracking silently
+            # accepted this and labelled the whole listing with the late
+            # page's own version.
+            page = _ALL_RECORDS[cursor : cursor + limit]
+            next_cursor = cursor + limit if cursor + limit < len(_ALL_RECORDS) else None
+            if cursor == 0:
+                self._send_json({"records": page, "next_cursor": next_cursor})
+            else:
+                self._send_json(
+                    {"records": page, "next_cursor": next_cursor},
+                    extra_headers={"ETag": "snapshot-v1"},
+                )
+            return
+
+        if parsed.path == "/multipage-no-snapshot-header":
+            # 2026-10-04 L2 finding: a declared snapshot_version_header that
+            # never appears on any page of a genuinely multi-page listing
+            # used to return a quiet success with snapshot_version=None --
+            # Section 67.1 requires SNAPSHOT_UNSTABLE/a block, not silence,
+            # when consistency across pages cannot be verified.
+            page = _ALL_RECORDS[cursor : cursor + limit]
+            next_cursor = cursor + limit if cursor + limit < len(_ALL_RECORDS) else None
+            self._send_json({"records": page, "next_cursor": next_cursor})
+            return
+
+        if parsed.path == "/repeating-cursor":
+            # 2026-10-04 L2 finding: a misbehaving endpoint that returns the
+            # identical next_cursor forever -- unbounded only by
+            # max_page_fetches, and every repeated fetch re-adds duplicate
+            # records into the preview.
+            self._send_json(
+                {"records": [{"id": 1, "value": "x"}], "next_cursor": "stuck"},
+                extra_headers={"ETag": "snapshot-v1"},
+            )
+            return
+
+        if parsed.path == "/url-unsafe-cursor":
+            raw_cursor = query.get("cursor", [None])[0]
+            if raw_cursor is None:
+                self._send_json({"records": [{"id": 1}], "next_cursor": "a&b=c d#e"})
+                return
+            if raw_cursor == "a&b=c d#e":
+                self._send_json({"records": [{"id": 2}], "next_cursor": None})
+                return
+            # The cursor arrived corrupted (not URL-encoded/decoded
+            # correctly) -- a distinguishable third record proves the
+            # mismatch rather than silently returning an empty page.
+            self._send_json({"records": [{"id": 999}], "next_cursor": None})
             return
 
         if parsed.path == "/rate-limited-then-ok":
@@ -696,6 +756,233 @@ def test_manifest_hash_is_real_and_deterministic() -> None:
         "FTF-0500C",
         "acceptance: manifest_hash differs for genuinely different content",
         first.manifest_hash != third.manifest_hash,
+    )
+
+
+def test_rest_connector_catches_a_header_that_appears_only_on_a_later_page() -> None:
+    """2026-10-04 L2 finding: the inverse of the already-caught
+    missing-after-seen case -- page one has no snapshot-version header at
+    all, and a later page starts sending one. Equally inconsistent; the
+    original code only ever compared against a value, so "no value yet"
+    never triggered a comparison at all."""
+    if _BASE_URL is None:
+        return
+    try:
+        source_module.validate_and_preview_rest_trace_source(
+            _rest_config("/header-appears-late", max_preview_records=1000), policy=_policy()
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a header that appears only on a later page (after page one "
+            "had none) is caught, not silently adopted as the listing's version",
+            False,
+        )
+    except source_module.SourceChangedDuringListingError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a header that appears only on a later page (after page one "
+            "had none) is caught, not silently adopted as the listing's version",
+            True,
+        )
+
+
+def test_rest_connector_blocks_a_multipage_listing_that_never_sends_the_declared_header() -> None:
+    """2026-10-04 L2 finding: Section 67.1 -- "if consistency cannot be
+    guaranteed, show SNAPSHOT_UNSTABLE and block production data use." A
+    declared snapshot_version_header that never once appears across a real
+    multi-page listing used to return a quiet, successful
+    snapshot_version=None instead."""
+    if _BASE_URL is None:
+        return
+    try:
+        source_module.validate_and_preview_rest_trace_source(
+            _rest_config("/multipage-no-snapshot-header", max_preview_records=1000),
+            policy=_policy(),
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a multi-page listing whose declared snapshot header never "
+            "once appears is blocked (SNAPSHOT_UNSTABLE), not silently returned as a success",
+            False,
+        )
+    except source_module.SnapshotUnstableError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a multi-page listing whose declared snapshot header never "
+            "once appears is blocked (SNAPSHOT_UNSTABLE), not silently returned as a success",
+            True,
+        )
+
+
+def test_disabling_the_snapshot_unstable_check_genuinely_fails_the_assertion() -> None:
+    """Law 1, disclosed real fault injection for the new SNAPSHOT_UNSTABLE
+    check: disables it directly in the module under test, proves the
+    assertion above genuinely fails (a silent, wrongly-successful result)
+    without it, then reverts the file byte-identical."""
+    if _BASE_URL is None:
+        return
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "if config.snapshot_version_header and snapshot_version is None and page_fetches > 1:",
+        "if False:  # FTF-0500C fault injection -- disabled for this check",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the SNAPSHOT_UNSTABLE check line was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            result = source_module.validate_and_preview_rest_trace_source(
+                _rest_config("/multipage-no-snapshot-header", max_preview_records=1000),
+                policy=_policy(),
+            )
+            genuinely_failed_without_the_check = True
+            _ = result
+        except source_module.SnapshotUnstableError:
+            genuinely_failed_without_the_check = False
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real SNAPSHOT_UNSTABLE check genuinely breaks the "
+            "assertion above (proves it was testing something real, not vacuously passing)",
+            genuinely_failed_without_the_check,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
+def test_rest_connector_refuses_a_repeating_cursor_rather_than_duplicating_records() -> None:
+    """2026-10-04 L2 finding: a misbehaving endpoint that returns the
+    identical next_cursor forever used to be bounded only by
+    max_page_fetches, re-adding duplicate records into the preview on every
+    repeated fetch in the meantime."""
+    if _BASE_URL is None:
+        return
+    try:
+        source_module.validate_and_preview_rest_trace_source(
+            _rest_config("/repeating-cursor", max_preview_records=20), policy=_policy()
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real endpoint repeating the identical cursor is refused, "
+            "not silently refetched into duplicate preview records",
+            False,
+        )
+    except source_module.SourceUnavailableError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real endpoint repeating the identical cursor is refused, "
+            "not silently refetched into duplicate preview records",
+            True,
+        )
+
+
+def test_disabling_the_repeated_cursor_check_genuinely_produces_duplicates() -> None:
+    """Law 1, disclosed real fault injection: disables the repeated-cursor
+    check directly in the module under test, proves the real endpoint above
+    genuinely succeeds with duplicated records (the actual defect) without
+    it, then reverts the file byte-identical."""
+    if _BASE_URL is None:
+        return
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "if cursor is not None and str(next_cursor) == cursor:",
+        "if False:  # FTF-0500C fault injection -- disabled for this check",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the repeated-cursor check line was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            result = source_module.validate_and_preview_rest_trace_source(
+                _rest_config("/repeating-cursor", max_preview_records=20), policy=_policy()
+            )
+            genuinely_duplicated = len(result.records) == 20 and all(
+                r["id"] == 1 for r in result.records
+            )
+        except source_module.SourceUnavailableError:
+            genuinely_duplicated = False
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real repeated-cursor check genuinely reproduces the "
+            "defect (20 duplicate copies of the same record), proving the check was load-bearing",
+            genuinely_duplicated,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
+def test_rest_connector_url_encodes_an_unsafe_cursor_value() -> None:
+    """2026-10-04 L2 finding ("recommended"): an unescaped &, =, space or #
+    inside a real cursor value used to corrupt the next request's own query
+    string. A real round trip through the local HTTPS fixture with a
+    deliberately unsafe cursor value proves the encoding survives."""
+    if _BASE_URL is None:
+        return
+    result = source_module.validate_and_preview_rest_trace_source(
+        _rest_config("/url-unsafe-cursor", max_preview_records=10, snapshot_version_header=None),
+        policy=_policy(),
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: a cursor value containing &, =, space and # round-trips correctly through "
+        "a real URL-encoded request, rather than corrupting the query string",
+        [r["id"] for r in result.records] == [1, 2],
+    )
+
+
+def test_rest_connector_reports_truncated_when_the_cap_exactly_fills_a_page() -> None:
+    """2026-10-04 L2 finding ("recommended"): truncated used to stay False
+    whenever len(collected) landed exactly on max_preview_records at the
+    natural end of a page's own records (never triggering the inner
+    per-record cap-break), even though the source's own next_cursor proved
+    more real data remained."""
+    if _BASE_URL is None:
+        return
+    result = source_module.validate_and_preview_rest_trace_source(
+        _rest_config("/pages", max_preview_records=10), policy=_policy()
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: truncated is True when the cap exactly coincides with a real page "
+        "boundary and the source reports further pages remain",
+        result.truncated is True and len(result.records) == 10,
     )
 
 

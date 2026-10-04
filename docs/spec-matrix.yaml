@@ -6001,7 +6001,122 @@ FTF-0500C:
     Regression swept `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_0303.py`/`test_ftf_h006.py`
     -- zero interference (the printed `TenantContextError` traceback inside `test_ftf_0500.py`''s
     own output is that suite''s own disclosed negative-test case, confirmed exit 0, "all checks
-    passed"). Not self-certified (Law 4).'
+    passed"). Not self-certified (Law 4).
+
+
+    L2 fix-and-resubmit (2026-10-04, round 3): a five-subagent Control-plane review of this merged
+    submission (PR #404) found five further real gaps beyond the 2026-10-01 round, all CI-genuinely-
+    green and reproduced by independent probes/additive fault injection rather than an edit of the
+    producer''s own line. Clause-to-test mapping for each (new rule: every acceptance/
+    negative_acceptance clause gets a test that a clause-level fault turns red):
+
+
+    (1) REST snapshot-version header absent on page one, present on a later page, was silently
+    adopted as the listing''s version (the inverse of the already-caught missing-after-seen case --
+    the old code only ever compared against a captured *value*, so "no value yet" never triggered a
+    comparison). Fixed: `snapshot_version_initialized` now tracks a tri-state (not-yet-seen vs. a
+    real baseline, where `None` absence is itself a legitimate baseline) separately from the
+    captured value, so any change away from page one''s baseline -- changed value, header dropped,
+    or header newly appearing -- raises `SourceChangedDuringListingError` identically. Clause:
+    negative_acceptance ("lost watermark/snapshot blocks consistent import"). Test:
+    `test_rest_connector_catches_a_header_that_appears_only_on_a_later_page` (new `/header-appears-
+    late` fixture). This shares the exact comparison line the 2026-10-01 round''s own fault
+    injection (`test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion`) already
+    proved load-bearing for the other two variants of this same branch.
+
+
+    (2) A declared `snapshot_version_header` that never once appeared across a real multi-page
+    listing returned a quiet success with `snapshot_version=None`, though Section 67.1 requires
+    "SNAPSHOT_UNSTABLE ... block production data use" when consistency cannot be guaranteed. Fixed:
+    new `SnapshotUnstableError`, raised after the pagination loop when the header was declared,
+    never observed, and more than one real page was fetched. Clause: negative_acceptance (Section
+    67.1 SNAPSHOT_UNSTABLE). Tests:
+    `test_rest_connector_blocks_a_multipage_listing_that_never_sends_the_declared_header` (new
+    `/multipage-no-snapshot-header` fixture) plus a dedicated additive-fault test
+    (`test_disabling_the_snapshot_unstable_check_genuinely_fails_the_assertion`) disabling the new
+    check line directly and confirming the same call then succeeds silently (the actual pre-fix
+    defect), reverted byte-identical.
+
+
+    (3) A misbehaving REST endpoint returning the identical `next_cursor` forever was bounded only
+    by `max_page_fetches`, re-fetching and re-appending duplicate records into the preview on every
+    repeat in the meantime. Fixed: the pagination loop now raises `SourceUnavailableError` the
+    instant a page''s own `next_cursor` equals the cursor just used. Clause: acceptance ("Bounded
+    pagination/cursors"). Tests:
+    `test_rest_connector_refuses_a_repeating_cursor_rather_than_duplicating_records` (new
+    `/repeating-cursor` fixture) plus
+    `test_disabling_the_repeated_cursor_check_genuinely_produces_duplicates` (additive fault:
+    disabling the new check line reproduces the real defect -- 20 duplicate copies of the same
+    record -- rather than merely un-asserting an existing line), reverted byte-identical.
+
+
+    (4) A Postgres `stable_key_column` that is not actually unique silently skips or duplicates rows
+    across a resumed capture: the `WHERE key > %s` resume comparison permanently skips any further
+    row still carrying an already-returned key value, most dangerously when a tied group straddles
+    the `LIMIT` cutoff. Fixed: `validate_and_preview_postgres_source` now fetches one extra lookahead
+    row (`max_preview_records + 1`) and raises the new `NonUniqueStableKeyError` if either (a) the
+    real returned page itself contains a duplicate key value, or (b) the lookahead row shares the
+    last returned row''s key (the boundary-split case). `truncated` is now derived directly from
+    whether that extra row was actually returned, rather than the previous `len(rows) >=
+    max_preview_records` heuristic (which also mis-reported truncation when a table had exactly
+    `max_preview_records` rows remaining). Clause: negative_acceptance ("lost watermark/snapshot
+    blocks consistent import" -- a non-unique key is a structural lost-watermark risk on every
+    resume, not only after a delete). Tests, against a new real `source_schema.dup_key_records`
+    fixture table (group_key values 10, 20, 20, 30 for ids 1-4) in
+    `tests/integration/test_ftf_0500c_database_api_trace_source.py`:
+    `test_real_non_unique_stable_key_within_one_page_is_refused` (max_preview_records=3, duplicate
+    lands inside one fetched page), `test_real_non_unique_stable_key_split_across_a_page_boundary_is_refused`
+    (max_preview_records=2, the tied pair straddles the cutoff -- only the lookahead catches this),
+    and `test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through` (additive fault:
+    disabling the new check and proving a real two-call resumed capture then genuinely, permanently
+    skips id=3 -- the actual silent-skip defect, not a hypothetical), reverted byte-identical.
+
+
+    (5) The `statement_timeout` read-back check (`observed_timeout[0] == "0"`) was real but entirely
+    untested by any assertion that could fail: no existing test ever passed `statement_timeout_ms=0`
+    (Postgres''s own real "no timeout" sentinel). Fixed: no code change was needed (the comparison
+    already covers this literal value) -- added the missing test. Clause: acceptance ("statement
+    timeout and backpressure"). Tests: `test_real_statement_timeout_ms_zero_is_refused` (real
+    Postgres session, `statement_timeout_ms=0`) and
+    `test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero` (additive fault:
+    disabling the read-back check and confirming the real unbounded session is then silently
+    accepted), reverted byte-identical.
+
+
+    Recommended hardening also applied in the same pass (not independently reported as defects, but
+    disclosed): (i) `_build_page_url` now URL-encodes every query key/value via `urllib.parse.quote`
+    -- an unescaped `&`/`=`/space/`#` inside a real cursor value previously corrupted the next
+    request''s own query string; proven by a real HTTPS round trip through a deliberately unsafe
+    cursor value (new `/url-unsafe-cursor` fixture,
+    `test_rest_connector_url_encodes_an_unsafe_cursor_value`). (ii) the REST `truncated` flag''s exit
+    logic was simplified (`if not next_cursor: break` / `if len(collected) >= cap: truncated=True;
+    break`), fixing a case where `truncated` stayed `False` whenever the cap was reached exactly at
+    the natural end of a page''s own records (the old heuristic''s `len(collected) < cap` condition
+    was never true at exactly the cap), even though the source''s own `next_cursor` proved more data
+    remained; proven by `test_rest_connector_reports_truncated_when_the_cap_exactly_fills_a_page`
+    (`/pages`, `max_preview_records=10`, which divides evenly into two real 5-record pages). (iii)
+    `validate_and_preview_postgres_source`''s outer `except OSError` is now paired with `except
+    psycopg.Error`, wrapping any other real psycopg error (e.g. `OperationalError`) as
+    `SourceUnavailableError` instead of letting it propagate raw; this module''s own already-handled
+    error classes (`UndefinedTable`/`UndefinedColumn`, converted to `UnknownSourceContractError`
+    inside the inner `try`) are unaffected since they never reach the outer `except` as raw psycopg
+    errors.
+
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (no new errors).
+    `uv run mypy .` clean repo-wide (370 source files, zero errors). `python3 scripts/validate_spec.py
+    --strict` clean (after `git fetch --unshallow`, pre-existing shallow-clone sandbox artifact).
+    `product_truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` still blank --
+    disclosed, no live caller added by this fix). `status.py`: unchanged `99/301` certified (Law 2 --
+    a resubmission is not a certification). Both suites re-run clean end to end against a real,
+    freshly-started local PostgreSQL 16: `tests/tasks/test_ftf_0500c.py` and
+    `tests/integration/test_ftf_0500c_database_api_trace_source.py`. Regression swept
+    `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` -- zero interference (the printed
+    `TenantContextError` traceback inside `test_ftf_0500.py`''s own output is that suite''s own
+    disclosed negative-test case, confirmed exit 0, "all checks passed"; `test_ftf_h006.py`''s own
+    disclosed no-IPv6-stack skip is unchanged, pre-existing sandbox behavior). Not self-certified
+    (Law 4) -- independent Control-plane L2 review and a real CI run on the opened PR are required
+    before certification.'
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py

@@ -28280,3 +28280,149 @@ reviewed). Stopping here — not picking a second task this shift. No open owner
 "Owner actions — current" unchanged: only the pre-existing, low-urgency branch-protection ask).
 `BLOCKER.md`'s live FTF-0902 entry untouched, not retried (STEP 4(c) — a Control-plane design
 question, not a further guess).
+
+## 2026-10-04T13:50:00Z — Scheduled relay shift — FTF-0500C fix-and-resubmit, round 3 (PR pending)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` directly — no mismatch.
+`BLOCKER.md` read in full at shift start: no live entries (all prior entries resolved history).
+STEP 0.2: no `cognee-cli` binary on this sandbox — text-search fallback declared, same as every
+prior shift.
+
+STEP 1: the designated branch (`claude/wizardly-fermat-goeiru`) started two commits behind
+`origin/main` (confirmed via `git rev-list --left-right --count origin/main...HEAD` → `2 0` before
+trusting it) — fast-forwarded onto it (`git merge --ff-only`). The two new commits were themselves
+the highest-priority returned work this repo's own relay protocol requires fixing before any new
+task: **960f8fd**, a five-subagent Control-plane L2 review (`session_01QVznorVMjnmcttUhyDnoGR`)
+returning 9 merged submissions (FTF-0902, FTF-0500B, FTF-0500C, FTF-0500D, FTF-1807, FTF-0510,
+FTF-0307, FTF-1002, FTF-04A18) NOT CERTIFIED with new findings beyond the 2026-10-01 round, and
+**e035dfc** (PR #447), Control plane reorganizing `QUEUE.md`'s own "## Active" list to put this
+returned work at the top. A later `git merge origin/main` (clean fast-forward, zero conflicts)
+picked up one further concurrent commit the same way.
+
+Picked **FTF-0500C** from the returned list. **Disclosed order deviation:** the list's own stated
+priority order is FTF-H007+FTF-04A06 (security) first, then FTF-0601, then FTF-0500B, then
+FTF-0500C; a fresh `list_pull_requests` at shift start showed no item in the list had an open
+`[relay]` PR yet (only #444 tracking-only, #402 historical/superseded, #295 FTF-0214-blocked), so
+the strict order would have started at FTF-H007+FTF-04A06. This shift completed FTF-0500C instead
+— recorded directly on `QUEUE.md`'s own item 0, not silently reordered. FTF-H007+FTF-04A06 and
+FTF-0601 remain untouched and are the top-priority items for the next shift.
+
+STEP 2 (PEV): **P** — read the 2026-10-04T11:00Z review's five FTF-0500C findings directly against
+`apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py` (615
+lines) and its two existing test suites before any change, to form a real hypothesis for each:
+
+1. *Header absent on page one, present later, silently adopted.* The REST connector's
+   `snapshot_version_seen` flag only ever became `True` when a header value was actually observed
+   (`if observed is not None: snapshot_version = observed; snapshot_version_seen = True`) — so a
+   page-one absence left it `False`, and a later page's real header then looked like "the first
+   value seen" rather than a change from an already-fixed `None` baseline.
+2. *A declared header that never appears across a multi-page listing returns a quiet success.*
+   Confirmed: nothing in the loop ever asserts the header was observed at all when
+   `snapshot_version_header` is configured; the function simply returns `snapshot_version=None`
+   with no error, for any number of real pages.
+3. *A repeated cursor duplicates records.* Confirmed: the exit condition only checked `not
+   next_cursor` and the preview cap — an endpoint returning the identical `next_cursor` forever
+   would be refetched and re-appended on every iteration, bounded only by `max_page_fetches` (a
+   much larger number than any reasonable preview size), accumulating duplicates the whole way.
+4. *Non-unique Postgres stable key silently skips/drops rows.* Confirmed by reading the query
+   construction: `WHERE {key} > %s` is a strict greater-than resume comparison with `LIMIT`; if two
+   or more rows share the exact key value returned as the last row of one page, every further row
+   still carrying that key is permanently unreachable on resume (`> key` excludes ties), and nothing
+   in the module ever checks `stable_key_column` for real uniqueness.
+5. *`statement_timeout_ms=0` untested.* Read the check (`observed_timeout[0] == "0"`) and confirmed
+   it is already correct for Postgres's own real "no timeout" sentinel (`SHOW statement_timeout`
+   literally returns `"0"`) — grepped both test files and confirmed neither ever exercises
+   `statement_timeout_ms=0`, so the check was real but entirely unproven by any assertion that could
+   fail.
+
+**E** — implemented all five fixes directly in the module (tri-state `snapshot_version_initialized`
+tracking; new `SnapshotUnstableError`, raised post-loop when a declared header was never observed
+across more than one real page; a repeated-cursor check raising `SourceUnavailableError`; a new
+`NonUniqueStableKeyError` via a one-extra-row Postgres lookahead, catching an intra-page duplicate
+key *and* a tied pair split exactly across the `LIMIT` boundary, with `truncated` now derived from
+whether that lookahead row actually existed rather than the previous `len(rows) >=
+max_preview_records` heuristic; a new `statement_timeout_ms=0` test, no code change needed for that
+one). Also applied three disclosed "recommended" hardenings from the same review: URL-encoded
+`_build_page_url`'s query keys/values (`urllib.parse.quote`) against real cursor-value corruption;
+simplified the REST `truncated` exit logic, fixing a latent under-report when the cap landed exactly
+at a page's natural end; paired the Postgres connector's `except OSError` with `except psycopg.Error`
+so any other real psycopg error (e.g. `OperationalError`) is wrapped rather than left raw.
+
+New tests, each with a disclosed, byte-identical-reverted real fault injection (Law 1) proving the
+specific new/changed check is load-bearing (not merely an un-asserted line): in
+`tests/tasks/test_ftf_0500c.py` — `test_rest_connector_catches_a_header_that_appears_only_on_a_later_page`
+(new `/header-appears-late` fixture; shares the already-fault-tested comparison line from the
+2026-10-01 round), `test_rest_connector_blocks_a_multipage_listing_that_never_sends_the_declared_header`
++ `test_disabling_the_snapshot_unstable_check_genuinely_fails_the_assertion` (new
+`/multipage-no-snapshot-header` fixture), `test_rest_connector_refuses_a_repeating_cursor_rather_than_duplicating_records`
++ `test_disabling_the_repeated_cursor_check_genuinely_produces_duplicates` (new `/repeating-cursor`
+fixture — disabling the check reproduces 20 real duplicate copies of one record), and two
+"recommended"-hardening tests (`test_rest_connector_url_encodes_an_unsafe_cursor_value` against a
+new `/url-unsafe-cursor` fixture; `test_rest_connector_reports_truncated_when_the_cap_exactly_fills_a_page`).
+In `tests/integration/test_ftf_0500c_database_api_trace_source.py` — a new real `source_schema.
+dup_key_records` fixture table (`group_key` values 10, 20, 20, 30 for ids 1-4, built so the tied
+pair ids 2/3 lands exactly across a `max_preview_records=2` boundary) backs
+`test_real_non_unique_stable_key_within_one_page_is_refused`,
+`test_real_non_unique_stable_key_split_across_a_page_boundary_is_refused`, and
+`test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through` (disabling the check proves
+a real two-call resumed capture permanently skips id=3 — the actual silent-skip defect, not a
+hypothetical); `test_real_statement_timeout_ms_zero_is_refused` +
+`test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero` close out the fifth
+finding. One incidental bug found and fixed in the test fixture itself while wiring these up: the
+shared `do_GET` handler's own `cursor = int(query.get("cursor", ["0"])[0])` crashed on the new
+non-integer `/repeating-cursor`/`/url-unsafe-cursor` cursor values — wrapped in `try/except
+ValueError` (those two paths never read the integer form). One test-isolation fix: the first draft
+of `test_disabling_the_snapshot_version_check_genuinely_fails_the_assertion` added a third
+`/header-appears-late` sub-case sharing that function's own disabled-comparison context, which
+crashed with an *unexpected* `SnapshotUnstableError` instead of the expected
+`SourceChangedDuringListingError` — the new post-loop check happens to independently catch that
+exact scenario when the comparison line is disabled (snapshot_version stays at page-one's `None`
+baseline throughout), which would have silently passed the test for the wrong reason. Removed that
+sub-case from the shared function rather than widen its except clause to mask the ambiguity; the
+dedicated positive test for that scenario stands on its own, and the comparison line's load-bearing
+status is already proven by the other two variants sharing it.
+
+Real Postgres needed for the integration suite and was down in this sandbox
+(`pg_lsclusters` showed cluster `16/main` installed but stopped) — started it directly
+(`sudo pg_ctlcluster 16 main start`), same "directly-installed PostgreSQL 16" precedent every prior
+FTF-0500C shift used, not a container (no registry egress in this sandbox, same disclosed finding).
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean, zero new errors.
+`uv run mypy .` clean repo-wide (370 source files, zero errors — confirmed on the changed module and
+both test files individually first, then repo-wide). `python3 scripts/validate_spec.py --strict`
+clean (`git fetch --unshallow` first — this sandbox's own pre-existing shallow-clone artifact, same
+disclosed precedent every prior shift used). Directly confirmed the new `docs/spec-matrix.yaml`
+prose parses with `python3 -c "import yaml; yaml.safe_load(...)"` before trusting
+`validate_spec.py`'s own result, per this repo's own 2026-10-01 unterminated-single-quote lesson
+(a prior shift's own YAML edit silently absorbed several hundred lines into one unterminated
+scalar). `product_truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` still
+blank — disclosed, no live caller added by this fix, same boundary FTF-0500B's own module already
+established). `status.py`: unchanged `99/301` certified / 24 product-true (Law 2 — a resubmission
+is not a certification; denominator is 301 since FTF-1206A's 2026-10-04 addendum). Both
+`tests/tasks/test_ftf_0500c.py` (no live DB) and `tests/integration/
+test_ftf_0500c_database_api_trace_source.py` (real local PostgreSQL 16) re-run clean end to end
+after every fix, exit 0, "all checks passed". Regression swept `test_ftf_0500.py`/
+`test_ftf_0500b.py`/`test_ftf_h006.py` — zero interference (the printed `TenantContextError`
+traceback inside `test_ftf_0500.py`'s own stdout is that suite's own disclosed negative-test case,
+confirmed exit 0; `test_ftf_h006.py`'s own disclosed no-IPv6-stack skip is unchanged, pre-existing
+sandbox behavior, not a regression from this change).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500C entry with a full "L2 fix-and-resubmit (2026-10-04,
+round 3)" note, including the clause-to-test mapping the new relay DoD rule requires
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md` ("2026-10-04T13:20Z"). Updated `QUEUE.md`:
+new top dated log entry; the "## Active" item 0 and the "## Returned 2026-10-04" section both
+updated to mark FTF-0500C fixed and to disclose the order deviation and the still-untouched
+FTF-H007+FTF-04A06/FTF-0601 items for the next shift.
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated
+this shift, before compaction. STEP 4 stop condition (a): FTF-0500C now joins the same PROVISIONAL
+backlog awaiting Control-plane L2 certification and the L4 gate (99/301 certified, unchanged).
+Stopping here — one item per shift, per this list's own rule; not picking a second task. No open
+owner ask (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing, low-urgency
+branch-protection item, already resolved/closed per the owner's 2026-10-04 decision recorded
+there). `BLOCKER.md` unchanged — no live entries.

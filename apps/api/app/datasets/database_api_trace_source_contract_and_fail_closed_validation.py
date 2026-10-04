@@ -103,6 +103,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from urllib.parse import quote
 
 import psycopg
 from packages.security.outbound_guard import GuardedResponse, OutboundGuardError, guarded_fetch
@@ -116,6 +117,7 @@ __all__ = [
     "DEFAULT_MAX_RATE_LIMIT_RETRIES",
     "DEFAULT_STATEMENT_TIMEOUT_MS",
     "LostWatermarkError",
+    "NonUniqueStableKeyError",
     "PostgresIdentifierError",
     "PostgresRecordPreview",
     "PostgresSourceConfig",
@@ -123,6 +125,7 @@ __all__ = [
     "RateLimitRetriesExhaustedError",
     "RestTraceSourceConfig",
     "RestTraceSourceValidationResult",
+    "SnapshotUnstableError",
     "SourceChangedDuringListingError",
     "SourceUnavailableError",
     "UnknownSourceContractError",
@@ -184,6 +187,31 @@ class LostWatermarkError(SourceUnavailableError):
 class SourceChangedDuringListingError(LostWatermarkError):
     """A real REST source's own declared snapshot-version header differed
     between two pages of the same paginated listing."""
+
+
+class SnapshotUnstableError(SourceUnavailableError):
+    """Section 67.1: "if consistency cannot be guaranteed, show
+    SNAPSHOT_UNSTABLE and block production data use." A caller declared a
+    `snapshot_version_header` to track (it wants a consistency guarantee
+    across pages), the listing genuinely spanned more than one real page,
+    and the source never once actually sent that header on any of them --
+    there is then no real signal this module could have checked, so
+    consistency across the pages it already returned cannot be guaranteed
+    one way or the other. Returning a quiet success here would be exactly
+    the un-provable "nothing changed" claim Section 67.1 forbids."""
+
+
+class NonUniqueStableKeyError(SourceUnavailableError):
+    """A Postgres `stable_key_column` that is not actually unique: keyset
+    pagination (`WHERE key > %s ORDER BY key ASC LIMIT %s`) silently skips
+    or drops rows whenever two or more rows share the exact same key value
+    and that tied group is split across a page boundary (the `>` resume
+    comparison permanently skips every further row still carrying the
+    already-returned key), or duplicates rows if a caller mistakes repeated
+    key values within one page for distinct records. Detected two ways: a
+    duplicate key value within one real fetched page, or -- fetching one
+    extra lookahead row past the real page boundary -- the first row past
+    the boundary sharing the same key as the last row returned."""
 
 
 class PostgresIdentifierError(SourceUnavailableError):
@@ -337,6 +365,14 @@ def validate_and_preview_postgres_source(
                         resume_after_key=resume_after_key,
                     )
 
+                # Fetch one extra lookahead row past the real page boundary
+                # (`max_preview_records + 1`): the only way to detect a
+                # non-unique `stable_key_column` whose tied rows straddle
+                # the LIMIT cutoff, which a single-row-over-the-line
+                # `>`-comparison resume would otherwise silently skip on the
+                # next call. `NonUniqueStableKeyError`'s own docstring has
+                # the full reasoning.
+                fetch_limit = config.max_preview_records + 1
                 select_columns = sql.SQL(", ").join(sql.Identifier(c) for c in all_columns)
                 if resume_after_key is None:
                     query = sql.SQL(
@@ -347,7 +383,7 @@ def validate_and_preview_postgres_source(
                         table=sql.Identifier(table),
                         key=sql.Identifier(stable_key_column),
                     )
-                    params: tuple[object, ...] = (config.max_preview_records,)
+                    params: tuple[object, ...] = (fetch_limit,)
                 else:
                     query = sql.SQL(
                         "SELECT {cols} FROM {schema}.{table} WHERE {key} > %s "
@@ -358,7 +394,7 @@ def validate_and_preview_postgres_source(
                         table=sql.Identifier(table),
                         key=sql.Identifier(stable_key_column),
                     )
-                    params = (resume_after_key, config.max_preview_records)
+                    params = (resume_after_key, fetch_limit)
 
                 try:
                     fetched = conn.execute(query, params).fetchall()
@@ -368,11 +404,34 @@ def validate_and_preview_postgres_source(
                         f"{all_columns} does not exist in the real connected database -- "
                         "refusing to fabricate an empty preview for an unknown contract"
                     ) from exc
+
+                extra_fetched = len(fetched) > config.max_preview_records
+                boundary_rows = fetched[: config.max_preview_records]
+                lookahead_row = fetched[config.max_preview_records] if extra_fetched else None
+                # `stable_key_column` is always column 0 of `all_columns`
+                # (see its construction above), so index 0 of every fetched
+                # row is always the real key value, never any other column.
+                key_values = [row[0] for row in boundary_rows]
+                split_at_boundary = (
+                    lookahead_row is not None
+                    and boundary_rows
+                    and lookahead_row[0] == boundary_rows[-1][0]
+                )
+                if len(key_values) != len(set(key_values)) or split_at_boundary:
+                    raise NonUniqueStableKeyError(
+                        f"stable_key_column {stable_key_column!r} is not unique within "
+                        f"{schema}.{table} -- found a duplicate key value among the real "
+                        "fetched rows, which would risk silently skipping or duplicating rows "
+                        "across a resumed capture; refusing to paginate on a non-unique key"
+                    )
+                fetched = boundary_rows
     except OSError as exc:
         raise SourceUnavailableError(f"could not reach the Postgres source: {exc}") from exc
+    except psycopg.Error as exc:
+        raise SourceUnavailableError(f"a real Postgres error occurred: {exc}") from exc
 
     rows = tuple(PostgresRecordPreview(values=row) for row in fetched)
-    truncated = len(rows) >= config.max_preview_records
+    truncated = extra_fetched
     key_index = all_columns.index(stable_key_column)
     next_watermark = rows[-1].values[key_index] if rows else resume_after_key
 
@@ -457,7 +516,15 @@ def _build_page_url(config: RestTraceSourceConfig, *, cursor: str | None) -> str
     if not params:
         return config.base_url
     separator = "&" if "?" in config.base_url else "?"
-    query = "&".join(f"{key}={value}" for key, value in params.items())
+    # `quote(..., safe="")` -- a cursor/query-parameter value is real,
+    # source-supplied data (never a caller-supplied expression; see this
+    # module's own docstring on "no arbitrary scripting"), so it is never
+    # assumed to already be URL-safe. An unescaped `&`/`=`/space/non-ASCII
+    # byte inside a cursor would otherwise silently corrupt the next
+    # request's own query-string structure.
+    query = "&".join(
+        f"{quote(str(key), safe='')}={quote(str(value), safe='')}" for key, value in params.items()
+    )
     return f"{config.base_url}{separator}{query}"
 
 
@@ -497,7 +564,12 @@ def validate_and_preview_rest_trace_source(
     collected: list[Mapping[str, object]] = []
     cursor: str | None = None
     snapshot_version: str | None = None
-    snapshot_version_seen = False
+    # Distinct from `snapshot_version is None` -- that's also the real,
+    # legitimate value when page one genuinely had no header at all.
+    # Without this separate flag, a page-one absence followed by a
+    # page-two header appearing would look identical to "first value seen"
+    # and be silently accepted as this listing's version.
+    snapshot_version_initialized = False
     truncated = False
     cancelled = False
     page_fetches = 0
@@ -558,18 +630,22 @@ def validate_and_preview_rest_trace_source(
 
         if config.snapshot_version_header:
             observed = _header_lookup(response.headers, config.snapshot_version_header)
-            if not snapshot_version_seen:
-                if observed is not None:
-                    snapshot_version = observed
-                    snapshot_version_seen = True
+            if not snapshot_version_initialized:
+                # Page one fixes this listing's own baseline -- `None` is a
+                # real, legitimate baseline (the header is simply absent)
+                # and is tracked exactly like any other observed value.
+                snapshot_version = observed
+                snapshot_version_initialized = True
             elif observed != snapshot_version:
-                # Catches both a changed value and a later page that drops
-                # the header entirely (`observed is None`) after an earlier
-                # page carried one -- a source that stops declaring its own
-                # snapshot version mid-listing is exactly as inconsistent as
-                # one that changes it, and silently falling back to "no
-                # check" here would defeat the lost-watermark guarantee for
-                # any source whose header is merely intermittent.
+                # Catches a changed value, a later page that drops the
+                # header entirely after an earlier page carried one, and a
+                # later page where the header appears for the first time
+                # after page one had none -- all three are equally real
+                # proof the source's own declared version is not a stable
+                # signal across this listing, and silently falling back to
+                # "no check" for any of them would defeat the
+                # lost-watermark guarantee for a source whose header is
+                # merely intermittent.
                 raise SourceChangedDuringListingError(
                     f"the source's own {config.snapshot_version_header!r} header changed "
                     f"from {snapshot_version!r} to {observed!r} between two pages of the "
@@ -592,11 +668,30 @@ def validate_and_preview_rest_trace_source(
             break
 
         next_cursor = body.get(config.cursor_response_field)
-        if not next_cursor or len(collected) >= config.max_preview_records:
-            if len(records) == config.page_size and len(collected) < config.max_preview_records:
-                truncated = truncated or bool(next_cursor)
+        if not next_cursor:
+            # The source itself says this listing has genuinely ended --
+            # not truncated.
+            break
+        if cursor is not None and str(next_cursor) == cursor:
+            raise SourceUnavailableError(
+                f"the REST/trace source returned the identical cursor {cursor!r} again -- "
+                "refusing to refetch the same page and duplicate its records into the preview"
+            )
+        if len(collected) >= config.max_preview_records:
+            # Stopped only because of this module's own cap, with the
+            # source itself reporting further pages still exist.
+            truncated = True
             break
         cursor = str(next_cursor)
+
+    if config.snapshot_version_header and snapshot_version is None and page_fetches > 1:
+        raise SnapshotUnstableError(
+            f"the declared snapshot_version_header {config.snapshot_version_header!r} never "
+            f"appeared on any of the {page_fetches} real pages fetched for this multi-page "
+            "listing -- consistency across those pages cannot be guaranteed one way or the "
+            "other; refusing to return a possibly-inconsistent multi-page preview "
+            "(SNAPSHOT_UNSTABLE, Section 67.1)"
+        )
 
     manifest_hash = hashlib.sha256(
         json.dumps(list(collected), sort_keys=True, separators=(",", ":"), default=str).encode(
