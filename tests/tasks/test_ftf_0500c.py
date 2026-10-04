@@ -192,6 +192,216 @@ def test_real_connection_failure_is_wrapped_not_swallowed() -> None:
         check("FTF-0500C", "a real connection failure is raised, never a fabricated result", True)
 
 
+def test_statement_timeout_ms_rejects_non_positive_bad_types_before_any_connection() -> None:
+    """2026-10-04 L2 round-4 finding (recommended hardening): a positive-int
+    check alone lets a real `bool` through (`isinstance(True, int)` is
+    `True` in Python)."""
+    for bad_value in (0, -1, "5000", 5000.0, True, False):
+        try:
+            source_module.validate_and_preview_postgres_source(
+                _config(statement_timeout_ms=bad_value),
+                connect=_AssertNeverCalledConnect(),  # type: ignore[arg-type]
+            )
+            check(
+                "FTF-0500C",
+                f"negative_acceptance: bad statement_timeout_ms {bad_value!r} is rejected "
+                "before any connection attempt",
+                False,
+            )
+        except source_module.SourceUnavailableError:
+            check(
+                "FTF-0500C",
+                f"negative_acceptance: bad statement_timeout_ms {bad_value!r} is rejected "
+                "before any connection attempt",
+                True,
+            )
+
+
+# -- Fake-connection unit tests: Postgres-specific mechanics that don't need
+#    a real server (SQL_ASCII bytes read-back, a raw TypeError while
+#    processing fetched rows) -- the real duplicate-key/NULL/NaN/collation
+#    mechanics need a real connected database and live in
+#    tests/integration/test_ftf_0500c_database_api_trace_source.py instead.
+
+
+class _FakeCursor:
+    def __init__(
+        self,
+        *,
+        fetchone_result: tuple[object, ...] | None = None,
+        fetchall_result: list[tuple[object, ...]] | None = None,
+        raise_on_fetchall: BaseException | None = None,
+    ) -> None:
+        self._fetchone_result = fetchone_result
+        self._fetchall_result = fetchall_result if fetchall_result is not None else []
+        self._raise_on_fetchall = raise_on_fetchall
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._fetchone_result
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        if self._raise_on_fetchall is not None:
+            raise self._raise_on_fetchall
+        return self._fetchall_result
+
+
+class _FakeTransaction:
+    def __enter__(self) -> _FakeTransaction:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+
+class _FakePostgresConnection:
+    """A fake `connect()` target for the Postgres-specific unit tests below
+    that don't need a real server -- it only ever needs to answer the fixed
+    sequence of `execute()` calls this module itself issues for a
+    `resume_after_key=None` call, never a real round trip. Distinguishes
+    which of the module's own calls is which by structural signature
+    (`query` is a plain `str` only for the two fixed `SET
+    TRANSACTION.../SHOW statement_timeout` calls; the module's own `SET
+    statement_timeout = {}` call is a `Composed` object with `params=None`;
+    the bounded `SELECT ... LIMIT %s` is a `Composed` object with real
+    `params`) -- robust to call order, not a hardcoded call count."""
+
+    def __init__(
+        self,
+        *,
+        statement_timeout_value: object,
+        fetchall_result: list[tuple[object, ...]] | None = None,
+        raise_on_fetchall: BaseException | None = None,
+    ) -> None:
+        self._statement_timeout_value = statement_timeout_value
+        self._fetchall_result = fetchall_result
+        self._raise_on_fetchall = raise_on_fetchall
+
+    def __enter__(self) -> _FakePostgresConnection:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def transaction(self) -> _FakeTransaction:
+        return _FakeTransaction()
+
+    def execute(self, query: object, params: tuple[object, ...] | None = None) -> _FakeCursor:
+        if isinstance(query, str):
+            if "SHOW statement_timeout" in query:
+                return _FakeCursor(fetchone_result=(self._statement_timeout_value,))
+            return _FakeCursor()
+        if params is None:
+            # The module's own "SET statement_timeout = {ms}" call -- no
+            # real answer needed.
+            return _FakeCursor()
+        # The module's own bounded SELECT ... LIMIT %s query.
+        if self._raise_on_fetchall is not None:
+            return _FakeCursor(raise_on_fetchall=self._raise_on_fetchall)
+        return _FakeCursor(fetchall_result=self._fetchall_result)
+
+
+def _fake_postgres_connect(
+    *,
+    statement_timeout_value: object,
+    fetchall_result: list[tuple[object, ...]] | None = None,
+    raise_on_fetchall: BaseException | None = None,
+) -> object:
+    def _connect(conninfo: str, autocommit: bool = False) -> _FakePostgresConnection:
+        return _FakePostgresConnection(
+            statement_timeout_value=statement_timeout_value,
+            fetchall_result=fetchall_result,
+            raise_on_fetchall=raise_on_fetchall,
+        )
+
+    return _connect
+
+
+def test_postgres_statement_timeout_readback_is_decoded_even_as_raw_bytes() -> None:
+    """2026-10-04 L2 round-4 finding: on a SQL_ASCII (or any non-UTF8)
+    server encoding, psycopg can hand `SHOW statement_timeout` back as raw
+    `bytes` instead of `str` -- comparing that to the plain string literal
+    "0" without decoding first would silently never match, letting a real
+    statement_timeout=0 (Postgres's own "no timeout" value) slip through
+    undetected. CI's own test image and this sandbox are both UTF8, so a
+    fake connection stands in for the real SQL_ASCII cluster the review
+    reproduced this against, returning the exact `b"0"` it found."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _config(),
+            connect=_fake_postgres_connect(statement_timeout_value=b"0"),  # type: ignore[arg-type]
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a statement_timeout read back as raw bytes (b'0', a "
+            "SQL_ASCII-style encoding) is still correctly decoded and refused",
+            False,
+        )
+    except source_module.SourceUnavailableError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a statement_timeout read back as raw bytes (b'0', a "
+            "SQL_ASCII-style encoding) is still correctly decoded and refused",
+            True,
+        )
+
+
+def test_postgres_statement_timeout_readback_accepts_a_real_bounded_value_as_bytes() -> None:
+    """The flip side of the above: a real non-zero bounded timeout, also
+    returned as raw bytes, must still be accepted -- proves the decode path
+    doesn't just refuse every byte-string value indiscriminately."""
+    result = source_module.validate_and_preview_postgres_source(
+        _config(),
+        connect=_fake_postgres_connect(  # type: ignore[arg-type]
+            # Trailing `None` is this fixture's own `__tied_with_prev`
+            # column -- the module's real query always appends one.
+            statement_timeout_value=b"5s",
+            fetchall_result=[(1, "a", None)],
+        ),
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: a real bounded statement_timeout read back as raw bytes is still accepted",
+        len(result.rows) == 1,
+    )
+
+
+def test_postgres_connector_wraps_an_unexpected_type_error_not_a_raw_leak() -> None:
+    """2026-10-04 L2 round-4 finding: a raw TypeError (the former Python-side
+    duplicate-key `set()` genuinely raised one for an unhashable key type,
+    e.g. a Postgres array) used to escape this module's own error family
+    entirely. Simulates the same class of failure structurally -- a
+    fetchall() that itself raises TypeError -- and proves it is now wrapped
+    rather than leaked raw."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _config(),
+            connect=_fake_postgres_connect(  # type: ignore[arg-type]
+                statement_timeout_value="5s",
+                raise_on_fetchall=TypeError("unhashable type: 'list'"),
+            ),
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: an unexpected TypeError while processing fetched rows is "
+            "wrapped as SourceUnavailableError, never leaked raw",
+            False,
+        )
+    except source_module.SourceUnavailableError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: an unexpected TypeError while processing fetched rows is "
+            "wrapped as SourceUnavailableError, never leaked raw",
+            True,
+        )
+    except TypeError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: an unexpected TypeError while processing fetched rows is "
+            "wrapped as SourceUnavailableError, never leaked raw",
+            False,
+        )
+
+
 # -- 4. REST/trace connector, real local HTTPS fixture ----------------------
 
 _TLS_TMP = Path(tempfile.mkdtemp(prefix="ftf-0500c-tls-"))
@@ -309,8 +519,9 @@ class _RestHandler(BaseHTTPRequestHandler):
             cursor = int(query.get("cursor", ["0"])[0])
         except ValueError:
             # Non-integer cursors (e.g. /repeating-cursor's "stuck",
-            # /url-unsafe-cursor's own value) are handled by their own path
-            # branch below, which never reads this integer form.
+            # /cursor-cycle's "A"/"B", /url-unsafe-cursor's own value) are
+            # handled by their own path branch below, which never reads this
+            # integer form.
             cursor = 0
         limit = int(query.get("limit", ["5"])[0])
 
@@ -390,6 +601,32 @@ class _RestHandler(BaseHTTPRequestHandler):
                 {"records": [{"id": 1, "value": "x"}], "next_cursor": "stuck"},
                 extra_headers={"ETag": "snapshot-v1"},
             )
+            return
+
+        if parsed.path == "/cursor-cycle":
+            # 2026-10-04 L2 round-4 finding: the original repeated-cursor
+            # check only ever compared against the immediately-previous
+            # cursor, so a longer cycle (A -> B -> A) ran completely
+            # undetected all the way to the generic max_page_fetches bound
+            # instead of being caught as the same real defect.
+            raw_cursor = query.get("cursor", [None])[0]
+            if raw_cursor is None:
+                self._send_json(
+                    {"records": [{"id": 1, "value": "x"}], "next_cursor": "A"},
+                    extra_headers={"ETag": "snapshot-v1"},
+                )
+            elif raw_cursor == "A":
+                self._send_json(
+                    {"records": [{"id": 2, "value": "y"}], "next_cursor": "B"},
+                    extra_headers={"ETag": "snapshot-v1"},
+                )
+            elif raw_cursor == "B":
+                self._send_json(
+                    {"records": [{"id": 3, "value": "z"}], "next_cursor": "A"},
+                    extra_headers={"ETag": "snapshot-v1"},
+                )
+            else:
+                self._send_json({"records": [], "next_cursor": None})
             return
 
         if parsed.path == "/url-unsafe-cursor":
@@ -904,7 +1141,7 @@ def test_disabling_the_repeated_cursor_check_genuinely_produces_duplicates() -> 
     original = MODULE_PATH.read_text()
     original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
     disabled = original.replace(
-        "if cursor is not None and str(next_cursor) == cursor:",
+        "if next_cursor_str in used_cursors:",
         "if False:  # FTF-0500C fault injection -- disabled for this check",
         1,
     )
@@ -934,6 +1171,87 @@ def test_disabling_the_repeated_cursor_check_genuinely_produces_duplicates() -> 
             "fault injection: disabling the real repeated-cursor check genuinely reproduces the "
             "defect (20 duplicate copies of the same record), proving the check was load-bearing",
             genuinely_duplicated,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
+def test_rest_connector_refuses_a_cursor_cycle_longer_than_one_step() -> None:
+    """2026-10-04 L2 round-4 finding: a repeated cursor more than one page
+    apart (A -> B -> A) used to run completely undetected all the way to
+    the generic max_page_fetches bound instead of being caught as the same
+    real repeated-cursor defect a one-step repeat already catches."""
+    if _BASE_URL is None:
+        return
+    try:
+        source_module.validate_and_preview_rest_trace_source(
+            _rest_config("/cursor-cycle", max_preview_records=20, max_page_fetches=10),
+            policy=_policy(),
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real cursor cycle longer than one step (A -> B -> A) is "
+            "refused as a repeated cursor, not run to the generic page-fetch bound",
+            False,
+        )
+    except source_module.SourceUnavailableError as exc:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real cursor cycle longer than one step (A -> B -> A) is "
+            "refused as a repeated cursor, not run to the generic page-fetch bound",
+            "already been used earlier" in str(exc),
+        )
+
+
+def test_disabling_the_cursor_cycle_check_genuinely_loops_to_the_page_fetch_bound() -> None:
+    """Law 1, disclosed real fault injection: disables the new
+    every-cursor-used tracking directly in the module under test, proves
+    the real A->B->A cycle above genuinely runs unbounded except for
+    max_page_fetches without it, then reverts the file byte-identical."""
+    if _BASE_URL is None:
+        return
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "if next_cursor_str in used_cursors:",
+        "if False:  # FTF-0500C fault injection -- disabled for this check",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the cursor-cycle check line was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            source_module.validate_and_preview_rest_trace_source(
+                _rest_config("/cursor-cycle", max_preview_records=20, max_page_fetches=6),
+                policy=_policy(),
+            )
+            genuinely_ran_unbounded = False
+        except source_module.SourceUnavailableError as exc:
+            genuinely_ran_unbounded = "max_page_fetches" in str(exc)
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real cursor-cycle check genuinely lets the cycle "
+            "run all the way to the generic max_page_fetches bound instead (proves the check "
+            "was load-bearing, not vacuously passing)",
+            genuinely_ran_unbounded,
         )
     finally:
         MODULE_PATH.write_text(original)

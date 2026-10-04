@@ -1,4 +1,149 @@
 # PROGRESS — Sovra
+## 2026-10-04T15:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-mezaz2` — FTF-0500C fix-and-resubmit, round 4 (PR pending)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch.
+`BLOCKER.md` read in full: no live entries (all prior entries resolved history). STEP 0.2: no
+`cognee-cli` binary on this sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh, per this repo's own
+"never assume state from prior context" rule. The most recent entry across all three is Control
+plane's own 2026-10-04T13:45Z L2 review of PR #448 — the immediately-prior shift's own FTF-0500C
+round-3 fix — returning it **NOT CERTIFIED again** with five new round-4 findings (a cursor cycle
+longer than one step still duplicated records; the `statement_timeout` read-back fails open on a
+SQL_ASCII server encoding; a real NULL/NaN/non-deterministic-collation stable key value is silently
+lost because Python equality disagrees with Postgres's own real comparison semantics; a raw
+`TypeError` could escape the module's error family; two prior fixes — `truncated`'s exact-boundary
+behavior and the new `except psycopg.Error` clause — had no test proving the matching fault turns
+red).
+
+Per CLAUDE.md's relay protocol ("Returned work first... A PROVISIONAL item that Control plane
+returned is relay work"), this is the freshest returned work in the whole backlog. Checked whether
+`QUEUE.md`'s own stated top-priority order (FTF-H007+FTF-04A06, then FTF-0601) should take
+precedence instead: a fresh `list_pull_requests` found no open PR for either — but also found no new
+Control-plane findings against either since their own round-2 fix (PR #403, merged) — meaning they
+are currently only awaiting Control plane's own next review cycle, not something relay has an
+unaddressed finding to act on. FTF-0500C, by contrast, has a concrete, just-posted, unaddressed
+NOT-CERTIFIED verdict. Picked **FTF-0500C**'s round-4 fix this shift; FTF-H007+FTF-04A06/FTF-0601
+remain disclosed as the top-priority items once Control plane's review reaches them, unchanged from
+the prior shift's own disclosure.
+
+STEP 2 (PEV): **P** — read the 2026-10-04T13:45Z review's five findings directly against
+`apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py` (710 lines
+after round 3) before any change, to form a real hypothesis for each. Before trusting the review's
+own claims about real-database comparison semantics, independently probed this sandbox's real local
+PostgreSQL 16 directly: `SELECT 'NaN'::float8 = 'NaN'::float8` → `t` (Postgres treats NaN as equal to
+itself, unlike Python's `nan == nan`, which is always `False`); a real ICU collation created with
+`CREATE COLLATION ... (provider = icu, locale = 'und-u-ks-level2', deterministic = false)` genuinely
+ties `'b'`/`'B'` (`tied` column `t` via a `LAG(...) OVER (ORDER BY ...)` probe query); a real table
+with key values `(1, 2, NULL, NULL)` shows the NULL rows are permanently excluded by a resumed `key >
+%s` comparison, independent of any tie. All three confirmed as real, reproducible Postgres behavior,
+not merely asserted by the review.
+
+**E** — implemented all five fixes:
+
+1. *Cursor cycle (A→B→A) duplicated records.* The old check only compared against the
+   immediately-previous cursor. Fixed: a real `set` tracks every cursor already used in this
+   listing, seeded immediately before its own fetch; any `next_cursor` matching anything already in
+   that set is refused.
+2. *`statement_timeout` guard fails open on SQL_ASCII.* psycopg can hand `SHOW statement_timeout`
+   back as raw `bytes` on a non-UTF8 server encoding, which the old plain `== "0"` string comparison
+   never matched. Fixed: decode `bytes` before comparing. Also added a separate, earlier
+   config-level check rejecting a non-positive/non-`int`/`bool` `statement_timeout_ms` before any
+   connection is attempted (`isinstance(True, int)` is `True` in Python, checked explicitly).
+3. *Silent row loss on keys Python equality does not match (NULL, NaN, non-deterministic collation).*
+   Replaced the Python-equality/`set()`-based duplicate-key detection entirely with a query-level
+   check: the generated SELECT now also computes `({key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER
+   BY {key} ASC)) AS __tied_with_prev`, which inherits the stable key column's own real type, NaN
+   handling and collation directly from the connected database — plus an explicit real-NULL check on
+   every fetched key value (a NULL key can never satisfy `key > %s`, so it is refused outright rather
+   than only when tied).
+4. *Raw `TypeError` escaped the module's error family.* The outer exception handling now also catches
+   `TypeError`, wrapping it as `SourceUnavailableError`.
+5. *Two unpinned claims.* `truncated`'s exact-boundary behavior and the `except psycopg.Error` clause
+   each needed a real test proving the matching fault turns red; no code change was needed for
+   either, only tests.
+
+New tests, each with a disclosed, byte-identical-reverted real fault injection (Law 1) proving the
+specific new/changed check is load-bearing: in `tests/tasks/test_ftf_0500c.py` — a new
+`/cursor-cycle` fixture backing `test_rest_connector_refuses_a_cursor_cycle_longer_than_one_step` +
+`test_disabling_the_cursor_cycle_check_genuinely_loops_to_the_page_fetch_bound`; a new fake
+`_FakePostgresConnection` (distinguishes the module's own fixed `execute()` call sequence by
+structural signature — `str` query vs `Composed`, `params=None` vs real `params` — not a hardcoded
+call count) backing `test_postgres_statement_timeout_readback_is_decoded_even_as_raw_bytes`,
+`test_postgres_statement_timeout_readback_accepts_a_real_bounded_value_as_bytes`, and
+`test_statement_timeout_ms_rejects_non_positive_bad_types_before_any_connection`; and
+`test_postgres_connector_wraps_an_unexpected_type_error_not_a_raw_leak` (a fake connection whose
+`fetchall()` itself raises `TypeError`). In `tests/integration/test_ftf_0500c_database_api_trace_source.py`
+— three new real-Postgres fixture tables (`null_key_records`, `nan_key_records`, a best-effort ICU
+`collation_key_records` with a disclosed skip path for a Postgres build lacking ICU support,
+confirmed available on this build) back
+`test_real_null_stable_key_value_is_refused_not_silently_lost`,
+`test_real_nan_stable_key_tie_is_refused_python_equality_would_miss_it`, and
+`test_real_non_deterministic_collation_tie_is_refused`; a real `exact_boundary_records` table (exactly
+5 rows) backs `test_real_exact_boundary_table_is_not_falsely_marked_truncated`; a real, deliberately
+ungranted `ungranted_records` table backs `test_real_select_denied_by_grants_on_an_ungranted_table_is_wrapped`
++ `test_disabling_the_psycopg_error_wrapper_genuinely_leaks_the_raw_error`. The existing real
+`test_real_statement_timeout_ms_zero_is_refused` (+ its paired fault test) needed rewriting: the new,
+separate config-level `statement_timeout_ms <= 0` check now intercepts a literal `0` config value
+before any connection, so the old test's own premise (reach the session read-back path with
+`statement_timeout_ms=0`) was no longer reachable — replaced with a new
+`_ForcedStatementTimeoutReadbackConnection` spy that forces the real session's own read-back to `"0"`
+independently, keeping the two checks' own test coverage genuinely separate. Two existing
+fault-injection tests (non-unique-key check, statement_timeout read-back check) had their own
+string-replace target lines updated to match the refactored code they now target, since the exact
+lines they disabled no longer exist verbatim.
+
+Real Postgres needed for the integration suite and was down in this sandbox (`pg_lsclusters` showed
+cluster `16/main` installed but stopped) — started it directly (`sudo pg_ctlcluster 16 main start`),
+same precedent every prior FTF-0500C shift used. The `postgres` role's password needed resetting
+(`ALTER USER postgres PASSWORD 'postgres'`) to match the DSN this suite's own default expects — the
+sandbox's existing peer-auth-only configuration for that role was a local setup gap, not a module
+defect, disclosed here rather than worked around silently.
+
+`uv sync --all-packages` (first run this session — `psycopg`/`fastapi`/etc. were not yet installed,
+confirmed via a fresh `ModuleNotFoundError` before syncing, not assumed). `uv run ruff check .`
+found one real line-length violation in the new integration-test spy class; fixed and re-verified
+clean. `uv run ruff format --check .` reformatted the same file; re-verified clean after. `uv run
+mypy .` found two real `__exit__` return-type errors in the new no-DB fake-connection test classes
+(`bool` is invalid for a context manager's `__exit__` that always returns `False` — would silently
+let it swallow exceptions under stricter typing); fixed to `None` and re-verified clean repo-wide
+(370 source files, zero errors). `python3 scripts/validate_spec.py --strict` clean (`git fetch
+--unshallow` first — this sandbox's own pre-existing shallow-clone artifact, same disclosed
+precedent every prior shift used). Directly confirmed the new `docs/spec-matrix.yaml` prose parses
+with `python3 -c "import yaml; yaml.safe_load(...)"` before trusting `validate_spec.py`'s own
+result, per this repo's own 2026-10-01 unterminated-single-quote lesson. `product_truth_check.py
+--fail-on-unwired`: unchanged `26/26` (`proving_symbol` still blank — disclosed, no live caller
+added by this fix, same boundary FTF-0500B's own module already established). `status.py`: unchanged
+`99/301` certified / 24 product-true (Law 2 — a resubmission is not a certification). Both
+`tests/tasks/test_ftf_0500c.py` (no live DB) and `tests/integration/
+test_ftf_0500c_database_api_trace_source.py` (real local PostgreSQL 16) re-run clean end to end
+after every fix, exit 0, "all checks passed". Regression swept `test_ftf_0500.py`/
+`test_ftf_0500b.py`/`test_ftf_h006.py` — zero interference (the printed `TenantContextError`
+traceback inside `test_ftf_0500.py`'s own stdout is that suite's own disclosed negative-test case,
+confirmed exit 0; `test_ftf_h006.py`'s own disclosed no-IPv6-stack skip is unchanged, pre-existing
+sandbox behavior, not a regression from this change).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500C entry with a full "L2 fix-and-resubmit (2026-10-04,
+round 4)" note, including the clause-to-test mapping the relay DoD rule requires
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended a
+full evidence entry to `docs/certifications/queue.md` ("2026-10-04T15:10Z"). Updated `QUEUE.md`:
+new top dated log entry; the "## Active" item 0 updated to disclose the round-4 return and this
+shift's own disclosed reasoning for picking FTF-0500C over FTF-H007+FTF-04A06/FTF-0601 (no new
+findings against either since their own round-2 fix; still the top-priority items once Control
+plane's review reaches them).
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated
+this shift, before compaction. STEP 4 stop condition (a): FTF-0500C now stays PROVISIONAL, joining
+the same backlog awaiting Control-plane L2 certification and the L4 gate (99/301 certified,
+unchanged). Stopping here — one item per shift, per this list's own rule; not picking a second task.
+No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing,
+low-urgency branch-protection item, already resolved/closed per the owner's 2026-10-04 decision
+recorded there). `BLOCKER.md` unchanged — no live entries.
+
 ## 2026-10-04T08:05:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-artau8` — merged PR #442 (prior shift's own tracking-only PR, green), independently re-confirmed frontier saturated, no new relay-actionable task found
 
 STEP 0: `sha256sum CLAUDE.md` (`0912712...2dbf6`) matched the committed `CLAUDE.md.sha256` exactly —

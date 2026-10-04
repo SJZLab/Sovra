@@ -86,11 +86,11 @@ def _admin_available() -> bool:
         return False
 
 
-def _provision() -> tuple[str, str]:
+def _provision() -> tuple[str, str, bool]:
     """Real setup: a scratch database, a real least-privileged SELECT-only
     role, and a real read/write role (used only to prove this module's own
     READ ONLY transaction mode independently of role grants). Returns
-    (ro_conninfo, rw_conninfo)."""
+    (ro_conninfo, rw_conninfo, collation_available)."""
     with psycopg.connect(_ADMIN_DSN, autocommit=True) as admin:
         admin.execute(f"DROP DATABASE IF EXISTS {_TEST_DB}")
         admin.execute(f"DROP ROLE IF EXISTS {_RO_ROLE}")
@@ -137,10 +137,85 @@ def _provision() -> tuple[str, str]:
         )
         conn.execute(f"GRANT SELECT ON source_schema.dup_key_records TO {_RO_ROLE}")
 
+        # 2026-10-04 L2 round-4 finding: Python equality is not a safe proxy
+        # for "is this stable key value tied/unreachable" -- a real NULL key
+        # (never `> %s` reachable at all), a real float8 NaN (Python's `nan
+        # == nan` is always False; Postgres's own comparison treats NaN as
+        # equal to itself), each get their own real table.
+        conn.execute(
+            "CREATE TABLE source_schema.null_key_records ("
+            "id BIGINT PRIMARY KEY, key_value BIGINT, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.null_key_records (id, key_value, name) VALUES "
+            "(1, 1, 'a'), (2, 2, 'b'), (3, NULL, 'c'), (4, NULL, 'd')"
+        )
+        conn.execute(f"GRANT SELECT ON source_schema.null_key_records TO {_RO_ROLE}")
+
+        conn.execute(
+            "CREATE TABLE source_schema.nan_key_records ("
+            "id BIGINT PRIMARY KEY, key_value DOUBLE PRECISION NOT NULL, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.nan_key_records (id, key_value, name) VALUES "
+            "(1, 1.0, 'a'), (2, 'NaN', 'b'), (3, 'NaN', 'c')"
+        )
+        conn.execute(f"GRANT SELECT ON source_schema.nan_key_records TO {_RO_ROLE}")
+
+        # A real table with exactly `max_preview_records` rows and no more --
+        # the exact boundary a fault test found no real assertion
+        # distinguished from the old `len(fetched) >= max` heuristic.
+        conn.execute(
+            "CREATE TABLE source_schema.exact_boundary_records ("
+            "id BIGINT PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.exact_boundary_records (id, name) "
+            "SELECT g, 'row-' || g FROM generate_series(1, 5) AS g"
+        )
+        conn.execute(f"GRANT SELECT ON source_schema.exact_boundary_records TO {_RO_ROLE}")
+
+        # Deliberately never granted to `_RO_ROLE` -- this module's own
+        # connection uses the RO role's conninfo, so a real SELECT against
+        # this table must be denied by the database's own grants (a real
+        # `psycopg.errors.InsufficientPrivilege`, not an `OSError`), proving
+        # the module's generic `except psycopg.Error` wrapper against a real
+        # error class the connection-failure test never exercises.
+        conn.execute(
+            "CREATE TABLE source_schema.ungranted_records (id BIGINT PRIMARY KEY, name TEXT)"
+        )
+        conn.execute("INSERT INTO source_schema.ungranted_records (id, name) VALUES (1, 'secret')")
+
+        # Best-effort: not every Postgres build includes ICU support.
+        # `collation_available` lets the matching test disclose a skip
+        # rather than fail the whole suite on an environment without it.
+        collation_available = True
+        try:
+            conn.execute(
+                "CREATE COLLATION source_schema.ci_test "
+                "(provider = icu, locale = 'und-u-ks-level2', deterministic = false)"
+            )
+            conn.execute(
+                "CREATE TABLE source_schema.collation_key_records ("
+                "id BIGINT PRIMARY KEY, key_value TEXT COLLATE source_schema.ci_test, "
+                "name TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO source_schema.collation_key_records (id, key_value, name) VALUES "
+                "(1, 'a', 'w'), (2, 'b', 'x'), (3, 'B', 'y'), (4, 'c', 'z')"
+            )
+            conn.execute(f"GRANT SELECT ON source_schema.collation_key_records TO {_RO_ROLE}")
+        except psycopg.Error as exc:
+            collation_available = False
+            print(
+                f"FTF-0500C: this Postgres build has no usable ICU collation support ({exc}) -- "
+                "the non-deterministic-collation fail-closed test is skipped and disclosed here."
+            )
+
     host_and_port = db_dsn.split("@", 1)[1].split("/", 1)[0]
     ro_conninfo = f"postgresql://{_RO_ROLE}:{_RO_PASSWORD}@{host_and_port}/{_TEST_DB}"
     rw_conninfo = f"postgresql://{_RW_ROLE}:{_RW_PASSWORD}@{host_and_port}/{_TEST_DB}"
-    return ro_conninfo, rw_conninfo
+    return ro_conninfo, rw_conninfo, collation_available
 
 
 def _teardown() -> None:
@@ -481,7 +556,7 @@ def test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through(
     original = MODULE_PATH.read_text()
     original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
     disabled = original.replace(
-        "if len(key_values) != len(set(key_values)) or split_at_boundary:",
+        "if any_null_key or intra_page_tie or boundary_tie:",
         "if False:  # FTF-0500C fault injection -- disabled for this check",
         1,
     )
@@ -536,26 +611,89 @@ def test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through(
         )
 
 
+class _ForcedCursor:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def fetchone(self) -> tuple[object, ...]:
+        return (self._value,)
+
+
+class _ForcedStatementTimeoutReadbackConnection:
+    """Wraps a real `psycopg.Connection`, used only as the module's own
+    `connect` callable, to force its own `SHOW statement_timeout` probe to
+    read back a chosen value regardless of what was actually set on the
+    real session. 2026-10-04 L2 round-4: a separate, earlier config-level
+    `statement_timeout_ms <= 0` validation now also rejects a literal `0`
+    config value before any connection is attempted -- this spy keeps that
+    check out of the picture entirely (a real, valid positive
+    `statement_timeout_ms` is used) so this test exercises only the real
+    session read-back path the module's own `SHOW statement_timeout` SQL
+    produces, independently."""
+
+    def __init__(self, real: psycopg.Connection[tuple[object, ...]], forced_value: object) -> None:
+        self._real = real
+        self._forced_value = forced_value
+
+    def __enter__(self) -> _ForcedStatementTimeoutReadbackConnection:
+        self._real.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> None:
+        self._real.__exit__(exc_type, exc_value, traceback)  # type: ignore[arg-type]
+
+    def transaction(self) -> object:
+        return self._real.transaction()
+
+    def execute(self, query: object, params: tuple[object, ...] | None = None) -> object:
+        if isinstance(query, str) and "SHOW statement_timeout" in query:
+            return _ForcedCursor(self._forced_value)
+        if params is not None:
+            return self._real.execute(query, params)  # type: ignore[arg-type]
+        return self._real.execute(query)  # type: ignore[arg-type]
+
+
 def test_real_statement_timeout_ms_zero_is_refused(ro_conninfo: str) -> None:
     """2026-10-04 L2 finding: `statement_timeout_ms=0` means "no timeout" to
     Postgres itself (`SHOW statement_timeout` reports back the literal
     string `"0"`) -- the existing read-back check already compares against
-    that exact literal, but was never actually exercised by a real test."""
+    that exact literal, but was never actually exercised by a real test.
+    Forces the real `SHOW statement_timeout` probe to report "0" on an
+    otherwise real, valid session -- proving the independent session
+    read-back check itself, not the separate config-level
+    `statement_timeout_ms <= 0` validation (see
+    `test_statement_timeout_ms_rejects_non_positive_bad_types_before_any_connection`
+    in the no-DB suite) that would otherwise short-circuit a literal `0`
+    config value before any connection is even attempted."""
+
+    def spy_connect(
+        conninfo: str, autocommit: bool = False
+    ) -> _ForcedStatementTimeoutReadbackConnection:
+        return _ForcedStatementTimeoutReadbackConnection(
+            psycopg.connect(conninfo, autocommit=autocommit), "0"
+        )
+
     try:
         source_module.validate_and_preview_postgres_source(
-            _config(ro_conninfo, statement_timeout_ms=0)
+            _config(ro_conninfo),
+            connect=spy_connect,  # type: ignore[arg-type]
         )
         check(
             "FTF-0500C",
-            "negative_acceptance: a real statement_timeout_ms=0 (Postgres's own 'no timeout' "
-            "value) is refused, never silently run unbounded",
+            "negative_acceptance: a real session whose statement_timeout reads back as '0' "
+            "(Postgres's own 'no timeout' value) is refused, never silently run unbounded",
             False,
         )
     except source_module.SourceUnavailableError:
         check(
             "FTF-0500C",
-            "negative_acceptance: a real statement_timeout_ms=0 (Postgres's own 'no timeout' "
-            "value) is refused, never silently run unbounded",
+            "negative_acceptance: a real session whose statement_timeout reads back as '0' "
+            "(Postgres's own 'no timeout' value) is refused, never silently run unbounded",
             True,
         )
 
@@ -570,7 +708,7 @@ def test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(
     original = MODULE_PATH.read_text()
     original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
     disabled = original.replace(
-        'if observed_timeout is None or observed_timeout[0] == "0":',
+        'if observed_timeout_value is None or str(observed_timeout_value).strip() == "0":',
         "if False:  # FTF-0500C fault injection -- disabled for this check",
         1,
     )
@@ -581,6 +719,14 @@ def test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(
             False,
         )
         return
+
+    def spy_connect(
+        conninfo: str, autocommit: bool = False
+    ) -> _ForcedStatementTimeoutReadbackConnection:
+        return _ForcedStatementTimeoutReadbackConnection(
+            psycopg.connect(conninfo, autocommit=autocommit), "0"
+        )
+
     try:
         MODULE_PATH.write_text(disabled)
         import importlib
@@ -588,7 +734,8 @@ def test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(
         importlib.reload(source_module)
         try:
             result = source_module.validate_and_preview_postgres_source(
-                _config(ro_conninfo, statement_timeout_ms=0)
+                _config(ro_conninfo),
+                connect=spy_connect,  # type: ignore[arg-type]
             )
             genuinely_failed_without_the_check = True
             _ = result
@@ -613,6 +760,255 @@ def test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(
         )
 
 
+def _null_key_config(ro_conninfo: str, **overrides: object) -> source_module.PostgresSourceConfig:
+    base: dict[str, object] = {
+        "conninfo": ro_conninfo,
+        "schema": "source_schema",
+        "table": "null_key_records",
+        "columns": ("id", "key_value", "name"),
+        "stable_key_column": "key_value",
+    }
+    base.update(overrides)
+    return source_module.PostgresSourceConfig(**base)  # type: ignore[arg-type]
+
+
+def test_real_null_stable_key_value_is_refused_not_silently_lost(ro_conninfo: str) -> None:
+    """2026-10-04 L2 round-4 finding: a real NULL in the stable key column
+    can never satisfy `key > %s` (NULL comparisons are never true in SQL),
+    so a NULL-keyed row becomes permanently unreachable the moment any
+    resume happens -- the former Python `set()`-based duplicate check never
+    special-cased this at all. `null_key_records` has key_value 1, 2, NULL,
+    NULL (ids 1-4); max_preview_records=2 brings the first NULL row into
+    the lookahead position."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _null_key_config(ro_conninfo, max_preview_records=2)
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real NULL stable-key value is refused outright, not "
+            "silently skipped on a later resumed capture",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real NULL stable-key value is refused outright, not "
+            "silently skipped on a later resumed capture",
+            True,
+        )
+
+
+def _nan_key_config(ro_conninfo: str, **overrides: object) -> source_module.PostgresSourceConfig:
+    base: dict[str, object] = {
+        "conninfo": ro_conninfo,
+        "schema": "source_schema",
+        "table": "nan_key_records",
+        "columns": ("id", "key_value", "name"),
+        "stable_key_column": "key_value",
+    }
+    base.update(overrides)
+    return source_module.PostgresSourceConfig(**base)  # type: ignore[arg-type]
+
+
+def test_real_nan_stable_key_tie_is_refused_python_equality_would_miss_it(
+    ro_conninfo: str,
+) -> None:
+    """2026-10-04 L2 round-4 finding: Python's `nan == nan` is always
+    `False` (IEEE754), so the former Python-side duplicate check could
+    never catch two real `float8` NaN key values as tied -- Postgres's own
+    comparison operators, by contrast, genuinely treat NaN as equal to
+    itself (confirmed directly: `SELECT 'NaN'::float8 = 'NaN'::float8` is
+    `t`). `nan_key_records` has key_value 1.0, NaN, NaN (ids 1-3); the tied
+    pair lands exactly in the lookahead position with max_preview_records=2."""
+    try:
+        source_module.validate_and_preview_postgres_source(
+            _nan_key_config(ro_conninfo, max_preview_records=2)
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real tied NaN stable-key pair is refused, using the "
+            "database's own real comparison semantics rather than Python equality",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real tied NaN stable-key pair is refused, using the "
+            "database's own real comparison semantics rather than Python equality",
+            True,
+        )
+
+
+def test_real_non_deterministic_collation_tie_is_refused(
+    ro_conninfo: str, collation_available: bool
+) -> None:
+    """2026-10-04 L2 round-4 finding: a text column under a non-default,
+    non-deterministic ICU collation (e.g. `und-u-ks-level2`, case-
+    insensitive) ties 'b' and 'B' under the database's own real comparison
+    rules -- confirmed directly against this exact collation (`SELECT 'b'
+    = 'B' COLLATE ci_test` is `t`) -- which plain Python string equality
+    has no way to know about. `collation_key_records` has key_value 'a',
+    'b', 'B', 'c' (ids 1-4); the tied pair lands exactly in the lookahead
+    position with max_preview_records=2."""
+    if not collation_available:
+        print(
+            "FTF-0500C: this Postgres build has no usable ICU collation support -- the "
+            "non-deterministic-collation fail-closed test is skipped, already disclosed when "
+            "the fixture table was provisioned."
+        )
+        return
+    try:
+        source_module.validate_and_preview_postgres_source(
+            source_module.PostgresSourceConfig(
+                conninfo=ro_conninfo,
+                schema="source_schema",
+                table="collation_key_records",
+                columns=("id", "key_value", "name"),
+                stable_key_column="key_value",
+                max_preview_records=2,
+            )
+        )
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real stable-key tie under a non-deterministic ICU "
+            "collation ('b'/'B') is refused, using the column's own real collation rather "
+            "than plain Python string equality",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real stable-key tie under a non-deterministic ICU "
+            "collation ('b'/'B') is refused, using the column's own real collation rather "
+            "than plain Python string equality",
+            True,
+        )
+
+
+def test_real_exact_boundary_table_is_not_falsely_marked_truncated(ro_conninfo: str) -> None:
+    """2026-10-04 L2 round-4 finding: a fault test reverting `truncated` to
+    the old `len(fetched) >= max_preview_records` heuristic found no real
+    test actually distinguished that from the correct lookahead-based
+    `truncated`, at the exact boundary where a real table has precisely
+    `max_preview_records` rows and nothing more. `exact_boundary_records`
+    has exactly 5 real rows."""
+    result = source_module.validate_and_preview_postgres_source(
+        source_module.PostgresSourceConfig(
+            conninfo=ro_conninfo,
+            schema="source_schema",
+            table="exact_boundary_records",
+            columns=("id", "name"),
+            stable_key_column="id",
+            max_preview_records=5,
+        )
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: a real table with exactly max_preview_records rows and no more is not "
+        "falsely marked truncated",
+        result.truncated is False and len(result.rows) == 5,
+    )
+
+
+def _ungranted_config(ro_conninfo: str) -> source_module.PostgresSourceConfig:
+    return source_module.PostgresSourceConfig(
+        conninfo=ro_conninfo,
+        schema="source_schema",
+        table="ungranted_records",
+        columns=("id", "name"),
+        stable_key_column="id",
+    )
+
+
+def test_real_select_denied_by_grants_on_an_ungranted_table_is_wrapped(
+    ro_conninfo: str,
+) -> None:
+    """2026-10-04 L2 round-4 finding: a fault test deleting the module's own
+    `except psycopg.Error` clause entirely found both suites stayed GREEN,
+    because the only connection-failure test used a fake OSError, never a
+    real psycopg error from a live connection. `ungranted_records` is
+    deliberately never granted to the real least-privileged role this
+    module connects as."""
+    try:
+        source_module.validate_and_preview_postgres_source(_ungranted_config(ro_conninfo))
+        check(
+            "FTF-0500C",
+            "acceptance: a real permission-denied error (SELECT on an ungranted table) is "
+            "wrapped as SourceUnavailableError, never leaked as a raw psycopg error",
+            False,
+        )
+    except source_module.SourceUnavailableError:
+        check(
+            "FTF-0500C",
+            "acceptance: a real permission-denied error (SELECT on an ungranted table) is "
+            "wrapped as SourceUnavailableError, never leaked as a raw psycopg error",
+            True,
+        )
+    except psycopg.errors.InsufficientPrivilege:
+        check(
+            "FTF-0500C",
+            "acceptance: a real permission-denied error (SELECT on an ungranted table) is "
+            "wrapped as SourceUnavailableError, never leaked as a raw psycopg error",
+            False,
+        )
+
+
+def test_disabling_the_psycopg_error_wrapper_genuinely_leaks_the_raw_error(
+    ro_conninfo: str,
+) -> None:
+    """Law 1, disclosed real fault injection: disables the module's own
+    generic `except psycopg.Error` clause, proves the assertion above
+    genuinely fails (a raw psycopg error leaks out, unwrapped) without it,
+    then reverts the file byte-identical."""
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "    except psycopg.Error as exc:\n"
+        '        raise SourceUnavailableError(f"a real Postgres error occurred: {exc}") from exc',
+        "    except psycopg.Error as _unused_exc:  # FTF-0500C fault injection -- disabled\n"
+        "        raise _unused_exc",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the generic psycopg.Error wrapper clause was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            source_module.validate_and_preview_postgres_source(_ungranted_config(ro_conninfo))
+            genuinely_leaked_raw = False
+        except source_module.SourceUnavailableError:
+            genuinely_leaked_raw = False
+        except psycopg.errors.InsufficientPrivilege:
+            genuinely_leaked_raw = True
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real psycopg.Error wrapper genuinely leaks the raw "
+            "permission-denied error (proves the wrapper was load-bearing, not vacuously "
+            "passing)",
+            genuinely_leaked_raw,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
 def main() -> int:
     if not _admin_available():
         print(
@@ -623,7 +1019,7 @@ def main() -> int:
         )
         return 0
 
-    ro_conninfo, rw_conninfo = _provision()
+    ro_conninfo, rw_conninfo, collation_available = _provision()
     try:
         test_real_bounded_cursor_pagination_covers_the_whole_real_table(ro_conninfo)
         test_real_statement_timeout_is_genuinely_set_on_the_session(ro_conninfo)
@@ -637,6 +1033,12 @@ def main() -> int:
         test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through(ro_conninfo)
         test_real_statement_timeout_ms_zero_is_refused(ro_conninfo)
         test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(ro_conninfo)
+        test_real_null_stable_key_value_is_refused_not_silently_lost(ro_conninfo)
+        test_real_nan_stable_key_tie_is_refused_python_equality_would_miss_it(ro_conninfo)
+        test_real_non_deterministic_collation_tie_is_refused(ro_conninfo, collation_available)
+        test_real_exact_boundary_table_is_not_falsely_marked_truncated(ro_conninfo)
+        test_real_select_denied_by_grants_on_an_ungranted_table_is_wrapped(ro_conninfo)
+        test_disabling_the_psycopg_error_wrapper_genuinely_leaks_the_raw_error(ro_conninfo)
     finally:
         _teardown()
 

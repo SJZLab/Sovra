@@ -1,5 +1,62 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-04T13:50:00Z (scheduled relay shift, branch `claude/wizardly-fermat-goeiru`) —
+Updated: 2026-10-04T15:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-mezaz2`) —
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly, no mismatch. `BLOCKER.md` read in
+  full: no live entries (all resolved history). STEP 1: read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh — the most recent entry is Control plane's own
+  2026-10-04T13:45Z L2 review of PR #448 (the immediately-prior shift's own FTF-0500C round-3 fix),
+  returning it **NOT CERTIFIED again** with five new round-4 findings. Per STEP 1 "fix every open or
+  returned `[relay]` item before new work," this is the freshest returned work and was picked this
+  shift (FTF-H007+FTF-04A06/FTF-0601 have no new findings since their own round-2 fix — PR #403,
+  merged — and are only awaiting Control plane's own next review cycle, not relay-owned right now;
+  confirmed via a fresh `list_pull_requests`: no open PR exists for them, and FTF-0500B's own round-3
+  fix is already open as PR #449, awaiting review).
+
+  STEP 2 (PEV): **P** — read the 2026-10-04T13:45Z review's five findings directly against
+  `apps/api/app/datasets/database_api_trace_source_contract_and_fail_closed_validation.py` before any
+  change, plus directly probed this sandbox's real local Postgres 16 to confirm the review's own
+  claims about NaN/collation/NULL comparison semantics before trusting them (`SELECT 'NaN'::float8 =
+  'NaN'::float8` → `t`; a real `und-u-ks-level2` ICU collation genuinely ties `'b'`/`'B'`; a real NULL
+  key is unconditionally lost on resume). **E** — fixed all five: a real `set` tracks every REST
+  cursor already used (not only the immediately-previous one), refusing a longer A→B→A cycle; the
+  Postgres `statement_timeout` read-back now decodes `bytes` before comparing (SQL_ASCII-style
+  encodings) and a separate, earlier config-level check rejects a non-positive/non-`int`/`bool`
+  `statement_timeout_ms`; the Python-equality/`set()`-based duplicate-key check is replaced entirely
+  with a SQL-pushed `IS NOT DISTINCT FROM LAG(...) OVER (ORDER BY ...)` tie check (inherits the real
+  column's own type/NaN/collation semantics) plus an explicit real-NULL refusal; the outer exception
+  handling now also wraps `TypeError`; two previously-unpinned claims (`truncated`'s exact-boundary
+  behavior, the `except psycopg.Error` clause) each got a real test proving the matching fault turns
+  red. Every new/changed check has a disclosed, byte-identical-reverted real fault-injection test
+  (Law 1) — full clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-04T15:10Z" entry
+  and `docs/spec-matrix.yaml`'s FTF-0500C entry (round-4 note). Disclosed, not applied: the review's
+  own explicitly-optional SNAPSHOT_UNSTABLE empty-ETag suggestion. **V** — per Law 4, not
+  self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` in
+  `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR
+  are required before certification.
+
+  Verification this shift: real local PostgreSQL 16 started (`sudo pg_ctlcluster 16 main start`;
+  `ALTER USER postgres PASSWORD 'postgres'` to match this sandbox's own auth — same "directly-
+  installed PostgreSQL 16" precedent every prior FTF-0500C shift used) and confirmed ICU collation
+  support is genuinely available on this build before relying on it. `uv sync --all-packages`; `uv run
+  ruff check .`/`ruff format --check .` clean (one line-length/formatting fix applied and
+  re-verified). `uv run mypy .` clean repo-wide (370 source files, zero errors — two new
+  `__exit__` return-type annotations fixed, `bool` → `None`, to match the real `ContextManager`
+  protocol). `python3 scripts/validate_spec.py --strict` clean (`git fetch --unshallow` first) —
+  directly confirmed the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load` before
+  trusting it. `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged
+  `99/301` certified (Law 2 — a resubmission is not a certification). Both `tests/tasks/
+  test_ftf_0500c.py` and `tests/integration/test_ftf_0500c_database_api_trace_source.py` re-run clean
+  end to end. Regression swept `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` — zero
+  interference (same disclosed precedents every prior FTF-0500C shift already established).
+
+  STEP 3: this file, `docs/certifications/queue.md`, `docs/spec-matrix.yaml` and `PROGRESS.md` all
+  updated this shift, before compaction. STEP 4 stop condition (a): FTF-0500C now stays PROVISIONAL,
+  joining the same backlog awaiting Control-plane L2 certification and the L4 gate. Stopping here —
+  one item per shift, per this list's own rule; **FTF-H007 + FTF-04A06 and FTF-0601 remain the
+  top-priority items for the next shift** (unchanged from the prior shift's own disclosure — still
+  not picked up, disclosed here rather than silently reordered again). No open owner ask beyond the
+  pre-existing low-urgency branch-protection item below. `BLOCKER.md` unchanged (no live entries).
+
+Previous update: 2026-10-04T13:50:00Z (scheduled relay shift, branch `claude/wizardly-fermat-goeiru`) —
   STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly, no mismatch. `BLOCKER.md` read in
   full: no live entries (all resolved history). STEP 1: fast-forwarded this branch onto `origin/main`
   (picked up PR #446 — Control plane's own 2026-10-04T11:00Z L2 review returning 9 merged submissions
@@ -8872,6 +8929,14 @@ this same resolution (doc-only, redundant once this lands).
    and this file's own top dated log entry. **FTF-H007 + FTF-04A06 and FTF-0601 remain untouched by this
    shift and are the top-priority items for the next one** — not skipped out of neglect, disclosed here
    per this repo's "reported, not silently worked around" norm rather than silently reordered.
+   **Round 4, disclosed (2026-10-04T15:10Z shift):** Control plane reviewed that round-3 fix (PR #448)
+   at 2026-10-04T13:45Z and returned FTF-0500C NOT CERTIFIED again with five new findings. This shift
+   picked that returned work (the freshest return in the whole backlog) over FTF-H007+FTF-04A06/
+   FTF-0601 — those two have had no new findings since their own round-2 fix (PR #403, merged) and are
+   only awaiting Control plane's own next review cycle, confirmed via a fresh `list_pull_requests`
+   showing no open PR for either — see `docs/certifications/queue.md`'s "2026-10-04T15:10Z" entry for
+   the full round-4 fix. **FTF-H007 + FTF-04A06 and FTF-0601 remain the top-priority items for the next
+   shift**, unchanged from the prior disclosure.
 1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
    directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
    see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
