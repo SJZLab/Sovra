@@ -339,6 +339,11 @@ jobs:
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
         run: python3 scripts/status.py
+      # Law 18 (SECURE BY DEFAULT): every Alembic table needs ENABLE + FORCE RLS
+      # and a non-allow-all policy; no anonymous S3 identity. Backends must match
+      # CLAUDE.md DATASTORE_BACKENDS.
+      - name: Data exposure check
+        run: python3 scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure
       # Knowledge graph ingestion — commented out until M0 closes (N/A for fresh
       # repo, but left disabled until FTF-0001 lands so there is something to ingest).
       # - name: Update knowledge graph

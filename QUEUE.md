@@ -8878,6 +8878,21 @@ this same resolution (doc-only, redundant once this lands).
    — that chain's own "dependency-ready" bar needs FTF-0510 `certification_state: CERTIFIED`, not
    merely merged-PROVISIONAL; recompute again once Control plane certifies it.
 
+## Returned round 2 (2026-10-01T13:40Z — relay-owned, highest priority)
+FTF-H007 + FTF-04A06 (filter drivers, config includes, unpinned hardening) and FTF-0601 (reviewer
+normalisation and binding, int cap, whitespace name). Exact DoD: docs/certifications/queue.md, entry
+"2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
+
+## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+1. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
+   2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
+   FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
+(Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
+docs/spec-matrix.yaml. It never invents criteria.)
+
+## Parked (item-level blockers — relay continues other work; Control plane resolves)
+None currently.
+
 ## Active (awaiting Control plane — no relay action left)
 None currently. FTF-1601 (Postgres backup) was the only item here; it was
 independently reviewed and CERTIFIED this shift via PR #100 (merge commit
