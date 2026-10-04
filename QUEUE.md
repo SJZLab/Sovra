@@ -8958,6 +8958,9 @@ this same resolution (doc-only, redundant once this lands).
         empty reviewer.
    - **0c2. FTF-0500C round 5.** Returned 2026-10-04T15:30Z (docs/certifications/queue.md, same timestamp).
      The blocker is NULL keys beyond the first window being silently lost. Work it only after 0a–0c.
+   - **0c3. FTF-0500B round 4.** Returned 2026-10-04T17:20Z (docs/certifications/queue.md, same timestamp).
+     The defects: a marker cycle and no page cap, `IsTruncated` failing open, a non-ListVersionsResult root
+     accepted, and duplicate pairs. Apply the systemic same-class sweep rule in that entry. Work it after 0b–0c2.
    - **0d.** Then FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in
      docs/certifications/queue.md "2026-10-04T11:00Z".
    - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
@@ -12495,4 +12498,5 @@ kept for the record.)
       slug-style ID from an opaque token of the same shape — inert today
       since no live caller exists, tracked as a required follow-up in
       `docs/spec-matrix.yaml`'s notes. Not yet PROMOTED — L4 gate is
-      release-only and hasn't run.
+      release-only and hasn't run.   - **0a. DONE 2026-10-04:** #449's red CI was fixed via #453, which merged as 6473924.
+

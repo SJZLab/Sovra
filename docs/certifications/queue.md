@@ -22526,3 +22526,70 @@ certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf
 **State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified (Law 4) --
 independent Control-plane L2 review and a real CI run (including the new integration job) on the opened PR are
 required before certification.
+
+## 2026-10-04T17:20Z — Control-plane L2 review: FTF-0500B round 3 (#453, supersedes #449; merge 6473924) — NOT CERTIFIED, returned to relay (round 4)
+
+**Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producer sessions are
+`session_01R15bUkFqhw5k6VpW8Mcke3` (#449 commits) and `session_01FPm4Ae68dfgEBiaQdrEomX` (#453 commits, PR body, and
+the #449 closing comment). No match, so this review is independent.
+
+**CI evidence read.** Job `s3-minio-versioned-source-integration` (111484359389, sha 0db2056; the production code is
+identical at the final head 97d7997):
+- docker compose boots SeaweedFS;
+- `test_real_unversioned_bucket_is_genuinely_refused` runs;
+- `test_real_versioned_bucket_produces_an_exact_two_version_manifest` runs: versioning is enabled and the same key is
+  written twice;
+- "FTF-0500B versioned S3/MinIO source integration: all checks passed".
+The IPv6 `::1/128` allowlist addition is in the test fixture only, and production code is unchanged.
+
+**Held:**
+- A VersionId that is missing, empty, self-closing, whitespace, or any case/padding of "null" is refused, including
+  mixed pages and DeleteMarkers.
+- Markers that are missing, empty, or equal to the previous ones are refused after 1 request.
+- A namespaced or no-namespace `<Error>` root, an empty body and a non-XML body are refused.
+- A real empty ListVersionsResult passes.
+- The versioned-bucket job is real and would go red if VersionId were ignored, so the round-2 integration DoD item is
+  met.
+
+**Defects (independent verifier, real code, hand-built XML through `validate_and_preview_s3_minio_source(...,
+fetch=...)`):**
+1. **The 2-step marker cycle is undetected (same class as the FTF-0500C round-4 cursor defect).** Only the immediately
+   previous marker pair is compared. With pages alternating (org/a,v1)→(org/b,v2)→(org/a,v1) at 1 entry/page, the
+   result is ACCEPTED with 20 objects, all duplicates of `('org/a','v1')`. With empty pages, a 3-cycle, or
+   ever-advancing markers, the loop is **unbounded**: there is no page or request cap.
+2. **`IsTruncated` fails open.** Line 313 accepts only `"true"`. `"1"`, which is a valid xsd:boolean, is read as
+   false, so page 1 is returned as a complete listing. Garbage or a missing element is also treated as complete.
+3. **The root is never required to be ListVersionsResult.** Line 291 rejects only an `Error` root. Each of these is
+   ACCEPTED as an empty, complete listing with a manifest_hash:
+   - `<Foo><Error/></Foo>`
+   - `<Errors>`
+   - `<ListBucketResult>`
+   - `<html>`
+   - `<Foo/>`
+   An additive fault that returns empty for a namespaced `<Error>` stays GREEN.
+4. **Duplicate (Key, VersionId) pairs are accepted** into the "exact version" manifest. One page with the same pair
+   twice gives 2 objects.
+5. **Unpinned:** a whitespace-only VersionId under a raw-emptiness check, and a strict `== "true"` parse, both stay
+   GREEN.
+
+Minor: a DeleteMarker and a Version both `IsLatest=true` for one key is accepted; a non-integer `<Size>` raises a bare
+ValueError; a negative Size is accepted.
+
+**DoD (round 4).** Each item needs a test shown RED first, including at least one additive fault:
+- (1) Keep a seen-set of (key-marker, version-id-marker) pairs, or require strictly advancing markers, AND add a hard
+  page/request cap. Tests: A→B→A with 1 entry/page, A→B→A with empty pages, and ever-advancing empty pages hitting the
+  cap.
+- (2) Parse `IsTruncated` strictly: "true"/"1" → truncated, "false"/"0" → not. Refuse anything else, including a
+  missing element. Tests: "TRUE", "1", " true ", garbage, missing.
+- (3) Require the root local name to be `ListVersionsResult`, and refuse anything else. Tests: a namespaced `<Error>`,
+  `<Foo><Error/></Foo>`, `<ListBucketResult>`, `<html>`.
+- (4) Refuse duplicate (Key, VersionId) pairs across the whole listing. Tests: within a page and across pages.
+- (5) Refuse a non-integer or negative `<Size>` with the module's own error class.
+
+**Systemic rule (applies to FTF-0500B/C/D and every sibling connector):** when Control plane names a defect class on
+one connector (a pagination cycle, fail-open parsing, error-shaped success, duplicate identity, encoding), the fix PR
+sweeps the same class across every sibling connector in apps/api/app/datasets/ and lists the result per connector in
+its queue entry. Fixing only the named instance is incomplete. This is the second time the same cycle class has
+appeared.
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md "## Active" item 0 lists FTF-0500B at 0c3.
