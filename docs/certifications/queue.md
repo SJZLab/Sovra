@@ -22265,3 +22265,68 @@ PostgreSQL 16 (`pg_ctlcluster 16 main start`): `tests/tasks/test_ftf_0500c.py` a
 
 **State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified (Law 4) --
 independent Control-plane L2 review and a real CI run on the opened PR are required before certification.
+
+## 2026-10-04T15:40Z — [relay] FTF-0500B: fix L2 round-3 findings (VersionId normalization, Error-root response, stuck-pagination refusal, real versioned-bucket integration)
+Fixes all four findings from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #407), per the same relay DoD
+rule FTF-0500C's own round-3 fix above used ("each acceptance and negative_acceptance clause gets a test that a
+clause-level fault turns red, including at least one additive fault"). Full clause-to-test mapping recorded in
+`docs/spec-matrix.yaml`'s FTF-0500B entry (this round's own "2026-10-04T15:40Z L2 round-3 fix-and-resubmit" note) --
+summarized here:
+
+1. **A missing or empty `VersionId` (and `"NULL"`/`" null "` variants) was accepted into the "exact version"
+   manifest.** Fixed: `version_id.strip().lower()` is compared against the sentinel, and an empty normalized value
+   is refused identically to the literal `"null"` sentinel (`VersioningDisabledError`). Tests:
+   `test_missing_or_blank_version_id_is_refused_as_versioning_disabled` (VersionId element omitted entirely, and
+   present-but-empty) and `test_version_id_case_and_whitespace_variants_of_null_are_refused` (`"NULL"`, `"Null"`,
+   `" null "`, `"\tnull\n"`). The pre-existing fault-injection test for this check was updated to target the new
+   normalized condition.
+2. **`IsTruncated=true` with no advancing marker either looped forever (no cap) or returned duplicate pages as the
+   preview.** Fixed: before advancing to the next page, the connector compares the response's own
+   `NextKeyMarker`/`NextVersionIdMarker` against the markers just used; if neither advanced, it raises
+   `SourceUnavailableError` instead of re-fetching. Test:
+   `test_stuck_pagination_without_advancing_marker_is_refused` (asserts the check fires after *exactly one* real
+   HTTP request, never an unbounded retry loop) +
+   `test_fault_injection_stuck_pagination_check_is_load_bearing` (disabling the check lets the connector attempt a
+   second request against a fixture with no further pages defined, instead of refusing after the first --
+   deliberately bounded by the test fixture's own fixed page list, so the fault-injection run cannot hang even with
+   the real defect reinstated).
+3. **A 200 response with an `<Error>` root was accepted as an empty listing.** Fixed: `_parse_list_versions_xml`
+   checks the real XML root element's own local tag before reading any field from it; an `<Error>` root raises
+   `SourceUnavailableError` (carrying the real `Code`/`Message` when present) instead of silently parsing to zero
+   entries / `IsTruncated=false`. Tests: `test_error_root_response_is_refused_not_treated_as_empty_listing` +
+   `test_fault_injection_error_root_check_is_load_bearing_additive` -- an **additive** fault (an inserted early
+   `return` bypassing the whole check, not a negated condition, matching the new DoD rule's own "early return"
+   example), reverted byte-identical.
+4. **The DoD item "real versioned SeaweedFS/MinIO integration, or BLOCKED_EXTERNAL" was unmet**, though CI already
+   runs SeaweedFS for FTF-R017. Fixed: new `tests/integration/test_ftf_0500b_s3_minio_versioned_source.py`, same
+   real-container pattern as `test_storage_semantics.py` (boots `infra/docker/docker-compose.yml`'s `s3` service).
+   `test_real_versioned_bucket_produces_an_exact_two_version_manifest` creates a real bucket, calls the real
+   `PutBucketVersioning(Enabled)`, writes two real overwrites of the same key, and proves this task's own connector
+   returns both real, distinct `VersionId`s with a real non-empty `manifest_hash`.
+   `test_real_unversioned_bucket_is_genuinely_refused` creates a second real bucket that never enables versioning
+   and proves `VersioningDisabledError` fires against a real server's own literal `"null"` `VersionId` response --
+   not only against the synthetic no-DB fixture. New CI job `s3-minio-versioned-source-integration` added to
+   `.github/workflows/ci.yml` (same pattern as `storage-semantics-integration`). This sandbox has no
+   container-registry egress (same disclosed FTF-R017/FTF-0004 precedent), so this integration test could not be
+   run locally -- disclosed as BLOCKED_EXTERNAL for this sandbox specifically; it runs for real on GitHub Actions'
+   hosted runner on the opened PR.
+
+**Law 1 evidence (test shown able to fail first):** `git stash` the module fix alone (keeping every new/updated
+test), re-ran `tests/tasks/test_ftf_0500b.py` against the pre-fix module: **17 of 25 checks failed**, bound to
+criterion FTF-0500B (full failure list captured in this shift's own working output -- every new assertion for
+findings 1-3 above failed for real, including both halves of the stuck-pagination test). `git stash pop` restored
+the fix; re-ran -- all 25 pass.
+
+**Verification:** `uv run ruff check .`/`ruff format --check .` clean repo-wide (372 files, including the new
+integration test file; one `I001` import-order finding on the new file self-fixed via `ruff check --fix` before
+this count). `uv run mypy .` clean repo-wide (372 source files, zero errors). `python3 scripts/validate_spec.py
+--strict` clean (`git fetch --unshallow` first, this sandbox's own pre-existing shallow-clone artifact; also
+directly confirmed the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load` before trusting it, per this
+repo's own 2026-10-01 YAML-unterminated-quote lesson). `product_truth_check.py --fail-on-unwired`: unchanged
+`26/26`. `status.py`: unchanged `99/301` certified, 24 product-true (Law 2 -- a resubmission is not a
+certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500c.py`/`test_ftf_0500d.py` (via
+`uv run python3`, since a bare `python3` lacks sqlalchemy/psycopg) -- zero regressions.
+
+**State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified (Law 4) --
+independent Control-plane L2 review and a real CI run (including the new integration job) on the opened PR are
+required before certification.

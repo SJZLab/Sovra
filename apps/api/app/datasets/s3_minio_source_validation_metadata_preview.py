@@ -29,7 +29,7 @@ established -- this module likewise never uses that module's own
 
 This task's own negative_acceptance ("S3 ETag is not assumed SHA; source
 changes, cross-tenant prefix and overly broad grants are denied") is
-enforced as four independent, disclosed checks:
+enforced as seven independent, disclosed checks:
 
   1. **Overly broad grant** -- a connection whose own `tenant_key_prefix`
      is blank or resolves to bucket root (`""`/`"/"`) is refused before
@@ -73,8 +73,26 @@ enforced as four independent, disclosed checks:
      versioning was suspended). This task's own "exact version manifest"
      acceptance clause cannot be made real against a source that cannot
      actually distinguish object versions, so a real `"null"` VersionId
-     anywhere in the listing is refused rather than silently accepted and
-     hashed as if it pinned anything (`VersioningDisabledError`).
+     anywhere in the listing -- or a missing/blank `VersionId`, or one
+     that differs from the literal sentinel only by case or surrounding
+     whitespace (`"NULL"`, `" null "`) -- is refused rather than silently
+     accepted and hashed as if it pinned anything (`VersioningDisabledError`).
+  6. **A 200 response whose body is actually an `<Error>` document** --
+     some S3/MinIO-compatible servers report an application-level error
+     (e.g. a transient backend fault) with HTTP status 200 and an
+     `<Error>` root element instead of the expected `<ListVersionsResult>`
+     root. This module's own XML parser checks the real root element's own
+     tag before reading any field from it, so such a response is refused
+     (`SourceUnavailableError`) rather than silently parsed as a listing
+     with zero entries and `IsTruncated=false` -- a fabricated "source is
+     empty" success.
+  7. **Pagination that claims more pages but never advances** -- a real
+     `IsTruncated=true` response must also advance at least one of
+     `NextKeyMarker`/`NextVersionIdMarker`; a response that reports
+     truncation without ever advancing either marker is refused
+     (`SourceUnavailableError`) rather than re-fetched forever (no real
+     next page exists to request) or allowed to silently append duplicate
+     copies of the same page into the bounded preview.
 
 The returned `manifest_hash` (sha256 over the canonical JSON serialization
 of the exact bounded `(key, version_id, size_bytes, etag_raw)` tuples
@@ -270,6 +288,20 @@ def _parse_list_versions_xml(
             f"the S3/MinIO endpoint returned an unparsable ListObjectVersions response: {exc}"
         ) from exc
 
+    if _local_tag(root.tag) == "Error":
+        code: str | None = None
+        message: str | None = None
+        for child in root:
+            name = _local_tag(child.tag)
+            if name == "Code":
+                code = child.text
+            elif name == "Message":
+                message = child.text
+        raise SourceUnavailableError(
+            "the S3/MinIO endpoint returned an HTTP 200 response with an <Error> root "
+            f"(Code={code!r}, Message={message!r}) -- never treated as an empty listing"
+        )
+
     entries: list[dict[str, object]] = []
     is_truncated = False
     next_key_marker: str | None = None
@@ -380,11 +412,13 @@ def validate_and_preview_s3_minio_source(
                 )
             version_id = entry["version_id"]
             assert isinstance(version_id, str)
-            if version_id == _UNVERSIONED_SENTINEL:
+            normalized_version_id = version_id.strip().lower()
+            if not normalized_version_id or normalized_version_id == _UNVERSIONED_SENTINEL:
                 raise VersioningDisabledError(
-                    f"key {key!r} reports the real literal VersionId {_UNVERSIONED_SENTINEL!r} "
-                    "-- object versioning is disabled (or suspended) on this source, so no "
-                    "exact version manifest can be produced from it"
+                    f"key {key!r} reports VersionId {version_id!r} (missing, blank, or the "
+                    f"real literal {_UNVERSIONED_SENTINEL!r} sentinel, case/whitespace-"
+                    "insensitive) -- object versioning is disabled (or suspended) on this "
+                    "source, so no exact version manifest can be produced from it"
                 )
             if entry["is_latest"] and not entry["is_delete_marker"]:
                 previously_seen = latest_version_by_key.get(key)
@@ -423,8 +457,16 @@ def validate_and_preview_s3_minio_source(
             break
         if not is_truncated:
             break
-        key_marker = next_key_marker or ""
-        version_id_marker = next_version_id_marker or ""
+        new_key_marker = next_key_marker or ""
+        new_version_id_marker = next_version_id_marker or ""
+        if new_key_marker == key_marker and new_version_id_marker == version_id_marker:
+            raise SourceUnavailableError(
+                "the S3/MinIO endpoint reported IsTruncated=true without advancing the "
+                "pagination marker (stuck pagination) -- refusing to loop forever or "
+                "silently return duplicate pages as the preview"
+            )
+        key_marker = new_key_marker
+        version_id_marker = new_version_id_marker
 
     truncated = is_truncated or total_examined > len(collected)
 

@@ -28426,3 +28426,94 @@ Stopping here — one item per shift, per this list's own rule; not picking a se
 owner ask (`QUEUE.md` "Owner actions — current" unchanged: only the pre-existing, low-urgency
 branch-protection item, already resolved/closed per the owner's 2026-10-04 decision recorded
 there). `BLOCKER.md` unchanged — no live entries.
+
+## 2026-10-04T15:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-spe8k9` — merged PR #448 (prior
+shift's own FTF-0500C fix), then fixed FTF-0500B's own L2 round-3 findings
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`BLOCKER.md` (no live entries), `QUEUE.md`'s "Owner actions — current" (none open) and "## Active"/"## Returned
+2026-10-04" sections, and `docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2: no `cognee-cli`
+binary in this sandbox — text-search fallback declared, same as every prior shift.
+
+`git fetch origin main` showed the designated branch's prior work already fully merged (PR #448, the immediately
+prior shift's own FTF-0500C round-3 fix) — `HEAD..origin/main`/`origin/main..HEAD` both `0` after fetch. Per this
+session's own "merged PR → restart from latest main" instruction, reset the local branch to `origin/main`
+(`git checkout -B claude/wizardly-fermat-spe8k9 origin/main`) rather than stack new work on already-merged history.
+
+Checked `QUEUE.md`'s "## Active" item 0 highest-priority order (`FTF-H007 + FTF-04A06, FTF-0601, FTF-0500B,
+FTF-0500C [done], FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18, FTF-1807`) before picking work, not
+assumed from the ordering alone: confirmed directly via `pull_request_read`/`list_pull_requests` that FTF-H007's/
+FTF-04A06's/FTF-0601's own round-2 fix (PR #403) is already merged, and that the 2026-10-04T11:00Z Control-plane L2
+review (`docs/certifications/queue.md`) explicitly did not re-review these three — its own text: "Certifier PRs
+#421 and #434 were closed: they would have certified these items, plus FTF-H007/04A06/0601, which are still open
+from round 2." No new findings exist for them to fix; they are awaiting a Control-plane L2 review of already-merged
+code, not relay-actionable work (CLAUDE.md "Relay is execution-only" — nothing to improvise here). Disclosed this
+in `QUEUE.md`'s own Active item 0 note rather than silently skipping past them. Picked up the next item with real,
+documented outstanding findings in the stated order: **FTF-0500B**.
+
+**P** — read `apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` in full and the
+2026-10-04T11:00Z review's own four findings for this item (`docs/certifications/queue.md`): (1) missing/empty/
+case/whitespace VersionId variants accepted into the "exact version" manifest; (2) `IsTruncated=true` with no
+advancing marker loops forever or returns duplicate pages; (3) a 200 response with an `<Error>` root accepted as an
+empty listing; (4) the "real versioned SeaweedFS/MinIO integration, or BLOCKED_EXTERNAL" DoD item unmet. Formed a
+fix for each before writing any test, confirmed `infra/docker/docker-compose.yml`'s own `s3` (SeaweedFS) service
+and `S3Client.create_bucket`/`put_bucket_versioning`/`put_object`/`list_object_versions` (already used by
+FTF-R017's own `test_storage_semantics.py`) were reusable for a real versioned-bucket integration test rather than
+inventing a new fixture.
+
+**E** — fixed all four in `s3_minio_source_validation_metadata_preview.py`: VersionId is now compared via
+`.strip().lower()` against the sentinel, with an empty normalized value refused identically
+(`VersioningDisabledError`); the pagination loop now compares the next page's own markers against the ones just
+used and raises `SourceUnavailableError` if neither advanced; `_parse_list_versions_xml` checks the real XML root
+element's own tag and raises `SourceUnavailableError` (carrying the real Code/Message) for an `<Error>` root instead
+of silently returning zero entries. Added 6 new test functions to `tests/tasks/test_ftf_0500b.py` (19 → 25) —
+`test_missing_or_blank_version_id_is_refused_as_versioning_disabled`,
+`test_version_id_case_and_whitespace_variants_of_null_are_refused`,
+`test_error_root_response_is_refused_not_treated_as_empty_listing`,
+`test_stuck_pagination_without_advancing_marker_is_refused`,
+`test_fault_injection_error_root_check_is_load_bearing_additive` (additive fault — an inserted early `return`, per
+the new relay DoD rule's own example, not a negated condition), and
+`test_fault_injection_stuck_pagination_check_is_load_bearing` — plus updated the pre-existing versioning-disabled
+fault test's target string to match the new normalized condition. **Law 1, shown able to fail first:** `git stash`
+of the module fix alone (keeping every test change), re-ran `tests/tasks/test_ftf_0500b.py` against the genuinely
+pre-fix module — **17 of 25 checks failed**, output bound to criterion `FTF-0500B` (every new assertion for
+findings 1-3 failed for real, including the "exactly one request" stuck-pagination assertion). `git stash pop`
+restored the fix; re-ran — all 25 pass.
+
+New `tests/integration/test_ftf_0500b_s3_minio_versioned_source.py` (real SeaweedFS, same boot/readiness pattern as
+`test_storage_semantics.py`): a real bucket with real `PutBucketVersioning(Enabled)` and two real overwrites of the
+same key proves the connector returns both real, distinct VersionIds with a real manifest_hash; a second real
+bucket that never enables versioning proves `VersioningDisabledError` fires against a real server's own literal
+`"null"` response. New CI job `s3-minio-versioned-source-integration` added to `.github/workflows/ci.yml` (same
+pattern as `storage-semantics-integration`); YAML re-parsed and confirmed valid (44 jobs total). This sandbox has no
+container-registry egress (same disclosed FTF-R017/FTF-0004 precedent) — could not run this integration test
+locally, disclosed as BLOCKED_EXTERNAL for this sandbox specifically; it runs for real on GitHub Actions' hosted
+runner on the opened PR.
+
+**V** — `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean, zero new errors (one `I001`
+import-order finding on the new integration test file self-fixed via `ruff check --fix` before this count, 372
+files). `uv run mypy .` clean repo-wide (372 source files, zero errors). `python3 scripts/validate_spec.py --strict`
+clean (`git fetch --unshallow` first, this sandbox's own pre-existing shallow-clone artifact; directly confirmed
+the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load` before trusting `validate_spec.py`'s own result,
+per this repo's own 2026-10-01 YAML-unterminated-quote lesson). `product_truth_check.py --fail-on-unwired`:
+unchanged `26/26`. `status.py`: unchanged `99/301` certified / 24 product-true (Law 2 — a resubmission is not a
+certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500c.py`/`test_ftf_0500d.py` (via
+`uv run python3`, since a bare `python3` lacks sqlalchemy/psycopg) — all exit 0, zero regressions.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with a full "2026-10-04T15:40Z L2 round-3 fix-and-resubmit" note,
+including the clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` —
+Law 2); `proving_test` now also lists the new integration test. Appended a full evidence entry to
+`docs/certifications/queue.md` ("2026-10-04T15:40Z"). Updated `QUEUE.md`: Active item 0's own note extended to
+disclose the FTF-H007/FTF-04A06/FTF-0601 finding (no relay-actionable work there) and this shift's own FTF-0500B
+fix; "## Returned 2026-10-04" updated to mark FTF-0500B fixed, same pattern as FTF-0500C above it.
+
+**V (certification)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR
+(including the new integration job) are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/`.github/workflows/ci.yml`
+all updated this shift, before compaction. STEP 4 stop condition (a): FTF-0500B now joins the same PROVISIONAL
+backlog awaiting Control-plane L2 certification and the L4 gate (99/301 certified, unchanged). Stopping here — one
+item per shift, per this list's own rule; not picking a second task. No open owner ask (`QUEUE.md` "Owner actions —
+current" unchanged — only the pre-existing, already-resolved branch-protection note). `BLOCKER.md` unchanged — no
+live entries.

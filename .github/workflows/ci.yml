@@ -847,6 +847,24 @@ jobs:
       - name: Prove the real storage semantics against the live S3 fixture
         run: python3 tests/integration/test_storage_semantics.py
 
+  s3-minio-versioned-source-integration:
+    # FTF-0500B: real versioned-bucket S3/MinIO source validation +
+    # metadata preview evidence against the live SeaweedFS S3-API
+    # container (the 2026-10-04 Control-plane L2 review's own DoD item 4
+    # for this task). Same real container pattern as
+    # storage-semantics-integration (this repo's interactive dev sandbox
+    # has no container-registry egress; see that job's own comment).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install gate deps
+        run: pip install pyyaml --quiet
+      - name: Prove the real versioned S3/MinIO source evidence against the live S3 fixture
+        run: python3 tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
+
   oidc-provider-integration:
     # FTF-0101 acceptance clause 1 ("Real OIDC provider login/refresh/logout
     # validates issuer+audience+subject and secure session"): real

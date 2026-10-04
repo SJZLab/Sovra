@@ -8872,6 +8872,18 @@ this same resolution (doc-only, redundant once this lands).
    and this file's own top dated log entry. **FTF-H007 + FTF-04A06 and FTF-0601 remain untouched by this
    shift and are the top-priority items for the next one** — not skipped out of neglect, disclosed here
    per this repo's "reported, not silently worked around" norm rather than silently reordered.
+   **Update (2026-10-04T15:40Z shift):** checked FTF-H007/FTF-04A06/FTF-0601 directly before picking up
+   new work — their own round-2 fix (PR #403) is already merged, and the 2026-10-04T11:00Z review
+   explicitly did not re-review them (`docs/certifications/queue.md`'s own entry: "Certifier PRs #421
+   and #434 were closed: they would have certified these items, plus FTF-H007/04A06/0601, which are
+   still open from round 2"). No new findings exist for these three to fix — they are sitting in
+   `docs/certifications/queue.md` awaiting a Control-plane L2 review of the already-merged PR #403, not
+   relay-actionable work. Proceeded to the next item with real outstanding findings in the stated order:
+   **FTF-0500B** — fixed this shift, see `docs/certifications/queue.md`'s "2026-10-04T15:40Z" entry (all
+   four round-3 findings, plus a new real versioned-bucket SeaweedFS integration test closing this task's
+   own "real integration, or BLOCKED_EXTERNAL" DoD item). **FTF-0500D, FTF-0902, FTF-0307, FTF-1002,
+   FTF-0510, FTF-04A18, FTF-1807 remain untouched by this shift and are next in the stated order** —
+   disclosed, not skipped silently.
 1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
    directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
    see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
@@ -8957,6 +8969,18 @@ psycopg error wrapping). Full clause-to-test mapping in `docs/certifications/que
 and `docs/spec-matrix.yaml`'s FTF-0500C entry. Not self-certified (Law 4) — awaiting Control-plane L2 re-review and
 a real CI run. Removed from this list's own remaining-work set above; the merged PR is Control plane's own next
 step to re-review, same as every other item in this list.
+
+**FTF-0500B: fixed this shift (2026-10-04T15:40Z), PR opened — all four round-3 findings** (VersionId
+normalization covering missing/blank/case/whitespace variants of the "null" sentinel, a stuck-pagination refusal
+when IsTruncated=true never advances either marker, an `<Error>`-root 200 response refused rather than treated as
+an empty listing, and a new real versioned-bucket SeaweedFS integration test — `tests/integration/
+test_ftf_0500b_s3_minio_versioned_source.py` plus a new CI job `s3-minio-versioned-source-integration` — closing
+the "real integration, or BLOCKED_EXTERNAL" DoD item). Full clause-to-test mapping in `docs/certifications/
+queue.md`'s "2026-10-04T15:40Z" entry and `docs/spec-matrix.yaml`'s FTF-0500B entry. Law 1 evidence: every new test
+independently shown to fail against the pre-fix module first (`git stash` the module fix alone — 17/25 checks
+failed — then `git stash pop` and re-run, all 25 pass). Not self-certified (Law 4) — awaiting Control-plane L2
+re-review and a real CI run (including the new integration job). Removed from this list's own remaining-work set
+above; the merged PR is Control plane's own next step to re-review, same as every other item in this list.
 
 ## Returned round 2 (2026-10-01T13:40Z — relay-owned, highest priority)
 FTF-H007 + FTF-04A06 (filter drivers, config includes, unpinned hardening) and FTF-0601 (reviewer
