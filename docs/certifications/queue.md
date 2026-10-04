@@ -22103,3 +22103,108 @@ passed. Every round-1 finding is fixed. Each item is returned for the NEW gaps b
      - a raw-DB whitespace reviewer, then lock: 409.
   6. Before 0018's CHECK runs, give migration 0018 a data-remediation step or a runbook note for any
      existing locked rows with an empty reviewer.
+
+## 2026-10-04T11:00Z — Control-plane L2 review of 9 merged submissions: all NOT CERTIFIED, returned to relay
+Reviewer: control-plane session `session_01QVznorVMjnmcttUhyDnoGR`, with five independent verifier subagents in
+isolated worktrees at `7a25688`. This session appears on none of the reviewed PRs (commit trailers, PR bodies,
+comments). For every item, CI genuinely ran the proving test green on a real runner, and the earlier findings for
+re-submissions are fixed. Each item is returned for NEW defects, found by adversarial probes and fault injection
+beyond the producer's own faults. All stay PROVISIONAL. Certifier PRs #421 and #434 were closed: they would have
+certified these items, plus FTF-H007/04A06/0601, which are still open from round 2.
+
+**Systemic cause, applying to every item below:** tests pin only the faults the producer thought of. New relay DoD
+rule: for each acceptance and negative_acceptance clause, write a test that a clause-level fault turns red. Include
+at least one *additive* fault (an early return, an extra allow rule, an extra field, an added doc section), not only
+an edit of the line the producer wrote. Record the clause-to-test mapping in the submission entry.
+
+- **FTF-0902 (#430).** The DoD's CI evidence is real: the baseline is {T,T,T}, Calico is {T,F,F}, and the
+  pre/post self-check ran. Remaining gaps:
+  (1) `tests/tasks/test_ftf_0902.py` is not run by any CI step;
+  (2) a renderer adding a `::/0` or `169.254.169.254/32` peer stays GREEN;
+  (3) given a mutated, subclassed or duck-typed endpoint, the renderer emits `::/0`, metadata, `ports: []` and
+      `podSelector: {}`.
+  DoD:
+  - re-validate every endpoint at render time, accepting exact types only, and reject IPv6, prefix 0,
+    metadata overlap, empty ports and empty selectors;
+  - derive metadata from `url_policy._CLOUD_METADATA_NETWORKS`;
+  - **Control-plane decision:** `CidrEndpoint` accepts private address ranges only (RFC1918 or ULA-excluded),
+    so a public CIDR is refused;
+  - add the CI gate step;
+  - give `$defs/Cidr` an IPv4-CIDR pattern, or record the narrowing;
+  - disclose DNS live testing as BLOCKED_EXTERNAL, or add a DNS probe.
+- **FTF-0500B (#407).** Defects:
+  - a missing or empty `VersionId` (and `NULL` or ` null `) is accepted into an "exact version" manifest;
+  - `IsTruncated=true` with no advancing marker either loops forever (no cap) or returns 20 duplicate copies as
+    a preview;
+  - a 200 response with an `<Error>` root is accepted as an empty listing;
+  - the DoD item "real versioned SeaweedFS/MinIO integration, or BLOCKED_EXTERNAL" is unmet, though CI already
+    runs SeaweedFS.
+  DoD: refuse each defect above, with a test for each; add a versioned-bucket integration job, or record
+  BLOCKED_EXTERNAL.
+- **FTF-0500C (#404).** Defects:
+  - a header absent on page 1 and present later is accepted and labelled with that later version;
+  - a declared snapshot header that never appears on a multi-page listing returns success, but §67.1 requires
+    SNAPSHOT_UNSTABLE or a block;
+  - a repeated cursor puts duplicates into the preview;
+  - a non-unique Postgres stable key silently skips or drops rows;
+  - the statement_timeout read-back is unpinned (GREEN).
+  DoD: fix each defect above, with a test for each, including a statement_timeout_ms=0 test. Recommended: URL-encode
+  the cursor, fix the `truncated` under-report, and wrap psycopg errors.
+- **FTF-0500D (#410).** The matrix holds org default equal to the project profile and fixes the purpose, so an early
+  return when org≠project, or when purpose='validation', stays GREEN. A full probe confirms real gaps.
+  DoD: test the full classification × org-default × project × status × grant × purpose matrix (1,440 cases)
+  asserting `preview.blocked == authorize raises`, plus an additive early-return fault test.
+- **FTF-1807 (#408).** The round-1 inversion, written as an added section, still passes, and 8 of 10 inversions stay
+  GREEN.
+  DoD: pin every operator-table row's Effect to its expected meaning; scan the whole document for forbidden claims
+  (cached or post-revocation access, deferred refusal, external or unapproved fallback, optional no-cache); add
+  fault tests for an added section and three reworded rows; add explicit operator procedure steps.
+- **FTF-0510 (#411).** Reproduced negative_acceptance violation: the render diverges from HF `apply_chat_template`
+  (it adds a second BOS; `tojson` uses ensure_ascii and drops indent). A conversation that is really 90 tokens is
+  reported as 71 and certified against max 80 with `exact=True`. Fail-open truncation, boundary and percentile
+  faults stay GREEN. `exact` is self-asserted.
+  DoD:
+  - match `apply_chat_template` exactly, or wrap transformers' renderer;
+  - bind exactness to the tokenizer.json digest and chat_template sha256;
+  - report non-list `content` as an issue;
+  - use nearest-rank percentiles;
+  - add an oracle test against real transformers output with a BOS post-processor and non-ASCII text, plus pinned
+    max/max+1, per-message boundary and p50/p90/p99 tests.
+  Note: the `tokenizers`/`jinja2` runtime dependencies are accepted under the default resolution rule (the
+  architecture's Axolotl/vLLM stack already uses HF tokenizers).
+- **FTF-0307 (#422).** Defects:
+  - an unrecognised artifact status classifies as trainable, and no test catches it (the negative_acceptance
+    "unknown remains blocked");
+  - a probe for another model, or one with UNVERIFIED route identity, labels this model inference_only;
+  - any ready artifact makes the model trainable, with no model or org binding and no weights_digest requirement;
+  - role and licence faults stay GREEN.
+  DoD:
+  - bind probe evidence to model_id with VERIFIED route identity;
+  - require a weights_digest;
+  - add an org binding;
+  - pin unrecognised status → unknown, role None → None, licence false when not accepted, a mismatched probe →
+    unknown, and a real rename scenario.
+- **FTF-1002 (#424).** It accepts:
+  - an artifact whose digest or revision differs from the ModelVersion;
+  - an unresolved, archived or cross-tenant parent;
+  - an adapter with no base link (the check is optional), and an adapter whose base value is its own digest;
+  - a self-parent.
+  There is no manifest digest, so nothing makes it tamper-evident. Hard-coded licence and digest faults stay GREEN.
+  DoD:
+  - refuse each mismatch, unresolved, cross-org or archived case;
+  - make the adapter base check mandatory, by digest and identity;
+  - add a canonical content digest and a verify function;
+  - add tests for each case;
+  - add a live load consumer, or record that half BLOCKED.
+- **FTF-04A18 (#426).** Defects:
+  - auto-selecting a single candidate, or autoFocus on the first button (so Enter selects it), stays GREEN;
+  - the backend accepts a candidate from an older snapshot when the client didn't send the optional
+    `supersedes_snapshot_id` (201 plus an audit row);
+  - the spec-matrix `proving_test` doesn't catch the stale or audit faults.
+  DoD:
+  - add spec cases for a single-candidate list and for Enter after load;
+  - define "stale" against the connection's latest snapshot, server-side, with an integration test for an unlinked
+    newer snapshot returning 409;
+  - point `proving_test` at the catching tests;
+  - surface network errors.
+  Law 6: the same disclosed precedent as FTF-04A04 is accepted for now.
