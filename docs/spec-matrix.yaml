@@ -5884,9 +5884,86 @@ FTF-0500B:
     regressions (ran after `uv sync --all-packages`, since a bare `uv run`
     environment lacks sqlalchemy/psycopg, the same disclosed precedent prior
     shifts already documented).
+
+    2026-10-04T15:40Z L2 round-3 fix-and-resubmit (certification_state stays
+    PROVISIONAL, proof_state stays L1-PROVEN -- Law 2). The 2026-10-04T11:00Z
+    Control-plane L2 review (docs/certifications/queue.md) found four real
+    gaps: (1) a missing or empty VersionId (and "NULL"/" null " variants) was
+    accepted into the "exact version" manifest; (2) IsTruncated=true with no
+    advancing marker either looped forever or returned duplicate pages as the
+    preview; (3) a 200 response with an <Error> root was accepted as an empty
+    listing; (4) the DoD item "real versioned SeaweedFS/MinIO integration, or
+    BLOCKED_EXTERNAL" was unmet, though CI already runs SeaweedFS for FTF-R017.
+    Fixed: (1) VersionId is now normalized (stripped, lowercased) before the
+    sentinel comparison, and a missing/blank value is refused identically to
+    the literal "null" sentinel (VersioningDisabledError) --
+    test_missing_or_blank_version_id_is_refused_as_versioning_disabled and
+    test_version_id_case_and_whitespace_variants_of_null_are_refused. (2) the
+    pagination loop now compares the next page's own NextKeyMarker/
+    NextVersionIdMarker against the markers just used; IsTruncated=true with
+    neither marker advanced raises SourceUnavailableError instead of looping
+    or re-collecting the same page -- test_stuck_pagination_without_advancing_
+    marker_is_refused (asserts exactly one real HTTP request is made, not an
+    unbounded retry loop). (3) _parse_list_versions_xml now checks the real
+    XML root element's own tag before reading any field from it; an <Error>
+    root raises SourceUnavailableError (with the real Code/Message if
+    present) instead of being silently parsed as zero entries/IsTruncated=
+    false -- test_error_root_response_is_refused_not_treated_as_empty_listing.
+    (4) new tests/integration/test_ftf_0500b_s3_minio_versioned_source.py: a
+    real SeaweedFS bucket with real PutBucketVersioning(Enabled) and two real
+    overwrites of the same key proves the connector returns both real,
+    distinct VersionIds with a real non-empty manifest_hash
+    (test_real_versioned_bucket_produces_an_exact_two_version_manifest), and a
+    second real bucket that never enables versioning proves
+    VersioningDisabledError fires against a real server's own literal "null"
+    VersionId, not only a synthetic fixture
+    (test_real_unversioned_bucket_is_genuinely_refused). New CI job
+    `s3-minio-versioned-source-integration` added to .github/workflows/ci.yml,
+    same real-container pattern as storage-semantics-integration (requires
+    GitHub Actions' hosted-runner container-registry egress; this sandbox
+    does not have it, same disclosed FTF-R017/FTF-0004 precedent -- could not
+    be run locally, BLOCKED_EXTERNAL for this sandbox specifically, not for
+    CI).
+
+    Per the new 2026-10-04 relay DoD rule, each fix above has its own test
+    plus a disclosed fault injection: the VersionId fix reuses the existing
+    load-bearing fault test (updated for the new normalized condition); the
+    <Error>-root fix adds an *additive* fault-injection test
+    (test_fault_injection_error_root_check_is_load_bearing_additive -- an
+    inserted early `return` bypassing the check, not merely a negated
+    condition, per the rule's own "early return" example); the
+    stuck-pagination fix adds test_fault_injection_stuck_pagination_check_is_
+    load_bearing (disabling the check lets the connector attempt further
+    requests past the first non-advancing page instead of refusing
+    immediately -- bounded by the test fixture's own fixed page list, so the
+    fault-injection run cannot hang). Each fault test reverts the module file
+    byte-identical (confirmed by direct byte comparison in the test itself).
+
+    tests/tasks/test_ftf_0500b.py: 25 test functions (was 19), all pass.
+    Independently confirmed every new test genuinely fails against the
+    pre-fix module first (Law 1): `git stash` the module fix alone, re-run --
+    17 of 25 checks failed (the rest already passed pre-fix, e.g. the
+    existing happy-path/pagination/cross-tenant cases this round did not
+    touch), `git stash pop` restores the fix, re-run -- all 25 pass. `uv run
+    ruff check .`/`ruff format --check .` clean repo-wide (372 files,
+    including the new integration test file). `uv run mypy .` clean
+    repo-wide (372 source files, zero errors). `python3
+    scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`,
+    same disclosed shallow-clone precedent). `python3
+    scripts/product_truth_check.py --fail-on-unwired` unchanged 26/26.
+    `scripts/status.py` unchanged 99/301 certified, 24 product-true (Law 2 --
+    a resubmission is not a certification). Regression swept
+    test_ftf_0500.py/test_ftf_0303.py/test_ftf_0500c.py/test_ftf_0500d.py --
+    zero regressions (ran via `uv run python3`, since a bare `python3`
+    environment lacks sqlalchemy/psycopg, the same disclosed precedent prior
+    shifts already documented).
+
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run (including the new integration job) on the opened PR are
+    required before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: tests/tasks/test_ftf_0500b.py
+  proving_test: tests/tasks/test_ftf_0500b.py, tests/integration/test_ftf_0500b_s3_minio_versioned_source.py
 FTF-0500C:
   certification_state: PROVISIONAL
   criticality: MUST

@@ -8914,9 +8914,16 @@ this same resolution (doc-only, redundant once this lands).
 ## Active (decided by Control plane — relay executes, top first)
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
-   - **0a. PR #449 (FTF-0500B) has RED CI.** `s3-minio-versioned-source-integration` fails after
-     `docker compose ... stop s3` (run on head 3ce16ce). It has been idle since 13:06Z. Your own red PR comes first (relay STEP 1): fix it on
-     that branch, get CI green, and merge it.
+   - **0a. PR #449 (FTF-0500B) had RED CI — fixed 2026-10-04T19:05Z, superseding PR #453 opened.** Real root cause
+     (read from the real `s3-minio-versioned-source-integration` job log, not assumed): the test's own
+     `_policy()` `explicit_private_allowlist` only allowlisted `127.0.0.0/8` (IPv4), but the GitHub Actions
+     runner's `getaddrinfo("localhost")` also returns the IPv6 loopback `::1`, which
+     `packages/security/outbound_guard.py`'s `resolve_and_validate` requires to pass too — refused with
+     `OutboundPolicyError`. Not a production-code defect (the real connector and real SeaweedFS server both
+     worked; only the test's own policy fixture was missing an entry). Fixed by adding
+     `ipaddress.ip_network("::1/128")` to that allowlist. Per this session's own branch restriction (same
+     pattern PR #402 used), pushed as a new PR rather than onto PR #449's own branch; PR #449 closed, unmerged,
+     pointing to the replacement. Skip this sub-item once the replacement PR's CI is green and it merges.
    - **0b. FTF-H007 + FTF-04A06 (security). Returned NOT CERTIFIED — NOT awaiting review.** The 15:10Z
      shift wrote that these "have had no new findings since PR #403". That is wrong.
      docs/certifications/queue.md entry "2026-10-01T13:40Z — Control-plane L2 re-review of PR #403"
@@ -9044,6 +9051,18 @@ psycopg error wrapping). Full clause-to-test mapping in `docs/certifications/que
 and `docs/spec-matrix.yaml`'s FTF-0500C entry. Not self-certified (Law 4) — awaiting Control-plane L2 re-review and
 a real CI run. Removed from this list's own remaining-work set above; the merged PR is Control plane's own next
 step to re-review, same as every other item in this list.
+
+**FTF-0500B: fixed this shift (2026-10-04T15:40Z), PR https://github.com/SJZLab/Sovra/pull/449 opened — all four round-3 findings** (VersionId
+normalization covering missing/blank/case/whitespace variants of the "null" sentinel, a stuck-pagination refusal
+when IsTruncated=true never advances either marker, an `<Error>`-root 200 response refused rather than treated as
+an empty listing, and a new real versioned-bucket SeaweedFS integration test — `tests/integration/
+test_ftf_0500b_s3_minio_versioned_source.py` plus a new CI job `s3-minio-versioned-source-integration` — closing
+the "real integration, or BLOCKED_EXTERNAL" DoD item). Full clause-to-test mapping in `docs/certifications/
+queue.md`'s "2026-10-04T15:40Z" entry and `docs/spec-matrix.yaml`'s FTF-0500B entry. Law 1 evidence: every new test
+independently shown to fail against the pre-fix module first (`git stash` the module fix alone — 17/25 checks
+failed — then `git stash pop` and re-run, all 25 pass). Not self-certified (Law 4) — awaiting Control-plane L2
+re-review and a real CI run (including the new integration job). Removed from this list's own remaining-work set
+above; the merged PR is Control plane's own next step to re-review, same as every other item in this list.
 
 ## Returned round 2 (2026-10-01T13:40Z — relay-owned, highest priority)
 FTF-H007 + FTF-04A06 (filter drivers, config includes, unpinned hardening) and FTF-0601 (reviewer
