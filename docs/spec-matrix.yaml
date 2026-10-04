@@ -6116,7 +6116,106 @@ FTF-0500C:
     disclosed negative-test case, confirmed exit 0, "all checks passed"; `test_ftf_h006.py`''s own
     disclosed no-IPv6-stack skip is unchanged, pre-existing sandbox behavior). Not self-certified
     (Law 4) -- independent Control-plane L2 review and a real CI run on the opened PR are required
-    before certification.'
+    before certification.
+
+
+    L2 fix-and-resubmit (2026-10-04, round 4): a five-subagent Control-plane review of round 3''s
+    merged PR (#448) found five new real defects. (1) The repeated-cursor check only ever compared
+    against the immediately-previous cursor, so a longer cycle (A -> B -> A) ran undetected all the
+    way to the generic `max_page_fetches` bound instead of being caught. (2) On a SQL_ASCII (or any
+    non-UTF8) server encoding, psycopg can hand `SHOW statement_timeout` back as raw `bytes` rather
+    than `str` -- the plain `== "0"` comparison would silently never match, letting a real
+    `statement_timeout_ms=0` slip through (CI''s own UTF8 test image never exercised this). (3)
+    Python equality is not a safe proxy for whether a real stable key value ties or is reachable: a
+    real NULL key can never satisfy `key > %s` at all (both NULL rows in a real `(1, 2, NULL, NULL)`
+    fixture were silently lost on resume); a real `float8` NaN never equals itself under Python''s
+    `==` even though Postgres''s own comparison treats NaN as equal to itself (a tied NaN pair was
+    silently lost at a page boundary); a non-default, non-deterministic ICU collation on a `text`
+    column ties values Python string equality cannot know about (e.g. `b`/`B` under
+    `und-u-ks-level2`). (4) A raw `TypeError` (the old Python-side `set(key_values)` genuinely
+    raised one for an unhashable key type, e.g. a Postgres array) could escape this module''s own
+    error family entirely. (5) Two unpinned claims: the Postgres `truncated` flag''s exact-boundary
+    behavior, and the new `except psycopg.Error` clause, both had no test that a reverting fault
+    actually turned red.
+
+
+    Fixed (1): `validate_and_preview_rest_trace_source` now tracks every cursor already used in a
+    real `set`, seeded with each cursor immediately before its own fetch, and refuses with
+    `SourceUnavailableError` the instant a `next_cursor` matches any previously-used cursor, not
+    only the immediately preceding one. New fixture endpoint `/cursor-cycle`
+    (`tests/tasks/test_ftf_0500c.py`, a real A -> B -> A cycle) backs
+    `test_rest_connector_refuses_a_cursor_cycle_longer_than_one_step` and the paired fault test
+    `test_disabling_the_cursor_cycle_check_genuinely_loops_to_the_page_fetch_bound` (disabling the
+    check proves the real cycle genuinely runs all the way to the generic `max_page_fetches` bound
+    instead, reverted byte-identical).
+
+
+    Fixed (2): the Postgres connector now decodes a `bytes` `SHOW statement_timeout` read-back to
+    `str` before comparing it, and separately rejects a non-positive or non-`int`
+    `statement_timeout_ms` (explicitly including `bool`, since `isinstance(True, int)` is `True` in
+    Python) before any connection is attempted. `tests/tasks/test_ftf_0500c.py` adds a fake
+    `_FakePostgresConnection` (distinguishes the module''s own fixed `execute()` call sequence by
+    structural signature -- `str` query vs `Composed`, `params=None` vs real `params` -- not a
+    hardcoded call count) backing
+    `test_postgres_statement_timeout_readback_is_decoded_even_as_raw_bytes` (refuses a real `b"0"`
+    read-back), its flip side
+    `test_postgres_statement_timeout_readback_accepts_a_real_bounded_value_as_bytes` (a real bounded
+    timeout, also as bytes, is still accepted), and
+    `test_statement_timeout_ms_rejects_non_positive_bad_types_before_any_connection`. The existing
+    real-Postgres `test_real_statement_timeout_ms_zero_is_refused` (and its paired fault test) were
+    rewritten to use a new `_ForcedStatementTimeoutReadbackConnection` spy that forces the real
+    session''s own `SHOW statement_timeout` read-back to report `"0"` independently of the
+    (now-separate) config-level check, since a literal `statement_timeout_ms=0` config value is
+    caught earlier by that same-shift config validation and would otherwise never reach the
+    read-back path at all.
+
+
+    Fixed (3): duplicate/NULL detection is no longer done with Python equality or a Python `set()`.
+    The generated SELECT now also computes `({key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER BY
+    {key} ASC)) AS __tied_with_prev`, which inherits the stable key column''s own real type, NaN
+    handling and collation directly from the connected database (independently confirmed against
+    this exact Postgres build: `SELECT ''NaN''::float8 = ''NaN''::float8` is `t`; `SELECT ''b'' =
+    ''B'' COLLATE ci_test` is `t` under `und-u-ks-level2`), plus an explicit real-NULL check on every
+    fetched key value. Three new real-Postgres fixture tables in
+    `tests/integration/test_ftf_0500c_database_api_trace_source.py` (`null_key_records`,
+    `nan_key_records`, a best-effort ICU `collation_key_records` that discloses a skip rather than
+    failing the suite on a Postgres build without ICU support -- confirmed available on this build)
+    back `test_real_null_stable_key_value_is_refused_not_silently_lost`,
+    `test_real_nan_stable_key_tie_is_refused_python_equality_would_miss_it`, and
+    `test_real_non_deterministic_collation_tie_is_refused`. `NonUniqueStableKeyError`''s own
+    docstring was rewritten to cover all three real causes.
+
+
+    Fixed (4): the outer exception handling now also catches `TypeError`, wrapping it as
+    `SourceUnavailableError` rather than letting it propagate raw.
+    `test_postgres_connector_wraps_an_unexpected_type_error_not_a_raw_leak`
+    (`tests/tasks/test_ftf_0500c.py`) proves this with a fake connection whose `fetchall()` itself
+    raises `TypeError`, simulating the same class of failure structurally.
+
+
+    Fixed (5): `test_real_exact_boundary_table_is_not_falsely_marked_truncated`
+    (`tests/integration/...`) adds a real `exact_boundary_records` table with exactly 5 rows and no
+    more, proving `truncated is False` at the exact lookahead boundary. A real `ungranted_records`
+    table, deliberately never granted to the least-privileged role, backs
+    `test_real_select_denied_by_grants_on_an_ungranted_table_is_wrapped` (a genuine
+    `psycopg.errors.InsufficientPrivilege` from a live connection, not a fake `OSError`) and its
+    paired fault test `test_disabling_the_psycopg_error_wrapper_genuinely_leaks_the_raw_error`
+    (disabling the module''s own `except psycopg.Error` clause proves the raw error genuinely leaks
+    without it, reverted byte-identical).
+
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean. `uv run mypy .`
+    clean repo-wide (370 source files, zero errors). `python3 scripts/validate_spec.py --strict`
+    clean (after `git fetch --unshallow`, pre-existing shallow-clone sandbox artifact).
+    `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `99/301`
+    certified (Law 2 -- a resubmission is not a certification). Both suites re-run clean end to end
+    against a real, freshly-started local PostgreSQL 16 (`sudo pg_ctlcluster 16 main start`; `ALTER
+    USER postgres PASSWORD ...` to match this sandbox''s own auth, same precedent prior shifts
+    disclosed): `tests/tasks/test_ftf_0500c.py` and
+    `tests/integration/test_ftf_0500c_database_api_trace_source.py`. Regression swept
+    `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` -- zero interference (same disclosed
+    precedents as round 3). Not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run on the opened PR are required before certification.'
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py

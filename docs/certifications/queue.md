@@ -22329,3 +22329,76 @@ independent.
 Optional: treat an empty snapshot header value (`ETag: ""`) as absent for SNAPSHOT_UNSTABLE.
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. FTF-0500C stays in QUEUE.md "## Active" item 0.
+
+## 2026-10-04T15:10Z — [relay] FTF-0500C: fix L2 round-4 findings (cursor-cycle set, SQL_ASCII statement_timeout decode, SQL-pushed NULL/NaN/collation-safe tie detection, TypeError wrap, exact-boundary + permission-denied tests)
+Fixes all five defects from the 2026-10-04T13:45Z Control-plane L2 review (five independent verifier
+subagents, PR #448 merge 141a1a9). Full clause-to-test mapping recorded in `docs/spec-matrix.yaml`'s
+FTF-0500C entry ("L2 fix-and-resubmit (2026-10-04, round 4)") -- summarized here:
+
+1. **Cursor cycle (A -> B -> A) duplicated records.** The old check only compared against the
+   immediately-previous cursor. Fixed: every cursor used in this listing is tracked in a real `set`,
+   seeded immediately before its own fetch; any `next_cursor` already in that set is refused
+   (`SourceUnavailableError`), not only an exact one-step repeat. New `/cursor-cycle` fixture +
+   `test_rest_connector_refuses_a_cursor_cycle_longer_than_one_step` +
+   `test_disabling_the_cursor_cycle_check_genuinely_loops_to_the_page_fetch_bound` (additive fault --
+   disabling it proves the cycle genuinely runs to the generic `max_page_fetches` bound instead,
+   reverted byte-identical).
+2. **`statement_timeout` guard fails open on SQL_ASCII.** psycopg can hand `SHOW statement_timeout`
+   back as raw `bytes` on a non-UTF8 server encoding; the plain `== "0"` comparison never matched.
+   Fixed: decode `bytes` before comparing. Also added a separate, earlier config-level check
+   rejecting a non-positive or non-`int` `statement_timeout_ms` (explicitly including `bool`, since
+   `isinstance(True, int)` is `True`). Tests: a new fake `_FakePostgresConnection` (distinguishes the
+   module's own call sequence by structural signature, not a hardcoded count) backs
+   `test_postgres_statement_timeout_readback_is_decoded_even_as_raw_bytes`,
+   `test_postgres_statement_timeout_readback_accepts_a_real_bounded_value_as_bytes`, and
+   `test_statement_timeout_ms_rejects_non_positive_bad_types_before_any_connection`. The existing real
+   `test_real_statement_timeout_ms_zero_is_refused` (+ paired fault test) were rewritten against a new
+   `_ForcedStatementTimeoutReadbackConnection` spy that forces the real session's own read-back to "0"
+   independently of the new, separate config-level check (which now catches a literal
+   `statement_timeout_ms=0` earlier and would otherwise make the old test's own premise unreachable).
+3. **Silent row loss on keys Python equality does not match** (NULL, NaN, non-deterministic
+   collation). Duplicate/NULL detection no longer uses Python equality or `set()`. The generated
+   SELECT now also computes `({key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER BY {key} ASC)) AS
+   __tied_with_prev`, inheriting the stable key column's own real type, NaN handling and collation
+   directly from the database (independently confirmed on this exact build: `SELECT 'NaN'::float8 =
+   'NaN'::float8` is `t`; `'b' = 'B' COLLATE <ICU und-u-ks-level2>` is `t`), plus an explicit real-NULL
+   check. Three new real-Postgres fixture tables back
+   `test_real_null_stable_key_value_is_refused_not_silently_lost`,
+   `test_real_nan_stable_key_tie_is_refused_python_equality_would_miss_it`, and
+   `test_real_non_deterministic_collation_tie_is_refused` (the ICU-collation table is provisioned
+   best-effort; confirmed available on this build, with a disclosed skip path for a build that lacks
+   it). `NonUniqueStableKeyError`'s own docstring now covers all three real causes.
+4. **Raw `TypeError` escaped the module's error family.** Fixed: the outer exception handling now
+   also catches `TypeError`, wrapping it as `SourceUnavailableError`. Proven with a fake connection
+   whose `fetchall()` itself raises `TypeError`
+   (`test_postgres_connector_wraps_an_unexpected_type_error_not_a_raw_leak`), the same class of
+   failure structurally (an unhashable key type previously reaching the now-removed Python `set()`).
+5. **Two unpinned claims.** `truncated`'s exact-boundary behavior and the `except psycopg.Error`
+   clause each got a real test that the matching fault turns red:
+   `test_real_exact_boundary_table_is_not_falsely_marked_truncated` (a real table with exactly
+   `max_preview_records` rows and no more) and
+   `test_real_select_denied_by_grants_on_an_ungranted_table_is_wrapped` +
+   `test_disabling_the_psycopg_error_wrapper_genuinely_leaks_the_raw_error` (a real, genuinely
+   ungranted table -- a real `psycopg.errors.InsufficientPrivilege` from a live connection, not a fake
+   `OSError`; disabling the wrapper clause proves the raw error genuinely leaks, reverted
+   byte-identical).
+
+Not applied: the review's own explicitly-**optional** suggestion (treat an empty `ETag: ""` as absent
+for SNAPSHOT_UNSTABLE) -- disclosed as skipped, not silently dropped, since the DoD marked it optional
+rather than required.
+
+**Verification:** `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean. `uv
+run mypy .` clean repo-wide (370 source files, zero errors). `python3 scripts/validate_spec.py
+--strict` clean (`git fetch --unshallow` first, this sandbox's own pre-existing shallow-clone
+artifact; directly confirmed the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load`
+before trusting it). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`:
+unchanged `99/301` certified (Law 2 -- a resubmission is not a certification). Both suites re-run
+clean end to end against a real, freshly-started local PostgreSQL 16 (`sudo pg_ctlcluster 16 main
+start`; `ALTER USER postgres PASSWORD ...` to match this sandbox's own auth): `tests/tasks/
+test_ftf_0500c.py` and `tests/integration/test_ftf_0500c_database_api_trace_source.py`. Regression
+swept `test_ftf_0500.py`/`test_ftf_0500b.py`/`test_ftf_h006.py` -- zero interference (same disclosed
+precedents every prior FTF-0500C shift already established).
+
+**State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified
+(Law 4) -- independent Control-plane L2 review and a real CI run on the opened PR are required before
+certification.

@@ -202,16 +202,33 @@ class SnapshotUnstableError(SourceUnavailableError):
 
 
 class NonUniqueStableKeyError(SourceUnavailableError):
-    """A Postgres `stable_key_column` that is not actually unique: keyset
-    pagination (`WHERE key > %s ORDER BY key ASC LIMIT %s`) silently skips
-    or drops rows whenever two or more rows share the exact same key value
-    and that tied group is split across a page boundary (the `>` resume
-    comparison permanently skips every further row still carrying the
-    already-returned key), or duplicates rows if a caller mistakes repeated
-    key values within one page for distinct records. Detected two ways: a
-    duplicate key value within one real fetched page, or -- fetching one
-    extra lookahead row past the real page boundary -- the first row past
-    the boundary sharing the same key as the last row returned."""
+    """A Postgres `stable_key_column` that is not safely unique and
+    orderable for keyset pagination (`WHERE key > %s ORDER BY key ASC LIMIT
+    %s`), which silently skips or drops rows in three distinct real ways:
+
+      - two or more rows share the exact same key value and that tied
+        group is split across a page boundary (the `>` resume comparison
+        permanently skips every further row still carrying the
+        already-returned key), or are duplicated within one page if a
+        caller mistakes repeated key values for distinct records;
+      - the key column contains a real SQL `NULL` -- a `NULL` key can never
+        satisfy `key > %s` (NULL comparisons are never true in SQL), so a
+        `NULL`-keyed row is permanently unreachable the moment any resume
+        happens, whether or not it is ever tied with another row;
+      - Python equality disagrees with the real connected database's own
+        comparison semantics for this exact column -- a NaN in a real
+        `float8` column (Postgres treats NaN as equal to itself; Python's
+        `==` never does), or a non-default collation on a real `text`
+        column (e.g. `b`/`B` tie under a case-insensitive ICU collation,
+        which Python has no way to know about).
+
+    Because of the last point, tie/NULL detection is never done with Python
+    equality or a Python `set()` -- it is pushed into the query itself
+    (`{key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER BY {key} ASC)`),
+    which inherits the stable key column's own real type, NaN handling and
+    collation directly from the connected database, plus an explicit
+    real-NULL check, rather than trusting a Python-side approximation of
+    what "the same value" means for an arbitrary real column."""
 
 
 class PostgresIdentifierError(SourceUnavailableError):
@@ -322,6 +339,18 @@ def validate_and_preview_postgres_source(
         raise SourceUnavailableError(
             f"max_preview_records must be a positive integer: {config.max_preview_records!r}"
         )
+    # `isinstance(True, int)` is `True` in Python -- checked first and
+    # separately, otherwise a real `bool` would silently pass an `isinstance
+    # (..., int)` check and could reach `SET statement_timeout = {}` below.
+    if (
+        isinstance(config.statement_timeout_ms, bool)
+        or not isinstance(config.statement_timeout_ms, int)
+        or config.statement_timeout_ms <= 0
+    ):
+        raise SourceUnavailableError(
+            "statement_timeout_ms must be a real positive int, never a bool or a "
+            f"non-integer value: {config.statement_timeout_ms!r}"
+        )
 
     schema = _validate_identifier(config.schema, field_name="schema")
     table = _validate_identifier(config.table, field_name="table")
@@ -350,7 +379,22 @@ def validate_and_preview_postgres_source(
                 # `SET` (e.g. a role lacking permission to change it) is
                 # itself a real, caught defect rather than an unproven claim.
                 observed_timeout = conn.execute("SHOW statement_timeout").fetchone()
-                if observed_timeout is None or observed_timeout[0] == "0":
+                observed_timeout_value: object = (
+                    observed_timeout[0] if observed_timeout is not None else None
+                )
+                if isinstance(observed_timeout_value, bytes):
+                    # 2026-10-04 L2 round-4 finding: on a SQL_ASCII (or any
+                    # non-UTF8) server encoding, psycopg can hand this value
+                    # back as raw `bytes` rather than `str` -- comparing it
+                    # to a plain string literal without decoding first would
+                    # silently never match "0" on such a cluster (this
+                    # repo's own CI test image is UTF8, so this path was
+                    # never exercised there), letting a real
+                    # statement_timeout=0 slip through undetected.
+                    observed_timeout_value = observed_timeout_value.decode(
+                        "ascii", errors="replace"
+                    )
+                if observed_timeout_value is None or str(observed_timeout_value).strip() == "0":
                     raise SourceUnavailableError(
                         "the connected Postgres session did not accept a real "
                         "statement_timeout -- refusing to run an unbounded query"
@@ -371,14 +415,21 @@ def validate_and_preview_postgres_source(
                 # the LIMIT cutoff, which a single-row-over-the-line
                 # `>`-comparison resume would otherwise silently skip on the
                 # next call. `NonUniqueStableKeyError`'s own docstring has
-                # the full reasoning.
+                # the full reasoning, including why the tie/NULL check below
+                # is pushed into the query itself rather than done with
+                # Python equality or a Python `set()`.
                 fetch_limit = config.max_preview_records + 1
                 select_columns = sql.SQL(", ").join(sql.Identifier(c) for c in all_columns)
+                tied_with_prev = sql.SQL(
+                    "({key} IS NOT DISTINCT FROM LAG({key}) OVER (ORDER BY {key} ASC))"
+                ).format(key=sql.Identifier(stable_key_column))
                 if resume_after_key is None:
                     query = sql.SQL(
-                        "SELECT {cols} FROM {schema}.{table} ORDER BY {key} ASC LIMIT %s"
+                        "SELECT {cols}, {tied} AS __tied_with_prev FROM {schema}.{table} "
+                        "ORDER BY {key} ASC LIMIT %s"
                     ).format(
                         cols=select_columns,
+                        tied=tied_with_prev,
                         schema=sql.Identifier(schema),
                         table=sql.Identifier(table),
                         key=sql.Identifier(stable_key_column),
@@ -386,10 +437,11 @@ def validate_and_preview_postgres_source(
                     params: tuple[object, ...] = (fetch_limit,)
                 else:
                     query = sql.SQL(
-                        "SELECT {cols} FROM {schema}.{table} WHERE {key} > %s "
-                        "ORDER BY {key} ASC LIMIT %s"
+                        "SELECT {cols}, {tied} AS __tied_with_prev FROM {schema}.{table} "
+                        "WHERE {key} > %s ORDER BY {key} ASC LIMIT %s"
                     ).format(
                         cols=select_columns,
+                        tied=tied_with_prev,
                         schema=sql.Identifier(schema),
                         table=sql.Identifier(table),
                         key=sql.Identifier(stable_key_column),
@@ -397,7 +449,7 @@ def validate_and_preview_postgres_source(
                     params = (resume_after_key, fetch_limit)
 
                 try:
-                    fetched = conn.execute(query, params).fetchall()
+                    fetched_with_tie = conn.execute(query, params).fetchall()
                 except (UndefinedTable, UndefinedColumn) as exc:
                     raise UnknownSourceContractError(
                         f"the declared schema/table/column contract {schema}.{table} "
@@ -405,28 +457,38 @@ def validate_and_preview_postgres_source(
                         "refusing to fabricate an empty preview for an unknown contract"
                     ) from exc
 
-                extra_fetched = len(fetched) > config.max_preview_records
-                boundary_rows = fetched[: config.max_preview_records]
-                lookahead_row = fetched[config.max_preview_records] if extra_fetched else None
+                extra_fetched = len(fetched_with_tie) > config.max_preview_records
+                boundary_with_tie = fetched_with_tie[: config.max_preview_records]
+                lookahead_with_tie = (
+                    fetched_with_tie[config.max_preview_records] if extra_fetched else None
+                )
                 # `stable_key_column` is always column 0 of `all_columns`
                 # (see its construction above), so index 0 of every fetched
-                # row is always the real key value, never any other column.
-                key_values = [row[0] for row in boundary_rows]
-                split_at_boundary = (
-                    lookahead_row is not None
-                    and boundary_rows
-                    and lookahead_row[0] == boundary_rows[-1][0]
+                # row is always the real key value; `__tied_with_prev` is
+                # always the trailing column this query itself appended.
+                any_null_key = any(row[0] is None for row in boundary_with_tie) or (
+                    lookahead_with_tie is not None and lookahead_with_tie[0] is None
                 )
-                if len(key_values) != len(set(key_values)) or split_at_boundary:
+                intra_page_tie = any(bool(row[-1]) for row in boundary_with_tie)
+                boundary_tie = lookahead_with_tie is not None and bool(lookahead_with_tie[-1])
+                if any_null_key or intra_page_tie or boundary_tie:
                     raise NonUniqueStableKeyError(
-                        f"stable_key_column {stable_key_column!r} is not unique within "
-                        f"{schema}.{table} -- found a duplicate key value among the real "
-                        "fetched rows, which would risk silently skipping or duplicating rows "
-                        "across a resumed capture; refusing to paginate on a non-unique key"
+                        f"stable_key_column {stable_key_column!r} is not safely unique and "
+                        f"orderable within {schema}.{table} -- a real NULL key value, a "
+                        "duplicate key tied to an adjacent row, or a key tied across the page "
+                        "boundary would risk silently skipping or dropping rows across a "
+                        "resumed capture; refusing to paginate on this key"
                     )
-                fetched = boundary_rows
+                # Drop the trailing `__tied_with_prev` column -- every
+                # caller below expects exactly the row shape `all_columns`
+                # already describes.
+                fetched = [row[:-1] for row in boundary_with_tie]
     except OSError as exc:
         raise SourceUnavailableError(f"could not reach the Postgres source: {exc}") from exc
+    except TypeError as exc:
+        raise SourceUnavailableError(
+            f"an unexpected type error occurred processing the Postgres source: {exc}"
+        ) from exc
     except psycopg.Error as exc:
         raise SourceUnavailableError(f"a real Postgres error occurred: {exc}") from exc
 
@@ -563,6 +625,12 @@ def validate_and_preview_rest_trace_source(
     active_policy = policy or default_rest_trace_source_policy()
     collected: list[Mapping[str, object]] = []
     cursor: str | None = None
+    # Tracks every cursor this listing has already used, not merely the one
+    # immediately before it -- a longer cycle (A -> B -> A) used to run
+    # completely undetected all the way to the generic `max_page_fetches`
+    # bound instead of being caught as the same real repeated-cursor defect
+    # a one-step repeat (A -> A) already catches.
+    used_cursors: set[str] = set()
     snapshot_version: str | None = None
     # Distinct from `snapshot_version is None` -- that's also the real,
     # legitimate value when page one genuinely had no header at all.
@@ -582,6 +650,11 @@ def validate_and_preview_rest_trace_source(
                 "unboundedly"
             )
         page_fetches += 1
+        if cursor is not None:
+            # Seeded before this cursor's own fetch -- so the very next
+            # `next_cursor` this page returns is checked against a set that
+            # already includes the cursor used to fetch it.
+            used_cursors.add(cursor)
         url = _build_page_url(config, cursor=cursor)
 
         attempt = 0
@@ -672,17 +745,20 @@ def validate_and_preview_rest_trace_source(
             # The source itself says this listing has genuinely ended --
             # not truncated.
             break
-        if cursor is not None and str(next_cursor) == cursor:
+        next_cursor_str = str(next_cursor)
+        if next_cursor_str in used_cursors:
             raise SourceUnavailableError(
-                f"the REST/trace source returned the identical cursor {cursor!r} again -- "
-                "refusing to refetch the same page and duplicate its records into the preview"
+                f"the REST/trace source returned cursor {next_cursor_str!r} again, having "
+                "already been used earlier in this same listing (not merely the immediately "
+                "preceding page) -- refusing to refetch an already-seen page and duplicate its "
+                "records into the preview"
             )
         if len(collected) >= config.max_preview_records:
             # Stopped only because of this module's own cap, with the
             # source itself reporting further pages still exist.
             truncated = True
             break
-        cursor = str(next_cursor)
+        cursor = next_cursor_str
 
     if config.snapshot_version_header and snapshot_version is None and page_fetches > 1:
         raise SnapshotUnstableError(
