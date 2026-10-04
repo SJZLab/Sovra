@@ -8949,10 +8949,12 @@ this same resolution (doc-only, redundant once this lands).
         - a raw-DB whitespace reviewer, then lock: 409.
      6. Add a data-remediation step or runbook note to migration 0018 for existing locked rows with an
         empty reviewer.
+   - **0c2. FTF-0500C round 5.** Returned 2026-10-04T15:40Z (docs/certifications/queue.md, same timestamp).
+     The blocker is NULL keys beyond the first window being silently lost. Work it only after 0a–0c.
    - **0d.** Then FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in
      docs/certifications/queue.md "2026-10-04T11:00Z".
    - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
-   - FTF-0500B and FTF-0500C re-enter this list only if Control plane returns them again. A NEW verdict
+   - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
      entry in docs/certifications/queue.md does NOT outrank 0a–0c. Work the list order, not the newest entry.
    For every acceptance and negative_acceptance clause, add a test that a clause-level fault turns red,
    including an additive fault (an early return, an extra allow rule). "Frontier saturated" is NOT a valid
