@@ -8803,7 +8803,16 @@ by it — same conclusion, this is simply the first version tied to a
 verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
-## Active (decided by Control plane 2026-10-01 — relay executes)
+## Active (decided by Control plane — relay executes, top first)
+0. **2026-10-04: highest priority, one item per shift, one PR per item.** These items were returned
+   NOT CERTIFIED and are relay-owned, even though spec-matrix shows PROVISIONAL. Work them in this order:
+   FTF-H007 + FTF-04A06 (security), FTF-0601, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0902, FTF-0307,
+   FTF-1002, FTF-0510, FTF-04A18, FTF-1807. Then FTF-1206A (Backlog; its contract is
+   `spec/addenda/FTF-1206A.json`). The exact DoD for each is in docs/certifications/queue.md, entries
+   "2026-10-04T11:00Z" and "2026-10-01T13:40Z". For every acceptance and negative_acceptance clause, add a
+   test that a clause-level fault turns red, including an additive fault such as an early return or an
+   extra allow rule. Skip any item that already has an open `[relay]` PR. "Frontier saturated" is NOT
+   a valid shift outcome while this list is non-empty.
 1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
    directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
    see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
