@@ -81,8 +81,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.target_connectors.local_repository_connector import (
+    DangerousGitConfigError,
     PathAllowlistError,
-    _run_git,
+    _scan_dangerous_git_config,
     capture_local_repository,
     resolve_allowed_root,
 )
@@ -254,41 +255,6 @@ def _scan_git_hooks(real_root: Path) -> tuple[str, ...]:
     return tuple(active)
 
 
-_DANGEROUS_GIT_CONFIG_KEY_PATTERN = (
-    r"^(core\.fsmonitor|core\.hookspath|core\.sshcommand|" r"filter\..+\.(clean|smudge|process))$"
-)
-
-
-def _scan_dangerous_git_config(real_root: Path) -> tuple[str, ...]:
-    """Reads (never executes) the repository's own resolved git config for
-    keys that can make an otherwise read-only git invocation execute a
-    repo-controlled command: `core.fsmonitor`/`core.hooksPath`/
-    `core.sshCommand`, or any `filter.<name>.(clean|smudge|process)`
-    driver (FTF-H007's own negative_acceptance -- the presence of such a
-    key is itself a blocking finding, independent of `_run_git`'s own
-    `-c` overrides already neutralizing it for every call this process
-    makes). Uses `_run_git`'s own hardened invocation to do the reading --
-    so this read cannot itself trigger the very commands it is checking
-    for -- rather than a hand-rolled INI parser, which would have to
-    reimplement git's own config precedence/quoting/include-file rules to
-    be correct."""
-    result = _run_git(
-        real_root,
-        "config",
-        "--local",
-        "--get-regexp",
-        _DANGEROUS_GIT_CONFIG_KEY_PATTERN,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return ()
-    keys: list[str] = []
-    for line in result.stdout.splitlines():
-        key = line.split(" ", 1)[0]
-        if key not in keys:
-            keys.append(key)
-    return tuple(sorted(keys))
-
-
 def _call_dotted_name(node: ast.expr) -> tuple[str, str] | None:
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
         return (node.value.id, node.attr)
@@ -409,6 +375,15 @@ def scan_local_repository_boundary(
         is_dirty = capture.capture_method == "local_dirty_snapshot"
     except PathAllowlistError:
         is_dirty = True  # a refused dirty-tree walk is still a dirty tree
+    except DangerousGitConfigError:
+        # `capture_local_repository` itself refused before ever running a
+        # git command that could trigger the dangerous key it found -- this
+        # scanner's own job is to keep producing complete evidence anyway
+        # (continue-on-finding), so dirtiness is simply unknown here, never
+        # assumed clean. `dangerous_git_config_keys` below (a separate, pure
+        # config read -- never the filter/hook-triggering command itself)
+        # still reports the real key(s) found.
+        is_dirty = True
 
     inventory = build_local_snapshot_inventory(
         root,

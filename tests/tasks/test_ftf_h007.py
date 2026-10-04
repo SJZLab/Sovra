@@ -405,6 +405,122 @@ def test_core_hookspath_config_blocks_lock() -> None:
         )
 
 
+def test_filter_driver_config_never_executes_and_blocks_lock() -> None:
+    """L2 round-2 finding (a) (2026-10-01T13:40Z): a repo-defined
+    `filter.<name>.clean` driver declared via `.gitattributes` on a
+    stat-dirty tracked file genuinely runs during a plain `git status`,
+    before this fix -- `_run_git`'s own fsmonitor/hooksPath overrides
+    cannot neutralize it generically, since the driver *name* is chosen by
+    the untrusted repository itself. `capture_local_repository` now
+    pre-scans for exactly this (`_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_
+    PATTERN`) and refuses before ever running `git status`; this scanner's
+    own separate, pure `_scan_dangerous_git_config` call (never the
+    execution path) reports the same key as a blocking finding here."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "filter_executed.marker"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "filter.evil.clean", f"sh -c 'touch {marker}'")
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "the repo-controlled filter.evil.clean command was never actually executed",
+            not marker.exists(),
+        )
+        check(
+            "FTF-H007",
+            "filter.evil.clean is reported as a dangerous git config key",
+            "filter.evil.clean" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with a filter driver config key is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+        check(
+            "FTF-H007",
+            "evaluate_manifest_lock_readiness refuses for a filter driver config key",
+            _raises(SourceBoundaryUnsafeError, evaluate_manifest_lock_readiness, report),
+        )
+
+
+def test_include_path_config_is_detected_and_blocks_lock() -> None:
+    """L2 round-2 finding (b): `_scan_dangerous_git_config` previously used
+    `git config --local --get-regexp` with no `--includes`, which (confirmed
+    directly against a real git binary) does not resolve `include.path` by
+    default -- a dangerous key hidden behind an include evaded detection
+    entirely while it still applied to every real git call. The fixed scan
+    is unscoped, which resolves includes by default."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "fsmonitor_executed.marker"
+        included = base / "included.gitconfig"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        included.write_text(f"[core]\n\tfsmonitor = sh -c 'touch {marker}'\n")
+        _run(repo, "config", "include.path", str(included))
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a dangerous key reached only through include.path is detected",
+            "core.fsmonitor" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with a dangerous key hidden behind include.path is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+        check(
+            "FTF-H007",
+            "the included fsmonitor command was never actually executed",
+            not marker.exists(),
+        )
+
+
+def test_worktree_scope_config_is_detected_and_blocks_lock() -> None:
+    """L2 round-2 finding (b): the prior scan never read `.git/config.
+    worktree` (the `extensions.worktreeConfig` scope) at all -- a dangerous
+    key set only there was invisible to detection while still applying to
+    every real git call made against this worktree."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "extensions.worktreeConfig", "true")
+        (repo / ".git" / "config.worktree").write_text("[core]\n\thooksPath = /dev/null-evil\n")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a dangerous key set only in .git/config.worktree is detected",
+            "core.hookspath" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with a dangerous key set only in .git/config.worktree "
+            "is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
 def test_symlinked_hook_is_treated_as_active() -> None:
     """Before the fix, `_scan_git_hooks` skipped every `.git/hooks/*`
     symlink outright (`if entry.is_symlink() or not entry.is_file()`),

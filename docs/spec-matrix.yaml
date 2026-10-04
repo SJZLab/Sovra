@@ -3514,6 +3514,74 @@ FTF-04A06:
     `test_ftf_h006.py`/`test_ftf_h007.py`, zero regressions. No `ci.yml` change needed -- the
     existing `gate`-job step already runs this file. **Not self-certified (Law 4)** -- awaiting
     independent Control-plane L2 re-review and a real CI run on the opened PR before certification.
+
+    L2 fix-and-resubmit round 2 (2026-10-04, shared root cause with FTF-H007): the 2026-10-01T13:40Z
+    review found `_run_git`'s own `-c core.fsmonitor=false -c core.hooksPath=/dev/null` neutralizes
+    only those two fixed, named keys -- a repo-defined `filter.<name>.(clean|smudge|process)` driver
+    declared via `.gitattributes` on a stat-dirty tracked file still genuinely runs during the first
+    `git status`-family call, since its *name* is repo-chosen and no fixed `-c` override can
+    anticipate it. Reproduced for real against the pre-fix code (`sh -c 'touch <marker>'` as
+    `filter.evil.clean`, a stat-dirty tracked `.secret` file) -- the marker genuinely appeared.
+    Fixed by moving the config-presence scan (`_scan_dangerous_git_config`, previously duplicated
+    in `source_boundary.py`) into this module, adding a new `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_
+    PATTERN` subset check that `capture_local_repository` now runs *before* its own first
+    working-tree-content git call (`_git_dirty_signature`) and refuses outright
+    (`DangerousGitConfigError`) if a filter driver key is present -- never merely neutralize-and-
+    proceed, since no fixed override exists for an unknown driver name. `core.fsmonitor`/
+    `core.hooksPath` deliberately stay on the original neutralize-and-proceed path (unchanged,
+    preserving this task's own already-established "capture succeeds once neutralized" behavior);
+    only the strictly-unneutralizable filter-driver subset blocks the capture itself.
+
+    A real, independently-found correctness bug surfaced while building this fix and was corrected
+    before submission: reading the config-presence scan through the *same* hardened `_run_git`
+    (which always injects `-c core.fsmonitor=false -c core.hooksPath=/dev/null`) made `git config
+    --get-regexp` echo back this process's own benign override value for exactly those two keys,
+    silently masking whatever real value the untrusted repository itself had set -- confirmed
+    directly against a real git binary before fixing it. `_run_git` now takes an explicit
+    `config_overrides` parameter (defaulting to the two safety overrides for every normal call);
+    the config-presence scan passes `config_overrides=()` so it always sees the real, unmasked
+    value. This also closes the review's separate finding (b): the scan now runs fully unscoped
+    (no `--local` restriction), which a real git binary confirms resolves `include.path`/
+    `includeIf.*.path` and `.git/config.worktree` (`extensions.worktreeConfig`) by default, unlike
+    the prior `--local`-only call, while `GIT_CONFIG_NOSYSTEM=1`/`GIT_CONFIG_GLOBAL=/dev/null`
+    (unconditional, not part of `config_overrides`) continues to exclude this process's own
+    system/global config.
+
+    Six new cases in `test_ftf_04a06.py`, each against real git repositories, each clause-to-test:
+    (1) `test_malicious_filter_driver_never_executes_and_capture_is_refused` -- the filter-driver
+    exploit above is refused (`DangerousGitConfigError`) and the marker never appears;
+    (2) `test_fault_injection_filter_driver_check_is_load_bearing` -- with the pre-scan stubbed to
+    return `()`, the identical exploit genuinely executes, proving the pre-scan (not some unrelated
+    side effect) is what blocks it in (1); (3)/(4) `test_fault_injection_hookspath_override_is_
+    load_bearing`/`test_fault_injection_env_isolation_is_load_bearing` -- the review's own finding
+    (c) ("removing the hooksPath override, or the env isolation, leaves every test green") is now
+    closed with two newly-found, real, reproducible exploits going beyond the original fsmonitor-
+    command-string vector: a real, executable `post-index-change` hook under a repo-controlled
+    `core.hooksPath` genuinely fires during `git status` (git refreshes the index's stat cache and
+    runs this real, documented hook) when the `-c core.hooksPath=/dev/null` override is specifically
+    removed from `_run_git`; and, independently, a `filter.<name>.clean` driver defined only in this
+    *process's* own global `~/.gitconfig` (never the repo's) genuinely leaks through and executes
+    when `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` isolation is specifically removed (with the
+    pre-scan stubbed out in both fault-injection cases, to isolate the one layer each test is
+    proving -- the full, unstubbed scan would otherwise also catch the exploit and block before the
+    vulnerable call is reached, masking the gap). Both exploits were confirmed by hand against a
+    real git binary before being written up as tests. Law 1, whole-suite evidence: stashed only the
+    two production files (keeping every test change), re-ran `test_ftf_04a06.py` against the
+    genuinely pre-fix module -- the import itself failed (`DangerousGitConfigError` does not exist
+    pre-fix), a real, bound failure; `git stash pop` restored the fix, suite re-ran clean (20/20).
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (one pre-existing
+    formatting diff in the edited test file, fixed by `ruff format` itself before this count).
+    `uv run mypy` clean on every changed file (two `no_implicit_optional` findings in the new fault-
+    injection stubs' own lambda defaults, fixed; the remaining repo-wide `Unused "type: ignore"`
+    findings in `test_ftf_0500c.py`/the matching integration test are confirmed pre-existing on
+    unmodified `main`, unrelated to this change). `git fetch --unshallow`; `validate_spec.py
+    --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `26/26`. `status.py`
+    unchanged `99/301` certified (Law 2). Regression swept the full `test_ftf_04a0*.py`/
+    `test_ftf_04a1*.py`/`test_ftf_04a2*.py`/`test_ftf_h007.py` family (26 suites) -- zero
+    regressions. No `ci.yml` change needed -- the existing `gate`-job steps already run both files.
+    **Not self-certified (Law 4)** -- awaiting independent Control-plane L2 re-review and a real CI
+    run on the opened PR before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
@@ -10427,6 +10495,47 @@ FTF-H007:
     `test_ftf_h006.py`, zero regressions. No `ci.yml` change needed -- the existing `gate`-job step
     already runs this file. **Not self-certified (Law 4)** -- awaiting independent Control-plane L2
     re-review and a real CI run on the opened PR before certification.
+
+    L2 fix-and-resubmit round 2 (2026-10-04, shared root cause and fix with FTF-04A06 -- see that
+    task's own entry for the full mechanism). The 2026-10-01T13:40Z review found two gaps at this
+    task's own "scan" layer (`scan_local_repository_boundary`/`evaluate_manifest_lock_readiness`):
+    (a) a repo-defined filter driver still genuinely executes during the scan's own underlying
+    `capture_local_repository` call (fixed at the source in FTF-04A06's own module -- this task's
+    own scanner now simply inherits the refusal); (b) `_scan_dangerous_git_config` (previously
+    defined here, now a single shared function imported from `local_repository_connector.py`) used
+    `git config --local --get-regexp` with no `--includes`, so a dangerous key reached only through
+    `include.path`/`includeIf.*.path`, or set only in `.git/config.worktree`, evaded detection
+    entirely for *lock-readiness reporting* while still applying to every real git call. The shared
+    function is now unscoped (resolves includes/worktree by default, confirmed directly against a
+    real git binary), with `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` still excluding this process's
+    own system/global config. `scan_local_repository_boundary` now also catches the new
+    `DangerousGitConfigError` its own call to `capture_local_repository` can raise (treating it the
+    same as the pre-existing `PathAllowlistError` catch -- dirtiness unknown, continue building the
+    rest of the report rather than crash) and still separately calls the shared scanner (a pure,
+    non-executing config read) to populate `report.dangerous_git_config_keys` for reporting.
+
+    Three new cases in `test_ftf_h007.py`, each shown red against the pre-fix code before being
+    confirmed green: `test_filter_driver_config_never_executes_and_blocks_lock` (the marker is
+    confirmed absent, `filter.evil.clean` is reported, `is_safe_to_lock` is `False`,
+    `evaluate_manifest_lock_readiness` raises); `test_include_path_config_is_detected_and_blocks_
+    lock` (a `core.fsmonitor` key reachable only through `include.path` is now reported and blocks
+    lock); `test_worktree_scope_config_is_detected_and_blocks_lock` (a `core.hooksPath` key set only
+    in `.git/config.worktree`, with `extensions.worktreeConfig=true`, is now reported and blocks
+    lock). Law 1, whole-suite evidence: stashed only the two production files (keeping every test
+    change) and re-ran `test_ftf_h007.py` against the genuinely pre-fix code -- exactly 5 checks
+    failed, all and only the new ones (one execution/marker check from the filter-driver case, four
+    detection/blocking checks from the include-path and worktree-scope cases), zero bleed into any
+    pre-existing check; `git stash pop` restored the fix, suite re-ran clean (24/24).
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean. `uv run mypy`
+    clean on every changed file. `git fetch --unshallow`; `validate_spec.py --strict` clean.
+    `product_truth_check.py --fail-on-unwired` unchanged `26/26` (`proving_symbol` still
+    deliberately blank, disclosed above, unchanged by this fix). `status.py` unchanged `99/301`
+    certified (Law 2). Regression swept the full `test_ftf_04a0*.py`/`test_ftf_04a1*.py`/
+    `test_ftf_04a2*.py` family (25 suites) plus this file itself -- zero regressions. No `ci.yml`
+    change needed -- the existing `gate`-job step already runs this file. **Not self-certified
+    (Law 4)** -- awaiting independent Control-plane L2 re-review and a real CI run on the opened PR
+    before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h007.py

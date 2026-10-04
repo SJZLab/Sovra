@@ -1,4 +1,95 @@
 # PROGRESS — Sovra
+## 2026-10-04T21:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-r495s2` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 2 (PR pending)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`BLOCKER.md` fresh this shift (`BLOCKER.md`: no live
+entries, every entry already resolved). STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback
+declared, same as every prior shift.
+
+`git fetch origin main` confirmed this session's own designated branch is already at `origin/main`'s tip
+(`1421b95`, `HEAD..origin/main`/`origin/main..HEAD` both `0`) — no reset needed. Checked `list_pull_requests`
+(open, state=all not needed): only two open PRs exist (#402, stale/superseded; #295, an unrelated declared-blocked
+item) — no open `[relay]` claim for this item, so picking it up fresh per "claim before implementing."
+
+QUEUE.md's "## Active" item 0 (corrected 15:25Z by Control plane) states strict priority order. 0a (PR #449's red
+CI) was already fixed and merged (PR #453, merge `6473924`) by the prior shift. Next in order: **0b. FTF-H007 +
+FTF-04A06 (security) — returned NOT CERTIFIED, round 2, no fix PR since.**
+
+**P** — read `apps/api/app/target_connectors/local_repository_connector.py` and `source_boundary.py` in full, plus
+the 2026-10-01T13:40Z round-2 review's own three findings (docs/certifications/queue.md): (a) `_run_git`'s own `-c
+core.fsmonitor=false -c core.hooksPath=/dev/null` neutralizes only those two fixed, named keys — a repo-defined
+`filter.<name>.(clean|smudge|process)` driver cannot be anticipated by a fixed override since its name is
+repo-chosen; (b) `_scan_dangerous_git_config` (in `source_boundary.py`) used `git config --local --get-regexp` with
+no `--includes`, missing `include.path`/`includeIf.*.path` and `.git/config.worktree`; (c) neither the hooksPath
+override nor the `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` env isolation had a test proving it load-bearing.
+
+Reproduced each finding for real against the pre-fix code, by hand, before writing any fix: (a) a real
+`filter.evil.clean = sh -c 'touch <marker>'` plus a `.gitattributes` `filter=evil` entry on a stat-dirty tracked
+file — the marker genuinely appeared during `capture_local_repository`'s own `git status` call. (b) confirmed
+directly against a real git binary that `git config --local --get-regexp` (no `--includes`) returns nothing for a
+key set only via `include.path`, and that `.git/config.worktree` is invisible without an explicit `--worktree`
+flag, while the unscoped form (no `--local`) picks up both plus includes by default. (c) found and confirmed two
+real, previously-undocumented exploits: a real, executable `post-index-change` hook under a malicious
+`core.hooksPath` genuinely fires during `git status` (git refreshes the index's stat cache and runs this real,
+documented hook) when the hooksPath override is missing; a `filter.<name>.clean` driver defined only in this
+process's own global `~/.gitconfig` genuinely leaks through when `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` is
+missing, independent of the `-c` overrides.
+
+**E** — `capture_local_repository` now pre-scans for a strict, unneutralizable subset
+(`_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN`, filter drivers only) before its own first working-tree-content git
+call and refuses outright (`DangerousGitConfigError`) rather than merely neutralize-and-proceed; `core.fsmonitor`/
+`core.hooksPath` deliberately stay on the original neutralize-and-proceed path, preserving this task's own
+already-established behavior rather than widening the block and regressing it. Moved `_scan_dangerous_git_config`
+out of `source_boundary.py` (removing the duplicate) into `local_repository_connector.py` as the single source of
+truth, now called fully unscoped (closing finding b). Found and fixed a real correctness bug while building this:
+reading the config-presence scan through the same hardened `_run_git` (which always injects the two safety
+overrides) made `git config --get-regexp` echo back this process's own override value for exactly those two keys,
+masking the repo's real value — every repo in the test suite, including ones that never touched these keys, was
+being reported as "dangerous" once the scan went unscoped, until this was caught and fixed. `_run_git` now takes an
+explicit `config_overrides` parameter (default: the two safety overrides); the config-presence scan passes
+`config_overrides=()`. `source_boundary.py` updated to import the shared function and to catch the new
+`DangerousGitConfigError` from its own `capture_local_repository` call (same treatment as the pre-existing
+`PathAllowlistError` catch).
+
+9 new tests: 6 in `tests/tasks/test_ftf_04a06.py` (filter-driver block + fault injection proving the pre-scan itself
+is load-bearing + two fault-injection tests proving the hooksPath override and the env isolation are each
+independently load-bearing, using the two newly-found exploits above), 3 in `tests/tasks/test_ftf_h007.py`
+(filter-driver/include-path/worktree-scope, each at the scan/lock-readiness layer). **Law 1, shown able to fail
+first:** `git stash` of the two production files only (every test change kept), re-ran both suites against the
+genuinely pre-fix code — `test_ftf_04a06.py` failed at import (`DangerousGitConfigError` does not exist pre-fix);
+`test_ftf_h007.py` failed exactly 5 checks, all and only the new ones (1 execution check, 4 detection/blocking
+checks), zero bleed into the 24 pre-existing checks. `git stash pop` restored the fix; both suites re-ran clean
+(20/20, 24/24).
+
+**V** — `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (one pre-existing formatting
+diff in the edited test file, fixed via `ruff format` itself before this count). `uv run mypy` clean on every
+changed file (two `no_implicit_optional` findings in the new fault-injection stubs' own lambda defaults, fixed; the
+remaining repo-wide `Unused "type: ignore"` findings in `test_ftf_0500c.py`/its matching integration test confirmed
+present identically on unmodified `main` via `git stash`, unrelated to this change). `git fetch --unshallow` first
+(this sandbox's own pre-existing shallow-clone artifact). `python3 scripts/validate_spec.py --strict` clean
+(`docs/spec-matrix.yaml` prose re-parsed directly with `yaml.safe_load` first, per this repo's own 2026-10-01
+lesson). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `99/301` certified /
+24 product-true (Law 2 — a resubmission is not a certification). Regression swept the full `test_ftf_04a0*.py`/
+`test_ftf_04a1*.py`/`test_ftf_04a2*.py` family (26 suites) plus `test_ftf_h007.py` — zero regressions (required
+`uv sync --all-packages` first; several of these suites need `uvicorn`/`sqlalchemy`, absent from the minimal venv
+`uv run` otherwise creates). No `ci.yml` change needed — the existing `gate`-job steps already run both files.
+
+Updated `docs/spec-matrix.yaml`'s FTF-H007 and FTF-04A06 entries with full "L2 fix-and-resubmit round 2
+(2026-10-04)" notes (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Appended
+a full evidence entry to `docs/certifications/queue.md` ("2026-10-04T21:10Z"). Updated `QUEUE.md`'s "## Active"
+item 0, sub-item 0b, to mark it fixed and point to the new evidence entry.
+
+**V (certification)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml` for both tasks; independent Control-plane L2 re-review and a real CI run on
+the opened PR are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this shift,
+before compaction. STEP 4 stop condition (a): both items now join the same PROVISIONAL backlog awaiting
+Control-plane L2 certification and the L4 gate (99/301 certified, unchanged). Stopping here — one item per shift,
+per this list's own rule; not picking a second task. FTF-0601 (0c), FTF-0500C round 5 (0c2), and FTF-0500B round 4
+(0c3) remain for the next shift, in that order. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged
+— none open). `BLOCKER.md` unchanged — no live entries.
+
 ## 2026-10-04T19:05:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-6z9pma` — fixed PR #449's (FTF-0500B) red CI, opened a replacement PR
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read

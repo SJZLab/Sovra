@@ -8924,22 +8924,21 @@ this same resolution (doc-only, redundant once this lands).
      `ipaddress.ip_network("::1/128")` to that allowlist. Per this session's own branch restriction (same
      pattern PR #402 used), pushed as a new PR rather than onto PR #449's own branch; PR #449 closed, unmerged,
      pointing to the replacement. Skip this sub-item once the replacement PR's CI is green and it merges.
-   - **0b. FTF-H007 + FTF-04A06 (security). Returned NOT CERTIFIED — NOT awaiting review.** The 15:10Z
-     shift wrote that these "have had no new findings since PR #403". That is wrong.
-     docs/certifications/queue.md entry "2026-10-01T13:40Z — Control-plane L2 re-review of PR #403"
-     returned them (round 2), and no fix PR exists since. DoD (copied from that entry):
-     - Neutralise git filter drivers (`filter.<x>.clean`/`process` + `.gitattributes`) for every git call
-       on an untrusted tree, or replace `git status` with a non-executing plumbing read.
-     - Read config with includes across the local and worktree scopes, or treat any `include*` or
-       `includeIf*` key as blocking.
-     - Tests, each shown RED before the fix:
-       - a filter-driver repo with a stat-dirty file: the marker is never created and the scan blocks;
-       - an `include.path` repo whose included file sets `core.fsmonitor`: the scan blocks;
-       - a `.git/config.worktree` repo: the scan blocks;
-       - a test that turns red when `-c core.hooksPath=/dev/null` is removed;
-       - a test that turns red when the `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` env isolation is removed.
-     - These are defensive tests: an inert marker file proves non-execution. If a tool or classifier
-       blocks a step, PARK the item with what was blocked and three routes. Do not skip it silently.
+   - **0b. FTF-H007 + FTF-04A06 (security) — fixed 2026-10-04T21:10Z, PR pending.** All five DoD items from the
+     2026-10-01T13:40Z round-2 entry: `capture_local_repository` now pre-scans for the unneutralizable
+     `filter.<name>.(clean|smudge|process)` subset before its own first working-tree-content git call and refuses
+     outright (`DangerousGitConfigError`); the shared `_scan_dangerous_git_config` (moved into
+     `local_repository_connector.py`, single source of truth) now runs fully unscoped, resolving
+     `include.path`/`includeIf.*.path` and `.git/config.worktree` by default (confirmed directly against a real
+     git binary) while `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` keeps excluding system/global config; a
+     self-found correctness bug (the scan's own `-c core.fsmonitor=false -c core.hooksPath=/dev/null` overrides
+     were masking the repo's real value for those two keys) is fixed via a new `config_overrides=()` parameter on
+     the config-reading call. Two new real, reproducible exploits (a `post-index-change` hook under a malicious
+     `core.hooksPath`, and a global-config-sourced filter driver) pin the hooksPath override and the env isolation
+     independently. 9 new tests (6 in `test_ftf_04a06.py`, 3 in `test_ftf_h007.py`), each shown red against the
+     genuinely pre-fix code first. Full evidence: docs/certifications/queue.md "2026-10-04T21:10Z". Not
+     self-certified (Law 4) — awaiting Control-plane L2 re-review. Skip this sub-item once its PR is green and
+     merged; FTF-0601 (0c) is next.
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock

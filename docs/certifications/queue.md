@@ -22593,3 +22593,86 @@ its queue entry. Fixing only the named instance is incomplete. This is the secon
 appeared.
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md "## Active" item 0 lists FTF-0500B at 0c3.
+
+## 2026-10-04T21:10Z — [relay] FTF-H007 + FTF-04A06: fix L2 round-2 findings (filter drivers, config include/worktree scope)
+
+**Items:** FTF-H007 (Untrusted source acquisition and complete immutable analysis), FTF-04A06 (Local repository
+connector with root allowlist/path protections). Round-2 DoD: `docs/certifications/queue.md`'s own
+"2026-10-01T13:40Z" entry. QUEUE.md "## Active" item 0, sub-item 0b.
+
+**Finding (a) — filter drivers.** `_run_git`'s own `-c core.fsmonitor=false -c core.hooksPath=/dev/null` neutralizes
+only those two fixed, named keys. A repo-defined `filter.<name>.(clean|smudge|process)` driver declared via
+`.gitattributes` on a stat-dirty tracked file still genuinely runs during the first `git status`-family call, since
+its name is repo-chosen and no fixed `-c` override can anticipate it. Reproduced for real (`filter.evil.clean =
+sh -c 'touch <marker>'`, a stat-dirty `.secret` file carrying `filter=evil`): the marker genuinely appeared under the
+pre-fix code.
+
+Fix: `capture_local_repository` now pre-scans for exactly this unneutralizable subset
+(`_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN = r"^filter\..+\.(clean|smudge|process)$"`) before its own first
+working-tree-content git call (`_git_dirty_signature`) and refuses outright (`DangerousGitConfigError`) rather than
+merely neutralize-and-proceed. `core.fsmonitor`/`core.hooksPath` deliberately stay on the original
+neutralize-and-proceed path, preserving this task's own already-established "capture succeeds once neutralized"
+behavior — widening the block to those two as well would have been a regression against that established behavior,
+not a fix.
+
+**Finding (b) — config scope gaps.** `_scan_dangerous_git_config` used `git config --local --get-regexp` with no
+`--includes`, which (confirmed directly against a real git binary) resolves neither `include.path`/`includeIf.*.path`
+nor `.git/config.worktree` (`extensions.worktreeConfig`) by default. A dangerous key hidden behind either evaded
+detection entirely while still applying to every real git call.
+
+Fix: the scan is now unscoped (no `--local` restriction), which resolves includes and worktree scope by default;
+`GIT_CONFIG_NOSYSTEM=1`/`GIT_CONFIG_GLOBAL=/dev/null` (already present, unconditional) continues to exclude this
+process's own system/global config. The function moved from `source_boundary.py` (duplicated) into
+`local_repository_connector.py` (single source of truth); `source_boundary.py` now imports it.
+
+**Self-found correctness bug, fixed before submission.** Reading the config-presence scan through the same hardened
+`_run_git` (which always injects `-c core.fsmonitor=false -c core.hooksPath=/dev/null`) made `git config
+--get-regexp` echo back this process's own benign override value for exactly those two keys, silently masking
+whatever real value the untrusted repository itself had set — confirmed directly against a real git binary while
+building the fix (every repo in the test suite, including ones that never touched these keys, was reported as
+"dangerous" because of this). `_run_git` now takes an explicit `config_overrides` parameter (default: the two safety
+overrides, for every normal call); the config-presence scan passes `config_overrides=()` to see the real, unmasked
+value.
+
+**Finding (c) — unpinned hardening.** Two new, real, reproducible exploits (found by direct experimentation against
+a real git binary, not assumed) now pin `-c core.hooksPath=/dev/null` and the `GIT_CONFIG_NOSYSTEM`/
+`GIT_CONFIG_GLOBAL` env isolation independently of each other and of the fsmonitor-command vector already covered:
+(1) a real, executable `post-index-change` hook under a repo-controlled `core.hooksPath` genuinely fires during
+`git status` (git refreshes the index's stat cache and runs this real, documented hook) when the hooksPath override
+is specifically removed; (2) a `filter.<name>.clean` driver defined only in this process's own global `~/.gitconfig`
+(never the repo's) genuinely leaks through and executes when `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` isolation is
+specifically removed, independent of the `-c` overrides (which stay intact in that test).
+
+**Tests, clause-to-test mapping:**
+- `tests/tasks/test_ftf_04a06.py` (+6): `test_malicious_filter_driver_never_executes_and_capture_is_refused`
+  (finding a, positive); `test_fault_injection_filter_driver_check_is_load_bearing` (finding a, additive fault —
+  stubs the pre-scan to always return empty, proving the pre-scan itself is load-bearing);
+  `test_fault_injection_hookspath_override_is_load_bearing` (finding c, hooksPath); 
+  `test_fault_injection_env_isolation_is_load_bearing` (finding c, env isolation).
+- `tests/tasks/test_ftf_h007.py` (+3): `test_filter_driver_config_never_executes_and_blocks_lock` (finding a, at the
+  scan/lock-readiness layer); `test_include_path_config_is_detected_and_blocks_lock` (finding b, include.path);
+  `test_worktree_scope_config_is_detected_and_blocks_lock` (finding b, config.worktree).
+
+**Law 1, whole-suite evidence (not just the new assertions in isolation):** `git stash` of the two production files
+only (keeping every test change), then re-ran both suites against the genuinely pre-fix code:
+- `test_ftf_04a06.py`: `ImportError: cannot import name 'DangerousGitConfigError'` — a real, bound failure (the new
+  tests reference a symbol the pre-fix module does not export).
+- `test_ftf_h007.py`: exactly 5 checks failed, all and only the new ones (1 execution/marker check from the
+  filter-driver case, 4 detection/blocking checks from the include-path and worktree-scope cases) — zero bleed into
+  any of the 24 pre-existing checks.
+`git stash pop` restored the fix; both suites re-ran clean (20/20 and 24/24).
+
+**Verification.** `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean. `uv run mypy` clean
+on every changed file (two `no_implicit_optional` findings in the new fault-injection stubs' own lambda defaults,
+fixed; the pre-existing `Unused "type: ignore"` findings in `test_ftf_0500c.py`/its matching integration test are
+confirmed present identically on unmodified `main`, unrelated to this change). `git fetch --unshallow`;
+`python3 scripts/validate_spec.py --strict` clean (`docs/spec-matrix.yaml` prose re-parsed directly with
+`yaml.safe_load` first, per this repo's own 2026-10-01 lesson). `product_truth_check.py --fail-on-unwired` unchanged
+`26/26`. `status.py` unchanged `99/301` certified (Law 2 — a resubmission is not a certification). Regression swept
+the full `test_ftf_04a0*.py`/`test_ftf_04a1*.py`/`test_ftf_04a2*.py` family (26 suites) plus `test_ftf_h007.py` —
+zero regressions. No `ci.yml` change needed — the existing `gate`-job steps already run both files.
+
+**State.** Not self-certified (Law 4): `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged for
+both tasks in `docs/spec-matrix.yaml`. Independent Control-plane L2 re-review and a real CI run on the opened PR are
+required before certification. Per QUEUE.md "## Active" item 0's own stated order, FTF-0601 (0c) is next, then
+FTF-0500C round 5 (0c2) and FTF-0500B round 4 (0c3).

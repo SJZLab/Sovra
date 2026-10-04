@@ -42,6 +42,7 @@ Run directly: python3 tests/tasks/test_ftf_04a06.py
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,7 @@ sys.path.insert(0, str(API_ROOT))
 from app.target_connectors import local_repository_connector as _connector_module  # noqa: E402
 from app.target_connectors.local_repository_connector import (  # noqa: E402
     ConcurrentModificationError,
+    DangerousGitConfigError,
     EmptyRepositoryError,
     LocalRepositoryCapture,
     NotAGitRepositoryError,
@@ -383,6 +385,230 @@ def test_malicious_core_fsmonitor_never_executes_and_never_edits_the_tree() -> N
             "FTF-04A06",
             "the capture itself still succeeds normally once the malicious config is neutralized",
             capture.capture_method == "local_git_commit",
+        )
+
+
+def test_malicious_filter_driver_never_executes_and_capture_is_refused() -> None:
+    """L2 round-2 finding (a) (2026-10-01T13:40Z): `_run_git`'s own `-c
+    core.fsmonitor=false -c core.hooksPath=/dev/null` neutralizes those two
+    named vectors, but not a repo-defined `filter.<name>.clean`/`process`
+    driver declared via `.gitattributes` on a stat-dirty tracked file --
+    git genuinely runs that driver while comparing the working tree against
+    the index during a plain `git status`, before the fix. Reproduced for
+    real against the pre-fix code path (see
+    `test_fault_injection_filter_driver_check_is_load_bearing` below for the
+    same exploit proven to succeed once the new pre-scan is bypassed).
+    `capture_local_repository` now runs `_scan_dangerous_git_config` before
+    its own first working-tree-content git call and refuses outright."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "filter_executed.marker"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "filter.evil.clean", f"sh -c 'touch {marker}'")
+        # Make the tracked file stat-dirty so git must re-compare its
+        # content (through the clean filter) against the index during the
+        # very next `status`-family call.
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        check(
+            "FTF-H007",
+            "a repo-defined filter driver is detected and capture is refused "
+            "before any working-tree git command could trigger it",
+            _raises(DangerousGitConfigError, capture_local_repository, repo, [base]),
+        )
+        check(
+            "FTF-H007",
+            "the repo-controlled filter.evil.clean command was never actually executed",
+            not marker.exists(),
+        )
+
+
+def test_fault_injection_filter_driver_check_is_load_bearing() -> None:
+    """Law 1 -- shown able to fail: with the new pre-scan stubbed out
+    (simulating its absence, the genuine pre-fix behavior), the identical
+    malicious filter driver from the test above is proven to actually
+    execute during `capture_local_repository`'s own `git status` call,
+    confirming the pre-scan -- not some unrelated side effect -- is what
+    prevents it in the real, unpatched call path."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "filter_executed.marker"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "filter.evil.clean", f"sh -c 'touch {marker}'")
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        original = _connector_module._scan_dangerous_git_config
+        _connector_module._scan_dangerous_git_config = lambda root, pattern="": ()
+        try:
+            capture_local_repository(repo, [base])
+        except DangerousGitConfigError:
+            pass
+        finally:
+            _connector_module._scan_dangerous_git_config = original
+
+        check(
+            "FTF-H007",
+            "with the pre-scan stubbed out, the malicious filter driver genuinely "
+            "executes during git status -- proving the pre-scan is load-bearing",
+            marker.exists(),
+        )
+
+
+def test_fault_injection_hookspath_override_is_load_bearing() -> None:
+    """L2 round-2 finding (c): with `_run_git`'s own `-c core.hooksPath=
+    /dev/null` override specifically removed (every other hardening
+    argument kept -- the pre-scan is untouched and genuinely does not fire
+    here, since `core.hooksPath` alone is outside its own strict
+    unneutralizable-filter-driver pattern by design, see
+    `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN`), a real, executable
+    `post-index-change` hook placed under a repo-controlled `core.
+    hooksPath` genuinely fires during `git status` -- confirmed directly
+    against a real git binary (git refreshes the index's stat cache during
+    `status` and runs this real, documented hook afterward) -- proving the
+    override is load-bearing for this module's own call set, not merely
+    cosmetic."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        evil_hooks_dir = base / "evil-hooks"
+        evil_hooks_dir.mkdir()
+        marker = base / "post_index_change.marker"
+        _init_repo(repo)
+        (repo / "a.txt").write_text("a\n")
+        _run(repo, "add", "a.txt")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        hook_path = evil_hooks_dir / "post-index-change"
+        hook_path.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        hook_path.chmod(0o755)
+        _run(repo, "config", "core.hooksPath", str(evil_hooks_dir))
+        (repo / "a.txt").touch()  # force a stat-dirty index refresh during status
+
+        git_binary = shutil.which("git")
+        assert git_binary is not None
+
+        def _stripped_run_git(root: Path, *args: str, config_overrides=None):
+            env = dict(os.environ)
+            env["GIT_CONFIG_NOSYSTEM"] = "1"
+            env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+            return subprocess.run(  # noqa: S603
+                [git_binary, "-c", "core.fsmonitor=false", "-C", str(root), *args],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                env=env,
+            )
+
+        original_run_git = _connector_module._run_git
+        _connector_module._run_git = _stripped_run_git
+        try:
+            capture_local_repository(repo, [base])
+        except _connector_module.LocalRepositoryConnectorError:
+            pass
+        finally:
+            _connector_module._run_git = original_run_git
+
+        check(
+            "FTF-H007",
+            "with the hooksPath override specifically removed, the repo-"
+            "controlled post-index-change hook genuinely fires during the real "
+            "capture call path -- proving the override is load-bearing",
+            marker.exists(),
+        )
+
+
+def test_fault_injection_env_isolation_is_load_bearing() -> None:
+    """L2 round-2 finding (c): `core.fsmonitor`/`core.hooksPath` cannot
+    show this -- `-c` is always the single highest-precedence config
+    source, so a fixed `-c core.hooksPath=/dev/null` override neutralizes
+    even a value this *process's* own global config sets, independent of
+    env isolation entirely (confirmed directly against a real git binary:
+    the override alone was already enough in that case, with or without
+    `HOME` pointing at a malicious global config). A filter driver is
+    different: `_run_git` never passes a fixed `-c filter.<name>.clean=...`
+    override for it (the driver name is repo-chosen, see
+    `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN`'s own docstring), so if
+    *this process's own* global config defines one -- never the repo's --
+    env isolation is the only thing stopping a repo-controlled
+    `.gitattributes` from invoking it. With `GIT_CONFIG_NOSYSTEM`/
+    `GIT_CONFIG_GLOBAL` removed (every `-c` override kept) and the pre-scan
+    stubbed out (isolating this one layer -- the real pre-scan, reading
+    through the same unisolated `_run_git`, would otherwise also see this
+    global-only key and block before the vulnerable call is even reached,
+    masking the very gap this test exists to prove), the global filter
+    driver genuinely executes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        fake_home = base / "fake-home"
+        fake_home.mkdir()
+        marker = base / "filter_executed.marker"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        (fake_home / ".gitconfig").write_text(
+            f"[filter \"evil\"]\n\tclean = sh -c 'touch {marker}'\n"
+        )
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        git_binary = shutil.which("git")
+        assert git_binary is not None
+
+        def _unisolated_run_git(root: Path, *args: str, config_overrides=None):
+            env = dict(os.environ)
+            env["HOME"] = str(fake_home)
+            return subprocess.run(  # noqa: S603
+                [
+                    git_binary,
+                    "-c",
+                    "core.fsmonitor=false",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-C",
+                    str(root),
+                    *args,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                env=env,
+            )
+
+        original_scan = _connector_module._scan_dangerous_git_config
+        original_run_git = _connector_module._run_git
+        _connector_module._scan_dangerous_git_config = lambda root, pattern="": ()
+        _connector_module._run_git = _unisolated_run_git
+        try:
+            capture_local_repository(repo, [base])
+        except _connector_module.LocalRepositoryConnectorError:
+            pass
+        finally:
+            _connector_module._scan_dangerous_git_config = original_scan
+            _connector_module._run_git = original_run_git
+
+        check(
+            "FTF-H007",
+            "with ambient env isolation specifically removed (-c overrides "
+            "kept, pre-scan stubbed out), this process's own global filter "
+            "driver genuinely leaks through and executes -- proving the env "
+            "isolation is load-bearing independently of the -c overrides",
+            marker.exists(),
         )
 
 
