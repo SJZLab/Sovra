@@ -8304,6 +8304,19 @@ FTF-1206:
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
+FTF-1206A:
+  certification_state: NONE
+  criticality: MUST
+  description: Organization gateway policy persistence (migration prerequisite for FTF-1206)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-04), docs/adr/0002-task-addendum-ftf-1206a.md.
+    The contract is spec/addenda/FTF-1206A.json; tools/r1_handoff.py covers only the frozen 300.
+    FTF-1206 now depends on this task. Denominator 301.
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
 FTF-1301:
   certification_state: CERTIFIED
   criticality: MUST

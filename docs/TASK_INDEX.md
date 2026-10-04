@@ -3,7 +3,7 @@
 
 ## Canonical meaning
 
-This is the complete Factory queue index. It contains 300 required work-item records: 246 retained feature tasks, 36 hardening tasks, and 18 reuse-architecture tasks. The complete task contracts define the acceptance, negative-acceptance, ownership, dependency, and verification rules for every row.
+This is the complete Factory queue index. It contains 300 frozen required work-item records plus 1 owner-approved addendum (FTF-1206A, docs/adr/0002, contract in spec/addenda/; denominator 301): 246 retained feature tasks, 36 hardening tasks, and 18 reuse-architecture tasks. The complete task contracts define the acceptance, negative-acceptance, ownership, dependency, and verification rules for every row.
 
 ## Queue rules
 
@@ -206,6 +206,7 @@ A task is READY only when its contract, exact scope/files, positive and negative
 | FTF-1204 | retained_feature | Post-registration real inference | FTF-0614, FTF-1201, FTF-1203 | AF-28 | Q21, Q22 | FTF-1201 |
 | FTF-1205 | retained_feature | Rollback/unregister procedure | FTF-1106, FTF-1201, FTF-1204 | CAP-02 | Q21, Q22 | FTF-1201 |
 | FTF-1206 | retained_feature | Organization policy control | FTF-0402, FTF-1201 | CAP-02 | Q21, Q22 | FTF-1201 |
+| FTF-1206A | retained_feature (addendum, ADR 0002) | Organization gateway policy persistence | FTF-0104, FTF-1201, FTF-H003 | CAP-02 | Q21, Q22 | FTF-1201 |
 | FTF-1301 | retained_feature | CostProfile schema/UI | FTF-0401, FTF-0403, FTF-0103 | AF-22 | Q15, Q19 | FTF-1301 |
 | FTF-1302 | retained_feature | Local compute costing | FTF-0006, FTF-1301 | AF-22 | Q15, Q19 | FTF-1301 |
 | FTF-1303 | retained_feature | Provider token costing | FTF-0210, FTF-1301 | AF-22 | Q15, Q19 | FTF-1301 |

@@ -8712,12 +8712,8 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-2026-10-01 (Control plane, from watchdog finding 2026-09-18): **enable a branch-protection
-ruleset on `main`** (GitHub → Settings → Rules → Rulesets: require a pull request before merging,
-require the `gate` status check, block force pushes). Today `BRANCH_PROTECTION` is
-instruction-tier only, and the direct-push norm has already failed twice (2026-09-15,
-2026-09-17). This changes repo settings, so it is ask-first. Low urgency: nothing is blocked on
-it. Once it's on, reply and Control plane will update `CLAUDE.md`'s `BRANCH_PROTECTION` flag.
+None currently. 2026-10-04: the owner decided to keep branch protection as it is
+(instruction-tier) for now, and approved FTF-1206A (ADR 0002). Both asks are closed.
 
 2026-09-30 (resolved 2026-10-01T01:14Z): the repo-wide GitHub Actions runner-provisioning outage
 escalated at 09:20Z (past its own "clears within hours" precedent window — 3h37m+ continuous at
@@ -8884,6 +8880,10 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+0. **FTF-1206A** Organization gateway policy persistence. This is a NEW owner-approved addendum
+   (ADR 0002, 2026-10-04). Its contract is `spec/addenda/FTF-1206A.json`; r1_handoff does not
+   cover it. All dependencies (FTF-0104, FTF-1201, FTF-H003) are CERTIFIED. It must land before
+   FTF-1206's persistence half. Must pass `scripts/data_exposure_check.py`.
 1. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
    2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
    FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
