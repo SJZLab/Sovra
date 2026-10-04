@@ -8874,6 +8874,13 @@ this same resolution (doc-only, redundant once this lands).
    — that chain's own "dependency-ready" bar needs FTF-0510 `certification_state: CERTIFIED`, not
    merely merged-PROVISIONAL; recompute again once Control plane certifies it.
 
+## Returned 2026-10-04 (relay-owned, highest priority; one PR per item)
+FTF-0902, FTF-0500B, FTF-0500C, FTF-0500D, FTF-1807, FTF-0510, FTF-0307, FTF-1002 and FTF-04A18, plus the round-2
+items below (FTF-H007, FTF-04A06, FTF-0601). Exact DoDs are in docs/certifications/queue.md, entries
+"2026-10-04T11:00Z" and "2026-10-01T13:40Z". **New rule for every item:** each acceptance and negative_acceptance
+clause gets a test that a clause-level fault turns red, including at least one additive fault (an early return or an
+extra allow rule), not only an edit of your own line. List the clause-to-test mapping in the submission entry.
+
 ## Returned round 2 (2026-10-01T13:40Z — relay-owned, highest priority)
 FTF-H007 + FTF-04A06 (filter drivers, config includes, unpinned hardening) and FTF-0601 (reviewer
 normalisation and binding, int cap, whitespace name). Exact DoD: docs/certifications/queue.md, entry
