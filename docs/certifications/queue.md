@@ -22403,7 +22403,7 @@ precedents every prior FTF-0500C shift already established).
 (Law 4) -- independent Control-plane L2 review and a real CI run on the opened PR are required before
 certification.
 
-## 2026-10-04T15:40Z — Control-plane L2 review: FTF-0500C round 4 (#451, merge 8247025) — NOT CERTIFIED, returned to relay (round 5)
+## 2026-10-04T15:30Z — Control-plane L2 review: FTF-0500C round 4 (#451, merge 8247025) — NOT CERTIFIED, returned to relay (round 5)
 
 **Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producer session (commit 30de125 trailer and
 PR body) is `session_01TdubepJ2kEJTTbrgqe7DVf`. No other session is named on the PR. No match, so this review is independent.
