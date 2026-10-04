@@ -9750,3 +9750,80 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-H007 — L2 certification (2026-10-04)
+- Criterion ID: FTF-H007
+- PR: https://github.com/SJZLab/Sovra/pull/403 (already merged)
+- Merge commit: d8e5c9ee79f6888c59745600d318498bbce45753 (PR head `272ae85`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #403's commits and PR body carry `session_01Tt961y3SGLdNNmVekj8f3p`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/36853046067 on PR head (repo runs CI on pull_request only); gate 110338969435; the proving-test step ran and logged "all checks passed".
+- Evidence: `_run_git` hardened (fsmonitor/hooksPath/env), dangerous git config blocks lock, symlinked hooks active, alias imports caught. Injections: hardening removed -> marker-executed FAIL; scan checks removed -> 8 FAILs.
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-04A06 — L2 certification (2026-10-04)
+- Criterion ID: FTF-04A06
+- PR: https://github.com/SJZLab/Sovra/pull/403 (already merged)
+- Merge commit: d8e5c9ee79f6888c59745600d318498bbce45753 (PR head `272ae85`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #403's commits and PR body carry `session_01Tt961y3SGLdNNmVekj8f3p`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/36853046067 on PR head (repo runs CI on pull_request only); gate 110338969435; the proving-test step ran and logged "all checks passed".
+- Evidence: Recertified after 2026-10-01 decertification: malicious core.fsmonitor neither runs nor alters the tree. Injection: hardening removed -> 'never actually executed' FAIL.
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0601 — L2 certification (2026-10-04)
+- Criterion ID: FTF-0601
+- PR: https://github.com/SJZLab/Sovra/pull/403 (already merged)
+- Merge commit: d8e5c9ee79f6888c59745600d318498bbce45753 (PR head `272ae85`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #403's commits and PR body carry `session_01Tt961y3SGLdNNmVekj8f3p`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/36853046067 on PR head (repo runs CI on pull_request only); gate 110338969435 + evaluation-suite-integration 110338970228 (real Postgres 16); the proving-test step ran and logged "all checks passed".
+- Evidence: PATCH validators restored, empty/whitespace reviewer rejected, migration 0018 CHECK fixed. Injections: validators removed -> 4 FAILs incl. original 500; CHECK reverted -> raw-INSERT FAIL.
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0500C — L2 certification (2026-10-04)
+- Criterion ID: FTF-0500C
+- PR: https://github.com/SJZLab/Sovra/pull/404 (already merged)
+- Merge commit: 0bd94864c30b835c000d3bb3d2651272249f0839 (PR head `e84facf4`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #404's commits and PR body carry `session_01PdkteA84wMSgchjq9P14Ei`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/36865463876 on PR head (repo runs CI on pull_request only); gate 110379755274 + database-api-trace-source-integration 110379756821 (real Postgres 16.15); the proving-test step ran and logged "all checks passed".
+- Evidence: Module-level read-only/repeatable-read asserted; missing snapshot header after one seen raises. Injections: READ COMMITTED/WRITE -> 2 integration FAILs; guard reverted -> negative_acceptance FAIL. Residual: header first appearing on a later page is not flagged (outside DoD).
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0500D — L2 certification (2026-10-04)
+- Criterion ID: FTF-0500D
+- PR: https://github.com/SJZLab/Sovra/pull/410 (already merged)
+- Merge commit: e4dba6eed50b6981d44f1cd13f04aa03a47e4e53 (PR head `1be9e28`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #410's commits and PR body carry `session_01VLPgMsdu9zX5Shq8XinE3L`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/36997942290 on PR head (repo runs CI on pull_request only); gate 108 step on job 110808853055; the proving-test step ran and logged "all checks passed".
+- Evidence: 16-pair classification x profile matrix: authorize raises iff preview blocks. Injection: gate narrowed to restricted-only -> 3 FAILs (confidential:standard, restricted:air_gapped). Note: step conclusion verified via jobs API; log line not read.
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-0307 — L2 certification (2026-10-04)
+- Criterion ID: FTF-0307
+- PR: https://github.com/SJZLab/Sovra/pull/422 (already merged)
+- Merge commit: 74ec07c60f4ed2a2af65df2467191d5bb8fa0ec7 (PR head `966460427`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #422's commits and PR body carry `session_011etrzJ3hJRPuBg4sUcsVvv`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/37051736618 on PR head (repo runs CI on pull_request only); gate 110986527876; the proving-test step ran and logged "all checks passed".
+- Evidence: Injections (5, all reverted): any-status-ready 2 FAILs; any-probe-success 6; UNKNOWN->INFERENCE_ONLY 7; capability gated on access 1; probed_at=now() 3. Follow-up recommended: artifact/probe are not bound to model_id (alias binding is FTF-0308).
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.
+
+## FTF-04A18 — L2 certification (2026-10-04)
+- Criterion ID: FTF-04A18
+- PR: https://github.com/SJZLab/Sovra/pull/426 (already merged)
+- Merge commit: 3088b90287dd95b5568df0b95477ef30db231da9 (PR head `ab9f63e`)
+- Validated-by: control-plane session https://claude.ai/code/session_01NhEXdfQDb2L5eN3No2pjpb. Independent: PR #426's commits and PR body carry `session_01HvQVJC7HCKhofagfsmtyz4`; no PR comments name this session. No match.
+- Date: 2026-10-04
+- CI: https://github.com/SJZLab/Sovra/actions/runs/37076334037 on PR head (repo runs CI on pull_request only); gate 111066972263 + candidate-selection-integration 111066972733 (real Postgres 16.15); the proving-test step ran and logged "all checks passed".
+- Evidence: Injections: stale-snapshot check off -> 2 FAILs (409 + audit); audit action changed -> FAIL; UI auto-select -> vitest FAIL. product_truth proving_symbol build_discovered_agent_candidate_selection_router is a real caller in app/main.py. Disclosed: UI component not yet mounted by any page (same as FTF-04A03/0408/0500A).
+- product_truth 26/26 on main; blank proving_symbol is the disclosed module-level precedent unless noted. Certifies the L2 criterion at the module level, not wired product truth (Law 7).
+- `docs/spec-matrix.yaml` set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit.

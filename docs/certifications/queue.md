@@ -22047,3 +22047,18 @@ observes)
   untouched by this shift (a different session's branch) and stays open as the historical record of the
   three round-1 falsified attempts; this shift's own PR is a fresh branch off current `main` carrying
   only the corrected fix.
+
+## 2026-10-04 — Control-plane L2 review of the remaining PROVISIONAL backlog
+Reviewer: control-plane session `session_01NhEXdfQDb2L5eN3No2pjpb` (triggered by PR #443, a docs-only tracking PR carrying no certifiable item). Every commit trailer, PR body and PR comment on each PR below was compared with this session; no match on any. Each item got CI job-log reading, local re-run and at least one own fault injection.
+
+**CERTIFIED (see ledger.md):** FTF-H007, FTF-04A06, FTF-0601 (#403), FTF-0500C (#404), FTF-0500D (#410), FTF-0307 (#422), FTF-04A18 (#426). Certified count 99 -> 106 / 300.
+
+**NOT CERTIFIED: stay PROVISIONAL; relay fixes in a new PR.**
+- **FTF-1807 (#408).** Semantics check asserts only 2 of 7 operator-table Effect rows. Mutating the "Connection revoked by admin" row to "Call allowed until TTL, external fallback permitted", or the "No successful refresh for 5 minutes" row to "Cached access continues; external fallback allowed", still passes. DoD: assert the Effect column of every row making an access/fallback claim; add a fault test inverting the connection-revoked row or the TTL row.
+- **FTF-1206 (#412).** Route-change-against-grant half is genuinely fixed (injection: 2 FAILs). The persistence half of the 2026-10-01 DoD is not delivered: in-memory only, no storage/API/caller, matrix state not set BLOCKED_DEPENDENCY. DoD: land a persisted tenant-scoped org-policy record with tenant-isolation tests, or Control plane resolves BLOCKER.md and the item is set BLOCKED_DEPENDENCY.
+- **FTF-0500B (#407).** Code and tests are verified (version-sensitivity and unversioned-bucket refusal both fail under injection). Missing: the required BLOCKED_EXTERNAL disclosure that no real MinIO integration exists. DoD: either add a real MinIO service-container CI job, or state BLOCKED_EXTERNAL in the spec-matrix notes and queue.md (docs-only PR; re-review is then quick).
+- **FTF-0510 (#411).** `workers/data/tokenization_analysis.py::_percentile` claims nearest-rank but uses banker's `round()`: `[1,2,3,4,5]` p50 returns 2 (should be 3). Test only asserts `p50 in totals`; replacing the return with the max still passes. DoD: `ceil(p/100*n)` and exact-value percentile tests.
+- **FTF-1002 (#424).** `base.value`/`tokenizer.value` are set to the adapter's own `weights_digest`, so base is not bound; an adapter without `resolved_base_artifact` yields `base.known=True` with no refusal; mismatch compares only revision strings. Tests never call the no-base case. DoD: require `resolved_base_artifact` for an adapter (or mark base unknown), bind base to the base artifact's digest and identity, compare more than the revision, add tests.
+- **FTF-0902 (#430).** The kind/Calico allowed/denied/metadata result is real and green (job 111151835291). But (1) `tests/tasks/test_ftf_0902.py`, the spec-matrix proving_test, is not invoked by any step in ci.yml on main (the queue entry's claim is false; only PR #342's old branch ever added it); (2) no live DNS/IPv6 probes, the integration script itself calls IPv6 BLOCKED_EXTERNAL; (3) proving_symbol blank. DoD: add the CI step and read its green log; add DNS/IPv6 live probes or obtain an explicit Control-plane ruling that structural-only IPv6 evidence suffices.
+
+Open Control-plane L2 PRs #421 and #434 were not touched and their verdicts are not adopted; this review re-verified from scratch.

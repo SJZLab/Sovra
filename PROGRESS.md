@@ -1,4 +1,11 @@
 # PROGRESS — Sovra
+## 2026-10-04 — Control-plane CERTIFY run (session_01NhEXdfQDb2L5eN3No2pjpb)
+
+Triggered by PR #443 (docs-only). Reviewed all 13 PROVISIONAL items independently (session-ID comparison,
+CI job logs, own fault injection, packet acceptance). Certified 7 (FTF-H007, 04A06, 0601, 0500C, 0500D,
+0307, 04A18); rejected 6 with exact DoDs (FTF-1807, 1206, 0500B, 0510, 1002, 0902). `status.py`: 106/300
+certified / 26 product-true. Details: `docs/certifications/ledger.md`, `docs/certifications/queue.md`.
+
 ## 2026-10-04T08:05:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-artau8` — merged PR #442 (prior shift's own tracking-only PR, green), independently re-confirmed frontier saturated, no new relay-actionable task found
 
 STEP 0: `sha256sum CLAUDE.md` (`0912712...2dbf6`) matched the committed `CLAUDE.md.sha256` exactly —

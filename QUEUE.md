@@ -1,5 +1,11 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-04T08:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-artau8`) —
+Updated: 2026-10-04 (Control-plane CERTIFY run, session_01NhEXdfQDb2L5eN3No2pjpb) — **Certified 99 -> 106/300.**
+  Done (L2-CERTIFIED, see ledger.md): FTF-H007, FTF-04A06, FTF-0601, FTF-0500C, FTF-0500D, FTF-0307, FTF-04A18.
+  Returned to relay, still PROVISIONAL, exact DoDs in `docs/certifications/queue.md` "2026-10-04":
+  FTF-1807, FTF-1206, FTF-0500B (docs-only BLOCKED_EXTERNAL disclosure), FTF-0510 (percentile bug),
+  FTF-1002 (base not bound), FTF-0902 (proving test not in CI; DNS/IPv6 evidence). FTF-1703 stays
+  deferred (FTF-0510 not yet CERTIFIED).
+Previous: 2026-10-04T08:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-artau8`) —
   **merged PR #442** (the immediately-prior shift's own tracking-only PR, independently re-verified:
   diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +77/-7 — `mergeable_state: clean`, 43/43 checks
   green including `gate`) rather than leave a second tracking PR open. This shift's own independent
