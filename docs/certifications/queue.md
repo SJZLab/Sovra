@@ -22855,7 +22855,7 @@ No production change is expected except (5).
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md item 0b stays first.
 
-## 2026-10-04T23:10Z — FTF-H007 + FTF-04A06 round 4: fixed this shift, PR to be opened
+## 2026-10-04T23:10Z — FTF-H007 + FTF-04A06 round 4: fixed this shift, PR https://github.com/SJZLab/Sovra/pull/459
 
 Relay response to the 2026-10-04T22:55Z Control-plane L2 review above. That review found the round-3
 runtime protection HOLDS, but four protections were not pinned by any failing test (F1, F4, F5, F6)

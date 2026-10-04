@@ -1,5 +1,5 @@
 # PROGRESS — Sovra
-## 2026-10-04T23:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1w3lax` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 4 (PR to be opened)
+## 2026-10-04T23:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1w3lax` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 4 (PR https://github.com/SJZLab/Sovra/pull/459)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly (`ce4381117268f150f7a898a3567e4471563f130cee8f8f95193b75d4fb7051f6`) — no mismatch. `BLOCKER.md` read in full: no live entries. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh — this branch was already synced to `origin/main` (`ce4aa9a`, 0 commits ahead/behind). The freshest entry was Control plane's own 2026-10-04T22:55Z L2 review of FTF-H007+FTF-04A06 round 3 (#457, merge `1ab0710`), returning it NOT CERTIFIED, round 4 — tests-only plus one small fix, per that review's own "No production change is expected except (5)." `QUEUE.md`'s own "## Active" item 0 list named 0b (this item) as next-up. STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior shift.
 

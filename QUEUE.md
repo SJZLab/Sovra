@@ -9044,7 +9044,7 @@ this same resolution (doc-only, redundant once this lands).
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
-   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 4 — FIXED this shift (2026-10-04T23:10Z), PR to be opened.**
+   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 4 — FIXED this shift (2026-10-04T23:10Z), PR https://github.com/SJZLab/Sovra/pull/459.**
      Returned 2026-10-04T22:55Z after #457 (merge 1ab0710). All five round-4 findings closed: four new baseline
      tests (F1, F4, F5, F6) run the real attack against the real, unmodified default constants (two of the four,
      F4/F1, independently re-run once on this sandbox's own real ambient host — confirmed to carry a real
