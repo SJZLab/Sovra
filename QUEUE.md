@@ -8970,7 +8970,7 @@ and `docs/spec-matrix.yaml`'s FTF-0500C entry. Not self-certified (Law 4) — aw
 a real CI run. Removed from this list's own remaining-work set above; the merged PR is Control plane's own next
 step to re-review, same as every other item in this list.
 
-**FTF-0500B: fixed this shift (2026-10-04T15:40Z), PR opened — all four round-3 findings** (VersionId
+**FTF-0500B: fixed this shift (2026-10-04T15:40Z), PR https://github.com/SJZLab/Sovra/pull/449 opened — all four round-3 findings** (VersionId
 normalization covering missing/blank/case/whitespace variants of the "null" sentinel, a stuck-pagination refusal
 when IsTruncated=true never advances either marker, an `<Error>`-root 200 response refused rather than treated as
 an empty listing, and a new real versioned-bucket SeaweedFS integration test — `tests/integration/

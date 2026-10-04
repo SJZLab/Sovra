@@ -22267,6 +22267,8 @@ PostgreSQL 16 (`pg_ctlcluster 16 main start`): `tests/tasks/test_ftf_0500c.py` a
 independent Control-plane L2 review and a real CI run on the opened PR are required before certification.
 
 ## 2026-10-04T15:40Z — [relay] FTF-0500B: fix L2 round-3 findings (VersionId normalization, Error-root response, stuck-pagination refusal, real versioned-bucket integration)
+**PR:** https://github.com/SJZLab/Sovra/pull/449 (`claude/wizardly-fermat-spe8k9` -> `main`)
+
 Fixes all four findings from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #407), per the same relay DoD
 rule FTF-0500C's own round-3 fix above used ("each acceptance and negative_acceptance clause gets a test that a
 clause-level fault turns red, including at least one additive fault"). Full clause-to-test mapping recorded in
