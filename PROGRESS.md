@@ -1,5 +1,5 @@
 # PROGRESS — Sovra
-## 2026-10-04T21:50:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-tjwpap` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 3 (PR pending)
+## 2026-10-04T21:50:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-tjwpap` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 3 (PR https://github.com/SJZLab/Sovra/pull/457)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly (`ce4381117268f150f7a898a3567e4471563f130cee8f8f95193b75d4fb7051f6`) — no mismatch. `BLOCKER.md` read in full: no live entries. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh — this branch was already synced to `origin/main` (`f9d062f`, 0 commits ahead/behind). The freshest entry was Control plane's own 2026-10-04T20:55Z L2 review of FTF-H007+FTF-04A06 round 2 (#455, merge `d53a4d9`), returning it NOT CERTIFIED with three defects and four minor items, round 3. `QUEUE.md`'s own "## Active" item 0 list named 0b (this item) as next-up, "before 0c only if the 20:48Z shift has not already taken 0c" — a fresh `list_pull_requests` confirmed only #402 (parked FTF-0902) and #295 (declared-blocked FTF-0214) are open, no claim on 0c (FTF-0601) exists, so 0b was picked per the list's own order.
 

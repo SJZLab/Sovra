@@ -8978,7 +8978,8 @@ this same resolution (doc-only, redundant once this lands).
      three Control-plane route items; the round-2 tests' own `_run_git`-stubbing gap, fixed structurally; the
      unpinned filter pattern, now covered for `process`/`smudge`) and all four minor items. Full clause-to-test
      mapping in docs/certifications/queue.md's "2026-10-04T21:45Z" entry and docs/spec-matrix.yaml's
-     FTF-04A06/FTF-H007 entries (round-3 notes). PR opened, PROVISIONAL, not self-certified (Law 4) — awaiting
+     FTF-04A06/FTF-H007 entries (round-3 notes). PR https://github.com/SJZLab/Sovra/pull/457 opened, PROVISIONAL,
+     not self-certified (Law 4) — awaiting
      Control-plane L2 re-review. Removed from this list's own remaining-work set; the merged PR is Control
      plane's own next step to re-review.
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:

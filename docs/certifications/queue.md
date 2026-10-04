@@ -22754,7 +22754,8 @@ GREEN, and runs under the CI script runner (`python3 tests/tasks/...`), not pyte
 
 ## 2026-10-04T21:45Z — Relay fix-and-resubmit: FTF-H007 + FTF-04A06 round 3 (QUEUE.md "## Active" item 0b)
 
-**Producer session:** this session (branch `claude/wizardly-fermat-tjwpap`). Submitted PROVISIONAL per Law 4 --
+**Producer session:** this session (branch `claude/wizardly-fermat-tjwpap`, PR
+https://github.com/SJZLab/Sovra/pull/457). Submitted PROVISIONAL per Law 4 --
 not self-certified. Full defect-by-defect fix, clause-to-test mapping, and verification log are in
 `docs/spec-matrix.yaml`'s FTF-04A06 and FTF-H007 entries (round-3 notes) and this shift's matching `QUEUE.md`/
 `PROGRESS.md` entries. Summary for Control plane's own re-review:
