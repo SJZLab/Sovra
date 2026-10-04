@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 09 Interface (NetworkPolicyTemplate)
+  version: 0.1.0
+  description: >-
+    Frozen shared phase interface for Phase 9 (Zero-data-egress
+    enforcement, Section 11-12/65.4/77.5) at the declared owner paths
+    (`packages/contracts/openapi/09-interface.yaml` +
+    `packages/contracts/jsonschema/09-domain.schema.json`). No prior task
+    had claimed either file, so FTF-0902 ("Network-policy templates") is
+    this phase's own interface owner (`shared_lock_required:
+    ["contracts:09", "security:network_policy_templates"]`) -- the first,
+    and so far only, Phase 9 task to reach implementation (FTF-0901/0903-
+    0909 remain `ABSENT`/`NONE` in `docs/spec-matrix.yaml` and each names
+    FTF-0902 as its own dependency, per `docs/TASK_INDEX.md`).
+
+    This file deliberately declares **zero HTTP paths**. FTF-0902's own
+    task contract says so explicitly: `database_changes` is "No
+    independent schema change. Consume frozen contract" -- there is no
+    `NetworkPolicyTemplate` database table, no CRUD route, and no live
+    caller anywhere in this repository yet (the same disclosed blank-
+    `proving_symbol` precedent every dependency-only, no-live-dispatcher
+    task in this repository already carries -- see e.g. FTF-04A25/
+    FTF-04A26's own spec-matrix notes). `packages/security/
+    network_policy_templates.py` is a pure Factory-internal rendering/
+    validation library, not a resource an authenticated browser session
+    calls directly.
+
+    Per this task's own acceptance clause ("Freeze the minimum shared
+    phase interface and domain schemas at the declared owner paths ...
+    with ... no placeholder endpoints"), the honest, minimally-scoped
+    freeze for a phase whose only implemented task is a pure library is a
+    frozen **domain schema** (see `09-domain.schema.json`) with no
+    invented HTTP surface -- Law 11 ("no ... placeholder routes") and
+    Section 84.4's "no ... hidden placeholder routes" forbid declaring a
+    route this task does not itself implement and wire into
+    `apps/api/app/main.py`. A future Phase 9 task that adds a real,
+    backed HTTP route (for example FTF-0805 "Provisioning security
+    policies", which names FTF-0902 as its own dependency and could
+    reasonably expose a read-only `component-bindings`-style
+    `network-policy-status` surface once it has a real row to report on)
+    extends this same file under this same `contracts:09` lock, rather
+    than this task inventing that surface pre-emptively.
+
+    `NetworkPolicyTemplate` and its nested shapes below are the exact,
+    frozen domain model `packages/security/network_policy_templates.py`
+    implements and `tests/tasks/test_ftf_0902.py` tests -- copied
+    verbatim from that module's own real dataclasses/Literal types, not a
+    parallel, independently-invented shape (this file's own
+    `09-domain.schema.json` is the single frozen source a future HTTP
+    surface or another in-repository caller validates a serialized
+    template against).
+paths: {}
+components:
+  schemas:
+    NetworkPolicyTemplate:
+      $ref: './../jsonschema/09-domain.schema.json#/$defs/NetworkPolicyTemplate'

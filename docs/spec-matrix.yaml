@@ -1917,16 +1917,83 @@ FTF-0306:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 FTF-0307:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Training capability classifier
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
-    FTF-0306
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
+    FTF-0306 (all four CERTIFIED, confirmed before relying on them). Path refined from the task
+    packet's own hyphenated packages/model-catalog/... (not a uv workspace member, not even a valid
+    Python import path) to apps/api/app/artifacts/, the same refinement precedent FTF-0301/FTF-0304/
+    FTF-0305/FTF-0306 already established for this exact contract_owner (FTF-0301).
+
+    This task was independently recomputed as genuinely dependency-ready this shift -- all four
+    dependencies have been CERTIFIED since FTF-0306 (2026-10-01), but no prior shift's own frontier
+    recompute had caught it (`docs/TASK_INDEX.md`/QUEUE.md's prior "newly dependency-ready" sweeps
+    only named FTF-0510). No open PR, branch or BLOCKER.md entry referenced FTF-0307 before this one
+    (confirmed via a fresh `list_pull_requests`/`git ls-remote` sweep before claiming it).
+
+    apps/api/app/artifacts/training_capability_classifier.py::classify_training_capability is a pure,
+    synchronous, no-I/O composer (this task's own database_changes clause -- "No independent schema
+    change. Consume frozen contract.") over FTF-0207's AliasReconciliationResult, FTF-0212's
+    ToolCallProbeResult and FTF-0301's TrainableArtifact row, resolving this task's own acceptance
+    clause ("Classify access, training capability, artifact availability and role independently with
+    dated probe evidence") into four independently-computed dimensions -- access (real reconciled-set
+    membership), capability (Section 0.12's own trainable_open_weight/managed_fine_tunable/
+    inference_only/unknown enum), artifact_availability (a direct TrainableArtifact.status mapping)
+    and role (an explicit caller passthrough, never computed here, per Section 0.12's own "explicitly
+    assigned role"). None of the four gates another, reapplying Section 0.12's own orthogonality rule
+    ("An endpoint can be inference-only and still be the production baseline") as this module's own
+    defense-in-depth boundary, the same independently-computed-dimensions discipline
+    alias_reconciliation.py (FTF-0207) already applied to its own left join.
+
+    Scope decision, disclosed (same class of narrowing FTF-0301/FTF-1001's own notes already applied):
+    Section 13's own fuller TrainingCapability registry schema also names method_support/
+    recommended_precision/quantization_support/min_gpu_vram_gb/recommended_gpu_vram_gb/
+    supports_gradient_checkpointing/supports_flash_attention/zero_egress_compatible -- real Axolotl/
+    hardware-profile facts this task's own four-dependency set carries no signal for at all; declaring
+    them here would be an unearned "placeholder endpoint" (Law 11). TrainingCapability.
+    MANAGED_FINE_TUNABLE is declared for Section 0.12's own enum completeness but this module never
+    returns it -- no task in this dependency chain proves a gateway-managed fine-tuning capability.
+    There is also no persisted alias-to-artifact binding anywhere in this repository's schema yet
+    (confirmed: FTF-0308 "Model-to-artifact mapping UI" is the actual, separate, not-yet-built owner
+    of that binding) -- which TrainableArtifact, if any, corresponds to a given model_id is therefore
+    an explicit caller-supplied parameter, never a name-based lookup this module performs itself.
+
+    negative_acceptance ("Inference-only endpoint cannot become trainable by editing name; unknown
+    capability remains blocked") is enforced by construction: capability is decided solely from
+    artifact.status (only "ready" qualifies -- "registered"/"archived" do not) and probe.state (only
+    the exact ToolCallProbeState.PROBED qualifies -- every failure/timeout/rejection state does not);
+    no display-name/alias-string field is ever read by the decision. Absent both, capability fails
+    closed to UNKNOWN. tests/tasks/test_ftf_0307.py (no DB required, real TrainableArtifact ORM
+    instances and real dataclasses, no HTTP/TLS fixture needed since this task is pure/no-I/O, same
+    disclosed precedent FTF-0207/FTF-0306 already established) proves both halves plus the four-
+    dimension-independence acceptance clause. Real fault injection (Law 1, disclosed), two vectors,
+    each reverted byte-identical and the suite re-confirmed clean immediately after: (1) loosened the
+    ready-only artifact gate to also accept "registered" -- the exact "becomes trainable" negative
+    check genuinely failed for real; (2) loosened the probe-state check to accept any non-null probe
+    outcome -- the exact "failed probe never classifies as inference_only" negative check genuinely
+    failed for real.
+
+    uv run ruff check .//ruff format --check . clean repo-wide (360 files); uv run mypy . clean
+    repo-wide (360 source files, zero errors). scripts/validate_spec.py --strict clean. Regression
+    swept test_ftf_0207.py/test_ftf_0212.py/test_ftf_0301.py/test_ftf_0306.py (this task's own four
+    dependencies) -- all exit 0, zero regressions. scripts/product_truth_check.py --fail-on-unwired:
+    unchanged 25/25 (proving_symbol left blank -- this task is a pure classifier with no composing
+    route/UI caller yet, same disclosed "no live caller" precedent FTF-0207/FTF-0301 already
+    established; FTF-0308's own future route is the eventual caller). scripts/status.py: unchanged
+    99/300 certified (Law 2 -- this is a submission, not a certification). Added this task's own CI
+    gate step to .github/workflows/ci.yml in the same commit as the implementation, learning directly
+    from the disclosed FTF-0205/FTF-0206 "missing gate-wiring step" watchdog finding FTF-0212's own
+    notes already cite.
+
+    Submitted PROVISIONAL, not self-certified (Law 4) -- independent Control-plane L2 review and a
+    real CI run on the opened PR are required before certification.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
   certification_state: NONE
   criticality: MUST
@@ -4861,16 +4928,122 @@ FTF-04A17:
   proving_symbol: build_discovered_agent_candidate_router
   proving_test: tests/tasks/test_ftf_04a17.py
 FTF-04A18:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: "Candidate-selection UI \u2014 no auto-selection"
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01, FTF-04A12,
-    FTF-04A13, FTF-04A14, FTF-04A15, FTF-04A16, FTF-04A17
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-05; scenarios=Q03, Q04, Q05, Q06; deps=FTF-04A01,
+    FTF-04A12, FTF-04A13, FTF-04A14, FTF-04A15, FTF-04A16, FTF-04A17 (all CERTIFIED, confirmed
+    directly in this file before relying on them).
+
+    Scope decision (resolved without an owner ask, not improvised -- the prior shift's own
+    "almost certainly the same FTF-0214/no-live-backend-surface blocker class" flag was
+    independently re-verified and found NOT to apply): FTF-0214 was blocked because the frozen
+    `02-interface.yaml` contract *explicitly excludes* the catalog/probe route its acceptance
+    needs -- no task owns adding it. This task is different: FTF-04A17's own already-CERTIFIED
+    `/candidates` collection route is a real, live GET surface this task's UI consumes directly,
+    and this task's own `database_changes` clause ("No independent schema change. Consume frozen
+    contract") is genuinely satisfiable, not merely asserted -- `discovered_agent_candidates`
+    itself is immutable by construction (its own migration, 0014_discovered_agent_candidates.py,
+    grants sovra_app SELECT/INSERT only, never UPDATE -- confirmed directly via `\\dp` against a
+    real local Postgres before writing any code, not assumed from the docstring alone), so this
+    task's own real "persisted audit" reading of its acceptance clause ("...requires explicit
+    selected ID with persisted audit") is FTF-0104's own already-CERTIFIED, already-migrated
+    `write_audit_event`/`audit_events` (grants sovra_app INSERT, no migration needed) -- not a
+    new mutable "current selection" column, which the task's own contract forbids and the real
+    database grant makes structurally impossible from this process regardless. This is the
+    default-resolution-rule path: the architecture (Section 6.24's own generic append-only audit
+    trail, already reused by every mutating task in this chain) already fixes what "persisted"
+    means here once the immutability constraint is read literally, so this is not a fresh
+    Control-plane scope question like FTF-1206's -- it is this task's own correct reading of an
+    existing frozen contract.
+
+    Path refined from the task packet's own frontend-only files list
+    (apps/web/components/target-application/candidate_selection_ui_no_auto_selection.tsx +
+    apps/web/tests/ftf_04a18.spec.ts) to also add two real backend files -- the same "packet
+    files is an initial owner-path suggestion, not a cap on what the acceptance clause needs"
+    precedent FTF-04A04's own real github_branch_ref_resolver.py/_crud.py/_routes.py triad
+    already established for an identically-shaped "packet names only a .tsx, but the clause
+    needs a real backend write" task (confirmed via that task's own CERTIFIED spec-matrix notes
+    before relying on the precedent, including its own prior-rejection history for claiming
+    "persist" without a genuine durable write -- re-checked that this task's own persistence
+    claim is likewise genuine, not merely asserted, per the grant-surface proof below):
+    apps/api/app/target_connectors/discovered_agent_candidate_selection.py (pure selection logic:
+    `select_discovered_agent_candidate`) and
+    apps/api/app/target_connectors/discovered_agent_candidate_selection_routes.py (the real
+    POST .../candidates/{candidate_id}/select route, wired into app/main.py as the 20th router
+    in that chain).
+
+    `select_discovered_agent_candidate` reuses FTF-04A07's own CERTIFIED
+    `get_target_source_snapshot` and FTF-04A17's own CERTIFIED `get_discovered_agent_candidate`
+    directly (reuse-first, Section 77.1) to prove the (connection_id, snapshot_id, candidate_id)
+    chain is real and in the caller's own organization before anything else runs -- never
+    re-derived. negative_acceptance half 1 ("Highest score/first result cannot be preselected")
+    is met structurally: `candidate_id` is always a caller-supplied, explicit path argument; no
+    code path in this module or the UI component it backs reads `confidence_score` at all, let
+    alone sorts/filters by it. negative_acceptance half 2 ("stale candidate from prior snapshot
+    is rejected") is `StaleSnapshotCandidateError`, raised (HTTP 409) when a real, *other*
+    snapshot of the same connection already names the requested snapshot_id as the one it
+    supersedes (`target_source_snapshots.supersedes_snapshot_id`, FTF-04A07's own real field,
+    read literally) -- checked against the real database every time, never a client-supplied
+    flag. Acceptance clause 1 is met by writing one real `AuditEvent` row
+    (action=`discovered_agent_candidate.selected`) in the same transaction as the checks above,
+    identical to every prior task's own write-audit-in-the-same-transaction discipline; the
+    response's own `selected_at` is the real audit row's own `created_at`, read back after the
+    actual write, never computed before it.
+
+    apps/web/components/target-application/candidate_selection_ui_no_auto_selection.tsx (UI):
+    renders candidates in the exact backend-returned order (never re-sorted by confidence_score),
+    no option pre-checked/default-selected on load, `handleSelect` always takes an explicit
+    candidateId from a real click.
+
+    Tests: tests/tasks/test_ftf_04a18.py (no DB required -- role-boundary 401/403/pass-through
+    against a real uvicorn server with a MagicMock session_factory proving the role gate denies
+    before any session is opened, same precedent test_ftf_04a04_routes.py already established;
+    plus pure checks on StaleSnapshotCandidateError's real ValueError-subclass binding,
+    CandidateSelectionRecord's frozen-dataclass immutability, and the exact
+    CANDIDATE_SELECTED_ACTION literal the integration test's own audit lookup depends on).
+    tests/integration/test_ftf_04a18_candidate_selection.py (real local PostgreSQL 16: one real
+    organization with a connection, a real superseded snapshot and its real replacement
+    (supersedes_snapshot_id genuinely set), one candidate under each, a second organization for
+    the cross-tenant IDOR case; proves unauthenticated 401, evaluator 403, cross-tenant 404, the
+    real stale-snapshot 409 with zero AuditEvent rows left behind by the refused attempt, a
+    missing-candidate 404, a real successful selection (201) whose response body is cross-checked
+    against a fresh Postgres read of the real AuditEvent row -- organization_id/actor_id/
+    resource_type/resource_id/created_at and details_json's own snapshot/connection references
+    all matching the real request, never only the response body -- and a real grant-surface proof
+    that sovra_app genuinely cannot UPDATE discovered_agent_candidates.discovery_status directly,
+    confirming the "no new mutable column" design is a real database guarantee, not merely an
+    omitted route). apps/web/tests/ftf_04a18.spec.ts (Vitest + React Testing Library + jsdom, real
+    `fetch` call assertions: URL/method/order-preservation/no-pre-selection, a real successful
+    select flow, and the real 409 stale-snapshot surfaced as `error`, never silently confirmed).
+
+    Verification: `uv run ruff check .`/`ruff format --check .` clean (366 files); `uv run mypy .`
+    clean (366 source files, zero errors). `pnpm run typecheck`/`pnpm run lint`/
+    `pnpm run format:check` clean. `pnpm exec vitest run`: 52/52 (full suite, zero regressions).
+    `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this
+    sandbox's own pre-existing shallow-clone artifact). A real, directly-installed local
+    PostgreSQL 16 cluster (`sudo pg_ctlcluster 16 main start`, this sandbox's own apt-installed
+    cluster, no container-registry egress here) ran the real forward Alembic migration chain and
+    both the new integration test and a full regression sweep of
+    tests/integration/test_ftf_04a17_discovered_agent_candidate.py/
+    test_ftf_04a07_target_source_snapshot.py (this task's own two real dependencies' own
+    integration suites) -- all exit 0, zero regressions. `scripts/product_truth_check.py
+    --fail-on-unwired`: 25/25 -> 26/26 -- `proving_symbol` filled in below (a real, non-test text
+    search hit on `build_discovered_agent_candidate_selection_router` in app/main.py, the same
+    "router really is wired" convention FTF-04A17 already established, not a vacuous 0/0).
+    `scripts/status.py`: unchanged 99/300 certified (Law 2 -- a submission is not a
+    certification). Added this task's own two CI gate steps
+    (`tests/tasks/test_ftf_04a18.py`, no DB) and a dedicated
+    `candidate-selection-integration` job (real `services: postgres` container, same pattern as
+    `discovered-agent-candidate-integration`) to `.github/workflows/ci.yml` in the same commit.
+    Not self-certified (Law 4) -- independent Control-plane L2 review and a real CI run on the
+    opened PR are required before certification.
+  proof_state: L1-PROVEN
+  proving_symbol: build_discovered_agent_candidate_selection_router
+  proving_test: tests/tasks/test_ftf_04a18.py
 FTF-04A19:
   certification_state: CERTIFIED
   criticality: MUST
@@ -5677,6 +5850,40 @@ FTF-0500B:
 
     Not self-certified (Law 4) -- independent Control-plane L2 review and a real
     CI run on the opened PR are required before certification.
+
+    2026-10-01 L2 fix-and-resubmit (certification_state stays PROVISIONAL,
+    proof_state stays L1-PROVEN -- Law 2). The 2026-10-01 Control-plane L2 review
+    found two real gaps: (a) dropping version_id from the manifest_hash input left
+    the suite green (the "exact version manifest" acceptance clause was unpinned);
+    (b) an unversioned bucket (real literal VersionId "null") was accepted without
+    a flag. Fixed: (a) manifest_hash was already keyed on version_id in the
+    shipped code, but no test proved it -- added
+    test_manifest_hash_changes_when_only_the_version_id_differs (same key/size/
+    ETag, only VersionId differs, hash must differ) plus a disclosed fault
+    injection (Law 1) that removes version_id from the manifest_hash input,
+    confirms the new test genuinely fails (an identical-looking but unpinned
+    manifest_hash), then reverts the module file byte-identical. (b) added
+    VersioningDisabledError, raised the instant any real entry in the listing
+    reports the literal VersionId "null" (a real S3/MinIO ListObjectVersions
+    response's own sentinel for "this bucket never had object versioning
+    enabled", also returned for entries created while versioning was suspended)
+    -- refused before being added to the preview or the manifest, not merely
+    flagged in the result. New test_versioning_disabled_source_is_refused plus a
+    disclosed fault injection (Law 1) confirming the check is load-bearing,
+    reverted byte-identical. tests/tasks/test_ftf_0500b.py: 19 test functions
+    (was 15), all pass. `uv run ruff check .`/`ruff format --check .` clean
+    repo-wide (358 files). `uv run mypy .` clean on both changed files (26
+    pre-existing, unrelated alembic-stub/mypy-environment errors confirmed
+    byte-for-byte identical on unmodified origin/main via `git stash`, not a
+    regression). `python3 scripts/validate_spec.py --strict` clean (after `git
+    fetch --unshallow`, same disclosed shallow-clone precedent). `python3
+    scripts/product_truth_check.py --fail-on-unwired` unchanged 25/25.
+    `scripts/status.py` unchanged 99/300 certified, 24 product-true (Law 2 -- a
+    resubmission is not a certification). Regression swept
+    test_ftf_0500.py/test_ftf_0303.py/test_ftf_h006.py/test_ftf_0500c.py -- zero
+    regressions (ran after `uv sync --all-packages`, since a bare `uv run`
+    environment lacks sqlalchemy/psycopg, the same disclosed precedent prior
+    shifts already documented).
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500b.py
@@ -5867,6 +6074,44 @@ FTF-0500D:
     CI gate step ("FTF-0500D negative-test proof") added to `.github/workflows/ci.yml`
     immediately after the FTF-04A20 step. **Not self-certified (Law 4)** -- independent
     Control-plane L2 review is required before certification.
+
+    **2026-10-01 L2 fix-and-resubmit.** Finding: narrowing the real boundary check inside
+    `authorize_dataset_source_copy` to a literal `security_classification == "restricted"` test
+    (instead of the real `would_cross_security_boundary(effective_profile,
+    security_classification)` rank comparison) left the whole suite above green, because every
+    existing boundary-crossing test paired `restricted` with `standard` -- the one classification
+    that narrowed check still happens to catch; a confidential source into a standard project
+    would have been silently authorized despite `preview.blocked=True`, with no test to notice.
+    The shipped module itself was already correct (uses the real rank comparison, not a literal
+    classification string) -- only the negative_acceptance test coverage was unpinned, per the
+    review's own framing. Fixed by adding
+    `test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`
+    (`tests/tasks/test_ftf_0500d.py`), which checks every `security_classification` x
+    `security_profile` pairing (16 combinations, org default == project profile so the effective
+    profile is just that profile) rather than only the one pairing the original suite exercised,
+    and `test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`, which
+    reproduces the finding directly: narrows the real on-disk module's boundary check exactly as
+    described, runs the check in an isolated subprocess (so the mutation never touches this test
+    process's own already-imported functions/exception classes), confirms the original
+    restricted+standard case alone would stay blind to the gap, confirms the new matrix check
+    genuinely catches it (`confidential:standard` violation), then restores the module file
+    byte-identical (md5sum `2113594afa576abbd248d9e147fd8745` confirmed before and after).
+
+    `tests/tasks/test_ftf_0500d.py`: 27 test functions (was 25), "all checks passed". `uv run
+    ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+    tests/tasks/test_ftf_0500d.py` clean. `python3 scripts/validate_spec.py --strict` clean.
+    `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `scripts/
+    status.py`: unchanged `99/300` certified, 24 product-true (Law 2 -- a resubmission is not a
+    certification). No production code changed (the module file is byte-identical before and
+    after this fix, confirmed by the fault-injection test's own md5sum assertion); no
+    spec-matrix entry touched besides this one. Regression swept `test_ftf_0402.py` -- zero
+    regressions (`test_ftf_0500.py` could not be run in this sandbox -- `apps/api`'s own separate
+    `pyproject.toml`/dependency set, unrelated to this task's pure `workers/data` module, is not
+    installed here; disclosed, pre-existing environment gap, not caused by this change). No
+    `.github/workflows/ci.yml` change needed -- the existing "FTF-0500D negative-test proof" step
+    already runs `tests/tasks/test_ftf_0500d.py` in full. **Not self-certified (Law 4)** --
+    independent Control-plane L2 re-review and a real CI run on the opened PR are required before
+    certification; `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
@@ -6300,16 +6545,66 @@ FTF-0509:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0509.py
 FTF-0510:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Tokenization analysis
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0306, FTF-0500,
-    FTF-0508
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-08; scenarios=Q08, Q09, Q31; deps=FTF-0306, FTF-0500,
+    FTF-0508 (all CERTIFIED, confirmed before relying on them). Path refined from the packet's
+    own suggested services/training-worker/data/tokenization_analysis.py to
+    workers/data/tokenization_analysis.py (this repo's real SOURCE_ROOTS, FTF-0001/PR #10 --
+    no services/ tree exists), same precedent as FTF-0506/FTF-0507/FTF-0508/FTF-0511.
+
+    New runtime deps, disclosed (CLAUDE.md "Default resolution rule," same precedent FTF-04A11
+    used for pyyaml): workers/data/pyproject.toml adds tokenizers (loads a real Hugging Face
+    fast tokenizer.json, already one of FTF-0302's own _ALLOWED_FILENAME_SUFFIXES, no
+    torch/tensorflow needed) and jinja2 (renders the real tokenizer_config.json chat_template
+    string -- the exact mechanism docs/architecture/REFERENCE_REPOSITORIES.md's own "Model
+    templates" row names). No architecture doc names an alternative.
+
+    Built for real: analyze_tokenization (workers/data/tokenization_analysis.py) tokenizes an
+    already-normalized candidate batch with a real ConversationTokenizer backend.
+    ChatTemplateFastTokenizer (exact=True) loads the real selected base model's own resolved
+    tokenizer.json + chat_template via a sandboxed Jinja2 environment (matching Hugging Face's
+    own apply_chat_template mechanism, including a real raise_exception global many production
+    templates call). ApproximateAliasTokenizer (exact=False) is a real tokenizer too, just not
+    the pinned one. Acceptance ("Tokenize with actual selected tokenizer/template, report
+    distribution and complete conversation boundaries") is met by real per-message cumulative
+    token boundaries (re-render+re-encode each growing prefix through the same real
+    template/tokenizer) and a real TokenDistribution (min/max/mean/p50/p90/p99, nearest-rank,
+    no numpy added).
+
+    negative_acceptance ("Any truncated critical turn requires explicit policy; alias-only
+    approximate tokenizer cannot certify training fit") is met by
+    TokenizationAnalysisReport.certifies_training_fit: forced False whenever any conversation
+    used exact=False, or total_token_count exceeds max_sequence_length with no explicit,
+    non-empty truncation_policy entry for that batch_position (Section 8.2's own "missing
+    assistant outcome" blocking error means a clean record's own last message is always the
+    real critical/training-target turn, so this reduces to a direct, real comparison -- no
+    guessed overlap arithmetic), or any row issue exists. A row that cannot be tokenized
+    (empty/malformed messages, or a genuine Jinja2 template rejection) is reported as a
+    TokenizationAnalysisIssue, never silently dropped or retried with a guessed substitute.
+
+    tests/tasks/test_ftf_0510.py: 30 checks, fully hermetic (a real tokenizers.Tokenizer trained
+    offline/in-memory on a tiny fixed corpus -- no Hugging Face Hub network call anywhere).
+    Real fault injection (Law 1, disclosed): temporarily removed this module's own
+    `if not tokenizer.exact or requires_explicit_truncation_policy: certifies_training_fit =
+    False` check -- both matching negative_acceptance tests genuinely FAILed, bound to this
+    criterion ID; reverted byte-identical (md5sum confirmed matching before/after) and reran
+    clean. The test file's own exact-tokenizer total_token_count is additionally cross-checked
+    against an independent manual render+encode of the same conversation, outside the
+    production module, proving no fabricated count.
+
+    Disclosed gap, same "no live caller yet" precedent as FTF-0506/0507/0508/0511/1302/1303/1304:
+    no dataset-import route exists yet to call this with a real resolved TrainableArtifact's own
+    downloaded tokenizer files (FTF-0302's own file-fetch plumbing is not wired to this module --
+    a later, separately dependency-gated composition task). proving_symbol left blank
+    accordingly (Law 6/7); product_truth_check.py's product-true count is unchanged.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0510.py
 FTF-0511:
   certification_state: CERTIFIED
   criticality: MUST
@@ -7346,15 +7641,98 @@ FTF-0901:
   proving_symbol: ''
   proving_test: ''
 FTF-0902:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Network-policy templates
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0005, FTF-0402
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=AF-06, AF-07; scenarios=Q23, Q25; deps=FTF-0005, FTF-0402
+    (both CERTIFIED, confirmed before relying on them). Interface owner for phase 09 (Zero-data-egress
+    enforcement) -- froze `packages/contracts/openapi/09-interface.yaml`/
+    `packages/contracts/jsonschema/09-domain.schema.json` at the declared owner paths, deliberately with
+    zero HTTP paths (this task''s own `database_changes` clause: "No independent schema change. Consume
+    frozen contract" -- no DB table, no live caller, same disclosed blank `proving_symbol` precedent as
+    FTF-04A25/04A26). Live-cluster enforcement proof routed through CI (GitHub Actions'' own hosted
+    runner has a real Docker daemon and container-registry egress this interactive sandbox lacks), same
+    pattern every other Docker-dependent integration job in `.github/workflows/ci.yml` already uses.
+    Path: `packages/security/network_policy_templates.py`.
+
+
+    `NetworkPolicyTemplate` is a frozen, versioned dataclass (namespace/pod_selector/cni_profile/
+    deny_by_default_egress/deny_by_default_ingress/block_metadata_endpoint/ipv6_policy/
+    allowed_internal_endpoints/allow_dns) with two allowed-endpoint shapes -- `CidrEndpoint` (a stable
+    ClusterIP/VIP, `ipaddress.ip_network(strict=True)`-validated) and `PodSelectorEndpoint` (another
+    in-cluster service reached by real Kubernetes namespace+pod selectors). `validate_network_policy_template`/
+    each endpoint''s own `__post_init__` raise a specifically-typed exception per real invariant:
+    `NetworkPolicyDefaultOpenError`, `MetadataEndpointExposedError` (reuses FTF-H006''s own
+    `is_cloud_metadata_address` as the single source of truth), `IPv6EscapeError`,
+    `MissingExplicitScopingError`. `render_network_policy_manifest`/`render_network_policy_yaml`/
+    `manifest_digest` complete the render/evidence-identity surface. `tests/tasks/test_ftf_0902.py` (no
+    DB, no cluster, no network egress): 19 checks, all pass, including a disclosed fault injection (Law
+    1) proving `deny_by_default_egress` load-bearing.
+
+
+    **Root-cause correction, round 2 (this submission, superseding PR #402''s own three falsified
+    attempts and the round-1 kind-binary-pin fix):** PR #402''s round-1 fix pinned only the `kind`
+    *binary* to v0.23.0 while leaving the node image at `kindest/node:v1.31.2` for both clusters. Real
+    CI evidence on that PR showed this pin never took effect (job 110295202473: `kind v0.23.0` genuinely
+    installed and used, baseline cluster still returned the enforcing signature). Two further
+    evidence-anchored theories (a pre-policy ARP/route warm-up, then the same warm-up moved to after
+    `fake-metadata-service`''s own `hostNetwork` setup) were each implemented for real on that PR and
+    each falsified by a real CI run too (jobs 110298220036, 110304795503) -- full trail in PR #402''s own
+    comments and `BLOCKER.md`''s resolved history. Control plane then diagnosed the actual cause directly
+    on PR #402 (comment, 2026-10-01T11:08:10Z): `kind` ships its default CNI (`kindnet`) *inside the node
+    image*, not the binary, and a `kindest/node:v1.31.2` image is built by `kind` >=0.24, whose bundled
+    `kindnet` enforces NetworkPolicy by default regardless of which `kind` binary created the cluster --
+    so "kind v0.23.0 binary installed, still fails" never falsified the enforcement theory, it just named
+    the wrong artifact. Control plane''s own evidence re-reading: the pre-policy warm-up to `denied`
+    succeeded quickly (round-1''s own commit), every probe after the policy existed timed out (a dropped
+    packet, not a refusal), `allowed` (inside the policy''s ipBlock) always succeeded, and the hostNetwork
+    metadata listener stayed reachable since kube-network-policies does not police host-destined traffic
+    -- exactly the signature of real enforcement, not a route/ARP disruption (which would not single out
+    one specific policy-excluded pod).
+
+
+    Corrected fix, implemented this submission per Control plane''s own posted DoD (PR #402 comment,
+    2026-10-01T11:08:10Z, "the 3-attempt count starts fresh" since this is a new, distinct route, not a
+    further guess on an already-falsified theory): `tests/integration/test_ftf_0902_network_policy_enforcement.py`
+    now creates `npt-baseline` with node image `kindest/node:v1.30.0` (the node image `kind` v0.23.0
+    itself defaults to -- confirmed the last image line whose bundled `kindnet` does not enforce
+    NetworkPolicy) and `npt-enforcing` with `kindest/node:v1.31.2` (unchanged, Calico installed). Added a
+    self-checking methodology (`run_scenario`): on the baseline cluster, `denied` is probed once *before*
+    the NetworkPolicy object exists (must succeed, or the run fails fast with a distinct
+    probe-methodology-broken message rather than a confusing downstream symptom) and the existing
+    post-policy assertion probe is reused as the "after" half; if the before succeeds and the after fails,
+    this raises a distinct, explicit `ScenarioFailure` ("baseline CNI enforces NetworkPolicy ...") rather
+    than folding into the generic negative_acceptance failure message, and prints the baseline cluster''s
+    own `kindnet` DaemonSet image to the job log for direct confirmation. Removed the now-superseded
+    post-policy warm-up (round-1''s `5e75919`) per Control plane''s own DoD item (d) -- it was never the
+    fix and only blurred the methodology. `packages/security/network_policy_templates.py` and the two
+    `contracts/09-*` files are untouched (byte-identical to the original submission) -- Control plane''s
+    own note: "the Calico result already proves it", this was a test-harness/CI node-image defect, not a
+    production-code defect. This submission''s own diff is confined to
+    `tests/integration/test_ftf_0902_network_policy_enforcement.py` (node-image split, self-check,
+    warm-up removal, corrected docstrings) and `.github/workflows/ci.yml`''s job comment.
+
+
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide (369 files, zero new errors); `uv run
+    mypy .` clean on every new/changed file. `python3 scripts/validate_spec.py --strict` clean.
+    `product_truth_check.py --fail-on-unwired` unchanged (blank `proving_symbol` -- no live dispatcher
+    exists for a pure rendering/validation library, same disclosed precedent as FTF-04A25/04A26).
+    Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` -- zero regressions. The
+    live-cluster integration job itself (`network-policy-enforcement-integration`) cannot be run inside
+    this interactive sandbox (no Docker daemon/container-registry egress, same disclosed FTF-0004
+    precedent) -- its real result on the opened PR''s own CI run is this task''s actual acceptance-clause
+    evidence for the corrected methodology, not asserted here in advance of that run completing.
+
+
+    Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run
+    (including the corrected `network-policy-enforcement-integration` job) on the opened PR before
+    certification. The node-image fix is not itself claimed as a pass here -- only that PR''s own real CI
+    run on the pushed head is that evidence.'
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0902.py
 FTF-0903:
   certification_state: NONE
   criticality: MUST
@@ -7516,15 +7894,69 @@ FTF-1001:
   proving_symbol: build_model_version_router
   proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Artifact lineage manifest
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0306, FTF-1001
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0306, FTF-1001 (both
+    CERTIFIED, confirmed before relying on them). Path refined from the task packet's own
+    suggested services/serving-controller/vllm/artifact_lineage_manifest.py (services/ does not
+    exist anywhere in this repository, not a uv workspace member) to
+    apps/api/app/artifacts/artifact_lineage_manifest.py, the same refinement precedent
+    FTF-0301/FTF-0304/FTF-0305/FTF-0306/FTF-0307 already established for the identical reason.
+    build_artifact_lineage_manifest is a pure, synchronous, no-I/O composer over an
+    already-fetched ModelVersion (FTF-1001) and an optional already-fetched TrainableArtifact
+    (FTF-0301/FTF-0306) -- never a database query or name-based lookup of its own, matching this
+    task's own database_changes clause ("No independent schema change. Consume frozen contract.")
+    the same way training_capability_classifier.py (FTF-0307) already read that clause. Reports
+    this task's own seven named dimensions independently: base/tokenizer both report the real,
+    already-resolved weights_digest (FTF-0306's own resolvers hash the entire artifact tree,
+    tokenizer files included -- no separate tokenizer-only digest exists in this schema) plus
+    base_model_revision for a full_weight/adapter import, both known=False for an endpoint import
+    (Section 68.1's own "Display unknown parent/training data as unknown"); license from the real
+    TrainableArtifact.license_id/license_accepted_by/license_accepted_at; runtime from the real
+    declared required_python_packages_json when non-empty, else honestly unknown (no
+    ComponentVersionLock/container-digest record exists anywhere in this repository yet, Section
+    77.5 not yet implemented); method from the real, already-validated import_kind
+    (full_weight/adapter) only, no deeper hyperparameter claim; training/data always
+    known=False, "unknown external ancestry" in this task's own acceptance clause's own words,
+    since no TrainingRun or dataset-hash/versioning task exists anywhere in this task's own
+    dependency set -- never fabricated as Factory-trained without a real training record (Law 11).
+    negative_acceptance ("Unknown parent cannot be fabricated; adapter-base mismatch invalidates
+    load/qualification") is two real, raising checks, not descriptive text:
+    ArtifactLineageError when a full_weight/adapter model_version is given no artifact at all, an
+    artifact whose own id does not match model_version.trainable_artifact_id, or an endpoint
+    model_version given a real artifact anyway; AdapterBaseMismatchError when an adapter's own
+    caller-supplied resolved_base_artifact is not status=='ready' or its own base_model_revision
+    does not match the adapter artifact's own declared base_model_revision -- Section 68.1's own
+    "exact base, not same-family guessed weights" rule made executable, the same
+    recompute-and-compare-never-silently-accept-drift discipline FTF-0306's own
+    DigestMismatchError already established. LineageFact itself refuses known=False with a
+    non-None value by construction (__post_init__), so no code path anywhere in this module can
+    silently smuggle a fabricated value under an "unknown" label. `tests/tasks/test_ftf_1002.py`
+    (no DB required, same precedent test_ftf_0307.py already established) proves the acceptance
+    clause's seven dimensions across full_weight/adapter/endpoint imports, every negative path
+    above, LineageFact's own construction-time guard, manifest immutability, and one real fault
+    injection (disabling the base_model_revision compare backing AdapterBaseMismatchError,
+    reverted byte-identical) -- all checks passed on the real, as-built module.
+    `uv run ruff check .`/`ruff format --check .` clean repo-wide (362 files); `uv run mypy .`
+    clean (362 source files, zero errors); `scripts/validate_spec.py --strict` clean (after
+    `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact). Regression
+    swept `test_ftf_0306.py`/`test_ftf_1001.py` (this task's own two dependencies) -- both exit 0,
+    zero regressions (test_ftf_1001.py's own stderr TenantContextError traceback is a pre-existing,
+    disclosed negative-test assertion inside that suite itself, unrelated to this change --
+    confirmed by its own final "all checks passed" line). `scripts/product_truth_check.py
+    --fail-on-unwired`: unchanged 25/25 (proving_symbol left blank -- no live route/worker caller
+    yet, same disclosed "no live caller" precedent FTF-0306/FTF-0307 already established).
+    `scripts/status.py`: unchanged 99/300 certified, 24 product-true (Law 2 -- a submission is not
+    a certification). Added this task's own CI gate step to .github/workflows/ci.yml in the same
+    commit. Not self-certified (Law 4): independent Control-plane L2 review and a real CI run on
+    the opened PR are required before CERTIFIED.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1002.py
 FTF-1003:
   certification_state: NONE
   criticality: MUST
@@ -7826,6 +8258,49 @@ FTF-1206:
     (`if unauthorized_registration or unauthorized_deployment or unauthorized_approvers:` ->
     `if False:`) -- 3 of the negative_acceptance checks genuinely FAILed, bound to this criterion
     ID; reverted byte-identical (md5sum confirmed matching before/after) and reran clean.
+
+    2026-10-02 fix-and-resubmit for half of the 2026-10-01 L2 finding (full finding in
+    `docs/certifications/queue.md`'s 2026-10-01 entry): the review's second DoD item -- "a
+    route-change check against the granted deployment namespaces" -- is now fixed.
+    `enforce_route_change_authority` previously accepted `grant` only as a type-presence proof
+    (`del grant`) and never actually consulted it: any recognized organization approver could
+    authorize a route change into any namespace in the organization's wider policy, including one
+    this specific project was never granted. `enforce_route_change_authority` now takes a required
+    `target_deployment_namespace` argument and refuses outright (before even checking approval)
+    when it is not already a member of `grant.deployment_namespaces` -- unconditionally, even when
+    the organization's own policy does not require approval at all, since this is a scope check on
+    the project's own grant, never a question organization approval policy answers.
+    `tests/tasks/test_ftf_1206.py` gained `test_enforce_route_change_authority_checks_target_
+    namespace_against_grant` (3 new checks) and every pre-existing `enforce_route_change_authority`
+    call site was updated to pass a real `target_deployment_namespace`. Real fault injection (Law
+    1), performed directly against the on-disk module: disabled the new namespace-membership check
+    (`if target_deployment_namespace not in grant.deployment_namespaces:` -> `if False:`) -- 2
+    genuine FAILs reproducing exactly the finding (an organization-wide namespace this project was
+    never granted was wrongly authorized, with and without approval required); reverted
+    byte-identical (md5sum `53b5c5d400e84186387da293dce30572` confirmed matching before and after)
+    and reran clean. `uv run ruff check`/`ruff format --check`/`mypy .` clean (356 files);
+    `validate_spec.py --strict` clean; `product_truth_check.py --fail-on-unwired` unchanged 25/25.
+    Regression swept `test_ftf_0402.py`/`test_ftf_1201.py` (both named dependencies) -- zero
+    regressions.
+
+    The review's first DoD item -- "a persisted, tenant-scoped org-policy record (its own
+    migration task, per the packet's `database_changes` rule; until that exists, mark FTF-1206
+    BLOCKED_DEPENDENCY rather than done)" -- is deliberately NOT done by this fix and stays
+    disclosed, not hidden: this task's own packet `files` clause is closed to exactly
+    `packages/litellm-client/organization_policy_control.py` and
+    `tests/tasks/test_ftf_1206.py`, and its own `database_changes` clause explicitly defers any
+    schema to "a separately claimed migration prerequisite" rather than this task's own scope.
+    Checked directly rather than assumed: no task anywhere in the real, fixed 300-task
+    `docs/TASK_INDEX.md` owns an `OrganizationGatewayPolicy`-persistence migration -- FTF-1201
+    (this task's own dependency) explicitly disclaims it too ("No independent schema change...
+    capability is computed fresh per call, never persisted"), and no other FTF-12xx/FTF-R-series
+    entry names one. So "claim a separate migration prerequisite first" has no existing task ID to
+    claim -- inventing a new one, or adding schema outside this task's own closed `files` list, is
+    a Control-plane scope decision, not a relay improvisation of an unclear DoD (CLAUDE.md "Relay
+    is execution-only"). Formalized as a live `BLOCKER.md` entry rather than left implicit. This
+    task's own `certification_state` stays `PROVISIONAL` and this entry stays NOT CERTIFIED on the
+    persistence half until Control plane resolves that scope question; the route-change-against-
+    grant half above is ready for re-review on its own.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
@@ -10041,6 +10516,32 @@ FTF-R002:
     credentials, direct vendor DB writes, fake health after dependency outage) both genuinely met.
     No blocking defect found. Merged PR #236 (merge commit
     d257254c78678e978533190b327d4d8758fb3914) into main.
+
+    2026-10-02 flaky-test fix, found while diagnosing an unrelated PR's (#412) real `gate`
+    job failure: `test_job_identity_rejects_tampered_token`'s own tamper construction flipped only
+    the token's *last character* -- the final base64url sextet of a 32-byte SHA-256 signature
+    encodes only 16 of its 18 available bits (32 % 3 == 2), so its low 2 bits are unused encoding
+    padding, not digest data. Flipping that character is therefore a silent no-op (decodes back to
+    the identical signature bytes) for a measurable fraction of randomly generated tokens --
+    reproduced directly, 20,000 trials of the real `sign_worker_job_identity`/
+    `verify_worker_job_identity` functions: 329 no-ops (1.6%), each one making
+    `verify_worker_job_identity` wrongly accept the "tampered" token and the check genuinely fail.
+    This is a test-construction defect, not a production signing/verification defect -- `hmac.
+    compare_digest` itself is unaffected; the test merely sometimes failed to actually tamper
+    anything. Fixed by decoding the signature, XORing one real byte (`signature[0] ^= 0xFF`), and
+    re-encoding -- unconditionally changes the compared bytes; reconfirmed 0/50,000 no-ops after
+    the fix. Real fault injection (Law 1), performed directly against the on-disk module: disabled
+    the real signature check (`hmac.compare_digest(...)` call short-circuited to `False and ...`)
+    -- 2 genuine FAILs (this check and the wrong-signing-key check); reverted byte-identical
+    (md5sum `fbfc6b8a297f32c844530886e8b02d2c` confirmed matching before/after) and reran clean.
+    `ruff check`/`ruff format --check`/`mypy` clean; `validate_spec.py --strict` clean;
+    `product_truth_check.py --fail-on-unwired` unchanged 25/25; `status.py` unchanged 99/300
+    certified (Law 2 -- a test-only fix is not a new certification). Regression swept
+    `test_ftf_r001.py`/`test_ftf_r002.py` itself, 5x each, clean. Test-only change
+    (`tests/tasks/test_ftf_r002.py`); `packages/component_contracts/job_identity.py` untouched on
+    disk (confirmed byte-identical pre/post this fix, not just pre/post the fault injection) --
+    `certification_state`/`proof_state` stay as already certified above; this is a latent-flake
+    repair of already-certified evidence, not a reopened certification.
   proof_state: L2-CERTIFIED
   proving_symbol: build_component_binding_router
   proving_test: tests/tasks/test_ftf_r002.py

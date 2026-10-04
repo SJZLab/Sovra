@@ -66,6 +66,15 @@ enforced as four independent, disclosed checks:
      there is no real downloaded-content digest to prefer over ETag in the
      first place; the point is that this module's own manifest never
      *claims* ETag is one.
+  5. **Versioning disabled on the source bucket** -- a real S3/MinIO-
+     compatible `ListObjectVersions` response reports the literal string
+     `"null"` as `VersionId` for every entry of a bucket that never had
+     object versioning enabled (and for any entry created while
+     versioning was suspended). This task's own "exact version manifest"
+     acceptance clause cannot be made real against a source that cannot
+     actually distinguish object versions, so a real `"null"` VersionId
+     anywhere in the listing is refused rather than silently accepted and
+     hashed as if it pinned anything (`VersioningDisabledError`).
 
 The returned `manifest_hash` (sha256 over the canonical JSON serialization
 of the exact bounded `(key, version_id, size_bytes, etag_raw)` tuples
@@ -119,9 +128,15 @@ __all__ = [
     "S3MinioSourceValidationResult",
     "SourceChangedDuringListingError",
     "SourceUnavailableError",
+    "VersioningDisabledError",
     "default_s3_minio_preview_policy",
     "validate_and_preview_s3_minio_source",
 ]
+
+# A real S3/MinIO `ListObjectVersions` response's own literal sentinel for
+# "this bucket never had object versioning enabled" -- never a real version
+# id.
+_UNVERSIONED_SENTINEL = "null"
 
 _DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -159,6 +174,12 @@ class SourceChangedDuringListingError(S3MinioSourceValidationError):
 class SourceUnavailableError(S3MinioSourceValidationError):
     """The real endpoint could not be reached, or returned an unexpected
     (non-200) status or an unparsable response body."""
+
+
+class VersioningDisabledError(S3MinioSourceValidationError):
+    """A real entry in the listing reports the literal `"null"` VersionId
+    -- object versioning was never enabled (or was suspended) for this
+    source, so no real "exact version manifest" can be produced from it."""
 
 
 @dataclass(frozen=True)
@@ -359,6 +380,12 @@ def validate_and_preview_s3_minio_source(
                 )
             version_id = entry["version_id"]
             assert isinstance(version_id, str)
+            if version_id == _UNVERSIONED_SENTINEL:
+                raise VersioningDisabledError(
+                    f"key {key!r} reports the real literal VersionId {_UNVERSIONED_SENTINEL!r} "
+                    "-- object versioning is disabled (or suspended) on this source, so no "
+                    "exact version manifest can be produced from it"
+                )
             if entry["is_latest"] and not entry["is_delete_marker"]:
                 previously_seen = latest_version_by_key.get(key)
                 if previously_seen is not None and previously_seen != version_id:

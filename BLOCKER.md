@@ -1,6 +1,65 @@
 # BLOCKER.md
 
-_No open blockers. The entries below are resolved history._
+## LIVE 2026-10-02 — FTF-1206: no task in the fixed 300-task index owns the `OrganizationGatewayPolicy`
+## persistence migration the 2026-10-01 L2 review's own DoD requires — Control-plane scope decision
+
+**What this is not:** not an owner ask (no secret, destructive op, repo-setting change, new spend,
+or reused-component swap is involved), and not a stuck implementation attempt (STEP 4(c) does not
+apply — no fix was attempted and failed; this is a scope question raised before attempting one, per
+CLAUDE.md "Relay is execution-only ... write BLOCKER.md and stop ... do not improvise the DoD").
+
+**The gap:** the 2026-10-01 Control-plane L2 review (`docs/certifications/queue.md`) returned
+FTF-1206 NOT CERTIFIED with a two-part DoD: (1) "a persisted, tenant-scoped org-policy record (its
+own migration task, per the packet's `database_changes` rule; until that exists, mark FTF-1206
+BLOCKED_DEPENDENCY rather than done)"; (2) "a route-change check against the granted deployment
+namespaces." This shift completed (2) — see this file's matching `docs/certifications/queue.md`
+2026-10-02 entry and the fix PR — but found (1) has no existing task to claim:
+
+- FTF-1206's own task packet (`docs/implementation/task-packets/FTF-1206.md`, pulled fresh via
+  `tools/r1_handoff.py packet FTF-1206`) closes its own `files` clause to exactly
+  `packages/litellm-client/organization_policy_control.py` and `tests/tasks/test_ftf_1206.py`, and
+  its own `database_changes` clause reads "No independent schema change. Consume frozen contract;
+  any required change is a separately claimed migration prerequisite" — i.e. this task is
+  contractually barred from adding its own table, and some *other* task is supposed to own it.
+- Checked `docs/TASK_INDEX.md` directly for that other task: it does not exist. FTF-1206's own
+  dependency FTF-1201 (`litellm_registration_capability_detection.py`) explicitly disclaims the
+  identical persistence in its own certified notes ("No independent schema change... capability is
+  computed fresh per call, never persisted"). No other FTF-12xx entry, and no FTF-R-series
+  architecture task, names an `OrganizationGatewayPolicy`/org-gateway-policy migration as its own
+  scope. The review's own phrase "claim a separate migration prerequisite first" names an action
+  with no task ID behind it anywhere in the real, fixed 300-task index.
+
+**Why this can't be resolved by relay improvisation:** the task's own `files`/`database_changes`
+clauses are a closed contract, the same kind of boundary every other FTF-xxxx submission in this
+repository has been held to (e.g. FTF-0500B/FTF-0500C/FTF-1807's own fix-and-resubmit PRs each
+stayed inside their task's own declared file scope). Adding a migration/table under this task's own
+module would exceed that closed scope on relay's own say-so; inventing a brand-new task ID outside
+the 300-task index is a bigger decision than a single relay shift should make unilaterally.
+
+**Three route options for whoever picks this up next:**
+1. **Add a new task to the 300-task index** (e.g. an `FTF-12xx`/`FTF-R`-numbered "Organization
+   gateway policy persistence" migration task) with its own acceptance/negative_acceptance/
+   `database_changes` contract, FTF-1206 depending on it. Most faithful to the architecture's own
+   "separately claimed migration prerequisite" framing, but changes the fixed task count (currently
+   300) — a Control-plane/owner-level decision, not relay's to make alone.
+2. **Fold the persistence into FTF-1206's own scope directly** (widen this task's own `files` list
+   to include a migration + a real DB-backed read/write path, consuming the existing `apps/api`
+   Alembic chain the same way FTF-0601's own fix-and-resubmit added migration `0018` within its own
+   task) — faster, but overrides this task's own explicit `database_changes` clause rather than
+   following it.
+3. **Accept the disclosed-gap posture as sufficient for this task specifically** (same class FTF-
+   0103/FTF-0104/FTF-0105/FTF-H003/FTF-0402 already established and were certified under) and treat
+   the 2026-10-01 review's DoD item 1 as not actually required for *this* task's own certification,
+   overriding the review rather than the task contract — a position only Control plane can take,
+   since the review itself already rejected that posture once for this exact item.
+
+Until one of these is decided, FTF-1206's own `certification_state` stays `PROVISIONAL` on the
+persistence half (the route-change-against-grant half is independently re-review-eligible now, per
+`docs/certifications/queue.md`'s 2026-10-02 entry). No further relay attempt at DoD item 1 should be
+made without this decision — that would be exactly the improvisation CLAUDE.md's "Relay is
+execution-only" rule exists to prevent.
+
+## RESOLVED 2026-10-03 — FTF-0902: `network-policy-enforcement-integration` baseline cluster
 
 ## RESOLVED 2026-10-01T13:50Z by Control plane (UNBLOCK): FTF-0902 entry below
 The three "falsified" theories did not rule out the root cause. The harness pins
@@ -82,6 +141,26 @@ this session (this session pushed no code to PR #402's own branch, consistent wi
 a different branch without explicit permission" — the clean, unrelated FTF-H007/FTF-04A06/
 FTF-0601 portion of that PR's own work was instead ported to this session's own branch and
 resubmitted separately; see `QUEUE.md`'s matching top dated entry).
+
+**RESOLUTION (2026-10-03):** this entry went stale the moment it was written — Control plane posted a
+corrected root-cause diagnosis and a new DoD directly on PR #402 (comment, 2026-10-01T11:08:10Z, ~38
+minutes after this entry's own timestamp above), explicitly stating "this is a new route, so the
+3-attempt count starts fresh." That correction sat unactioned for 2 days: every relay shift since
+(2026-10-01T12:58Z through 2026-10-03T04:51Z, several "tracking-only, frontier saturated" entries in
+`PROGRESS.md`) read only this file's own summary and never re-checked PR #402's live comment thread for
+a Control-plane update, so each one's own "FTF-0902 stuck, not retried" conclusion was correct about
+*this entry* but stale about the real, current state of the task. A 2026-10-03 shift found the
+correction by reading PR #402's comments directly via the GitHub API, confirmed no commit or shift had
+acted on it since, and executed Control plane's own posted DoD on a fresh branch off current `main`
+(not a push onto PR #402's own branch, consistent with "never push to a different branch without
+explicit permission") — see `docs/certifications/queue.md`'s matching 2026-10-03 entry and
+`docs/spec-matrix.yaml`'s FTF-0902 entry for the full fix (a per-cluster node-image split plus a
+self-checking pre/post-policy probe on the baseline cluster, replacing the three falsified theories
+above). Not self-certified (Law 4) — the fix is submitted PROVISIONAL, awaiting a real CI run on the
+newly opened PR and independent Control-plane L2 review before certification. **Lesson for future
+shifts, not yet enforced by tooling:** a `BLOCKER.md` entry can go stale the moment Control plane
+replies on the PR thread it names; re-reading that PR's own live comments before trusting this file's
+summary is cheap and should be habitual, not just done once a gap is already suspected.
 
 ---
 

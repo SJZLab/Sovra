@@ -60,7 +60,14 @@ from
 `/api/v1/organizations/{organization_id}/projects/{project_id}/
 target-connections/{connection_id}/github-source-snapshot` router from
 `app.target_connectors.github_source_snapshot_routes.build_github_source_snapshot_router`
--- the fifteenth.
+-- the fifteenth. Six further routers (FTF-R002's `component-bindings`,
+FTF-04A19's `manifests`, FTF-04A20's `manifests/{manifest_id}/evidence`,
+FTF-0601's `evaluation-suites`, and now (FTF-04A18) the real
+`.../candidates/{candidate_id}/select` action route from
+`app.target_connectors.discovered_agent_candidate_selection_routes.
+build_discovered_agent_candidate_selection_router`) have landed since --
+see each router's own module docstring rather than this enumeration,
+which this task does not attempt to keep perfectly renumbered.
 
 Secret resolution gap (disclosed, not hidden -- same class of gap FTF-0005
 and FTF-R017 already carry): `OidcSettings` only carries *references*
@@ -132,6 +139,9 @@ from app.target_connectors.agent_manifest_routes import build_agent_manifest_rou
 from app.target_connectors.discovered_agent_candidate_routes import (
     build_discovered_agent_candidate_router,
 )
+from app.target_connectors.discovered_agent_candidate_selection_routes import (
+    build_discovered_agent_candidate_selection_router,
+)
 from app.target_connectors.github_branch_ref_routes import build_github_branch_ref_router
 from app.target_connectors.github_repository_listing_routes import (
     build_github_repository_listing_router,
@@ -189,6 +199,7 @@ def create_app() -> FastAPI:
     app.include_router(build_agent_manifest_router(session_factory))
     app.include_router(build_manifest_evidence_router(session_factory))
     app.include_router(build_evaluation_suite_router(session_factory))
+    app.include_router(build_discovered_agent_candidate_selection_router(session_factory))
     return app
 
 

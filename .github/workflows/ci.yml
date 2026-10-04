@@ -251,6 +251,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a17.py
+      - name: FTF-04A18 negative-test proof (Candidate-selection role boundary + pure module, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_04a18.py
       - name: FTF-1503 negative-test proof (CSRF suite, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1503.py
       - name: FTF-0511 negative-test proof (Exact duplicate detector, no DB required)
@@ -263,6 +265,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0514.py
       - name: FTF-0509 negative-test proof (Tool argument validator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0509.py
+      - name: FTF-0510 negative-test proof (Tokenization analysis, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_0510.py
       - name: FTF-04A08 negative-test proof (Source-analysis worker foundation, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a08.py
       - name: FTF-04A09 negative-test proof (Python deterministic agent/config/tool discovery, no DB required)
@@ -321,6 +325,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0304.py
       - name: FTF-0306 negative-test proof (Base model revision/digest resolver -- dispatch, load/resume drift detection, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0306.py
+      - name: FTF-0307 negative-test proof (Training capability classifier -- fail-closed unknown, real ready-artifact/probe-state evidence, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0307.py
+      - name: FTF-1002 negative-test proof (Artifact lineage manifest -- no fabricated parent, adapter-base mismatch denial, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1002.py
       - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1206.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
@@ -2088,3 +2096,116 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real EvaluationSuite evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0601_evaluation_suite.py
+
+  network-policy-enforcement-integration:
+    # FTF-0902: real kind+Calico NetworkPolicy enforcement + negative-
+    # acceptance evidence (Section 11-12/65.4/77.5) --
+    # tests/integration/test_ftf_0902_network_policy_enforcement.py. Runs
+    # on GitHub Actions' hosted runner because it has real container-
+    # registry/package-mirror egress (kind node image, Calico manifest/
+    # images) and a real Docker daemon this repo's interactive dev sandbox
+    # does not have (same disclosed FTF-0004-precedent gap every other
+    # Docker-dependent integration job in this file already carries).
+    #
+    # Stands up two real, disposable single-node kind clusters in
+    # sequence -- npt-baseline (node image kindest/node:v1.30.0, whose
+    # bundled kindnet CNI does not enforce NetworkPolicy) and npt-enforcing
+    # (node image kindest/node:v1.31.2, default CNI disabled, Calico
+    # v3.28.2 installed instead) -- applies the identical rendered
+    # packages.security.network_policy_templates manifest to both, and
+    # proves by real TCP probe exit code (never a YAML/string assertion)
+    # that the same policy is a no-op on the nonenforcing cluster (this
+    # task's own negative_acceptance: "NetworkPolicy YAML on a
+    # nonenforcing cluster is not a pass") and genuinely blocks/allows
+    # real traffic on the enforcing one. See that script's own module
+    # docstring for the disclosed, non-fabricated scope narrowing on the
+    # cloud-metadata and IPv6 sub-scenarios, and for the full root-cause
+    # correction history (two earlier misdiagnoses, each tested for real
+    # and falsified, before landing on the actual cause below).
+    #
+    # The `kind` *binary* is pinned to v0.23.0, but that pin alone is not
+    # the fix: kind ships its default CNI (kindnet) inside the *node
+    # image*, not the binary. A kindest/node:v1.31.2 image is built by kind
+    # >=0.24, whose bundled kindnet enforces NetworkPolicy by default
+    # regardless of which kind binary created the cluster -- confirmed by
+    # real CI evidence on PR #402 (kind v0.23.0 genuinely installed and
+    # used, baseline cluster still enforced identically). The real fix is
+    # the node-image split: npt-baseline explicitly uses
+    # kindest/node:v1.30.0 (the node image kind v0.23.0 itself defaults to,
+    # the last image line whose kindnet does not enforce NetworkPolicy),
+    # independent of the kind binary version. The test script's own
+    # self-checking methodology (probe `denied` before AND after the
+    # policy is applied on the baseline cluster) proves this directly on
+    # every run rather than trusting the image choice alone -- see
+    # docs/spec-matrix.yaml's FTF-0902 entry and docs/certifications/
+    # queue.md for the full evidence trail.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Install kind
+        run: |
+          curl -Lo /tmp/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          sudo install -o root -g root -m 0755 /tmp/kind /usr/local/bin/kind
+          kind version
+      - name: Install kubectl
+        run: |
+          curl -Lo /tmp/kubectl https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl
+          sudo install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+          kubectl version --client
+      - name: Prove real kind+Calico NetworkPolicy enforcement + the negative-acceptance contrast
+        run: uv run python3 tests/integration/test_ftf_0902_network_policy_enforcement.py
+
+  candidate-selection-integration:
+    # FTF-04A18: real Postgres candidate-selection + persisted-audit
+    # evidence (Section 6.8C/6.24/7A.5/45/65-67/77/81) -- one real
+    # organization with a connection, a real superseded snapshot and its
+    # real replacement (supersedes_snapshot_id genuinely set, FTF-04A07's
+    # own real field), one candidate under each, a second organization
+    # for the cross-tenant IDOR case, a real uvicorn server proving the
+    # organization_admin-only RBAC boundary, the cross-tenant IDOR case, a
+    # real stale-snapshot refusal (409) with zero AuditEvent rows left
+    # behind, a missing-candidate refusal (404), a real successful
+    # selection (201) cross-checked against a fresh Postgres read of the
+    # real AuditEvent row it wrote (never only the response body), and a
+    # real grant-surface proof that sovra_app cannot UPDATE
+    # discovered_agent_candidates.discovery_status directly -- confirming
+    # this task's own "no new mutable column, audit row is the real
+    # persistence" design is a real database guarantee, not merely an
+    # omitted route. No OpenBao needed -- this resource carries no
+    # credential. Same real `services: postgres` container pattern as
+    # discovered-agent-candidate-integration (this repo's interactive dev
+    # sandbox has no container-registry egress for a Docker Postgres
+    # image; that evidence was instead produced locally against a
+    # directly-installed PostgreSQL 16 -- see this task's
+    # docs/certifications/queue.md entry).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf04a18
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf04a18"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf04a18
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real candidate-selection + persisted-audit evidence against the live database
+        run: uv run python3 tests/integration/test_ftf_04a18_candidate_selection.py

@@ -21292,6 +21292,73 @@ named ("Do not re-review them until a new relay fix PR for that ID is appended b
 for FTF-0500C specifically — not for FTF-0500B/FTF-0500D/FTF-1807/FTF-1206, which remain exactly as
 that review left them, unchanged, no new relay PR yet.
 
+## 2026-10-01 — FTF-0500B — fix-and-resubmit for the 2026-10-01 L2 findings
+
+Fixes both real gaps the 2026-10-01 Control-plane L2 review found in
+`apps/api/app/datasets/s3_minio_source_validation_metadata_preview.py` (submitted PR #359, still
+PROVISIONAL, code unchanged by that review).
+
+**(a) "Dropping `version_id` from the `manifest_hash` input leaves the suite green, so the 'exact
+version manifest' is unpinned."** Read the shipped module first (Law 1 — inspect before changing):
+`manifest_source` already included `version_id` in the tuple hashed into `manifest_hash`, so the
+real defect was in test coverage, not the module — no test asserted that a listing differing only
+by `VersionId` (same key, size, ETag) produces a different `manifest_hash`, so a regression that
+dropped `version_id` from that tuple would have gone undetected. Fixed by adding
+`test_manifest_hash_changes_when_only_the_version_id_differs` to `tests/tasks/test_ftf_0500b.py`
+(two real listings, identical key/size/ETag, only `VersionId` differs — `v1` vs `v2` — asserts the
+resulting `manifest_hash` values differ). **Real fault injection (Law 1), performed directly by
+this session against the on-disk module:** removed the `"version_id": entry.version_id,` line from
+`manifest_source` and confirmed the new test genuinely fails (the version-differing listings now
+produce an identical, unpinned `manifest_hash`) — reproducing, for real, exactly the
+undetected-defect scenario the review described — then reverted the module file byte-identical and
+re-ran clean (`test_fault_injection_manifest_hash_is_load_bearing_on_version_id`).
+
+**(b) "Unversioned buckets (`VersionId: null`) are accepted without a flag."** A real S3/MinIO
+`ListObjectVersions` response reports the literal string `"null"` as `VersionId` for every entry of
+a bucket that never had object versioning enabled (and for entries created while versioning was
+suspended) — the module had no check for this, so such a source was previewed and hashed as if its
+`VersionId` genuinely pinned a version. Fixed: added `VersioningDisabledError` and a check, applied
+to every real entry in the listing before it is added to the preview or the manifest, that raises
+the instant a real entry's `version_id` equals the literal sentinel `"null"` — refused outright
+(consistent with this module's existing per-violation-raises shape for every other
+negative_acceptance check), not merely flagged in the result. New
+`test_versioning_disabled_source_is_refused` (a real entry with `VersionId` literal `"null"` raises
+`VersioningDisabledError`) plus a disclosed fault injection
+(`test_fault_injection_versioning_disabled_check_is_load_bearing`) confirming the check is
+load-bearing (disabling it lets the unversioned entry through as a fabricated success), reverted
+byte-identical.
+
+`tests/tasks/test_ftf_0500b.py`: 19 test functions (was 15), all pass —
+`python3 tests/tasks/test_ftf_0500b.py` exits 0, "all checks passed". `uv run ruff check .`/`ruff
+format --check .` clean (358 files). `uv run mypy .` clean on both changed files; repo-wide run
+shows the same 26 pre-existing errors (alembic `Module "alembic" has no attribute "op"/"context"`
+stub gaps plus 7 unrelated `Unused "type: ignore"` notes in `test_ftf_0500c.py`/
+`test_ftf_0500c_database_api_trace_source.py`) confirmed byte-for-byte identical on unmodified
+`origin/main` via `git stash` before treating them as pre-existing noise, not a regression.
+`validate_spec.py --strict` clean (after `git fetch --unshallow`, pre-existing shallow-clone sandbox
+artifact — same disclosed precedent prior shifts used). `product_truth_check.py --fail-on-unwired`:
+unchanged `25/25` (`proving_symbol` stays blank — no live caller added by this fix, same disclosed
+precedent the original PR #359 submission established). `status.py`: unchanged `99/300` certified,
+24 product-true (Law 2 — a resubmission is not a certification). Regression swept (after `uv sync
+--all-packages`, since a bare `uv run` environment lacks `sqlalchemy`/`psycopg`, the same disclosed
+precedent prior Postgres-backed shifts documented) `test_ftf_0500.py`/`test_ftf_0303.py`/
+`test_ftf_h006.py`/`test_ftf_0500c.py` — all "all checks passed", zero regressions (the printed
+`TenantContextError` traceback inside `test_ftf_0500.py`'s own stdout is that suite's own disclosed
+negative-test case; confirmed exit 0).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with this L2 fix-and-resubmit note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Opened a new
+PR (branch off current `main`, `[relay] FTF-0500B: fix L2 findings (version-id-sensitive manifest
+hash + versioning-disabled refusal)`) rather than reopening PR #359, same precedent FTF-0500C's own
+fix-and-resubmit (PR #404, merged) and FTF-H007/FTF-04A06/FTF-0601's own fix-and-resubmit (PR #403,
+merged) already established.
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review itself
+named ("Do not re-review them until a new relay fix PR for that ID is appended below this line")
+for FTF-0500B specifically — not for FTF-0500D/FTF-1807/FTF-1206, which remain exactly as that
+review left them, unchanged, no new relay PR yet.
+
 ## 2026-10-01 — FTF-1807 — fix-and-resubmit for the 2026-10-01 L2 finding
 
 Scheduled autonomous relay shift, branch `claude/wizardly-fermat-g8cp6d`. PR
@@ -21351,6 +21418,635 @@ named ("Do not re-review them until a new relay fix PR for that ID is appended b
 for FTF-1807 specifically — not for FTF-0500D/FTF-1206, which remain exactly as that review left
 them, unchanged, no new relay PR yet (FTF-1206 needs a persisted org-policy migration first, per
 `QUEUE.md`'s own "Active" item 3 — a larger, separate prerequisite, not a same-shift fix).
+
+## 2026-10-01 — FTF-0500D — fix-and-resubmit for the 2026-10-01 L2 findings
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-1qb4az`. STEP 0: `sha256sum
+CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: read `BLOCKER.md` (one live entry, FTF-0902,
+three real fix attempts already falsified this shift's own prior day — correctly not retried a
+4th time), `PROGRESS.md`/`QUEUE.md` (both exceed the single-read size limit — read via targeted
+offsets/grep, not assumed) and this file fresh. `QUEUE.md`'s own "Active" item 3 named two
+remaining untouched fix-and-resubmit items: FTF-0500D and FTF-1206 (FTF-1206 needs a persisted
+org-policy migration first, a separate larger prerequisite per that file's own existing note). A
+fresh `list_pull_requests` sweep (not trusted from either file's own narrative alone) confirmed no
+PR was already open for FTF-0500D. Picked **FTF-0500D** — the one genuinely unblocked item left.
+
+Finding being fixed (this file's own 2026-10-01 entry, reproduced above): "Narrowing the
+import-time gate to `security_classification == 'restricted'` leaves the suite green: a
+confidential source into a standard project gets `preview.blocked=True`, yet
+`authorize_dataset_source_copy` allows it. The shipped code is correct; the negative_acceptance is
+unpinned." DoD: "a test across the classification x effective-profile matrix asserting that
+`authorize_*` raises whenever the preview blocks."
+
+**P:** read `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` and
+`tests/tasks/test_ftf_0500d.py` directly. Confirmed the finding's own framing is accurate: the
+shipped `authorize_dataset_source_copy` already calls the real, generic
+`would_cross_security_boundary(effective_profile, security_classification)` rank comparison, not a
+literal `security_classification == "restricted"` check — the gap is purely in test coverage.
+Every existing boundary-crossing test (`test_authorize_raises_on_security_boundary_crossing`,
+`test_authorize_raises_on_both_failures_simultaneously`) paired `restricted` with `standard` only
+— the one classification a hypothetical narrowed check would still happen to catch, so the
+original suite could not have noticed a regression to that narrowed form.
+
+**E:** added `_classification_profile_matrix_violations` (a reusable helper iterating every
+`security_classification` x `security_profile` pairing — 4 x 4 = 16 combinations, org default ==
+project profile so the effective profile is just that profile, purpose/connection held compliant
+so only the boundary dimension varies) and
+`test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix`, which asserts
+the helper finds zero violations against the real module. Added
+`test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_test`, which reproduces
+the finding directly against the real on-disk module: temporarily rewrites the exact
+`if would_cross_security_boundary(effective_profile, security_classification):` line in
+`authorize_dataset_source_copy` to the literal `if security_classification == "restricted":` the
+review named, runs the identical matrix check as a fresh, isolated `subprocess` (deliberately
+avoiding any in-process module reload, so the mutation never touches this test process's own
+already-imported functions/exception-class identities — a real risk ruled out after
+tracing CPython's `importlib.reload` semantics: it mutates a module's existing `__dict__` in place
+rather than creating a new one, so a reload-based approach would silently desynchronize every
+other test's `except`-clause exception-class identity from the one `authorize_dataset_source_copy`
+actually raises after a second reload, an entire-suite-crashing risk this subprocess design avoids
+by construction), confirms the original restricted+standard case alone would stay blind under the
+narrowed check, confirms the new matrix check genuinely catches it (the `confidential:standard`
+pairing — a confidential source silently authorized into a standard project despite the preview
+blocking it), then restores the module file byte-identical and re-confirms the matrix check is
+clean again.
+
+**V:** `python3 tests/tasks/test_ftf_0500d.py` — 27 test functions (was 25), "all checks passed".
+`uv run ruff check .`/`ruff format --check .` clean (356 files). `uv run mypy
+tests/tasks/test_ftf_0500d.py` clean. `git fetch --unshallow` (this sandbox clones shallow by
+default) then `python3 scripts/validate_spec.py --strict` clean. `python3
+scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`. `python3 scripts/status.py`:
+unchanged `99/300` certified, 24 product-true (Law 2 — a resubmission is not a certification).
+Regression swept `test_ftf_0402.py` (FTF-0500D's own dependency) — zero regressions.
+`test_ftf_0500.py` could not be run in this sandbox (`apps/api`'s own separate
+`pyproject.toml`/dependency set — `sqlalchemy` not installed — unrelated to this task's pure,
+no-I/O `workers/data` module; disclosed, pre-existing environment gap, not caused by this change,
+and no test file importing this module besides `test_ftf_0500d.py` itself, confirmed via a
+repo-wide grep). No production code changed — the module file is byte-identical before and after
+this fix, confirmed by the fault-injection test's own md5sum assertion (`2113594afa576abbd248d9e147fd8745`
+before and after). No `.github/workflows/ci.yml` change needed — the existing "FTF-0500D
+negative-test proof" step already runs this test file in full. No spec-matrix entry touched
+besides FTF-0500D's own.
+
+`docs/spec-matrix.yaml`'s FTF-0500D entry updated with the full fix-and-resubmit note above;
+`certification_state` stays `PROVISIONAL` and `proof_state` stays `L1-PROVEN` (Law 2 — this
+submission does not self-certify).
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. This entry is the trigger the 2026-10-01 review
+itself named ("Do not re-review them until a new relay fix PR for that ID is appended below this
+line") for FTF-0500D specifically — not for FTF-1206, which remains exactly as that review left
+it, unchanged, still needing its own persisted org-policy migration prerequisite first.
+
+## 2026-10-01 — FTF-0510 — Tokenization analysis
+- **PR:** opened this shift, branch `claude/wizardly-fermat-wkzp3g` → `main` (see this repo's
+  own `QUEUE.md` top dated entry for the matching narrative).
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-0510 --plan FINE_TUNING_FACTORY_RELEASE_1.md`
+  (`docs/implementation/task-packets/FTF-0510.md`). Dependencies FTF-0306/FTF-0500/FTF-0508 all
+  CERTIFIED, confirmed via `docs/spec-matrix.yaml` before relying on them.
+- **New runtime dependencies, disclosed (CLAUDE.md "new runtime deps" ask-first category,
+  resolved via CLAUDE.md's own "Default resolution rule" rather than silently added):**
+  `workers/data/pyproject.toml` adds `tokenizers>=0.20.3,<0.21` and `jinja2>=3.1.4,<3.2`.
+  `docs/architecture/REFERENCE_REPOSITORIES.md`'s own "Model templates" row names
+  `https://huggingface.co/docs/transformers/en/chat_templating` as the required mechanism for
+  "Training and serving must share the qualified serialization contract" — that mechanism is a
+  real Hugging Face fast tokenizer (`tokenizer.json`, already one of FTF-0302's own
+  `_ALLOWED_FILENAME_SUFFIXES` for a resolved `huggingface` `TrainableArtifact`) plus a Jinja2
+  `chat_template` string (`tokenizer_config.json`). `tokenizers`+`jinja2` render that real
+  mechanism directly, with no torch/tensorflow backend and without the full `transformers`
+  package. No architecture doc names a different tokenization/templating library. Same
+  precedent FTF-04A11 already used promoting `pyyaml` to a real `apps/api` runtime dependency,
+  documented in this task's own module docstring, not silently added.
+- **Delivered:** `workers/data/tokenization_analysis.py::analyze_tokenization`. This task's own
+  acceptance clause ("Tokenize with actual selected tokenizer/template, report distribution and
+  complete conversation boundaries") is met by `ChatTemplateFastTokenizer` (`exact=True`) — a
+  real fast tokenizer plus the real selected model's own chat template, rendered through a
+  sandboxed Jinja2 environment matching Hugging Face's own `apply_chat_template` mechanism
+  (including a real `raise_exception` global, which real production templates — e.g. Meta
+  Llama 3's own published template — call to reject a malformed conversation) — real per-message
+  cumulative token boundaries (re-render+re-encode each growing prefix) and a real
+  `TokenDistribution` (min/max/mean/p50/p90/p99, nearest-rank, no numpy added).
+- **negative_acceptance** ("Any truncated critical turn requires explicit policy; alias-only
+  approximate tokenizer cannot certify training fit") is met by
+  `TokenizationAnalysisReport.certifies_training_fit`: forced `False` whenever any conversation
+  used `ApproximateAliasTokenizer` (`exact=False` — a real tokenizer, just not the pinned one,
+  same "alias/display-name … cannot substitute for exact" discipline FTF-0306's own
+  negative_acceptance already established for weight digests), or `total_token_count` exceeds
+  `max_sequence_length` with no explicit, non-empty `truncation_policy` entry for that
+  conversation's own `batch_position` (Section 8.2's own "missing assistant outcome" blocking
+  error means a clean record's own last message is always the real critical/training-target
+  turn, so this reduces to a direct, real comparison, not a guessed overlap calculation), or any
+  row carries a `TokenizationAnalysisIssue`.
+- **Test:** `tests/tasks/test_ftf_0510.py` — 30 checks, fully hermetic (a real
+  `tokenizers.Tokenizer` trained offline/in-memory on a tiny fixed corpus; no Hugging Face Hub
+  network call anywhere in the test or in the production module).
+- **Evidence — shown able to fail (Law 1):**
+  1. The test file's own fault-injection functions
+     (`_buggy_certifies_training_fit_ignoring_exact_flag`,
+     `_buggy_never_requires_explicit_policy`) reproduce each negative_acceptance gap inline and
+     are asserted to disagree with the real production report.
+  2. Performed directly by this session, beyond the committed test file: temporarily replaced
+     this module's own `if not tokenizer.exact or requires_explicit_truncation_policy:
+     certifies_training_fit = False` line with a no-op. Reran `tests/tasks/test_ftf_0510.py` —
+     exactly the two matching negative_acceptance checks genuinely FAILed
+     (`negative_acceptance: the real production report correctly refuses to certify training
+     fit for an alias-only approximate tokenizer`; `negative_acceptance: an unresolved truncated
+     critical turn refuses to certify training fit`), bound to this criterion ID. Reverted
+     byte-identical (`md5sum` confirmed matching before/after: `4e8e9c2436d2662d5fedb8312819ff8f`)
+     and reran clean.
+  3. `test_exact_tokenizer_matches_real_manual_render_and_encode` independently reproduces the
+     real template render + real encode outside the production module and asserts the counts
+     match exactly — proves `analyze_tokenization`'s own token counts are not fabricated.
+- **Verification run this shift:** `uv run ruff check .` / `uv run ruff format --check .` clean
+  (358 files). `uv run mypy .` clean (358 source files). `uv run pytest tests/unit` — 3 passed.
+  `python3 scripts/validate_spec.py --strict`: 31 pre-existing `stale_commit` defects, confirmed
+  present identically on `origin/main` before this change (`git stash` + rerun) — this sandbox's
+  own git checkout is a shallow clone (`git rev-parse --is-shallow-repository` → `true`), which
+  is the real cause (early squash-merge commit SHAs do not resolve locally), not a defect this
+  task introduced; none of the 31 names FTF-0510. `python3 scripts/product_truth_check.py
+  --fail-on-unwired`: unchanged `25/25` (`proving_symbol` deliberately left blank — disclosed "no
+  live caller yet" gap, Law 6/7). `scripts/status.py`: unchanged `99/300` certified, `24`
+  product-true. Regression-ran the full `workers/data` sibling suite
+  (FTF-0506/0507/0508/0509/0511/0512/0513/0514) and FTF-0306's own test — all pass, zero
+  regressions.
+- **Disclosed gap (same "no live caller yet" precedent as FTF-0506/0507/0508/0511/1302/1303/1304):**
+  no dataset-import pipeline route exists yet in this repository to call `analyze_tokenization`
+  with a real resolved `TrainableArtifact`'s own downloaded `tokenizer.json`/
+  `tokenizer_config.json` — FTF-0302's own file-fetch plumbing is not wired to this module; that
+  composition is a later, separately dependency-gated task.
+- **State:** proof_state=L1-PROVEN, certification_state=PROVISIONAL. Not self-certified —
+  awaiting Control plane L2 review per Law 4.
+## 2026-10-02 — FTF-1206 — partial fix-and-resubmit for the 2026-10-01 L2 finding (route-change-against-grant half only)
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-f6fqug`. This resolves only the
+second half of the 2026-10-01 L2 finding; the first half (persisted storage) is deliberately not
+attempted this shift and is instead formalized as a live `BLOCKER.md` entry — see below for why.
+
+**The L2 finding (full text in the 2026-10-01 entry above):** "What was delivered is in-memory
+dataclasses and pure functions, with no storage, no API and no caller. `enforce_route_change_
+authority` discards `grant`. DoD: (1) a persisted, tenant-scoped org-policy record ... (2) a
+route-change check against the granted deployment namespaces."
+
+**Fix (DoD item 2 only).** Read `packages/litellm_client/organization_policy_control.py` and
+`tests/tasks/test_ftf_1206.py` directly first: confirmed the finding by inspection — `enforce_
+route_change_authority` took `grant` as a parameter solely to prove a validated grant precedes the
+call (`del grant  # presence-only`), and never checked that the route change's own target
+namespace was inside `grant.deployment_namespaces`. A recognized organization approver could
+therefore authorize rolling a route into any namespace the *organization* allows, even one this
+specific *project* was never granted — a real violation of this task's own negative_acceptance
+("Project-level permission cannot widen gateway management capability or data boundary"), reached
+through the route-change path rather than the permission-request path the existing tests already
+covered.
+
+Added a required `target_deployment_namespace` argument to `enforce_route_change_authority`:
+validated via the module's own `validate_namespace`, then checked for membership in `grant.
+deployment_namespaces` — refused unconditionally, before the approval-policy checks, and even when
+the organization's own policy does not require approval at all (a namespace-scope question is never
+answered by an approval-policy question). Added `test_enforce_route_change_authority_checks_
+target_namespace_against_grant` (3 new checks: a granted namespace is authorized; a same-
+organization but ungranted namespace is refused even with a recognized approver; an ungranted
+namespace is refused even when approval is waived entirely) and updated every pre-existing call
+site in the test file to pass a real `target_deployment_namespace`, since the parameter is now
+required (no silent default that could mask the gap).
+
+**Real fault injection (Law 1), performed directly by this session against the on-disk module:**
+first added the new test with the real fix absent (the call raised `TypeError: unexpected keyword
+argument 'target_deployment_namespace'` — the real pre-fix signature), confirming the new test
+cases are genuinely able to fail before any fix existed. After implementing the fix and confirming
+all checks pass, separately disabled the new namespace-membership check (`if target_deployment_
+namespace not in grant.deployment_namespaces:` → `if False:  # FAULT INJECTION`) — 2 genuine FAILs
+bound to `[FTF-1206]`, reproducing exactly the finding — then reverted the module file
+byte-identical (md5sum `53b5c5d400e84186387da293dce30572` confirmed matching before and after) and
+reran clean.
+
+`python3 tests/tasks/test_ftf_1206.py`: "all checks passed" (22 checks, was 19). `uv run ruff check
+.`/`ruff format --check .` clean (356 files). `uv run mypy .` clean (356 files). `python3
+scripts/validate_spec.py --strict` clean. `python3 scripts/product_truth_check.py
+--fail-on-unwired`: unchanged 25/25 (`proving_symbol` stays blank — no live caller added by this
+fix, same disclosed posture as the original submission). `scripts/status.py`: unchanged `99/300`
+certified (Law 2 — a resubmission is not a certification). Regression swept `test_ftf_0402.py`/
+`test_ftf_1201.py` (both named dependencies) — zero regressions.
+
+**DoD item 1 (persisted storage) deliberately not attempted this shift — disclosed, not silently
+dropped.** This task's own packet `files` clause is closed to exactly
+`packages/litellm-client/organization_policy_control.py` and `tests/tasks/test_ftf_1206.py`, and
+its own `database_changes` clause explicitly defers schema to "a separately claimed migration
+prerequisite," naming a different task as the owner rather than this one. Checked directly rather
+than assumed idle: no task anywhere in the real, fixed 300-task `docs/TASK_INDEX.md` owns an
+`OrganizationGatewayPolicy`-persistence migration — this task's own dependency FTF-1201 explicitly
+disclaims the same persistence ("No independent schema change... capability is computed fresh per
+call, never persisted"), and no other FTF-12xx or FTF-R-series entry names one either. So "claim a
+separate migration prerequisite first" (the review's own first option) has no existing task ID to
+claim; inventing a new one, or adding schema outside this task's own closed `files` list, is a
+Control-plane scope decision this relay shift should not improvise (CLAUDE.md "Relay is
+execution-only... write BLOCKER.md and stop[, do not] improvise the DoD" — narrowed here to just
+the persistence half, since the route-change-against-grant half had a clear, in-scope DoD and was
+completed rather than blocked wholesale). Formalized as a live `BLOCKER.md` entry this shift rather
+than left implicit in this note alone.
+
+`docs/spec-matrix.yaml`'s FTF-1206 entry updated with this fix-and-resubmit note; `certification_
+state` stays `PROVISIONAL` and `proof_state` stays `L1-PROVEN` (Law 2 — this submission does not
+self-certify). Opened a new PR off current `main` rather than reopening #381.
+
+**Not self-certified (Law 4)** — independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification. Per the 2026-10-01 review's own stated trigger, this
+is now re-review-eligible on the route-change-against-grant half; the persistence half is a
+Control-plane scope question (see `BLOCKER.md`), not something a re-review of this PR's own diff
+can resolve by itself.
+## 2026-10-02 — FTF-R002 — real, reproducible flaky-test fix (not a new finding against already-certified production code)
+
+Scheduled autonomous relay shift, branch `claude/wizardly-fermat-pu0up5`. Not a fix-and-resubmit
+for a Control-plane L2 finding — FTF-R002 is already `CERTIFIED`/`L2-CERTIFIED` (PR #236). This
+was found as a side effect while diagnosing **PR #412**'s (FTF-1206) real `gate` job failure (run
+`36948577882`/job `110656171438`): the failing step was `test_ftf_r002.py`, a file PR #412's own
+diff never touches — ruled out as "not this PR's own" before going further, per CLAUDE.md's CI-red
+root-cause norm, rather than assumed.
+
+**Root cause, confirmed directly against the real functions, not assumed:**
+`test_job_identity_rejects_tampered_token` constructed its "tampered" token by flipping only the
+*last character* of the whole `<payload_b64>.<signature_b64>` wire string
+(`token[:-4] + ("A" if token[-1] != "A" else "B") + token[-3:]` — itself a second latent bug, since
+the replacement character landed at position -4 while the decision of *which* letter to use was
+based on `token[-1]`, and the original last 3 characters were reappended unchanged). The real
+signature is a base64url-encoded 32-byte SHA-256 digest; 32 % 3 == 2, so the final encoded sextet
+carries only 16 of its 18 available bits — its low 2 bits are unused encoding padding, not digest
+data. Flipping a token character that lands on those padding bits decodes back to the *identical*
+signature bytes, making the "tamper" a silent no-op. Reproduced directly against the real
+`sign_worker_job_identity`/`verify_worker_job_identity` functions (not simulated): 20,000 trials,
+329 no-ops (1.6%) — each one a token `verify_worker_job_identity` wrongly accepted, reproducing
+exactly PR #412's own observed CI failure (`FAIL [FTF-R002] a bit-flipped/tampered token fails
+signature verification`). This is a defect in the *test's own tamper construction*, not in
+production signing/verification — `hmac.compare_digest` itself was never the problem.
+
+**Fix:** added `_tamper_signature_byte` to `tests/tasks/test_ftf_r002.py` — decodes the real
+signature, flips one full decoded byte (`signature[0] ^= 0xFF`), re-encodes. Changing any one of
+32 real digest bytes unconditionally changes what `hmac.compare_digest` compares, eliminating the
+padding-bit edge case entirely. Reconfirmed directly: 50,000 trials, 0 no-ops, 0 missed tampers
+(the single-character version of the fix — guaranteeing `tampered != token` but still flipping a
+token *character* rather than a decoded byte — was tried first and *still* showed a 6.3% miss
+rate across 50,000 trials, confirming the padding-bit issue is about which bits a character change
+reaches, not merely whether the string changes; this is why the real fix operates on decoded
+bytes, not characters).
+
+**Real fault injection (Law 1), performed directly against the on-disk production module:**
+disabled the real signature check in `packages/component_contracts/job_identity.py`
+(`if not hmac.compare_digest(signature, expected_signature):` → `if False and not
+hmac.compare_digest(...):`) — 2 genuine FAILs (`a bit-flipped/tampered token fails signature
+verification` and `a token verified with the wrong signing key is refused`), confirming the fixed
+test still genuinely detects a real broken verifier; reverted byte-identical (md5sum
+`fbfc6b8a297f32c844530886e8b02d2c` confirmed matching before and after) and reran clean —
+`packages/component_contracts/job_identity.py` is untouched by this fix on disk, confirmed via
+`git diff` showing zero changes to that file.
+
+`uv run python3 tests/tasks/test_ftf_r002.py` × 10 runs: "all checks passed" every time (was
+previously observed to intermittently fail). `uv run ruff check .`/`ruff format --check .` clean.
+`uv run mypy tests/tasks/test_ftf_r002.py` clean. `python3 scripts/validate_spec.py --strict`
+clean. `python3 scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25`.
+`scripts/status.py`: unchanged `99/300` certified, 24 product-true (Law 2 — a test-only flake fix
+is not a new certification). Regression swept `test_ftf_r001.py`/`test_ftf_r002.py` itself, 5×
+each — zero regressions.
+
+**Why this isn't a reopened certification:** FTF-R002's own production code
+(`packages/component_contracts/job_identity.py`) is untouched; only the test's own tamper
+construction (a latent, now-fixed defect in how the test proves its own claim) changed.
+`certification_state`/`proof_state` in `docs/spec-matrix.yaml` stay exactly as the 2026-09-24
+CERTIFY review left them — this entry documents a latent-flake repair for the record, not a
+request to re-review FTF-R002 itself. Posted a comment on PR #412 (whose own `gate` failure first
+surfaced this) naming the real root cause, so Control plane does not mistake that PR's own CI
+failure for a defect in its own diff.
+
+Opened **PR** (branch `claude/wizardly-fermat-pu0up5` → `main`, fixing only
+`tests/tasks/test_ftf_r002.py` plus this doc trail) — this reduces spurious `gate` failures across
+every open and future PR in this repository (the flake could land on any PR's gate run, not just
+#412's), which is why it was picked up directly rather than left as a comment only.
+
+## 2026-10-02 — FTF-0307 — Training capability classifier
+- **Found newly dependency-ready, previously uncaught:** all four dependencies (FTF-0207, FTF-0212,
+  FTF-0301, FTF-0306) are CERTIFIED, but no prior shift's own "recompute the frontier" sweep had
+  caught this task — the last several shifts' own `docs/TASK_INDEX.md`/`spec-matrix.yaml` recomputes
+  only surfaced FTF-0510. A fresh, from-scratch dependency-graph walk this shift (every task whose
+  `certification_state != CERTIFIED` with every one of its own `dependencies` already `CERTIFIED`)
+  surfaced FTF-0307 (and FTF-1002, deferred to a future shift — see `QUEUE.md`'s matching dated
+  entry) as genuinely unclaimed and undeclined. Confirmed via a fresh `list_pull_requests` sweep and
+  `git ls-remote --heads origin`: no open PR or branch referenced FTF-0307 before this one.
+- **PR:** branch `claude/wizardly-fermat-iaofsc` → `main` (opened this shift).
+- **What was built:** `apps/api/app/artifacts/training_capability_classifier.py::
+  classify_training_capability` — a pure, synchronous, no-I/O composer (this task's own
+  `database_changes` clause) over FTF-0207's `AliasReconciliationResult`, FTF-0212's
+  `ToolCallProbeResult` and FTF-0301's `TrainableArtifact` row. Resolves this task's own acceptance
+  clause ("Classify access, training capability, artifact availability and role independently with
+  dated probe evidence") into four independently-computed dimensions — `access`, `capability`
+  (Section 0.12's own `trainable_open_weight`/`managed_fine_tunable`/`inference_only`/`unknown`
+  enum), `artifact_availability` and `role` (an explicit caller passthrough, never computed here).
+  None of the four gates another (Section 0.12's own orthogonality rule, reapplied here the same way
+  `alias_reconciliation.py` already applied it to its own left join).
+- **Scope, disclosed:** Section 13's own fuller `TrainingCapability` registry schema also names
+  `method_support`/`recommended_precision`/`quantization_support`/GPU-VRAM/`supports_gradient_
+  checkpointing`/`supports_flash_attention`/`zero_egress_compatible` — real Axolotl/hardware facts
+  this task's own four-dependency set carries no signal for; out of scope here (a later, not-yet-
+  dependency-gated task's own job), same disclosed-narrowing precedent FTF-0301/FTF-1001 already
+  established. `TrainingCapability.MANAGED_FINE_TUNABLE` is declared for enum completeness but never
+  returned (no real signal source exists in this dependency chain). Confirmed there is no persisted
+  alias-to-artifact binding anywhere in this repository's schema yet — FTF-0308 ("Model-to-artifact
+  mapping UI") is the real, separate, not-yet-built owner of that binding — so which `TrainableArtifact`
+  corresponds to a given `model_id` is an explicit caller-supplied parameter here, never a name-based
+  lookup this module performs itself.
+- **Test:** `tests/tasks/test_ftf_0307.py` (no DB required — real `TrainableArtifact` ORM instances
+  and real dataclasses; no HTTP/TLS fixture needed since this task is pure/no-I/O, same disclosed
+  precedent FTF-0207/FTF-0306 already established). Covers the acceptance clause's four-dimension-
+  independence requirement directly, plus both negative_acceptance halves ("Inference-only endpoint
+  cannot become trainable by editing name; unknown capability remains blocked").
+- **Real fault injection (Law 1), two vectors, each reverted byte-identical and the suite
+  re-confirmed clean immediately after:** (1) loosened the `ready`-only artifact gate to also accept
+  `registered` — the exact "becomes trainable" negative check genuinely failed for real; (2) loosened
+  the probe-state check to accept any non-null probe outcome (not only real `PROBED`) — the exact
+  "failed probe never classifies as inference_only" negative check genuinely failed for real.
+- **Full verification:** `uv run ruff check .`/`ruff format --check .` clean repo-wide (360 files);
+  `uv run mypy .` clean repo-wide (360 source files, zero errors); `scripts/validate_spec.py --strict`
+  clean. Regression swept `test_ftf_0207.py`/`test_ftf_0212.py`/`test_ftf_0301.py`/`test_ftf_0306.py`
+  (this task's own four dependencies) — all exit 0, zero regressions.
+  `scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25` (`proving_symbol` left blank
+  — no composing route/UI caller yet, same disclosed "no live caller" precedent FTF-0207/FTF-0301
+  already established; FTF-0308's own future route is the eventual caller). `scripts/status.py`:
+  unchanged `99/300` certified (Law 2 — a submission, not a certification). Added this task's own CI
+  gate step to `.github/workflows/ci.yml` in the same commit as the implementation (learning directly
+  from the disclosed FTF-0205/FTF-0206 "missing gate-wiring step" watchdog finding).
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
+  — independent Control-plane L2 review and a real CI run on the opened PR are required before
+  certification.
+
+## 2026-10-02 — FTF-1002 — Artifact lineage manifest (submitted PROVISIONAL, not certified by this
+entry — same relay/Control-plane separation every prior entry in this file observes)
+- **PR:** opened from branch `claude/wizardly-fermat-61pj77` → `main` (this shift's own designated
+  branch), title `[relay] FTF-1002: Artifact lineage manifest`.
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-1002`. Dependencies FTF-0306/FTF-1001 confirmed
+  `certification_state: CERTIFIED` in `docs/spec-matrix.yaml` before relying on them. Picked up
+  per QUEUE.md's own prior-shift note (`iaofsc`, 2026-10-02T20:30:00Z) flagging FTF-1002 as
+  genuinely dependency-ready but deferred to a future shift.
+- **Path refined:** the packet's own suggested `services/serving-controller/vllm/
+  artifact_lineage_manifest.py` — `services/` does not exist anywhere in this repository and is
+  not a `uv` workspace member — to `apps/api/app/artifacts/artifact_lineage_manifest.py`, joining
+  this task's own two dependencies (FTF-0306/FTF-1001, both under `apps/api/app/`), the same
+  refinement precedent FTF-0301/FTF-0304/FTF-0305/FTF-0306/FTF-0307 already established.
+- **Delivered:** `build_artifact_lineage_manifest` — a pure, synchronous, no-I/O composer over an
+  already-fetched `ModelVersion` (FTF-1001) and an optional already-fetched `TrainableArtifact`
+  (FTF-0301/FTF-0306), never a database query or name-based lookup of its own
+  (`database_changes: "No independent schema change. Consume frozen contract."`). Reports this
+  task's own seven named dimensions (`base`/`tokenizer`/`training`/`data`/`license`/`runtime`/
+  `method`) independently:
+  - `base`/`tokenizer`: the real, already-resolved `weights_digest` (FTF-0306's own resolvers hash
+    the entire artifact tree, tokenizer files included — no separate tokenizer-only digest exists
+    in this schema) plus `base_model_revision`, for a `full_weight`/`adapter` import; both
+    `known=False` for an `endpoint` import (Section 68.1: "Display unknown parent/training data as
+    unknown").
+  - `license`: the real `TrainableArtifact.license_id`/`license_accepted_by`/`license_accepted_at`.
+  - `runtime`: the real declared `required_python_packages_json` when non-empty (Section 34's own
+    "library versions"); honestly `known=False` otherwise — no `ComponentVersionLock`/
+    container-digest record exists anywhere in this repository yet (Section 77.5, not yet
+    implemented by any task), so "pinned full execution environment" is disclosed as a gap, never
+    fabricated.
+  - `method`: the real, already-validated `import_kind` (`full_weight`/`adapter`) only — no
+    training-method/hyperparameter record exists in this task's own dependency set.
+  - `training`/`data`: always `known=False` ("unknown external ancestry", this task's own
+    acceptance clause's own words) — no `TrainingRun` or dataset-hash/versioning task exists
+    anywhere in this task's own dependency set; never fabricated as Factory-trained without a real
+    training record (Law 11: no fake training job).
+- **negative_acceptance ("Unknown parent cannot be fabricated; adapter-base mismatch invalidates
+  load/qualification") made real, not descriptive:**
+  1. `ArtifactLineageError` when a `full_weight`/`adapter` `model_version` is given no `artifact`
+     at all, an `artifact` whose own `id` does not match `model_version.trainable_artifact_id`, or
+     an `endpoint` `model_version` given a real `artifact` anyway.
+  2. `AdapterBaseMismatchError` when an `adapter`'s own caller-supplied `resolved_base_artifact` is
+     not `status == "ready"`, or its own `base_model_revision` does not match the adapter
+     artifact's own declared `base_model_revision` — Section 68.1's own "exact base, not
+     same-family guessed weights" rule made executable, the same recompute-and-compare-never-
+     silently-accept-drift discipline FTF-0306's own `DigestMismatchError` already established.
+  3. `LineageFact.__post_init__` itself refuses `known=False` with a non-`None` value by
+     construction — no code path in this module can smuggle a fabricated value under an "unknown"
+     label.
+- **Test:** `tests/tasks/test_ftf_1002.py` (no DB required — real `TrainableArtifact`/`ModelVersion`
+  ORM instances constructed directly, same disclosed precedent `test_ftf_0307.py` already
+  established for a pure composer task with no live route or database of its own). Covers every
+  dimension across `full_weight`/`adapter`/`endpoint` imports, every negative path above, manifest
+  immutability, and one real fault injection.
+- **Real fault injection (Law 1):** disabled the real `base_model_revision` comparison backing
+  `AdapterBaseMismatchError` (replaced the real `if` condition with `if False:` in the on-disk
+  module, via a subprocess running the mutated module directly) — a real, previously-rejected
+  mismatched adapter/base pairing genuinely passed through uncaught (`NO_ERROR_RAISED`), proving
+  the guard is load-bearing, not merely present. Reverted byte-identical immediately after
+  (`_MODULE_PATH.write_bytes(original)`, confirmed byte-for-byte restored).
+- **Full verification:** `uv sync --all-packages` (bare `uv run` lacks `sqlalchemy`, same disclosed
+  precedent prior Postgres-backed-task shifts used). `uv run ruff check .`/`ruff format --check .`
+  clean repo-wide (362 files). `uv run mypy .` clean repo-wide (362 source files, zero errors).
+  `scripts/validate_spec.py --strict` clean (`git fetch --unshallow` first, same disclosed
+  shallow-clone precedent). Regression swept `test_ftf_0306.py`/`test_ftf_1001.py` (this task's own
+  two dependencies) — both exit 0, zero regressions (`test_ftf_1001.py`'s own stderr
+  `TenantContextError` traceback is a pre-existing, disclosed negative-test assertion inside that
+  suite itself, confirmed by its own final "all checks passed" line, unrelated to this change).
+  `scripts/product_truth_check.py --fail-on-unwired`: unchanged `25/25` (`proving_symbol` left
+  blank — no live route/worker caller yet, same disclosed "no live caller" precedent FTF-0306/
+  FTF-0307 already established). `scripts/status.py`: unchanged `99/300` certified / 24
+  product-true (Law 2 — a submission is not a certification). Added this task's own CI gate step
+  to `.github/workflows/ci.yml` in the same commit.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
+  — independent Control-plane L2 review and a real CI run on the opened PR are required before
+  certification.
+
+## 2026-10-02 — FTF-04A18 — Candidate-selection UI — no auto-selection (submitted PROVISIONAL, not
+certified by this entry — same relay/Control-plane separation every prior entry in this file
+observes)
+- **PR:** opened from branch `claude/wizardly-fermat-2dd8f4` (this shift's own designated branch)
+  → `main`, title `[relay] FTF-04A18: Candidate-selection UI — no auto-selection`.
+- **Real DoD source:** `FINE_TUNING_FACTORY_RELEASE_1.md` §85, resolved via
+  `python tools/r1_handoff.py packet FTF-04A18`. All seven dependencies (FTF-04A01/04A12/04A13/
+  04A14/04A15/04A16/04A17) confirmed `certification_state: CERTIFIED` in `docs/spec-matrix.yaml`
+  directly before relying on them. Picked up per the immediately-prior shift's own flag (PR #424's
+  matching `QUEUE.md`/`PROGRESS.md` entry) naming FTF-04A18 as needing independent re-verification
+  against the known FTF-0214 (PR #295) UI-heavy/no-live-backend-surface blocker class before being
+  claimed.
+- **Blocker-class re-verification (resolved, not an owner ask):** independently re-checked whether
+  FTF-04A18 genuinely falls into FTF-0214's own class. It does not. FTF-0214 is blocked because its
+  frozen `02-interface.yaml` OpenAPI contract *explicitly excludes* the catalog/probe route its
+  acceptance clause needs, with no task in the 300-task index owning that route — re-confirmed
+  unchanged (`FTF-0214` still `certification_state: NONE`/`implementation_state: ABSENT`,
+  `connection_routes.py`'s own docstring still disclaims `sync-models`/`/models`/`/models/{id}/
+  probe`). FTF-04A18 is structurally different: FTF-04A17's own already-CERTIFIED `/candidates`
+  collection route is a real, live GET surface already wired into `app/main.py` for this task's own
+  UI to consume, and this task's own `database_changes` clause ("No independent schema change.
+  Consume frozen contract") is genuinely satisfiable — confirmed directly against a real local
+  Postgres 16 cluster (`\dp discovered_agent_candidates`/`\dp audit_events`) before writing any
+  code: `discovered_agent_candidates` grants `sovra_app` SELECT/INSERT only (never UPDATE — its own
+  migration, `0014_discovered_agent_candidates.py`, makes any future mutation of
+  `discovery_status` structurally impossible from this process, not merely undeclared), while
+  `audit_events` (FTF-0104, already CERTIFIED, already migrated) grants `sovra_app` INSERT — so
+  this task's own real "persisted audit" reading of its acceptance clause ("...requires explicit
+  selected ID with persisted audit") needs no new migration at all. This is the CLAUDE.md
+  default-resolution-rule path (the architecture's own Section 6.24 generic audit trail already
+  fixes what "persisted" means here), not a fresh Control-plane scope question like FTF-1206's
+  BLOCKER.md entry — escalating this would have been over-cautious, not careful.
+- **Path refined:** the packet's own frontend-only `files` list (a `.tsx` + its `.spec.ts`) to also
+  add two real backend files — the same "packet `files` is an initial owner-path suggestion, not a
+  cap on what the acceptance clause needs" precedent FTF-04A04's own real `github_branch_ref_
+  resolver.py`/`_crud.py`/`_routes.py` triad already established (that task's own CERTIFIED notes,
+  including its prior-rejection history for claiming "persist" without a genuine durable write,
+  were read in full before relying on the precedent — re-checked below that this task's own
+  persistence claim is likewise genuine):
+  - `apps/api/app/target_connectors/discovered_agent_candidate_selection.py` — pure selection logic.
+  - `apps/api/app/target_connectors/discovered_agent_candidate_selection_routes.py` — the real
+    `POST .../candidates/{candidate_id}/select` route, wired into `app/main.py` (20th router).
+- **Delivered:** `select_discovered_agent_candidate` reuses FTF-04A07's own CERTIFIED
+  `get_target_source_snapshot` and FTF-04A17's own CERTIFIED `get_discovered_agent_candidate`
+  directly (reuse-first, Section 77.1) to prove the real `(connection_id, snapshot_id,
+  candidate_id)` chain before anything else runs. negative_acceptance half 1 ("Highest score/first
+  result cannot be preselected") is structural: `candidate_id` is always an explicit path argument;
+  no code path here or in the UI reads `confidence_score` to pick a default. negative_acceptance
+  half 2 ("stale candidate from prior snapshot is rejected") is `StaleSnapshotCandidateError`
+  (HTTP 409) when a real, *other* snapshot of the same connection already names the requested
+  snapshot as the one it supersedes (`target_source_snapshots.supersedes_snapshot_id`, FTF-04A07's
+  own real field) — checked against the real database, never a client-supplied flag. Acceptance
+  clause 1 is one real `AuditEvent` row (`action=discovered_agent_candidate.selected`) written in
+  the same transaction as the checks above; the response's own `selected_at` is that row's own real
+  `created_at`, read back after the actual write.
+  `apps/web/components/target-application/candidate_selection_ui_no_auto_selection.tsx`: renders
+  candidates in the exact backend-returned order (never re-sorted by confidence), nothing
+  pre-selected on load, `handleSelect` always takes an explicit candidate ID from a real click.
+- **Tests:**
+  - `tests/tasks/test_ftf_04a18.py` (no DB required): real-uvicorn-server role-boundary proof
+    (401 unauthenticated, 403 evaluator, both confirmed via `session_factory.call_count == 0` that
+    no session is ever opened; organization_admin passes the gate and genuinely attempts to open a
+    session) — same precedent `test_ftf_04a04_routes.py` already established — plus pure checks
+    that `StaleSnapshotCandidateError` is a real catchable `ValueError` subclass,
+    `CandidateSelectionRecord` is a real frozen dataclass, and `CANDIDATE_SELECTED_ACTION` is the
+    exact literal the integration test's own audit-row lookup depends on.
+  - `tests/integration/test_ftf_04a18_candidate_selection.py` (real local PostgreSQL 16): one real
+    organization with a connection, a real superseded snapshot and its real replacement
+    (`supersedes_snapshot_id` genuinely set) each carrying one real candidate, a second organization
+    for the cross-tenant IDOR case. Proves: unauthenticated 401; evaluator 403; the core IDOR case
+    (org1's real resources requested under org2's path) 404; the real stale-snapshot refusal 409
+    with a direct Postgres count-query confirming **zero** `AuditEvent` rows were left behind by
+    the refused attempt (a rejected action is never partially persisted); a missing-candidate 404;
+    a real successful selection (201) whose response body is cross-checked against a *fresh*
+    Postgres read of the real `AuditEvent` row — `organization_id`/`actor_id`/`resource_type`/
+    `resource_id`/`created_at` and `details_json`'s own snapshot/connection references all matching
+    the real request, never only the response body; a real grant-surface proof that `sovra_app`
+    genuinely cannot `UPDATE discovered_agent_candidates.discovery_status` directly (confirming the
+    "no new mutable column" design is a real database guarantee, not merely an omitted route); and
+    a cross-organization candidate_id requested through org1's own real path refused 404 (the
+    deeper candidate-belongs-to-this-snapshot check genuinely runs, not only the top-level
+    organization_id match).
+  - `apps/web/tests/ftf_04a18.spec.ts` (Vitest + React Testing Library + jsdom, real mocked-`fetch`
+    assertions): URL helpers match the real API contract; loading renders every candidate in
+    backend order with nothing pre-selected; the higher-confidence candidate is listed but not
+    auto-selected, only an explicit click selects it, and the resulting confirmation is read from
+    the real response body; a real 409 stale-snapshot response surfaces as `error`, never silently
+    confirmed.
+- **Verification:** `uv run ruff check .`/`ruff format --check .` clean (366 files); `uv run
+  mypy .` clean (366 source files, zero errors). `pnpm run typecheck`/`pnpm run lint`/`pnpm run
+  format:check` clean. `pnpm exec vitest run`: 52/52 (full suite, zero regressions).
+  `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's
+  own pre-existing shallow-clone artifact). A real, directly-installed local PostgreSQL 16 cluster
+  (`sudo pg_ctlcluster 16 main start`) ran the real forward Alembic migration chain and both the
+  new integration test and a full regression sweep of
+  `tests/integration/test_ftf_04a17_discovered_agent_candidate.py`/
+  `test_ftf_04a07_target_source_snapshot.py` (this task's own two real dependencies' own
+  integration suites) plus `tests/tasks/test_ftf_0104.py` (the audit-event-writer dependency this
+  task's own persistence claim rests on) — all exit 0, zero regressions.
+  `scripts/product_truth_check.py --fail-on-unwired`: **25/25 → 26/26** — `proving_symbol` filled
+  in (a real, non-test text-search hit on `build_discovered_agent_candidate_selection_router` in
+  `app/main.py`, the same "router really is wired" convention FTF-04A17 already established, never
+  a vacuous 0/0). `scripts/status.py`: unchanged `99/300` certified (Law 2 — a submission is not a
+  certification). Added this task's own CI gate step (`tests/tasks/test_ftf_04a18.py`, no DB) and a
+  dedicated `candidate-selection-integration` job (real `services: postgres` container, same
+  pattern as `discovered-agent-candidate-integration`) to `.github/workflows/ci.yml` in the same
+  commit.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4)
+  — independent Control-plane L2 review and a real CI run on the opened PR are required before
+  certification.
+
+## 2026-10-03 — FTF-0902 — corrected node-image fix, executing Control plane's own posted DoD (new 3-attempt budget)
+
+- **What this is:** FTF-0902 ("Network-policy templates") was never merged — its whole implementation
+  (`packages/security/network_policy_templates.py`, the two `contracts/09-*` files,
+  `tests/tasks/test_ftf_0902.py`, `tests/integration/test_ftf_0902_network_policy_enforcement.py`, the
+  `network-policy-enforcement-integration` CI job) has lived only on PR #402's own branch
+  (`claude/wizardly-fermat-c06dbx`) since 2026-09-30. PR #402's own session tried three distinct,
+  real-evidence-backed fix theories for the baseline cluster's deterministic enforcement signature, each
+  implemented for real and each falsified by a real CI run (kind-binary-version pin; a pre-policy
+  ARP/route warm-up; the same warm-up moved to after `fake-metadata-service`'s own `hostNetwork` setup —
+  full trail: PR #402 comments, jobs 110295202473/110298220036/110304795503). That session then stopped
+  per STEP 4(c) and formalized the stop in `BLOCKER.md`.
+- **Why this is a fresh attempt, not a 4th on the same falsified theory:** Control plane itself then
+  posted a corrected root-cause diagnosis and a new DoD directly on PR #402 (comment,
+  2026-10-01T11:08:10Z), explicitly stating "this is a new route, so the 3-attempt count starts fresh."
+  That comment sat unactioned for 2 days — every relay shift since 2026-10-01T10:30Z (when the live
+  `BLOCKER.md` entry was written, *before* Control plane's 11:08:10Z correction) kept reading only
+  `BLOCKER.md`'s own stale entry and never re-checked PR #402's own comments for a Control-plane update,
+  so the saturated-frontier conclusion every "tracking-only" shift since has recorded was itself stale on
+  this one point. This shift found it by directly reading PR #402's live comment thread via the GitHub
+  API rather than trusting `BLOCKER.md`'s summary, confirmed no later commit or shift had acted on it,
+  and is executing it now — this is exactly what CLAUDE.md's "Relay is execution-only" rule calls for
+  once Control plane has decided and sliced the DoD, not relay improvisation.
+- **Root cause (Control plane's own diagnosis, confirmed by re-reading PR #402's own evidence):** `kind`
+  ships its default CNI (`kindnet`) *inside the node image*, not the `kind` binary. PR #402's round-1 fix
+  pinned the binary to v0.23.0 but left the node image at `kindest/node:v1.31.2` for both clusters — a
+  v1.31.2 image is built by `kind` >=0.24, whose bundled `kindnet` enforces NetworkPolicy by default
+  (`kube-network-policies`), independent of which binary created the cluster. The two further warm-up
+  theories were falsified because the real symptom (pre-policy warm-up succeeds quickly; every probe
+  after the policy exists times out — a dropped packet, not a refusal; the allowed, in-ipBlock
+  destination always succeeds; the hostNetwork metadata listener stays reachable since
+  kube-network-policies does not police host-destined traffic) is exactly the signature of real
+  enforcement, which no route/ARP disruption theory could explain (a transient disruption would not
+  single out one specific policy-excluded pod, deterministically, on every run).
+- **Fix implemented this shift, per Control plane's own posted DoD (b)-(d) (step (a), "merge main into
+  this branch," is moot here since this is a fresh branch off current `main` rather than a push onto PR
+  #402's own branch — a different session's branch, not this session's to push to):**
+  - (b) `tests/integration/test_ftf_0902_network_policy_enforcement.py`: split the single `NODE_IMAGE`
+    constant into `NODE_IMAGE_BASELINE = "kindest/node:v1.30.0"` (the node image `kind` v0.23.0 itself
+    defaults to) and `NODE_IMAGE_ENFORCING = "kindest/node:v1.31.2"` (unchanged); `kind_cluster_config`/
+    `create_cluster`/`run_scenario` all now take an explicit `node_image` parameter instead of a single
+    module-level constant.
+  - (c) Added a self-checking methodology to `run_scenario`: on the baseline cluster only, `denied` is
+    probed once before the `NetworkPolicy` object exists (must succeed, or the run fails fast with a
+    distinct "probe methodology broken" message) and the existing post-policy assertion probe serves as
+    the "after" half. If pre succeeds and post fails, this raises a distinct `ScenarioFailure` ("baseline
+    CNI enforces NetworkPolicy ...") instead of folding into the generic negative_acceptance failure
+    message. Added `print_kindnet_image` — prints the baseline cluster's own `kindnet` DaemonSet image to
+    the job log directly, so a future image-tag/rollout mismatch is visible without re-diagnosing blind.
+  - (d) Removed the round-1 post-policy warm-up (commit `5e75919` on PR #402) and its now-obsolete
+    comment block — it was never the fix and only blurred the methodology, per Control plane's own
+    instruction.
+  - (e) not invoked: no fallback is needed unless this shift's own real CI run shows `kindest/node:v1.30.0`
+    failing to boot on the runner, which is not yet known — if that happens, the documented fallback
+    (keep `v1.31.2` for the baseline, swap its CNI for flannel) is Control plane's own next step, not
+    assumed here in advance of evidence.
+  - `.github/workflows/ci.yml`: added the `network-policy-enforcement-integration` job (identical steps
+    to PR #402's own job — `kind` v0.23.0 binary, `kubectl` v1.31.0 — since the fix is in the test
+    script's own per-cluster node image, not the CI job's tooling versions) with an updated job comment
+    explaining the corrected root cause. `packages/security/network_policy_templates.py` and the two
+    `contracts/09-*` files are carried over byte-identical from PR #402's own branch (confirmed via
+    `git show` + direct diff) — untouched, per Control plane's own note that the Calico result already
+    proves that module correct.
+- **Verification:** `uv run ruff check .`/`ruff format --check .` clean (369 files, zero new errors);
+  `uv run mypy .` clean on every new/changed file, zero errors. `uv run python3 tests/tasks/test_ftf_0902.py`
+  — 19/19 checks pass (no DB, no cluster — pure template/validation suite, unaffected by this shift's
+  own integration-script-only diff). `python3 scripts/validate_spec.py --strict` clean (after
+  `git fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+  `product_truth_check.py --fail-on-unwired`: `26/26` unchanged (blank `proving_symbol` — no live
+  dispatcher exists for a pure rendering/validation library, same disclosed FTF-04A25/04A26 precedent).
+  `scripts/status.py`: unchanged `99/300` certified (Law 2 — a submission is not a certification).
+  Regression swept `tests/tasks/test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` — all "all
+  checks passed", zero regressions. The live-cluster integration job itself cannot be run inside this
+  interactive sandbox (no Docker daemon/container-registry egress, same disclosed FTF-0004 precedent) —
+  its real result on this PR's own CI run is this task's actual acceptance-clause evidence for the
+  corrected methodology, not asserted here in advance of that run completing.
+- **State:** `proof_state=L1-PROVEN`, `certification_state=PROVISIONAL`. Not self-certified (Law 4) —
+  independent Control-plane L2 review and a real CI run on the opened PR (including the corrected
+  `network-policy-enforcement-integration` job) are required before certification. PR #402 itself is
+  untouched by this shift (a different session's branch) and stays open as the historical record of the
+  three round-1 falsified attempts; this shift's own PR is a fresh branch off current `main` carrying
+  only the corrected fix.
 
 ## 2026-10-01T13:40Z — Control-plane L2 re-review of PR #403 (FTF-H007, FTF-04A06, FTF-0601): NOT CERTIFIED, returned to relay (round 2)
 Reviewer: control-plane session `session_01QVznorVMjnmcttUhyDnoGR`. Independent: PR #403's commit carries
