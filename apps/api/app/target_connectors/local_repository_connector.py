@@ -96,6 +96,7 @@ from pathlib import Path
 
 __all__ = [
     "ConcurrentModificationError",
+    "DangerousGitConfigError",
     "EmptyRepositoryError",
     "GitCommandError",
     "LocalRepositoryCapture",
@@ -109,6 +110,38 @@ __all__ = [
 
 _GIT_DIRECTORY_NAME = ".git"
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
+
+# A real, closed, named set of git config keys that can make an otherwise
+# read-only git invocation execute a repo-controlled command: `core.fsmonitor`/
+# `core.hooksPath`/`core.sshCommand`, or any `filter.<name>.(clean|smudge|
+# process)` driver (FTF-H007/FTF-04A06's own L2 round-2 finding (a)/(b)).
+# `filter.<name>.clean`/`process` in particular can run during a plain
+# `git status` on a stat-dirty tracked file carrying a matching
+# `.gitattributes` `filter=<name>` entry -- `_run_git`'s own `-c` overrides
+# neutralize `core.fsmonitor`/`core.hooksPath` for every call this process
+# makes, but cannot neutralize an arbitrary, repo-chosen filter driver *name*
+# the same way, since the name itself is not known in advance. The only
+# reliable defense is to detect the key's mere presence before ever running a
+# git command that would invoke it, and refuse outright (see
+# `capture_local_repository`, which calls `_scan_dangerous_git_config` before
+# its own first `_git_dirty_signature` call -- the first command in this
+# module able to trigger a filter driver).
+_DANGEROUS_GIT_CONFIG_KEY_PATTERN = (
+    r"^(core\.fsmonitor|core\.hookspath|core\.sshcommand|filter\..+\.(clean|smudge|process))$"
+)
+
+# The strict subset of the pattern above that `_run_git`'s own `-c`
+# overrides cannot neutralize: a `filter.<name>.(clean|smudge|process)`
+# driver's *name* is chosen by the untrusted repository itself, so there is
+# no fixed `-c filter.<name>.clean=...` override this module could pass in
+# advance the way it can for the two fixed, already-known keys `core.
+# fsmonitor`/`core.hooksPath`. `capture_local_repository` pre-scans for
+# exactly this subset (never the full pattern above -- `core.fsmonitor`/
+# `core.hooksPath` are already safely neutralized for every call this
+# module makes, and FTF-04A06's own established behavior is to proceed with
+# the capture once neutralized, not refuse outright) and refuses before its
+# own first git call able to trigger one.
+_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN = r"^filter\..+\.(clean|smudge|process)$"
 
 
 class LocalRepositoryConnectorError(Exception):
@@ -148,7 +181,28 @@ class ConcurrentModificationError(LocalRepositoryConnectorError):
     negative_acceptance."""
 
 
-def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+class DangerousGitConfigError(LocalRepositoryConnectorError):
+    """The repository's own resolved git config (local scope, worktree
+    scope, and every `include.path`/`includeIf.*.path` it names -- never
+    system/global, which `_run_git`'s own `GIT_CONFIG_NOSYSTEM`/
+    `GIT_CONFIG_GLOBAL` isolation already excludes) carries a key that could
+    make a real git invocation execute a repo-controlled command
+    (FTF-H007/FTF-04A06's own L2 round-2 finding). Raised *before* this
+    module ever runs a git command capable of triggering one -- never
+    discovered only after the fact."""
+
+
+_SAFETY_CONFIG_OVERRIDES: tuple[tuple[str, str], ...] = (
+    ("core.fsmonitor", "false"),
+    ("core.hooksPath", "/dev/null"),
+)
+
+
+def _run_git(
+    root: Path,
+    *args: str,
+    config_overrides: tuple[tuple[str, str], ...] = _SAFETY_CONFIG_OVERRIDES,
+) -> subprocess.CompletedProcess[str]:
     """Every invocation is hardened against a repo-controlled config value
     making this supposedly read-only call execute an arbitrary command
     (FTF-H007/FTF-04A06): `core.fsmonitor` can be set to a command git
@@ -160,25 +214,32 @@ def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL=/dev/null` additionally stop
     this process's own ambient system/global git config -- which this
     untrusted scan has no business reading at all -- from influencing the
-    result."""
+    result; unlike `config_overrides`, this isolation is unconditional and
+    cannot be turned off by a caller.
+
+    `config_overrides` defaults to the two safety overrides above, applied
+    to every working-tree-content git command this module makes (`status`,
+    the clean-checkout `HEAD^{tree}` resolution). `_scan_dangerous_git_config`
+    below passes `()` instead: a `-c core.fsmonitor=false` override is
+    itself a real, highest-precedence config value, so leaving it in would
+    make `git config --get-regexp` echo back *this process's own* benign
+    override rather than the real value (if any) the untrusted repository
+    itself set for that exact key -- silently masking the one thing this
+    scan exists to detect. A pure config read never triggers a filter/hook/
+    fsmonitor command on its own, so omitting these two overrides for that
+    one call is still safe."""
     git_binary = shutil.which("git")
     if git_binary is None:
         raise GitCommandError("no 'git' binary found on PATH")
     env = dict(os.environ)
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    config_args: list[str] = []
+    for key, value in config_overrides:
+        config_args.extend(["-c", f"{key}={value}"])
     try:
         return subprocess.run(  # noqa: S603
-            [
-                git_binary,
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-C",
-                str(root),
-                *args,
-            ],
+            [git_binary, *config_args, "-C", str(root), *args],
             capture_output=True,
             text=True,
             timeout=_SUBPROCESS_TIMEOUT_SECONDS,
@@ -187,6 +248,50 @@ def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitCommandError(f"git {' '.join(args)} could not be run: {exc}") from exc
+
+
+def _scan_dangerous_git_config(
+    root: Path, pattern: str = _DANGEROUS_GIT_CONFIG_KEY_PATTERN
+) -> tuple[str, ...]:
+    """Reads (never executes) the repository's own fully-resolved git
+    config for `pattern`'s own keys (`_DANGEROUS_GIT_CONFIG_KEY_PATTERN` by
+    default -- the full reportable set; `capture_local_repository`'s own
+    pre-scan instead passes `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN`,
+    the strict subset it must refuse on rather than merely report),
+    deliberately
+    **unscoped** -- no `--local`/`--worktree` restriction, and no
+    `--no-includes` -- so this one real git invocation naturally resolves
+    every scope and `include.path`/`includeIf.*.path` directive the
+    repository's own local config and `.git/config.worktree` (when
+    `extensions.worktreeConfig` is enabled) actually name, exactly the way
+    any later git command in this process would resolve them. `--local`
+    alone, as this module used before this fix, follows neither includes
+    nor worktree scope by default (confirmed directly against a real git
+    binary) -- the exact round-2 L2 finding (b) this function closes.
+
+    System/global config is still excluded: `_run_git`'s own
+    `GIT_CONFIG_NOSYSTEM=1`/`GIT_CONFIG_GLOBAL=/dev/null` environment
+    isolation applies here too (this call goes through `_run_git`), so
+    "unscoped" in practice means "every scope this untrusted repository
+    itself can define," never this process's own ambient config.
+
+    Uses `_run_git`'s own hardened invocation to do the reading -- a pure
+    config read never triggers a filter/hook/fsmonitor command on its own,
+    so this call itself cannot be the vector it is checking for. Passes
+    `config_overrides=()`: see `_run_git`'s own docstring for why the
+    default safety overrides must NOT be applied to this specific call --
+    they would mask the real `core.fsmonitor`/`core.hooksPath` value (if
+    any) the untrusted repository itself set with this process's own benign
+    override, defeating detection for exactly those two keys."""
+    result = _run_git(root, "config", "--get-regexp", pattern, config_overrides=())
+    if result.returncode != 0 or not result.stdout.strip():
+        return ()
+    keys: list[str] = []
+    for line in result.stdout.splitlines():
+        key = line.split(" ", 1)[0]
+        if key not in keys:
+            keys.append(key)
+    return tuple(sorted(keys))
 
 
 def resolve_allowed_root(root: os.PathLike[str] | str, allowed_roots: list[Path]) -> Path:
@@ -410,6 +515,26 @@ def capture_local_repository(
         raise NotAGitRepositoryError(
             f"{real_root} is not a real Git working-tree top level -- "
             "Section 7A.3's local repository connector requires a real Git checkout"
+        )
+
+    # Checked before any command below that can trigger a filter driver
+    # (`_git_dirty_signature`'s own `git status`, first) -- never after.
+    # `rev-parse`/`symbolic-ref` above are pure ref reads and cannot invoke
+    # a working-tree filter, so running this check here, rather than before
+    # them too, still closes the window completely. Only the strict,
+    # unneutralizable filter-driver subset blocks the capture itself --
+    # `core.fsmonitor`/`core.hooksPath` stay handled purely by `_run_git`'s
+    # own `-c` overrides, exactly as FTF-04A06's own already-established
+    # behavior expects (neutralized, capture proceeds); the full set
+    # (including those two) is still reported as blocking for *lock*
+    # readiness by `source_boundary.scan_local_repository_boundary`.
+    dangerous_keys = _scan_dangerous_git_config(
+        real_root, pattern=_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN
+    )
+    if dangerous_keys:
+        raise DangerousGitConfigError(
+            f"{real_root} sets unneutralizable filter driver key(s) {list(dangerous_keys)} -- "
+            "refusing before any working-tree-content git command could trigger one"
         )
 
     commit_sha = _git_head_commit_sha(real_root)
