@@ -128,12 +128,23 @@ _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 # `capture_local_repository`, which calls `_scan_dangerous_git_config` before
 # its own first `_git_dirty_signature` call -- the first command in this
 # module able to trigger a filter driver). `filter.<name>.required` alone
-# (no clean/smudge/process) is not itself an execution vector -- confirmed
-# directly against a real git binary, a stat-dirty file with only
-# `required=true` set does not make a plain `git status` fail or run
-# anything -- so it is reported here (round-3 finding, "report rather than
-# raise") but deliberately left out of `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_
-# PATTERN` below, which only names keys that genuinely must block capture.
+# (no clean/smudge/process) is not itself an execution vector -- it never
+# runs a repo-controlled command -- but round-4's own direct confirmation
+# against a real git binary corrects the round-3 claim above: a same-size
+# stat-dirty tracked file (content byte-identical, mtime changed -- git's
+# own stat cache can no longer short-circuit the comparison) carrying a
+# matching `.gitattributes` `filter=<name>` entry makes a plain `git
+# status` genuinely FAIL non-zero ("clean filter '<name>' failed"), since
+# `required=true` demands a clean/smudge/process driver that was never
+# configured. This is a failure, never an execution, so it still stays out
+# of `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN` below (that pattern names
+# only keys needing to block capture before an execution vector is
+# reached) -- but it does mean `capture_local_repository`'s own
+# `_git_dirty_signature` call can raise `GitCommandError` for this key
+# alone. `scan_local_repository_boundary` (the continue-on-finding scanner)
+# catches exactly that failure and still reports the key via
+# `_scan_dangerous_git_config` below, rather than letting the exception
+# propagate uncaught (round-4 fix, FTF-H007/FTF-04A06).
 _DANGEROUS_GIT_CONFIG_KEY_PATTERN = (
     r"^(core\.fsmonitor|core\.hookspath|core\.sshcommand|"
     r"filter\..+\.(clean|smudge|process|required))$"

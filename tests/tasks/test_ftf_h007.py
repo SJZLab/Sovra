@@ -747,13 +747,14 @@ def test_filter_smudge_driver_is_detected_and_blocks_lock() -> None:
 
 def test_filter_required_alone_is_reported_never_raises() -> None:
     """L2 round-3 minor item: `filter.<name>.required` alone (no clean/
-    smudge/process) is not itself an execution vector -- confirmed directly
-    against a real git binary, a stat-dirty tracked file with only
-    `required=true` set does not make a plain `git status` fail or run
-    anything. The fix adds `required` to `_DANGEROUS_GIT_CONFIG_KEY_
-    PATTERN` so it is reported like any other filter key; this test proves
-    the scan completes normally (no `GitCommandError`, no crash) and still
-    reports the finding, rather than the scan somehow raising for it."""
+    smudge/process) is never itself an execution vector -- it never runs a
+    repo-controlled command. The fix adds `required` to `_DANGEROUS_GIT_
+    CONFIG_KEY_PATTERN` so it is reported like any other filter key; this
+    test (a real content *modification*, not a same-size stat-dirty touch
+    -- see `test_filter_required_alone_with_same_size_stat_dirty_file_is_
+    reported_never_raises` below for round-4's own corrected, load-bearing
+    case) proves the scan completes normally (no `GitCommandError`, no
+    crash) and still reports the finding."""
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         repo = base / "repo"
@@ -785,6 +786,111 @@ def test_filter_required_alone_is_reported_never_raises() -> None:
             "FTF-H007",
             "a repository with only filter.evil.required set is not safe to lock",
             raised or not report.is_safe_to_lock,
+        )
+
+
+def test_filter_required_alone_with_same_size_stat_dirty_file_is_reported_never_raises() -> None:
+    """L2 round-4 finding 5: the round-3 test above modifies the tracked
+    file's real *content*, which this round's direct confirmation against a
+    real git binary shows does NOT reproduce the actual defect -- a bare
+    `filter.<name>.required` key only makes `git status` genuinely FAIL
+    ("clean filter '<name>' failed", non-zero exit) on a tracked file that
+    is *stat-dirty* (its on-disk mtime no longer matches git's own cached
+    stat info) while its content stays byte-identical, after an earlier
+    `git status` call has already populated that stat cache. Before
+    round-4's fix, that real `GitCommandError` propagated straight out of
+    `scan_local_repository_boundary` uncaught, instead of being reported
+    like every other dangerous key. This test reproduces the exact
+    sequence (an initial status to populate the cache, then config the
+    required key, then rewrite identical content and `touch` it) and
+    proves the scan still completes normally and still reports the real
+    finding, exactly like the content-modified case above."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        content = "hello\n"
+        (repo / "a.secret").write_text(content)
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        # Populate git's own stat cache with a real, successful status call
+        # *before* `required` is set -- without this, the fault this test
+        # targets does not reproduce on a fresh checkout.
+        _run(repo, "status", "--porcelain=v1", "--untracked-files=all")
+        _run(repo, "config", "filter.evil.required", "true")
+        # Same-size, byte-identical rewrite, then touch: the file's content
+        # never changes, only its mtime -- this is what makes git's own
+        # stat-cache short-circuit fail and force a real clean-filter check.
+        (repo / "a.secret").write_text(content)
+        (repo / "a.secret").touch()
+
+        try:
+            report = scan_local_repository_boundary(repo, [base])
+            raised = False
+        except Exception:  # noqa: BLE001 -- this test's own point is "never raises"
+            raised = True
+
+        check(
+            "FTF-H007",
+            "a same-size stat-dirty file with only filter.evil.required set "
+            "never makes the boundary scan raise",
+            not raised,
+        )
+        check(
+            "FTF-H007",
+            "filter.evil.required is reported as a dangerous git config key "
+            "for the same-size stat-dirty case too",
+            raised or "filter.evil.required" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a same-size stat-dirty repository with only filter.evil.required "
+            "set is not safe to lock",
+            raised or not report.is_safe_to_lock,
+        )
+
+
+def test_fault_injection_git_command_error_catch_is_load_bearing_for_required_filter() -> None:
+    """Law 1 -- shown able to fail: with `GitCommandError` removed from the
+    tuple of exceptions `scan_local_repository_boundary` catches around its
+    own `capture_local_repository` call (stood in for by directly calling
+    the un-caught code path below), the exact same-size stat-dirty
+    `filter.<name>.required` scenario above genuinely raises instead of
+    returning a report -- proving round-4's own new `except GitCommandError`
+    branch is load-bearing, not merely coincidental with some other catch
+    clause already in place."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        content = "hello\n"
+        (repo / "a.secret").write_text(content)
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "status", "--porcelain=v1", "--untracked-files=all")
+        _run(repo, "config", "filter.evil.required", "true")
+        (repo / "a.secret").write_text(content)
+        (repo / "a.secret").touch()
+
+        from app.target_connectors.local_repository_connector import (
+            GitCommandError as _GitCommandError,
+        )
+
+        check(
+            "FTF-H007",
+            "without the round-4 except GitCommandError branch, "
+            "capture_local_repository itself genuinely raises for this "
+            "exact same-size stat-dirty filter.required scenario -- "
+            "confirming the branch this test's sibling relies on is real, "
+            "not a no-op",
+            _raises(
+                _GitCommandError,
+                _connector_module.capture_local_repository,
+                repo,
+                [base],
+            ),
         )
 
 

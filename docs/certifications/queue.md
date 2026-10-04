@@ -22854,3 +22854,89 @@ turn RED under its fault, under the CI script runner, on BOTH a host with LFS co
 No production change is expected except (5).
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md item 0b stays first.
+
+## 2026-10-04T23:10Z — FTF-H007 + FTF-04A06 round 4: fixed this shift, PR to be opened
+
+Relay response to the 2026-10-04T22:55Z Control-plane L2 review above. That review found the round-3
+runtime protection HOLDS, but four protections were not pinned by any failing test (F1, F4, F5, F6)
+plus one small, genuine production defect (finding 5, `filter.<name>.required`). Per that review's
+own "No production change is expected except (5)," this round is tests-only plus one small fix.
+
+**Clause-to-test mapping** (every new test independently confirmed to turn RED under its exact fault
+first, Law 1 — see detail below):
+
+- **F4** (`test_ftf_04a06.py`): `test_default_constants_defeat_hookspath_attack_on_host_as_is` and
+  `..._on_neutral_host`. Runs the real, executable `core.hooksPath` post-index-change-hook attack
+  against the real, UNMODIFIED `_SAFETY_CONFIG_OVERRIDES`/`_run_git` (no toggle flipped anywhere in
+  either test) and asserts the marker is absent. Confirmed RED by directly removing `core.hooksPath`
+  from the real `_SAFETY_CONFIG_OVERRIDES` tuple in an isolated interpreter and re-running just these
+  two functions — both failed with the expected message, then passed again once restored. Run once on
+  this sandbox's own real ambient host (confirmed directly: a real `/etc/gitconfig` carries `[filter
+  "lfs"]` clean/smudge/process/required, and a real `git-lfs` binary is on `PATH` — exactly the
+  "host with LFS config" condition the review named) and once with `GIT_CONFIG_SYSTEM` forced to a
+  genuinely empty temp file (neutral host) via the new `_with_empty_git_config_system` helper.
+- **F1** (`test_ftf_04a06.py`): `test_default_constants_defeat_submodule_recursion_attack_on_host_
+  as_is` and `..._on_neutral_host`. Per the DoD's own exact recipe: stubs only `_scan_populated_
+  gitlinks` to return `()` (isolating the layer), keeps the real, unmodified `_GIT_STATUS_IGNORE_
+  SUBMODULES_FLAG` default, populates a submodule filter driver, runs `capture_local_repository`, and
+  asserts the marker is absent. Confirmed RED the same way (removing the real flag default in an
+  isolated interpreter). Same two host conditions as F4.
+- **F5** (`test_ftf_04a06.py`): `test_default_constants_defeat_global_env_leak_attack`. Points an
+  ambient `GIT_CONFIG_GLOBAL` at the test's own temp file defining a malicious `filter.evil.clean`,
+  against the real, unmodified `_GIT_CONFIG_GLOBAL_ENV_VALUE`/`_run_git` default, and asserts the
+  clean repo's capture both succeeds (not refused) and never executes the marker. Self-contained —
+  independent of the host by construction, so no separate host-condition variant (matches the DoD's
+  own F6 instruction, which applies identically here). Confirmed RED by flipping `_GIT_CONFIG_GLOBAL_
+  ENV_VALUE` to `None` (with the independent pre-scan stubbed out to isolate this one layer, same
+  isolation the existing round-3 fault-injection test already uses) in an isolated interpreter.
+- **F6** (`test_ftf_04a06.py`): `test_default_constants_defeat_nosystem_env_leak_attack`. Same shape
+  as F5, using an ambient `GIT_CONFIG_SYSTEM` pointed at the test's own temp file rather than this
+  sandbox's own real `/etc/gitconfig` — directly resolving the review's own named host-dependence
+  ("RED only on a host whose /etc/gitconfig has filter.lfs... GREEN on a neutral host"): this test
+  never reads that real file at all. Confirmed RED the same way (flipping `_GIT_CONFIG_NOSYSTEM_ENV_
+  VALUE` to `None`, pre-scan stubbed, isolated interpreter).
+- **(5) `filter.<name>.required` same-size stat-dirty** (`test_ftf_h007.py`): confirmed by hand
+  against a real git binary that `capture_local_repository`'s own `_git_dirty_signature` (`git
+  status`) genuinely fails non-zero ("clean filter '<name>' failed") on a tracked file that is
+  stat-dirty (mtime changed, content byte-identical) once an earlier `git status` call has already
+  populated git's own stat cache — the round-3 comment claiming this never fails tested a real
+  content *modification* instead, which does not reproduce the defect. **Production fix:**
+  `source_boundary.scan_local_repository_boundary` now also catches `GitCommandError` around its own
+  `capture_local_repository` call (same continue-on-finding treatment as the two exceptions already
+  caught there), so the key is still reported via the separate, already-existing `_scan_dangerous_
+  git_config` call instead of the exception propagating straight out of the whole function uncaught.
+  Corrected the wrong round-3 comment on `_DANGEROUS_GIT_CONFIG_KEY_PATTERN` in `local_repository_
+  connector.py`. New tests: `test_filter_required_alone_with_same_size_stat_dirty_file_is_reported_
+  never_raises` (the real repro — an initial `git status` to populate the cache, then `config filter.
+  evil.required true`, then rewrite identical content and `touch`) and `test_fault_injection_git_
+  command_error_catch_is_load_bearing_for_required_filter` (proves the underlying `capture_local_
+  repository` call genuinely raises `GitCommandError` for this exact scenario). Law 1: `git stash` of
+  the two production files only (keeping every test change) — `test_ftf_h007.py` failed exactly 1 new
+  check; `git stash pop` restored the fix byte-identical, suite re-ran clean.
+
+**Full verification this shift.** `uv sync --all-packages`; `uv run ruff check .`/`ruff format
+--check .` clean, zero new errors (one `UP035` import-source finding on the new test helper's own
+`Callable` import, self-fixed to `collections.abc` before this count). `uv run mypy .` clean
+repo-wide (371 source files, zero errors — the new helper's parameter is typed `Callable[[], None]`
+directly, no unused `type: ignore`). `git fetch --unshallow` (this sandbox's own pre-existing
+shallow-clone artifact); `python3 scripts/validate_spec.py --strict` clean; directly confirmed the
+new `docs/spec-matrix.yaml` prose still parses with `python3 -c "import yaml; yaml.safe_load(...)"`.
+`product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `99/301`
+certified / 24 product-true (Law 2 — a resubmission is not a certification). Both `test_ftf_
+04a06.py` (now 6 new cases: 2×F4, 2×F1, 1×F5, 1×F6) and `test_ftf_h007.py` (now 2 new cases) re-run
+clean end to end, exit 0, "all checks passed." Regression swept `test_ftf_04a01.py`/`test_ftf_
+04a07.py`/`test_ftf_h006.py` (via `uv run python3`, since a bare `python3` lacks sqlalchemy/fastapi)
+— all exit 0, zero interference (the printed `TenantContextError` traceback inside `test_ftf_
+04a01.py`'s own stdout and `test_ftf_h006.py`'s own disclosed no-IPv6-stack skip are both that
+suite's own pre-existing, disclosed negative-test/skip cases, not a regression). No `ci.yml` change
+needed — the existing `gate`-job steps already run both files.
+
+Updated `docs/spec-matrix.yaml`'s FTF-04A06 and FTF-H007 entries with a full "2026-10-04 round-4 fix"
+note each, including this same clause-to-test mapping (`certification_state` stays `PROVISIONAL`,
+`proof_state` stays `L1-PROVEN` — Law 2).
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN`
+unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification.
+
+**State.** Not certified. Awaiting Control-plane L2 re-review and a real CI run.

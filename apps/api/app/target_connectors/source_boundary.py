@@ -97,6 +97,7 @@ from pathlib import Path
 
 from app.target_connectors.local_repository_connector import (
     DangerousGitConfigError,
+    GitCommandError,
     PathAllowlistError,
     PopulatedSubmoduleError,
     _scan_dangerous_git_config,
@@ -422,6 +423,24 @@ def scan_local_repository_boundary(
         # keys`/`submodule_declarations` below (separate, pure plumbing
         # reads -- never the filter/hook-triggering command itself) still
         # report the real finding(s).
+        is_dirty = True
+    except GitCommandError:
+        # Round-4 fix (FTF-H007/FTF-04A06 finding 5): a bare `filter.<name>.
+        # required` key with no clean/smudge/process driver configured is
+        # never itself an execution vector, but it genuinely makes
+        # `capture_local_repository`'s own `_git_dirty_signature` (`git
+        # status`) fail non-zero ("clean filter '<name>' failed") on a
+        # same-size stat-dirty tracked file carrying a matching
+        # `.gitattributes` entry -- confirmed directly against a real git
+        # binary (see `local_repository_connector.py`'s own corrected
+        # comment on `_DANGEROUS_GIT_CONFIG_KEY_PATTERN`). Before this fix,
+        # this exception propagated uncaught out of this whole function
+        # instead of being reported. This scanner's own job is to keep
+        # producing complete evidence regardless (continue-on-finding, same
+        # as the two exceptions above) -- dirtiness is simply unknown here,
+        # never assumed clean, and `dangerous_git_config_keys` below (a
+        # separate, pure config read -- never the failing `git status` call
+        # itself) still reports the real `filter.<name>.required` key.
         is_dirty = True
 
     inventory = build_local_snapshot_inventory(
