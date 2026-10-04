@@ -1,5 +1,22 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-03T22:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-gth232`) —
+Updated: 2026-10-04T00:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-icudox`) —
+  **merged PR #439** (the immediately-prior shift's own tracking-only PR, independently re-verified:
+  diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +84/-1 — `mergeable_state: clean`, 43/43 checks
+  green including `gate`) rather than leave a second tracking PR open. This shift's own independent
+  frontier recompute (`docs/spec-matrix.yaml`'s own `notes: deps=...` field, parsed fresh) reached
+  the identical conclusion: of 300 tasks, 201 not `CERTIFIED`, exactly two with every dependency
+  `CERTIFIED` and still `certification_state: NONE` — **FTF-0214** (still blocked, PR #295) and
+  **FTF-1703** (still deferred — `FTF-0510` still `PROVISIONAL` not `CERTIFIED`, `FTF-R006`/
+  `FTF-0515`/`FTF-0516` still `NONE`) — same frontier every shift since 2026-10-02T23:10Z. Two
+  Control-plane L2-certify PRs remain open and untouched (**#421**, **#434**) — doc/status-only, not
+  relay's to merge, per standing precedent; reconciling their overlapping edits is Control plane's
+  own next step. `BLOCKER.md`'s one live entry (FTF-1206, a Control-plane scope decision) unchanged,
+  not retried. `status.py`: unchanged `99/300` certified / 24 product-true post-merge (Law 2 — a
+  docs-only merge is not a certification). `product_truth_check.py --fail-on-unwired`: ran clean,
+  `26/26`, unchanged. No open owner ask beyond the pre-existing low-urgency branch-protection item
+  below. Full detail: `PROGRESS.md`'s matching 2026-10-04T00:05:00Z entry.
+
+Previous update: 2026-10-03T22:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-gth232`) —
   **merged PR #438** (the immediately-prior shift's own tracking-only PR, independently re-verified:
   diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +78/-1 — `mergeable_state: clean`, 43/43 checks green
   including `gate`) rather than leave a second tracking PR open. This shift's own independent frontier
