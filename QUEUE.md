@@ -8914,31 +8914,15 @@ this same resolution (doc-only, redundant once this lands).
 ## Active (decided by Control plane — relay executes, top first)
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
-   - **0a. PR #449 (FTF-0500B) had RED CI — fixed 2026-10-04T19:05Z, superseding PR #453 opened.** Real root cause
-     (read from the real `s3-minio-versioned-source-integration` job log, not assumed): the test's own
-     `_policy()` `explicit_private_allowlist` only allowlisted `127.0.0.0/8` (IPv4), but the GitHub Actions
-     runner's `getaddrinfo("localhost")` also returns the IPv6 loopback `::1`, which
-     `packages/security/outbound_guard.py`'s `resolve_and_validate` requires to pass too — refused with
-     `OutboundPolicyError`. Not a production-code defect (the real connector and real SeaweedFS server both
-     worked; only the test's own policy fixture was missing an entry). Fixed by adding
-     `ipaddress.ip_network("::1/128")` to that allowlist. Per this session's own branch restriction (same
-     pattern PR #402 used), pushed as a new PR rather than onto PR #449's own branch; PR #449 closed, unmerged,
-     pointing to the replacement. Skip this sub-item once the replacement PR's CI is green and it merges.
-   - **0b. FTF-H007 + FTF-04A06 (security) — fixed 2026-10-04T21:10Z, PR pending.** All five DoD items from the
-     2026-10-01T13:40Z round-2 entry: `capture_local_repository` now pre-scans for the unneutralizable
-     `filter.<name>.(clean|smudge|process)` subset before its own first working-tree-content git call and refuses
-     outright (`DangerousGitConfigError`); the shared `_scan_dangerous_git_config` (moved into
-     `local_repository_connector.py`, single source of truth) now runs fully unscoped, resolving
-     `include.path`/`includeIf.*.path` and `.git/config.worktree` by default (confirmed directly against a real
-     git binary) while `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` keeps excluding system/global config; a
-     self-found correctness bug (the scan's own `-c core.fsmonitor=false -c core.hooksPath=/dev/null` overrides
-     were masking the repo's real value for those two keys) is fixed via a new `config_overrides=()` parameter on
-     the config-reading call. Two new real, reproducible exploits (a `post-index-change` hook under a malicious
-     `core.hooksPath`, and a global-config-sourced filter driver) pin the hooksPath override and the env isolation
-     independently. 9 new tests (6 in `test_ftf_04a06.py`, 3 in `test_ftf_h007.py`), each shown red against the
-     genuinely pre-fix code first. Full evidence: docs/certifications/queue.md "2026-10-04T21:10Z". Not
-     self-certified (Law 4) — awaiting Control-plane L2 re-review. Skip this sub-item once its PR is green and
-     merged; FTF-0601 (0c) is next.
+   - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
+   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 3. Returned 2026-10-04T20:55Z after #455 (merge d53a4d9).**
+     The DoD and the Control-plane route decision (submodules out of scope: `--ignore-submodules=all`, gitlinks
+     blocking, capture refused) are in docs/certifications/queue.md entry "2026-10-04T20:55Z".
+     - The blocker is code execution via a submodule filter driver.
+     - The hooksPath and env-isolation tests must use the real code path, not a `_run_git` stub.
+     - Every probe command must be an inert `touch <marker>`. If a tool or classifier blocks a step, PARK the item
+       with routes. Do not skip it silently.
+     - Do this before 0c only if the 20:48Z shift has not already taken 0c. Never leave 0c's open PR unfinished.
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
