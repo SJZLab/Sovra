@@ -1,5 +1,26 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-04T08:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-artau8`) —
+Updated: 2026-10-04T10:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-nxhu80`) —
+  **merged PR #443** (the immediately-prior shift's own tracking-only PR, independently re-verified:
+  diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +88/-1 — `mergeable_state: clean`, 43/43 checks
+  green including `gate`) rather than leave a second tracking PR open. This shift's own independent
+  frontier recompute (`docs/spec-matrix.yaml`'s own `notes: deps=...` field, parsed fresh) reached
+  the identical conclusion: of 300 tasks, 201 not `CERTIFIED`; the regex heuristic flagged three
+  every-dependency-`CERTIFIED` tasks, one already `PROVISIONAL` (**FTF-0601**, not relay's to redo),
+  and exactly two still genuinely `certification_state: NONE` — **FTF-0214** (still blocked, PR
+  #295, no composed `/models/{id}/probe` route or `Project`↔`LiteLLMConnection` binding) and
+  **FTF-1703** (still deferred — `FTF-0510` still `PROVISIONAL` not `CERTIFIED`, `FTF-R006`/
+  `FTF-0515`/`FTF-0516` still `NONE`) — same frontier every shift since 2026-10-02T23:10Z. Two
+  Control-plane L2-certify PRs remain open and untouched (**#421**, **#434** — zero comments on
+  either, `updated_at` unchanged since 2026-10-02T17:09Z/2026-10-03T12:58Z, re-checked live, not
+  relay's to merge per standing precedent). `BLOCKER.md`'s one live entry (FTF-1206, a
+  Control-plane scope decision) re-checked against PR #412's own live comment thread (per the
+  FTF-0902 stale-blocker lesson) — unchanged, no new Control-plane activity. `status.py`: unchanged
+  `99/300` certified / 24 product-true post-merge (Law 2 — a docs-only merge is not a
+  certification). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. No open owner ask
+  beyond the pre-existing low-urgency branch-protection item below. Full detail: `PROGRESS.md`'s
+  matching 2026-10-04T10:40:00Z entry.
+
+Previous update: 2026-10-04T08:05:00Z (scheduled relay shift, branch `claude/wizardly-fermat-artau8`) —
   **merged PR #442** (the immediately-prior shift's own tracking-only PR, independently re-verified:
   diff doc-only — `PROGRESS.md`/`QUEUE.md` only, +77/-7 — `mergeable_state: clean`, 43/43 checks
   green including `gate`) rather than leave a second tracking PR open. This shift's own independent
