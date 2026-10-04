@@ -69,6 +69,7 @@ API_ROOT = ROOT / "apps" / "api"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(API_ROOT))
 
+from app.target_connectors import local_repository_connector as _connector_module  # noqa: E402
 from app.target_connectors.source_boundary import (  # noqa: E402
     SourceBoundaryUnsafeError,
     evaluate_manifest_lock_readiness,
@@ -604,6 +605,247 @@ def test_aliased_dangerous_import_is_detected() -> None:
             "FTF-H007",
             "a repository with only aliased dangerous imports is not safe to lock",
             not report.is_safe_to_lock,
+        )
+
+
+def test_plain_gitlink_submodule_declaration_blocks_lock() -> None:
+    """L2 round-3 finding 1, route item (ii): Control-plane decision --
+    submodules are out of scope for an untrusted-source capture entirely,
+    so a bare gitlink (no `.gitmodules` at all, added via `git update-index
+    --cacheinfo` directly) is reported as a blocking `submodule_
+    declarations` finding regardless of whether it is populated or
+    resolved -- distinct from, and a superset of, `snapshot_inventory`'s
+    own `unresolved_submodule_paths`, which only fires for a `.gitmodules`-
+    declared path that is empty/unreadable."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub = repo / "sub"
+        _init_repo(repo)
+        (repo / "top.txt").write_text("top\n")
+        _run(repo, "add", "top.txt")
+        _run(repo, "commit", "--quiet", "-m", "top-initial")
+        _init_repo(sub)
+        (sub / "a.txt").write_text("a\n")
+        _run(sub, "add", "a.txt")
+        _run(sub, "commit", "--quiet", "-m", "sub-initial")
+        sub_head = _run(sub, "rev-parse", "HEAD").stdout.strip()
+        _run(repo, "update-index", "--add", "--cacheinfo", f"160000,{sub_head},sub")
+        _run(repo, "commit", "--quiet", "-m", "add plain gitlink")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a bare gitlink with no .gitmodules is reported as a submodule declaration",
+            "sub" in report.submodule_declarations,
+        )
+        check(
+            "FTF-H007",
+            "a repository with any submodule declaration is not safe to lock, "
+            "even a fully-populated/resolved one",
+            not report.is_safe_to_lock,
+        )
+        check(
+            "FTF-H007",
+            "evaluate_manifest_lock_readiness refuses for a submodule declaration",
+            _raises(SourceBoundaryUnsafeError, evaluate_manifest_lock_readiness, report),
+        )
+
+
+def test_registered_submodule_declaration_and_nested_hooks_block_lock() -> None:
+    """L2 round-3 finding 1, route item (ii), the `git submodule add`
+    variant (`.gitmodules` present) -- combined with minor item 5 ("report
+    nested .git/modules/*/hooks"): a real, executable hook placed under the
+    registered submodule's own `.git/modules/sub/hooks/` (a real path a
+    plain `.git/hooks` scan never reaches) must be reported with its own
+    real, locatable relative path."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub_source = base / "sub-source"
+        _init_repo(repo)
+        (repo / "top.txt").write_text("top\n")
+        _run(repo, "add", "top.txt")
+        _run(repo, "commit", "--quiet", "-m", "top-initial")
+        _init_repo(sub_source)
+        (sub_source / "a.txt").write_text("a\n")
+        _run(sub_source, "add", "a.txt")
+        _run(sub_source, "commit", "--quiet", "-m", "sub-initial")
+        _run(
+            repo,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            str(sub_source),
+            "sub",
+        )
+        _run(repo, "commit", "--quiet", "-m", "add registered submodule")
+
+        nested_hooks_dir = repo / ".git" / "modules" / "sub" / "hooks"
+        nested_hook = nested_hooks_dir / "pre-commit"
+        nested_hook.write_text("#!/bin/sh\necho should-never-run\n")
+        nested_hook.chmod(nested_hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        is_declared = (
+            "sub" in report.submodule_declarations or ".gitmodules" in report.submodule_declarations
+        )
+        check(
+            "FTF-H007",
+            "a registered submodule (.gitmodules present) is reported as a submodule declaration",
+            is_declared,
+        )
+        check(
+            "FTF-H007",
+            "an executable hook nested under .git/modules/<name>/hooks/ is "
+            "reported, with its own real relative path",
+            any(h.endswith("modules/sub/hooks/pre-commit") for h in report.executable_hooks),
+        )
+        check(
+            "FTF-H007",
+            "a repository with a nested submodule hook is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
+def test_filter_smudge_driver_is_detected_and_blocks_lock() -> None:
+    """L2 round-3 finding 4 ("process and smudge driver tests, so that
+    narrowing the pattern turns RED"): confirmed directly against a real
+    git binary that a bare `filter.<name>.smudge` driver (no clean/process)
+    does not itself fire during a plain `git status` -- smudge is the
+    checkout direction, status only ever needs the clean direction -- so
+    this is a pure detection-coverage test: if `_DANGEROUS_GIT_CONFIG_KEY_
+    PATTERN` were ever narrowed back to `clean` only, this key would stop
+    being reported and this test would go red, even though no execution
+    claim is being made for it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "filter.evil.smudge", "sh -c 'echo should-never-run'")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a bare filter.evil.smudge key is reported as a dangerous git config key",
+            "filter.evil.smudge" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with only a smudge filter driver is not safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
+def test_filter_required_alone_is_reported_never_raises() -> None:
+    """L2 round-3 minor item: `filter.<name>.required` alone (no clean/
+    smudge/process) is not itself an execution vector -- confirmed directly
+    against a real git binary, a stat-dirty tracked file with only
+    `required=true` set does not make a plain `git status` fail or run
+    anything. The fix adds `required` to `_DANGEROUS_GIT_CONFIG_KEY_
+    PATTERN` so it is reported like any other filter key; this test proves
+    the scan completes normally (no `GitCommandError`, no crash) and still
+    reports the finding, rather than the scan somehow raising for it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "filter.evil.required", "true")
+        (repo / "a.secret").write_text("modified now\n")
+
+        try:
+            report = scan_local_repository_boundary(repo, [base])
+            raised = False
+        except Exception:  # noqa: BLE001 -- this test's own point is "never raises"
+            raised = True
+
+        check(
+            "FTF-H007",
+            "a bare filter.evil.required key never makes the boundary scan raise",
+            not raised,
+        )
+        check(
+            "FTF-H007",
+            "filter.evil.required is reported as a dangerous git config key",
+            raised or "filter.evil.required" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "a repository with only filter.evil.required set is not safe to lock",
+            raised or not report.is_safe_to_lock,
+        )
+
+
+def test_scan_dangerous_git_config_fails_closed_on_real_git_failure() -> None:
+    """L2 round-3 minor item: the prior `_scan_dangerous_git_config`
+    returned `()` ("safe") on ANY non-zero `git config --get-regexp` exit,
+    including a real failure (a malformed config), which would make
+    `is_safe_to_lock` incorrectly `True`. Exit `1` ("no key matched") is
+    the only genuinely benign non-zero exit and still returns `()`; this
+    test proves a real failure now fails closed (`GitCommandError`), using
+    a real, syntactically-broken `.git/config` (an unterminated section
+    header) that makes git's own `config --get-regexp` genuinely exit
+    non-1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        config_path = repo / ".git" / "config"
+        config_path.write_text(config_path.read_text() + "\n[broken\n")
+
+        check(
+            "FTF-H007",
+            "a real git config failure (not 'no match') makes the scan fail "
+            "closed with GitCommandError, never silently return an empty, "
+            "'safe' result",
+            _raises(
+                _connector_module.GitCommandError,
+                _connector_module._scan_dangerous_git_config,
+                repo,
+            ),
+        )
+
+
+def test_dangerous_git_config_key_with_spaced_subsection_is_not_truncated() -> None:
+    """L2 round-3 minor item: the prior line-based parsing
+    (`line.split(" ", 1)[0]`) truncated a key whose quoted subsection name
+    itself contains a space (`[filter "a.b c"]` -> key `filter.a.b c.clean`)
+    at the first space, reporting only `filter.a.b` -- confirmed directly
+    against a real git binary. The `--null` (NUL-record, newline-separated
+    key/value) fix reports the real, complete key."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "README.md").write_text("hello\n")
+        _run(repo, "add", "README.md")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "--local", "filter.a.b c.clean", "sh -c 'echo should-never-run'")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a key whose subsection name contains a space is reported in full, "
+            "never truncated at the embedded space",
+            "filter.a.b c.clean" in report.dangerous_git_config_keys,
+        )
+        check(
+            "FTF-H007",
+            "the truncated (wrong) key is never reported",
+            "filter.a.b" not in report.dangerous_git_config_keys,
         )
 
 

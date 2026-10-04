@@ -104,8 +104,10 @@ __all__ = [
     "ManifestEntry",
     "NotAGitRepositoryError",
     "PathAllowlistError",
+    "PopulatedSubmoduleError",
     "capture_local_repository",
     "resolve_allowed_root",
+    "scan_submodule_declarations",
 ]
 
 _GIT_DIRECTORY_NAME = ".git"
@@ -114,9 +116,9 @@ _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 # A real, closed, named set of git config keys that can make an otherwise
 # read-only git invocation execute a repo-controlled command: `core.fsmonitor`/
 # `core.hooksPath`/`core.sshCommand`, or any `filter.<name>.(clean|smudge|
-# process)` driver (FTF-H007/FTF-04A06's own L2 round-2 finding (a)/(b)).
-# `filter.<name>.clean`/`process` in particular can run during a plain
-# `git status` on a stat-dirty tracked file carrying a matching
+# process|required)` driver (FTF-H007/FTF-04A06's own L2 round-2/round-3
+# findings). `filter.<name>.clean`/`process` in particular can run during a
+# plain `git status` on a stat-dirty tracked file carrying a matching
 # `.gitattributes` `filter=<name>` entry -- `_run_git`'s own `-c` overrides
 # neutralize `core.fsmonitor`/`core.hooksPath` for every call this process
 # makes, but cannot neutralize an arbitrary, repo-chosen filter driver *name*
@@ -125,9 +127,16 @@ _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 # git command that would invoke it, and refuse outright (see
 # `capture_local_repository`, which calls `_scan_dangerous_git_config` before
 # its own first `_git_dirty_signature` call -- the first command in this
-# module able to trigger a filter driver).
+# module able to trigger a filter driver). `filter.<name>.required` alone
+# (no clean/smudge/process) is not itself an execution vector -- confirmed
+# directly against a real git binary, a stat-dirty file with only
+# `required=true` set does not make a plain `git status` fail or run
+# anything -- so it is reported here (round-3 finding, "report rather than
+# raise") but deliberately left out of `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_
+# PATTERN` below, which only names keys that genuinely must block capture.
 _DANGEROUS_GIT_CONFIG_KEY_PATTERN = (
-    r"^(core\.fsmonitor|core\.hookspath|core\.sshcommand|filter\..+\.(clean|smudge|process))$"
+    r"^(core\.fsmonitor|core\.hookspath|core\.sshcommand|"
+    r"filter\..+\.(clean|smudge|process|required))$"
 )
 
 # The strict subset of the pattern above that `_run_git`'s own `-c`
@@ -140,8 +149,13 @@ _DANGEROUS_GIT_CONFIG_KEY_PATTERN = (
 # `core.hooksPath` are already safely neutralized for every call this
 # module makes, and FTF-04A06's own established behavior is to proceed with
 # the capture once neutralized, not refuse outright) and refuses before its
-# own first git call able to trigger one.
+# own first git call able to trigger one. `required` alone is excluded, see
+# the docstring on the pattern above.
 _UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN = r"^filter\..+\.(clean|smudge|process)$"
+
+# A real gitlink (mode 160000) in the index -- `git ls-files -s -z`'s own
+# first whitespace-delimited field for an entry whose path follows a tab.
+_GITLINK_MODE = "160000"
 
 
 class LocalRepositoryConnectorError(Exception):
@@ -192,16 +206,59 @@ class DangerousGitConfigError(LocalRepositoryConnectorError):
     discovered only after the fact."""
 
 
+class PopulatedSubmoduleError(LocalRepositoryConnectorError):
+    """A real, populated gitlink (a `<path>/.git` genuinely exists on disk,
+    plain or registered) was found in the index (FTF-H007/FTF-04A06's own
+    L2 round-3 finding 1). `git status` recurses into exactly this kind of
+    path, loading the submodule's own config and reaching its own filter/
+    hook drivers -- confirmed directly: a real `filter.<name>.clean`
+    command set only inside a populated submodule's own config genuinely
+    executes during the *superproject's* plain `git status`, both for a
+    manually-added gitlink and for one registered via `git submodule add`.
+    `--ignore-submodules=all`/`-c submodule.recurse=false` (see
+    `_git_dirty_signature`) already stop this for every status call this
+    module makes; this is a second, independent layer -- raised *before*
+    that call, from a pure plumbing read (`git ls-files -s`) that cannot
+    itself trigger a submodule's filter driver -- since submodules are out
+    of scope for an untrusted-source capture entirely (Control-plane
+    decision), not merely something to neutralize and proceed past the way
+    `core.fsmonitor`/`core.hooksPath` are."""
+
+
+# Mutable at the module level, not bound as a function-default value, so a
+# test can monkeypatch the actual constant and exercise the real `_run_git`
+# code path unmodified (FTF-H007/FTF-04A06's own L2 round-3 finding 2: a
+# test that instead swaps out `_run_git` itself for a stub proves nothing
+# about the real call). A `tuple` default parameter value is bound once, at
+# function-definition time -- reassigning the module attribute afterward
+# would never be seen by a plain `config_overrides: tuple = _SAFETY_CONFIG_
+# OVERRIDES` default, so `_run_git` below instead looks this name up fresh,
+# as a global, on every call.
 _SAFETY_CONFIG_OVERRIDES: tuple[tuple[str, str], ...] = (
     ("core.fsmonitor", "false"),
     ("core.hooksPath", "/dev/null"),
+    ("submodule.recurse", "false"),
 )
+
+# Same rationale as `_SAFETY_CONFIG_OVERRIDES` above, for the two ambient
+# environment variables `_run_git` sets unconditionally: a test exercising
+# "env isolation removed" must flip these real module attributes and call
+# the real `_run_git`/`capture_local_repository`, never a stand-in function.
+# `None` means "do not override -- leave this process's own ambient
+# environment variable exactly as inherited" (as opposed to setting it to
+# the empty string, which git treats differently).
+_GIT_CONFIG_NOSYSTEM_ENV_VALUE: str | None = "1"
+_GIT_CONFIG_GLOBAL_ENV_VALUE: str | None = "/dev/null"
+
+# Same rationale again, for `_git_dirty_signature`'s own `--ignore-
+# submodules=all` flag (FTF-H007/FTF-04A06's own L2 round-3 finding 1).
+_GIT_STATUS_IGNORE_SUBMODULES_FLAG: str | None = "--ignore-submodules=all"
 
 
 def _run_git(
     root: Path,
     *args: str,
-    config_overrides: tuple[tuple[str, str], ...] = _SAFETY_CONFIG_OVERRIDES,
+    config_overrides: tuple[tuple[str, str], ...] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Every invocation is hardened against a repo-controlled config value
     making this supposedly read-only call execute an arbitrary command
@@ -227,13 +284,29 @@ def _run_git(
     itself set for that exact key -- silently masking the one thing this
     scan exists to detect. A pure config read never triggers a filter/hook/
     fsmonitor command on its own, so omitting these two overrides for that
-    one call is still safe."""
+    one call is still safe. `config_overrides=None` (the default) resolves
+    to the real, current `_SAFETY_CONFIG_OVERRIDES` module global at call
+    time, not a value bound when this function was defined -- see that
+    global's own docstring for why. The two env-isolation values are
+    resolved the same way, from `_GIT_CONFIG_NOSYSTEM_ENV_VALUE`/
+    `_GIT_CONFIG_GLOBAL_ENV_VALUE`."""
     git_binary = shutil.which("git")
     if git_binary is None:
         raise GitCommandError("no 'git' binary found on PATH")
+    if config_overrides is None:
+        config_overrides = _SAFETY_CONFIG_OVERRIDES
     env = dict(os.environ)
-    env["GIT_CONFIG_NOSYSTEM"] = "1"
-    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    # `None` leaves this process's own ambient environment variable exactly
+    # as `dict(os.environ)` already copied it above -- neither set nor
+    # popped -- so a fault-injection test can set a real, external value in
+    # `os.environ` beforehand (standing in for whatever an unisolated
+    # ambient environment might already contain) and observe it leak
+    # through once this module's own override is turned off, without this
+    # line then erasing that external value itself.
+    if _GIT_CONFIG_NOSYSTEM_ENV_VALUE is not None:
+        env["GIT_CONFIG_NOSYSTEM"] = _GIT_CONFIG_NOSYSTEM_ENV_VALUE
+    if _GIT_CONFIG_GLOBAL_ENV_VALUE is not None:
+        env["GIT_CONFIG_GLOBAL"] = _GIT_CONFIG_GLOBAL_ENV_VALUE
     config_args: list[str] = []
     for key, value in config_overrides:
         config_args.extend(["-c", f"{key}={value}"])
@@ -282,16 +355,112 @@ def _scan_dangerous_git_config(
     default safety overrides must NOT be applied to this specific call --
     they would mask the real `core.fsmonitor`/`core.hooksPath` value (if
     any) the untrusted repository itself set with this process's own benign
-    override, defeating detection for exactly those two keys."""
-    result = _run_git(root, "config", "--get-regexp", pattern, config_overrides=())
-    if result.returncode != 0 or not result.stdout.strip():
+    override, defeating detection for exactly those two keys.
+
+    Round-3 fixes: `--null` (NUL-terminated records, key and value split on
+    the first newline, never a space) replaces the prior "split the line on
+    the first space" parsing -- confirmed directly against a real git
+    binary that a quoted subsection containing a space (`[filter "a.b c"]`)
+    makes the old parsing truncate the key at the wrong point, since the
+    *value* can also contain spaces and the old code could not tell the two
+    apart. `git config --get-regexp` exits `1` for "no key matched" (a real,
+    documented, genuinely benign outcome) and non-zero for a real failure
+    (a malformed config, for instance) -- only the former returns `()`; any
+    other non-zero exit now fails closed (`GitCommandError`), not a silent
+    `()` that would make `is_safe_to_lock` incorrectly `True`."""
+    result = _run_git(root, "config", "--null", "--get-regexp", pattern, config_overrides=())
+    if result.returncode == 1:
         return ()
+    if result.returncode != 0:
+        raise GitCommandError(
+            f"{root}: git config --get-regexp failed (exit {result.returncode}): "
+            f"{result.stderr.strip()}"
+        )
     keys: list[str] = []
-    for line in result.stdout.splitlines():
-        key = line.split(" ", 1)[0]
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        key = record.split("\n", 1)[0]
         if key not in keys:
             keys.append(key)
     return tuple(sorted(keys))
+
+
+def _scan_populated_gitlinks(root: Path) -> tuple[str, ...]:
+    """Pure plumbing read (`git ls-files -s`, never executed, never a
+    working-tree-*content* command -- but confirmed directly against a
+    real git binary to still trigger `core.fsmonitor`, so this call keeps
+    the default `_SAFETY_CONFIG_OVERRIDES`, unlike `_scan_dangerous_git_
+    config`'s own config-reading call, which must omit them to avoid
+    masking the very value it is checking for) of every real gitlink (mode
+    `160000`) the index records, filtered to the ones genuinely populated
+    on disk -- a real `<path>/.git` (file, for a registered submodule, or
+    directory, for a plain one) actually exists. `git status` recurses into
+    exactly a populated gitlink, loading its own config and reaching its
+    own filter/hook drivers (FTF-H007/FTF-04A06's own L2 round-3 finding 1,
+    confirmed directly against a real git binary for both a plain and a
+    registered submodule). An unpopulated gitlink (declared but never
+    checked out) has no `.git` of its own, so there is nothing for `git
+    status` to recurse into and nothing unsafe to refuse here --
+    `source_boundary.py`'s own `scan_submodule_declarations` still reports
+    its mere declaration as a blocking lock-readiness finding regardless of
+    population state."""
+    result = _run_git(root, "ls-files", "-s", "-z")
+    if result.returncode != 0:
+        raise GitCommandError(f"{root}: git ls-files -s failed: {result.stderr.strip()}")
+    populated: list[str] = []
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
+        mode = meta.split(" ", 1)[0]
+        if mode != _GITLINK_MODE:
+            continue
+        if (root / path / ".git").exists():
+            populated.append(path)
+    return tuple(sorted(populated))
+
+
+def _scan_gitlink_paths(root: Path, *args: str) -> tuple[str, ...]:
+    """Shared parsing for the two real, NUL-terminated plumbing commands
+    `scan_submodule_declarations` below reads: `git ls-tree -r -z HEAD`
+    (`<mode> <type> <sha>\\t<path>`) and `git ls-files -s -z`
+    (`<mode> <sha> <stage>\\t<path>`) -- in both, the mode is the first
+    whitespace-delimited field before the tab. A non-zero exit (e.g. an
+    unborn `HEAD` for `ls-tree`) is treated as "no entries," never raised --
+    this is a continue-on-finding scan, not a refusal gate. Keeps the
+    default `_SAFETY_CONFIG_OVERRIDES`, same reasoning as
+    `_scan_populated_gitlinks` above."""
+    result = _run_git(root, *args)
+    if result.returncode != 0:
+        return ()
+    paths: list[str] = []
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
+        mode = meta.split(" ", 1)[0]
+        if mode == _GITLINK_MODE:
+            paths.append(path)
+    return tuple(paths)
+
+
+def scan_submodule_declarations(root: Path) -> tuple[str, ...]:
+    """Every real submodule this repository declares -- a gitlink (mode
+    `160000`) in `HEAD^{tree}` (committed) or the index (staged, possibly
+    uncommitted), or a plain `.gitmodules` file with no matching gitlink
+    yet -- populated or not. Control-plane decision (round-3 route for
+    finding 1): submodules are out of scope for an untrusted-source capture
+    entirely, so `source_boundary.scan_local_repository_boundary` reports
+    every one of these as a blocking lock-readiness finding, never only the
+    unresolved ones `snapshot_inventory.build_local_snapshot_inventory`
+    already reports separately."""
+    paths: set[str] = set()
+    paths.update(_scan_gitlink_paths(root, "ls-tree", "-r", "-z", "HEAD"))
+    paths.update(_scan_gitlink_paths(root, "ls-files", "-s", "-z"))
+    if (root / ".gitmodules").is_file():
+        paths.add(".gitmodules")
+    return tuple(sorted(paths))
 
 
 def resolve_allowed_root(root: os.PathLike[str] | str, allowed_roots: list[Path]) -> Path:
@@ -478,8 +647,29 @@ def _git_current_branch(root: Path) -> str | None:
 def _git_dirty_signature(root: Path) -> str:
     """Real working-tree status text (tracked and untracked changes alike)
     -- the identity this module compares before/after a capture to detect
-    concurrent drift. Not parsed further; only ever compared for equality."""
-    result = _run_git(root, "status", "--porcelain=v1", "--untracked-files=all")
+    concurrent drift. Not parsed further; only ever compared for equality.
+
+    `--ignore-submodules=all` (FTF-H007/FTF-04A06's own L2 round-3 finding
+    1): without it, `git status` recurses into a real, populated gitlink
+    and loads *its own* config, reaching a filter driver this module's own
+    `-c`/env overrides cannot neutralize generically (the driver name is
+    submodule-chosen, same reasoning as `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_
+    PATTERN`'s own docstring) -- confirmed directly against a real git
+    binary, for both a plain and a registered submodule, that this flag
+    alone (with `-c submodule.recurse=false`, already in `_SAFETY_CONFIG_
+    OVERRIDES`, confirmed alone NOT sufficient) stops the recursion.
+    `capture_local_repository`'s own `_scan_populated_gitlinks` pre-scan is
+    a second, independent layer, refusing before this call runs at all.
+
+    Sourced from the module-level `_GIT_STATUS_IGNORE_SUBMODULES_FLAG`, not
+    a literal in this function body, for the identical reason
+    `_SAFETY_CONFIG_OVERRIDES` is: a test proving this one flag is
+    load-bearing must flip the real module attribute and call the real
+    `_git_dirty_signature`/`capture_local_repository`, never a stand-in."""
+    status_args = ["status", "--porcelain=v1", "--untracked-files=all"]
+    if _GIT_STATUS_IGNORE_SUBMODULES_FLAG is not None:
+        status_args.append(_GIT_STATUS_IGNORE_SUBMODULES_FLAG)
+    result = _run_git(root, *status_args)
     if result.returncode != 0:
         raise GitCommandError(f"{root}: git status failed: {result.stderr.strip()}")
     return result.stdout
@@ -535,6 +725,19 @@ def capture_local_repository(
         raise DangerousGitConfigError(
             f"{real_root} sets unneutralizable filter driver key(s) {list(dangerous_keys)} -- "
             "refusing before any working-tree-content git command could trigger one"
+        )
+
+    # Checked for the identical reason, same place in the call order: a
+    # populated gitlink's own config is reached by `git status`'s recursion
+    # into it, not by anything this process's own `-c`/env overrides can
+    # name in advance (FTF-H007/FTF-04A06's own L2 round-3 finding 1). Pure
+    # plumbing (`git ls-files -s`), cannot itself trigger a filter driver.
+    populated_gitlinks = _scan_populated_gitlinks(real_root)
+    if populated_gitlinks:
+        raise PopulatedSubmoduleError(
+            f"{real_root} has populated submodule path(s) {list(populated_gitlinks)} -- "
+            "submodules are out of scope for an untrusted-source capture; refusing before "
+            "any working-tree-content git command could recurse into one"
         )
 
     commit_sha = _git_head_commit_sha(real_root)

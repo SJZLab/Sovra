@@ -3582,6 +3582,111 @@ FTF-04A06:
     regressions. No `ci.yml` change needed -- the existing `gate`-job steps already run both files.
     **Not self-certified (Law 4)** -- awaiting independent Control-plane L2 re-review and a real CI
     run on the opened PR before certification.
+
+    L2 fix-and-resubmit round 3 (2026-10-04T20:55Z, shared root cause and fix with FTF-H007): the
+    round-2 review found the fix itself sound (both suites green, CI confirmed) but three real
+    defects and four minor items the round-2 submission's own tests did not cover. **Defect 1
+    (blocking, security): code execution via a submodule filter driver.** The round-2 pre-scan reads
+    only the superproject's own config; `git status` recurses into a real, populated gitlink (plain,
+    via `git update-index --cacheinfo`, or `git submodule add`-registered) and loads *its own*
+    config, reaching a filter driver the superproject-scoped pre-scan never sees. Reproduced for real
+    against the round-2 code, both variants: a real, standalone sub-repository with `filter.evil.
+    clean` set only in its own config, added as a plain and as a registered gitlink to a superproject
+    -- the superproject's own plain `git status` genuinely ran the driver in both cases, confirmed by
+    hand against a real git binary before fixing. Fixed per the Control-plane-specified route, all
+    three parts: (i) `_git_dirty_signature`'s own `git status` call now also passes
+    `--ignore-submodules=all` (confirmed alone sufficient; `-c submodule.recurse=false`, also added to
+    `_SAFETY_CONFIG_OVERRIDES`, confirmed alone NOT sufficient by hand); (ii) `source_boundary.
+    scan_local_repository_boundary` now reports every real gitlink (`HEAD^{tree}` or the index, via
+    new `local_repository_connector.scan_submodule_declarations`, pure `git ls-tree`/`git ls-files -s`
+    plumbing) or `.gitmodules` file as a new, always-blocking `submodule_declarations` finding,
+    independent of `snapshot_inventory`'s own "unresolved" concept -- a fully resolved/populated
+    submodule now blocks lock too, matching the Control-plane decision that submodules are out of
+    scope for an untrusted-source capture entirely; (iii) `capture_local_repository` now runs a new
+    `_scan_populated_gitlinks` pre-scan (pure `git ls-files -s` plumbing, cannot itself trigger a
+    filter driver) before its own first working-tree-content git call and refuses outright
+    (`PopulatedSubmoduleError`) if any declared gitlink is genuinely populated on disk (`<path>/.git`
+    exists) -- a second, independent layer on top of (i). A real correctness bug was found and fixed
+    while building this: the new `ls-files -s`/`ls-tree` plumbing calls were first written with
+    `config_overrides=()` (matching the existing config-read precedent), but confirmed by hand that
+    `git ls-files -s` genuinely still triggers `core.fsmonitor` -- fixed to use the default
+    `_SAFETY_CONFIG_OVERRIDES` instead, confirmed by hand this closes it.
+
+    **Defect 2 (test-evidence gap, not a code defect): the round-2 hooksPath/env-isolation
+    fault-injection tests replaced `_run_git` with a hand-written stand-in function and so never
+    actually exercised `_run_git`'s own real constants.** Fixed structurally, not just in the two
+    named tests: `_SAFETY_CONFIG_OVERRIDES`/`_GIT_CONFIG_NOSYSTEM_ENV_VALUE`/`_GIT_CONFIG_GLOBAL_
+    ENV_VALUE`/`_GIT_STATUS_IGNORE_SUBMODULES_FLAG` are now looked up as module globals *inside*
+    `_run_git`/`_git_dirty_signature` at call time (a plain function-default parameter value, as
+    `config_overrides` was before this fix, is bound once at definition time and would never see a
+    later `module.ATTR = ...` reassignment) -- every fault-injection test now flips the real module
+    attribute and calls the real, unmodified `_run_git`/`capture_local_repository`, never a stand-in.
+    Rewrote `test_fault_injection_hookspath_override_is_load_bearing` (removes only the hooksPath
+    entry from the real `_SAFETY_CONFIG_OVERRIDES`) and replaced the single combined env-isolation
+    test with two, each using a real, external environment variable this test controls (never the
+    host's own ambient config): `test_fault_injection_global_env_isolation_is_load_bearing`
+    (`GIT_CONFIG_GLOBAL` pointed at a temp file) and `test_fault_injection_nosystem_env_isolation_
+    is_load_bearing` (`GIT_CONFIG_SYSTEM` pointed at a temp file, confirmed by hand against a real
+    git binary that `GIT_CONFIG_NOSYSTEM=1` suppresses `GIT_CONFIG_SYSTEM` too, giving a
+    host-independent test for the NOSYSTEM isolation specifically, per the review's own "regardless
+    of the host's /etc/gitconfig" / "use GIT_CONFIG_SYSTEM similarly for NOSYSTEM" instruction). A
+    real implementation bug was caught and fixed while building these: the first version of the
+    env-value toggles treated `None` as "pop the environment variable entirely," which erased the
+    test's own externally-set value instead of letting it flow through un-overridden -- fixed to mean
+    "leave `dict(os.environ)`'s own copy untouched," confirmed by re-running the test (it failed
+    red with the bug, green after the one-line fix).
+
+    **Defect 3 (test-evidence gap): the round-2 unneutralizable-filter-driver pattern already named
+    `clean|smudge|process`, but only `clean` had a real, executing test.** Confirmed by hand against
+    a real git binary: a bare `filter.<name>.process` driver (no `clean`) genuinely executes during a
+    plain `git status` on a racily-clean tracked file, the identical vector under a different key --
+    added `test_malicious_filter_process_driver_never_executes_and_capture_is_refused` (connector-
+    level, proves non-execution + refusal, same shape as the existing `clean` test) and
+    `test_filter_smudge_driver_is_detected_and_blocks_lock` (boundary-level, detection-only --
+    confirmed by hand a bare `smudge` driver does NOT itself fire during `status`, since smudge is
+    the checkout direction; this is a pure "would a narrowed pattern still report it" coverage test,
+    not an execution claim).
+
+    **Minor items, all fixed:** `_scan_dangerous_git_config` now parses `git config --null
+    --get-regexp` output (NUL-terminated records, key/value split on the first newline) instead of
+    splitting a plain line on the first space -- confirmed by hand against a real git binary that the
+    old parsing truncated a key whose quoted subsection name itself contains a space
+    (`[filter "a.b c"]` -> wrongly reported as `filter.a.b`); new test
+    `test_dangerous_git_config_key_with_spaced_subsection_is_not_truncated`. The scan now returns
+    `()` only on a real exit `1` ("no key matched," git's own documented benign case) and raises
+    `GitCommandError` on any other non-zero exit (a genuine failure, e.g. a malformed config) instead
+    of silently returning `()` either way, which would make `is_safe_to_lock` incorrectly `True`; new
+    test `test_scan_dangerous_git_config_fails_closed_on_real_git_failure` using a real,
+    syntactically-broken `.git/config`. `filter.<name>.required` alone (no clean/smudge/process) is
+    confirmed by hand NOT itself an execution vector (a racily-clean file with only `required=true`
+    set does not make `git status` fail or run anything) -- added to `_DANGEROUS_GIT_CONFIG_KEY_
+    PATTERN` (reporting only, deliberately left out of the stricter `_UNNEUTRALIZABLE_FILTER_DRIVER_
+    KEY_PATTERN`, which only names keys that must block capture); new test
+    `test_filter_required_alone_is_reported_never_raises` proves it is reported and the scan never
+    raises for it. `_scan_git_hooks` now also scans every real `.git/modules/<name>/hooks/` directory
+    (a registered submodule's own hooks, invisible to a plain `.git/hooks` scan), reported with its
+    own real relative path; covered by `test_registered_submodule_declaration_and_nested_hooks_block_
+    lock`.
+
+    Nine new/rewritten cases total across `test_ftf_04a06.py` (fault-injection and connector-level
+    refusal/non-execution) and `test_ftf_h007.py` (boundary-level reporting). Law 1, whole-suite
+    evidence: `git stash` the two production files only (keeping every test change), re-ran both
+    suites against the genuine round-2 module -- `test_ftf_04a06.py` failed at import
+    (`PopulatedSubmoduleError` does not exist pre-fix), `test_ftf_h007.py` failed with a real
+    `AttributeError` (`SourceBoundaryReport` has no `submodule_declarations` pre-fix); `git stash
+    pop` restored the fix byte-identical (md5sum confirmed equal before/after), both suites re-ran
+    clean. `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean (one
+    formatting diff in the new H007 test, fixed by `ruff format` itself before this count). `uv run
+    mypy .` clean on every changed file; the 32 repo-wide findings (`alembic.op`/`alembic.context`
+    attr-defined on every migration file, `Unused "type: ignore"` in `test_ftf_0500c.py`/its matching
+    integration test) confirmed identical in count on unmodified `origin/main` before this change
+    (`git stash`, re-ran `mypy .`, same 32, `git stash pop`). `git fetch --unshallow`;
+    `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `26/26`.
+    `status.py` unchanged `99/301` certified (Law 2). Regression swept the full `test_ftf_04a0*.py`/
+    `test_ftf_04a1*.py`/`test_ftf_04a2*.py`/`test_ftf_h007.py` family (26 suites) -- zero
+    regressions. No `ci.yml` change needed -- the existing `gate`-job steps already run both files.
+    **Not self-certified (Law 4)** -- awaiting independent Control-plane L2 re-review and a real CI
+    run on the opened PR before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_04a06.py
@@ -10536,6 +10641,39 @@ FTF-H007:
     change needed -- the existing `gate`-job step already runs this file. **Not self-certified
     (Law 4)** -- awaiting independent Control-plane L2 re-review and a real CI run on the opened PR
     before certification.
+
+    L2 fix-and-resubmit round 3 (2026-10-04T20:55Z, shared root cause and fix with FTF-04A06 -- see
+    that task's own entry for the full defect list, route, and clause-to-test mapping). This task's
+    own `SourceBoundaryReport` gained a new field, `submodule_declarations` (any real gitlink or
+    `.gitmodules` file, populated or not, via the new shared `local_repository_connector.
+    scan_submodule_declarations`), now included in `is_safe_to_lock`/`blocking_reasons` -- a
+    fully-resolved/populated submodule now blocks lock too, not only an unresolved one.
+    `scan_local_repository_boundary` also now catches the new `PopulatedSubmoduleError`
+    `capture_local_repository` can raise (same treatment as the pre-existing `DangerousGitConfigError`
+    catch). `_scan_git_hooks` now also scans every real `.git/modules/<name>/hooks/` directory.
+    `_DANGEROUS_GIT_CONFIG_KEY_PATTERN` (this module imports it from the shared `local_repository_
+    connector.py`) now also names `filter.<name>.required`.
+
+    Six new cases in `test_ftf_h007.py`: `test_plain_gitlink_submodule_declaration_blocks_lock`;
+    `test_registered_submodule_declaration_and_nested_hooks_block_lock` (also covers the nested-hooks
+    minor item); `test_filter_smudge_driver_is_detected_and_blocks_lock`;
+    `test_filter_required_alone_is_reported_never_raises`;
+    `test_scan_dangerous_git_config_fails_closed_on_real_git_failure`;
+    `test_dangerous_git_config_key_with_spaced_subsection_is_not_truncated`. Law 1, whole-suite
+    evidence (shared `git stash`/`stash pop` run with FTF-04A06's own round-3 fix, see that entry):
+    `test_ftf_h007.py` failed with a real `AttributeError` (`SourceBoundaryReport` has no
+    `submodule_declarations`) against the genuine round-2 module; restored byte-identical, suite
+    re-ran clean.
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean. `uv run mypy .`
+    clean on every changed file (32 repo-wide, pre-existing, unrelated findings confirmed identical
+    on unmodified `origin/main`, see FTF-04A06's own entry). `git fetch --unshallow`; `validate_
+    spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `26/26`
+    (`proving_symbol` still deliberately blank, unchanged by this fix). `status.py` unchanged
+    `99/301` certified (Law 2). Regression swept the full `test_ftf_04a0*.py`/`test_ftf_04a1*.py`/
+    `test_ftf_04a2*.py` family (25 suites) plus this file itself -- zero regressions. No `ci.yml`
+    change needed. **Not self-certified (Law 4)** -- awaiting independent Control-plane L2 re-review
+    and a real CI run on the opened PR before certification.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_h007.py

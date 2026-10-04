@@ -22751,3 +22751,55 @@ GREEN, and runs under the CI script runner (`python3 tests/tasks/...`), not pyte
   report rather than raise on `filter.x.required`, and report nested `.git/modules/*/hooks`.
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md "## Active" item 0b stays first.
+
+## 2026-10-04T21:45Z — Relay fix-and-resubmit: FTF-H007 + FTF-04A06 round 3 (QUEUE.md "## Active" item 0b)
+
+**Producer session:** this session (branch `claude/wizardly-fermat-tjwpap`, PR
+https://github.com/SJZLab/Sovra/pull/457). Submitted PROVISIONAL per Law 4 --
+not self-certified. Full defect-by-defect fix, clause-to-test mapping, and verification log are in
+`docs/spec-matrix.yaml`'s FTF-04A06 and FTF-H007 entries (round-3 notes) and this shift's matching `QUEUE.md`/
+`PROGRESS.md` entries. Summary for Control plane's own re-review:
+
+**Defect 1 (blocking, security) -- fixed, all three route items:** a populated gitlink (plain or `git submodule
+add`-registered) let a repo-controlled filter driver execute during the superproject's own `git status`, bypassing
+the round-2 pre-scan entirely (confirmed by hand against a real git binary, both variants). (i) `_git_dirty_
+signature` now also passes `--ignore-submodules=all` (confirmed alone sufficient) plus `-c submodule.recurse=false`
+(confirmed alone NOT sufficient, kept for defense in depth); (ii) `source_boundary.scan_local_repository_boundary`
+reports every real gitlink/`.gitmodules` as an always-blocking `submodule_declarations` finding, resolved or not;
+(iii) `capture_local_repository` now refuses outright (`PopulatedSubmoduleError`) via a new, pure-plumbing
+`_scan_populated_gitlinks` pre-scan before any working-tree-content git call.
+
+**Defect 2 (test-evidence gap) -- fixed structurally:** the round-2 hooksPath/env-isolation fault-injection tests
+stubbed `_run_git` itself, proving nothing about the real call. `_SAFETY_CONFIG_OVERRIDES`/`_GIT_CONFIG_NOSYSTEM_
+ENV_VALUE`/`_GIT_CONFIG_GLOBAL_ENV_VALUE`/`_GIT_STATUS_IGNORE_SUBMODULES_FLAG` are now real module-level globals
+`_run_git`/`_git_dirty_signature` look up at call time (not a function-default value, bound once at definition
+time) -- every fault-injection test now flips the real attribute and calls the real, unmodified function. The two
+env-isolation tests are now real, external-environment-variable-driven (`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`
+each pointed at a test-controlled temp file), the latter giving a host-independent test for the NOSYSTEM isolation
+specifically, per the review's own "regardless of the host's /etc/gitconfig" instruction.
+
+**Defect 3 (test-evidence gap) -- fixed:** `process` (confirmed by hand to genuinely execute during `status`, same
+as `clean`) now has a full non-execution + refusal test; `smudge` (confirmed by hand NOT to fire during `status`)
+now has a detection-only coverage test, so narrowing `_DANGEROUS_GIT_CONFIG_KEY_PATTERN` back to `clean` only would
+go red on either.
+
+**Minor items -- all fixed:** `--null`-based parsing (fixes the spaced-subsection truncation bug); fail-closed on
+any non-1 non-zero `git config --get-regexp` exit; `filter.<name>.required` added to the reporting pattern
+(confirmed by hand it is not itself an execution vector, so deliberately left out of the stricter
+unneutralizable-refusal pattern) with a test proving the scan never raises for it; nested `.git/modules/*/hooks`
+hook scanning.
+
+**Verification:** `uv sync --all-packages`; `ruff check .`/`ruff format --check .` clean; `mypy .` clean on every
+changed file (32 pre-existing, unrelated repo-wide findings confirmed identical on unmodified `origin/main` via
+`git stash`). `validate_spec.py --strict` clean. `product_truth_check.py --fail-on-unwired` unchanged `26/26`.
+`status.py` unchanged `99/301` certified (Law 2). Law 1 whole-suite proof: `git stash` the two production files
+only (every test change kept), re-ran both suites against the genuine round-2 module -- `test_ftf_04a06.py` failed
+at import (`PopulatedSubmoduleError` does not exist pre-fix), `test_ftf_h007.py` failed with a real `AttributeError`
+(`SourceBoundaryReport` has no `submodule_declarations`); `git stash pop` restored the fix byte-identical (md5sum
+confirmed equal before/after), both suites re-ran clean. Regression swept the full `test_ftf_04a0*.py`/
+`test_ftf_04a1*.py`/`test_ftf_04a2*.py`/`test_ftf_h007.py` family (26 suites) -- zero regressions.
+
+**State.** `certification_state: PROVISIONAL` / `proof_state: L1-PROVEN` on both `FTF-H007`/`FTF-04A06` in
+`docs/spec-matrix.yaml`. Not self-certified (Law 4) -- awaiting independent Control-plane L2 re-review and a real
+CI run on the opened PR. Per QUEUE.md "## Active" item 0's own stated order, FTF-0601 (0c) is next, then FTF-0500C
+round 5 (0c2) and FTF-0500B round 4 (0c3).
