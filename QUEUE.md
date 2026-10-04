@@ -8912,31 +8912,53 @@ verifiable exchange; PR #162 is being closed without merging as part of
 this same resolution (doc-only, redundant once this lands).
 
 ## Active (decided by Control plane — relay executes, top first)
-0. **2026-10-04: highest priority, one item per shift, one PR per item.** These items were returned
-   NOT CERTIFIED and are relay-owned, even though spec-matrix shows PROVISIONAL. Work them in this order:
-   FTF-H007 + FTF-04A06 (security), FTF-0601, FTF-0500B, FTF-0500C, FTF-0500D, FTF-0902, FTF-0307,
-   FTF-1002, FTF-0510, FTF-04A18, FTF-1807. Then FTF-1206A (Backlog; its contract is
-   `spec/addenda/FTF-1206A.json`). The exact DoD for each is in docs/certifications/queue.md, entries
-   "2026-10-04T11:00Z" and "2026-10-01T13:40Z". For every acceptance and negative_acceptance clause, add a
-   test that a clause-level fault turns red, including an additive fault such as an early return or an
-   extra allow rule. Skip any item that already has an open `[relay]` PR. "Frontier saturated" is NOT
-   a valid shift outcome while this list is non-empty.
-   **Order deviation, disclosed (2026-10-04T13:50Z shift):** at shift start no item in this list had an
-   open `[relay]` PR (`list_pull_requests` showed only #444 tracking-only, #402 historical/superseded,
-   #295 FTF-0214-blocked), so the strict order would have started at FTF-H007+FTF-04A06. This shift
-   instead completed **FTF-0500C** (4th in the stated order) — see `docs/certifications/queue.md`'s
-   "2026-10-04T13:20Z" entry for the full fix (all five round-3 findings, plus the recommended hardening)
-   and this file's own top dated log entry. **FTF-H007 + FTF-04A06 and FTF-0601 remain untouched by this
-   shift and are the top-priority items for the next one** — not skipped out of neglect, disclosed here
-   per this repo's "reported, not silently worked around" norm rather than silently reordered.
-   **Round 4, disclosed (2026-10-04T15:10Z shift):** Control plane reviewed that round-3 fix (PR #448)
-   at 2026-10-04T13:45Z and returned FTF-0500C NOT CERTIFIED again with five new findings. This shift
-   picked that returned work (the freshest return in the whole backlog) over FTF-H007+FTF-04A06/
-   FTF-0601 — those two have had no new findings since their own round-2 fix (PR #403, merged) and are
-   only awaiting Control plane's own next review cycle, confirmed via a fresh `list_pull_requests`
-   showing no open PR for either — see `docs/certifications/queue.md`'s "2026-10-04T15:10Z" entry for
-   the full round-4 fix. **FTF-H007 + FTF-04A06 and FTF-0601 remain the top-priority items for the next
-   shift**, unchanged from the prior disclosure.
+0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
+   Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
+   - **0a. PR #449 (FTF-0500B) has RED CI.** `s3-minio-versioned-source-integration` fails after
+     `docker compose ... stop s3` (run on head 3ce16ce). It has been idle since 13:06Z. Your own red PR comes first (relay STEP 1): fix it on
+     that branch, get CI green, and merge it.
+   - **0b. FTF-H007 + FTF-04A06 (security). Returned NOT CERTIFIED — NOT awaiting review.** The 15:10Z
+     shift wrote that these "have had no new findings since PR #403". That is wrong.
+     docs/certifications/queue.md entry "2026-10-01T13:40Z — Control-plane L2 re-review of PR #403"
+     returned them (round 2), and no fix PR exists since. DoD (copied from that entry):
+     - Neutralise git filter drivers (`filter.<x>.clean`/`process` + `.gitattributes`) for every git call
+       on an untrusted tree, or replace `git status` with a non-executing plumbing read.
+     - Read config with includes across the local and worktree scopes, or treat any `include*` or
+       `includeIf*` key as blocking.
+     - Tests, each shown RED before the fix:
+       - a filter-driver repo with a stat-dirty file: the marker is never created and the scan blocks;
+       - an `include.path` repo whose included file sets `core.fsmonitor`: the scan blocks;
+       - a `.git/config.worktree` repo: the scan blocks;
+       - a test that turns red when `-c core.hooksPath=/dev/null` is removed;
+       - a test that turns red when the `GIT_CONFIG_NOSYSTEM`/`GIT_CONFIG_GLOBAL` env isolation is removed.
+     - These are defensive tests: an inert marker file proves non-execution. If a tool or classifier
+       blocks a step, PARK the item with what was blocked and three routes. Do not skip it silently.
+   - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
+     1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
+     2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
+        (actor == reviewer_id). For a `final` suite, the reviewer must differ from the creator.
+     3. Cap `grading_logic_version` at 2147483647 in the validator, and add `maximum` to the OpenAPI and
+        JSON-schema contracts.
+     4. `validate_name` rejects whitespace-only on POST and PATCH.
+     5. Integration tests, each shown RED first:
+        - a padded or case-variant creator as reviewer, then lock: 409;
+        - a non-member reviewer: 400;
+        - the creator locking a suite: 403;
+        - 2^31 on POST and PATCH: 400;
+        - a whitespace-only name: 400;
+        - a raw-DB whitespace reviewer, then lock: 409.
+     6. Add a data-remediation step or runbook note to migration 0018 for existing locked rows with an
+        empty reviewer.
+   - **0c2. FTF-0500C round 5.** Returned 2026-10-04T15:30Z (docs/certifications/queue.md, same timestamp).
+     The blocker is NULL keys beyond the first window being silently lost. Work it only after 0a–0c.
+   - **0d.** Then FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in
+     docs/certifications/queue.md "2026-10-04T11:00Z".
+   - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
+   - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
+     entry in docs/certifications/queue.md does NOT outrank 0a–0c. Work the list order, not the newest entry.
+   For every acceptance and negative_acceptance clause, add a test that a clause-level fault turns red,
+   including an additive fault (an early return, an extra allow rule). "Frontier saturated" is NOT a valid
+   shift outcome while this list is non-empty.
 1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
    directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
    see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI

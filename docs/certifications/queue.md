@@ -22402,3 +22402,60 @@ precedents every prior FTF-0500C shift already established).
 **State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified
 (Law 4) -- independent Control-plane L2 review and a real CI run on the opened PR are required before
 certification.
+
+## 2026-10-04T15:30Z — Control-plane L2 review: FTF-0500C round 4 (#451, merge 8247025) — NOT CERTIFIED, returned to relay (round 5)
+
+**Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producer session (commit 30de125 trailer and
+PR body) is `session_01TdubepJ2kEJTTbrgqe7DVf`. No other session is named on the PR. No match, so this review is independent.
+
+**CI evidence read.** Run on head 30de125, job `database-api-trace-source-integration` (111465159165). The real Postgres
+16.15 log shows the new `IS NOT DISTINCT FROM LAG(...)` tie query and the `ungranted_records` permission-denied test
+executing. The `gate` job (111465159050) is green.
+
+**Held (independent verifiers, real Postgres on UTF8 and SQL_ASCII clusters, real HTTPS fixture):**
+- REST cursor cycles. The A→B→A and A→B→C→D→B cycles, the back-to-first-cursor case and int-vs-string cursors are all refused.
+  The key fault, reverting to round-3 logic with the checked line kept, turns RED.
+- statement_timeout. Config values 0, -1, 0.5, True and "5000" are refused before connect. A forced server-side 0 is
+  refused on both SQL_ASCII (`b'0'`) and UTF8.
+- Tie detection. Refused correctly for: (1,2,NULL,NULL), NaN pairs, ICU nondeterministic collation, citext, ties
+  straddling a page boundary, and duplicate int[] keys.
+- Identifier quoting through `sql.Identifier`. A 2M-row index plan reads about 102 rows.
+- Exact-boundary `truncated` and psycopg.Error wrapping still hold.
+- Faults that turn RED: bytes decode, NULL refusal (additive), `truncated` revert, psycopg.Error clause, TypeError wrap.
+
+**Defects:**
+1. **NULL-keyed rows outside the fetched window are still silently lost (blocking).** `ORDER BY key ASC` puts NULLs
+   last, and a resumed `WHERE key > %s` never returns them. So the NULL refusal fires only when a NULL lands in the
+   first call's n+1 rows. Repro on both clusters, keys 1,2,3,4,5,NULL with n=2:
+   - pages [1,2] → [3,4] → [5] with `truncated=False`;
+   - the capture "completes" with 5 of 6 rows and no error.
+   The same happens for keys 1,2,3,NULL with n=1 or 2, and for NULL,1,2,3 with n=2. The only NULL test uses
+   (1,2,NULL,NULL) with n=2, where the NULL is the lookahead row.
+2. **The `IS NOT DISTINCT FROM` claim is unproven (Law 1).** Replacing it with `=` leaves both suites GREEN, because
+   with the NULL refusal present the two operators differ only on NULL operands. Either add a test that isolates it,
+   or drop the claim.
+3. **The integration harness fails on a SQL_ASCII cluster.** `_SessionSettingsSpyConnection` does
+   `str(read_only_row[0])`, which turns `b'on'` into `"b'on'"`. That fails 2 checks: read_only and repeatable read.
+   The module itself is correct; the test must decode.
+4. **A concurrent duplicate at the resume watermark loses a row.** Keys 1,2,3 with n=2: page 1 is [1,2]. Another
+   session inserts a second k=2 row. The resume after 2 returns [3] with `truncated=False`, so 3 of 4 rows are
+   captured. `_verify_watermark_present` checks existence, not uniqueness.
+
+**DoD (round 5).** Each item needs a real-Postgres test shown RED first:
+- (1) Refuse NULL stable keys over the WHOLE source in the same REPEATABLE READ snapshot, on every call including
+  resumed ones. For example, `SELECT EXISTS (SELECT 1 FROM t WHERE key IS NULL)` → `NonUniqueStableKeyError` or a
+  dedicated error. Alternatively, refuse a nullable key column. Test: a full resumed capture of keys 1..5,NULL with
+  n=2 must be refused. An additive fault, such as skipping the whole-table check, must turn it RED.
+- (2) Isolate `IS NOT DISTINCT FROM` with a test that turns RED under `=`, or remove the claim from the spec-matrix
+  and queue text.
+- (3) Decode bytes in `_SessionSettingsSpyConnection`, and run (or simulate) the spy checks with a bytes read-back.
+- (4) Verify that the resume watermark is unique, e.g. `count(*) = 1 WHERE key IS NOT DISTINCT FROM watermark`.
+  Otherwise raise `NonUniqueStableKeyError`. Test: insert a duplicate of the watermark between pages, and the resume
+  must refuse.
+
+Optional:
+- Treat `ETag: ""` as absent.
+- Pin that the cursor check runs before the cap check.
+- Note that text and int[] keys on SQL_ASCII cannot be resumed (this fails closed).
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md "## Active" item 0 lists FTF-0500C at 0c2.
