@@ -47,6 +47,21 @@ repository (confirmed by a repo-wide grep before writing this file):
    imported, so a narrower "must be a direct top-level statement" check
    would be trivially defeated by one extra level of nesting.
 
+3. **Submodule declarations (L2 round-3).** `local_repository_connector.
+   scan_submodule_declarations` reads every real gitlink (mode `160000`,
+   from `HEAD^{tree}` or the index) and any plain `.gitmodules` file, pure
+   plumbing, never executed. Control-plane decision: submodules are out of
+   scope for an untrusted-source capture entirely, so any declaration at
+   all -- populated or not, resolved or not -- is a blocking finding here,
+   not only the unresolved ones `snapshot_inventory` already reports.
+   `capture_local_repository`'s own separate pre-scan additionally refuses
+   outright, before any working-tree-content git command, when a declared
+   gitlink is genuinely populated on disk (a real `<path>/.git` exists) --
+   confirmed directly against a real git binary that `git status`
+   otherwise recurses into exactly that path and reaches a filter driver
+   this module's own `-c`/env overrides cannot name in advance, for both a
+   plain and a `git submodule add`-registered gitlink.
+
 The escaping-symlink finding is *not* re-detected here -- it is
 `snapshot_inventory.build_local_snapshot_inventory`'s own real
 `InventoryEntry.escapes_root` field, computed once, during the one real
@@ -83,9 +98,11 @@ from pathlib import Path
 from app.target_connectors.local_repository_connector import (
     DangerousGitConfigError,
     PathAllowlistError,
+    PopulatedSubmoduleError,
     _scan_dangerous_git_config,
     capture_local_repository,
     resolve_allowed_root,
+    scan_submodule_declarations,
 )
 from app.target_connectors.snapshot_inventory import (
     SnapshotInventory,
@@ -165,6 +182,7 @@ class SourceBoundaryReport:
     executable_hooks: tuple[str, ...]
     dangerous_calls: tuple[DangerousCallFinding, ...]
     dangerous_git_config_keys: tuple[str, ...]
+    submodule_declarations: tuple[str, ...]
 
     @property
     def tree_complete(self) -> bool:
@@ -188,6 +206,7 @@ class SourceBoundaryReport:
             and not self.executable_hooks
             and not self.dangerous_calls
             and not self.dangerous_git_config_keys
+            and not self.submodule_declarations
         )
 
     @property
@@ -214,6 +233,8 @@ class SourceBoundaryReport:
             )
         if self.dangerous_git_config_keys:
             reasons.append(f"dangerous git config key(s): {list(self.dangerous_git_config_keys)}")
+        if self.submodule_declarations:
+            reasons.append(f"submodule declaration(s): {list(self.submodule_declarations)}")
         return tuple(reasons)
 
 
@@ -231,27 +252,44 @@ def _scan_git_hooks(real_root: Path) -> tuple[str, ...]:
     before it, which skipped every symlink outright regardless of what it
     resolved to. `os.stat` (follow-symlinks, never `os.lstat`) is used for
     the mode check so a symlink's *target* executable bit is what counts,
-    matching what git itself would actually run."""
-    hooks_dir = real_root / ".git" / "hooks"
-    if not hooks_dir.is_dir():
-        return ()
+    matching what git itself would actually run.
+
+    Also scans every real `.git/modules/<name>/hooks/` directory (L2
+    round-3 finding, minor item 5): a registered submodule's own hooks
+    live there, not under the superproject's own `.git/hooks/` -- the same
+    real hook mechanism, on a real path a plain `.git/hooks` scan never
+    reaches, reported with its own real path relative to `real_root` so a
+    finding always names a real, locatable file."""
     active: list[str] = []
-    try:
-        with os.scandir(hooks_dir) as scan:
-            entries = sorted(scan, key=lambda e: e.name)
-    except OSError:
-        return ()
-    for entry in entries:
-        if entry.name.endswith(_SAMPLE_SUFFIX):
-            continue
-        if not entry.is_file():
+    hook_directories: list[tuple[str, Path]] = [
+        (_GIT_HOOKS_DIRECTORY, real_root / ".git" / "hooks")
+    ]
+    modules_root = real_root / ".git" / "modules"
+    if modules_root.is_dir():
+        for nested_hooks_dir in sorted(modules_root.glob("**/hooks")):
+            if nested_hooks_dir.is_dir():
+                relative_dir = nested_hooks_dir.relative_to(real_root).as_posix()
+                hook_directories.append((relative_dir, nested_hooks_dir))
+
+    for relative_dir, hooks_dir in hook_directories:
+        if not hooks_dir.is_dir():
             continue
         try:
-            mode = os.stat(entry.path).st_mode
+            with os.scandir(hooks_dir) as scan:
+                entries = sorted(scan, key=lambda e: e.name)
         except OSError:
             continue
-        if mode & _EXECUTABLE_BITS:
-            active.append(f"{_GIT_HOOKS_DIRECTORY}/{entry.name}")
+        for entry in entries:
+            if entry.name.endswith(_SAMPLE_SUFFIX):
+                continue
+            if not entry.is_file():
+                continue
+            try:
+                mode = os.stat(entry.path).st_mode
+            except OSError:
+                continue
+            if mode & _EXECUTABLE_BITS:
+                active.append(f"{relative_dir}/{entry.name}")
     return tuple(active)
 
 
@@ -375,14 +413,15 @@ def scan_local_repository_boundary(
         is_dirty = capture.capture_method == "local_dirty_snapshot"
     except PathAllowlistError:
         is_dirty = True  # a refused dirty-tree walk is still a dirty tree
-    except DangerousGitConfigError:
+    except (DangerousGitConfigError, PopulatedSubmoduleError):
         # `capture_local_repository` itself refused before ever running a
-        # git command that could trigger the dangerous key it found -- this
-        # scanner's own job is to keep producing complete evidence anyway
-        # (continue-on-finding), so dirtiness is simply unknown here, never
-        # assumed clean. `dangerous_git_config_keys` below (a separate, pure
-        # config read -- never the filter/hook-triggering command itself)
-        # still reports the real key(s) found.
+        # git command that could trigger the dangerous key/populated
+        # submodule it found -- this scanner's own job is to keep producing
+        # complete evidence anyway (continue-on-finding), so dirtiness is
+        # simply unknown here, never assumed clean. `dangerous_git_config_
+        # keys`/`submodule_declarations` below (separate, pure plumbing
+        # reads -- never the filter/hook-triggering command itself) still
+        # report the real finding(s).
         is_dirty = True
 
     inventory = build_local_snapshot_inventory(
@@ -394,6 +433,7 @@ def scan_local_repository_boundary(
     escaping_symlinks = tuple(e.relative_path for e in inventory.entries if e.escapes_root)
     executable_hooks = _scan_git_hooks(real_root)
     dangerous_git_config_keys = _scan_dangerous_git_config(real_root)
+    submodule_declarations = scan_submodule_declarations(real_root)
 
     dangerous: list[DangerousCallFinding] = []
     for entry in inventory.entries:
@@ -408,6 +448,7 @@ def scan_local_repository_boundary(
         executable_hooks=executable_hooks,
         dangerous_calls=tuple(dangerous),
         dangerous_git_config_keys=dangerous_git_config_keys,
+        submodule_declarations=submodule_declarations,
     )
 
 

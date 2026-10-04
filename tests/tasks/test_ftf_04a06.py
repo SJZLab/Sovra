@@ -62,6 +62,7 @@ from app.target_connectors.local_repository_connector import (  # noqa: E402
     LocalRepositoryCapture,
     NotAGitRepositoryError,
     PathAllowlistError,
+    PopulatedSubmoduleError,
     capture_local_repository,
     resolve_allowed_root,
 )
@@ -467,18 +468,18 @@ def test_fault_injection_filter_driver_check_is_load_bearing() -> None:
 
 
 def test_fault_injection_hookspath_override_is_load_bearing() -> None:
-    """L2 round-2 finding (c): with `_run_git`'s own `-c core.hooksPath=
-    /dev/null` override specifically removed (every other hardening
-    argument kept -- the pre-scan is untouched and genuinely does not fire
-    here, since `core.hooksPath` alone is outside its own strict
-    unneutralizable-filter-driver pattern by design, see
-    `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN`), a real, executable
-    `post-index-change` hook placed under a repo-controlled `core.
-    hooksPath` genuinely fires during `git status` -- confirmed directly
-    against a real git binary (git refreshes the index's stat cache during
-    `status` and runs this real, documented hook afterward) -- proving the
-    override is load-bearing for this module's own call set, not merely
-    cosmetic."""
+    """L2 round-3 finding 2 (round-2 finding (c), re-proven through the real
+    code path): the round-2 version of this test replaced `_run_git`
+    entirely with a hand-written stand-in, which the round-3 review
+    correctly rejected as proving nothing about the real call ("swaps
+    _run_git for a stub and never exercise the real constants"). This
+    version instead monkeypatches the real module-level `_SAFETY_CONFIG_
+    OVERRIDES` tuple -- removing only the `core.hooksPath` entry, keeping
+    `core.fsmonitor`/`submodule.recurse` -- and calls the real, unmodified
+    `_run_git`/`capture_local_repository`. A real, executable `post-index-
+    change` hook placed under a repo-controlled `core.hooksPath` genuinely
+    fires during `git status` (git refreshes the index's stat cache during
+    `status` and runs this real, documented hook afterward)."""
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         repo = base / "repo"
@@ -495,119 +496,314 @@ def test_fault_injection_hookspath_override_is_load_bearing() -> None:
         _run(repo, "config", "core.hooksPath", str(evil_hooks_dir))
         (repo / "a.txt").touch()  # force a stat-dirty index refresh during status
 
-        git_binary = shutil.which("git")
-        assert git_binary is not None
-
-        def _stripped_run_git(root: Path, *args: str, config_overrides=None):
-            env = dict(os.environ)
-            env["GIT_CONFIG_NOSYSTEM"] = "1"
-            env["GIT_CONFIG_GLOBAL"] = "/dev/null"
-            return subprocess.run(  # noqa: S603
-                [git_binary, "-c", "core.fsmonitor=false", "-C", str(root), *args],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-                env=env,
-            )
-
-        original_run_git = _connector_module._run_git
-        _connector_module._run_git = _stripped_run_git
+        original_overrides = _connector_module._SAFETY_CONFIG_OVERRIDES
+        _connector_module._SAFETY_CONFIG_OVERRIDES = tuple(
+            kv for kv in original_overrides if kv[0] != "core.hooksPath"
+        )
         try:
             capture_local_repository(repo, [base])
         except _connector_module.LocalRepositoryConnectorError:
             pass
         finally:
-            _connector_module._run_git = original_run_git
+            _connector_module._SAFETY_CONFIG_OVERRIDES = original_overrides
 
         check(
             "FTF-H007",
-            "with the hooksPath override specifically removed, the repo-"
-            "controlled post-index-change hook genuinely fires during the real "
-            "capture call path -- proving the override is load-bearing",
+            "with only the hooksPath override removed from the real "
+            "_SAFETY_CONFIG_OVERRIDES global, through the real, unmodified "
+            "_run_git, the repo-controlled post-index-change hook genuinely "
+            "fires during the real capture call path",
             marker.exists(),
         )
 
 
-def test_fault_injection_env_isolation_is_load_bearing() -> None:
-    """L2 round-2 finding (c): `core.fsmonitor`/`core.hooksPath` cannot
-    show this -- `-c` is always the single highest-precedence config
-    source, so a fixed `-c core.hooksPath=/dev/null` override neutralizes
-    even a value this *process's* own global config sets, independent of
-    env isolation entirely (confirmed directly against a real git binary:
-    the override alone was already enough in that case, with or without
-    `HOME` pointing at a malicious global config). A filter driver is
-    different: `_run_git` never passes a fixed `-c filter.<name>.clean=...`
-    override for it (the driver name is repo-chosen, see
-    `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN`'s own docstring), so if
-    *this process's own* global config defines one -- never the repo's --
-    env isolation is the only thing stopping a repo-controlled
-    `.gitattributes` from invoking it. With `GIT_CONFIG_NOSYSTEM`/
-    `GIT_CONFIG_GLOBAL` removed (every `-c` override kept) and the pre-scan
-    stubbed out (isolating this one layer -- the real pre-scan, reading
-    through the same unisolated `_run_git`, would otherwise also see this
-    global-only key and block before the vulnerable call is even reached,
-    masking the very gap this test exists to prove), the global filter
-    driver genuinely executes."""
+def test_fault_injection_global_env_isolation_is_load_bearing() -> None:
+    """L2 round-3 finding 2: a real, external `GIT_CONFIG_GLOBAL` pointing
+    at a temp file this test controls (never the host's own real global
+    config, and never a stubbed `_run_git`) defines a malicious
+    `filter.evil.clean`. With `_run_git`'s own `GIT_CONFIG_GLOBAL=/dev/null`
+    override in place (the normal, unmodified default), this external value
+    is neutralized and the capture succeeds safely. With only the module-
+    level `_GIT_CONFIG_GLOBAL_ENV_VALUE` toggle flipped to `None` (so
+    `_run_git` leaves the ambient `GIT_CONFIG_GLOBAL` environment variable
+    alone instead of overriding it) -- the real pre-scan, reading through
+    the same real `_run_git`, would otherwise also see this key and refuse
+    before the vulnerable call is reached, so it is stubbed out here too,
+    isolating this one layer exactly as the round-2 version of this test
+    already did -- the external value leaks through and the filter
+    genuinely executes."""
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         repo = base / "repo"
-        fake_home = base / "fake-home"
-        fake_home.mkdir()
         marker = base / "filter_executed.marker"
+        fake_global_config = base / "fake-global.gitconfig"
         _init_repo(repo)
         (repo / ".gitattributes").write_text("*.secret filter=evil\n")
         (repo / "a.secret").write_text("hello\n")
         _run(repo, "add", ".gitattributes", "a.secret")
         _run(repo, "commit", "--quiet", "-m", "initial")
-        (fake_home / ".gitconfig").write_text(
-            f"[filter \"evil\"]\n\tclean = sh -c 'touch {marker}'\n"
-        )
+        fake_global_config.write_text(f"[filter \"evil\"]\n\tclean = sh -c 'touch {marker}'\n")
         (repo / "a.secret").write_text("hello\n")
         (repo / "a.secret").touch()
 
-        git_binary = shutil.which("git")
-        assert git_binary is not None
-
-        def _unisolated_run_git(root: Path, *args: str, config_overrides=None):
-            env = dict(os.environ)
-            env["HOME"] = str(fake_home)
-            return subprocess.run(  # noqa: S603
-                [
-                    git_binary,
-                    "-c",
-                    "core.fsmonitor=false",
-                    "-c",
-                    "core.hooksPath=/dev/null",
-                    "-C",
-                    str(root),
-                    *args,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-                env=env,
-            )
-
+        original_global_value = os.environ.get("GIT_CONFIG_GLOBAL")
+        original_global_toggle = _connector_module._GIT_CONFIG_GLOBAL_ENV_VALUE
         original_scan = _connector_module._scan_dangerous_git_config
-        original_run_git = _connector_module._run_git
+        os.environ["GIT_CONFIG_GLOBAL"] = str(fake_global_config)
+        _connector_module._GIT_CONFIG_GLOBAL_ENV_VALUE = None
         _connector_module._scan_dangerous_git_config = lambda root, pattern="": ()
-        _connector_module._run_git = _unisolated_run_git
         try:
             capture_local_repository(repo, [base])
         except _connector_module.LocalRepositoryConnectorError:
             pass
         finally:
+            if original_global_value is None:
+                os.environ.pop("GIT_CONFIG_GLOBAL", None)
+            else:
+                os.environ["GIT_CONFIG_GLOBAL"] = original_global_value
+            _connector_module._GIT_CONFIG_GLOBAL_ENV_VALUE = original_global_toggle
             _connector_module._scan_dangerous_git_config = original_scan
-            _connector_module._run_git = original_run_git
 
         check(
             "FTF-H007",
-            "with ambient env isolation specifically removed (-c overrides "
-            "kept, pre-scan stubbed out), this process's own global filter "
-            "driver genuinely leaks through and executes -- proving the env "
-            "isolation is load-bearing independently of the -c overrides",
+            "with only the GIT_CONFIG_GLOBAL override toggle removed, through "
+            "the real _run_git, an externally-set GIT_CONFIG_GLOBAL genuinely "
+            "leaks through and executes",
+            marker.exists(),
+        )
+
+
+def test_fault_injection_nosystem_env_isolation_is_load_bearing() -> None:
+    """L2 round-3 finding 3 ("Use GIT_CONFIG_SYSTEM similarly for
+    NOSYSTEM"): a real, external `GIT_CONFIG_SYSTEM` pointing at a temp
+    file this test controls stands in for "whatever the real host's own
+    `/etc/gitconfig` might contain" -- deterministic regardless of the
+    host, never relying on its real content. With the normal, unmodified
+    `GIT_CONFIG_NOSYSTEM=1` override in place, this redirected "system"
+    config is excluded entirely (confirmed directly against a real git
+    binary: `GIT_CONFIG_NOSYSTEM=1` suppresses `GIT_CONFIG_SYSTEM` too, not
+    only the real `/etc/gitconfig`). With only the module-level `_GIT_
+    CONFIG_NOSYSTEM_ENV_VALUE` toggle flipped to `None`, through the real,
+    unmodified `_run_git`, the redirected config leaks through."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "filter_executed.marker"
+        fake_system_config = base / "fake-system.gitconfig"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        fake_system_config.write_text(f"[filter \"evil\"]\n\tclean = sh -c 'touch {marker}'\n")
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        original_system_value = os.environ.get("GIT_CONFIG_SYSTEM")
+        original_nosystem_toggle = _connector_module._GIT_CONFIG_NOSYSTEM_ENV_VALUE
+        original_scan = _connector_module._scan_dangerous_git_config
+        os.environ["GIT_CONFIG_SYSTEM"] = str(fake_system_config)
+        _connector_module._GIT_CONFIG_NOSYSTEM_ENV_VALUE = None
+        _connector_module._scan_dangerous_git_config = lambda root, pattern="": ()
+        try:
+            capture_local_repository(repo, [base])
+        except _connector_module.LocalRepositoryConnectorError:
+            pass
+        finally:
+            if original_system_value is None:
+                os.environ.pop("GIT_CONFIG_SYSTEM", None)
+            else:
+                os.environ["GIT_CONFIG_SYSTEM"] = original_system_value
+            _connector_module._GIT_CONFIG_NOSYSTEM_ENV_VALUE = original_nosystem_toggle
+            _connector_module._scan_dangerous_git_config = original_scan
+
+        check(
+            "FTF-H007",
+            "with only the GIT_CONFIG_NOSYSTEM override toggle removed, through "
+            "the real _run_git, a redirected GIT_CONFIG_SYSTEM genuinely leaks "
+            "through and executes, independent of the real host's own "
+            "/etc/gitconfig",
+            marker.exists(),
+        )
+
+
+def test_malicious_filter_process_driver_never_executes_and_capture_is_refused() -> None:
+    """L2 round-3 finding 4 (round-2 finding (a), extended to `process`):
+    confirmed directly against a real git binary that a `filter.<name>.
+    process` driver (no `clean`) genuinely runs during a plain `git status`
+    on a racily-clean tracked file (identical content, only the mtime
+    changed) -- the same vector `clean` already proved, under a different
+    key. `_UNNEUTRALIZABLE_FILTER_DRIVER_KEY_PATTERN` already names
+    `process` (not only `clean`), so `capture_local_repository` refuses
+    before ever reaching the vulnerable `git status` call."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "process_executed.marker"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        _run(repo, "config", "filter.evil.process", f"sh -c 'touch {marker}; exit 1'")
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        check(
+            "FTF-H007",
+            "a repo-defined process filter driver is detected and capture is "
+            "refused before any working-tree git command could trigger it",
+            _raises(DangerousGitConfigError, capture_local_repository, repo, [base]),
+        )
+        check(
+            "FTF-H007",
+            "the repo-controlled filter.evil.process command was never actually executed",
+            not marker.exists(),
+        )
+
+
+def _make_populated_submodule(sub_repo: Path, marker: Path) -> None:
+    """A real, standalone git repository a test turns into either a plain
+    (manual `git update-index --cacheinfo`) or a registered (`git submodule
+    add`) gitlink -- genuinely populated (a real `.git` of its own), with a
+    `filter.evil.clean` driver set only inside *its own* config, never the
+    superproject's."""
+    _init_repo(sub_repo)
+    (sub_repo / ".gitattributes").write_text("*.secret filter=evil\n")
+    (sub_repo / "a.secret").write_text("hello\n")
+    _run(sub_repo, "add", ".gitattributes", "a.secret")
+    _run(sub_repo, "commit", "--quiet", "-m", "sub-initial")
+    _run(sub_repo, "config", "filter.evil.clean", f"sh -c 'touch {marker}'")
+
+
+def test_populated_plain_gitlink_submodule_filter_never_executes_and_capture_is_refused() -> None:
+    """L2 round-3 finding 1: a plain gitlink -- a real, populated nested
+    repository added via `git update-index --cacheinfo 160000,<sha>,<path>`
+    directly, never `git submodule add`, so no `.gitmodules` exists at all
+    -- with a `filter.evil.clean` driver set only in the sub-repository's
+    own config. Confirmed directly against a real git binary: the
+    superproject's own plain `git status` (pre-fix) recurses into this
+    populated gitlink and genuinely runs that driver. `capture_local_
+    repository` now refuses before any working-tree-content git command,
+    via a pure `git ls-files -s` plumbing read."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub = repo / "sub"
+        marker = base / "submodule_filter_executed.marker"
+        _init_repo(repo)
+        (repo / "top.txt").write_text("top\n")
+        _run(repo, "add", "top.txt")
+        _run(repo, "commit", "--quiet", "-m", "top-initial")
+        _make_populated_submodule(sub, marker)
+        sub_head = _run(sub, "rev-parse", "HEAD").stdout.strip()
+        _run(repo, "update-index", "--add", "--cacheinfo", f"160000,{sub_head},sub")
+        _run(repo, "commit", "--quiet", "-m", "add plain gitlink")
+        (sub / "a.secret").write_text("hello\n")
+        (sub / "a.secret").touch()
+
+        check(
+            "FTF-H007",
+            "a populated plain gitlink is detected and capture is refused "
+            "before any working-tree git command could recurse into it",
+            _raises(PopulatedSubmoduleError, capture_local_repository, repo, [base]),
+        )
+        check(
+            "FTF-H007",
+            "the repo-controlled filter.evil.clean command inside the plain "
+            "gitlink was never actually executed",
+            not marker.exists(),
+        )
+
+
+def test_populated_registered_submodule_filter_never_executes_and_capture_is_refused() -> None:
+    """L2 round-3 finding 1, the `git submodule add`-registered variant
+    (distinct real path: `.gitmodules` exists, and the submodule's own git
+    directory lives at `.git/modules/sub`, referenced from `sub/.git` as a
+    gitfile, not a real nested `.git` directory). Confirmed directly against
+    a real git binary: this variant is exploitable identically to the plain
+    gitlink above, and is stopped the same way."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub_source = base / "sub-source"
+        marker = base / "submodule_filter_executed.marker"
+        _init_repo(repo)
+        (repo / "top.txt").write_text("top\n")
+        _run(repo, "add", "top.txt")
+        _run(repo, "commit", "--quiet", "-m", "top-initial")
+        _make_populated_submodule(sub_source, marker)
+        _run(
+            repo,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            str(sub_source),
+            "sub",
+        )
+        _run(repo, "commit", "--quiet", "-m", "add registered submodule")
+        (repo / "sub" / "a.secret").write_text("hello\n")
+        (repo / "sub" / "a.secret").touch()
+
+        check(
+            "FTF-H007",
+            "a populated registered submodule is detected and capture is "
+            "refused before any working-tree git command could recurse into it",
+            _raises(PopulatedSubmoduleError, capture_local_repository, repo, [base]),
+        )
+        check(
+            "FTF-H007",
+            "the repo-controlled filter.evil.clean command inside the "
+            "registered submodule was never actually executed",
+            not marker.exists(),
+        )
+
+
+def test_fault_injection_ignore_submodules_flag_is_load_bearing() -> None:
+    """Law 1 -- shown able to fail, and the DoD's own explicit "test (i)
+    alone" requirement: with only the module-level `_GIT_STATUS_IGNORE_
+    SUBMODULES_FLAG` toggle removed (through the real, unmodified
+    `_run_git`/`_git_dirty_signature`) -- and `_scan_populated_gitlinks`
+    stubbed out, isolating this one layer, since the real pre-scan would
+    otherwise independently refuse first and mask whether the flag itself
+    does anything -- the populated-submodule filter driver from the test
+    above genuinely executes, proving the flag itself (not merely the
+    pre-scan) is load-bearing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub = repo / "sub"
+        marker = base / "submodule_filter_executed.marker"
+        _init_repo(repo)
+        (repo / "top.txt").write_text("top\n")
+        _run(repo, "add", "top.txt")
+        _run(repo, "commit", "--quiet", "-m", "top-initial")
+        _make_populated_submodule(sub, marker)
+        sub_head = _run(sub, "rev-parse", "HEAD").stdout.strip()
+        _run(repo, "update-index", "--add", "--cacheinfo", f"160000,{sub_head},sub")
+        _run(repo, "commit", "--quiet", "-m", "add plain gitlink")
+        (sub / "a.secret").write_text("hello\n")
+        (sub / "a.secret").touch()
+
+        original_flag = _connector_module._GIT_STATUS_IGNORE_SUBMODULES_FLAG
+        original_scan = _connector_module._scan_populated_gitlinks
+        _connector_module._GIT_STATUS_IGNORE_SUBMODULES_FLAG = None
+        _connector_module._scan_populated_gitlinks = lambda root: ()
+        try:
+            capture_local_repository(repo, [base])
+        except _connector_module.LocalRepositoryConnectorError:
+            pass
+        finally:
+            _connector_module._GIT_STATUS_IGNORE_SUBMODULES_FLAG = original_flag
+            _connector_module._scan_populated_gitlinks = original_scan
+
+        check(
+            "FTF-H007",
+            "with only the --ignore-submodules=all flag removed, through the "
+            "real _run_git, git status genuinely recurses into the populated "
+            "submodule and its filter driver executes",
             marker.exists(),
         )
 

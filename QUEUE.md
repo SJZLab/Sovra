@@ -1,5 +1,63 @@
 # QUEUE — Sovra (Model Factory)
-Updated: 2026-10-04T15:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-mezaz2`) —
+Updated: 2026-10-04T21:45:00Z (scheduled relay shift, branch `claude/wizardly-fermat-tjwpap`) —
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly, no mismatch; `BLOCKER.md` read
+  in full, no live entries. STEP 1: this branch was already synced to `origin/main` at `f9d062f`
+  (0 commits ahead/behind). Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh --
+  the "## Active" item 0 list (corrected 2026-10-04T15:25Z by Control plane) names 0a DONE, 0b
+  **FTF-H007 + FTF-04A06 round 3** (returned 2026-10-04T20:55Z after PR #455/merge `d53a4d9`) as
+  next, "before 0c only if the 20:48Z shift has not already taken 0c." A fresh `list_pull_requests`
+  confirmed no open PR exists for 0c (FTF-0601) or any other Active item -- only #402 (the
+  long-parked FTF-0902 network-policy PR) and #295 (FTF-0214, declared BLOCKED) are open -- so 0c
+  was not already claimed; picked 0b per the list's own stated order.
+
+  STEP 2 (PEV): **P** -- read the 2026-10-04T20:55Z review's three defects and four minor items
+  directly against `local_repository_connector.py`/`source_boundary.py` before any change, then
+  spent significant time directly confirming every claim against a real git binary in scratch
+  repositories before trusting it (a plain and a `git submodule add`-registered populated
+  submodule's own filter driver genuinely executing during the superproject's own `git status`;
+  `--ignore-submodules=all` alone sufficient to stop it, `-c submodule.recurse=false` alone NOT
+  sufficient; `GIT_CONFIG_SYSTEM` redirectable independently of the real host `/etc/gitconfig`, and
+  suppressed by `GIT_CONFIG_NOSYSTEM=1` the same way; a bare `filter.<name>.required` key NOT itself
+  an execution vector; `smudge` NOT itself firing during `status` while `process` genuinely does;
+  the exact spaced-subsection key-truncation bug in the old line-based config parsing). **E** --
+  fixed all three defects (populated-gitlink filter-driver execution, via all three Control-plane
+  route items; the round-2 fault-injection tests' own `_run_git`-stubbing gap, fixed structurally by
+  making the hardening constants real module globals `_run_git` looks up at call time rather than a
+  bound function-default value; the unpinned filter pattern, now covered for both `process` and
+  `smudge`) and all four minor items (`--null`-based config parsing, fail-closed on a genuine git
+  failure, `required` reporting without ever raising, nested `.git/modules/*/hooks` scanning). Every
+  new/changed check has a disclosed, real fault-injection or detection-coverage test proving it is
+  load-bearing (Law 1) -- full clause-to-test mapping in `docs/certifications/queue.md`'s
+  "2026-10-04T21:45Z" entry and `docs/spec-matrix.yaml`'s FTF-04A06/FTF-H007 entries (round-3
+  notes). **V** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+  L1-PROVEN` unchanged on both tasks in `docs/spec-matrix.yaml`; independent Control-plane L2
+  re-review and a real CI run on the opened PR are required before certification.
+
+  Verification this shift: `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`
+  clean (one formatting diff in the new H007 test, fixed by `ruff format` itself before this count).
+  `uv run mypy .` clean on every changed file; confirmed via `git stash`/re-run/`git stash pop` that
+  the 32 repo-wide findings (`alembic.op`/`alembic.context` attr-defined, `Unused "type: ignore"` in
+  `test_ftf_0500c.py`/its matching integration test) are identical in count on unmodified
+  `origin/main`, unrelated to this change. `git fetch --unshallow`; `python3 scripts/validate_spec.py
+  --strict` clean. `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`:
+  unchanged `99/301` certified (Law 2 -- a resubmission is not a certification). Law 1 whole-suite
+  proof: `git stash` the two production files only (every test change kept), re-ran both suites
+  against the genuine round-2 module -- `test_ftf_04a06.py` failed at import (`PopulatedSubmoduleError`
+  does not exist pre-fix), `test_ftf_h007.py` failed with a real `AttributeError`
+  (`SourceBoundaryReport` has no `submodule_declarations`); `git stash pop` restored the fix
+  byte-identical (md5sum confirmed equal before/after), both suites re-ran clean. Regression swept
+  the full `test_ftf_04a0*.py`/`test_ftf_04a1*.py`/`test_ftf_04a2*.py`/`test_ftf_h007.py` family (26
+  suites) -- zero regressions.
+
+  STEP 3: this file, `docs/certifications/queue.md`, `docs/spec-matrix.yaml` and `PROGRESS.md` all
+  updated this shift, before compaction. STEP 4 stop condition (a): FTF-H007/FTF-04A06 now stay
+  PROVISIONAL, joining the same backlog awaiting Control-plane L2 certification and the L4 gate.
+  Stopping here -- one item per shift, per this list's own rule; **FTF-0601 (0c), then FTF-0500C
+  round 5 (0c2) and FTF-0500B round 4 (0c3) remain the top-priority items for the next shift**, per
+  the Active list's own stated order. No open owner ask beyond the pre-existing low-urgency
+  branch-protection item below. `BLOCKER.md` unchanged (no live entries).
+
+Previous update: 2026-10-04T15:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-mezaz2`) —
   STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly, no mismatch. `BLOCKER.md` read in
   full: no live entries (all resolved history). STEP 1: read `PROGRESS.md`/`QUEUE.md`/
   `docs/certifications/queue.md` fresh — the most recent entry is Control plane's own
@@ -8915,14 +8973,14 @@ this same resolution (doc-only, redundant once this lands).
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
-   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 3. Returned 2026-10-04T20:55Z after #455 (merge d53a4d9).**
-     The DoD and the Control-plane route decision (submodules out of scope: `--ignore-submodules=all`, gitlinks
-     blocking, capture refused) are in docs/certifications/queue.md entry "2026-10-04T20:55Z".
-     - The blocker is code execution via a submodule filter driver.
-     - The hooksPath and env-isolation tests must use the real code path, not a `_run_git` stub.
-     - Every probe command must be an inert `touch <marker>`. If a tool or classifier blocks a step, PARK the item
-       with routes. Do not skip it silently.
-     - Do this before 0c only if the 20:48Z shift has not already taken 0c. Never leave 0c's open PR unfinished.
+   - **0b. DONE this shift (2026-10-04T21:45Z).** FTF-H007 + FTF-04A06 round 3 (returned 2026-10-04T20:55Z
+     after #455/merge `d53a4d9`) fixed: all three defects (populated-gitlink filter-driver execution via all
+     three Control-plane route items; the round-2 tests' own `_run_git`-stubbing gap, fixed structurally; the
+     unpinned filter pattern, now covered for `process`/`smudge`) and all four minor items. Full clause-to-test
+     mapping in docs/certifications/queue.md's "2026-10-04T21:45Z" entry and docs/spec-matrix.yaml's
+     FTF-04A06/FTF-H007 entries (round-3 notes). PR opened, PROVISIONAL, not self-certified (Law 4) — awaiting
+     Control-plane L2 re-review. Removed from this list's own remaining-work set; the merged PR is Control
+     plane's own next step to re-review.
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
