@@ -23076,3 +23076,109 @@ redundant layers, and each pair of them turns the suite RED.
 
 Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
 `spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.
+
+## 2026-10-05T04:40Z — [relay] FTF-0500B: fix L2 round-4 findings (marker-cycle seen-set + page-fetch cap, strict IsTruncated parsing, required ListVersionsResult root, duplicate (Key, VersionId) refusal, Size validation)
+
+Relay response to the 2026-10-04T17:20Z Control-plane L2 review (this file, same timestamp). QUEUE.md "## Active"
+item 0, sub-item 0c3 -- picked up after confirming 0c (FTF-0601, PR #463) and 0c2 (FTF-0500C round 5, PR #464) each
+already had an open `[relay]` PR from a concurrent session (`list_pull_requests`, confirmed before starting), so
+this item was next per the list's own stated order, not a deviation.
+
+**Clause-to-test mapping** (every new test independently confirmed to turn RED under its exact pre-fix (round-3)
+fault first, Law 1 -- see detail below):
+
+- **(1) pagination marker cycles and unbounded pagination.** The round-3 code only compared the immediately
+  previous marker pair (`new_key_marker == key_marker and new_version_id_marker == version_id_marker`), so a longer
+  A-to-B-to-A cycle through several distinct pages went undetected, and there was no independent cap on the number
+  of page fetches. **Production fix:** a `used_marker_pairs: set[tuple[str, str]]` now records every
+  `(key-marker, version-id-marker)` pair already requested in this listing; revisiting one -- the single-previous
+  case or a longer cycle -- is refused (`SourceUnavailableError`) before the repeat request is ever made. A new
+  `S3MinioSourceConfig.max_page_fetches` field (default `DEFAULT_MAX_PAGE_FETCHES = 10_000`) independently caps the
+  total number of page fetches, refusing a listing whose markers keep advancing and never repeat. The old
+  single-marker check is removed, superseded by the general seen-set (confirmed: the pre-existing
+  `test_stuck_pagination_without_advancing_marker_is_refused`, unmodified, still passes -- exactly one real request
+  before refusing). Tests: `test_longer_marker_cycle_through_distinct_pages_is_refused` (A-to-B-to-A, 1 entry/page,
+  exactly 3 real requests before refusing), `test_marker_cycle_with_empty_pages_is_refused` (the same cycle with
+  zero-entry pages, plus the same exactly-3-requests assertion -- see Law 1 note below for why that second
+  assertion was necessary), `test_ever_advancing_pagination_hits_the_page_fetch_cap` (10 ever-advancing, non-
+  repeating pages against `max_page_fetches=5`, refused after exactly 5 real requests).
+- **(2) `IsTruncated` fails open on anything but the literal string "true".** New `_parse_is_truncated` strictly
+  accepts only "true"/"1" (truncated) or "false"/"0" (not truncated), case/whitespace-insensitive, and raises
+  `SourceUnavailableError` for anything else, including a missing element. Tests:
+  `test_is_truncated_strict_values_are_each_correctly_interpreted` ("TRUE", "1", " true " all read as truncated;
+  "false"/"0" as not truncated), `test_is_truncated_garbage_or_missing_value_is_refused` ("maybe", an empty
+  `<IsTruncated></IsTruncated>`, and an entirely absent element, each refused).
+- **(3) the root was never required to be `ListVersionsResult`.** `_parse_list_versions_xml` now requires the
+  root's own local tag to equal "ListVersionsResult"; the pre-existing "Error" check stays (with its own
+  Code/Message message), and any other root is refused the same way. Test: `test_unexpected_root_element_is_refused`
+  -- a namespaced `<Error>`, `<Foo><Error/></Foo>`, `<ListBucketResult>`, and `<html>`, each refused.
+- **(4) duplicate `(Key, VersionId)` pairs were accepted.** A new `seen_key_version_pairs` set tracks every real
+  pair across the whole listing (within a page and across pages); a repeat raises the new
+  `DuplicateObjectVersionError`. Tests: `test_duplicate_key_version_pair_within_one_page_is_refused`,
+  `test_duplicate_key_version_pair_across_pages_is_refused`.
+- **(5) a non-integer `<Size>` raised a bare `ValueError`; a negative one was accepted.** `<Size>` parsing is now
+  wrapped in `try`/`except ValueError`, raising `SourceUnavailableError` (this module's own error class) for a
+  non-integer value, plus a separate explicit refusal for a negative one. Tests: `test_non_integer_size_is_refused`,
+  `test_negative_size_is_refused`.
+
+**New fault-injection tests (Law 1, disclosed):**
+`test_fault_injection_duplicate_version_check_is_load_bearing_additive` -- an *additive* fault (an early `continue`
+inserted right after the duplicate-pair `if`, before its existing `raise`, not a negated condition) that genuinely
+lets a repeated `(Key, VersionId)` pair through; `test_fault_injection_root_tag_required_check_is_load_bearing` and
+`test_fault_injection_is_truncated_strict_parsing_is_load_bearing` (both disable-style). The pre-existing
+`test_fault_injection_stuck_pagination_check_is_load_bearing` was renamed
+`test_fault_injection_marker_cycle_check_is_load_bearing` and retargeted at the new `used_marker_pairs` check --
+disabling it now additionally surfaces the still-active duplicate-pair check on the fixture's repeated page, so the
+test accepts either `SourceUnavailableError` or `DuplicateObjectVersionError` as proof that more than one real
+request was attempted (disclosed in the test's own comment). Every fault test reverts the module file
+byte-identical (confirmed by direct byte comparison in the test itself).
+
+**Law 1, shown able to fail first.** `git stash` of the production module alone (keeping every test change), re-ran
+the full suite against the genuinely pre-fix (round-3) code: the suite crashed immediately with a real, bound
+`TypeError` on `S3MinioSourceConfig.__init__()` (the `max_page_fetches` field does not exist pre-fix). Running each
+new test individually against the pre-fix module confirmed every one fails for real:
+`test_longer_marker_cycle_through_distinct_pages_is_refused`,
+`test_is_truncated_strict_values_are_each_correctly_interpreted`,
+`test_is_truncated_garbage_or_missing_value_is_refused`, `test_unexpected_root_element_is_refused`,
+`test_duplicate_key_version_pair_within_one_page_is_refused`,
+`test_duplicate_key_version_pair_across_pages_is_refused`, and `test_negative_size_is_refused` each produced a real
+check-failure; `test_non_integer_size_is_refused` crashed with an uncaught, uncategorized `ValueError` (exactly the
+defect finding 5 names). One test, `test_marker_cycle_with_empty_pages_is_refused`, initially passed against the
+pre-fix module for the wrong reason: the old code looped the cycle unboundedly and happened to raise
+`SourceUnavailableError` only once it exhausted the test fixture's own fixed 3-page list, not from genuine cycle
+detection -- confirmed directly by instrumenting the pre-fix run and observing more than 3 real requests before the
+fixture-exhaustion error fired. A second assertion (exactly 3 real requests, matching the sibling
+entries-bearing cycle test) was added to make this test a genuine discriminator; re-run against the pre-fix module
+with that assertion in place, it now fails for real. `git stash pop` restored the fix byte-identical; all 39 tests
+(was 25) re-ran clean end to end, exit 0, "all checks passed."
+
+**Full verification this shift.** `uv sync --all-packages`; `uv run ruff check .` clean; `ruff format --check .`
+flagged the changed production module only (reformatted via `ruff format`, re-verified clean, full suite re-run
+clean after reformatting). `uv run mypy .` clean repo-wide (371 source files, zero errors). `git fetch --unshallow`
+(this sandbox's own pre-existing shallow-clone artifact); `python3 scripts/validate_spec.py --strict` clean --
+directly confirmed the new `docs/spec-matrix.yaml` prose parses with `python3 -c "import yaml;
+yaml.safe_load(...)"` first, per this repo's own 2026-10-01 YAML-unterminated-quote lesson.
+`product_truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` still blank, no new composing
+caller). `status.py`: `101/301` certified / 24 product-true -- the increase from 99 to 101 is FTF-H007/FTF-04A06's
+own prior-shift certification (eecfa93/2cab888), unrelated to this fix (Law 2 -- a resubmission is not a
+certification). Regression swept `test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_h006.py` (via `uv run python3`,
+since a bare `python3` lacks sqlalchemy/fastapi) -- all exit 0, zero interference (the printed `TenantContextError`
+traceback inside `test_ftf_0500.py`'s own stdout and `test_ftf_h006.py`'s own disclosed no-IPv6-stack skip are both
+that suite's own pre-existing, disclosed negative-test/skip cases).
+
+**Systemic-sweep rule disclosed, not applied here.** This task's only sibling connector in
+`apps/api/app/datasets/` is `database_api_trace_source_contract_and_fail_closed_validation.py` (FTF-0500C), which
+had its own open round-5 fix PR (#464) from a concurrent relay session, addressing FTF-0500C's own distinct
+round-5 findings, already in flight when this shift started. Not touched here to avoid a merge conflict with that
+in-flight PR -- FTF-0500C's own cursor/marker protections were already hardened in its own prior rounds (a real
+`set` tracks every REST cursor already used, per this file's 2026-10-04T21:45Z entry and `PROGRESS.md`'s matching
+entry). Any further class-sweep onto FTF-0500C is Control plane's own call on its next review of PR #464, not
+duplicated here to avoid stepping on that concurrent session's own submission.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500B entry with a full "2026-10-05 L2 round-4 fix-and-resubmit" note
+(`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` -- Law 2).
+
+**State.** Not self-certified (Law 4): `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged.
+Independent Control-plane L2 re-review and a real CI run on the opened PR are required before certification.
+QUEUE.md "## Active" item 0's own sub-item 0c3 is done; 0d (FTF-0500D, FTF-0902, FTF-0307, FTF-1002, FTF-0510,
+FTF-04A18, FTF-1807) is next once 0a-0c3 all clear Control-plane review or are otherwise claimed.
