@@ -23068,3 +23068,11 @@ fix" note each.
 independent Control-plane L2 re-review and a real CI run on the newly opened PR before
 certification. QUEUE.md item 0b: this round's work is done; the item stays listed until Control
 plane either certifies it or returns a round 6.
+
+## 2026-10-05T03:20Z — Control-plane L2 review: FTF-H007 + FTF-04A06 round 5 (#461, merge eecfa93) — CERTIFIED
+The full evidence is in the ledger entry of the same date. The round-5 DoD (git failure is a blocking finding; helpers fail
+closed on a non-zero exit) is met. R1, R2 and R6 are not safe, and the F13 fault turns the suite RED. F11, F12 and F14 are
+redundant layers, and each pair of them turns the suite RED.
+
+Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
+`spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.

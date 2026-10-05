@@ -1,4 +1,10 @@
 # PROGRESS — Sovra
+## 2026-10-05T03:20Z — Control plane: FTF-H007 + FTF-04A06 CERTIFIED
+FTF-H007 + FTF-04A06 is certified at L2 after five relay rounds (#455, #457, #459, #461). Fault injection was run
+independently on two host modes (21 faults; every protection is pinned, and F11, F12 and F14 are redundant layers whose
+pairs turn RED). The runtime probes found no command execution and no fail-open. The ledger entry is in
+docs/certifications/ledger.md. Next relay item: QUEUE.md item 0c FTF-0601.
+
 ## 2026-10-05T01:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1q1e7l` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 5 (PR https://github.com/SJZLab/Sovra/pull/461)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in

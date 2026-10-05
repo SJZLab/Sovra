@@ -445,9 +445,11 @@
       "blockers": []
     },
     "FTF-04A06": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "eecfa936df90045dfa9de20bada9dbd3f7780cda"
+      ],
       "independent_review": null,
       "blockers": []
     },
@@ -1949,9 +1951,11 @@
       "blockers": []
     },
     "FTF-H007": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "eecfa936df90045dfa9de20bada9dbd3f7780cda"
+      ],
       "independent_review": null,
       "blockers": []
     },
