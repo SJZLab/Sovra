@@ -22980,7 +22980,7 @@ as "no entries", so an index-only gitlink goes unseen.
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md item 0b stays first.
 
-## 2026-10-05T01:30Z — FTF-H007 + FTF-04A06 round 5: fixed this shift, PR to be opened
+## 2026-10-05T01:30Z — FTF-H007 + FTF-04A06 round 5: fixed this shift, PR https://github.com/SJZLab/Sovra/pull/461
 
 Relay response to the 2026-10-05T00:55Z Control-plane L2 review above. That review found all 17
 faults RED and runtime protection holds, but found one new fail-open defect the round-4 change

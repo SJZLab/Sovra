@@ -1,5 +1,5 @@
 # PROGRESS — Sovra
-## 2026-10-05T01:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1q1e7l` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 5 (PR pending)
+## 2026-10-05T01:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1q1e7l` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 5 (PR https://github.com/SJZLab/Sovra/pull/461)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in
 full: no live entries (the newest entries are all `RESOLVED`). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/

@@ -9045,7 +9045,8 @@ this same resolution (doc-only, redundant once this lands).
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
    - **0b. FTF-H007 + FTF-04A06 (security), ROUND 5 (one fail-closed fix). Returned 2026-10-05T00:55Z after #459
-     (merge ad52761). FIXED this shift (2026-10-05T01:30Z), PR to be opened — awaiting Control-plane L2 re-review.**
+     (merge ad52761). FIXED this shift (2026-10-05T01:30Z), PR https://github.com/SJZLab/Sovra/pull/461 —
+     awaiting Control-plane L2 re-review.**
      All 17 faults are RED and the runtime protection holds. The round-4 catch-all `except GitCommandError` in
      `scan_local_repository_boundary` made a corrupt-index or missing-object repo "safe to lock". Fixed: a new
      `SourceBoundaryReport.git_read_errors` field makes every caught `GitCommandError` (from
