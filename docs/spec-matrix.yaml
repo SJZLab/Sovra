@@ -8457,7 +8457,66 @@ FTF-0902:
 
     Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run
     (including the now-CI-wired `tests/tasks/test_ftf_0902.py` step and the DNS-probe-extended
-    `network-policy-enforcement-integration` job) on the opened PR before certification.'
+    `network-policy-enforcement-integration` job) on the opened PR before certification.
+
+
+    **2026-10-05T17:30Z -- real CI failure found and fixed on the round-2 submission itself (PR
+    #467, job 111883477276), before any Control-plane review.** The round-2 PR''s own new DNS
+    probe failed on both clusters -- `baseline (kindnet) results: {''allowed'': True, ''denied'':
+    True, ''dns'': False, ''metadata'': True}` and `enforcing (calico) results: {''allowed'': True,
+    ''denied'': False, ''dns'': False, ''metadata'': False}` -- a universal failure on the
+    *nonenforcing* baseline cluster too, which the round-2 PR''s own failure message already named
+    as "the DNS probe methodology itself is broken before enforcement is even relevant." Two real
+    root causes, each independently confirmed before fixing:
+
+
+    (1) CoreDNS readiness race. `create_cluster` waited only for the node to report `Ready`, never
+    for CoreDNS itself -- the DNS probe could run against a cluster whose CoreDNS Deployment had
+    not finished rolling out yet, on either cluster, regardless of NetworkPolicy. Fixed: added
+    `wait_for_rollout(name, "kube-system", "deployment/coredns", timeout=120)` to `create_cluster`,
+    reusing the exact helper Calico''s own `daemonset/calico-node` wait already used, run
+    unconditionally for both clusters right after `wait_for_node_ready`.
+
+
+    (2) The probe queried the bare Service name `kubernetes.default` rather than its fully-qualified
+    form, making the proof depend on the `target` pod''s own resolver honoring `/etc/resolv.conf`''s
+    search-list the same way busybox''s `nslookup` applet does -- an extra, untested variable the
+    DoD''s own DNS clause does not require. Directly confirmed, rather than guessed, against the
+    exact pinned image version this pod uses: installed `busybox-static` 1:1.36.1 (matching
+    `busybox:1.36`) in this sandbox and ran `nslookup -timeout=5 kubernetes.default`/`nslookup
+    kubernetes.default` directly -- both resolve a real, searchable name identically (confirmed
+    search-list expansion works via a synthetic `search example.com` test), ruling out `-timeout=5`
+    itself as a parse error (it is silently accepted as a no-op, never rejected) but leaving the bare
+    name''s dependence on search-list behavior as a real, avoidable variable. Fixed: `resolve_dns`''s
+    own call site now queries `kubernetes.default.svc.cluster.local` (the real FQDN, always present
+    verbatim on every standard `kind` cluster''s default `cluster.local` domain) -- a single direct
+    query with no dependency on search-list expansion at all. Also dropped the inert `-timeout=5`
+    argument (confirmed a no-op, never load-bearing) to remove it as a point of confusion, and
+    updated `resolve_dns`''s own docstring and the module docstring to record both reasons.
+
+
+    This fix was ported onto a fresh branch off the same `main` head PR #467 itself is based on
+    (`2d52ae4`) rather than pushed to PR #467''s own branch, per this session''s own
+    push-to-own-branch-only operating constraint -- PR #467 is closed with a comment pointing here,
+    no content lost, same pattern this repository has used before for a superseded PR (see PR #402
+    -> #403''s own precedent). `uv run ruff check .`/`ruff format --check .` clean repo-wide (371
+    files, zero new errors). `uv run mypy .` clean repo-wide (371 source files, zero errors).
+    `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox''s
+    own pre-existing shallow-clone artifact). `tests/tasks/test_ftf_0902.py` re-run clean, exit 0,
+    "all checks passed" (unaffected by this fix -- it is a live-cluster-only defect, the no-DB suite
+    never exercises `resolve_dns`/`create_cluster`). `product_truth_check.py --fail-on-unwired`
+    unchanged `26/26`. `scripts/status.py` unchanged `101/301` certified / 24 product-true (Law 2 --
+    a resubmission is not a certification). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
+    `test_ftf_h006.py` -- zero regressions. The live-cluster `network-policy-enforcement-integration`
+    job itself still cannot run inside this interactive sandbox (no Docker daemon, same disclosed
+    precedent) -- its real result on this fix''s own newly opened PR is the actual acceptance-clause
+    evidence for both the DNS clause and the CoreDNS-readiness race fix; not claimed as a pass in
+    advance of that run.
+
+
+    Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run on
+    the newly opened PR, including a real-green `network-policy-enforcement-integration` job with a
+    real, non-`False` `dns` result on both clusters, before certification.'
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py

@@ -23243,3 +23243,77 @@ FTF-04A18/FTF-1807 for the next shift.
 L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
 opened PR (including the now-CI-wired `tests/tasks/test_ftf_0902.py` step and the DNS-probe-extended
 `network-policy-enforcement-integration` job) are required before certification.
+
+## 2026-10-05T17:30Z — [relay] FTF-0902 round-2 submission: real CI failure found and fixed (DNS probe)
+
+Scheduled relay shift. STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` — no mismatch.
+STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh this shift; the designated branch
+already matched `origin/main` HEAD (`2d52ae4`, the prior shift's own FTF-0500D round-2 fix, PR #466) — no rebase
+needed. STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior
+shift.
+
+Checked `QUEUE.md`'s "## Active" item 0's own stated order (0c FTF-0601, 0c2 FTF-0500C round 5, 0c3 FTF-0500B
+round 4, 0d FTF-0500D, then FTF-0902) before picking work — found an open `[relay]` PR for every one of 0c/0c2/0c3
+already, each with **GREEN** CI (#463/#464/#465, confirmed directly via `pull_request_read`/`actions_list` on each
+head SHA), so each is correctly skipped per this list's own "skip only an item with an open PR and GREEN CI" rule.
+FTF-0902 itself also already had a brand-new open `[relay]` PR (#467, created 2026-10-05T17:04Z, same day) — but
+its CI run (job `111883477276`, workflow run `37345663151`) came back **`failure`**. Per CLAUDE.md's own "Returned
+work first... red CI... is relay work" rule, this outranks picking a fresh item — fixed this instead of starting
+FTF-0902's own backlog successor.
+
+**P** — read the failing job's own log directly (`get_job_logs`): both clusters' own `run_scenario` printed
+`'dns': False` — `baseline (kindnet) results: {'allowed': True, 'denied': True, 'dns': False, 'metadata': True}`
+and `enforcing (calico) results: {'allowed': True, 'denied': False, 'dns': False, 'metadata': False}`. A universal
+failure on the *nonenforcing* baseline cluster too rules out NetworkPolicy enforcement as the cause outright — the
+PR's own failure message already named this exact signature ("the DNS probe methodology itself is broken before
+enforcement is even relevant"). Formed two hypotheses before changing anything: (a) CoreDNS not yet rolled out
+when the probe ran (`create_cluster` only waits for node-Ready, never for CoreDNS); (b) the probe's own bare
+Service name (`kubernetes.default`, no trailing FQDN) depends on the pod's resolver honoring `/etc/resolv.conf`'s
+search-list the same way busybox's `nslookup` applet does. Tested (b) directly rather than guessed: installed
+`busybox-static` 1:1.36.1 (apt), the exact version the real pod image (`busybox:1.36`) pins, and ran both
+`nslookup -timeout=5 kubernetes.default` and a synthetic `search example.com` + bare-name query — confirmed
+search-list expansion genuinely works for this busybox build, and confirmed `-timeout=5` is silently accepted as
+a no-op (never an error) rather than the parse failure a first guess assumed. This ruled out `-timeout=5` as a
+cause, but left the bare name's dependence on search-list behavior — untested and avoidable — as its own real
+variable, worth removing regardless of whether it was the actual trigger this run. No live `kind` cluster exists
+in this sandbox (no Docker daemon — confirmed directly, `docker pull busybox:1.36` failed with "no such file or
+directory" on the socket) to test hypothesis (a) directly, so both fixes are applied together rather than staking
+everything on one unverified theory.
+
+**E** — fixed both in `tests/integration/test_ftf_0902_network_policy_enforcement.py`: `create_cluster` now calls
+`wait_for_rollout(name, "kube-system", "deployment/coredns", timeout=120)` right after `wait_for_node_ready`, for
+both clusters unconditionally (reusing the exact helper Calico's own `daemonset/calico-node` wait already uses).
+`resolve_dns`'s own call site now queries the real FQDN `kubernetes.default.svc.cluster.local` (always present,
+verbatim, on every standard `kind` cluster's default `cluster.local` domain) instead of the bare Service name, and
+the inert `-timeout=5` argument is dropped. Updated `resolve_dns`'s own docstring and the module docstring to
+record both the FQDN reasoning and the confirmed-no-op status of the removed flag.
+
+This fix was ported onto a fresh branch off the same `main` head PR #467 is based on (`2d52ae4`) — cherry-picked
+PR #467's own single commit (`3e1f630`) cleanly, then added this fix on top — rather than pushed onto PR #467's
+own branch, per this session's own push-to-own-designated-branch-only operating constraint. PR #467 is closed with
+a comment pointing here; no content lost, same precedent this repository already used for PR #402 → #403.
+
+**V** — `uv sync --all-packages`; `uv run ruff check .`/`uv run ruff format --check .` clean repo-wide (371
+files, zero new errors). `uv run mypy .` clean repo-wide (371 source files, zero errors). `python3
+scripts/validate_spec.py --strict` clean (`git fetch --unshallow` first, this sandbox's own pre-existing
+shallow-clone artifact; directly confirmed the new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load`
+before trusting `validate_spec.py`'s own result, per this repo's own 2026-10-01 lesson). `product_truth_check.py
+--fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 — a
+resubmission is not a certification). `tests/tasks/test_ftf_0902.py` re-run clean end to end, exit 0, "all checks
+passed" (unaffected by this fix — it is a live-cluster-only defect; the no-DB suite never exercises
+`resolve_dns`/`create_cluster`). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` (via
+`uv run python3`) — zero regressions. `.github/workflows/ci.yml` re-parsed via `yaml.safe_load` — 44 jobs, no
+duplicate keys. The live-cluster `network-policy-enforcement-integration` job itself still cannot run inside this
+interactive sandbox (no Docker daemon, same disclosed FTF-0004 precedent) — its real result on this fix's own
+newly opened PR, including a real, non-`False` `dns` result on both clusters, is the actual acceptance-clause
+evidence; not claimed as a pass here in advance of that run.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0902 entry with a full "2026-10-05T17:30Z" fix note (`certification_state`
+stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` — Law 2). Updated `QUEUE.md`'s "## Active" item 1 (FTF-0902)
+to record this round-2-submission CI fix and the new PR link, and closed PR #467 with a pointer comment to the new
+PR.
+
+**V (certification)** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+newly opened PR (including a real-green `network-policy-enforcement-integration` job with a genuine, non-`False`
+DNS result on both clusters) are required before certification.

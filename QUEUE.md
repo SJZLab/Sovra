@@ -9212,17 +9212,25 @@ this same resolution (doc-only, redundant once this lands).
      test the DoD named. Zero violations found against the unmodified module — a test-coverage
      gap, not a production defect; no module code changed. Not self-certified (Law 4) — awaiting
      Control-plane L2 re-review and a real CI run.
-   - **0d2. FTF-0902 fixed 2026-10-05 this shift, PR opened.** Render-time endpoint revalidation
-     (`_revalidate_endpoint_at_render_time`, exact-type-gated, closes the mutated/subclassed/
-     duck-typed-endpoint gap), metadata overlap now derived directly from
+   - **0d2. FTF-0902 fixed 2026-10-05, PR #467 opened, then that PR's own CI came back red —
+     fixed again this shift, new PR opened, #467 closed with a pointer.** Round-2 fix: render-time
+     endpoint revalidation (`_revalidate_endpoint_at_render_time`, exact-type-gated, closes the
+     mutated/subclassed/duck-typed-endpoint gap), metadata overlap now derived directly from
      `url_policy._CLOUD_METADATA_NETWORKS`, a new `PublicCidrEndpointError` enforcing the
      Control-plane RFC1918-only decision, a CI step added for `tests/tasks/test_ftf_0902.py`
-     (previously not run by any CI step), a `$defs/Cidr` IPv4-CIDR pattern, and a real DNS
-     probe (`nslookup kubernetes.default`) added to the live-cluster integration test. Full
-     clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-05T14:40Z" entry. Not
-     self-certified (Law 4) — awaiting Control-plane L2 re-review and a real CI run (including the
-     now-CI-wired unit suite and the DNS-probe-extended integration job). Next in list order:
-     FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in
+     (previously not run by any CI step), a `$defs/Cidr` IPv4-CIDR pattern, and a real DNS probe
+     added to the live-cluster integration test. That DNS probe's own first CI run (#467, job
+     `111883477276`) failed `dns: False` on **both** clusters, including the nonenforcing
+     baseline — a probe-methodology defect, not an enforcement one. Root causes: (1) `create_cluster`
+     never waited for CoreDNS's own rollout, only the node; (2) the probe queried the bare
+     `kubernetes.default` rather than its FQDN, an untested dependency on search-list expansion.
+     Fixed this shift: added a `deployment/coredns` rollout wait to `create_cluster` for both
+     clusters, and the probe now queries `kubernetes.default.svc.cluster.local` directly (the inert
+     `-timeout=5` argument, confirmed a no-op via a local busybox-1.36 test, was also dropped). Full
+     clause-to-test mapping and the busybox-flag verification in `docs/certifications/queue.md`'s
+     "2026-10-05T17:30Z" entry. Not self-certified (Law 4) — awaiting Control-plane L2 re-review and
+     a real CI run (including a real-green `network-policy-enforcement-integration` job) on the new
+     PR. Next in list order: FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in
      docs/certifications/queue.md "2026-10-04T11:00Z".
    - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
    - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
