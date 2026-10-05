@@ -23076,3 +23076,70 @@ redundant layers, and each pair of them turns the suite RED.
 
 Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
 `spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.
+
+## 2026-10-05T04:10Z — [relay] FTF-0500D: fix L2 round-2 findings (full 6-dimension matrix test, additive early-return fault test)
+Fixes the finding from the 2026-10-04T11:00Z Control-plane L2 review (merged PR #410): "the matrix holds org
+default equal to the project profile and fixes the purpose, so an early return when org != project, or when
+purpose == 'validation', stays GREEN. A full probe confirms real gaps." DoD: test the full classification x
+org-default x project x status x grant x purpose matrix (1,440 cases) asserting `preview.blocked == authorize
+raises`, plus an additive early-return fault test.
+
+Clause-to-test mapping:
+- Full 6-dimension matrix (`security_classification` x `organization_default_security_profile` x
+  `project_security_profile` x `connection_status` x grant x `requested_purpose`) ->
+  `test_authorize_raises_whenever_preview_blocks_across_full_matrix`. The pre-existing
+  `test_authorize_raises_whenever_preview_blocks_across_classification_profile_matrix` always held
+  `organization_default_security_profile == project_security_profile` and always used a single, always-granted
+  purpose ("training") -- exactly the two narrowing gaps the review named. This module's own real, closed enums
+  (4 classifications, 3 org-default profiles, 3 project profiles, 2 connection statuses, 2 grant states, 5
+  purposes) multiply out to 4x3x3x2x2x5 = **720** real cases, not the review's own prose figure of "1,440" --
+  disclosed via `test_full_matrix_enumerates_every_real_value_of_every_dimension` rather than silently padded to
+  match a number that doesn't correspond to this module's actual enum sizes. What the DoD requires -- true
+  full-factorial coverage of every real value of every named dimension, with every other dimension held fixed --
+  is met regardless of which exact count the review's own prose cited.
+- Running the new full matrix against the unmodified, already-shipped module (before writing the fault-injection
+  test) found **zero violations**: `authorize_dataset_source_copy` already raises in exactly the cases the
+  independently built preview marks `blocked`, across all 720 real combinations. This is a test-coverage gap, not
+  an existing production defect -- consistent with the review's own "tests pin only the faults the producer
+  thought of" framing. No change was made to
+  `workers/data/dataset_source_security_boundary_preview_audit_evidence.py`.
+- Additive early-return fault test (Law 1, shown able to fail) ->
+  `test_fault_injection_additive_org_project_divergence_early_return`. Injects the exact additive fault the
+  review named -- a brand-new early `return` inserted into `authorize_dataset_source_copy` immediately before its
+  own (already-present) `check_purpose_authorized` call, firing whenever `organization_default_security_profile
+  != project_security_profile` and skipping both the purpose check and the boundary-crossing check entirely --
+  against the real on-disk module, in an isolated subprocess (so the mutation never touches this test process's
+  own already-imported functions/exception classes). Confirmed: (1) the exact anchor text this injection targets
+  exists exactly once in the real module before mutation; (2) the original, narrower classification x profile
+  matrix (which always holds org==project, so this fault's own trigger condition is never met) stays genuinely
+  blind to the injected fault -- 0 violations; (3) the new full 1,440-case-DoD / 720-real-case matrix genuinely
+  catches it -- >0 violations (every combination where org != project and either check would otherwise have
+  blocked); (4) the module file is restored byte-identical (md5-verified) after the mutation; (5) the full matrix
+  is clean again (0 violations) once reverted.
+
+`tests/tasks/test_ftf_0500d.py`: 30 test functions (was 27) -- `test_full_matrix_enumerates_every_real_value_of_
+every_dimension`, `test_authorize_raises_whenever_preview_blocks_across_full_matrix`, and
+`test_fault_injection_additive_org_project_divergence_early_return` are new. "FTF-0500D dataset source
+security-boundary preview: all checks passed." `uv run ruff check .`/`ruff format --check .` clean (371 files,
+zero new errors). `uv run mypy .` clean repo-wide (371 source files, zero errors). `python3
+scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`, this sandbox's own pre-existing
+shallow-clone artifact; directly confirmed the new `docs/spec-matrix.yaml` prose parses with `python3 -c "import
+yaml; yaml.safe_load(...)"` before trusting `validate_spec.py`'s own result, per this repo's own 2026-10-01
+unterminated-single-quote lesson). `product_truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol`
+still blank -- disclosed, no live caller added by this fix, same boundary this module's own docstring already
+established). `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 -- a resubmission is not a
+certification). Regression swept `test_ftf_0402.py`/`test_ftf_0500.py` (via `uv run python3`) -- zero regressions
+(`test_ftf_0500.py`'s own printed `TenantContextError` traceback in stdout is that suite's own disclosed
+negative-test case, confirmed exit 0). No `.github/workflows/ci.yml` change needed -- the existing "FTF-0500D
+negative-test proof" step already runs `tests/tasks/test_ftf_0500d.py` in full.
+
+Updated `docs/spec-matrix.yaml`'s FTF-0500D entry with a full "2026-10-05 L2 round-2 fix-and-resubmit" note,
+including this clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays
+`L1-PROVEN` -- Law 2). Updated `QUEUE.md`: new top dated log entry; the "## Active" item 0's own 0c3/0d notes
+updated to mark FTF-0500D fixed and disclose the already-open, already-green PRs for 0c/0c2/0c3 (skipped per this
+list's own skip rule) and the still-untouched FTF-0902/FTF-0307/FTF-1002/FTF-0510/FTF-04A18/FTF-1807 items for the
+next shift.
+
+**V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state:
+L1-PROVEN` unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification.
