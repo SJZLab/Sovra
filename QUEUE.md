@@ -9061,8 +9061,11 @@ this same resolution (doc-only, redundant once this lands).
         - a raw-DB whitespace reviewer, then lock: 409.
      6. Add a data-remediation step or runbook note to migration 0018 for existing locked rows with an
         empty reviewer.
-   - **0c2. FTF-0500C round 5.** Returned 2026-10-04T15:30Z (docs/certifications/queue.md, same timestamp).
-     The blocker is NULL keys beyond the first window being silently lost. Work it only after 0a–0c.
+   - **0c2. DONE 2026-10-05: FTF-0500C round 5 fix submitted** — PR opened this shift
+     (`claude/wizardly-fermat-a6faz0` -> `main`), fixing all four findings from the
+     2026-10-04T15:30Z review (docs/certifications/queue.md "2026-10-05T07:40Z" entry has the full
+     evidence). Not self-certified (Law 4) — `certification_state: PROVISIONAL`/`proof_state:
+     L1-PROVEN` unchanged, awaiting independent Control-plane L2 re-review. Next is 0c3.
    - **0c3. FTF-0500B round 4.** Returned 2026-10-04T17:20Z (docs/certifications/queue.md, same timestamp).
      The defects: a marker cycle and no page cap, `IsTruncated` failing open, a non-ListVersionsResult root
      accepted, and duplicate pairs. Apply the systemic same-class sweep rule in that entry. Work it after 0b–0c2.

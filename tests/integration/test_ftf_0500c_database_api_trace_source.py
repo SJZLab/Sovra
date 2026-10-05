@@ -73,6 +73,12 @@ _RO_ROLE = "sovra_ftf0500c_it_ro"
 _RO_PASSWORD = "sovra_ftf0500c_it_ro_only"
 _RW_ROLE = "sovra_ftf0500c_it_rw"
 _RW_PASSWORD = "sovra_ftf0500c_it_rw_only"
+# 2026-10-04 L2 round-5 finding: a genuinely different real database
+# *encoding* (not merely a different fixture), not reachable by creating
+# another table on the same UTF8 test database -- `_SessionSettingsSpyConnection`'s
+# own bytes-decode defect only reproduces against a server/client encoding
+# Python has no direct codec equivalent for.
+_ASCII_TEST_DB = "sovra_ftf0500c_it_ascii"
 
 
 def _admin_available() -> bool:
@@ -86,13 +92,14 @@ def _admin_available() -> bool:
         return False
 
 
-def _provision() -> tuple[str, str, bool]:
+def _provision() -> tuple[str, str, bool, str]:
     """Real setup: a scratch database, a real least-privileged SELECT-only
     role, and a real read/write role (used only to prove this module's own
     READ ONLY transaction mode independently of role grants). Returns
-    (ro_conninfo, rw_conninfo, collation_available)."""
+    (ro_conninfo, rw_conninfo, collation_available, ascii_conninfo)."""
     with psycopg.connect(_ADMIN_DSN, autocommit=True) as admin:
         admin.execute(f"DROP DATABASE IF EXISTS {_TEST_DB}")
+        admin.execute(f"DROP DATABASE IF EXISTS {_ASCII_TEST_DB}")
         admin.execute(f"DROP ROLE IF EXISTS {_RO_ROLE}")
         admin.execute(f"DROP ROLE IF EXISTS {_RW_ROLE}")
         admin.execute(f"CREATE ROLE {_RO_ROLE} LOGIN PASSWORD '{_RO_PASSWORD}'")
@@ -103,6 +110,16 @@ def _provision() -> tuple[str, str, bool]:
         # superuser is named by its POSTGRES_USER, "sovra_migrate" in CI) --
         # never hardcoded, since a role by that literal name may not exist.
         admin.execute(f"CREATE DATABASE {_TEST_DB}")
+        # 2026-10-04 L2 round-5 finding: a real SQL_ASCII-encoded database --
+        # confirmed directly against this exact cluster that `SHOW
+        # transaction_read_only`/`SHOW transaction_isolation` genuinely come
+        # back as raw `bytes` here (`b'off'`/`b'read committed'`), not `str`,
+        # which is what `_SessionSettingsSpyConnection`'s own decode defect
+        # needs a real server to reproduce against.
+        admin.execute(
+            f"CREATE DATABASE {_ASCII_TEST_DB} ENCODING 'SQL_ASCII' TEMPLATE template0 "
+            "LC_COLLATE 'C' LC_CTYPE 'C'"
+        )
 
     db_dsn = _ADMIN_DSN.rsplit("/", 1)[0] + f"/{_TEST_DB}"
     with psycopg.connect(db_dsn, autocommit=True) as conn:
@@ -151,6 +168,47 @@ def _provision() -> tuple[str, str, bool]:
             "(1, 1, 'a'), (2, 2, 'b'), (3, NULL, 'c'), (4, NULL, 'd')"
         )
         conn.execute(f"GRANT SELECT ON source_schema.null_key_records TO {_RO_ROLE}")
+
+        # 2026-10-04 L2 round-5 finding: a NULL that never enters any one
+        # call's own fetched-plus-lookahead window at all -- distinct from
+        # `null_key_records` above, where the NULL sits in the very first
+        # call's own lookahead row. Keys 1,2,3,4,5 (ids 1-5) sort strictly
+        # before the single NULL-keyed row (id 6); with max_preview_records=2,
+        # a resumed capture crosses keys 1..5 across several calls before
+        # ever reaching where the NULL would sort, and the old lookahead-only
+        # check could never see it from any of those calls' own windows.
+        conn.execute(
+            "CREATE TABLE source_schema.far_null_key_records ("
+            "id BIGINT PRIMARY KEY, key_value BIGINT, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.far_null_key_records (id, key_value, name) VALUES "
+            "(1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c'), (4, 4, 'd'), (5, 5, 'e'), (6, NULL, 'f')"
+        )
+        conn.execute(f"GRANT SELECT ON source_schema.far_null_key_records TO {_RO_ROLE}")
+
+        # 2026-10-04 L2 round-5 finding: a real concurrent INSERT of a
+        # duplicate of the exact resume watermark value, racing in *after*
+        # the page that produced that watermark was already fetched (so
+        # that page's own lookahead-based tie check could never have seen
+        # it -- the duplicate did not exist yet in that snapshot). Keys
+        # 1, 2, 3 (ids 1-3); max_preview_records=2 makes key=2 (id=2) the
+        # first call's own real next_watermark.
+        conn.execute(
+            "CREATE TABLE source_schema.concurrent_watermark_dup_records ("
+            "id BIGINT PRIMARY KEY, group_key BIGINT NOT NULL, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.concurrent_watermark_dup_records "
+            "(id, group_key, name) VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c')"
+        )
+        conn.execute(
+            f"GRANT SELECT ON source_schema.concurrent_watermark_dup_records TO "
+            f"{_RO_ROLE}, {_RW_ROLE}"
+        )
+        conn.execute(
+            f"GRANT INSERT ON source_schema.concurrent_watermark_dup_records TO {_RW_ROLE}"
+        )
 
         conn.execute(
             "CREATE TABLE source_schema.nan_key_records ("
@@ -215,12 +273,28 @@ def _provision() -> tuple[str, str, bool]:
     host_and_port = db_dsn.split("@", 1)[1].split("/", 1)[0]
     ro_conninfo = f"postgresql://{_RO_ROLE}:{_RO_PASSWORD}@{host_and_port}/{_TEST_DB}"
     rw_conninfo = f"postgresql://{_RW_ROLE}:{_RW_PASSWORD}@{host_and_port}/{_TEST_DB}"
-    return ro_conninfo, rw_conninfo, collation_available
+
+    ascii_dsn = _ADMIN_DSN.rsplit("/", 1)[0] + f"/{_ASCII_TEST_DB}"
+    with psycopg.connect(ascii_dsn, autocommit=True) as conn:
+        conn.execute("CREATE SCHEMA source_schema")
+        conn.execute(
+            "CREATE TABLE source_schema.records (id BIGINT PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO source_schema.records (id, name) "
+            "SELECT g, 'record-' || g FROM generate_series(1, 5) AS g"
+        )
+        conn.execute(f"GRANT USAGE ON SCHEMA source_schema TO {_RO_ROLE}")
+        conn.execute(f"GRANT SELECT ON source_schema.records TO {_RO_ROLE}")
+    ascii_conninfo = f"postgresql://{_RO_ROLE}:{_RO_PASSWORD}@{host_and_port}/{_ASCII_TEST_DB}"
+
+    return ro_conninfo, rw_conninfo, collation_available, ascii_conninfo
 
 
 def _teardown() -> None:
     with psycopg.connect(_ADMIN_DSN, autocommit=True) as admin:
         admin.execute(f"DROP DATABASE IF EXISTS {_TEST_DB}")
+        admin.execute(f"DROP DATABASE IF EXISTS {_ASCII_TEST_DB}")
         admin.execute(f"DROP ROLE IF EXISTS {_RO_ROLE}")
         admin.execute(f"DROP ROLE IF EXISTS {_RW_ROLE}")
 
@@ -315,7 +389,15 @@ class _SessionSettingsSpyConnection:
     review found: the old version of this test replicated the `SET
     TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` statement on a
     raw connection instead of calling the module, so changing the module's
-    own transaction-mode SQL would have left this suite green."""
+    own transaction-mode SQL would have left this suite green.
+
+    2026-10-04 L2 round-5 finding: on a real SQL_ASCII (or any non-UTF8)
+    server encoding, `SHOW transaction_read_only`/`SHOW
+    transaction_isolation` genuinely come back as raw `bytes`, not `str`
+    (confirmed directly: `b'off'`/`b'read committed'`) -- `str(b'on')`
+    produces the literal text `"b'on'"`, not `"on"`, so this spy's own
+    captured value must decode bytes first rather than merely `str()`-ing
+    whatever psycopg hands back."""
 
     def __init__(
         self, real: psycopg.Connection[tuple[object, ...]], captured: dict[str, str | None]
@@ -345,9 +427,17 @@ class _SessionSettingsSpyConnection:
         if "SHOW statement_timeout" in query:
             read_only_row = self._real.execute("SHOW transaction_read_only").fetchone()
             isolation_row = self._real.execute("SHOW transaction_isolation").fetchone()
-            self._captured["read_only"] = str(read_only_row[0]) if read_only_row else None
-            self._captured["isolation"] = str(isolation_row[0]) if isolation_row else None
+            self._captured["read_only"] = _decode_guc(read_only_row[0] if read_only_row else None)
+            self._captured["isolation"] = _decode_guc(isolation_row[0] if isolation_row else None)
         return cur
+
+
+def _decode_guc(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value.decode("ascii", errors="replace")
+    return str(value)
 
 
 def test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql(ro_conninfo: str) -> None:
@@ -375,6 +465,42 @@ def test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql(ro_connin
         "FTF-0500C",
         "acceptance: the module's own SQL (not a test re-implementation) genuinely sets "
         "transaction_isolation=repeatable read on the real session",
+        captured["isolation"] == "repeatable read",
+    )
+
+
+def test_real_read_only_transaction_mode_is_set_on_a_real_sql_ascii_cluster(
+    ascii_conninfo: str,
+) -> None:
+    """2026-10-04 L2 round-5 finding: the same spy test above, but against
+    a real SQL_ASCII-encoded database -- confirmed directly against this
+    exact cluster that `SHOW transaction_read_only`/`SHOW
+    transaction_isolation` come back as real `bytes` here, which is what
+    `_SessionSettingsSpyConnection`'s own decode defect needed a real
+    server to reproduce against (a fake connection cannot genuinely change
+    what encoding a real server negotiates)."""
+    captured: dict[str, str | None] = {"read_only": None, "isolation": None}
+
+    def spy_connect(conninfo: str, autocommit: bool = False) -> _SessionSettingsSpyConnection:
+        return _SessionSettingsSpyConnection(
+            psycopg.connect(conninfo, autocommit=autocommit), captured
+        )
+
+    source_module.validate_and_preview_postgres_source(
+        _config(ascii_conninfo, columns=("id", "name")),
+        connect=spy_connect,  # type: ignore[arg-type]
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: on a real SQL_ASCII cluster, the module's own SQL genuinely sets "
+        "transaction_read_only=on, correctly decoded from the real bytes response",
+        captured["read_only"] == "on",
+    )
+    check(
+        "FTF-0500C",
+        "acceptance: on a real SQL_ASCII cluster, the module's own SQL genuinely sets "
+        "transaction_isolation=repeatable read, correctly decoded from the real bytes "
+        "response",
         captured["isolation"] == "repeatable read",
     )
 
@@ -552,12 +678,26 @@ def test_disabling_the_non_unique_key_check_genuinely_lets_a_skip_through(
     """Law 1, disclosed real fault injection: disables the new non-unique-
     key detection directly in the module under test, proves a real resumed
     capture genuinely skips id=3 without it (the actual silent-skip defect
-    this check exists to prevent), then reverts the file byte-identical."""
+    this check exists to prevent), then reverts the file byte-identical.
+
+    2026-10-04 L2 round-5: this exact dataset's own resume watermark
+    (group_key=20) is now also independently caught by
+    `_verify_watermark_present`'s own new uniqueness check (a real
+    concurrent-duplicate-at-the-watermark defect, a distinct round-5
+    finding) -- so isolating *this* check's own load-bearingness now also
+    needs that second, independent safety net disabled for this one fault
+    run, or the fault would be masked by the other real check instead of
+    proving this one specifically."""
     original = MODULE_PATH.read_text()
     original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
     disabled = original.replace(
         "if any_null_key or intra_page_tie or boundary_tie:",
         "if False:  # FTF-0500C fault injection -- disabled for this check",
+        1,
+    ).replace(
+        "    if count > 1:\n        raise NonUniqueStableKeyError(",
+        "    if False:  # FTF-0500C fault injection -- disabled for this check\n"
+        "        raise NonUniqueStableKeyError(",
         1,
     )
     if disabled == original:
@@ -799,6 +939,239 @@ def test_real_null_stable_key_value_is_refused_not_silently_lost(ro_conninfo: st
         )
 
 
+def _far_null_key_config(
+    ro_conninfo: str, **overrides: object
+) -> source_module.PostgresSourceConfig:
+    base: dict[str, object] = {
+        "conninfo": ro_conninfo,
+        "schema": "source_schema",
+        "table": "far_null_key_records",
+        "columns": ("id", "key_value", "name"),
+        "stable_key_column": "key_value",
+        "max_preview_records": 2,
+    }
+    base.update(overrides)
+    return source_module.PostgresSourceConfig(**base)  # type: ignore[arg-type]
+
+
+def test_real_null_stable_key_value_beyond_the_first_window_is_still_refused(
+    ro_conninfo: str,
+) -> None:
+    """2026-10-04 L2 round-5 finding: `far_null_key_records` has key_value
+    1, 2, 3, 4, 5, NULL (ids 1-6) -- the NULL sorts strictly after every
+    non-NULL key, so with max_preview_records=2 it never enters the
+    lookahead window of the *first* call at all (only a multi-page resumed
+    capture would ever reach where it sorts). The first call alone,
+    resume_after_key=None, must still be refused outright -- proving the
+    whole-table check runs independently of how far any one call's own
+    window reaches, not only when a NULL happens to land inside it."""
+    try:
+        source_module.validate_and_preview_postgres_source(_far_null_key_config(ro_conninfo))
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real NULL stable-key value is refused on the very first "
+            "call, even though it sorts far outside that call's own fetch window",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real NULL stable-key value is refused on the very first "
+            "call, even though it sorts far outside that call's own fetch window",
+            True,
+        )
+
+
+def test_disabling_the_whole_table_null_check_genuinely_loses_the_null_row(
+    ro_conninfo: str,
+) -> None:
+    """Law 1, disclosed real fault injection, additive (an inserted early
+    `return`, not a negated condition): disables `_verify_no_null_keys`'s
+    own call site directly in the module under test, proves a real,
+    multi-page resumed capture over `far_null_key_records` genuinely
+    completes (`truncated=False`) having silently never returned the
+    NULL-keyed row at all -- the exact round-5 defect ("pages [1,2] ->
+    [3,4] -> [5] ... the capture 'completes' with 5 of 6 rows and no
+    error") -- then reverts the file byte-identical."""
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    anchor = (
+        "def _verify_no_null_keys(\n"
+        "    conn: psycopg.Connection[tuple[object, ...]],\n"
+        "    *,\n"
+        "    schema: str,\n"
+        "    table: str,\n"
+        "    stable_key_column: str,\n"
+        ") -> None:\n"
+    )
+    if anchor not in original:
+        check(
+            "FTF-0500C",
+            "fault injection: the _verify_no_null_keys function signature was found to patch",
+            False,
+        )
+        return
+    disabled = original.replace(
+        anchor,
+        anchor + "    return  # FTF-0500C fault injection -- additive early return\n",
+        1,
+    )
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        seen_keys: list[object] = []
+        watermark: object = None
+        truncated = True
+        config = _far_null_key_config(ro_conninfo)
+        for _ in range(10):
+            result = source_module.validate_and_preview_postgres_source(
+                config, resume_after_key=watermark
+            )
+            seen_keys.extend(row.values[1] for row in result.rows)
+            watermark = result.next_watermark
+            truncated = result.truncated
+            if not truncated:
+                break
+        genuinely_lost_the_null_row = (
+            not truncated and None not in seen_keys and seen_keys == [1, 2, 3, 4, 5]
+        )
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the whole-table NULL check genuinely reproduces the "
+            "defect (a real resumed capture completes having silently never returned the "
+            "NULL-keyed row), proving the check was load-bearing",
+            genuinely_lost_the_null_row,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
+def _concurrent_watermark_dup_config(
+    ro_conninfo: str, **overrides: object
+) -> source_module.PostgresSourceConfig:
+    base: dict[str, object] = {
+        "conninfo": ro_conninfo,
+        "schema": "source_schema",
+        "table": "concurrent_watermark_dup_records",
+        "columns": ("id", "group_key", "name"),
+        "stable_key_column": "group_key",
+        "max_preview_records": 2,
+    }
+    base.update(overrides)
+    return source_module.PostgresSourceConfig(**base)  # type: ignore[arg-type]
+
+
+def test_real_concurrent_duplicate_at_the_watermark_is_refused_not_silently_lost(
+    ro_conninfo: str, rw_conninfo: str
+) -> None:
+    """2026-10-04 L2 round-5 finding: `concurrent_watermark_dup_records`
+    starts with group_key 1, 2, 3 (ids 1-3) -- no duplicate yet, so the
+    first call's own lookahead-based tie check has nothing to catch.
+    max_preview_records=2 makes group_key=2 (id=2) the first call's own
+    real next_watermark. A real concurrent session then INSERTs a second
+    row with group_key=2 (id=4) -- racing in *after* that first page was
+    already fetched, so it could not have been seen by that page's own
+    snapshot. Resuming from watermark=2 must now be refused outright, not
+    silently resumed past the new duplicate (which `WHERE group_key > 2`
+    can never return, permanently losing it from every future page)."""
+    config = _concurrent_watermark_dup_config(ro_conninfo)
+    first = source_module.validate_and_preview_postgres_source(config)
+    watermark = first.next_watermark
+    check(
+        "FTF-0500C",
+        "fixture precondition: the first call's own real next_watermark is group_key=2",
+        watermark == 2,
+    )
+
+    with psycopg.connect(rw_conninfo, autocommit=True) as rw:
+        rw.execute(
+            "INSERT INTO source_schema.concurrent_watermark_dup_records "
+            "(id, group_key, name) VALUES (4, 2, 'dup')"
+        )
+
+    try:
+        source_module.validate_and_preview_postgres_source(config, resume_after_key=watermark)
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real concurrent duplicate inserted at the exact resume "
+            "watermark, after that watermark's own page was fetched, is refused outright, "
+            "not silently resumed past (which would permanently lose it)",
+            False,
+        )
+    except source_module.NonUniqueStableKeyError:
+        check(
+            "FTF-0500C",
+            "negative_acceptance: a real concurrent duplicate inserted at the exact resume "
+            "watermark, after that watermark's own page was fetched, is refused outright, "
+            "not silently resumed past (which would permanently lose it)",
+            True,
+        )
+
+    # Real fault injection (Law 1, disclosed): disable the new watermark-
+    # uniqueness check and prove a real resumed capture genuinely loses the
+    # concurrently-inserted duplicate row (3 of the now-real 4 rows
+    # captured), then revert the file byte-identical.
+    original = MODULE_PATH.read_text()
+    original_hash = hashlib.md5(original.encode("utf-8")).hexdigest()
+    disabled = original.replace(
+        "    if count > 1:\n        raise NonUniqueStableKeyError(",
+        "    if False:  # FTF-0500C fault injection -- disabled for this check\n"
+        "        raise NonUniqueStableKeyError(",
+        1,
+    )
+    if disabled == original:
+        check(
+            "FTF-0500C",
+            "fault injection: the watermark-uniqueness check line was found to disable",
+            False,
+        )
+        return
+    try:
+        MODULE_PATH.write_text(disabled)
+        import importlib
+
+        importlib.reload(source_module)
+        try:
+            second = source_module.validate_and_preview_postgres_source(
+                _concurrent_watermark_dup_config(ro_conninfo), resume_after_key=watermark
+            )
+            first_ids = [row.values[0] for row in first.rows]
+            second_ids = [row.values[0] for row in second.rows]
+            all_ids = set(first_ids) | set(second_ids)
+            genuinely_lost_the_duplicate_row = 4 not in all_ids
+        except source_module.NonUniqueStableKeyError:
+            genuinely_lost_the_duplicate_row = False
+        check(
+            "FTF-0500C",
+            "fault injection: disabling the real watermark-uniqueness check genuinely "
+            "reproduces the defect (the concurrently-inserted duplicate row is silently "
+            "lost from every page), proving the check was load-bearing",
+            genuinely_lost_the_duplicate_row,
+        )
+    finally:
+        MODULE_PATH.write_text(original)
+        import importlib
+
+        importlib.reload(source_module)
+        restored_hash = hashlib.md5(MODULE_PATH.read_text().encode("utf-8")).hexdigest()
+        check(
+            "FTF-0500C",
+            "fault injection: the module file was reverted byte-identical after the injection",
+            restored_hash == original_hash,
+        )
+
+
 def _nan_key_config(ro_conninfo: str, **overrides: object) -> source_module.PostgresSourceConfig:
     base: dict[str, object] = {
         "conninfo": ro_conninfo,
@@ -1019,13 +1392,14 @@ def main() -> int:
         )
         return 0
 
-    ro_conninfo, rw_conninfo, collation_available = _provision()
+    ro_conninfo, rw_conninfo, collation_available, ascii_conninfo = _provision()
     try:
         test_real_bounded_cursor_pagination_covers_the_whole_real_table(ro_conninfo)
         test_real_statement_timeout_is_genuinely_set_on_the_session(ro_conninfo)
         test_real_unknown_table_is_refused_not_fabricated(ro_conninfo)
         test_real_ro_role_write_is_denied_by_database_grants(ro_conninfo)
         test_real_read_only_transaction_mode_is_set_by_the_modules_own_sql(ro_conninfo)
+        test_real_read_only_transaction_mode_is_set_on_a_real_sql_ascii_cluster(ascii_conninfo)
         test_real_read_only_transaction_mode_independently_blocks_a_write(rw_conninfo)
         test_real_lost_watermark_after_a_genuine_concurrent_delete(ro_conninfo, rw_conninfo)
         test_real_non_unique_stable_key_within_one_page_is_refused(ro_conninfo)
@@ -1034,6 +1408,11 @@ def main() -> int:
         test_real_statement_timeout_ms_zero_is_refused(ro_conninfo)
         test_disabling_the_statement_timeout_readback_check_genuinely_allows_zero(ro_conninfo)
         test_real_null_stable_key_value_is_refused_not_silently_lost(ro_conninfo)
+        test_real_null_stable_key_value_beyond_the_first_window_is_still_refused(ro_conninfo)
+        test_disabling_the_whole_table_null_check_genuinely_loses_the_null_row(ro_conninfo)
+        test_real_concurrent_duplicate_at_the_watermark_is_refused_not_silently_lost(
+            ro_conninfo, rw_conninfo
+        )
         test_real_nan_stable_key_tie_is_refused_python_equality_would_miss_it(ro_conninfo)
         test_real_non_deterministic_collation_tie_is_refused(ro_conninfo, collation_available)
         test_real_exact_boundary_table_is_not_falsely_marked_truncated(ro_conninfo)

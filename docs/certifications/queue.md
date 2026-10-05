@@ -23076,3 +23076,64 @@ redundant layers, and each pair of them turns the suite RED.
 
 Follow-up, not blocking: `scripts/verify_task.py --stage task` is BLOCKED for every item, including certified ones, because
 `spec/verification-map.json` has no merged evidence records. Control plane will scope this as a tooling task.
+
+## 2026-10-05T07:40Z — [relay] FTF-0500C: fix L2 round-5 findings (whole-table NULL-key refusal, IS NOT DISTINCT FROM claim dropped, SQL_ASCII test-harness decode, concurrent-watermark-duplicate refusal)
+
+Fixes all four findings from the 2026-10-04T15:30Z Control-plane L2 review of FTF-0500C round 4
+(#451, merge 8247025). QUEUE.md "## Active" item 0, sub-item 0c2.
+
+1. **NULL-keyed rows outside the current call's own fetched-plus-lookahead window were silently
+   lost.** New `_verify_no_null_keys`: a whole-table `SELECT EXISTS (... WHERE key IS NULL)`, run
+   unconditionally on every call (not only a resumed one), inside the same `REPEATABLE READ`
+   transaction as the paginated `SELECT` that follows. New real `far_null_key_records` table
+   (keys 1,2,3,4,5,NULL) proves the very first call is refused outright even though the NULL sorts
+   far outside that call's own fetch window. Additive fault (an inserted early `return`) proves a
+   real multi-page resumed capture genuinely completes having silently never returned the NULL row
+   without the check.
+2. **The `IS NOT DISTINCT FROM` claim was unproven.** With (1) now excluding every NULL before the
+   tie-detection query is ever built, `IS NOT DISTINCT FROM` and plain `=` are provably equivalent
+   at that point. Per the review's own stated option, the claim is dropped: the LAG comparison now
+   uses plain `=`.
+3. **The integration harness's own `_SessionSettingsSpyConnection` failed on a SQL_ASCII cluster**
+   (`str(b'on')` produces `"b'on'"`, not `"on"`). Confirmed directly against this sandbox's own
+   cluster that a real SQL_ASCII database genuinely returns `bytes` for these `SHOW` results. Fixed
+   with a `_decode_guc` helper; new real `_ASCII_TEST_DB` (`ENCODING 'SQL_ASCII' TEMPLATE
+   template0`) and a new test prove the fix against a genuinely different real server encoding.
+4. **A real concurrent duplicate at the resume watermark was silently lost.**
+   `_verify_watermark_present` now counts real matching rows (`SELECT count(*)`) instead of only
+   checking existence, and raises `NonUniqueStableKeyError` when more than one row matches. New
+   real `concurrent_watermark_dup_records` table + a real concurrent `INSERT` via the read/write
+   role prove a duplicate racing in after the watermark's own page was fetched is refused outright;
+   a disclosed fault injection (disabling the new `count > 1` branch) proves the row is genuinely
+   lost without it.
+
+Both new whole-table checks also wrap a real `UndefinedTable`/`UndefinedColumn` as
+`UnknownSourceContractError` (this task's own existing negative_acceptance contract) — caught
+directly during this round's own development when `test_real_unknown_table_is_refused_not_fabricated`
+broke against the new NULL check's own initial omission of this wrapping, fixed before this
+submission.
+
+**Law 1, shown able to fail first:** `git stash` of the module fix alone (keeping every new/updated
+test), re-ran `tests/integration/test_ftf_0500c_database_api_trace_source.py` against the genuinely
+pre-fix module — **4 of 47 checks failed**, bound to criterion `FTF-0500C`: both new
+negative-test assertions for findings (1) and (4) failed for real, and both new fault-injection
+anchor-patches correctly reported "not found" against code lacking `_verify_no_null_keys`/the new
+`count > 1` branch. `git stash pop` restored the fix; re-ran — all 47 pass.
+`tests/tasks/test_ftf_0500c.py` (fake-connection unit suite): unchanged, all pass.
+
+**Verification:** `uv run ruff check .`/`ruff format --check .` clean repo-wide (371 files). `uv run
+mypy .` clean repo-wide (371 source files, zero errors). `python3 scripts/validate_spec.py
+--strict` clean (`docs/spec-matrix.yaml` prose directly re-confirmed parseable with
+`yaml.safe_load` first). `product_truth_check.py --fail-on-unwired`: unchanged `26/26`.
+`status.py`: unchanged `101/301` certified, 24 product-true (Law 2 — a resubmission is not a
+certification). Both suites re-run clean against a real, freshly-started local PostgreSQL 16
+(`pg_ctlcluster 16 main start`). Regression swept
+`test_ftf_0500.py`/`test_ftf_0303.py`/`test_ftf_0500b.py`/`test_ftf_0500d.py` — zero regressions
+(`test_ftf_0500.py`'s own printed traceback is a pre-existing, deliberate failure-path assertion in
+that suite, exit 0). No `ci.yml` change needed — the existing
+`database-api-trace-source-integration` job already runs the whole test file, which now also
+provisions the new SQL_ASCII database and runs the new tests itself at runtime.
+
+**State:** `certification_state: PROVISIONAL`, `proof_state: L1-PROVEN` (Law 2). Not self-certified
+(Law 4) — independent Control-plane L2 review and a real CI run on the opened PR are required
+before certification.
