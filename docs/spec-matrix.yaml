@@ -8951,18 +8951,89 @@ FTF-1206:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1206A:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Organization gateway policy persistence (migration prerequisite for FTF-1206)
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: >-
     Owner-approved Release 1 addendum (2026-10-04), docs/adr/0002-task-addendum-ftf-1206a.md.
     The contract is spec/addenda/FTF-1206A.json; tools/r1_handoff.py covers only the frozen 300.
     FTF-1206 now depends on this task. Denominator 301.
-  proof_state: UNPROVEN
+
+    Implemented 2026-10-05: real forward migration
+    `apps/api/alembic/versions/0019_org_gateway_policies.py` (revision id kept <=32 chars --
+    alembic_version.version_num's own column width -- so the filename is shortened from the
+    contract's own suggested `organization_gateway_policies` to `org_gateway_policies`; discovered
+    the hard way, via a real DataError on the first `alembic upgrade head` attempt, not assumed)
+    adds two tables: `organization_gateway_policies` (one real row per organization, `UNIQUE
+    (organization_id)`, three `jsonb` array columns each guarded by a real `jsonb_typeof(...) =
+    'array'` CHECK, `sovra_app` granted SELECT/INSERT/UPDATE -- never DELETE, a policy is reset via
+    UPDATE, not removed) and `organization_gateway_route_changes` (append-only, one row per real
+    route-change decision attempt, a real composite FK `(organization_id, project_id) ->
+    projects(organization_id, id)` reusing FTF-0401's own `uq_projects_organization_id_id`,
+    `sovra_app` granted SELECT/INSERT only -- never UPDATE/DELETE, this task's own
+    negative_acceptance clause enforced at the database level). Both tables ENABLE+FORCE row-level
+    security with a real, non-allow-all `tenant_isolation` policy scoped to
+    `app.current_organization_id`, same discipline as every prior migration in this chain.
+
+    `apps/api/app/litellm/organization_gateway_policy_store.py` is the real persistence/query layer
+    this task's own `api_contract` scopes it to ("Internal store consumed by FTF-1206's
+    organization_policy_control; no new public route in this task") -- `get_organization_gateway_
+    policy`/`upsert_organization_gateway_policy` (create-or-update in place, never a growing history
+    of competing rows) and `record_route_change`/`list_route_changes` (append-only; this function
+    never decides authorization itself, only durably records a decision the caller already proved
+    against `organization_policy_control.enforce_route_change_authority`). Every real query goes
+    through `execute_tenant_scoped`/`authorize_resource_ownership` (FTF-H003/FTF-0105); every
+    mutation writes a real FTF-0104 audit event in the same transaction. Reuses
+    `organization_policy_control.py`'s own already-certified `validate_namespace`/`validate_
+    approver_identity` directly (same function object, confirmed by identity check in
+    `tests/tasks/test_ftf_1206a.py`) -- never a parallel re-implementation.
+
+    `tests/tasks/test_ftf_1206a.py` (no-DB): migration-shape checks (RLS ENABLE+FORCE, the real
+    non-allow-all tenant_isolation policy, the restricted GRANT surface on both tables, the three
+    jsonb_typeof CHECKs, the composite FK, the single-serialized-head chain onto FTF-0601's own
+    0018), two independent real fault injections against the tracked migration file on disk (missing
+    FORCE ROW LEVEL SECURITY; a widened route-changes GRANT reintroducing UPDATE), and the store
+    module's own domain shape (ActorInfo, ProjectNotFoundError, both ORM record classes' real column
+    sets, a pure in-memory `_to_policy` round-trip, the validator-reuse identity check,
+    `record_route_change`'s own `actor_info` parameter has no default). "all checks passed."
+
+    `tests/integration/test_ftf_1206a_org_gateway_policy.py` (real local PostgreSQL 16, this
+    sandbox's own pre-existing no-container-registry-egress boundary -- CI runs it against a real
+    `services: postgres` container): two real organizations each with a real workspace/project;
+    proves a real upgrade/downgrade/upgrade round-trip (Sections 6/65/71); acceptance -- no policy
+    yet reads back None, a create then an update both leave exactly one row and are each audited via
+    a real FTF-0104 event, the route-change history is real, retrievable and ordered, both outcomes
+    audited; negative_acceptance -- a different tenant sees no policy where org1's real one exists
+    (RLS, not an app-layer filter), a route change against another organization's real project and
+    against a genuinely missing project both raise the identical `ProjectNotFoundError` (same type,
+    same message) and leave no row behind, `sovra_app` genuinely cannot UPDATE or DELETE an existing
+    route-change row (real `DBAPIError`, both confirmed), nor DELETE a policy row, and a raw INSERT
+    of a non-array JSON value into a namespaces column is rejected by the real database CHECK, not
+    only by application-level validation. **Law 1, shown able to fail for real:** temporarily removed
+    the cross-tenant `_authorize_project_or_raise` call from `record_route_change` and re-ran this
+    suite against a fresh database -- the cross-tenant write attempt that should have been refused
+    cleanly instead reached the INSERT and crashed with a real, uncaught `IntegrityError` (the
+    composite FK's own backstop, not this suite's intended clean 400-shaped denial), proving the
+    check is load-bearing; reverted byte-identical (diff-confirmed) and re-ran clean. "all checks
+    passed."
+
+    `uv run ruff check .`/`ruff format --check .` clean (375 files). `uv run mypy .` clean repo-wide
+    (375 source files, zero errors). `python3 scripts/validate_spec.py --strict` clean (after `git
+    fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact).
+    `scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` clean.
+    `product_truth_check.py --fail-on-unwired`: unchanged -- `proving_symbol` stays blank, no live
+    FastAPI route exists for this task by design (same disclosed "no live caller yet" class already
+    accepted for FTF-1206/FTF-0005/FTF-0006/FTF-0102/FTF-0103/FTF-0104/FTF-0105 before each one's own
+    first live caller existed). **Not self-certified (Law 4)** -- awaiting independent Control-plane
+    L2 re-review and a real CI run on the opened PR before certification. This unblocks FTF-1206's
+    own persistence half (BLOCKER.md's RESOLVED 2026-10-02 entry, route option 1) -- a follow-up
+    task, not done here, since this task's own `files` clause is closed to exactly the migration,
+    the store module and these two test files.
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_1206a.py
 FTF-1301:
   certification_state: CERTIFIED
   criticality: MUST
