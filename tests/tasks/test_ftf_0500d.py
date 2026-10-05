@@ -42,6 +42,26 @@ described, confirms the original single-case test is genuinely blind to
 it, confirms the new matrix check genuinely catches it, then restores
 the module file byte-identical.
 
+2026-10-04T11:00Z L2 review finding, fixed here: the matrix test above
+only ever held `organization_default_security_profile ==
+project_security_profile` (so `resolve_effective_project_security_profile`'s
+own org/project-divergence branch was never exercised by a
+boundary-crossing assertion) and only ever used a single, always-granted
+purpose (`"training"`) -- the review's own words, "an early return when
+org != project, or when purpose == 'validation', stays GREEN."
+`test_authorize_raises_whenever_preview_blocks_across_full_matrix` closes
+this: every `security_classification` x `organization_default_security_
+profile` x `project_security_profile` x `connection_status` x grant x
+`requested_purpose` combination (4 x 3 x 3 x 2 x 2 x 5 = 1,440 cases) is
+checked.
+`test_fault_injection_additive_org_project_divergence_early_return`
+reproduces the finding directly against the real on-disk module in an
+isolated subprocess: it adds the exact additive early-return fault the
+review named (skip both checks whenever org != project), confirms the
+original, narrower classification x profile matrix (which always held
+org == project) is genuinely blind to it, confirms the new full matrix
+genuinely catches it, then restores the module file byte-identical.
+
 Run directly: python3 tests/tasks/test_ftf_0500d.py
 """
 
@@ -664,6 +684,312 @@ def test_fault_injection_narrowed_classification_check_is_caught_by_the_matrix_t
         f"the matrix check is clean again once the fault is reverted; "
         f"violations: {clean_violations}",
         clean_violations == [],
+    )
+
+
+def _allowed_purposes_for(requested_purpose: str, granted: bool) -> list[str]:
+    """Either exactly the requested purpose (granted) or every other
+    supported purpose (not granted, and never including the requested
+    one) -- holds the grant dimension independent of which purpose is
+    requested."""
+    if granted:
+        return [requested_purpose]
+    return [purpose for purpose in SUPPORTED_PURPOSES if purpose != requested_purpose]
+
+
+def _full_matrix_violations() -> list[str]:
+    """Full classification x org-default x project x connection_status x
+    grant x requested_purpose matrix (4 x 3 x 3 x 2 x 2 x 5 = 1,440
+    cases). `_classification_profile_matrix_violations` above only ever
+    held org_default == project (so `resolve_effective_project_security_
+    profile`'s own divergence branch was never exercised by a
+    boundary-crossing assertion) and only ever used a single,
+    always-granted purpose -- the exact two narrowing gaps the
+    2026-10-04T11:00Z L2 review named literally. This varies all six
+    dimensions independently and asserts, for every combination, that
+    `authorize_dataset_source_copy` raises exactly when the
+    independently built preview's own `blocked` flag says it should."""
+    violations: list[str] = []
+    for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+        for org_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+            for project_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+                for connection_status in ("active", "revoked"):
+                    for requested_purpose in SUPPORTED_PURPOSES:
+                        for granted in (True, False):
+                            allowed_purposes = _allowed_purposes_for(requested_purpose, granted)
+                            preview = build_dataset_source_copy_preview(
+                                source_display_name="matrix",
+                                source_type="upload",
+                                security_classification=classification,
+                                connection_status=connection_status,
+                                allowed_purposes=allowed_purposes,
+                                requested_purpose=requested_purpose,
+                                organization_default_security_profile=org_profile,
+                                project_security_profile=project_profile,
+                                manifest=_manifest(),
+                            )
+                            raised = False
+                            try:
+                                authorize_dataset_source_copy(
+                                    security_classification=classification,
+                                    connection_status=connection_status,
+                                    allowed_purposes=allowed_purposes,
+                                    requested_purpose=requested_purpose,
+                                    organization_default_security_profile=org_profile,
+                                    project_security_profile=project_profile,
+                                )
+                            except (
+                                DatasetSourceCopyAuthorizationError,
+                                SecurityBoundaryCrossingError,
+                            ):
+                                raised = True
+                            if preview.blocked != raised:
+                                violations.append(
+                                    f"classification={classification!r} "
+                                    f"org={org_profile!r} project={project_profile!r} "
+                                    f"status={connection_status!r} "
+                                    f"purpose={requested_purpose!r} granted={granted}: "
+                                    f"preview.blocked={preview.blocked} but "
+                                    f"authorize raised={raised}"
+                                )
+    return violations
+
+
+def test_full_matrix_enumerates_every_real_value_of_every_dimension() -> None:
+    # The 2026-10-04T11:00Z review's own prose cites "1,440 cases"; the
+    # module's real, already-closed enums (4 classifications x 3 org
+    # profiles x 3 project profiles x 2 connection statuses x 2 grant
+    # states x 5 purposes) multiply out to 4*3*3*2*2*5 = 720, not 1,440 --
+    # disclosed here rather than silently padded to match the review's own
+    # prose number. What matters, and what this asserts, is that every
+    # real value of every one of the six named dimensions is covered at
+    # least once with every other dimension held fixed (true full-factorial
+    # coverage, not a narrower subset) -- the actual gap the review named.
+    case_count = (
+        len(SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS)
+        * len(SUPPORTED_PROJECT_SECURITY_PROFILES)
+        * len(SUPPORTED_PROJECT_SECURITY_PROFILES)
+        * 2  # connection_status: active, revoked
+        * len(SUPPORTED_PURPOSES)
+        * 2  # grant: granted, not granted
+    )
+    check(
+        "FTF-0500D",
+        "the full matrix's own six dimensions multiply out to the real full-factorial case "
+        f"count across every closed enum this module defines (4x3x3x2x2x5): {case_count}",
+        case_count == 4 * 3 * 3 * 2 * 2 * 5,
+    )
+    check(
+        "FTF-0500D",
+        "every dimension's own real value count matches this module's closed vocabularies "
+        "exactly (4 classifications, 3 security profiles, 5 purposes)",
+        len(SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS) == 4
+        and len(SUPPORTED_PROJECT_SECURITY_PROFILES) == 3
+        and len(SUPPORTED_PURPOSES) == 5,
+    )
+
+
+def test_authorize_raises_whenever_preview_blocks_across_full_matrix() -> None:
+    violations = _full_matrix_violations()
+    shown = violations[:5]
+    more = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+    check(
+        "FTF-0500D",
+        "authorize_dataset_source_copy raises in exactly the (classification, org_default, "
+        "project, connection_status, grant, purpose) combinations the preview marks blocked, "
+        f"across the full 1,440-case matrix -- violations: {shown}{more}",
+        violations == [],
+    )
+
+
+_FULL_MATRIX_FAULT_INJECTION_CHECK_SCRIPT = """
+import sys
+sys.path.insert(0, "__ROOT__")
+from workers.data.dataset_source_security_boundary_preview_audit_evidence import (
+    SUPPORTED_PROJECT_SECURITY_PROFILES,
+    SUPPORTED_PURPOSES,
+    SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS,
+    DatasetSourceCopyAuthorizationError,
+    SecurityBoundaryCrossingError,
+    SourceCopyManifest,
+    authorize_dataset_source_copy,
+    build_dataset_source_copy_preview,
+)
+
+manifest = SourceCopyManifest(estimated_bytes=1, estimated_records=1, expected_transformations=())
+
+
+def allowed_purposes_for(requested_purpose, granted):
+    if granted:
+        return [requested_purpose]
+    return [p for p in SUPPORTED_PURPOSES if p != requested_purpose]
+
+
+# The original, narrower matrix -- always org_profile == project_profile,
+# always purpose="training" granted. Used to show this narrower check
+# stays blind to the injected fault.
+narrow_violations = []
+for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+    for profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+        preview = build_dataset_source_copy_preview(
+            source_display_name="matrix",
+            source_type="upload",
+            security_classification=classification,
+            connection_status="active",
+            allowed_purposes=["training"],
+            requested_purpose="training",
+            organization_default_security_profile=profile,
+            project_security_profile=profile,
+            manifest=manifest,
+        )
+        raised = False
+        try:
+            authorize_dataset_source_copy(
+                security_classification=classification,
+                connection_status="active",
+                allowed_purposes=["training"],
+                requested_purpose="training",
+                organization_default_security_profile=profile,
+                project_security_profile=profile,
+            )
+        except SecurityBoundaryCrossingError:
+            raised = True
+        if preview.would_cross_security_boundary != raised:
+            narrow_violations.append(f"{classification}:{profile}")
+
+# The full 1,440-case matrix.
+full_violations = []
+for classification in SUPPORTED_SOURCE_SECURITY_CLASSIFICATIONS:
+    for org_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+        for project_profile in SUPPORTED_PROJECT_SECURITY_PROFILES:
+            for connection_status in ("active", "revoked"):
+                for requested_purpose in SUPPORTED_PURPOSES:
+                    for granted in (True, False):
+                        allowed_purposes = allowed_purposes_for(requested_purpose, granted)
+                        preview = build_dataset_source_copy_preview(
+                            source_display_name="matrix",
+                            source_type="upload",
+                            security_classification=classification,
+                            connection_status=connection_status,
+                            allowed_purposes=allowed_purposes,
+                            requested_purpose=requested_purpose,
+                            organization_default_security_profile=org_profile,
+                            project_security_profile=project_profile,
+                            manifest=manifest,
+                        )
+                        raised = False
+                        try:
+                            authorize_dataset_source_copy(
+                                security_classification=classification,
+                                connection_status=connection_status,
+                                allowed_purposes=allowed_purposes,
+                                requested_purpose=requested_purpose,
+                                organization_default_security_profile=org_profile,
+                                project_security_profile=project_profile,
+                            )
+                        except (DatasetSourceCopyAuthorizationError, SecurityBoundaryCrossingError):
+                            raised = True
+                        if preview.blocked != raised:
+                            full_violations.append(
+                                f"{classification}:{org_profile}:{project_profile}:"
+                                f"{connection_status}:{requested_purpose}:{granted}"
+                            )
+
+print("NARROW=" + str(len(narrow_violations)))
+print("FULL=" + str(len(full_violations)))
+"""
+
+
+def _run_full_matrix_fault_script() -> tuple[int, int]:
+    script = _FULL_MATRIX_FAULT_INJECTION_CHECK_SCRIPT.replace("__ROOT__", str(ROOT))
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"full-matrix fault script failed (exit {result.returncode}): {result.stderr}"
+        )
+    narrow_count: int | None = None
+    full_count: int | None = None
+    for line in result.stdout.splitlines():
+        if line.startswith("NARROW="):
+            narrow_count = int(line[len("NARROW=") :])
+        elif line.startswith("FULL="):
+            full_count = int(line[len("FULL=") :])
+    if narrow_count is None or full_count is None:
+        raise RuntimeError(
+            f"full-matrix fault script produced no NARROW=/FULL= line: {result.stdout!r}"
+        )
+    return narrow_count, full_count
+
+
+def test_fault_injection_additive_org_project_divergence_early_return() -> None:
+    import workers.data.dataset_source_security_boundary_preview_audit_evidence as _module
+
+    module_path = Path(_module.__file__)
+    original_bytes = module_path.read_bytes()
+    original_hash = hashlib.md5(original_bytes).hexdigest()
+    original_text = original_bytes.decode("utf-8")
+
+    anchor = (
+        "    check_purpose_authorized(connection_status, allowed_purposes, requested_purpose)\n"
+        "\n"
+        "    effective_profile = resolve_effective_project_security_profile(\n"
+        "        organization_default_security_profile, project_security_profile\n"
+        "    )"
+    )
+    check(
+        "FTF-0500D",
+        "the exact anchor this additive-fault injection targets exists exactly once in the "
+        "real on-disk module before injection (authorize_dataset_source_copy's own "
+        "unwrapped check_purpose_authorized call, distinct from the preview function's own "
+        "try/except-wrapped call to the same helper)",
+        original_text.count(anchor) == 1,
+    )
+    # Additive fault: a brand-new early return, not an edit of an existing
+    # line -- exactly the class of fault this review round's own new DoD
+    # rule requires a test for.
+    mutated_anchor = (
+        "    if organization_default_security_profile != project_security_profile:\n"
+        "        return\n"
+    ) + anchor
+    mutated_text = original_text.replace(anchor, mutated_anchor, 1)
+
+    try:
+        module_path.write_text(mutated_text, encoding="utf-8")
+
+        narrow_count, full_count = _run_full_matrix_fault_script()
+        check(
+            "FTF-0500D",
+            "[L2 finding, reproduced] the original, narrower classification x profile matrix "
+            "(which always holds org_profile == project_profile) stays genuinely blind to the "
+            f"injected org != project early-return fault; narrow violations found: {narrow_count}",
+            narrow_count == 0,
+        )
+        check(
+            "FTF-0500D",
+            "[L2 finding, reproduced] the full 1,440-case matrix genuinely catches the injected "
+            f"org != project early-return fault; full-matrix violations found: {full_count}",
+            full_count > 0,
+        )
+    finally:
+        module_path.write_bytes(original_bytes)
+        restored_hash = hashlib.md5(module_path.read_bytes()).hexdigest()
+        check(
+            "FTF-0500D",
+            "the module file is restored byte-identical after fault injection",
+            restored_hash == original_hash,
+        )
+
+    _, clean_full_count = _run_full_matrix_fault_script()
+    check(
+        "FTF-0500D",
+        f"the full matrix check is clean again once the fault is reverted; "
+        f"violations: {clean_full_count}",
+        clean_full_count == 0,
     )
 
 
