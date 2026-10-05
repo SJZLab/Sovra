@@ -29051,3 +29051,83 @@ backlog awaiting Control-plane L2 certification and the L4 gate (99/301 certifie
 item per shift, per this list's own rule; not picking a second task. No open owner ask (`QUEUE.md` "Owner actions —
 current" unchanged — only the pre-existing, already-resolved branch-protection note). `BLOCKER.md` unchanged — no
 live entries.
+
+## 2026-10-05T21:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-oho98i` — triaged red CI on
+## PR #468 (FTF-0902 round 2's own fix of PR #467's own red CI); no new code change, disclosed and stopped
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. STEP 0.1: read
+`BLOCKER.md` (no live entries), `QUEUE.md`'s "Owner actions — current" (none open) and "## Active" section, and
+`docs/certifications/queue.md`'s tail, all fresh this shift. STEP 0.2: no `cognee-cli` binary in this sandbox —
+text-search fallback declared, same as every prior shift.
+
+`git fetch origin main` showed the designated branch already fully merged through PR #466 (FTF-0500D, the
+immediately prior shift's own fix) — reset to `origin/main` rather than stack on already-merged history, per this
+session's own "merged PR → restart from latest main" instruction.
+
+Checked `QUEUE.md`'s "## Active" item 0's own chain (0a–0e) before picking work: 0a/0b done/certified; 0c
+(FTF-0601, PR #463)/0c2 (FTF-0500C round 5, PR #464)/0c3 (FTF-0500B round 4, PR #465) each already had an open
+`[relay]` PR, independently reconfirmed green this shift via `pull_request_read get_check_runs` (44/44 on PR #463;
+trusted the prior shift's own same-day confirmation for #464/#465) — skipped per the list's own skip rule; 0d
+(FTF-0500D) already merged (PR #466). Per 0d's own note, next in list order is item 1, FTF-0902.
+
+**P** — read item 1's own history: PR #467 (round-2 fix of the 2026-10-04T11:00Z L2 review's findings — render-time
+endpoint revalidation, RFC1918-only + cloud-metadata CIDR-overlap checks, missing CI wiring, a new DNS probe) opened
+2026-10-05T17:04Z, came back with `dns: False` on both clusters in real CI, and was closed unmerged with a pointer to
+PR #468 — which fixed the two real root causes (CoreDNS-rollout-wait race; bare-Service-name vs. FQDN DNS query) and
+was itself open with a failing `network-policy-enforcement-integration` CI job at the time this shift started. Per
+CLAUDE.md "Returned work first... red CI... outranks starting a fresh backlog item," this was the shift's own work,
+not FTF-0902 implementation from scratch.
+
+**E/V** — `pull_request_read get_check_runs`/`get_workflow_run` on PR #468's attempt 1 (`37365686503`): overall
+conclusion "failure," but `get_job_logs --failed_only` reported zero jobs with conclusion `failure` — every
+non-green job showed `conclusion: cancelled` with `runner_id: 0`/`runner_name: ""` (job IDs confirmed individually
+via `actions_get get_workflow_job`), including `gate` and this PR's own target job,
+`network-policy-enforcement-integration`. Cross-checked against PR #463's own very recent green run
+(`37276590225`, same day): `network-policy-enforcement-integration` normally completes in ~3 minutes once
+scheduled (07:16:13–07:19:31) and `gate` in ~5.5 minutes — ruling out a per-job timeout (`timeout-minutes: 25` on
+that job) as the cause and pointing instead at jobs that simply never got assigned a runner, the same signature
+`BLOCKER.md`'s resolved 2026-09-30 "GitHub Actions runner-provisioning outage" entry already documents. Tried
+`actions_get get_workflow_run_logs_url` to pull step-level logs for independent confirmation — the signed download
+URL is on `results-receiver.actions.githubusercontent.com`, blocked by this sandbox's own egress policy (`curl`
+403/`connect_rejected`); relied on job-level timestamps and `runner_id` instead, same disclosed-boundary class as
+every other no-egress gap this repo already carries.
+
+This matches CLAUDE.md's CI-red "died before any test body ran (checkout, install, runner loss)" case, which
+licenses one re-run without a prior standing-down comment. Ran `actions_run_trigger rerun_workflow_run` once (the
+one sanctioned re-run) on the same run ID. **Attempt 2:** `gate` and `network-policy-enforcement-integration` — the
+only two checks this PR's diff touches — both passed; the real test step ran in under 3 minutes once it finally got
+a runner (21:24:02–21:26:58), confirming the CoreDNS-rollout-wait + FQDN fix itself is sound, not merely "didn't
+time out this time." 8 unrelated jobs (`secret-manager-integration`, `critical-behavior-requirements-integration`,
+`storage-semantics-integration`, `litellm-connection-crud-integration`, `database-api-trace-source-integration`,
+`litellm-registration-capability-integration`, `evaluation-suite-integration`,
+`tenant-isolation-query-guards-integration`) again showed the identical never-scheduled signature and were
+cancelled ~17–21 minutes after being queued — none touch this PR's own changed files
+(`tests/integration/test_ftf_0902_network_policy_enforcement.py`, `.github/workflows/ci.yml`'s FTF-0902 wiring).
+
+Per CLAUDE.md's own rule ("at most once in total... a second failure is real"), did not re-run a third time on the
+hope of a different random subset clearing — that would be exactly the unjustified-retry pattern the rule exists to
+prevent, and the two checks this PR's own diff actually affects are already confirmed green. Posted one PR comment
+on #468 (required "standing-down" disclosure) naming the failing checks, the evidence that they are infra/
+runner-scheduling noise rather than this PR's own regression, and the already-spent re-run — not merely silent, per
+Law 1/5/17 ("provider failure/outage/unknown state stays visible as blocked ... never converted to success"). No
+code change was made — there is nothing in this PR's own diff that could plausibly cause unrelated secret-manager/
+storage-semantics/litellm/database-api-trace-source/evaluation-suite/tenant-isolation jobs to fail, so widening the
+PR to "fix" infra noise would violate CLAUDE.md's own "never widen the PR on your own" rule.
+
+Updated `QUEUE.md`'s "## Active" item 1 with the full FTF-0902 round-2 history (PR #467 → #468) and this shift's own
+CI-triage record, including the clause-to-test mapping already carried in PR #468's own body. No
+`docs/certifications/queue.md`/`docs/spec-matrix.yaml` change — no new DoD submission was made this shift, only
+returned-work CI triage on an already-open PR; PR #468 stays `PROVISIONAL`/`L1-PROVEN`, awaiting independent
+Control-plane L2 re-review of the real green `gate`/`network-policy-enforcement-integration` evidence.
+
+**V (certification)** — per Law 4, not self-certified: nothing here changes `certification_state`/`proof_state`;
+FTF-0902 stays `PROVISIONAL`/`L1-PROVEN`, awaiting independent Control-plane L2 re-review and a human read of this
+shift's own disclosed CI-infra-flake evidence on PR #468.
+
+STEP 3: this file and `QUEUE.md` updated this shift, before compaction. STEP 4 stop condition (a): FTF-0902 (PR
+#468) now stays PROVISIONAL, joining the same backlog awaiting Control-plane L2 certification. Stopping here — one
+item per shift, per this list's own rule; **FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807 remain the
+next-priority items** per the Active list's own stated order (unchanged — this shift fixed CI triage on an
+already-open item, not a new backlog pick). No open owner ask (`QUEUE.md` "Owner actions — current" unchanged:
+"None currently"). `BLOCKER.md` unchanged — no live entries (this CI-infra pattern did not block all work, only one
+PR's non-target jobs, so it does not meet BLOCKER.md's own "stops ALL work" bar).

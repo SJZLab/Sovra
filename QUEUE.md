@@ -9148,21 +9148,33 @@ this same resolution (doc-only, redundant once this lands).
    For every acceptance and negative_acceptance clause, add a test that a clause-level fault turns red,
    including an additive fault (an early return, an extra allow rule). "Frontier saturated" is NOT a valid
    shift outcome while this list is non-empty.
-1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
-   directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
-   see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
-   (`kindnet`) inside the node *image*, not the binary — round-1's fix pinned only the binary to
-   v0.23.0 while the node image stayed `kindest/node:v1.31.2` (built by `kind` >=0.24, whose kindnet
-   enforces NetworkPolicy by default), so the pin never took effect. Corrected DoD (b)-(d), executed
-   this shift on a fresh branch off `main` (not a push onto PR #402's own branch): (b) split the node
-   image per cluster — `npt-baseline` now uses `kindest/node:v1.30.0` (genuinely non-enforcing),
-   `npt-enforcing` keeps `kindest/node:v1.31.2` + Calico; (c) added a self-checking pre/post-policy
-   probe on the baseline cluster (`denied` must be reachable before the policy exists; if it's then
-   unreachable after, that's its own explicit "baseline CNI enforces NetworkPolicy" failure, not a
-   generic one) plus a printed `kindnet` image for the job log; (d) removed the now-superseded
-   post-policy warm-up. (e) fallback (keep v1.31.2 + swap CNI to flannel) not needed unless this PR's
-   own CI run shows v1.30.0 failing to boot. Not self-certified (Law 4) — awaiting the real CI run on
-   the newly opened PR and independent Control-plane L2 review.
+1. **FTF-0902 — round 2 (L2 review 2026-10-04T11:00Z, PR #467 opened 2026-10-05T17:04Z, closed
+   unmerged; superseded by PR #468, open).** PR #467 fixed render-time endpoint revalidation
+   (type-gated, never `isinstance`), real RFC1918-only + cloud-metadata CIDR-overlap checks sourced
+   from `url_policy._CLOUD_METADATA_NETWORKS`, missing CI wiring for `tests/tasks/test_ftf_0902.py`,
+   and added a real DNS probe (`nslookup kubernetes.default.svc.cluster.local`) to the live-cluster
+   integration test — but PR #467's own CI run came back with `dns: False` on both clusters (a
+   probe-methodology defect, not an enforcement one: the nonenforcing baseline should never fail
+   DNS). **2026-10-05T19:47Z — PR #468 fixed this** (returned-work priority, CLAUDE.md "fix every
+   open or returned item before new work"): two real root causes, both independently confirmed
+   first — `create_cluster` never waited for CoreDNS's own rollout (only node-Ready), and the probe
+   queried the bare Service name instead of its FQDN (an untested search-list dependency). Fixed:
+   `create_cluster` now calls `wait_for_rollout(..., "deployment/coredns", timeout=120)` on both
+   clusters; `resolve_dns` now queries `kubernetes.default.svc.cluster.local` directly.
+   **CI on PR #468 (this shift):** attempt 1 (`37365686503`) came back "failure" with ~20/44 jobs
+   showing `runner_id: 0` (never scheduled), `gate` and `network-policy-enforcement-integration`
+   included — "died before any test body ran / runner loss" under CLAUDE.md's CI-red rules, so
+   re-ran once (the one sanctioned re-run for that case). Attempt 2: `gate` and
+   `network-policy-enforcement-integration` (the only two checks this PR's diff touches) both
+   passed — the real test step ran in under 3 minutes once scheduled, confirming the fix itself is
+   sound. 8 unrelated jobs (secret-manager, critical-behavior-requirements, storage-semantics,
+   litellm-connection-crud, database-api-trace-source, litellm-registration-capability,
+   evaluation-suite, tenant-isolation-query-guards integration) again showed the same
+   never-scheduled signature and were cancelled — none touch this PR's own files, same class as
+   the already-documented `BLOCKER.md` 2026-09-30 runner-provisioning entry. Disclosed on PR #468
+   (comment) rather than re-run a third time or widen the PR's scope. Not self-certified (Law 4) —
+   PROVISIONAL, awaiting Control-plane L2 re-review weighing `gate`/`network-policy-enforcement-
+   integration`'s real green result as this task's actual acceptance evidence.
 2. **FTF-1703 (Training dataset): stays deferred, now with a recorded dependency.** §55 requires
    ">=1,000 approved training traces", and §77.3 makes Argilla the owner of "review records,
    annotations and curation". So "reviewed/approved" needs FTF-R006 (Argilla review + reviewer
