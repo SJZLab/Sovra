@@ -22979,3 +22979,92 @@ as "no entries", so an index-only gitlink goes unseen.
   flips nothing.
 
 **State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md item 0b stays first.
+
+## 2026-10-05T01:30Z — FTF-H007 + FTF-04A06 round 5: fixed this shift, PR https://github.com/SJZLab/Sovra/pull/461
+
+Relay response to the 2026-10-05T00:55Z Control-plane L2 review above. That review found all 17
+faults RED and runtime protection holds, but found one new fail-open defect the round-4 change
+itself introduced, plus one fail-open helper (finding 2) and one optional rename (finding 3).
+
+**Clause-to-test mapping** (every new test independently confirmed to turn RED under its exact
+pre-fix fault first, Law 1 — see detail below):
+
+- **(1) git failure during the boundary scan must be a BLOCKING finding.** Round-4's own
+  `except GitCommandError` in `scan_local_repository_boundary` caught every `GitCommandError` from
+  `capture_local_repository` — not only the `filter.<name>.required` case it was written for — and
+  simply set `is_dirty = True` with nothing recorded. A repository git genuinely could not read
+  (corrupt index, missing tree/commit object) became `is_safe_to_lock=True` with zero blocking
+  reasons. **Production fix:** `SourceBoundaryReport` gets a new `git_read_errors: tuple[str, ...]`
+  field, included in both `is_safe_to_lock` and `blocking_reasons`. `scan_local_repository_boundary`
+  now appends every `GitCommandError` it catches — from `capture_local_repository` (the existing
+  catch), from `_scan_dangerous_git_config`, and from `scan_submodule_declarations` (both newly
+  wrapped in their own `try`/`except GitCommandError`) — to this field instead of swallowing it. The
+  function never raises uncaught; every git read failure now surfaces as its own blocking finding.
+  Tests (`test_ftf_h007.py`), each building a real one-commit repo then corrupting it exactly as the
+  review's own repro names: `test_round5_corrupt_index_boundary_scan_fails_closed` (R1: `printf
+  'DIRCgarbage' > .git/index`), `test_round5_missing_head_tree_object_boundary_scan_fails_closed`
+  (R2: delete the real `HEAD^{tree}` loose object), `test_round5_missing_head_commit_object_
+  boundary_scan_fails_closed` (R6: delete the real `HEAD` commit loose object). Each asserts
+  `report.git_read_errors` is non-empty, `report.is_safe_to_lock is False`, and (R1 only, as a
+  belt-and-suspenders check) that `evaluate_manifest_lock_readiness` raises. All three use a real
+  temporary git repository and a real git binary — never a mocked git command.
+- **(2) every helper that shells out must fail closed on a non-zero exit.** `_scan_gitlink_paths`
+  (`local_repository_connector.py`) treated ANY non-zero exit from `git ls-tree`/`git ls-files` as
+  "no entries." Checked first whether this was ever covering a real benign case: a genuinely unborn
+  `HEAD` never reaches this call at all, because `capture_local_repository`'s own
+  `_git_head_commit_sha` already raises `EmptyRepositoryError` before `scan_local_repository_
+  boundary` ever calls `scan_submodule_declarations` — so the old comment's "e.g. an unborn HEAD for
+  ls-tree" justification named a case this function could not actually be reached for. **Production
+  fix:** `_scan_gitlink_paths` now raises `GitCommandError` on any non-zero exit, matching the
+  already-fail-closed `_scan_populated_gitlinks` immediately above it in the same file. Test
+  (`test_ftf_h007.py`): `test_round5_corrupt_index_with_staged_gitlink_is_not_safe` — a real
+  submodule gitlink committed on record (via `git submodule add` against a second real local repo),
+  then the index corrupted the same way as R1. Before the fix, the corrupted `git ls-files -s` call
+  inside `scan_submodule_declarations` silently returned `()` (no submodules found) instead of
+  surfacing the read failure; after the fix it raises, caught by `scan_local_repository_boundary`'s
+  own new wrapping and recorded as a `git_read_error`.
+- **(3) optional rename.** `test_fault_injection_git_command_error_catch_is_load_bearing_for_
+  required_filter` renamed to `test_fault_injection_capture_local_repository_raises_for_required_
+  filter_precondition` — the old name claimed to exercise `scan_local_repository_boundary`'s own
+  catch branch, but the test body only ever calls `capture_local_repository` directly and never
+  removes or bypasses that branch; it flips nothing about the branch itself. The new name and
+  docstring state what the test actually proves: the branch's own precondition (that the same-size
+  stat-dirty `filter.<name>.required` scenario really does make `capture_local_repository` raise
+  `GitCommandError`).
+
+**Law 1, every new test confirmed to fail for real against the exact round-4 code first:** `git
+stash` of the two production files only (`source_boundary.py`/`local_repository_connector.py`,
+keeping every test change) — `test_round5_corrupt_index_boundary_scan_fails_closed` crashed with
+`AttributeError: 'SourceBoundaryReport' object has no attribute 'git_read_errors'` (the field did
+not exist on the round-4 class). To confirm the *real* security defect independent of the new
+field's mere absence, ran a standalone ad hoc script against the stashed (round-4) code
+reproducing the same R1 corrupt-index scenario directly against `scan_local_repository_boundary`
+and printed `report.is_safe_to_lock` — it printed `True`, confirming the fail-open defect for real,
+not merely an `AttributeError` artifact of the new test. `git stash pop` restored the fix
+byte-identical; all four new tests and the renamed test re-ran clean.
+
+**Full verification this shift.** `uv sync --all-packages`; `uv run ruff check .` clean; `ruff
+format --check .` flagged `test_ftf_h007.py` only (one `def` line over the line-length limit),
+fixed with `ruff format tests/tasks/test_ftf_h007.py`, re-verified clean, tests re-run clean after
+reformatting. `uv run mypy .` clean on both changed production files and the test file; repo-wide
+`uv run mypy .`, run only after `uv sync --all-packages` (a run before that sync spuriously
+reported 32 `alembic.op`/`alembic.context`/test `type: ignore` errors from missing dependency
+stubs, not a real repo defect — that misleading count is not carried forward here), is clean: 0
+errors across 371 source files. `python3 scripts/validate_spec.py --strict` clean; `docs/spec-matrix.yaml`
+re-parses with `python3 -c "import yaml; yaml.safe_load(...)"` after the FTF-H007/FTF-04A06 note
+additions. `product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged
+`99/301` certified / 24 product-true (Law 2 — a resubmission is not a certification). Both
+`test_ftf_h007.py` (4 new cases, 1 renamed) and `test_ftf_04a06.py` re-run clean end to end via both
+`python3` and `uv run python3`, exit 0, "all checks passed." Regression swept
+`test_ftf_04a01.py`/`test_ftf_04a07.py`/`test_ftf_h006.py` (via `uv run python3`) — all exit 0, zero
+interference (same disclosed, pre-existing `TenantContextError`/no-IPv6-stack cases as every prior
+round, not a new regression). No `ci.yml` change needed — the existing `gate`-job steps already run
+both files.
+
+Updated `docs/spec-matrix.yaml`'s FTF-04A06 and FTF-H007 entries with a full "2026-10-05 round-5
+fix" note each.
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged — not self-certified (Law 4). Awaiting
+independent Control-plane L2 re-review and a real CI run on the newly opened PR before
+certification. QUEUE.md item 0b: this round's work is done; the item stays listed until Control
+plane either certifies it or returns a round 6.

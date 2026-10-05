@@ -437,14 +437,24 @@ def _scan_gitlink_paths(root: Path, *args: str) -> tuple[str, ...]:
     `scan_submodule_declarations` below reads: `git ls-tree -r -z HEAD`
     (`<mode> <type> <sha>\\t<path>`) and `git ls-files -s -z`
     (`<mode> <sha> <stage>\\t<path>`) -- in both, the mode is the first
-    whitespace-delimited field before the tab. A non-zero exit (e.g. an
-    unborn `HEAD` for `ls-tree`) is treated as "no entries," never raised --
-    this is a continue-on-finding scan, not a refusal gate. Keeps the
-    default `_SAFETY_CONFIG_OVERRIDES`, same reasoning as
-    `_scan_populated_gitlinks` above."""
+    whitespace-delimited field before the tab. Round-5 fix (FTF-H007/
+    FTF-04A06 finding 2): a non-zero exit now raises `GitCommandError`,
+    matching `_scan_populated_gitlinks` above -- a failed read (e.g. a
+    corrupt index, so `ls-files` cannot enumerate it) must never be
+    silently treated as "no entries," which previously made a repository
+    this scan could not actually read look clean. A genuinely unborn
+    `HEAD` never reaches this call: `capture_local_repository`'s own
+    `_git_head_commit_sha` already raises `EmptyRepositoryError` for that
+    case before `scan_local_repository_boundary` ever calls
+    `scan_submodule_declarations`. Keeps the default
+    `_SAFETY_CONFIG_OVERRIDES`, same reasoning as `_scan_populated_gitlinks`
+    above."""
     result = _run_git(root, *args)
     if result.returncode != 0:
-        return ()
+        raise GitCommandError(
+            f"{root}: git {' '.join(args)} failed (exit {result.returncode}): "
+            f"{result.stderr.strip()}"
+        )
     paths: list[str] = []
     for record in result.stdout.split("\0"):
         if not record:
