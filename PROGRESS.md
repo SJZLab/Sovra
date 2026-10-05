@@ -1,4 +1,133 @@
 # PROGRESS — Sovra
+## 2026-10-05T14:40:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-q24x99` — FTF-0902 fix-and-resubmit, round 2 (L2 "2026-10-04T11:00Z" finding)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in
+full: no live entries. STEP 0.1: synced to `origin/main` at `2d52ae4` (FTF-0500D round-2 PR #466 merged by the
+immediately prior shift). Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh. `QUEUE.md`'s
+"## Active" item 0 names 0a/0b/0d DONE, with 0c/0c2/0c3 each already claimed. Re-verified directly via
+`list_pull_requests`/`pull_request_read(method=get_check_runs)` rather than trusting the prior shift's summary:
+PRs #463 (FTF-0601), #464 (FTF-0500C round 5), #465 (FTF-0500B round 4) are all still open with every check run
+`success`, `gate` included — all three skipped per the list's own skip rule ("skip only an item that has an open
+`[relay]` PR with GREEN CI"). The only open PR naming FTF-0902 (#402) is the stale pre-round-1 bundle, already
+superseded by the merged-and-re-returned PR #430 — not a green claim on the *current* round, so it does not block
+picking FTF-0902. No open PR exists for FTF-0307/FTF-1002/FTF-0510/FTF-04A18/FTF-1807/FTF-1206A either. Picked the
+next unclaimed item in strict list order: **FTF-0902**. STEP 0.2: no `cognee-cli` binary in this sandbox —
+text-search fallback declared, same as every prior shift.
+
+**P** — pulled FTF-0902's real current DoD from `docs/certifications/queue.md`'s "2026-10-04T11:00Z" entry: round-1
+CI evidence stayed real (baseline {T,T,T}, Calico {T,F,F}, self-check ran), but three new gaps were found by
+adversarial probing beyond the round-1 producer's own faults: (1) `tests/tasks/test_ftf_0902.py` is not run by any
+CI step; (2) a renderer adding a `::/0` or `169.254.169.254/32` peer stays GREEN; (3) given a mutated, subclassed
+or duck-typed endpoint, the renderer emits `::/0`, metadata, `ports: []` and `podSelector: {}`. DoD: re-validate
+every endpoint at render time accepting exact types only; derive metadata from
+`url_policy._CLOUD_METADATA_NETWORKS`; a Control-plane decision that `CidrEndpoint` accepts RFC1918-only private
+ranges; add the CI gate step; give `$defs/Cidr` an IPv4-CIDR pattern or record the narrowing; disclose DNS live
+testing as BLOCKED_EXTERNAL or add a DNS probe.
+
+Read `packages/security/network_policy_templates.py`, `tests/tasks/test_ftf_0902.py`, and
+`tests/integration/test_ftf_0902_network_policy_enforcement.py` in full before changing anything. Confirmed the
+core finding directly: `_endpoint_egress_rule` used `isinstance(endpoint, CidrEndpoint)` and simply trusted each
+endpoint's own `__post_init__` to have already validated it once, at construction time — a `CidrEndpoint` mutated
+via `object.__setattr__` after construction (the same bypass the pre-existing
+`test_render_manifest_always_revalidates_even_a_mutated_template` already proved at the *template* level, never
+extended to endpoints), a subclass overriding `__post_init__` to skip every check, or a duck-typed object with the
+right attribute names would all render without any fresh check — exactly matching the review's own three listed
+symptoms.
+
+**E** — extracted the real per-field invariant checks into two standalone functions,
+`_validate_cidr_endpoint_fields`/`_validate_pod_selector_endpoint_fields`, used both by each dataclass's own
+`__post_init__` (construction time) and by a new `_revalidate_endpoint_at_render_time` (render time, called from
+`_endpoint_egress_rule` for every endpoint on every render — independent of whatever happened at construction).
+That function type-gates via `type(endpoint) is CidrEndpoint`/`is PodSelectorEndpoint`, never `isinstance`, since a
+subclass overriding `__post_init__` still satisfies an `isinstance` check; anything else raises
+`InvalidEndpointDefinitionError`. The metadata-overlap check was rewritten from a 3-hardcoded-concrete-address
+probe loop into a real CIDR-overlap check (`network.overlaps(metadata_network)`) directly against
+`packages.security.url_policy._CLOUD_METADATA_NETWORKS` — the DoD's own named source — so this module can never
+silently drift from that list if it changes. Added `PublicCidrEndpointError` and `_RFC1918_NETWORKS` (10.0.0.0/8,
+172.16.0.0/12, 192.168.0.0/16): every `CidrEndpoint.cidr` must be `ipaddress.IPv4Network.subnet_of` one of them,
+checked *after* the metadata-overlap check so a metadata address still raises its own more specific error. Added
+the missing "FTF-0902 negative-test proof" CI step to `.github/workflows/ci.yml` (same pattern as every other
+task's own step). Added a real IPv4-CIDR regex `pattern` to `packages/contracts/jsonschema/09-domain.schema.json`'s
+`$defs/Cidr`, and updated its own and `CidrEndpoint`'s description to name the RFC1918/metadata-overlap
+restrictions the real module enforces beyond what a JSON Schema pattern alone can express (disclosed narrowing, per
+the DoD's own "or record the narrowing" alternative). Added a real `resolve_dns` probe (`nslookup
+kubernetes.default` from inside the `target` pod via `kubectl exec`) to
+`tests/integration/test_ftf_0902_network_policy_enforcement.py`'s `run_scenario`, asserted `True` on the baseline
+cluster (methodology sanity — DNS must work before enforcement is even relevant) and the enforcing cluster (the
+mandatory kube-dns egress rule genuinely lets the workload resolve names under real Calico enforcement, not merely
+rendered YAML) — this task's own acceptance clause names "DNS" explicitly and the prior version of this script only
+ever proved TCP allow/deny/metadata.
+
+New unit tests in `tests/tasks/test_ftf_0902.py`:
+`test_render_manifest_revalidates_mutated_endpoint_fields_not_merely_the_template` (a `CidrEndpoint` mutated via
+`object.__setattr__` to a wildcard, the real metadata address, a public address, an IPv6 cidr, and empty ports —
+each independently refused at render time with its own specific exception — plus a `PodSelectorEndpoint` mutated to
+an empty `pod_labels`), `test_render_manifest_rejects_a_subclassed_endpoint_bypassing_post_init` (a local
+`CidrEndpoint` subclass overriding `__post_init__` to skip every check, constructed with malicious fields, refused
+at render time by its exact type), `test_render_manifest_rejects_a_duck_typed_endpoint` (a plain object with
+CidrEndpoint-shaped attribute names but no real inheritance, refused the same way),
+`test_cidr_endpoint_requires_rfc1918_private_range` (a public resolver address and a non-metadata link-local
+address are both refused with the new, distinct `PublicCidrEndpointError`; the three RFC1918 ranges' own boundary
+addresses are accepted), and `test_metadata_overlap_is_derived_from_url_policy_cloud_metadata_networks` (imports
+the real `_CLOUD_METADATA_NETWORKS` tuple directly and asserts every IPv4 entry in it is independently refused —
+not a hardcoded duplicate that could silently go stale). The pre-existing "adjacent to the metadata address"
+boundary example (`169.254.169.253/32`) is no longer constructible at all under the new RFC1918-only restriction
+(link-local is not RFC1918) — replaced with two RFC1918 addresses numerically similar to real metadata addresses
+(`10.100.100.200/32`, `10.254.169.254/32`), proving the overlap check is a real containment test, not a sloppy
+substring match.
+
+**Law 1, additive fault injection (the new relay DoD rule):**
+`test_fault_injection_render_time_endpoint_revalidation_is_load_bearing` wraps the real
+`_revalidate_endpoint_at_render_time` call inside `_endpoint_egress_rule` with `if False:` (same established
+pattern as this suite's own pre-existing `deny_by_default_egress` fault test), in a fresh subprocess, against an
+endpoint mutated to a wildcard cidr *after* construction (so the already-passed `__post_init__` check is never the
+thing being tested) — confirmed the mutated module genuinely accepts the wildcard endpoint once the call is
+disabled, then restored the module file byte-identical (confirmed by direct bytes comparison).
+`test_fault_injection_rfc1918_check_is_load_bearing_additive` does the same for the new RFC1918 check (`if False
+and ...`), against a real public cidr (`8.8.8.8/32`) this suite depends on being refused.
+
+`uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean, zero new errors (371 files). `uv run
+mypy .` clean on every new/changed file (3 source files: `packages/security/network_policy_templates.py`,
+`tests/tasks/test_ftf_0902.py`, `tests/integration/test_ftf_0902_network_policy_enforcement.py`) — 5 pre-existing
+`apps/api/alembic/*` `alembic.op`/`alembic.context` findings and 7 pre-existing `test_ftf_0500c*`
+`unused-ignore` findings (FTF-0500C's own open round-5 PR #464) confirmed present identically on an unmodified
+checkout via `git stash` before trusting this count — untouched by this submission, repo-wide mypy still reports
+the same 32 pre-existing errors with or without this diff. `python3 scripts/validate_spec.py --strict` clean (`git
+fetch --unshallow` first, this sandbox's own pre-existing shallow-clone artifact; directly confirmed the new
+`docs/spec-matrix.yaml` prose parses with `python3 -c "import yaml; yaml.safe_load(...)"` before trusting
+`validate_spec.py`'s own result, per this repo's own 2026-10-01 unterminated-single-quote lesson). `product_truth_
+check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` still blank — disclosed, no live caller, same
+precedent this module's own docstring already established). `status.py`: unchanged `101/301` certified / 24
+product-true (Law 2 — a resubmission is not a certification). `tests/tasks/test_ftf_0902.py` re-run clean end to
+end after every fix, exit 0, "all checks passed".
+
+**Law 1, shown able to fail:** `git stash` of the module/contract fix alone (keeping every test change), re-ran
+`tests/tasks/test_ftf_0902.py` against the genuinely pre-fix module — fails immediately with `ImportError: cannot
+import name 'PublicCidrEndpointError' from 'packages.security.network_policy_templates'` (the new tests import a
+symbol the old module does not export at all, output bound to criterion `FTF-0902`, exit 1). `git stash pop`
+restored the fix; re-ran — exit 0, all checks passed. Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
+`test_ftf_h006.py` (via `uv run python3`) — zero regressions (`test_ftf_h006.py`'s own disclosed no-IPv6-stack
+skip is that suite's own pre-existing, unrelated sandbox limitation).
+
+Updated `docs/spec-matrix.yaml`'s FTF-0902 entry with a full "2026-10-05T14:40Z L2 round-2 fix-and-resubmit" note,
+including the clause-to-test mapping the relay DoD rule requires (`certification_state` stays `PROVISIONAL`,
+`proof_state` stays `L1-PROVEN` — Law 2). Appended a full evidence entry to `docs/certifications/queue.md`
+("2026-10-05T14:40Z"). Updated `QUEUE.md`: new top dated log entry; the "## Active" item 0's own list updated to
+mark FTF-0902 fixed (0d2) and the stale round-1 FTF-0902 entry (item 1) marked SUPERSEDED, disclosing the still-
+untouched FTF-0307/FTF-1002/FTF-0510/FTF-04A18/FTF-1807 items for the next shift.
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged in
+`docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR (including the
+now-CI-wired `tests/tasks/test_ftf_0902.py` step and the DNS-probe-extended `network-policy-enforcement-integration`
+job) are required before certification.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/`.github/workflows/ci.yml`/
+`packages/contracts/jsonschema/09-domain.schema.json` all updated this shift, before compaction. STEP 4 stop
+condition (a): FTF-0902 now joins the same PROVISIONAL backlog awaiting Control-plane L2 certification and the L4
+gate (101/301 certified, unchanged). Stopping here — one item per shift, per this list's own rule; not picking a
+second task. No open owner ask (`QUEUE.md` "Owner actions — current" unchanged: none open). `BLOCKER.md` unchanged
+— no live entries.
+
 ## 2026-10-05T04:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-t5nrme` — FTF-0500D fix-and-resubmit, round 2 (L2 "2026-10-04T11:00Z" finding)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in

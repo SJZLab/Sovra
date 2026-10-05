@@ -30,6 +30,19 @@ in-Docker) clusters and applies the *identical* rendered
      the one destination this task's own explicit
      `allowed_internal_endpoints` names.
 
+Both clusters also attempt one real DNS resolution from the same
+policy-restricted pod (`dns`, below) -- this task's own acceptance clause
+names "DNS" explicitly ("Install and test actual CNI/firewall/DNS/IPv6/
+metadata restrictions"), and a TCP-only proof cannot show that the
+mandatory kube-dns egress rule (`render_network_policy_manifest`'s own
+`allow_dns=True` carve-out) genuinely lets the workload resolve names under
+real enforcement, rather than merely reach a raw IP it was already told.
+This is a real `nslookup` of a well-known in-cluster Service name
+(`kubernetes.default`, always present on every real Kubernetes API server)
+run from inside the `target` pod via `kubectl exec`, asserted on the
+enforcing cluster (where a missing/misrendered DNS rule would make it
+genuinely fail, same as any other non-allow-listed destination).
+
 Both clusters probe three real, distinct TCP destinations from the same
 policy-restricted pod:
   - `allowed`  -- a real in-cluster pod IP named in the template's own
@@ -446,6 +459,30 @@ def probe_tcp(cluster: str, host: str, port: int, attempts: int = 3) -> bool:
     return False
 
 
+def resolve_dns(cluster: str, name: str) -> bool:
+    """A real DNS resolution attempt from inside the `target` pod, via the
+    mandatory kube-dns egress rule this task's own module always renders
+    when `allow_dns=True`. Uses busybox's own `nslookup` applet (already
+    the `target` pod's image) against a Service name that exists on every
+    real Kubernetes API server (`kubernetes.default`) -- genuinely fails
+    under a NetworkPolicy that blocks UDP/TCP 53 to kube-dns, genuinely
+    succeeds when that rule is actually applied and enforced."""
+    result = kubectl(
+        cluster,
+        "-n",
+        NAMESPACE,
+        "exec",
+        "target",
+        "--",
+        "nslookup",
+        "-timeout=5",
+        name,
+        check=False,
+        timeout=20,
+    )
+    return result.returncode == 0
+
+
 def build_network_policy_yaml(allowed_ip: str) -> str:
     template = NetworkPolicyTemplate(
         schema_version=1,
@@ -536,6 +573,7 @@ def run_scenario(cluster: str, node_image: str, install_calico: bool) -> dict[st
     results: dict[str, bool | str] = {
         "allowed": probe_tcp(cluster, allowed_ip, 8080),
         "denied": probe_tcp(cluster, denied_ip, 8080),
+        "dns": resolve_dns(cluster, "kubernetes.default"),
     }
     if metadata_available:
         results["metadata"] = probe_tcp(cluster, METADATA_ADDRESS, 80)
@@ -629,6 +667,12 @@ def main() -> int:
             "if this fails, the probe methodology itself cannot distinguish enforcement from "
             "network unavailability, and the negative_acceptance proof below would be worthless"
         )
+    if baseline_results.get("dns") is not True:
+        failures.append(
+            "baseline: expected DNS resolution to succeed on a nonenforcing CNI -- if this "
+            "fails, the DNS probe methodology itself is broken before enforcement is even "
+            "relevant, and the enforcing-cluster DNS assertion below would be worthless"
+        )
     if baseline_results.get("metadata") is True:
         print(
             "baseline: fake metadata service reachable with no policy enforcement (expected -- "
@@ -662,6 +706,13 @@ def main() -> int:
         failures.append(
             "enforcing: expected the non-allow-listed internal destination to be BLOCKED under "
             "real Calico enforcement -- this is this task's own core deny-by-default proof"
+        )
+    if enforcing_results.get("dns") is not True:
+        failures.append(
+            "enforcing: expected DNS resolution to succeed under real deny-by-default "
+            "enforcement -- this is the mandatory kube-dns egress carve-out "
+            "(render_network_policy_manifest's own allow_dns=True rule) genuinely working "
+            "under a real enforcing CNI, not merely rendered YAML"
         )
 
     baseline_metadata_reachable = baseline_results.get("metadata") is True
