@@ -9222,7 +9222,7 @@ this same resolution (doc-only, redundant once this lands).
      Control-plane L2 re-review and a real CI run. Next in list order: FTF-0902, FTF-0307,
      FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md
      "2026-10-04T11:00Z".
-   - **0e. FTF-1206A implemented 2026-10-05 this shift, PR opened.** Migration
+   - **0e. FTF-1206A implemented 2026-10-05 this shift, PR https://github.com/SJZLab/Sovra/pull/470 opened.** Migration
      `0019_org_gateway_policies.py` (two tables: `organization_gateway_policies`,
      `organization_gateway_route_changes`, both RLS-forced, the policy table
      SELECT/INSERT/UPDATE-only, the route-change table SELECT/INSERT-only —
