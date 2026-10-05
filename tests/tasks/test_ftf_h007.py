@@ -851,15 +851,16 @@ def test_filter_required_alone_with_same_size_stat_dirty_file_is_reported_never_
         )
 
 
-def test_fault_injection_git_command_error_catch_is_load_bearing_for_required_filter() -> None:
-    """Law 1 -- shown able to fail: with `GitCommandError` removed from the
-    tuple of exceptions `scan_local_repository_boundary` catches around its
-    own `capture_local_repository` call (stood in for by directly calling
-    the un-caught code path below), the exact same-size stat-dirty
-    `filter.<name>.required` scenario above genuinely raises instead of
-    returning a report -- proving round-4's own new `except GitCommandError`
-    branch is load-bearing, not merely coincidental with some other catch
-    clause already in place."""
+def test_fault_injection_capture_local_repository_raises_for_required_filter_precondition() -> None:
+    """Round-5 rename (Control-plane finding: the prior name claimed this
+    test exercised `scan_local_repository_boundary`'s own `except
+    GitCommandError` branch, but it only ever calls `capture_local_repository`
+    directly and never removes or bypasses that branch -- it flips nothing
+    about the branch itself. What it genuinely proves is the branch's own
+    *precondition*: that the exact same-size stat-dirty `filter.<name>.
+    required` scenario above really does make `capture_local_repository`
+    raise `GitCommandError`, so the sibling test above is exercising a real
+    exception path, not one that can never actually occur."""
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         repo = base / "repo"
@@ -952,6 +953,165 @@ def test_dangerous_git_config_key_with_spaced_subsection_is_not_truncated() -> N
             "FTF-H007",
             "the truncated (wrong) key is never reported",
             "filter.a.b" not in report.dangerous_git_config_keys,
+        )
+
+
+def _delete_loose_object(repo: Path, sha: str) -> None:
+    """Deletes a real loose git object by its sha -- used below to simulate
+    a repository git genuinely cannot read (a missing tree/commit object),
+    never a mocked git failure."""
+    object_path = repo / ".git" / "objects" / sha[:2] / sha[2:]
+    assert object_path.is_file(), f"expected a real loose object at {object_path}"
+    object_path.unlink()
+
+
+def test_round5_corrupt_index_boundary_scan_fails_closed() -> None:
+    """Round-5 DoD repro R1 (2026-10-05T00:55Z): `printf 'DIRCgarbage' >
+    .git/index` makes both `git status` and `git ls-files -s` genuinely
+    exit 128 (confirmed directly against a real git binary). Before this
+    fix, `scan_local_repository_boundary`'s own `except GitCommandError`
+    swallowed the `git status` failure from `capture_local_repository` and
+    simply treated it as "dirty, nothing further to report" -- with no
+    other finding present, `is_safe_to_lock` was incorrectly `True` for a
+    repository this scan could not actually read at all."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "a.txt").write_text("hello\n")
+        _run(repo, "add", "a.txt")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        (repo / ".git" / "index").write_text("DIRCgarbage")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "R1: a corrupt index makes the boundary scan report a " "git_read_error",
+            bool(report.git_read_errors),
+        )
+        check(
+            "FTF-H007",
+            "R1: a repository with a corrupt index is never safe to lock",
+            not report.is_safe_to_lock,
+        )
+        check(
+            "FTF-H007",
+            "R1: evaluate_manifest_lock_readiness raises for a corrupt index",
+            _raises(SourceBoundaryUnsafeError, evaluate_manifest_lock_readiness, report),
+        )
+
+
+def test_round5_missing_head_tree_object_boundary_scan_fails_closed() -> None:
+    """Round-5 DoD repro R2: deleting the real `HEAD^{tree}` loose object
+    makes `git status` genuinely exit 128 ("fatal: bad tree object HEAD",
+    confirmed directly against a real git binary) and `git ls-tree -r -z
+    HEAD` genuinely exit 128 too ("fatal: not a tree object") -- both
+    reached from `scan_local_repository_boundary`, neither silently
+    treated as "no entries" or "merely dirty" after this fix."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "a.txt").write_text("hello\n")
+        _run(repo, "add", "a.txt")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        tree_sha = _run(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+        _delete_loose_object(repo, tree_sha)
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "R2: a missing HEAD tree object makes the boundary scan report " "a git_read_error",
+            bool(report.git_read_errors),
+        )
+        check(
+            "FTF-H007",
+            "R2: a repository with a missing HEAD tree object is never " "safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
+def test_round5_missing_head_commit_object_boundary_scan_fails_closed() -> None:
+    """Round-5 DoD repro R6: deleting the real `HEAD` commit loose object
+    makes `git status` genuinely exit 128 ("fatal: bad object HEAD",
+    confirmed directly against a real git binary) while `git rev-parse
+    --verify --quiet HEAD` still happily prints the (now-dangling) sha --
+    the failure only surfaces once something actually tries to read the
+    commit/tree content, exactly the kind of failure the round-4 catch-all
+    swallowed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        _init_repo(repo)
+        (repo / "a.txt").write_text("hello\n")
+        _run(repo, "add", "a.txt")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        head_sha = _run(repo, "rev-parse", "HEAD").stdout.strip()
+        _delete_loose_object(repo, head_sha)
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "R6: a missing HEAD commit object makes the boundary scan " "report a git_read_error",
+            bool(report.git_read_errors),
+        )
+        check(
+            "FTF-H007",
+            "R6: a repository with a missing HEAD commit object is never " "safe to lock",
+            not report.is_safe_to_lock,
+        )
+
+
+def test_round5_corrupt_index_with_staged_gitlink_is_not_safe() -> None:
+    """Round-5 DoD finding 2: `_scan_gitlink_paths` previously treated any
+    non-zero exit (including a real read failure, not only a genuinely
+    empty result) as "no entries" -- so a corrupt index that makes `git
+    ls-files -s` itself fail (confirmed above, R1) silently hid a real
+    staged gitlink from `scan_submodule_declarations` instead of reporting
+    it, or at least failing closed. This test has a real staged submodule
+    gitlink on record (via `.gitmodules` + a committed gitlink entry)
+    before the index is corrupted, so the only way this can be safe is if
+    the read failure is itself swallowed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub = base / "sub"
+        _init_repo(sub)
+        (sub / "f.txt").write_text("sub\n")
+        _run(sub, "add", "f.txt")
+        _run(sub, "commit", "--quiet", "-m", "sub initial")
+
+        _init_repo(repo)
+        (repo / "a.txt").write_text("hello\n")
+        _run(repo, "add", "a.txt")
+        _run(
+            repo,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            str(sub),
+            "vendor/sub",
+        )
+        _run(repo, "commit", "--quiet", "-m", "add submodule")
+        (repo / ".git" / "index").write_text("DIRCgarbage")
+
+        report = scan_local_repository_boundary(repo, [base])
+
+        check(
+            "FTF-H007",
+            "a corrupt index with a real staged gitlink on record reports "
+            "a git_read_error rather than silently finding no submodules",
+            bool(report.git_read_errors),
+        )
+        check(
+            "FTF-H007",
+            "a corrupt index with a real staged gitlink on record is " "never safe to lock",
+            not report.is_safe_to_lock,
         )
 
 

@@ -184,6 +184,7 @@ class SourceBoundaryReport:
     dangerous_calls: tuple[DangerousCallFinding, ...]
     dangerous_git_config_keys: tuple[str, ...]
     submodule_declarations: tuple[str, ...]
+    git_read_errors: tuple[str, ...] = ()
 
     @property
     def tree_complete(self) -> bool:
@@ -208,6 +209,7 @@ class SourceBoundaryReport:
             and not self.dangerous_calls
             and not self.dangerous_git_config_keys
             and not self.submodule_declarations
+            and not self.git_read_errors
         )
 
     @property
@@ -236,6 +238,8 @@ class SourceBoundaryReport:
             reasons.append(f"dangerous git config key(s): {list(self.dangerous_git_config_keys)}")
         if self.submodule_declarations:
             reasons.append(f"submodule declaration(s): {list(self.submodule_declarations)}")
+        if self.git_read_errors:
+            reasons.append(f"git_read_error(s): {list(self.git_read_errors)}")
         return tuple(reasons)
 
 
@@ -408,6 +412,7 @@ def scan_local_repository_boundary(
     finding by construction) still runs and still reports the real
     escaping symlink as a finding rather than a crash."""
     real_root = resolve_allowed_root(root, allowed_roots)
+    git_read_errors: list[str] = []
 
     try:
         capture = capture_local_repository(root, allowed_roots)
@@ -424,7 +429,7 @@ def scan_local_repository_boundary(
         # reads -- never the filter/hook-triggering command itself) still
         # report the real finding(s).
         is_dirty = True
-    except GitCommandError:
+    except GitCommandError as exc:
         # Round-4 fix (FTF-H007/FTF-04A06 finding 5): a bare `filter.<name>.
         # required` key with no clean/smudge/process driver configured is
         # never itself an execution vector, but it genuinely makes
@@ -433,15 +438,25 @@ def scan_local_repository_boundary(
         # same-size stat-dirty tracked file carrying a matching
         # `.gitattributes` entry -- confirmed directly against a real git
         # binary (see `local_repository_connector.py`'s own corrected
-        # comment on `_DANGEROUS_GIT_CONFIG_KEY_PATTERN`). Before this fix,
-        # this exception propagated uncaught out of this whole function
-        # instead of being reported. This scanner's own job is to keep
-        # producing complete evidence regardless (continue-on-finding, same
-        # as the two exceptions above) -- dirtiness is simply unknown here,
-        # never assumed clean, and `dangerous_git_config_keys` below (a
-        # separate, pure config read -- never the failing `git status` call
-        # itself) still reports the real `filter.<name>.required` key.
+        # comment on `_DANGEROUS_GIT_CONFIG_KEY_PATTERN`). `dangerous_git_
+        # config_keys` below (a separate, pure config read -- never the
+        # failing `git status` call itself) still additionally reports the
+        # real `filter.<name>.required` key for that specific case.
+        #
+        # Round-5 fix (FTF-H007/FTF-04A06 finding, 2026-10-05T00:55Z): the
+        # round-4 version of this clause caught *every* `GitCommandError`
+        # -- including one git genuinely cannot read past at all (a
+        # corrupt index, a missing tree/commit object) -- and simply
+        # treated it as "dirty, nothing further to report," which silently
+        # made an unreadable repository look safe to lock. A git failure
+        # here is never proof of safety: it is recorded as its own
+        # blocking `git_read_error` below, same as every other unsafe
+        # finding this scanner produces, so `is_safe_to_lock` cannot be
+        # `True` while the underlying git state could not actually be
+        # read. Dirtiness stays unknown (never assumed clean), same as the
+        # two exceptions above.
         is_dirty = True
+        git_read_errors.append(f"capture_local_repository: {exc}")
 
     inventory = build_local_snapshot_inventory(
         root,
@@ -451,8 +466,23 @@ def scan_local_repository_boundary(
 
     escaping_symlinks = tuple(e.relative_path for e in inventory.entries if e.escapes_root)
     executable_hooks = _scan_git_hooks(real_root)
-    dangerous_git_config_keys = _scan_dangerous_git_config(real_root)
-    submodule_declarations = scan_submodule_declarations(real_root)
+
+    try:
+        dangerous_git_config_keys = _scan_dangerous_git_config(real_root)
+    except GitCommandError as exc:
+        dangerous_git_config_keys = ()
+        git_read_errors.append(f"_scan_dangerous_git_config: {exc}")
+
+    try:
+        submodule_declarations = scan_submodule_declarations(real_root)
+    except GitCommandError as exc:
+        # Round-5 fix, same reasoning as above: `_scan_gitlink_paths` itself
+        # now raises on a non-zero exit instead of silently returning "no
+        # entries" (finding 2) -- a git read failure here must surface as
+        # its own blocking finding too, never as a quietly empty submodule
+        # list that `is_safe_to_lock` would treat as "no submodules."
+        submodule_declarations = ()
+        git_read_errors.append(f"scan_submodule_declarations: {exc}")
 
     dangerous: list[DangerousCallFinding] = []
     for entry in inventory.entries:
@@ -468,6 +498,7 @@ def scan_local_repository_boundary(
         dangerous_calls=tuple(dangerous),
         dangerous_git_config_keys=dangerous_git_config_keys,
         submodule_declarations=submodule_declarations,
+        git_read_errors=tuple(git_read_errors),
     )
 
 

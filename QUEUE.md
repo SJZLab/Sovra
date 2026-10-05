@@ -9045,12 +9045,14 @@ this same resolution (doc-only, redundant once this lands).
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
    - **0b. FTF-H007 + FTF-04A06 (security), ROUND 5 (one fail-closed fix). Returned 2026-10-05T00:55Z after #459
-     (merge ad52761).** All 17 faults are RED and the runtime protection holds. The only open defect: the round-4
-     catch-all `except GitCommandError` in `scan_local_repository_boundary` makes a corrupt-index or missing-object
-     repo "safe to lock".
-     - Make any git failure a blocking finding.
-     - Make every helper fail closed on a non-zero exit.
-     - The DoD is in docs/certifications/queue.md "2026-10-05T00:55Z".
+     (merge ad52761). FIXED this shift (2026-10-05T01:30Z), PR to be opened — awaiting Control-plane L2 re-review.**
+     All 17 faults are RED and the runtime protection holds. The round-4 catch-all `except GitCommandError` in
+     `scan_local_repository_boundary` made a corrupt-index or missing-object repo "safe to lock". Fixed: a new
+     `SourceBoundaryReport.git_read_errors` field makes every caught `GitCommandError` (from
+     `capture_local_repository`, `_scan_dangerous_git_config`, `scan_submodule_declarations`) a blocking finding;
+     `_scan_gitlink_paths` now fails closed on a non-zero exit instead of returning "no entries". Full
+     clause-to-test mapping and Law 1 evidence in `docs/certifications/queue.md`'s "2026-10-05T01:30Z" entry.
+     Not self-certified (Law 4) — item stays listed until Control plane certifies it or returns a round 6.
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock

@@ -1,4 +1,91 @@
 # PROGRESS — Sovra
+## 2026-10-05T01:30:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1q1e7l` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 5 (PR pending)
+
+STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly — no mismatch. `BLOCKER.md` read in
+full: no live entries (the newest entries are all `RESOLVED`). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/
+`docs/certifications/queue.md` fresh. This branch's own remote ref did not exist yet at shift start (`git fetch
+origin claude/wizardly-fermat-1q1e7l` returned "couldn't find remote ref"); `git fetch origin` (full) showed it was
+created at the same timestamp as current `main` (`2cab888`, Control plane's own merge of PR #460 — the
+2026-10-05T00:55Z L2 review of round 4, returning FTF-H007+FTF-04A06 NOT CERTIFIED with a round-5 DoD). Confirmed no
+open relay PR already claims this item (`list_pull_requests` showed only the long-stale #402/#295). `QUEUE.md`'s own
+"## Active" item 0 list named 0b (this item) as next-up, highest priority. STEP 0.2: no `cognee-cli` binary in this
+sandbox — text-search fallback declared, same as every prior shift.
+
+STEP 1: picked **FTF-H007 + FTF-04A06 round 5**.
+
+STEP 2 (PEV): **P** — read the round-5 review directly against `apps/api/app/target_connectors/
+local_repository_connector.py`/`source_boundary.py`: all 17 faults RED, runtime protection holds, but round-4's own
+new `except GitCommandError` in `scan_local_repository_boundary` caught EVERY `GitCommandError` from
+`capture_local_repository` (not only the `filter.<name>.required` case it was written for) and simply set
+`is_dirty = True` with nothing recorded — a repository git genuinely could not read (corrupt index, missing
+tree/commit object) came back `is_safe_to_lock=True` with zero blocking reasons. Independently reproduced all three
+named repros (R1/R2/R6) against a real git binary in scratch repositories before writing any fix: `printf
+'DIRCgarbage' > .git/index` makes both `git status` and `git ls-files -s` exit 128; deleting the real `HEAD^{tree}`
+loose object makes `git status` exit 128 (`fatal: bad tree object HEAD`) and `git ls-tree -r -z HEAD` exit 128
+(`fatal: not a tree object`); deleting the real `HEAD` commit loose object makes `git status` exit 128 (`fatal: bad
+object HEAD`) while `git rev-parse --verify --quiet HEAD` still happily prints the now-dangling sha. Also checked
+whether `_scan_gitlink_paths`'s own "non-zero exit = no entries" comment (finding 2) was ever covering a real
+benign case: confirmed a genuinely unborn `HEAD` never reaches that call at all, because `capture_local_repository`'s
+own `_git_head_commit_sha` already raises `EmptyRepositoryError` first — the comment's own justification named a
+case this function could not actually be reached for.
+
+**E** — `SourceBoundaryReport` gets a new `git_read_errors: tuple[str, ...]` field (default `()`), wired into both
+`is_safe_to_lock` and `blocking_reasons`. `scan_local_repository_boundary` now records every `GitCommandError` it
+catches — from `capture_local_repository` (the existing catch, now also appending to `git_read_errors`), from
+`_scan_dangerous_git_config`, and from `scan_submodule_declarations` (both newly wrapped in their own
+`try`/`except GitCommandError`) — instead of swallowing any of them; the function never raises uncaught.
+`_scan_gitlink_paths` (`local_repository_connector.py`) now raises `GitCommandError` on any non-zero exit, matching
+the already-fail-closed `_scan_populated_gitlinks` immediately above it, closing finding 2. Four new tests added to
+`tests/tasks/test_ftf_h007.py`: `test_round5_corrupt_index_boundary_scan_fails_closed` (R1),
+`test_round5_missing_head_tree_object_boundary_scan_fails_closed` (R2),
+`test_round5_missing_head_commit_object_boundary_scan_fails_closed` (R6), and
+`test_round5_corrupt_index_with_staged_gitlink_is_not_safe` (finding 2 — a real committed submodule gitlink via
+`git submodule add` against a second real local repo, then the index corrupted the same way as R1). Also renamed
+`test_fault_injection_git_command_error_catch_is_load_bearing_for_required_filter` to
+`test_fault_injection_capture_local_repository_raises_for_required_filter_precondition` per the review's own
+optional item 3 (the old name claimed to exercise the scanner's own catch branch but the test body only ever calls
+`capture_local_repository` directly and never removes or bypasses that branch).
+
+**Law 1, shown able to fail first:** `git stash` of the two production files only (keeping every test change),
+re-ran against the genuine round-4 module — `test_round5_corrupt_index_boundary_scan_fails_closed` crashed with
+`AttributeError: 'SourceBoundaryReport' object has no attribute 'git_read_errors'` (the field did not exist yet on
+round-4's class). To confirm the *real* security defect independent of the new field's mere absence, ran a
+standalone ad hoc script against the stashed (round-4) code reproducing the same R1 corrupt-index scenario directly
+against `scan_local_repository_boundary` and printed `report.is_safe_to_lock` — it printed `True`, confirming the
+fail-open defect for real. `git stash pop` restored the fix byte-identical; all four new tests and the renamed test
+re-ran clean.
+
+**V** — per Law 4, not self-certified: `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged on both
+`FTF-H007`/`FTF-04A06` in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the
+opened PR are required before certification.
+
+Verification this shift: `uv sync --all-packages`; `uv run ruff check .` clean; `ruff format --check .` flagged
+`tests/tasks/test_ftf_h007.py` only (one `def` line over the line-length limit), fixed with `ruff format`,
+re-verified clean, tests re-run clean after reformatting. `uv run mypy .` clean on both changed production files and
+the test file; repo-wide `uv run mypy .`, run only after `uv sync --all-packages` (a run before that sync
+spuriously reported 32 `alembic.op`/`alembic.context`/test `type: ignore` errors from missing dependency stubs, not
+a real repo defect — that misleading count is not carried forward here), is clean: 0 errors across 371 source
+files. `python3 scripts/validate_spec.py --strict` clean; directly confirmed the updated `docs/spec-matrix.yaml`
+prose still parses with `python3 -c "import yaml; yaml.safe_load(...)"`. `product_truth_check.py --fail-on-unwired`:
+unchanged `26/26`. `status.py`: unchanged `99/301` certified / 24 product-true (Law 2 — a resubmission is not a
+certification). Both `test_ftf_h007.py` (4 new cases, 1 renamed) and `test_ftf_04a06.py` re-run clean end to end via
+both `python3` and `uv run python3`, exit 0, "all checks passed." Regression swept `test_ftf_04a01.py`/
+`test_ftf_04a07.py`/`test_ftf_h006.py` (via `uv run python3`, since a bare `python3` lacks sqlalchemy/fastapi) — all
+exit 0, zero interference (same disclosed, pre-existing `TenantContextError`/no-IPv6-stack cases as every prior
+round, not a new regression). No `ci.yml` change needed — the existing `gate`-job steps already run both files.
+
+Updated `docs/spec-matrix.yaml`'s FTF-04A06/FTF-H007 entries with a full "2026-10-05 round-5 fix" note each,
+including the clause-to-test mapping (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` —
+Law 2). Appended a full evidence entry to `docs/certifications/queue.md` ("2026-10-05T01:30Z"). Updated `QUEUE.md`:
+the "## Active" item 0's own 0b line updated to mark this round fixed and awaiting Control-plane re-review.
+
+STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated this shift,
+before compaction. STEP 4 stop condition (a): FTF-H007/FTF-04A06 round 5 now joins the same PROVISIONAL backlog
+awaiting Control-plane L2 certification and the L4 gate (99/301 certified, unchanged). Stopping here — one item per
+shift, per this list's own rule; not picking up 0c (FTF-0601) in the same shift. No open owner ask (`QUEUE.md`
+"Owner actions — current" unchanged: "None currently," both prior asks already resolved/closed 2026-10-04).
+`BLOCKER.md` unchanged — no live entries.
+
 ## 2026-10-04T23:10:00Z — Scheduled relay shift, branch `claude/wizardly-fermat-1w3lax` — FTF-H007 + FTF-04A06 fix-and-resubmit, round 4 (PR https://github.com/SJZLab/Sovra/pull/459)
 
 STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly (`ce4381117268f150f7a898a3567e4471563f130cee8f8f95193b75d4fb7051f6`) — no mismatch. `BLOCKER.md` read in full: no live entries. STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh — this branch was already synced to `origin/main` (`ce4aa9a`, 0 commits ahead/behind). The freshest entry was Control plane's own 2026-10-04T22:55Z L2 review of FTF-H007+FTF-04A06 round 3 (#457, merge `1ab0710`), returning it NOT CERTIFIED, round 4 — tests-only plus one small fix, per that review's own "No production change is expected except (5)." `QUEUE.md`'s own "## Active" item 0 list named 0b (this item) as next-up. STEP 0.2: no `cognee-cli` binary in this sandbox — text-search fallback declared, same as every prior shift.
