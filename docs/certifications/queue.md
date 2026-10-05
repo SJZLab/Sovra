@@ -23091,4 +23091,4 @@ whitespace-only; migration `0019_eval_suites_reviewer_norm` recreates both revie
 constraints with normalized (`lower(trim(...))`) conditions, with a data-remediation guard that fails
 closed (raises, naming violating row IDs) rather than silently applying a stricter constraint. Not
 self-certified (Law 4) -- `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged, awaiting
-Control-plane L2 re-review and a real CI run on the opened PR.
+Control-plane L2 re-review and a real CI run on PR https://github.com/SJZLab/Sovra/pull/463.

@@ -9089,7 +9089,7 @@ this same resolution (doc-only, redundant once this lands).
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
    - **0b. DONE 2026-10-05: FTF-H007 + FTF-04A06 CERTIFIED** (#461, merge eecfa93; see ledger.md). Next is 0c.
-   - **0c. DONE 2026-10-05: FTF-0601 round-2 fix submitted PROVISIONAL, PR opened.** All six DoD items
+   - **0c. DONE 2026-10-05: FTF-0601 round-2 fix submitted PROVISIONAL, PR https://github.com/SJZLab/Sovra/pull/463 opened.** All six DoD items
      addressed: (1) `normalize_identity` (strip+casefold) in `evaluation_suite_schema.py`, used by both
      `EvaluationSuite.__init__` and `lock_evaluation_suite`'s independence checks; `validate_reviewer_id_
      or_none` now stores the stripped value. (2) new `OrganizationMemberLookup` (fail-closed default)
