@@ -8375,7 +8375,89 @@ FTF-0902:
     Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run
     (including the corrected `network-policy-enforcement-integration` job) on the opened PR before
     certification. The node-image fix is not itself claimed as a pass here -- only that PR''s own real CI
-    run on the pushed head is that evidence.'
+    run on the pushed head is that evidence.
+
+
+    **2026-10-05T14:40Z L2 round-2 fix-and-resubmit** (Control-plane review, 2026-10-04T11:00Z, merged
+    PR #430): three new defects found by adversarial probes and fault injection beyond the round-1
+    producer''s own faults -- CI evidence from round 1 (node-image split, self-check) stayed real and
+    unaffected. Clause-to-test mapping (new relay DoD rule):
+
+    (1) `tests/tasks/test_ftf_0902.py` not run by any CI step -- fixed: added a "FTF-0902 negative-test
+    proof" step to `.github/workflows/ci.yml`, same pattern as every other task''s own step.
+
+    (2)/(3) a renderer accepting a `::/0`/metadata/empty-ports/empty-selector endpoint, or one reaching
+    it via a mutated, subclassed or duck-typed object, stayed GREEN -- `render_network_policy_manifest`
+    only ever re-validated the *template*, never re-derived each endpoint''s own invariants from its
+    current attribute values at render time, so `CidrEndpoint`/`PodSelectorEndpoint`''s own
+    `__post_init__` checks were a one-time gate a `object.__setattr__` mutation, a subclass overriding
+    `__post_init__`, or any other duck-typed stand-in could all bypass. Fixed: extracted
+    `_validate_cidr_endpoint_fields`/`_validate_pod_selector_endpoint_fields` as the single real
+    invariant-checking functions, called both at construction time (`__post_init__`) and again,
+    independently, at render time via the new `_revalidate_endpoint_at_render_time` (called from
+    `_endpoint_egress_rule` for every endpoint, every render). That function accepts *exactly*
+    `CidrEndpoint`/`PodSelectorEndpoint` via `type(endpoint) is ...`, never `isinstance`, since a
+    subclass overriding `__post_init__` still satisfies `isinstance`. New tests:
+    `test_render_manifest_revalidates_mutated_endpoint_fields_not_merely_the_template` (wildcard,
+    metadata, public, IPv6, empty-ports, empty-pod_labels mutations, each via `object.__setattr__`
+    after construction), `test_render_manifest_rejects_a_subclassed_endpoint_bypassing_post_init`, and
+    `test_render_manifest_rejects_a_duck_typed_endpoint`. Additive fault (Law 1, the new relay DoD rule):
+    `test_fault_injection_render_time_endpoint_revalidation_is_load_bearing` wraps the real
+    `_revalidate_endpoint_at_render_time` call in `_endpoint_egress_rule` with `if False:` in a fresh
+    subprocess -- a wildcard-mutated endpoint that this suite depends on being refused genuinely flips to
+    accepted once the call is disabled, then the module is restored byte-identical.
+
+    Metadata derivation: replaced the old 3-concrete-address probe loop with a real CIDR-overlap check
+    directly against `url_policy._CLOUD_METADATA_NETWORKS` (the DoD''s own named source), so this module
+    can never silently drift from that list. New test
+    `test_metadata_overlap_is_derived_from_url_policy_cloud_metadata_networks` imports that same real
+    tuple and asserts every IPv4 entry in it is independently refused.
+
+    Control-plane decision (RFC1918-only): added `PublicCidrEndpointError` and a check that every
+    `CidrEndpoint.cidr` is a subnet of `10.0.0.0/8`/`172.16.0.0/12`/`192.168.0.0/16`, checked after the
+    metadata-overlap check (so a metadata address still raises its own more specific
+    `MetadataEndpointExposedError`, not this one). New test
+    `test_cidr_endpoint_requires_rfc1918_private_range` (a public resolver address and a non-metadata
+    link-local address are both refused; the three RFC1918 ranges'' own boundaries are accepted).
+    Replaced the pre-existing "adjacent to the metadata address" boundary example (`169.254.169.253/32`,
+    itself no longer constructible under this new restriction -- link-local is not RFC1918) with two
+    RFC1918 addresses numerically similar to real metadata addresses
+    (`10.100.100.200/32`/`10.254.169.254/32`), proving the overlap check is precise rather than a
+    sloppy substring match. Additive fault:
+    `test_fault_injection_rfc1918_check_is_load_bearing_additive` (`if False and ...` around the new
+    check, same established pattern as this suite''s own pre-existing deny_by_default_egress fault test).
+
+    `$defs/Cidr` (`packages/contracts/jsonschema/09-domain.schema.json`): added a real IPv4-CIDR regex
+    `pattern`, and updated its own and `CidrEndpoint`''s description to name the RFC1918/metadata-overlap
+    restrictions the real enforcing module applies beyond what a JSON Schema pattern alone can express.
+
+    DNS: `tests/integration/test_ftf_0902_network_policy_enforcement.py` previously proved TCP
+    allow/deny/metadata only -- this task''s own acceptance clause names DNS explicitly. Added a real
+    `resolve_dns` probe (`nslookup kubernetes.default` from inside the `target` pod, via `kubectl exec`)
+    to `run_scenario`, asserted `True` on both the baseline cluster (methodology sanity: DNS must work
+    before enforcement is even relevant) and the enforcing cluster (the mandatory kube-dns egress rule
+    genuinely lets the workload resolve names under real Calico enforcement, not merely rendered YAML).
+    This integration job itself cannot run inside this sandbox (no Docker/kind, same disclosed
+    precedent) -- its real result on the opened PR''s own CI run is this item''s actual evidence.
+
+    `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .` clean repo-wide (zero new
+    errors, 371 files). `uv run mypy .` clean on every new/changed file (3 pre-existing unrelated
+    `tests/tasks/test_ftf_0500c.py`/`tests/integration/test_ftf_0500c_database_api_trace_source.py`
+    `unused-ignore` findings and 5 pre-existing `apps/api/alembic/*` `alembic.op`/`alembic.context`
+    findings are untouched by this submission -- confirmed present identically on an unmodified
+    checkout via `git stash`). `python3 scripts/validate_spec.py --strict` clean. `product_truth_check.py
+    --fail-on-unwired` unchanged `26/26` (still no live caller, disclosed). `scripts/status.py` unchanged
+    `101/301` certified / 24 product-true (Law 2). `tests/tasks/test_ftf_0902.py` re-run clean end to end,
+    exit 0, "all checks passed". **Law 1, shown able to fail:** `git stash` of the module/contract fix
+    alone (keeping every test change) and re-running `tests/tasks/test_ftf_0902.py` against the genuine
+    pre-fix module fails immediately with `ImportError: cannot import name ''PublicCidrEndpointError''`
+    (the new tests import a symbol the old module does not export) -- `git stash pop` restored the fix;
+    re-ran clean. Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/`test_ftf_h006.py` -- zero
+    regressions.
+
+    Not self-certified (Law 4) -- awaiting independent Control-plane L2 review and a real CI run
+    (including the now-CI-wired `tests/tasks/test_ftf_0902.py` step and the DNS-probe-extended
+    `network-policy-enforcement-integration` job) on the opened PR before certification.'
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0902.py

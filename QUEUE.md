@@ -1,4 +1,76 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-05T14:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-q24x99`) --
+  STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly, no mismatch; `BLOCKER.md` read,
+  no live entries. STEP 0.1: synced `origin/main` (tip `2d52ae4`, FTF-0500D round-2 PR #466 merged by
+  the immediately prior shift). Read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md` fresh.
+  "## Active" item 0: 0a/0b/0d DONE; re-verified 0c/0c2/0c3 directly via `list_pull_requests`/
+  `pull_request_read(get_check_runs)` rather than trusted from the prior shift's summary -- PRs
+  #463/#464/#465 all still open with every check run `success` (`gate` included on each): skipped
+  per the list's own skip rule. No open PR exists for FTF-0902's current round (the only PR naming
+  it, #402, is the stale pre-round-1 bundle already superseded by the merged PR #430). Picked the
+  next unclaimed item in strict list order: **FTF-0902**. STEP 0.2: no `cognee-cli` binary in this
+  sandbox -- text-search fallback declared, same as every prior shift.
+
+  STEP 2 (PEV): **P** -- pulled the real current DoD from `docs/certifications/queue.md`'s
+  "2026-10-04T11:00Z" entry (three findings: `tests/tasks/test_ftf_0902.py` not run by any CI step;
+  a renderer accepting a mutated/subclassed/duck-typed endpoint's own `::/0`/metadata/empty-ports/
+  empty-selector values; Control-plane RFC1918-only decision for `CidrEndpoint.cidr`; plus two
+  secondary items, a `$defs/Cidr` pattern and DNS live-testing disclosure). Read
+  `packages/security/network_policy_templates.py` and both existing test files in full: confirmed
+  `_endpoint_egress_rule` used `isinstance(endpoint, CidrEndpoint)` and trusted each endpoint's own
+  one-time `__post_init__` check, with no re-derivation of its current field values at render time --
+  exactly the gap the review named.
+
+  **E** -- extracted `_validate_cidr_endpoint_fields`/`_validate_pod_selector_endpoint_fields` as the
+  real invariant functions, called both at construction (`__post_init__`) and again, independently,
+  at render time via new `_revalidate_endpoint_at_render_time` (type-gated via `type(endpoint) is
+  ...`, never `isinstance`, so a subclass overriding `__post_init__` is still refused). Metadata
+  overlap now derived directly from `url_policy._CLOUD_METADATA_NETWORKS` (a real CIDR-overlap
+  check) instead of three hardcoded probe addresses. New `PublicCidrEndpointError` enforces the
+  RFC1918-only decision, checked after the metadata check. Added a CI step for
+  `tests/tasks/test_ftf_0902.py`, a `$defs/Cidr` IPv4-CIDR regex pattern, and a real
+  `resolve_dns`/`nslookup kubernetes.default` probe to the live-cluster integration test, asserted on
+  both clusters. New unit tests for every clause (mutated-endpoint revalidation across all five fault
+  shapes, a subclassed bypassing endpoint, a duck-typed endpoint, RFC1918 boundaries, metadata
+  derived from the real `url_policy` tuple) plus two additive fault-injection tests (`if False:`
+  around the new revalidation call; `if False and ...` around the new RFC1918 check), each proving
+  the real check load-bearing in a fresh subprocess against the real on-disk module, then restored
+  byte-identical. Full clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-05T14:40Z"
+  entry.
+
+  **V** -- `tests/tasks/test_ftf_0902.py`: "all checks passed". `uv run ruff check .`/
+  `ruff format --check .` clean (371 files, zero new errors). `uv run mypy .` clean on every new/
+  changed file (5 pre-existing `apps/api/alembic/*` findings and 7 pre-existing `test_ftf_0500c*`
+  `unused-ignore` findings confirmed present identically via `git stash`, untouched by this
+  submission). `python3 scripts/validate_spec.py --strict` clean (after `git fetch --unshallow`;
+  `docs/spec-matrix.yaml` prose confirmed parseable via `yaml.safe_load` first). `product_truth_
+  check.py --fail-on-unwired`: unchanged `26/26`. `status.py`: unchanged `101/301` certified / 24
+  product-true (Law 2). **Law 1, shown able to fail:** `git stash` of the module/contract fix alone
+  (keeping every test change), re-run against the genuine pre-fix module -- fails immediately with
+  `ImportError: cannot import name 'PublicCidrEndpointError'` (exit 1); `git stash pop` restored the
+  fix, re-ran clean (exit 0). Regression swept `test_ftf_0005.py`/`test_ftf_0402.py`/
+  `test_ftf_h006.py` -- zero regressions. The live-cluster `network-policy-enforcement-integration`
+  job cannot run inside this sandbox (no Docker/kind) -- its real result on the opened PR's own CI
+  run is this item's actual acceptance-clause evidence. Updated `docs/spec-matrix.yaml`'s FTF-0902
+  entry with a full "2026-10-05T14:40Z L2 round-2 fix-and-resubmit" note (`certification_state` stays
+  `PROVISIONAL`, `proof_state` stays `L1-PROVEN` -- Law 2). Appended a full evidence entry to
+  `docs/certifications/queue.md`. Updated this file's own "## Active" item 0 to mark FTF-0902 fixed
+  (0d2) and marked the stale round-1 FTF-0902 entry (item 1 below) SUPERSEDED.
+
+  **V (certification)** -- not self-certified (Law 4): `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN` unchanged; independent Control-plane L2 re-review and a real CI run on the
+  opened PR (including the now-CI-wired unit suite and the DNS-probe-extended integration job) are
+  required before certification.
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+  `.github/workflows/ci.yml`/`packages/contracts/jsonschema/09-domain.schema.json` all updated this
+  shift, before compaction. STEP 4 stop condition (a): FTF-0902 now joins the same PROVISIONAL
+  backlog awaiting Control-plane L2 certification and the L4 gate (101/301 certified, unchanged).
+  Stopping here -- one item per shift, per this list's own rule. No open owner ask. `BLOCKER.md`
+  unchanged -- no live entries.
+
+---
+
 Updated: 2026-10-05T04:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-t5nrme`) --
   STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
   `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
@@ -9133,24 +9205,36 @@ this same resolution (doc-only, redundant once this lands).
      The defects: a marker cycle and no page cap, `IsTruncated` failing open, a non-ListVersionsResult root
      accepted, and duplicate pairs. Apply the systemic same-class sweep rule in that entry. Work it after 0b–0c2.
      2026-10-05: open PR #465, green CI — skipped per this list's own skip rule.
-   - **0d. FTF-0500D fixed 2026-10-05 this shift, PR opened.** Full 6-dimension matrix test added
+   - **0d. FTF-0500D fixed 2026-10-05, PR opened.** Full 6-dimension matrix test added
      (classification x org-default x project x status x grant x purpose, 720 real cases — the
      review's own prose cited "1,440", disclosed as not matching this module's real closed enums,
      per this file's own top dated log entry) plus the additive org!=project early-return fault
      test the DoD named. Zero violations found against the unmodified module — a test-coverage
      gap, not a production defect; no module code changed. Not self-certified (Law 4) — awaiting
-     Control-plane L2 re-review and a real CI run. Next in list order: FTF-0902, FTF-0307,
-     FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in docs/certifications/queue.md
-     "2026-10-04T11:00Z".
+     Control-plane L2 re-review and a real CI run.
+   - **0d2. FTF-0902 fixed 2026-10-05 this shift, PR opened.** Render-time endpoint revalidation
+     (`_revalidate_endpoint_at_render_time`, exact-type-gated, closes the mutated/subclassed/
+     duck-typed-endpoint gap), metadata overlap now derived directly from
+     `url_policy._CLOUD_METADATA_NETWORKS`, a new `PublicCidrEndpointError` enforcing the
+     Control-plane RFC1918-only decision, a CI step added for `tests/tasks/test_ftf_0902.py`
+     (previously not run by any CI step), a `$defs/Cidr` IPv4-CIDR pattern, and a real DNS
+     probe (`nslookup kubernetes.default`) added to the live-cluster integration test. Full
+     clause-to-test mapping in `docs/certifications/queue.md`'s "2026-10-05T14:40Z" entry. Not
+     self-certified (Law 4) — awaiting Control-plane L2 re-review and a real CI run (including the
+     now-CI-wired unit suite and the DNS-probe-extended integration job). Next in list order:
+     FTF-0307, FTF-1002, FTF-0510, FTF-04A18 and FTF-1807. Their DoDs are in
+     docs/certifications/queue.md "2026-10-04T11:00Z".
    - **0e.** Then FTF-1206A (Backlog; contract `spec/addenda/FTF-1206A.json`).
    - FTF-0500B re-enters this list only if Control plane returns it again. A NEW verdict
      entry in docs/certifications/queue.md does NOT outrank 0a–0c. Work the list order, not the newest entry.
    For every acceptance and negative_acceptance clause, add a test that a clause-level fault turns red,
    including an additive fault (an early return, an extra allow rule). "Frontier saturated" is NOT a valid
    shift outcome while this list is non-empty.
-1. **FTF-0902 (PR #402's own three round-1 attempts falsified; Control plane posted a corrected DoD
-   directly on PR #402, 2026-10-01T11:08:10Z, "3-attempt count starts fresh" — EXECUTED 2026-10-03,
-   see `docs/certifications/queue.md`'s matching entry.)** Root cause: `kind` ships its default CNI
+1. **FTF-0902 round-1 history (SUPERSEDED — merged as PR #430, then returned again for new defects;
+   see item 0d2 above for the current, 2026-10-05 round-2 fix). PR #402's own three round-1 attempts
+   falsified; Control plane posted a corrected DoD directly on PR #402, 2026-10-01T11:08:10Z,
+   "3-attempt count starts fresh" — EXECUTED 2026-10-03, see `docs/certifications/queue.md`'s matching
+   entry.)** Root cause: `kind` ships its default CNI
    (`kindnet`) inside the node *image*, not the binary — round-1's fix pinned only the binary to
    v0.23.0 while the node image stayed `kindest/node:v1.31.2` (built by `kind` >=0.24, whose kindnet
    enforces NetworkPolicy by default), so the pin never took effect. Corrected DoD (b)-(d), executed
