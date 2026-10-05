@@ -22940,3 +22940,42 @@ unchanged in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and
 opened PR are required before certification.
 
 **State.** Not certified. Awaiting Control-plane L2 re-review and a real CI run.
+
+## 2026-10-05T00:55Z — Control-plane L2 review: FTF-H007 + FTF-04A06 round 4 (#459, merge ad52761) — NOT CERTIFIED, returned to relay (round 5: one fail-closed fix)
+
+**Independence.** The certifier session is `session_01QVznorVMjnmcttUhyDnoGR`. The producer session (commits 68b9f72 and 4b55831,
+plus the PR body) is `session_01SJyKvrFWRe8VDWJPiv2Zhv`. No match, so this review is independent.
+
+**CI evidence read.** In gate job 111553835307, the `test_ftf_04a06.py` step reported "all checks passed" (23:10:34Z) and
+the `test_ftf_h007.py` step reported "all checks passed" (23:11:28Z). The test diff is additive only.
+
+**Held.** An independent verifier ran the script runner on two hosts: as-is (with `filter.lfs`), and neutral (an empty
+`GIT_CONFIG_SYSTEM`). All 17 faults are RED in both modes: F1a/b, F2, F2b, F3, F4, F5a/b, F6a/b, F7a/b/c, F8, F9 and F10.
+F6 is now host-independent. The six new negative tests use the real default constants with the attack material present.
+Only F1's test stubs `_scan_populated_gitlinks`, which is permitted. The runtime sanity checks show no marker anywhere:
+- superproject and submodule filters are refused;
+- include, includeIf and worktree `core.fsmonitor` blocks the lock;
+- a `core.hooksPath` hook blocks the lock;
+- `filter.x.required` with a same-size stat-dirty file is now reported, not raised.
+A malformed config or an unborn HEAD still fails closed.
+
+**Defect: a new fail-open path, introduced by the round-4 change.** `scan_local_repository_boundary` now catches EVERY
+`GitCommandError` from `capture_local_repository` and continues. A repo that git cannot read becomes `is_safe_to_lock=True`
+with no blocking reasons, and `evaluate_manifest_lock_readiness` passes. Repro, starting from a repo with one commit:
+- R1: `printf 'DIRCgarbage' > .git/index` (status and `ls-files` exit 128);
+- R2: delete the HEAD tree object;
+- R6: delete the HEAD commit object.
+Before the round-4 change, each of these raised (fail-closed). On R1, `_scan_gitlink_paths` also treats a failed `ls-files`
+as "no entries", so an index-only gitlink goes unseen.
+
+**DoD (round 5).** Each item must be shown RED at ad52761 first:
+- (1) A git failure during the boundary scan is a BLOCKING finding. Record it on the report (e.g. `git_read_error`), add
+  it to `blocking_reasons`, and make `is_safe_to_lock` False. The only exception is that the `filter.<x>.required` case
+  may additionally report its key. Tests: R1, R2 and R6 must each give `is_safe_to_lock=False`, or raise. A test that
+  re-broadens the catch to swallow silently must turn RED.
+- (2) `_scan_gitlink_paths` and every helper that shells out must treat a non-zero exit as fail-closed, never as "no
+  entries". Test: a corrupt index plus a staged gitlink must not be safe.
+- (3) Optional: rename `test_fault_injection_git_command_error_catch_is_load_bearing_for_required_filter`, because it
+  flips nothing.
+
+**State.** `PROVISIONAL` / `L1-PROVEN` is unchanged. QUEUE.md item 0b stays first.
