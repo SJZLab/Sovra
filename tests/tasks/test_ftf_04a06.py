@@ -47,6 +47,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -517,6 +518,87 @@ def test_fault_injection_hookspath_override_is_load_bearing() -> None:
         )
 
 
+def _with_empty_git_config_system(fn: Callable[[], None]) -> None:
+    """Runs `fn()` with the ambient `GIT_CONFIG_SYSTEM` environment variable
+    this *test process* inherits pointed at a genuinely empty temp file --
+    standing in for "a neutral host with no system-level git config at all"
+    -- restoring the real ambient value afterward. L2 round-4's own explicit
+    requirement for the new baseline tests below: each must pass both as
+    this sandbox's real ambient host currently is (which, confirmed
+    directly, has a real `/etc/gitconfig` carrying `filter.lfs.(clean|
+    smudge|process|required)`) and independently on a neutral host, never
+    relying on whatever a given CI runner's own system-level git config
+    happens to contain."""
+    with tempfile.TemporaryDirectory() as tmp:
+        empty_system_config = Path(tmp) / "empty-system.gitconfig"
+        empty_system_config.write_text("")
+        original = os.environ.get("GIT_CONFIG_SYSTEM")
+        os.environ["GIT_CONFIG_SYSTEM"] = str(empty_system_config)
+        try:
+            fn()
+        finally:
+            if original is None:
+                os.environ.pop("GIT_CONFIG_SYSTEM", None)
+            else:
+                os.environ["GIT_CONFIG_SYSTEM"] = original
+
+
+def _assert_hookspath_attack_is_defeated_by_real_defaults() -> None:
+    """L2 round-4 finding F4: `test_fault_injection_hookspath_override_is_
+    load_bearing` above only proves the protection is load-bearing once it
+    is deliberately *removed* -- nothing ran this exact attack against the
+    real, unmodified default `_SAFETY_CONFIG_OVERRIDES`/`_run_git` to prove
+    the shipped defaults themselves still include it (and would turn RED,
+    not silently stay GREEN, the moment a future edit genuinely dropped
+    `core.hooksPath` from that tuple). This is that missing baseline: no
+    module attribute is monkeypatched anywhere in this function."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        evil_hooks_dir = base / "evil-hooks"
+        evil_hooks_dir.mkdir()
+        marker = base / "post_index_change_default.marker"
+        _init_repo(repo)
+        (repo / "a.txt").write_text("a\n")
+        _run(repo, "add", "a.txt")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        hook_path = evil_hooks_dir / "post-index-change"
+        hook_path.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        hook_path.chmod(0o755)
+        _run(repo, "config", "core.hooksPath", str(evil_hooks_dir))
+        (repo / "a.txt").touch()  # force a stat-dirty index refresh during status
+
+        capture = capture_local_repository(repo, [base])
+
+        check(
+            "FTF-H007",
+            "with the real, unmodified default _SAFETY_CONFIG_OVERRIDES (no "
+            "toggle flipped anywhere in this test), a repo-controlled "
+            "core.hooksPath hook never actually fires",
+            not marker.exists(),
+        )
+        check(
+            "FTF-H007",
+            "the capture itself still succeeds normally once the malicious "
+            "hooksPath config is neutralized by the real defaults",
+            capture.capture_method == "local_git_commit",
+        )
+
+
+def test_default_constants_defeat_hookspath_attack_on_host_as_is() -> None:
+    """Round-4 F4 baseline, run on this sandbox's own real ambient host
+    environment, completely unmodified."""
+    _assert_hookspath_attack_is_defeated_by_real_defaults()
+
+
+def test_default_constants_defeat_hookspath_attack_on_neutral_host() -> None:
+    """Round-4 F4 baseline, independently re-run with `GIT_CONFIG_SYSTEM`
+    forced to a genuinely empty file -- a neutral host -- proving the
+    result does not depend on this sandbox's own real host-level git
+    config (confirmed directly to carry `filter.lfs`) either way."""
+    _with_empty_git_config_system(_assert_hookspath_attack_is_defeated_by_real_defaults)
+
+
 def test_fault_injection_global_env_isolation_is_load_bearing() -> None:
     """L2 round-3 finding 2: a real, external `GIT_CONFIG_GLOBAL` pointing
     at a temp file this test controls (never the host's own real global
@@ -573,6 +655,57 @@ def test_fault_injection_global_env_isolation_is_load_bearing() -> None:
         )
 
 
+def test_default_constants_defeat_global_env_leak_attack() -> None:
+    """L2 round-4 finding F5: nothing ran this exact ambient-`GIT_CONFIG_
+    GLOBAL` attack against the real, unmodified default `_GIT_CONFIG_
+    GLOBAL_ENV_VALUE`/`_run_git`/`_scan_dangerous_git_config` to prove the
+    shipped defaults themselves still neutralize it -- the fault-injection
+    test above only proves it is load-bearing once *removed*. Uses its own
+    self-contained temp file for the ambient `GIT_CONFIG_GLOBAL`, never the
+    real host's own actual global config, so this one test is already
+    independent of the host by construction -- no separate host-condition
+    variant is needed, matching round-4's own explicit F6 instruction ("the
+    same ... independent of the host"), which applies identically here. No
+    module attribute is monkeypatched anywhere in this function."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "filter_executed_global_default.marker"
+        fake_global_config = base / "fake-global-default.gitconfig"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        fake_global_config.write_text(f"[filter \"evil\"]\n\tclean = sh -c 'touch {marker}'\n")
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        original_global_value = os.environ.get("GIT_CONFIG_GLOBAL")
+        os.environ["GIT_CONFIG_GLOBAL"] = str(fake_global_config)
+        try:
+            capture = capture_local_repository(repo, [base])
+        finally:
+            if original_global_value is None:
+                os.environ.pop("GIT_CONFIG_GLOBAL", None)
+            else:
+                os.environ["GIT_CONFIG_GLOBAL"] = original_global_value
+
+        check(
+            "FTF-H007",
+            "with the real, unmodified default GIT_CONFIG_GLOBAL=/dev/null "
+            "override in place, an ambient GIT_CONFIG_GLOBAL pointed at a "
+            "malicious filter config never leaks through and never executes",
+            not marker.exists(),
+        )
+        check(
+            "FTF-H007",
+            "the clean repo's capture still succeeds normally, not refused "
+            "or blocked by the (correctly) out-of-scope global config",
+            capture.capture_method == "local_git_commit",
+        )
+
+
 def test_fault_injection_nosystem_env_isolation_is_load_bearing() -> None:
     """L2 round-3 finding 3 ("Use GIT_CONFIG_SYSTEM similarly for
     NOSYSTEM"): a real, external `GIT_CONFIG_SYSTEM` pointing at a temp
@@ -624,6 +757,63 @@ def test_fault_injection_nosystem_env_isolation_is_load_bearing() -> None:
             "through and executes, independent of the real host's own "
             "/etc/gitconfig",
             marker.exists(),
+        )
+
+
+def test_default_constants_defeat_nosystem_env_leak_attack() -> None:
+    """L2 round-4 finding F6: the fault-injection test above is deliberately
+    self-contained (its own ambient `GIT_CONFIG_SYSTEM` temp file, never
+    this sandbox's own real `/etc/gitconfig`) and only proves
+    `GIT_CONFIG_NOSYSTEM=1` is load-bearing once removed. Round-4's own
+    review found "Removing GIT_CONFIG_NOSYSTEM is RED only on a host whose
+    /etc/gitconfig has filter.lfs. It is GREEN on a neutral host" -- this
+    sandbox's own real `/etc/gitconfig`, confirmed directly, does carry
+    `[filter "lfs"]` with `clean`/`smudge`/`process`/`required` all set, and
+    a real `git-lfs` binary is on `PATH` -- exactly the host-dependent
+    condition the finding names. This baseline test, per round-4's own
+    explicit instruction ("the same [as F5], using an ambient GIT_CONFIG_
+    SYSTEM set to the test's own file, independent of the host"), uses its
+    own self-contained temp file rather than relying on that real ambient
+    `/etc/gitconfig` at all -- so it is, by construction, independent of
+    whether the host running it has LFS configured system-wide or not,
+    resolving the host-dependence this exact finding named. No module
+    attribute is monkeypatched anywhere in this function."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        marker = base / "filter_executed_system_default.marker"
+        fake_system_config = base / "fake-system-default.gitconfig"
+        _init_repo(repo)
+        (repo / ".gitattributes").write_text("*.secret filter=evil\n")
+        (repo / "a.secret").write_text("hello\n")
+        _run(repo, "add", ".gitattributes", "a.secret")
+        _run(repo, "commit", "--quiet", "-m", "initial")
+        fake_system_config.write_text(f"[filter \"evil\"]\n\tclean = sh -c 'touch {marker}'\n")
+        (repo / "a.secret").write_text("hello\n")
+        (repo / "a.secret").touch()
+
+        original_system_value = os.environ.get("GIT_CONFIG_SYSTEM")
+        os.environ["GIT_CONFIG_SYSTEM"] = str(fake_system_config)
+        try:
+            capture = capture_local_repository(repo, [base])
+        finally:
+            if original_system_value is None:
+                os.environ.pop("GIT_CONFIG_SYSTEM", None)
+            else:
+                os.environ["GIT_CONFIG_SYSTEM"] = original_system_value
+
+        check(
+            "FTF-H007",
+            "with the real, unmodified default GIT_CONFIG_NOSYSTEM=1 override "
+            "in place, a redirected ambient GIT_CONFIG_SYSTEM pointed at a "
+            "malicious filter config never leaks through and never executes",
+            not marker.exists(),
+        )
+        check(
+            "FTF-H007",
+            "the clean repo's capture still succeeds normally, not refused "
+            "or blocked by the (correctly) out-of-scope system config",
+            capture.capture_method == "local_git_commit",
         )
 
 
@@ -806,6 +996,67 @@ def test_fault_injection_ignore_submodules_flag_is_load_bearing() -> None:
             "submodule and its filter driver executes",
             marker.exists(),
         )
+
+
+def _assert_ignore_submodules_flag_defeats_attack_by_real_defaults() -> None:
+    """L2 round-4 finding F1: the fault-injection test above only proves
+    `_GIT_STATUS_IGNORE_SUBMODULES_FLAG` is load-bearing once it is
+    deliberately removed. This is the missing baseline the round-4 DoD asks
+    for verbatim: "stub only `_scan_populated_gitlinks` to return `()`,
+    populate a submodule filter, keep the flag, run capture, and assert no
+    marker." The real `_GIT_STATUS_IGNORE_SUBMODULES_FLAG` default is never
+    touched here -- only the independent pre-scan is stubbed out, isolating
+    this one layer exactly as the fault-injection test does, so this test
+    proves the flag ITSELF (under its own real, unmodified default) still
+    defeats the attack even when the separate pre-scan that would otherwise
+    also catch it first is bypassed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        repo = base / "repo"
+        sub = repo / "sub"
+        marker = base / "submodule_filter_executed_default.marker"
+        _init_repo(repo)
+        (repo / "top.txt").write_text("top\n")
+        _run(repo, "add", "top.txt")
+        _run(repo, "commit", "--quiet", "-m", "top-initial")
+        _make_populated_submodule(sub, marker)
+        sub_head = _run(sub, "rev-parse", "HEAD").stdout.strip()
+        _run(repo, "update-index", "--add", "--cacheinfo", f"160000,{sub_head},sub")
+        _run(repo, "commit", "--quiet", "-m", "add plain gitlink")
+        (sub / "a.secret").write_text("hello\n")
+        (sub / "a.secret").touch()
+
+        original_scan = _connector_module._scan_populated_gitlinks
+        _connector_module._scan_populated_gitlinks = lambda root: ()
+        try:
+            capture_local_repository(repo, [base])
+        except _connector_module.LocalRepositoryConnectorError:
+            pass
+        finally:
+            _connector_module._scan_populated_gitlinks = original_scan
+
+        check(
+            "FTF-H007",
+            "with the real, unmodified default _GIT_STATUS_IGNORE_SUBMODULES_"
+            "FLAG (only the independent pre-scan stubbed out, per the DoD's "
+            "own isolation requirement), git status still never recurses "
+            "into the populated submodule and its filter driver never fires",
+            not marker.exists(),
+        )
+
+
+def test_default_constants_defeat_submodule_recursion_attack_on_host_as_is() -> None:
+    """Round-4 F1 baseline, run on this sandbox's own real ambient host
+    environment, completely unmodified."""
+    _assert_ignore_submodules_flag_defeats_attack_by_real_defaults()
+
+
+def test_default_constants_defeat_submodule_recursion_attack_on_neutral_host() -> None:
+    """Round-4 F1 baseline, independently re-run with `GIT_CONFIG_SYSTEM`
+    forced to a genuinely empty file -- a neutral host -- proving the
+    result does not depend on this sandbox's own real host-level git
+    config (confirmed directly to carry `filter.lfs`) either way."""
+    _with_empty_git_config_system(_assert_ignore_submodules_flag_defeats_attack_by_real_defaults)
 
 
 def test_symlink_pointing_inside_root_is_followed_safely() -> None:

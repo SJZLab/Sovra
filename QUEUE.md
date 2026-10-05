@@ -1,4 +1,75 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-04T23:10:00Z (scheduled relay shift, branch `claude/wizardly-fermat-1w3lax`) —
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch;
+  `BLOCKER.md` read, no live entries. STEP 0.1: this branch was already synced to `origin/main` at
+  `ce4aa9a` (0 commits ahead/behind) -- read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
+  queue.md` fresh. The "## Active" item 0 list (corrected 2026-10-04T15:25Z by Control plane) names
+  0a DONE, 0b **FTF-H007 + FTF-04A06 round 4** (returned 2026-10-04T22:55Z after PR #457/merge
+  `1ab0710`) as next, tests-only plus one small fix per that review's own "No production change
+  expected except (5)." STEP 0.2: no `cognee-cli` binary in this sandbox -- text-search fallback
+  declared, same as every prior shift.
+
+  STEP 2 (PEV): **P** -- read the 2026-10-04T22:55Z review's five findings (F1, F4, F5, F6 "tests
+  not load-bearing," plus the genuine `filter.<name>.required` same-size-stat-dirty defect) directly
+  against `local_repository_connector.py`/`source_boundary.py`/both test files before any change,
+  then independently reproduced finding 5 against a real git binary in a scratch repository first
+  (confirmed: setting `filter.evil.required=true` alone, after an earlier `git status` call has
+  populated git's own stat cache, makes a *same-size, byte-identical, re-touched* tracked file's
+  next `git status` genuinely fail non-zero -- a real content *modification* instead does NOT
+  reproduce it, which is exactly why the pre-existing `test_filter_required_alone_is_reported_
+  never_raises` test, which only modifies content, stayed green through this real defect). Also
+  confirmed this sandbox's own real `/etc/gitconfig` carries `[filter "lfs"]` clean/smudge/process/
+  required with a real `git-lfs` binary on `PATH` -- the exact "host with LFS config" condition the
+  review named for F6.
+
+  **E** -- added six new tests to `test_ftf_04a06.py` (F4: `test_default_constants_defeat_
+  hookspath_attack_on_host_as_is`/`..._on_neutral_host`; F1: `test_default_constants_defeat_
+  submodule_recursion_attack_on_host_as_is`/`..._on_neutral_host`; F5: `test_default_constants_
+  defeat_global_env_leak_attack`; F6: `test_default_constants_defeat_nosystem_env_leak_attack`),
+  each running the real attack against the real, unmodified default constants (never flipping a
+  toggle) and asserting the marker/leak is absent -- the gap the review named precisely ("no test
+  runs the DEFAULT constants against [the attack] and asserts the marker is absent"). Added two new
+  tests to `test_ftf_h007.py` for finding 5 and fixed the one genuine production defect:
+  `source_boundary.scan_local_repository_boundary` now also catches `GitCommandError` around its own
+  `capture_local_repository` call (same continue-on-finding treatment as the two exceptions already
+  caught there) so the `filter.<name>.required` key is still reported rather than the exception
+  propagating out of the whole function uncaught; corrected the wrong round-3 comment on
+  `_DANGEROUS_GIT_CONFIG_KEY_PATTERN` that claimed this case never fails. Every new test independently
+  confirmed to turn RED against the exact pre-fix behavior first (Law 1) -- full clause-to-test
+  mapping in `docs/certifications/queue.md`'s "2026-10-04T23:10Z" entry and `docs/spec-matrix.yaml`'s
+  FTF-04A06/FTF-H007 entries (round-4 notes). **V** -- per Law 4, not self-certified:
+  `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged on both tasks in
+  `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a real CI run on the opened PR
+  are required before certification.
+
+  Verification this shift: `uv sync --all-packages`; `uv run ruff check .`/`ruff format --check .`
+  clean (one `UP035` import-source finding on the new test helper's own `Callable` import, self-fixed
+  to `collections.abc` before this count). `uv run mypy .` clean repo-wide (371 source files, zero
+  errors). `git fetch --unshallow` (this sandbox's own pre-existing shallow-clone artifact);
+  `python3 scripts/validate_spec.py --strict` clean; directly confirmed the new `docs/spec-
+  matrix.yaml` prose parses with `python3 -c "import yaml; yaml.safe_load(...)"` first, per this
+  repo's own 2026-10-01 YAML-unterminated-quote lesson. `product_truth_check.py --fail-on-unwired`:
+  unchanged `26/26`. `status.py`: unchanged `99/301` certified / 24 product-true (Law 2 -- a
+  resubmission is not a certification). Both `test_ftf_04a06.py` and `test_ftf_h007.py` re-run clean
+  end to end after every fix, exit 0, "all checks passed." Regression swept `test_ftf_04a01.py`/
+  `test_ftf_04a07.py`/`test_ftf_h006.py` (via `uv run python3`, since a bare `python3` lacks
+  sqlalchemy/fastapi) -- zero interference (the printed `TenantContextError` traceback and the
+  disclosed no-IPv6-stack skip are both that suite's own pre-existing, disclosed cases).
+
+  Updated `docs/spec-matrix.yaml`'s FTF-04A06/FTF-H007 entries with a full "2026-10-04 round-4 fix"
+  note each (`certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN` -- Law 2).
+  Appended a full evidence entry to `docs/certifications/queue.md` ("2026-10-04T23:10Z"). Updated
+  `QUEUE.md`'s own "## Active" item 0b to mark it fixed and disclose the next item (0c, FTF-0601) for
+  the next shift.
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml` all updated
+  this shift, before compaction. STEP 4 stop condition (a): FTF-H007/FTF-04A06 round 4 now joins the
+  same PROVISIONAL backlog awaiting Control-plane L2 certification and the L4 gate (99/301 certified,
+  unchanged). Stopping here -- one item per shift, per this list's own rule; not picking up 0c
+  (FTF-0601) in the same shift. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged:
+  "None currently," both prior asks already resolved/closed 2026-10-04). `BLOCKER.md` unchanged -- no
+  live entries.
+
 Updated: 2026-10-04T21:45:00Z (scheduled relay shift, branch `claude/wizardly-fermat-tjwpap`) —
   STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` directly, no mismatch; `BLOCKER.md` read
   in full, no live entries. STEP 1: this branch was already synced to `origin/main` at `f9d062f`
@@ -8973,14 +9044,17 @@ this same resolution (doc-only, redundant once this lands).
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
-   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 4 (tests only plus one small fix). Returned 2026-10-04T22:55Z after
-     #457 (merge 1ab0710).** The runtime protection holds, but four protections are not pinned by any failing test
-     (F1, F4, F5, F6).
-     - Add negative tests that use the default constants with the attack material present, and run them on a neutral
-       `GIT_CONFIG_SYSTEM`.
-     - Fix the `filter.<x>.required` reporting.
-     - The DoD is in docs/certifications/queue.md "2026-10-04T22:55Z".
-     - Every probe command must be an inert `touch <marker>`.
+   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 4 — FIXED this shift (2026-10-04T23:10Z), PR https://github.com/SJZLab/Sovra/pull/459.**
+     Returned 2026-10-04T22:55Z after #457 (merge 1ab0710). All five round-4 findings closed: four new baseline
+     tests (F1, F4, F5, F6) run the real attack against the real, unmodified default constants (two of the four,
+     F4/F1, independently re-run once on this sandbox's own real ambient host — confirmed to carry a real
+     `/etc/gitconfig` with `filter.lfs` — and once with `GIT_CONFIG_SYSTEM` forced to a genuinely empty file); the
+     `filter.<x>.required` same-size stat-dirty finding is fixed in `source_boundary.scan_local_repository_boundary`
+     (now also catches `GitCommandError`, reporting the key instead of letting the exception propagate uncaught).
+     Full clause-to-test mapping and Law 1 evidence in docs/certifications/queue.md "2026-10-04T23:10Z" and
+     docs/spec-matrix.yaml's FTF-04A06/FTF-H007 entries. Not self-certified (Law 4) — awaiting Control-plane L2
+     re-review and a real CI run. Removed from this list's own remaining-work set; the merged PR is Control
+     plane's own next step to re-review. **0c (FTF-0601) is next.**
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
