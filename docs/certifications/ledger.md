@@ -9750,3 +9750,60 @@ PR is not landed by the next certifier shift.
   - The command wrote `INJECTED.txt` into the target working tree. Capture then returned `local_dirty_snapshot`, including the file it had just caused to be written.
   - This violates FTF-04A06's own negative_acceptance ("never edit the target working tree") and §7A.4/§66.2 ("Disable Git hooks"). It was found while independently verifying FTF-H007, which inherits the same call.
 - Action: `certification_state` CERTIFIED → PROVISIONAL, `proof_state` → L1-PROVEN, evidence_hash cleared, and `spec/tasks.json`/`TRACKER.json` reverted to match. Re-certification requires the `_run_git` hardening and a regression test listed in `docs/certifications/queue.md` (2026-10-01 entry), plus an independent review.
+
+## FTF-H007 + FTF-04A06 — Untrusted source acquisition / Local repository connector — CERTIFIED (2026-10-05)
+- Criterion IDs: FTF-H007, FTF-04A06. FTF-04A06 is re-certified after the 2026-10-01 decertification.
+- Final PR: #461. Merge commit: eecfa936df90045dfa9de20bada9dbd3f7780cda (PR head `1f880dc`). This closes rounds 1–5: #403,
+  #455, #457, #459 and #461.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent:
+  - Producer sessions across the rounds: `01FsHFXF` (#461), `01SJyKvr` (#459), `01JBoQqX` (#457), `0187FXHS` (#455), and
+    `01Tt961y`/`01KZxZHc` (#403/#402).
+  - Every commit touching `local_repository_connector.py`, `source_boundary.py`, `test_ftf_04a06.py` or `test_ftf_h007.py`
+    was checked by trailer: `0159tZvU`, `015T4mqq`, `0187FXHS`, `01FsHFXF`, `01JBoQqX`, `01SJyKvr`, `01Tt961y`.
+  - None is this session, and this session appears in no PR text as author or resolver. Control-plane merges of green relay
+    PRs are not authorship.
+- Date: 2026-10-05.
+- CI: gate job 111575145622 on head `1f880dc`, 44/44 success. Step `test_ftf_04a06.py` printed "FTF-04A06 local repository
+  connector tests: all checks passed" (01:08:38Z), and step `test_ftf_h007.py` printed "FTF-H007 source boundary tests: all
+  checks passed" (01:09:45Z).
+- Fault injection (Law 1). Run by this session directly with the CI script runner, on two hosts: (A) as-is, with
+  `filter.lfs` in `/etc/gitconfig`; (B) neutral, with `GIT_CONFIG_SYSTEM` an empty file. Every fault was reverted with
+  `git checkout` and the tree confirmed clean, 21/21 per mode.
+  - RED in both modes:
+    - F1a/b `--ignore-submodules=all` removed;
+    - F2a/F2b gitlink scans early-return;
+    - F3 populated-gitlink refusal removed;
+    - F4 hooksPath override removed;
+    - F5a/b `GIT_CONFIG_GLOBAL` isolation removed;
+    - F6a/b `GIT_CONFIG_NOSYSTEM` isolation removed (host-independent);
+    - F7a/b/c filter pattern narrowed to `clean`;
+    - F8 config-scan early return;
+    - F9 `--local` restored;
+    - F10 required-filter catch removed;
+    - F13 `is_safe_to_lock` ignores `git_read_errors`.
+  - F11 (capture git error swallowed), F12 (`_scan_gitlink_paths` non-zero → "no entries") and F14 (submodule-scan git error
+    swallowed) are GREEN individually. They are redundant layers, not gaps: a direct probe shows corrupt-index (R1),
+    missing-tree (R2) and missing-commit (R6) repos stay `is_safe_to_lock=False` under each alone, through the other
+    recorder. Both pairs F11+F14 and F11+F12 turn the H007 suite RED (8–9 FAILs) in both modes.
+- Runtime, verified by independent verifiers over rounds 2–4 with inert `touch` markers (no marker ever created), and
+  re-probed this round:
+  - superproject `filter.*.clean/process/smudge` is refused;
+  - plain, registered, nested and index-only submodule filters are refused before any `git status`;
+  - include, includeIf and `config.worktree` `core.fsmonitor` blocks the lock;
+  - a `core.hooksPath` hook never fires;
+  - `filter.x.required` is reported, not raised;
+  - R1, R2 and R6 are not safe;
+  - git missing from PATH is not safe;
+  - a `.git` file pointing to a missing gitdir, or a bare repo, raises `NotAGitRepositoryError`;
+  - a clean repo and an ordinary dirty repo are both safe (no false positive).
+- Contract: FTF-H007 acceptance ("malicious reference repo … scan produces evidence without execution/escape and incomplete
+  critical snapshot blocks lock") and FTF-04A06 negative_acceptance ("path/symlink traversal and concurrent file drift fail;
+  never edit the target working tree") are met. The 2026-10-01 decertification cause (fsmonitor execution) and every
+  later vector (filter drivers, include/worktree scope, submodules, hooks, env leakage, unreadable repos) is closed and
+  pinned.
+- Gates on eecfa93: `product_truth_check` 26/26, `validate_spec --strict` clean, `data_exposure_check` OK, and the CLAUDE.md
+  hash matches. `verify_task.py --stage task` reports BLOCKED ("no merged verification evidence yet") for these two items
+  AND for already-CERTIFIED items (FTF-0212, 04A15, 0306): a repo-wide tooling gap, not specific to this item, filed as a
+  follow-up.
+- `docs/spec-matrix.yaml` is set to CERTIFIED / L2-CERTIFIED with evidence_hash = merge commit, and
+  `sync_certified_status()` was run (TRACKER.json and spec/tasks.json updated).
