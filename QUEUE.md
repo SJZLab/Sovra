@@ -9044,17 +9044,13 @@ this same resolution (doc-only, redundant once this lands).
 0. **2026-10-04 (corrected 15:25Z by Control plane): highest priority, one item per shift, one PR per item.**
    Work strictly in this order. Skip only an item that has an open `[relay]` PR with GREEN CI.
    - **0a. DONE.** #449's red CI was fixed via #453, which merged as 6473924.
-   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 4 — FIXED this shift (2026-10-04T23:10Z), PR https://github.com/SJZLab/Sovra/pull/459.**
-     Returned 2026-10-04T22:55Z after #457 (merge 1ab0710). All five round-4 findings closed: four new baseline
-     tests (F1, F4, F5, F6) run the real attack against the real, unmodified default constants (two of the four,
-     F4/F1, independently re-run once on this sandbox's own real ambient host — confirmed to carry a real
-     `/etc/gitconfig` with `filter.lfs` — and once with `GIT_CONFIG_SYSTEM` forced to a genuinely empty file); the
-     `filter.<x>.required` same-size stat-dirty finding is fixed in `source_boundary.scan_local_repository_boundary`
-     (now also catches `GitCommandError`, reporting the key instead of letting the exception propagate uncaught).
-     Full clause-to-test mapping and Law 1 evidence in docs/certifications/queue.md "2026-10-04T23:10Z" and
-     docs/spec-matrix.yaml's FTF-04A06/FTF-H007 entries. Not self-certified (Law 4) — awaiting Control-plane L2
-     re-review and a real CI run. Removed from this list's own remaining-work set; the merged PR is Control
-     plane's own next step to re-review. **0c (FTF-0601) is next.**
+   - **0b. FTF-H007 + FTF-04A06 (security), ROUND 5 (one fail-closed fix). Returned 2026-10-05T00:55Z after #459
+     (merge ad52761).** All 17 faults are RED and the runtime protection holds. The only open defect: the round-4
+     catch-all `except GitCommandError` in `scan_local_repository_boundary` makes a corrupt-index or missing-object
+     repo "safe to lock".
+     - Make any git failure a blocking finding.
+     - Make every helper fail closed on a non-zero exit.
+     - The DoD is in docs/certifications/queue.md "2026-10-05T00:55Z".
    - **0c. FTF-0601. Returned NOT CERTIFIED in the same 2026-10-01T13:40Z entry — NOT awaiting review.** DoD:
      1. Strip `reviewer_id` on store, and compare it with the creator after strip+casefold.
      2. `reviewer_id` must be an existing member of the suite's organization. Only that reviewer may lock
