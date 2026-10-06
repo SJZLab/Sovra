@@ -3,7 +3,7 @@
 
 ## Canonical meaning
 
-This is the complete Factory queue index. It contains 300 frozen required work-item records plus 1 owner-approved addendum (FTF-1206A, docs/adr/0002, contract in spec/addenda/; denominator 301): 246 retained feature tasks, 36 hardening tasks, and 18 reuse-architecture tasks. The complete task contracts define the acceptance, negative-acceptance, ownership, dependency, and verification rules for every row.
+This is the complete Factory queue index. It contains 300 frozen required work-item records plus 2 owner-approved addenda (FTF-1206A, docs/adr/0002; FTF-0103A, docs/adr/0003; contracts in spec/addenda/; denominator 302): 246 retained feature tasks, 36 hardening tasks, and 18 reuse-architecture tasks. The complete task contracts define the acceptance, negative-acceptance, ownership, dependency, and verification rules for every row.
 
 ## Queue rules
 
@@ -30,6 +30,7 @@ A task is READY only when its contract, exact scope/files, positive and negative
 | FTF-0101 | retained_feature | OIDC login | FTF-0004, FTF-0005, FTF-0102 | AF-33 | Q01, Q24 | FTF-0102 |
 | FTF-0102 | retained_feature | Organization/workspace schema | FTF-0004, FTF-0005, FTF-H001 | AF-08 | Q01, Q24 | FTF-0102 |
 | FTF-0103 | retained_feature | RBAC middleware | FTF-0101, FTF-0102 | AF-08, AF-33 | Q01, Q24 | FTF-0102 |
+| FTF-0103A | retained_feature (addendum, ADR 0003) | Live session principal and Membership persistence | FTF-0101, FTF-0102, FTF-0103, FTF-0104, FTF-0105, FTF-H003 | AF-08, AF-33, CAP-01 | Q01, Q24 | FTF-0102 |
 | FTF-0104 | retained_feature | Audit event writer | FTF-0102 | AF-08, AF-33 | Q01, Q24 | FTF-0102 |
 | FTF-0105 | retained_feature | Tenant-isolation query guards | FTF-0102, FTF-0103 | CAP-01 | Q01, Q24 | FTF-0102 |
 | FTF-0106 | retained_feature | RBAC/IDOR security tests | FTF-0102, FTF-0103, FTF-0104, FTF-0105, FTF-H003 | CAP-01 | Q01, Q24 | FTF-0102 |

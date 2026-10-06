@@ -1,0 +1,1168 @@
+[
+ {
+  "id": "FTF-0001",
+  "title": "Initialize monorepo",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Monorepo scaffolding/layout only (workspace manifests, pyproject, contracts stubs); nothing for a route/worker/UI to call.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-0002",
+  "title": "Add formatting/lint/type checks",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Lint/format/type-check config (module apps/api/app/config/add_formatting_lint_type_checks.py); CI/tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-0003",
+  "title": "Add test harnesses",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Test harness tooling; CI only.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-0004",
+  "title": "Docker local stack",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Local docker stack readiness checker (apps/api/app/config/docker_local_stack.py, __main__ CLI, only imported by services/environment_preflight.py <- scripts/generate_compatibility_lock.py); operator/dev tooling, not a product path.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-0005",
+  "title": "Configuration system",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "Settings (Settings.from_env()) @ apps/api/app/main.py:168",
+  "reason": "create_app() builds the live app engine from Settings.from_env().database_url (main.py:168,175).",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0006",
+  "title": "Observability foundation",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0903",
+  "alternates": [
+   "FTF-0711",
+   "FTF-1505"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "observability_foundation has zero importers. Its docstring says future API routes/Temporal activities wrap handlers in it. 0903 (Content-free telemetry; depends 0006) is the closest telemetry-schema consumer; 0711 (training metric reporting worker) and 1505 are other direct dependents. No planned task explicitly wraps apps/api routes.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0102",
+  "title": "Organization/workspace schema",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "validate_name / set_tenant_context @ apps/api/app/projects/project_schema.py:248 (Project.__init__, reached from POST projects route via project_crud.py:271); apps/api/app/auth/tenant_isolation_query_guards.py:156 (set_tenant_context bound for every tenant_scoped_session)",
+  "reason": "Live routers construct Project/artifact/etc. rows through validate_name and open every request session via set_tenant_context. Generic symbol name; set_tenant_context is the more specific RLS-binding symbol.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0103",
+  "title": "RBAC middleware",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "require_role @ apps/api/app/projects/project_routes.py:195 (also litellm/connection_routes.py:296 and every other *_routes.py)",
+  "reason": "Every live /api/v1 router depends on require_role. CAVEAT (verified in main.py docstring + rbac_middleware.py:97-108): routers are built without principal_resolver/role_lookup, so default_principal_resolver/default_role_lookup return None -> every live request is denied (fail-closed). A user-visible success-path assertion cannot pass until a real session resolver + Membership lookup is wired; no task in spec/tasks.json names that wiring (only FTF-H033 loosely).",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0104",
+  "title": "Audit event writer",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "write_audit_event @ apps/api/app/projects/project_crud.py:219 (create_project; also :348,:371,:394 and ~77 sites across *_crud.py)",
+  "reason": "Called inside the CRUD functions the live project/artifact/litellm/budget/etc. routes invoke. (Same fail-closed caveat as 0103 for end-to-end success.)",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0105",
+  "title": "Tenant-isolation query guards",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "execute_tenant_scoped / install_tenant_pool_reset_guard @ apps/api/app/projects/project_crud.py:132 (execute_tenant_scoped); apps/api/app/main.py:176 (install_tenant_pool_reset_guard(engine))",
+  "reason": "Both are exercised by the live app (engine guard at startup; scoped execute in every CRUD read).",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0106",
+  "title": "RBAC/IDOR security tests",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "RBAC/IDOR security test harness (apps/api/app/auth/rbac_idor_security_tests.py builds a two-tenant demo app); a test/audit module, nothing in a product route should call it.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-0202",
+  "title": "Secret-manager integration",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "store_secret_ref / resolve_secret_ref @ apps/api/app/datasets/dataset_source_connection_crud.py:250 (_store_credential_and_config -> store_secret_ref); apps/api/app/target_connectors/target_application_connection_crud.py:258; packages/litellm_client/connection_validation.py:177 (resolve_secret_ref, called by validate_connection from litellm/connection_routes.py:386)",
+  "reason": "Live dataset-source and target-connection create routes store secret refs; LiteLLM validate route resolves them. Its own notes (FTF-0203 would wire it) are stale; note connection_validation.py is under packages/litellm_client, which is outside product_truth_check SOURCE_ROOTS, so prefer store_secret_ref (apps/api caller).",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0205",
+  "title": "`/v1/model/info` enrichment",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "Only consumer is alias_reconciliation (0207, dead) via enrich_visible_models; connection_routes.py does not call it. Catalog must show enriched capability metadata -> 0214 (transitive via 0207).",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0206",
+  "title": "`/model_group/info` optional enrichment",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "No code consumer; optional /model_group/info enrichment would be surfaced in the catalog UI/API. Nothing but 1812 depends on it, so wiring is by plan-inference only.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0207",
+  "title": "Alias reconciliation",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "alias_reconciliation.reconcile_aliases is imported only by dead modules (training_capability_classifier, litellm_current_model_binding_discovery, model_catalog.access_snapshot). 0214 is a direct dependent whose catalog UI/API consumes reconciled aliases.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0208",
+  "title": "Last-known-good catalog",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0215"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "LastKnownGoodCatalog has no live importer; its docstring says route that reads its snapshot is 0214/0215 job. 0214 is a direct dependent and shows access freshness.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0209",
+  "title": "Catalog anomaly detector",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0215"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "CatalogAnomalyDetector used only by dead periodic_sync_workflow; docstring names admin acknowledge route/UI + polling loop (0215, already CERTIFIED but unwired). 0214 is direct dependent showing anomalies/freshness.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0210",
+  "title": "Real chat probe",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "real_chat_probe module docstring: aggregating probes into advertised-vs-probed registry is 0214's job; /models/{id}/probe is in 0214's api_contract. Dependents 0614/0616 are later alternates.",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0211",
+  "title": "Real streaming probe",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "Streaming probe has no importer; probe evidence surfaced by 0214 (/models/{id}/probe). Only 1812 depends on it directly - plan-inference.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0212",
+  "title": "Real tool-call probe",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "real_tool_call_probe is imported only by dead training_capability_classifier (0307); 0214 surfaces probe evidence; 0308/0309 expose /capabilities.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0213",
+  "title": "Real structured-output probe",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "Structured-output probe has no importer; probe evidence surfaced by 0214. Only 1812 depends on it directly - plan-inference.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0215",
+  "title": "Periodic sync workflow",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-0214",
+   "FTF-1706"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "PeriodicSyncWorkflow (packages/litellm_client/periodic_sync_workflow.py) has no importer. Its own docstring defers a Temporal/cron registration to 'later separately claimed wiring work'; 0208/0209 docstrings call 0215 'the real wiring task' yet it was certified unwired. Dependents are 1706 (candidate discovery, a qualification fixture), 1807 (runbook, PROV), H005. 0214 (catalog UI incl. sync-models/syncs) does not depend on 0215. Needs explicit designation (a worker/Temporal registration task, possibly 0801 era).",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0302",
+  "title": "Hugging Face artifact resolver",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0706",
+  "alternates": [
+   "FTF-H010",
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "Chain: 0302/0303/0304 -> base_model_revision_digest_resolver (0306) -> no importer at all (verified in AST import graph). 0306 docstring: its eventual real caller is a training/resume worker ('compare hashes on every load/resume'). 0706 'Base artifact loading' (loads base revision and verifies all digests) is that worker; H010 (model import API/UI) is the user-facing alternative.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0303",
+  "title": "Private S3 artifact resolver",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0706",
+  "alternates": [
+   "FTF-H010",
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "Chain: 0302/0303/0304 -> base_model_revision_digest_resolver (0306) -> no importer at all (verified in AST import graph). 0306 docstring: its eventual real caller is a training/resume worker ('compare hashes on every load/resume'). 0706 'Base artifact loading' (loads base revision and verifies all digests) is that worker; H010 (model import API/UI) is the user-facing alternative.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0304",
+  "title": "Local artifact resolver",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0706",
+  "alternates": [
+   "FTF-H010",
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "Chain: 0302/0303/0304 -> base_model_revision_digest_resolver (0306) -> no importer at all (verified in AST import graph). 0306 docstring: its eventual real caller is a training/resume worker ('compare hashes on every load/resume'). 0706 'Base artifact loading' (loads base revision and verifies all digests) is that worker; H010 (model import API/UI) is the user-facing alternative.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0306",
+  "title": "Base model revision/digest resolver",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0706",
+  "alternates": [
+   "FTF-H010",
+   "FTF-0308"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "Chain: 0302/0303/0304 -> base_model_revision_digest_resolver (0306) -> no importer at all (verified in AST import graph). 0306 docstring: its eventual real caller is a training/resume worker ('compare hashes on every load/resume'). 0706 'Base artifact loading' (loads base revision and verifies all digests) is that worker; H010 (model import API/UI) is the user-facing alternative.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0307",
+  "title": "Training capability classifier",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0308",
+  "alternates": [
+   "FTF-0309",
+   "FTF-0701"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "training_capability_classifier has no importer. 0308 (Model-to-artifact mapping UI; api /api/v1/models/{id}/training-artifact and /capabilities) is the first direct dependent exposing a capability route.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0408",
+  "title": "Requirements UI",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-H029",
+  "alternates": [
+   "FTF-04A22"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "Requirements UI is a .tsx component; apps/web has no app/ pages, so nothing mounts it. H029 creates the first page (apps/web/app/projects/[projectId]/setup/page.tsx). Direct component-level dependent 04A22 (Mandate editor) is the alternate. Backend routes it composes (0407/0403) are already live.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-04A02",
+  "title": "GitHub App/token read-only secret integration",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-04A33",
+  "alternates": [
+   "FTF-04A31",
+   "FTF-04A27"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "validate_github_repository_access has no caller outside its own module (grep verified); only its exception classes/default_github_connector_policy are used by listing/branch/snapshot modules. 04A01 create route does not call it. 04A33 (revocation fail-closed test) is the only non-final direct dependent; 04A31 (real private repo integration) is the nearest flow that must connect for real.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A03",
+  "title": "GitHub accessible-repository selector UI",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "build_github_repository_listing_router @ apps/api/app/main.py:193 (route module apps/api/app/target_connectors/github_repository_listing_routes.py:122)",
+  "reason": "PARTIAL: backend half (GET installation repositories route) is live in main.py; the .tsx selector UI (apps/web/components/target-application/github_accessible_repository_selector_ui.tsx) is not mounted anywhere (no apps/web/app pages exist) - so full product-true (Law 6) still needs H029. Task notes chose blank symbol for that reason.",
+  "confidence": "medium",
+  "ui_wired_by": "FTF-H029"
+ },
+ {
+  "id": "FTF-04A04",
+  "title": "GitHub branch/ref selector + immutable SHA resolver",
+  "kind": "retained_feature",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "build_github_branch_ref_router @ apps/api/app/main.py:194 (route module apps/api/app/target_connectors/github_branch_ref_routes.py:170)",
+  "reason": "PARTIAL: backend branch/ref + resolve-ref routes live; .tsx selector UI not mounted in any page (needs H029). Task notes chose blank symbol for that reason.",
+  "confidence": "medium",
+  "ui_wired_by": "FTF-H029"
+ },
+ {
+  "id": "FTF-04A06",
+  "title": "Local repository connector with root allowlist/path protections",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-04A32",
+  "alternates": [
+   "FTF-04A27"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "local_repository_connector.capture_local_repository is reached only via dead snapshot_inventory/source_boundary (H007); no route creates a local snapshot. 04A32 (Local repository integration test, direct dependent, ready now) requires a real path; 04A27 (repository sync/drift) is the other dependent. Both are weak wiring tasks (a test and a drift detector).",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A08",
+  "title": "Source-analysis worker foundation",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A09",
+  "title": "Python deterministic agent/config/tool discovery",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A10",
+  "title": "TypeScript/JavaScript deterministic agent/config/tool discovery",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A11",
+  "title": "JSON/YAML/TOML configuration discovery",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A12",
+  "title": "LiteLLM/current-model binding discovery",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A13",
+  "title": "Prompt-source discovery + evidence capture",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A14",
+  "title": "Tool/schema/permission discovery + evidence capture",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A15",
+  "title": "Agent test/evaluation fixture discovery",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A16",
+  "title": "Runtime trace/deployment contract discovery",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-04A18",
+   "FTF-04A31"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Source-analysis analyzers (app/target_connectors/source_analysis_worker.py + discovery modules) have no importer anywhere. Candidate/evidence routes (04A17/04A20) only store records 'a real analysis run already produced'; their docstrings say the pipeline is 04A08-04A16 itself. No task in spec/tasks.json owns the dispatcher that runs analyzers on a snapshot and persists candidates/evidence. Nearest consumers: 04A18 (PROVISIONAL, already merged without wiring them), 04A21 (manifest evidence UI), 04A31/04A34 (integration tests that must analyze real repos). Control plane must designate an owner.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-04A25",
+  "title": "Production-faithful target-agent harness contract",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-R004",
+  "alternates": [
+   "FTF-H008",
+   "FTF-0614"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "production_faithful_target_agent_harness_contract imported only by dead 04A26 module. R004 (Integrate Inspect with actual target application; direct dependent, ready now, evaluation-worker entrypoint) is the first consumer; H008/0614 are later direct dependents.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-04A26",
+  "title": "Isolated real tool-backend adapter contract tests",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-R004",
+  "alternates": [
+   "FTF-H008",
+   "FTF-0614"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "isolated_real_tool_backend_adapter_contract_tests has no importer. Same chain as 04A25 -> R004 (ready now).",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0500A",
+  "title": "Dataset source selector + purpose-authorization UI",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-H029",
+  "alternates": [
+   "FTF-H011"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "Dataset source selector UI component is not mounted by any page; H011 (mapping/purpose approval UI, direct dependent) extends it and H029 creates the first page.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0500B",
+  "title": "S3/MinIO source validation + metadata preview",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-H012",
+  "alternates": [
+   "FTF-H011"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "app.datasets.s3_minio_source_validation_metadata_preview has no importer; dataset_source_connection_routes does not call it. H012 (Concrete S3/PostgreSQL/REST ingestion) is its only non-final direct dependent.",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0500C",
+  "title": "Database/API/trace source contract and fail-closed validation",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-H012",
+  "alternates": [
+   "FTF-H011"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "app.datasets.database_api_trace_source_contract_and_fail_closed_validation has no importer; H012 is its only non-final direct dependent.",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-0506",
+  "title": "Canonical conversation normalizer",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-H011",
+  "alternates": [
+   "FTF-0502",
+   "FTF-0503"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.canonical_conversation_normalizer imported only by dead sibling validators. Importers 0502-0505 (not ready: need 0501) are direct dependents; H011 (dataset mapping API+UI: import irregular CSV/XLSX/JSON) is the first with API/UI surface.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-0507",
+  "title": "Tool-trace normalizer",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-H011",
+  "alternates": [
+   "FTF-0707",
+   "FTF-H012"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "tool_trace_normalizer has no importer. H011 (direct dependent; rejects unmapped tool IDs) is the user-reachable consumer; 0707 chat-template validation also depends on it.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0508",
+  "title": "Record schema validator",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0516",
+  "alternates": [
+   "FTF-0515",
+   "FTF-H011"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.record_schema_validator has no live importer (workers/ has no entrypoint at all). Direct consumer is 0515 (Quality issue engine, a module with no route/UI of its own); 0516 (Dataset issue resolution UI, needs API over issues) is the first transitive dependent with user-visible surface; 0520 is a later one.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0509",
+  "title": "Tool argument validator",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0516",
+  "alternates": [
+   "FTF-0515"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.tool_argument_validator has no live importer (workers/ has no entrypoint at all). Direct consumer is 0515 (Quality issue engine, a module with no route/UI of its own); 0516 (Dataset issue resolution UI, needs API over issues) is the first transitive dependent with user-visible surface; 0520 is a later one.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0511",
+  "title": "Exact duplicate detector",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0516",
+  "alternates": [
+   "FTF-0515"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.exact_duplicate_detector has no live importer (workers/ has no entrypoint at all). Direct consumer is 0515 (Quality issue engine, a module with no route/UI of its own); 0516 (Dataset issue resolution UI, needs API over issues) is the first transitive dependent with user-visible surface; 0520 is a later one.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0512",
+  "title": "Normalized duplicate detector",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0516",
+  "alternates": [
+   "FTF-0515"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.normalized_duplicate_detector has no live importer (workers/ has no entrypoint at all). Direct consumer is 0515 (Quality issue engine, a module with no route/UI of its own); 0516 (Dataset issue resolution UI, needs API over issues) is the first transitive dependent with user-visible surface; 0520 is a later one.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0513",
+  "title": "Near-duplicate detector",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0516",
+  "alternates": [
+   "FTF-0515",
+   "FTF-0518"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.near_duplicate_detector has no live importer (workers/ has no entrypoint at all). Direct consumer is 0515 (Quality issue engine, a module with no route/UI of its own); 0516 (Dataset issue resolution UI, needs API over issues) is the first transitive dependent with user-visible surface; 0520 is a later one.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-0514",
+  "title": "PII/secrets detector",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-0516",
+  "alternates": [
+   "FTF-0515",
+   "FTF-H013"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "workers.data.pii_secrets_detector has no live importer (workers/ has no entrypoint at all). Direct consumer is 0515 (Quality issue engine, a module with no route/UI of its own); 0516 (Dataset issue resolution UI, needs API over issues) is the first transitive dependent with user-visible surface; 0520 is a later one.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-1302",
+  "title": "Local compute costing",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-1305",
+  "alternates": [
+   "FTF-H019",
+   "FTF-0613"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "No route calls it: FTF-1301's live cost-per-success/search route (cost_profile_routes.py) does not import the calculator/costing modules (AST-verified). 1305 (Candidate ranking; api_contract is that very /costs/cost-per-success/search route; direct dependent of 1304; ready now) is the first consumer. H019 (allocated economics API+UI) and 0613 (cost grader) are alternates. 1302/1303 are consumed indirectly via 1304 (1304 imports local_compute_costing.TASK_OUTCOMES only) - confidence lower.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-1303",
+  "title": "Provider token costing",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-1305",
+  "alternates": [
+   "FTF-H019",
+   "FTF-0613"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "No route calls it: FTF-1301's live cost-per-success/search route (cost_profile_routes.py) does not import the calculator/costing modules (AST-verified). 1305 (Candidate ranking; api_contract is that very /costs/cost-per-success/search route; direct dependent of 1304; ready now) is the first consumer. H019 (allocated economics API+UI) and 0613 (cost grader) are alternates. 1302/1303 are consumed indirectly via 1304 (1304 imports local_compute_costing.TASK_OUTCOMES only) - confidence lower.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-1304",
+  "title": "Cost-per-success calculator",
+  "kind": "retained_feature",
+  "class": "wire_later",
+  "wired_by": "FTF-1305",
+  "alternates": [
+   "FTF-H019",
+   "FTF-0613"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "No route calls it: FTF-1301's live cost-per-success/search route (cost_profile_routes.py) does not import the calculator/costing modules (AST-verified). 1305 (Candidate ranking; api_contract is that very /costs/cost-per-success/search route; direct dependent of 1304; ready now) is the first consumer. H019 (allocated economics API+UI) and 0613 (cost grader) are alternates.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-1401",
+  "title": "API load test",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "API load-test suite (contracts + measurement); qualification tooling, no production module.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-1501",
+  "title": "Tenant isolation suite",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Consolidated tenant-isolation evidence suite over already-certified primitives; its own notes say no new apps/api production module.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-1503",
+  "title": "CSRF suite",
+  "kind": "retained_feature",
+  "class": "unclear",
+  "wired_by": null,
+  "alternates": [
+   "FTF-H033",
+   "FTF-0101"
+  ],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "apps/api/app/auth/csrf_protection.py (require_csrf_protection) is production-tree code with zero importers; main.py installs no CSRF dependency and default_csrf_token_resolver is fail-closed. Task is titled a test suite (tests/security/csrf_suite.py) so it may be intended as no_product_surface, but the module itself must be dependency-injected into every mutating router; no planned task does that (only 1812 depends on it). Nearest: H033 (identity lifecycle) / the session-resolver wiring noted under 0103.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-1506",
+  "title": "Dependency scanning",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Dependency scanning is a CI security tool.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-1601",
+  "title": "Postgres backup",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "scripts/postgres_backup.py operator backup CLI (CI-integration tested); restore/DR tasks 1603/1606 qualify it. Operator tooling, not API/worker/UI.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-1701",
+  "title": "Reference agent specification",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Reference agent specification under evals/reference (qualification fixture, outside gate SOURCE_ROOTS); consumed only by qualification tasks 1703-1715/H008/H035 and by 04A26 adapter contract tests.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-1702",
+  "title": "Tool environment",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Reference tool environment under evals/reference (qualification fixture, outside SOURCE_ROOTS); consumed by 04A26 adapter contract tests and qualification tasks.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-1810",
+  "title": "ReleaseQualificationWorkflow",
+  "kind": "retained_feature",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Release-qualification gate (scripts/release_evidence_gate.py); release-only ship-gate tooling imported by scripts/verify_release.py and tools/implementation/executor_contract.py.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-H001",
+  "title": "Executable specification and gate bootstrap",
+  "kind": "audit_hardening",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Executable spec/gate bootstrap (scripts/validate_spec.py, verify_task.py, verify_release.py); audit_hardening gate tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-H002",
+  "title": "Freeze release scope, compatibility and measured execution inputs",
+  "kind": "audit_hardening",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Release scope/compatibility freeze + environment preflight CLI (apps/api/app/services/environment_preflight.py is a __main__ tool imported only by scripts/generate_compatibility_lock.py); audit_hardening tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-H003",
+  "title": "Cross-layer tenant isolation and relational identity",
+  "kind": "audit_hardening",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "authorize_resource_ownership / tenant_scoped_session_for / TenantContext @ apps/api/app/projects/project_crud.py:128,164 (authorize_resource_ownership); apps/api/app/projects/project_routes.py:215 (tenant_scoped_session_for)",
+  "reason": "PARTIAL: authorize_resource_ownership, tenant_scoped_session_for and TenantContext are live on every router. packages/storage/tenant_policy.py (storage layer of this task) has no importer anywhere (FTF-1501 notes say the same) and the cache/model-alias layers have no code; those parts would be wired by the first object-storage consumer (0501 direct upload / H012).",
+  "confidence": "medium",
+  "partial_alternates": [
+   "FTF-0501",
+   "FTF-H012"
+  ]
+ },
+ {
+  "id": "FTF-H004",
+  "title": "Authorized LiteLLM catalog and revocation semantics",
+  "kind": "audit_hardening",
+  "class": "wire_later",
+  "wired_by": "FTF-0214",
+  "alternates": [
+   "FTF-0616"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "access_snapshot.py docstring: FTF-0214 renders the catalog (calls access snapshot). access_guard.require_model_access needs a job-admission call site (first LiteLLM-calling worker: 0616 LLM judge adapter / 0801); none exists yet.",
+  "confidence": "medium"
+ },
+ {
+  "id": "FTF-H005",
+  "title": "Route identity, fallback and cache provenance",
+  "kind": "audit_hardening",
+  "class": "wire_later",
+  "wired_by": "FTF-H009",
+  "alternates": [
+   "FTF-H025",
+   "FTF-R004"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": false,
+  "already_wired_symbol": null,
+  "reason": "route_attestation/route_snapshot docstring: no qualification/evaluation workflow calls them; names R004 (Inspect integration) as the eventual caller, but R004 is not a dependent of H005. Direct dependents H009 (runtime compatibility tuple/drift) and H025 (canary route adoption attestation) consume route identity.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-H006",
+  "title": "Shared outbound URL and credential guard",
+  "kind": "audit_hardening",
+  "class": "already_wired_candidate",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": "guarded_fetch / ConnectionPolicy / validate_url_shape @ apps/api/app/component_bindings/component_binding_crud.py:367 (compute_health -> guarded_fetch, via component_binding_routes validate/component-status); packages/litellm_client/connection_validation.py:222,272; apps/api/app/component_bindings/component_binding_schema.py:321 (validate_url_shape)",
+  "reason": "Shared outbound guard is live in the component-binding and LiteLLM validate paths. Its own notes (FTF-0203 first caller) are stale.",
+  "confidence": "high"
+ },
+ {
+  "id": "FTF-H007",
+  "title": "Untrusted source acquisition and complete immutable analysis",
+  "kind": "audit_hardening",
+  "class": "wire_later",
+  "wired_by": "FTF-04A32",
+  "alternates": [
+   "FTF-04A31",
+   "FTF-H008"
+  ],
+  "wired_by_state": "NONE",
+  "wired_by_dependency_ready": true,
+  "already_wired_symbol": null,
+  "reason": "source_boundary/snapshot_inventory have no importer. Direct dependents are integration tests (04A31/04A32/04A34), H008 (runtime adapter) and H027; 04A32 is ready now and exercises the local acquisition path.",
+  "confidence": "low"
+ },
+ {
+  "id": "FTF-H028",
+  "title": "Trusted CI and exact-revision release evidence gate",
+  "kind": "audit_hardening",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Trusted CI / exact-revision release evidence gate (scripts, .github); audit_hardening gate tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-H034",
+  "title": "Safe parallel scheduler and task/evidence ownership",
+  "kind": "audit_hardening",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Task claim/scheduler tooling (scripts/task_claim.py, scripts/spec_verification.py); build-process tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-R001",
+  "title": "Freeze seven-component architecture, ownership and version-lock schemas",
+  "kind": "reuse_architecture",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Architecture/ownership/version-lock schema freeze (scripts/architecture_lock.py); spec tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-R011",
+  "title": "Define immutable connected and air-gap assertion-level release matrix",
+  "kind": "reuse_architecture",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Deployment-profile scope validator (scripts/validate_profile_scope.py); spec/gate tooling.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-R014",
+  "title": "Bind selected coding executor to the embedded Release 1 execution controls",
+  "kind": "reuse_architecture",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Build-time coding-executor contract (tools/implementation/*); not a Factory production API (per its api_contract).",
+  "confidence": null
+ },
+ {
+  "id": "FTF-R015",
+  "title": "Enforce isolated concurrent coding execution and independent integration",
+  "kind": "reuse_architecture",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Build-time isolated-executor workspace/orchestrator (tools/implementation/*); no eighth runtime service.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-R016",
+  "title": "Measure selected coding-model/executor pilot cost and enforce budget tree",
+  "kind": "reuse_architecture",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Build-time executor cost ledger/report (tools/implementation/usage_ledger.py, scripts/report_executor_pilot.py); explicitly separate from product costs.",
+  "confidence": null
+ },
+ {
+  "id": "FTF-R017",
+  "title": "Qualify maintained internal storage and OSS dependency lifecycle",
+  "kind": "reuse_architecture",
+  "class": "no_product_surface",
+  "wired_by": null,
+  "alternates": [],
+  "wired_by_state": null,
+  "wired_by_dependency_ready": null,
+  "already_wired_symbol": null,
+  "reason": "Storage-profile and component-maintenance validators (scripts/validate_storage_profile.py, scripts/validate_component_maintenance.py) are CI/ops tooling. Note: apps/api/app/services/storage_semantics_client.py (S3 SigV4 client from this task) is production-tree code whose only importers are the still-dead private_s3_artifact_resolver (0303) and s3_minio_source_validation_metadata_preview (0500B); it becomes live when those are wired (see 0303/0500B).",
+  "confidence": null
+ }
+]

@@ -91,6 +91,19 @@ FTF-0103:
   proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0103.py
+FTF-0103A:
+  certification_state: NONE
+  criticality: MUST
+  description: Live session principal and Membership persistence (wires FTF-0101 sessions and FTF-0103 RBAC into every live route)
+  evidence_hash: ''
+  implementation_state: ABSENT
+  notes: >-
+    Owner-approved Release 1 addendum (2026-10-06), docs/adr/0003-task-addendum-ftf-0103a.md.
+    The contract is spec/addenda/FTF-0103A.json; tools/r1_handoff.py covers only the frozen 300.
+    Unblocks every success path in apps/api (today every /api/v1 route denies every request). Denominator 302.
+  proof_state: UNPROVEN
+  proving_symbol: ''
+  proving_test: ''
 FTF-0104:
   certification_state: CERTIFIED
   criticality: MUST

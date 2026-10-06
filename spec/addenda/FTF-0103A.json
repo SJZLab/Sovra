@@ -1,0 +1,43 @@
+{
+  "_comment": "Release 1 task addendum (owner-approved 2026-10-06, ADR docs/adr/0003-task-addendum-ftf-0103a.md). spec/tasks.json stays the frozen 300-task source for tools/r1_handoff.py; this file is the contract. Denominator: 302.",
+  "required": true,
+  "status": "NOT_STARTED",
+  "evidence": [],
+  "ready": true,
+  "id": "FTF-0103A",
+  "title": "Live session principal and Membership persistence (wires FTF-0101 sessions and FTF-0103 RBAC into every live route)",
+  "kind": "retained_feature",
+  "dependencies": ["FTF-0101", "FTF-0102", "FTF-0103", "FTF-0104", "FTF-0105", "FTF-H003"],
+  "sections": "6.4,45-47,65,77,81",
+  "requirements": ["AF-08", "AF-33", "CAP-01"],
+  "qualification_scenarios": ["Q01", "Q24"],
+  "security": "Fail closed on any missing, expired, revoked, tampered or foreign session; roles come only from the Membership table for the path-resolved organization; no route, body field or header can grant or widen a role; least privilege for the app role.",
+  "observability": "Structured content-free auth decision events (allowed/denied + reason code, organization id, request id); no tokens, cookies or subjects in logs.",
+  "resource_gate": "Real Postgres 16 and the real local OIDC provider already used by FTF-0101's integration test; unavailable required evidence is BLOCKED_EXTERNAL, never skipped.",
+  "database_changes": "Own forward Alembic migration (next number in the serialized chain) creating `memberships` per Section 6.4: organization_id, workspace_id nullable (composite FK to a workspace of the same organization), issuer and subject (the FTF-0101 validated identity; user_id = that pair), role CHECK-constrained to the six Section 6.4 roles, status (active/revoked), created_at; uniqueness per (organization_id, workspace_id, issuer, subject) including the NULL-workspace case. ENABLE + FORCE row-level security with a non-allow-all tenant_isolation policy; the app role is granted SELECT only. Membership writes go through an operator CLI under the migrate role in this task, with no public route. Upgrade/downgrade tests per Sections 6/65/71.",
+  "api_contract": "No new public route. `apps/api/app/main.py` passes one real `principal_resolver` (reads and verifies FTF-0101's session cookie, including revocation) and one DB-backed `role_lookup` (Membership for the path organization) to EVERY router it builds, and wires FTF-0101's `membership_lookup` to the same store (a revoked membership is denied at login).",
+  "files": [
+    "apps/api/alembic/versions/<next>_memberships.py",
+    "apps/api/app/auth/membership_store.py",
+    "apps/api/app/auth/session_principal.py",
+    "apps/api/app/auth/membership_admin_cli.py",
+    "apps/api/app/main.py",
+    "tests/tasks/test_ftf_0103a.py",
+    "tests/integration/test_ftf_0103a_live_auth_path.py"
+  ],
+  "acceptance": [
+    "Through the real app (`create_app()`), a real OIDC login against the real local provider followed by a real API call to an existing route returns 200 for an active member with an allowed role. The same call returns 401 with no session cookie, a tampered or expired cookie, or a logged-out (revoked) session. It returns 403 for a member of a different organization (a foreign organization behaves like a missing one), for an insufficient role, and for a revoked membership. Every router built in main.py receives the real resolver and role lookup; a test enumerates `app.routes` and fails if any /api/v1 route still uses a default fail-closed resolver.",
+    "Independent review, exact merged commit, real relevant integration and negative-test evidence recorded."
+  ],
+  "negative_acceptance": [
+    "No body field, header, query parameter or workspace-level membership can grant or widen an organization-level role. The app role cannot INSERT/UPDATE/DELETE memberships. Raw `sovra_app` reads under a foreign or absent tenant context return 0 membership rows. No allow-all RLS policy (scripts/data_exposure_check.py passes)."
+  ],
+  "verification_commands": [
+    "python scripts/validate_spec.py --strict",
+    "python scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure",
+    "python scripts/product_truth_check.py --fail-on-unwired",
+    "uv run python3 tests/tasks/test_ftf_0103a.py",
+    "uv run python3 tests/integration/test_ftf_0103a_live_auth_path.py"
+  ],
+  "contract_owner": "FTF-0102"
+}
