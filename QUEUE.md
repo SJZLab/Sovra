@@ -1,4 +1,100 @@
 # QUEUE — Sovra (Model Factory)
+Updated: 2026-10-05T23:30:00Z (scheduled relay shift, branch `claude/wizardly-fermat-shlvk5`) --
+  STEP 0: `sha256sum CLAUDE.md` matched the committed `CLAUDE.md.sha256` exactly, no mismatch.
+  STEP 0.1: this branch was restarted from `origin/main` at `01d298d` (PR #469 merged -- the
+  2026-10-05T21:30Z shift's own FTF-0902 CI-triage, docs-only). Read `PROGRESS.md`/`QUEUE.md`/
+  `docs/certifications/queue.md` fresh, not assumed from prior context. Checked "## Active" item
+  0's own chain before picking work: 0a/0b DONE; 0c (FTF-0601, PR #463)/0c2 (FTF-0500C round 5, PR
+  #464)/0c3 (FTF-0500B round 4, PR #465) each independently reconfirmed GREEN this shift via
+  `pull_request_read get_check_runs` (44/44 on each) -- skipped per this list's own skip rule; 0d
+  (FTF-0500D) already merged (PR #466). Next in list order, **0e. FTF-1206A** -- no open PR found
+  for it (`search_pull_requests` confirmed only the closed, docs-only ADR PR #445). STEP 0.2: no
+  `cognee-cli` binary in this sandbox -- text-search fallback declared, same as every prior shift.
+
+  STEP 2 (PEV): **P** -- read `spec/addenda/FTF-1206A.json` and `docs/adr/0002-task-addendum-
+  ftf-1206a.md` directly (r1_handoff does not cover an addendum task). Confirmed all three
+  dependencies (FTF-0104, FTF-1201, FTF-H003) are `certification_state: CERTIFIED`. Read the
+  existing `packages/litellm_client/organization_policy_control.py` (FTF-1206's own already-
+  certified pure decision procedures) and the migration/CRUD conventions `0017_evaluation_suites.py`/
+  `0018_eval_suites_reviewer_fix.py`/`evaluation_suite_crud.py`/`audit_event_writer.py` already
+  established, before writing any code, to keep this task's own real `files` clause closed to
+  exactly the migration, the store module and its two test files (never touching
+  `organization_policy_control.py` or FTF-1206's own route/CRUD surface, per the task contract and
+  BLOCKER.md's RESOLVED 2026-10-02 "route option 1" decision).
+
+  **E** -- `apps/api/alembic/versions/0019_org_gateway_policies.py` (two tables:
+  `organization_gateway_policies` -- one row per org, `UNIQUE(organization_id)`, three real
+  `jsonb_typeof(...) = 'array'`-checked columns, `sovra_app` granted SELECT/INSERT/UPDATE, never
+  DELETE; `organization_gateway_route_changes` -- append-only, a real composite FK to `projects`,
+  `sovra_app` granted SELECT/INSERT only, never UPDATE/DELETE -- this task's own negative_acceptance
+  clause). Both ENABLE+FORCE RLS with a real, non-allow-all `tenant_isolation` policy. (Discovered
+  the hard way, via a real `DataError` on the first `alembic upgrade head`: the contract's own
+  suggested filename made a revision id 34 characters, over `alembic_version.version_num`'s own
+  32-character column width -- shortened to `0019_org_gateway_policies`, 25 characters, and fixed
+  before writing any test.) `apps/api/app/litellm/organization_gateway_policy_store.py`: `get_
+  organization_gateway_policy`/`upsert_organization_gateway_policy` (create-or-update in place) and
+  `record_route_change`/`list_route_changes` (append-only; never decides authorization itself, only
+  durably records a decision already proven elsewhere), reusing `organization_policy_control.py`'s
+  own `validate_namespace`/`validate_approver_identity` directly (same function object).
+
+  **V** -- stood up a real local PostgreSQL 16 cluster (`sovra_migrate`/`sovra_ftf1206a`, this
+  sandbox's own pre-existing no-container-registry-egress boundary, same class as every prior
+  Postgres-integration-tested task) and ran both new test files directly: `tests/tasks/
+  test_ftf_1206a.py` (no-DB; migration shape, two independent real fault injections against the
+  file on disk, store-module domain shape) and `tests/integration/test_ftf_1206a_org_gateway_
+  policy.py` (real Postgres; upgrade/downgrade/upgrade round-trip, every acceptance/
+  negative_acceptance clause). **Law 1, shown able to fail for real:** removed the cross-tenant
+  `_authorize_project_or_raise` call from `record_route_change` and re-ran the integration suite
+  against a fresh database -- the cross-tenant write that should have been cleanly refused instead
+  crashed with a real, uncaught `IntegrityError` from the composite FK's own backstop, proving the
+  check is load-bearing; reverted byte-identical (diff-confirmed) and re-ran clean. Both suites: "all
+  checks passed." `uv run ruff check .`/`ruff format --check .` clean (375 files). `uv run mypy .`
+  clean repo-wide (375 source files). `python3 scripts/validate_spec.py --strict` clean (after `git
+  fetch --unshallow`, this sandbox's own pre-existing shallow-clone artifact; directly confirmed the
+  new `docs/spec-matrix.yaml` prose parses with `yaml.safe_load` first). `scripts/
+  data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` clean. `product_
+  truth_check.py --fail-on-unwired`: unchanged `26/26` (`proving_symbol` stays blank -- disclosed,
+  no live route exists for this task by design, same "no live caller yet" class FTF-1206 itself
+  already established). `status.py`: unchanged `101/301` certified / 24 product-true (Law 2 -- a
+  resubmission is not a certification). Regression swept `test_ftf_1206.py`/`test_ftf_0104.py`/
+  `test_ftf_h003.py`/`test_ftf_0601.py`/`test_ftf_0401.py` -- zero regressions. Added CI job
+  `organization-gateway-policy-integration` and a `tests/tasks/test_ftf_1206a.py` gate step to
+  `.github/workflows/ci.yml` (45 jobs total, re-parsed clean). Updated `docs/spec-matrix.yaml`'s
+  FTF-1206A entry (`certification_state: PROVISIONAL`, `proof_state: L1-PROVEN`, `implementation_
+  state: IMPLEMENTED`) with the full clause-to-test mapping. Appended a full evidence entry to
+  `docs/certifications/queue.md`. Updated this file's own "## Active" item 0e (FTF-1206A done, PR
+  opened) and "## Backlog" (FTF-1206A removed, now below the Refill & Sweep ">= 3" target -- next
+  shift should run Refill & Sweep).
+
+  **V (certification)** -- per Law 4, not self-certified: `certification_state: PROVISIONAL`/
+  `proof_state: L1-PROVEN` in `docs/spec-matrix.yaml`; independent Control-plane L2 re-review and a
+  real CI run on the opened PR (including the new integration job) are required before
+  certification.
+
+  STEP 3: `PROGRESS.md`/`QUEUE.md`/`docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+  `.github/workflows/ci.yml` all updated this shift, before compaction. STEP 4 stop condition (a):
+  FTF-1206A now joins the same PROVISIONAL backlog awaiting Control-plane L2 certification and the
+  L4 gate (101/301 certified, unchanged). Stopping here -- one item per shift, per this list's own
+  rule. No open owner ask (`QUEUE.md` "Owner actions -- current" unchanged: none open). `BLOCKER.md`
+  unchanged -- no live entries.
+
+  **Post-open PR #470 maintenance (same session, 2026-10-06T09:XXZ):** `main` advanced past this
+  PR's own merge-base twice while CI ran (PR #463's FTF-0601 round-2 fix, PR #471's FTF-0307 fix,
+  each independently merged). Merged `origin/main` into this branch and found a real, substantive
+  collision, not just a textual one: PR #463's own `0019_eval_suites_reviewer_norm.py` and this
+  task's own `0019_org_gateway_policies.py` had independently claimed the identical Alembic
+  revision id `0019`. Caught before pushing, not left for CI to discover -- renumbered this task's
+  own migration to `0020_org_gateway_policies.py`, rebased its `down_revision` onto
+  `0019_eval_suites_reviewer_norm` (confirmed that revision is genuinely now the real chain head
+  before this task's own migration), and updated every reference to the old filename/revision id
+  in `tests/tasks/test_ftf_1206a.py`/`docs/spec-matrix.yaml`/this file/`PROGRESS.md`/
+  `docs/certifications/queue.md`. Re-ran the full real-Postgres chain locally (`alembic upgrade
+  head` through all 20 migrations, then both `test_ftf_1206a.py` and
+  `test_ftf_1206a_org_gateway_policy.py`) before pushing -- "a push that turns CI red costs a cycle
+  and the reviewers' trust." Also fixed this list's own "0e" entry: the textual merge had
+  duplicated a stale "0e. Then FTF-1206A (Backlog)" placeholder alongside this shift's own real
+  "0e. FTF-1206A implemented" entry (an artifact of `main`'s own unrelated 0d2/FTF-0307 insertion
+  landing between them) -- removed the stale duplicate, kept one real 0e.
 Updated: 2026-10-05T04:40:00Z (scheduled relay shift, branch `claude/wizardly-fermat-7vy5ny`) —
   STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256` exactly, no mismatch; `BLOCKER.md` read in
   full, no live entries (all RESOLVED). STEP 0.1: read `PROGRESS.md`/`QUEUE.md`/`docs/certifications/
@@ -9330,13 +9426,12 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
-0. **FTF-1206A** Organization gateway policy persistence. This is a NEW owner-approved addendum
-   (ADR 0002, 2026-10-04). Its contract is `spec/addenda/FTF-1206A.json`; r1_handoff does not
-   cover it. All dependencies (FTF-0104, FTF-1201, FTF-H003) are CERTIFIED. It must land before
-   FTF-1206's persistence half. Must pass `scripts/data_exposure_check.py`.
-1. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
+0. **FTF-0510** Tokenization analysis. Dependency-ready since FTF-0306 was certified on
    2026-10-01. DoD: `python tools/r1_handoff.py packet FTF-0510 --plan
    FINE_TUNING_FACTORY_RELEASE_1.md`. Next on the FTF-1703 critical path.
+   (2026-10-05: FTF-1206A — the other item formerly listed here — moved to "## Active" item 0e;
+   implemented this shift, PR opened, PROVISIONAL. This backlog is now below the Refill & Sweep
+   ">= 3" target; the next shift should run Refill & Sweep to top it back up.)
 (Refill & Sweep appends further dependency-ready items here from docs/TASK_INDEX.md +
 docs/spec-matrix.yaml. It never invents criteria.)
 
