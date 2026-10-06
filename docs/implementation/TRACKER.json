@@ -300,9 +300,11 @@
       "blockers": []
     },
     "FTF-0307": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "acbeb5447187d75c2d52d98ed0702f0b73248962"
+      ],
       "independent_review": null,
       "blockers": []
     },

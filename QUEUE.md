@@ -9384,7 +9384,6 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      emit `0.0.0.0/0`, `::/0`, `ports: []`, `port: null` and an empty pod selector; renderer-added peers stay GREEN;
      the PodSelectorEndpoint half is untested; no `::/0` test; RFC1918 range boundaries are unpinned. See
      docs/certifications/queue.md "2026-10-06T15:30Z". Everything else there is follow-up FTF-0902-F1.
-   - **0c. FTF-0307 round 3:** PR #484 merged (PROVISIONAL); under Control-plane review. Skip unless returned.
    - **0d. FTF-0500D round 3 (tests only):** an independent expected-value oracle. See docs/certifications/queue.md
      "2026-10-06T09:45Z".
    - **0d2. FTF-1206A round 2 (2 blocking tests: raw-RLS foreign-tenant read/write, list_route_changes project auth).**
@@ -9392,7 +9391,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    - **0d3. FTF-1002 round 3** (in-module digest/revision validation, base identity binding, refuse a base for an
      endpoint, per-fact distinct fixtures). Same entry.
    - **0e.** Then FTF-0510, FTF-04A18 and FTF-1807 (DoDs in "2026-10-04T11:00Z").
-   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C and FTF-0601 are CERTIFIED (2026-10-06).
+   - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601 and FTF-0307 are CERTIFIED (2026-10-06).
      They come back here only if returned again.
    Every item: run the PRE-SUBMIT SELF-ATTACK above (docs/operations/routines.md STEP 5b), using the script
    runner, not pytest, because the check-list tests pass under pytest even with production code broken. "Frontier saturated" is not a valid

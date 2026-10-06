@@ -23800,7 +23800,7 @@ Follow-up FTF-1206A-F1, not blocking:
 - the stale `0019` docstring;
 - TASK_INDEX row FTF-1206 should list FTF-1206A.
 
-## 2026-10-06T15:30Z — Control plane: FTF-0601 CERTIFIED; FTF-0902 NOT CERTIFIED (round 3)
+## 2026-10-06T15:30Z — Control plane: FTF-0601 and FTF-0307 CERTIFIED; FTF-0902 NOT CERTIFIED (round 3)
 
 Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
 mid-tier for FTF-0601, top model for FTF-0902 (security item). Faults were injected into production code and run with
@@ -23819,6 +23819,29 @@ the script runner, as CI does.
 - The test's embedded fault injection restores the module byte-identical (sha256 checked, git status clean).
 - Gates: product_truth 26/26, validate_spec clean, data_exposure OK.
 - Follow-up FTF-0601-F1 (from the 10:00Z entry) stays open and is not blocking.
+
+### FTF-0307 (#484, merge acbeb5447187d75c2d52d98ed0702f0b73248962): CERTIFIED
+- Producer session: `01PYwyLH` (relay lane B, dispatched by this Control-plane session through create_session; it
+  wrote the code, this session did not). Not this session.
+- CI on head c8674bf: `gate` job 112343071699 shows "FTF-0307 training capability classifier: all checks passed", plus
+  the 0301 and 1001 suites. `trainable-artifact-schema-api-integration` 112343071907 and
+  `model-version-schema-api-integration` 112343074605 succeeded.
+- All 5 round-3 DoD items (09:45Z entry) hold. 40+ production faults across the classifier, `artifact_crud`,
+  `model_version_crud` and the shared `validate_weights_digest` turn RED:
+  - (1) the ready-status gate;
+  - (2) rename/alias (`ft:`, display_name) cannot make a model trainable;
+  - (3) exact probe and access matching, and a real artifact_id;
+  - (4) one shared digest validator across 3 modules;
+  - (5) a non-str status maps to unknown.
+- Bypass probes on unmodified code are refused: fullwidth or Arabic-Indic digits, NUL, NBSP, uppercase, lying str
+  subclasses for digest and status, alias names, and an unverified route.
+- Follow-up FTF-0307-F1, not blocking:
+  - an absent `ft:*` model_id must stay `not_granted` (an additive access-grant fault is GREEN);
+  - a None-digest case in the 1001 suite;
+  - pin mark_ready against case-variant statuses;
+  - `type(model_id) is str` with a lying-subclass test;
+  - pin model_version_crud's ready gate in the 1001 unit suite (today it is pinned only by the integration test);
+  - the future wizard-entry gate must bind artifact to model.
 
 ### FTF-0902 (#468, merge 56e0a74; code 882c2c6): NOT CERTIFIED, round 3 (5 blocking items)
 - Producer sessions: `01XcRu6v`, `012M7ELE`, `01XiratpY`.

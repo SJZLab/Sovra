@@ -9886,3 +9886,20 @@ PR is not landed by the next certifier shift.
     surfaces as a 500, which the 409 assertions catch.
 - Follow-up, not blocking: FTF-0601-F1 (see docs/certifications/queue.md 2026-10-06T10:00Z).
 - Gates on 56e0a74: product_truth 26/26, validate_spec clean, data_exposure OK, status 103/301 before this entry.
+
+## FTF-0307 — Training capability classifier — CERTIFIED (2026-10-06)
+- Criterion: FTF-0307. PR #484, merge commit acbeb5447187d75c2d52d98ed0702f0b73248962 (head `c8674bf`). This closes rounds 1–3 (#471, #484).
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_01PYwyLH` (relay lane B, dispatched by this session with create_session; this session wrote
+  none of the code).
+- CI on head c8674bf: `gate` job 112343071699, "FTF-0307 training capability classifier: all checks passed";
+  integration jobs 112343071907 and 112343074605 succeeded.
+- Independent verifier (mid-tier), round-3 DoD met:
+  - the ready gate;
+  - no alias or rename to trainable;
+  - exact probe and access matching, and a real artifact_id;
+  - a shared `validate_weights_digest` in the classifier, `mark_ready` and `model_version_crud`;
+  - a non-str status maps to unknown.
+  - 40+ production faults RED, including additive bypasses. Unmodified-code bypass probes are refused.
+- Follow-up, not blocking: FTF-0307-F1 (see docs/certifications/queue.md 2026-10-06T15:30Z).
+- Gates on acbeb54: product_truth 26/26, validate_spec clean, data_exposure OK.
