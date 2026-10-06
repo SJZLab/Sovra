@@ -332,14 +332,20 @@ class ChatTemplateFastTokenizer:
                 "tokenizer_config has no non-empty chat_template -- the real selected base "
                 "model's own template is required, not a guessed default"
             )
-        tokenizer_json_sha256 = hashlib.sha256(Path(tokenizer_json_path).read_bytes()).hexdigest()
-        chat_template_sha256 = hashlib.sha256(chat_template.encode("utf-8")).hexdigest()
-        if tokenizer_json_sha256 != expected_tokenizer_json_sha256:
+        # Digests are compared inline and, once equal, the *expected* (== computed) value is
+        # recorded: there is no intermediate normalisable copy of the computed digest.
+        if (
+            hashlib.sha256(Path(tokenizer_json_path).read_bytes()).hexdigest()
+            != expected_tokenizer_json_sha256
+        ):
             raise TokenizationAnalysisError(
                 "tokenizer.json sha256 does not match the expected pinned digest -- this is "
                 "not the selected base model's own tokenizer, so it cannot be exact"
             )
-        if chat_template_sha256 != expected_chat_template_sha256:
+        if (
+            hashlib.sha256(chat_template.encode("utf-8")).hexdigest()
+            != expected_chat_template_sha256
+        ):
             raise TokenizationAnalysisError(
                 "chat_template sha256 does not match the expected pinned digest -- this is "
                 "not the selected base model's own template, so it cannot be exact"
@@ -351,8 +357,8 @@ class ChatTemplateFastTokenizer:
             template=template,
             bos_token=_token_token_content(tokenizer_config.get("bos_token")),
             eos_token=_token_token_content(tokenizer_config.get("eos_token")),
-            tokenizer_json_sha256=tokenizer_json_sha256,
-            chat_template_sha256=chat_template_sha256,
+            tokenizer_json_sha256=expected_tokenizer_json_sha256,
+            chat_template_sha256=expected_chat_template_sha256,
         )
 
     def _render(self, template_messages: Sequence[Mapping[str, object]]) -> str:

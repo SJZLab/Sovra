@@ -45,7 +45,9 @@ from workers.data.tokenization_analysis import (  # noqa: E402
     ApproximateAliasTokenizer,
     ChatTemplateFastTokenizer,
     TokenizationAnalysisError,
+    _hf_tojson,
     _percentile,
+    _to_template_message,
     analyze_tokenization,
 )
 
@@ -668,6 +670,121 @@ def test_max_sequence_length_boundary_is_pinned() -> None:
         over.conversations[0].requires_explicit_truncation_policy
         and not over.certifies_training_fit,
     )
+
+
+def test_exact_counts_match_real_transformers_apply_chat_template() -> None:
+    """FTF-0510 (returned DoD, 2026-10-04T11:00Z): oracle test against REAL transformers output.
+
+    A real `PreTrainedTokenizerFast` built on the same tokenizer.json (with a BOS post-processor)
+    and the same template (which itself emits `{{ bos_token }}`) renders and tokenizes every
+    prefix through `apply_chat_template(tokenize=True)`; the production module must agree on
+    every per-message boundary, with non-ASCII text and non-ASCII tool arguments."""
+    from transformers import PreTrainedTokenizerFast
+
+    template = "{{ bos_token }}" + _TEMPLATE
+    config = dict(_TOKENIZER_CONFIG, chat_template=template)
+    ours = ChatTemplateFastTokenizer.from_resolved_files(
+        _TOKENIZER_JSON_PATH,
+        config,
+        expected_tokenizer_json_sha256=_TOKENIZER_JSON_SHA256,
+        expected_chat_template_sha256=hashlib.sha256(template.encode("utf-8")).hexdigest(),
+    )
+    oracle = PreTrainedTokenizerFast(
+        tokenizer_file=_TOKENIZER_JSON_PATH,
+        bos_token="<s>",
+        eos_token="</s>",
+        chat_template=template,
+    )
+    conversation: list[dict[str, object]] = [
+        _text_message("user", "please lookup order \u00e9\u4e2d\u6587 one two three"),
+        {
+            "role": "assistant",
+            "content": [],
+            "tool_calls": [
+                {"id": "call_1", "name": "lookup_order", "arguments": {"order_id": "\u00e9\u4e2d"}}
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "name": "lookup_order",
+            "content": [{"type": "json", "value": {"status": "shipped"}}],
+        },
+        _text_message("assistant", "the order has shipped \u00e9 today"),
+    ]
+    template_messages = [_to_template_message(m) for m in conversation]
+    expected = tuple(
+        len(oracle.apply_chat_template(template_messages[:n], tokenize=True))
+        for n in range(1, len(template_messages) + 1)
+    )
+    actual = ours.prefix_token_counts(conversation)
+    check(
+        "FTF-0510",
+        f"boundaries equal real transformers apply_chat_template ({actual} vs {expected})",
+        actual == expected and len(set(actual)) == len(actual),
+    )
+    # Negative: a doubled-BOS count (plain encode, post-processor adds a second BOS) must differ.
+    doubled = len(
+        oracle(oracle.apply_chat_template(template_messages, tokenize=False))["input_ids"]
+    )
+    check(
+        "FTF-0510",
+        "oracle confirms the double-BOS defect would be visible",
+        doubled == actual[-1] + 1,
+    )
+
+
+def test_tojson_filter_honours_indent_and_sort_keys_like_transformers() -> None:
+    from transformers.utils.chat_template_utils import _compile_jinja_template
+
+    value = {"b": 1, "a": [1, {"z": "\u00e9", "y": 2}]}
+    ours = _hf_tojson(value, indent=2, sort_keys=True)
+    oracle = _compile_jinja_template("{{ v | tojson(indent=2, sort_keys=True) }}").render(v=value)
+    check("FTF-0510", "tojson(indent, sort_keys) equals real transformers output", ours == oracle)
+    check(
+        "FTF-0510",
+        "tojson pins an exact indented, sorted rendering",
+        ours.startswith('{\n  "a": [\n'),
+    )
+    check(
+        "FTF-0510",
+        "tojson default is compact insertion-order",
+        _hf_tojson(value).startswith('{"b": 1'),
+    )
+
+
+def test_expected_digests_must_match_exactly_no_normalisation() -> None:
+    for label, tok_digest, tpl_digest in (
+        ("upper-case tokenizer digest", _TOKENIZER_JSON_SHA256.upper(), _TEMPLATE_SHA256),
+        ("padded tokenizer digest", _TOKENIZER_JSON_SHA256 + " ", _TEMPLATE_SHA256),
+        ("upper-case template digest", _TOKENIZER_JSON_SHA256, _TEMPLATE_SHA256.upper()),
+        ("padded template digest", _TOKENIZER_JSON_SHA256, " " + _TEMPLATE_SHA256),
+    ):
+        try:
+            ChatTemplateFastTokenizer.from_resolved_files(
+                _TOKENIZER_JSON_PATH,
+                _TOKENIZER_CONFIG,
+                expected_tokenizer_json_sha256=tok_digest,
+                expected_chat_template_sha256=tpl_digest,
+            )
+        except TokenizationAnalysisError:
+            continue
+        check("FTF-0510", f"{label} must be refused, not normalised into a match", False)
+
+
+def test_record_index_only_echoes_real_ints() -> None:
+    bad_messages = {"content": {"messages": "nope"}}
+    for raw, expected in ((5, 5), (0, 0), (True, None), ("abc", None), (None, None), (2.0, None)):
+        candidate = dict(bad_messages, record_index=raw)
+        report = analyze_tokenization(
+            [candidate], tokenizer=_exact_tokenizer(), max_sequence_length=100
+        )
+        got = [i.record_index for i in report.issues]
+        check(
+            "FTF-0510",
+            f"record_index {raw!r} is echoed as {expected!r} in its issue (got {got})",
+            bool(got) and all(g == expected and type(g) is type(expected) for g in got),
+        )
 
 
 def main() -> None:
