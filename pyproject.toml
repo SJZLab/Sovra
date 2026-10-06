@@ -24,7 +24,6 @@ dev = [
   # (owner-approved 2026-09-19, QUEUE.md "Blocked" history) -- dev/test-only, never imported
   # by any production apps/api runtime path.
   "idpyoidc>=5.0.0,<5.1",
-  "transformers>=4.46.3,<4.47",
 ]
 
 [tool.pytest.ini_options]

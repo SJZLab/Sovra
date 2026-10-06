@@ -47,7 +47,6 @@ from workers.data.tokenization_analysis import (  # noqa: E402
     TokenizationAnalysisError,
     _hf_tojson,
     _percentile,
-    _to_template_message,
     analyze_tokenization,
 )
 
@@ -672,30 +671,18 @@ def test_max_sequence_length_boundary_is_pinned() -> None:
     )
 
 
-def test_exact_counts_match_real_transformers_apply_chat_template() -> None:
-    """FTF-0510 (returned DoD, 2026-10-04T11:00Z): oracle test against REAL transformers output.
+# Golden values recorded ONCE from real `transformers==4.46.3` (PreTrainedTokenizerFast on this
+# file's tokenizer.json + BOS post-processor, `apply_chat_template(tokenize=True)` on each prefix of
+# `_oracle_conversation()`, template = "{{ bos_token }}" + _TEMPLATE). transformers is NOT a repo
+# dependency: the dependency scanner blocks 4.46.3 (PYSEC-2026-2290 CRITICAL, no fix), so the oracle
+# output is pinned here as data instead of being imported.
+_TRANSFORMERS_ORACLE_PREFIX_COUNTS = (18, 68, 86, 103)
+# What a plain `encode(rendered)` (post-processor adds a SECOND BOS) would report for the full chat.
+_TRANSFORMERS_ORACLE_DOUBLE_BOS_TOTAL = 104
 
-    A real `PreTrainedTokenizerFast` built on the same tokenizer.json (with a BOS post-processor)
-    and the same template (which itself emits `{{ bos_token }}`) renders and tokenizes every
-    prefix through `apply_chat_template(tokenize=True)`; the production module must agree on
-    every per-message boundary, with non-ASCII text and non-ASCII tool arguments."""
-    from transformers import PreTrainedTokenizerFast
 
-    template = "{{ bos_token }}" + _TEMPLATE
-    config = dict(_TOKENIZER_CONFIG, chat_template=template)
-    ours = ChatTemplateFastTokenizer.from_resolved_files(
-        _TOKENIZER_JSON_PATH,
-        config,
-        expected_tokenizer_json_sha256=_TOKENIZER_JSON_SHA256,
-        expected_chat_template_sha256=hashlib.sha256(template.encode("utf-8")).hexdigest(),
-    )
-    oracle = PreTrainedTokenizerFast(
-        tokenizer_file=_TOKENIZER_JSON_PATH,
-        bos_token="<s>",
-        eos_token="</s>",
-        chat_template=template,
-    )
-    conversation: list[dict[str, object]] = [
+def _oracle_conversation() -> list[dict[str, object]]:
+    return [
         _text_message("user", "please lookup order \u00e9\u4e2d\u6587 one two three"),
         {
             "role": "assistant",
@@ -712,39 +699,44 @@ def test_exact_counts_match_real_transformers_apply_chat_template() -> None:
         },
         _text_message("assistant", "the order has shipped \u00e9 today"),
     ]
-    template_messages = [_to_template_message(m) for m in conversation]
-    expected = tuple(
-        len(oracle.apply_chat_template(template_messages[:n], tokenize=True))
-        for n in range(1, len(template_messages) + 1)
+
+
+def test_exact_counts_match_recorded_real_transformers_output() -> None:
+    """FTF-0510 (returned DoD): per-message boundaries equal real transformers
+    `apply_chat_template` output (recorded golden values; BOS post-processor, non-ASCII)."""
+    template = "{{ bos_token }}" + _TEMPLATE
+    config = dict(_TOKENIZER_CONFIG, chat_template=template)
+    ours = ChatTemplateFastTokenizer.from_resolved_files(
+        _TOKENIZER_JSON_PATH,
+        config,
+        expected_tokenizer_json_sha256=_TOKENIZER_JSON_SHA256,
+        expected_chat_template_sha256=hashlib.sha256(template.encode("utf-8")).hexdigest(),
     )
-    actual = ours.prefix_token_counts(conversation)
+    actual = ours.prefix_token_counts(_oracle_conversation())
     check(
         "FTF-0510",
-        f"boundaries equal real transformers apply_chat_template ({actual} vs {expected})",
-        actual == expected and len(set(actual)) == len(actual),
-    )
-    # Negative: a doubled-BOS count (plain encode, post-processor adds a second BOS) must differ.
-    doubled = len(
-        oracle(oracle.apply_chat_template(template_messages, tokenize=False))["input_ids"]
+        f"boundaries equal recorded transformers output ({actual} vs "
+        f"{_TRANSFORMERS_ORACLE_PREFIX_COUNTS})",
+        actual == _TRANSFORMERS_ORACLE_PREFIX_COUNTS,
     )
     check(
         "FTF-0510",
-        "oracle confirms the double-BOS defect would be visible",
-        doubled == actual[-1] + 1,
+        "the double-BOS count (plain encode) differs from the exact count",
+        actual[-1] != _TRANSFORMERS_ORACLE_DOUBLE_BOS_TOTAL,
     )
 
 
 def test_tojson_filter_honours_indent_and_sort_keys_like_transformers() -> None:
-    from transformers.utils.chat_template_utils import _compile_jinja_template
-
     value = {"b": 1, "a": [1, {"z": "\u00e9", "y": 2}]}
+    # Recorded from real transformers: `{{ v | tojson(indent=2, sort_keys=True) }}`.
+    recorded = (
+        '{\n  "a": [\n    1,\n    {\n      "y": 2,\n      "z": "\u00e9"\n    }\n  ],\n  "b": 1\n}'
+    )
     ours = _hf_tojson(value, indent=2, sort_keys=True)
-    oracle = _compile_jinja_template("{{ v | tojson(indent=2, sort_keys=True) }}").render(v=value)
-    check("FTF-0510", "tojson(indent, sort_keys) equals real transformers output", ours == oracle)
     check(
         "FTF-0510",
-        "tojson pins an exact indented, sorted rendering",
-        ours.startswith('{\n  "a": [\n'),
+        "tojson(indent, sort_keys) equals recorded transformers output",
+        ours == recorded,
     )
     check(
         "FTF-0510",
