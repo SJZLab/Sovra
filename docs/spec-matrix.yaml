@@ -6943,10 +6943,10 @@ FTF-0500C:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500c.py, tests/integration/test_ftf_0500c_database_api_trace_source.py
 FTF-0500D:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Dataset source security-boundary preview + audit evidence
-  evidence_hash: ''
+  evidence_hash: 2fb298eb57ee39910b654ac0620ce2af177dabd7
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-16; scenarios=Q08, Q09, Q31; deps=FTF-0402, FTF-0500
@@ -7093,7 +7093,7 @@ FTF-0500D:
     runs the full file. **Not self-certified (Law 4)** -- independent Control-plane L2 re-review
     and a real CI run on the opened PR are required before certification; `certification_state`
     stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
 FTF-0501:
@@ -9092,10 +9092,10 @@ FTF-1001:
   proving_symbol: build_model_version_router
   proving_test: tests/tasks/test_ftf_1001.py
 FTF-1002:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Artifact lineage manifest
-  evidence_hash: ''
+  evidence_hash: 84241a42d68c4a7f07a689deae23c9109d822143
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q20; deps=FTF-0306, FTF-1001 (both
@@ -9225,7 +9225,7 @@ FTF-1002:
     swept test_ftf_0301/0303/0304/0305/1001.py -- zero regressions. Not self-certified (Law 4):
     certification_state/proof_state unchanged; independent Control-plane L2 re-review and a real CI
     run on the newly opened PR are required before CERTIFIED.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1002.py
 FTF-1003:

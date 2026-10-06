@@ -1,20 +1,18 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-06T18:55Z. Source: `python3 scripts/status.py` on main.
-- **Status: 108/302 certified · 26 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
+Updated: 2026-10-06T20:10Z. Source: `python3 scripts/status.py` on main.
+- **Status: 110/302 certified · 26 product-true** (denominator 302 since the owner-approved addendum FTF-0103A, ADR 0003).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
-- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902.
-- **Returned to the relay (NOT CERTIFIED), tests-only fixes:**
-  - FTF-0500D round 4;
-  - FTF-1002 round 4;
-  - FTF-1206A-F2 round 2;
-  - FTF-H034-F1 round 2.
-  See docs/certifications/queue.md 2026-10-06T16:35Z and 17:45Z.
-- **Top of queue:** FTF-0103A (addendum). It wires a real session and Membership role lookup into every API route.
-  Today every /api/v1 route denies every request.
-- **New today:** every [relay] PR now runs a mutation gate (scripts/mutation_gate.py). It fails CI on any surviving
-  mutant.
+- **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
+  FTF-0500D, FTF-1002, plus follow-ups FTF-1206A-F2 and FTF-H034-F1.
+- **FTF-0103A:** live session principal + Membership. It is merged and every /api/v1 route now authorizes real
+  logins. Its production code passed every probe, and it is NOT CERTIFIED only because a test is missing for
+  header/query org injection (round 2, tests only).
+- **Returned to the relay, tests only:** FTF-0103A round 2, FTF-H034-F2, FTF-1807 round 4. Next is FTF-0214, the
+  wiring task for 10 certified units.
+- **Mutation gate:** every [relay] PR runs it in CI (scripts/mutation_gate.py, covering apps/, workers/, packages/ and
+  scripts/). On its first production change (FTF-0103A) it killed 51 of 51 mutants.
 - **Needs the owner: nothing.** L2 reviews, certification, merging relay PRs and returned items are Control-plane or
   relay work. Owner asks appear only under QUEUE.md "Owner actions — current".
 - **Relay:** 3 hourly lanes. Lane A is the owner routine at :48 every 2h. Lanes B (:28) and C (:08) run through the
