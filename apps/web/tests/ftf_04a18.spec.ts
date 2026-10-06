@@ -183,3 +183,110 @@ test("negative_acceptance: a stale candidate from a superseded snapshot is rejec
   );
   expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
 });
+
+function mockSingleCandidateList() {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      items: [
+        {
+          id: CANDIDATE_HIGH,
+          display_name: "OnlyAgent",
+          framework_or_runtime: "python",
+          confidence_score: 0.99,
+          discovery_status: "candidate",
+        },
+      ],
+      limit: 50,
+      offset: 0,
+      total: 1,
+    }),
+  });
+}
+
+test("negative_acceptance: a single-candidate list is never auto-selected (no POST, no confirmation)", async () => {
+  mockSingleCandidateList();
+  const onSelected = vi.fn();
+  renderSelectionUI(onSelected);
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+  await waitFor(() => expect(screen.getByTestId(`candidate-row-${CANDIDATE_HIGH}`)).toBeTruthy());
+  // Let any (faulty) effect-driven auto-select run to completion.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(fetch).toHaveBeenCalledTimes(1); // only the GET, never a POST
+  expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
+  expect(onSelected).not.toHaveBeenCalled();
+});
+
+test("negative_acceptance: after load, focus is not on a select button (Enter cannot select), and Enter selects nothing", async () => {
+  mockSingleCandidateList();
+  renderSelectionUI();
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+  await waitFor(() => expect(screen.getByTestId(`candidate-row-${CANDIDATE_HIGH}`)).toBeTruthy());
+
+  const active = document.activeElement;
+  expect(active?.getAttribute("data-testid") ?? "").not.toContain("candidate-select-button");
+
+  // Enter on whatever has focus (a button would turn it into a click).
+  const target = active ?? document.body;
+  fireEvent.keyDown(target, { key: "Enter", code: "Enter" });
+  fireEvent.keyPress(target, { key: "Enter", code: "Enter", charCode: 13 });
+  fireEvent.keyUp(target, { key: "Enter", code: "Enter" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
+});
+
+test("network error while loading candidates is surfaced, never an empty or successful list", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockRejectedValueOnce(new Error("connection refused"));
+  renderSelectionUI();
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain(
+      "connection refused",
+    ),
+  );
+  expect(screen.getByTestId("candidate-list").children.length).toBe(0);
+});
+
+test("network error while selecting is surfaced and nothing is confirmed", async () => {
+  mockCandidateList();
+  const onSelected = vi.fn();
+  renderSelectionUI(onSelected);
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+  await waitFor(() => expect(screen.getByTestId(`candidate-row-${CANDIDATE_LOW}`)).toBeTruthy());
+
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockRejectedValueOnce(new Error("socket hang up"));
+  fireEvent.click(screen.getByTestId(`candidate-select-button-${CANDIDATE_LOW}`));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("socket hang up"),
+  );
+  expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
+  expect(onSelected).not.toHaveBeenCalled();
+});
+
+test("an unparseable select response is surfaced as an error, never confirmed", async () => {
+  mockCandidateList();
+  renderSelectionUI();
+  fireEvent.click(screen.getByTestId("candidate-load-button"));
+  await waitFor(() => expect(screen.getByTestId(`candidate-row-${CANDIDATE_LOW}`)).toBeTruthy());
+
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => {
+      throw new SyntaxError("Unexpected end of JSON input");
+    },
+  });
+  fireEvent.click(screen.getByTestId(`candidate-select-button-${CANDIDATE_LOW}`));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("candidate-selection-error").textContent).toContain("network error"),
+  );
+  expect(screen.queryByTestId("candidate-selection-confirmation")).toBeNull();
+});

@@ -63,7 +63,7 @@ import time
 import urllib.parse
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -321,7 +321,18 @@ def main() -> None:
             last_validated_at=now,
             created_by="seed",
         )
-        session.add_all([connection1, connection2])
+        connection3 = TargetApplicationConnection(
+            organization_id=org1.id,
+            project_id=project1.id,
+            connector_type="local_repository",
+            display_name="acme-unlinked-repo",
+            repository_identity="acme/unlinked",
+            access_mode="read_only",
+            connection_status="active",
+            last_validated_at=now,
+            created_by="seed",
+        )
+        session.add_all([connection1, connection2, connection3])
         session.flush()
 
         snapshot_old = TargetSourceSnapshot(
@@ -351,7 +362,31 @@ def main() -> None:
             capture_method="local_git_commit",
             analysis_status="not_analyzed",
         )
-        session.add_all([snapshot_current, snapshot_org2])
+        # An *unlinked* newer snapshot: same connection, later captured_at,
+        # supersedes_snapshot_id left NULL (the link is optional/client-
+        # supplied, so staleness must not depend on it).
+        snapshot_unlinked_old = TargetSourceSnapshot(
+            organization_id=org1.id,
+            target_application_connection_id=connection3.id,
+            commit_sha="7" * 40,
+            tree_hash="8" * 40,
+            capture_method="local_git_commit",
+            analysis_status="not_analyzed",
+            captured_at=now - timedelta(hours=2),
+        )
+        snapshot_unlinked_new = TargetSourceSnapshot(
+            organization_id=org1.id,
+            target_application_connection_id=connection3.id,
+            commit_sha="9" * 40,
+            tree_hash="a" * 40,
+            capture_method="local_git_commit",
+            analysis_status="not_analyzed",
+            captured_at=now - timedelta(hours=1),
+            supersedes_snapshot_id=None,
+        )
+        session.add_all(
+            [snapshot_current, snapshot_org2, snapshot_unlinked_old, snapshot_unlinked_new]
+        )
         session.flush()
 
         candidate_stale = DiscoveredAgentCandidate(
@@ -378,7 +413,31 @@ def main() -> None:
             confidence_score=0.5,
             discovery_status="candidate",
         )
-        session.add_all([candidate_stale, candidate_current, candidate_org2])
+        candidate_unlinked_old = DiscoveredAgentCandidate(
+            organization_id=org1.id,
+            target_source_snapshot_id=snapshot_unlinked_old.id,
+            candidate_key="entrypoint:unlinked_old.py:Agent",
+            display_name="Unlinked-older agent",
+            confidence_score=0.5,
+            discovery_status="candidate",
+        )
+        candidate_unlinked_new = DiscoveredAgentCandidate(
+            organization_id=org1.id,
+            target_source_snapshot_id=snapshot_unlinked_new.id,
+            candidate_key="entrypoint:unlinked_new.py:Agent",
+            display_name="Unlinked-newer agent",
+            confidence_score=0.5,
+            discovery_status="candidate",
+        )
+        session.add_all(
+            [
+                candidate_stale,
+                candidate_current,
+                candidate_org2,
+                candidate_unlinked_old,
+                candidate_unlinked_new,
+            ]
+        )
         session.commit()
 
         org1_id, org2_id = org1.id, org2.id
@@ -388,6 +447,11 @@ def main() -> None:
         candidate_stale_id = candidate_stale.id
         candidate_current_id = candidate_current.id
         candidate_org2_id = candidate_org2.id
+        connection3_id = connection3.id
+        snapshot_unlinked_old_id = snapshot_unlinked_old.id
+        snapshot_unlinked_new_id = snapshot_unlinked_new.id
+        candidate_unlinked_old_id = candidate_unlinked_old.id
+        candidate_unlinked_new_id = candidate_unlinked_new.id
 
     fixture = _Fixture({"org1": org1_id, "org2": org2_id})
     session_factory = sessionmaker(bind=app_engine)
@@ -494,6 +558,60 @@ def main() -> None:
             "the refused stale-snapshot selection left no AuditEvent row "
             "behind -- a rejected action is never partially persisted",
             no_stale_audit == 0,
+        )
+
+        # -- negative_acceptance (round 2): staleness is defined server-side
+        # against the connection's latest snapshot, not only the optional
+        # supersedes link. A newer snapshot with NO supersedes link still
+        # makes the older one stale (409), and leaves no audit row --
+        r = _request(
+            base_url,
+            "POST",
+            select_path(
+                org1_id,
+                project1_id,
+                connection3_id,
+                snapshot_unlinked_old_id,
+                candidate_unlinked_old_id,
+            ),
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A18",
+            "an older snapshot with a newer UNLINKED snapshot of the same "
+            "connection (supersedes_snapshot_id NULL) is refused (409)",
+            r.status == 409,
+        )
+        with owner_engine.connect() as owner_connection:
+            unlinked_audit = owner_connection.execute(
+                text(
+                    "select count(*) from audit_events where resource_id = :rid "
+                    "and action = :action"
+                ),
+                {"rid": str(candidate_unlinked_old_id), "action": CANDIDATE_SELECTED_ACTION},
+            ).scalar_one()
+        check(
+            "FTF-04A18",
+            "the refused unlinked-newer stale selection left no AuditEvent row",
+            unlinked_audit == 0,
+        )
+        r = _request(
+            base_url,
+            "POST",
+            select_path(
+                org1_id,
+                project1_id,
+                connection3_id,
+                snapshot_unlinked_new_id,
+                candidate_unlinked_new_id,
+            ),
+            principal=org1_admin,
+        )
+        check(
+            "FTF-04A18",
+            "the connection's genuinely latest snapshot is still selectable "
+            "(201) -- the stale rule is not a blanket refusal",
+            r.status == 201,
         )
 
         # -- a missing candidate_id under a real, current snapshot is
