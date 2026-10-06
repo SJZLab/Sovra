@@ -67,9 +67,12 @@ duplicate identity, encoding, swallowed error), check and fix the same class in 
 under the same package, and list the result per module.
 
 STEP 6 — submit. Merge current main into the branch. Set the item's spec-matrix entry to
-PROVISIONAL/L1-PROVEN (never CERTIFIED). Append a submission entry to
-docs/certifications/queue.md and a PROGRESS.md entry. Touch only your own item's QUEUE.md
-lines. Mark the PR ready. Merge it on genuinely green CI (merge = PROVISIONAL only).
+PROVISIONAL/L1-PROVEN (never CERTIFIED). Write the submission as a NEW file
+docs/certifications/submissions/<YYYY-MM-DDTHHMMZ>-<ID>.md and the shift log as a NEW file
+docs/progress/<YYYY-MM-DDTHHMMZ>-<lane>.md. Do NOT edit QUEUE.md, PROGRESS.md or
+docs/certifications/queue.md: those are Control-plane files, and shared edits put every other open
+relay PR into conflict. Mark the PR ready and merge it on genuinely green CI (merge = PROVISIONAL only).
+Never open a docs-only "record this shift" PR.
 
 LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
 QUEUE.md order that has no `relay/<id>` branch and no open `[relay]` PR, and claims it at once
@@ -97,7 +100,7 @@ no design, no queue reprioritisation.
 GUARD: read CLAUDE.md. Exit if CERTIFIER is not "Control plane (autonomous)". Compare
 `sha256sum CLAUDE.md` with CLAUDE.md.sha256; on a mismatch, report it and exit.
 
-SCOPE: certify only MERGED relay work. Merge = PROVISIONAL, and CI must be green on the
+SCOPE: certify only MERGED relay work. Read submissions from docs/certifications/submissions/. Merge = PROVISIONAL, and CI must be green on the
 final head. On every fire, whether scheduled or PR event, scan docs/certifications/queue.md
 for every relay submission whose PR has merged and is newer than that item's latest verdict,
 and review all of them, not just the PR that triggered this run. A PR that is still open is

@@ -23753,34 +23753,49 @@ FTF-0601's behavior is correct (2026-10-06T09:45Z entry). To certify in one shif
 Items (3)–(6) of the 09:45Z entry are FOLLOW-UPS that do not block L2: the contract `maximum`/`pattern` test, the migration-0019
 test, the PATCH-stored reviewer assertion, and DB CHECK hardening. They go to Backlog as FTF-0601-F1.
 
-## 2026-10-06T13:05Z — FTF-0601 round-3 blocking items fixed (tests only), PR #483 opened
-Both items this narrowed DoD blocks on are done, submitted PROVISIONAL:
-- **(1) Independence, 3 actor roles + F19.** `tests/integration/test_ftf_0601_evaluation_suite.py` now independently creates/
-  self-assigns/self-locks a FINAL suite as `workspace_admin` and `organization_admin` (in addition to the pre-existing
-  `evaluator` case), each refused 409. The F19 additive-fault test temporarily patches `and not actor.actor_id.endswith("admin")`
-  onto `lock_evaluation_suite`'s own independence `if`, reloads the module, rebuilds the router from the reloaded functions, and
-  hits it over real HTTP (never a direct CRUD call). Finding, not assumed: the real `ck_evaluation_suites_independent_final_
-  reviewer` DB CHECK still blocks the resulting UPDATE even with the bypass present, so the fault does not silently let the
-  self-review through — it converts the previously-clean 409 into an unhandled 500 (confirmed: `baseline_response.status == 409`
-  before the patch, `fault_response.status != 409` after, `== 409` again post-restore). That is still a genuine regression the
-  old evaluator-only coverage would have missed, and this round's own 3-actor-role test would catch — the fault test asserts
-  exactly that, not the stronger (and, after checking, false) "bypass succeeds silently" claim. Module file restored
-  byte-identical, confirmed by content comparison before/after.
-- **(2) F06.** A non-member `reviewer_id` on POST create (not only PATCH, already covered) is refused 400 — new integration
-  check.
-- Fixture extended with an `ORGANIZATION_ADMIN` principal/membership per org (previously only `workspace_admin`/`evaluator`/
-  `viewer` existed). Listing-count assertion updated for the three new real suites these tests create (versions 4, 5, 6,
-  alongside the pre-existing 1, 2, 3, 96 — the suite's own `_next_version` is a live `MAX(version)+1` query, so the three POSTs
-  that were refused before any row existed — the non-member-reviewer 400 cases — do not consume a version number; confirmed by
-  running the suite and reading the real response list back).
+## 2026-10-06T13:45Z — Control-plane L2 batch: FTF-0500C CERTIFIED, FTF-0500B CERTIFIED, FTF-1002 returned (round 3), FTF-1206A returned (round 2)
+Independence: the certifier is `01QVzn`; the producers are #464 `01GV8hRZ`, #465 `014d69o2`, #476 `01Fj5bGF` and #470
+`01BmSF51`. There are no matches. The verifiers ran on the mid-tier model at main dbd3a5b. FTF-0500C and FTF-0500B are
+CERTIFIED (see ledger.md).
 
-**Verification:** both `tests/tasks/test_ftf_0601.py` and `tests/integration/test_ftf_0601_evaluation_suite.py` pass against a
-real local PostgreSQL 16 (ran directly, not only asserted). `uv run ruff check .` / `ruff format --check .` clean (376 files).
-`uv run mypy .` clean (376 source files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch origin main
---unshallow`, same precedent this file's own history already carries for a shallow-clone sandbox).
-`product_truth_check.py --fail-on-unwired` unchanged 26/26. `status.py` unchanged 101/301 certified (Law 2 — a resubmission is
-not a certification). `data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` OK.
+### FTF-1002 (#476): NOT CERTIFIED, round 3
+Round-2 items mostly hold. Parent status, tenant and digest/revision parity, the mandatory adapter base, self-parent by
+digest, and tamper detection are each RED under fault. Open items:
+- **Values are unpinned.** Every fixture uses the same digest and licence literals. Hard-coding `license` or a
+  base/tokenizer digest, dropping `accepted_by`, or omitting any fact from the manifest digest leaves the suite GREEN
+  (F17–F25, F28).
+- **Format is not validated in the module.** Validation happens only in ORM `__init__`, which is skipped on DB load.
+  None, "", "abc", uppercase and whitespace digests, and blank revisions on both sides, all produce a manifest (with None
+  as `known=True`).
+- **Adapter base identity is missing.** The base is compared only by revision string. There is no
+  `model_family`/`source_uri` check, the base digest is not validated, the base id and digest are not recorded in the
+  manifest, and a case-variant self-digest evades the check.
+- An endpoint import with a `resolved_base_artifact` silently ignores it.
+DoD (round 3), each shown RED first:
+- (a) Validate digest and revision with the shared `validate_weights_digest` inside `build_artifact_lineage_manifest`, for
+  the parent, the model version and the base. Refuse None or blank.
+- (b) Add a base identity check (`model_family` + `source_uri`, or a declared base id). Validate the base digest, and record
+  the base id and digest in the manifest and its digest.
+- (c) Refuse `resolved_base_artifact` for an endpoint import.
+- (d) Use a distinct digest and licence per fact in fixtures, mutate EVERY fact in the tamper test, and add a test for the
+  same id with a different digest.
 
-PR: https://github.com/SJZLab/Sovra/pull/483 (branch `claude/wizardly-fermat-05q043`, merged `origin/main` in first — clean
-merge, no conflicts). Not self-certified (Law 4) — `certification_state: PROVISIONAL`/`proof_state: L1-PROVEN` unchanged,
-awaiting independent Control-plane L2 re-review and a real CI run on this PR.
+### FTF-1206A (#470): NOT CERTIFIED, round 2 (2 blocking tests)
+Persistence is correct on real PG16:
+- ENABLE+FORCE RLS, with a tenant policy on both tables;
+- 0 rows with no or foreign context, and cross-tenant writes refused;
+- the app role cannot UPDATE/DELETE/TRUNCATE history;
+- constraints hold;
+- a clean up/down/up round-trip.
+The RLS faults are caught by the unit suite and `data_exposure_check`. Blocking (Law 18 needs a real unauthorized-principal
+test):
+- (1) A raw query as `sovra_app` under a foreign tenant context, WITHOUT the app-layer `WHERE organization_id` filter, must
+  return 0 rows from both tables, plus a foreign-tenant INSERT refused by RLS. Today the integration "RLS" test passes even
+  with `USING (true)`, because the app filter masks it.
+- (2) A negative test that `list_route_changes` refuses a project the principal cannot access. Dropping that authorization
+  leaves every suite GREEN.
+Follow-up FTF-1206A-F1, not blocking:
+- integration step 9 should assert the CHECK, not the RLS rejection;
+- `actor_not_blank` and NOT NULL `approvers` tests;
+- the stale `0019` docstring;
+- TASK_INDEX row FTF-1206 should list FTF-1206A.
