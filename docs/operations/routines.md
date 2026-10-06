@@ -24,6 +24,7 @@ firing if that lane's previous session is still working; otherwise it calls `cre
 the repo as source, model claude-sonnet-5-5, and the Relay prompt below with a one-line lane
 header. The dispatcher does no repository work. Lane A stays the owner-created routine.
 
+---
 
 ## Relay
 
