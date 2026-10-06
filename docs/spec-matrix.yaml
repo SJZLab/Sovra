@@ -9533,10 +9533,10 @@ FTF-1206:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206.py
 FTF-1206A:
-  certification_state: CERTIFIED
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Organization gateway policy persistence (migration prerequisite for FTF-1206)
-  evidence_hash: a8a1936049376e0dabd3bba2536b169fb04afcd9
+  evidence_hash: ''
   implementation_state: IMPLEMENTED
   notes: >-
     Owner-approved Release 1 addendum (2026-10-04), docs/adr/0002-task-addendum-ftf-1206a.md.
@@ -9618,7 +9618,7 @@ FTF-1206A:
     own persistence half (BLOCKER.md's RESOLVED 2026-10-02 entry, route option 1) -- a follow-up
     task, not done here, since this task's own `files` clause is closed to exactly the migration,
     the store module and these two test files.
-  proof_state: L2-CERTIFIED
+  proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1206a.py
 FTF-1301:

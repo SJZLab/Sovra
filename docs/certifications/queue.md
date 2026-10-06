@@ -23887,13 +23887,18 @@ Follow-up FTF-0902-F1, not blocking:
 Masked, not missed: an IPv4-only prefix-0 check and dropping fd00:ec2::254 are each caught by the IPv6 refusal;
 removing both layers turns RED.
 
-## 2026-10-06T16:35Z — Control plane: FTF-1206A CERTIFIED; FTF-0500D and FTF-1002 NOT CERTIFIED (round 4)
+## 2026-10-06T16:35Z — Control plane: FTF-1206A verdict CERTIFIED (status flip deferred); FTF-0500D and FTF-1002 NOT CERTIFIED (round 4)
 
 Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent verifiers:
 top model for FTF-1206A (Law 18), mid-tier for FTF-0500D and FTF-1002. Faults were injected into production code and
 run with the script runner.
 
 ### FTF-1206A (#486, squash a8a1936049376e0dabd3bba2536b169fb04afcd9): CERTIFIED
+- **Status flip deferred.** Setting spec-matrix to CERTIFIED turns the `gate` job RED: FTF-H034's
+  `test_real_committed_tracker_and_tasks_reflect_actual_certified_set` requires every CERTIFIED id to be in
+  `spec/tasks.json`, but ADR 0002 freezes that file at 300 tasks (r1_handoff enforces it) and the addendum is not in
+  it. The fix is code, so it goes to the relay as FTF-H034-F1 (QUEUE item 0b2). Control plane flips 1206A to
+  CERTIFIED, and adds its ledger entry, once FTF-H034-F1 is merged and verified. This verdict stands until then.
 - Producer session: `019gwFQK` (relay lane C). Not this session.
 - CI on head 65b5572: `organization-gateway-policy-integration` job 112345825620 shows "all checks passed", and the
   Postgres log shows the expected RLS and permission errors. `gate` job 112345824990 passed.
@@ -23943,6 +23948,16 @@ run with the script runner.
   - a zero-width-space revision is accepted;
   - `verify` that compares only a 20-character prefix stays GREEN;
   - anchor-text fault tests mask behavioral results.
+
+### FTF-H034-F1 (new, blocking FTF-1206A's status flip; small, show RED first)
+- In `tests/tasks/test_ftf_h034.py`, exclude ids that have `spec/addenda/<id>.json` from the `spec/tasks.json`
+  check only. ADR 0002 freezes tasks.json at 300. Keep the TRACKER check for all CERTIFIED ids.
+- In `scripts/task_claim.py` `sync_certified_status`, create or update TRACKER.json entries for addendum ids
+  (status, evidence = evidence_hash). Write the files when only the tracker changed; today it writes only when
+  tasks.json changed.
+- Tests: certifying an addendum id in a temp spec-matrix updates TRACKER and leaves tasks.json at 300. A
+  non-addendum CERTIFIED id missing from tasks.json still turns the test RED, so the exclusion must not widen past
+  spec/addenda.
 
 **AUDIT note (items returned more than twice):** 0500D and 1002 are on round 4. Both misses are hardcoded-value and
 sub-field faults that the STEP 5b self-attack should have produced. For every computed field, the relay must also
