@@ -1917,10 +1917,10 @@ FTF-0306:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0306.py, tests/integration/test_ftf_0306_base_model_revision_digest_resolver.py
 FTF-0307:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Training capability classifier
-  evidence_hash: ''
+  evidence_hash: acbeb5447187d75c2d52d98ed0702f0b73248962
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-14; scenarios=Q07, Q10; deps=FTF-0207, FTF-0212, FTF-0301,
@@ -2069,7 +2069,7 @@ FTF-0307:
     tests in test_ftf_0307/0301/1001; (5) a non-str status -> unknown, never TypeError. Same-class
     sweep: apply_mark_ready now refuses any status other than `registered`. Fault -> RED table:
     docs/certifications/submissions/2026-10-06T1500Z-FTF-0307.md.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0307.py
 FTF-0308:
@@ -8035,10 +8035,10 @@ FTF-0520:
   proving_symbol: ''
   proving_test: ''
 FTF-0601:
-  certification_state: PROVISIONAL
+  certification_state: CERTIFIED
   criticality: MUST
   description: Evaluation suite schema/API
-  evidence_hash: ''
+  evidence_hash: 88bf61978313ff3f9352d22b9a680de87f6eb89e
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=CAP-11; scenarios=Q16, Q17, Q18; deps=FTF-0401, FTF-04A19,
@@ -8151,7 +8151,7 @@ FTF-0601:
     `evaluation-suite-integration` job already run both files. **Not self-certified (Law 4)** --
     awaiting independent Control-plane L2 re-review and a real CI run on the opened PR before
     certification.
-  proof_state: L1-PROVEN
+  proof_state: L2-CERTIFIED
   proving_symbol: build_evaluation_suite_router
   proving_test: tests/tasks/test_ftf_0601.py
 FTF-0602:
