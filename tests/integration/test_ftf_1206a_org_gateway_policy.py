@@ -697,6 +697,101 @@ def main() -> None:
         leaked_raw == [],
     )
 
+    # -- 10b. FTF-1206A-F2: a WITH CHECK that fails open when NO tenant ----
+    #         context is set (or it is '') must be caught. A fresh org3 with
+    #         no policy row means UNIQUE(organization_id) cannot mask a
+    #         successful insert; the route-change case uses org1's real
+    #         project so the composite FK is satisfied and only RLS stands in
+    #         the way. Asserted on the real "row-level security" error, with
+    #         the same statement as a positive control under the own context.
+    with Session(owner_engine) as session:
+        org3 = Organization(name="Initech 1206A-F2", slug=f"initech-1206a-{uuid.uuid4().hex[:8]}")
+        session.add(org3)
+        session.commit()
+        org3_id = org3.id
+    insert_policy_org3 = text(
+        "INSERT INTO organization_gateway_policies "
+        "(id, organization_id, allowed_registration_namespaces, "
+        "allowed_deployment_namespaces, approvers, route_change_requires_approval) "
+        "VALUES (gen_random_uuid(), :org_id, '[]'::jsonb, '[\"*\"]'::jsonb, "
+        "'[]'::jsonb, false)"
+    )
+    insert_route_f2 = text(
+        "INSERT INTO organization_gateway_route_changes "
+        "(id, organization_id, project_id, actor, target_deployment_namespace, "
+        "approved, bypass_requested, request_id) "
+        "VALUES (gen_random_uuid(), :org_id, :project_id, 'user:raw', "
+        "'factory-production', true, false, 'f2-no-context')"
+    )
+    f2_cases = (
+        ("organization_gateway_policies", insert_policy_org3, {"org_id": str(org3_id)}),
+        (
+            "organization_gateway_route_changes",
+            insert_route_f2,
+            {"org_id": str(org1_id), "project_id": str(project1_id)},
+        ),
+    )
+    for table_name, statement, params in f2_cases:
+        own_ctx = org3_id if table_name == "organization_gateway_policies" else org1_id
+        control_ok = False
+        with Session(app_engine) as session:
+            set_tenant_context(session, own_ctx)
+            try:
+                session.execute(statement, params)
+                control_ok = True
+            except DBAPIError:
+                pass
+            session.rollback()
+        check(
+            "FTF-1206A-F2",
+            f"control: the raw {table_name} INSERT is valid under the owning tenant context",
+            control_ok,
+        )
+        for label, context_sql in (
+            ("no tenant context", None),
+            (
+                "empty-string tenant context",
+                "SELECT set_config(" "'app.current_organization_id', '', true)",
+            ),
+        ):
+            try:
+                with Session(app_engine) as session:
+                    if context_sql is not None:
+                        session.execute(text(context_sql))
+                    session.execute(statement, params)
+                    session.commit()
+                check(
+                    "FTF-1206A-F2",
+                    f"negative_acceptance: a raw sovra_app INSERT into {table_name} "
+                    f"with {label} is refused by RLS",
+                    False,
+                )
+            except DBAPIError as exc:
+                check(
+                    "FTF-1206A-F2",
+                    f"negative_acceptance: a raw sovra_app INSERT into {table_name} "
+                    f"with {label} is refused by RLS (row-level security in error: "
+                    f"{exc.orig!r})",
+                    "row-level security" in str(exc.orig),
+                )
+        with Session(owner_engine) as session:
+            left = session.execute(
+                text(
+                    f"SELECT count(*) FROM {table_name} WHERE "
+                    + (
+                        "organization_id = :o"
+                        if table_name == "organization_gateway_policies"
+                        else "request_id = 'f2-no-context'"
+                    )
+                ),
+                {"o": str(org3_id)},
+            ).scalar_one()
+        check(
+            "FTF-1206A-F2",
+            f"the refused no-context INSERTs left no row behind in {table_name}",
+            left == 0,
+        )
+
     # -- 11. negative_acceptance (round 2): list_route_changes itself must --
     #        refuse a project the principal cannot access. RLS alone would
     #        make a foreign project's history look EMPTY (indistinguishable
