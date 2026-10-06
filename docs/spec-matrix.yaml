@@ -6807,6 +6807,50 @@ FTF-0500D:
     already runs `tests/tasks/test_ftf_0500d.py` in full. **Not self-certified (Law 4)** --
     independent Control-plane L2 re-review and a real CI run on the opened PR are required before
     certification; `certification_state` stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
+
+    **2026-10-05 L2 round-2 fix-and-resubmit (2026-10-04T11:00Z finding).** Finding: "the matrix
+    holds org default equal to the project profile and fixes the purpose, so an early return when
+    org != project, or when purpose == 'validation', stays GREEN. A full probe confirms real
+    gaps." DoD: test the full classification x org-default x project x status x grant x purpose
+    matrix, asserting `preview.blocked == authorize raises`, plus an additive early-return fault
+    test. Clause-to-test mapping: added
+    `test_authorize_raises_whenever_preview_blocks_across_full_matrix`, which varies all six named
+    dimensions independently (`security_classification` x `organization_default_security_profile`
+    x `project_security_profile` x `connection_status` x grant x `requested_purpose`) -- the
+    pre-existing matrix only ever held org==project and a single, always-granted purpose. This
+    module's own real, closed enums multiply out to 4x3x3x2x2x5 = 720 cases, not the review's own
+    prose figure of "1,440" -- disclosed rather than silently padded to match (`test_full_matrix_
+    enumerates_every_real_value_of_every_dimension` asserts the real derivation and that every
+    dimension's own enum size matches the module exactly); what the DoD actually requires -- true
+    full-factorial coverage of every real value of every named dimension -- is met regardless of
+    which exact number the review's own prose cited. Running this full matrix against the
+    unmodified, already-shipped module found zero violations: this was a test-coverage gap, not an
+    existing production defect, consistent with the review's own "tests pin only the faults the
+    producer thought of" framing -- no change to
+    `workers/data/dataset_source_security_boundary_preview_audit_evidence.py` was needed or made.
+    Law 1, shown able to fail: added
+    `test_fault_injection_additive_org_project_divergence_early_return`, which injects the exact
+    additive fault the review named (a brand-new early `return` in `authorize_dataset_source_copy`
+    whenever `organization_default_security_profile != project_security_profile`, skipping both
+    checks) against the real on-disk module in an isolated subprocess, confirms the original,
+    narrower classification x profile matrix (which always held org==project) is genuinely blind
+    to it (0 violations), confirms the full matrix genuinely catches it (>0 violations), then
+    restores the module file byte-identical (md5sum-verified) and re-confirms the full matrix is
+    clean again.
+
+    `tests/tasks/test_ftf_0500d.py`: 30 test functions (was 27), "all checks passed". `uv run ruff
+    check .`/`ruff format --check .` clean (371 files). `uv run mypy .` clean repo-wide (371
+    source files). `python3 scripts/validate_spec.py --strict` clean (after `git fetch
+    --unshallow`, this sandbox's own pre-existing shallow-clone artifact). `python3
+    scripts/product_truth_check.py --fail-on-unwired`: unchanged `26/26`. `scripts/status.py`:
+    unchanged `101/301` certified, 24 product-true (Law 2 -- a resubmission is not a
+    certification). Regression swept `test_ftf_0402.py`/`test_ftf_0500.py` (via `uv run python3`)
+    -- zero regressions (`test_ftf_0500.py`'s own printed `TenantContextError` traceback in stdout
+    is that suite's own disclosed negative-test case, confirmed exit 0). No `.github/
+    workflows/ci.yml` change needed -- the existing "FTF-0500D negative-test proof" step already
+    runs the full file. **Not self-certified (Law 4)** -- independent Control-plane L2 re-review
+    and a real CI run on the opened PR are required before certification; `certification_state`
+    stays `PROVISIONAL`, `proof_state` stays `L1-PROVEN`.
   proof_state: L1-PROVEN
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0500d.py
@@ -9892,6 +9936,51 @@ FTF-1506:
     (merge commit `c805cd03e1c3cb03dfeced0888c373e00a547859`). PR #262
     (the original, CI-blocked submission this PR fixed) closed as
     superseded.
+
+    2026-10-06 relay maintenance (new live OSV.dev finding, not a defect in
+    this task's own module): PR #471 (FTF-0307, a task with no `pnpm-lock.yaml`
+    in its own closed `files` scope)'s `dependency-scanning-integration` job
+    failed twice in a row (runs #727/#728, head commits `062e6bc`/`088f605`)
+    with one real blocking finding -- `npm:source-map-js==1.2.1`
+    GHSA-68fv-2mgg-jv7q, severity HIGH, `fixed_versions: ["1.2.2"]` -- genuinely
+    unrelated to that PR's own diff (confirmed: `git log -- pnpm-lock.yaml`
+    shows the pin predates PR #471 by several merges, last touched by merge
+    PR #415; PR #471's own changed-files list is `PROGRESS.md`/`QUEUE.md`/
+    `apps/api/app/artifacts/training_capability_classifier.py`/
+    `docs/certifications/queue.md`/`docs/spec-matrix.yaml`/
+    `tests/tasks/test_ftf_0307.py` -- no lockfile). `source-map-js` is a
+    transitive dependency of `postcss@8.5.28` (`^1.2.1` range, confirmed via
+    `pnpm view postcss@8.5.28 dependencies` -- 1.2.2 satisfies it, a pure
+    patch-level resolution, not a new dependency or a range change). Per this
+    repo's own CI-red precedent (above, 2026-09-25: "a check unrelated to the
+    PR's own diff is this repo's to root-cause, fixed via its own separate
+    bump, not by widening the unrelated PR"), remediated via a dedicated
+    minimal 3-line lockfile edit (this PR, FTF-1506 tagged since this is the
+    dependency-scan task's own negative_acceptance firing correctly) rather
+    than inside PR #471 itself -- `source-map-js@1.2.1` to `@1.2.2` in all
+    three of its `pnpm-lock.yaml` occurrences (the `packages:` resolution
+    block, `postcss`'s own `dependencies:` entry, and the `snapshots:` entry),
+    nothing else touched (confirmed via `git diff --stat`: 1 file, 4
+    insertions, 4 deletions). Deliberately not run via `pnpm update`, whose
+    first attempt pulled in ~20 unrelated transitive bumps (rolldown,
+    oxc-project/types, nanoid, eslint-family packages, postcss's own patch
+    version) via loose semver ranges resolving to newer-than-lockfile
+    versions -- reverted, then applied by hand to keep this fix scoped to the
+    one real finding. `pnpm install --frozen-lockfile` confirms the edited
+    lockfile is self-consistent ("Lockfile is up to date, resolution step is
+    skipped"); `pnpm run lint`/`typecheck`/`format:check`/`vitest run` all
+    clean; `tests/tasks/test_ftf_1506.py` (no-network) still 19/19. Whether
+    1.2.2 actually clears GHSA-68fv-2mgg-jv7q cannot be confirmed locally
+    (this sandbox's own outbound proxy blocks `api.osv.dev` directly, same
+    disclosed gap as the 2026-09-25 entry above) -- the real
+    `dependency-scanning-integration` CI job on this fix's own PR is the only
+    genuine proof, watched to completion as part of this submission.
+    `certification_state`/`proof_state` deliberately unchanged (still
+    L2-CERTIFIED -- this is a one-line dependency-pin bump to an
+    already-certified CI tool's own scanned inputs, not a change to
+    `tests/security/dependency_scanning.py` or `tests/tasks/test_ftf_1506.py`
+    themselves; Law 2 -- nothing here moves a tracker status without new
+    certification-level evidence, and none is claimed).
   proof_state: L2-CERTIFIED
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_1506.py
