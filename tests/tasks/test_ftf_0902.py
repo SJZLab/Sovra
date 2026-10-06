@@ -970,12 +970,12 @@ def test_fault_injection_rfc1918_check_is_load_bearing_additive() -> None:
 # --- PodSelectorEndpoint half, ::/0, RFC1918 boundaries.                        ---
 
 
-class _TruthyEmptyTuple(tuple):  # type: ignore[type-arg]
+class _TruthyEmptyTuple(tuple):
     def __bool__(self) -> bool:
         return True
 
 
-class _TruthyEmptyDict(dict):  # type: ignore[type-arg]
+class _TruthyEmptyDict(dict):
     def __bool__(self) -> bool:
         return True
 
