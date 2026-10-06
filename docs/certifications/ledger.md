@@ -9814,3 +9814,59 @@ PR is not landed by the next certifier shift.
 - `dependency-scanning-integration` job 112086767916 reports "0 blocking". A verifier reintroduced 1.2.1 with an OSV-shaped
   stub, and the real scan path went RED.
 - The capability evidence is unchanged; no status change.
+
+## FTF-0500C — Database/API/trace source contract and fail-closed validation — CERTIFIED (2026-10-06)
+- Criterion: FTF-0500C. PR #464, merge commit da3d26cbf50660e82cb5a8a964e561f5948a52dc (head `4e1982a`). This closes rounds 1–5
+  (#404, #448, #451, #464).
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent:
+  - the producer of #464 is `session_01GV8hRZ`;
+  - earlier rounds were `01S4wdwY` and `01TdubeP`;
+  - none is this session.
+- CI on head `4e1982a`:
+  - `database-api-trace-source-integration` job 112233394854 ran on real Postgres 16.15. The log shows the new whole-table
+    `SELECT EXISTS (… WHERE "id" IS NULL)` executing, then "all checks passed".
+  - `gate` job 112233393417 passed.
+- Independent verifier (mid-tier model, policy A5) on 2 real PG16 clusters (UTF8+ICU and SQL_ASCII):
+  - Round-5 DoD met:
+    - (1) whole-table NULL refusal on every call;
+    - (2) the IS NOT DISTINCT FROM claim removed, with `=` documented equivalent once NULLs are excluded;
+    - (3) the spy decodes bytes, and the full suite passes on SQL_ASCII;
+    - (4) watermark uniqueness.
+  - Faults RED: NULL check (additive and delete), first-call-only, tie detection neutered, spy decode, watermark count and
+    existence-only.
+  - Round-4 sanity holds: cursor cycles, statement_timeout on SQL_ASCII, NaN/citext/ICU ties, exact boundary, and
+    psycopg.Error wrapping.
+- Follow-up, not blocking (FTF-0500C-F1): a test pinning the NULL refusal on resumed calls. The F1d mutant
+  "check only on resumed calls" survives, but the code is unconditional and probes confirm resumed-call refusal on both
+  clusters.
+- Gates on dbd3a5b: product_truth 26/26, validate_spec clean, data_exposure OK.
+- `docs/spec-matrix.yaml` is set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit, and `sync_certified_status()` was
+  run.
+
+## FTF-0500B — S3/MinIO source validation, metadata preview — CERTIFIED (2026-10-06)
+- Criterion: FTF-0500B. PR #465, merge commit 71f0f55d1aea6366cbbd01b0d015610df1f5af10 (head `01f85e2`). This closes rounds 1–4
+  (#407, #449/#453, #465).
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent:
+  - the producer of #465 is `session_014d69o2`;
+  - earlier rounds were `01R15bUk` and `01FPm4Ae`;
+  - none is this session.
+- CI on head `01f85e2`:
+  - `s3-minio-versioned-source-integration` job 112234036563 booted SeaweedFS, created a versioned bucket, wrote 2 versions of
+    one key, then "all checks passed";
+  - `gate` job 112234035884 passed.
+- Independent verifier (mid-tier, hand-built XML through the real module), round-4 DoD met:
+  - (1) the marker seen-set plus a hard page cap: A→B→A with full and with empty pages, a 3-cycle, ever-advancing pages
+    hitting the cap, and the exact cap boundary;
+  - (2) strict IsTruncated, with garbage or missing refused;
+  - (3) the root must be ListVersionsResult;
+  - (4) duplicate (Key, VersionId) within and across pages;
+  - (5) Size validation.
+  - 26 faults RED, including additive bypasses.
+- Follow-up, not blocking (FTF-0500B-F1):
+  - pin whitespace-only IsTruncated, DeleteMarker, non-latest and beyond-preview duplicate recording, and the default page
+    cap (these additive mutants survive; behavior is correct today);
+  - a missing `<Size>` defaults to 0, which should be refused;
+  - the same-class sweep for 0500C and 0500D was done by the Control-plane verifier (no new defect), not by the relay.
+- Gates on dbd3a5b: product_truth 26/26, validate_spec clean, data_exposure OK.
+- `docs/spec-matrix.yaml` is set to CERTIFIED / L2-CERTIFIED, evidence_hash = merge commit, and `sync_certified_status()` was
+  run.
