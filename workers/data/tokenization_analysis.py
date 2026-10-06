@@ -137,6 +137,7 @@ own modules instead of creating a second, non-existent tree.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -182,7 +183,30 @@ def _raise_exception(message: object) -> None:
 
 
 _SANDBOXED_JINJA_ENV = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True)
-_SANDBOXED_JINJA_ENV.filters["tojson"] = lambda value, **_kwargs: json.dumps(value)
+
+
+def _hf_tojson(
+    value: object,
+    ensure_ascii: bool = False,
+    indent: int | None = None,
+    separators: tuple[str, str] | None = None,
+    sort_keys: bool = False,
+) -> str:
+    """Mirrors transformers' own chat-template `tojson` filter exactly
+    (`ensure_ascii=False` by default, `indent`/`separators`/`sort_keys`
+    honoured) -- jinja2's own default `tojson` HTML-escapes and
+    ASCII-escapes, which would change the rendered text and so the token
+    count of any non-ASCII or indented tool argument."""
+    return json.dumps(
+        value,
+        ensure_ascii=ensure_ascii,
+        indent=indent,
+        separators=separators,
+        sort_keys=sort_keys,
+    )
+
+
+_SANDBOXED_JINJA_ENV.filters["tojson"] = _hf_tojson
 _SANDBOXED_JINJA_ENV.globals["raise_exception"] = _raise_exception
 
 
@@ -276,7 +300,11 @@ class ChatTemplateFastTokenizer:
         template: jinja2.Template,
         bos_token: str,
         eos_token: str,
+        tokenizer_json_sha256: str,
+        chat_template_sha256: str,
     ) -> None:
+        self.tokenizer_json_sha256 = tokenizer_json_sha256
+        self.chat_template_sha256 = chat_template_sha256
         self._fast_tokenizer = fast_tokenizer
         self._template = template
         self._bos_token = bos_token
@@ -287,12 +315,34 @@ class ChatTemplateFastTokenizer:
         cls,
         tokenizer_json_path: str | Path,
         tokenizer_config: Mapping[str, object],
+        *,
+        expected_tokenizer_json_sha256: str,
+        expected_chat_template_sha256: str,
     ) -> ChatTemplateFastTokenizer:
+        """`exact` is bound to the two real, pinned digests of the selected
+        base model's own tokenizer: the sha256 of the `tokenizer.json`
+        bytes and of the `chat_template` string (UTF-8). A caller must
+        supply the expected digests (from the resolved artifact manifest);
+        a mismatch -- a different tokenizer or template than the one the
+        model pins -- raises rather than yielding a self-asserted
+        `exact=True`."""
         chat_template = tokenizer_config.get("chat_template")
         if not isinstance(chat_template, str) or not chat_template.strip():
             raise TokenizationAnalysisError(
                 "tokenizer_config has no non-empty chat_template -- the real selected base "
                 "model's own template is required, not a guessed default"
+            )
+        tokenizer_json_sha256 = hashlib.sha256(Path(tokenizer_json_path).read_bytes()).hexdigest()
+        chat_template_sha256 = hashlib.sha256(chat_template.encode("utf-8")).hexdigest()
+        if tokenizer_json_sha256 != expected_tokenizer_json_sha256:
+            raise TokenizationAnalysisError(
+                "tokenizer.json sha256 does not match the expected pinned digest -- this is "
+                "not the selected base model's own tokenizer, so it cannot be exact"
+            )
+        if chat_template_sha256 != expected_chat_template_sha256:
+            raise TokenizationAnalysisError(
+                "chat_template sha256 does not match the expected pinned digest -- this is "
+                "not the selected base model's own template, so it cannot be exact"
             )
         fast_tokenizer = HuggingFaceFastTokenizer.from_file(str(tokenizer_json_path))
         template = _SANDBOXED_JINJA_ENV.from_string(chat_template)
@@ -301,6 +351,8 @@ class ChatTemplateFastTokenizer:
             template=template,
             bos_token=_token_token_content(tokenizer_config.get("bos_token")),
             eos_token=_token_token_content(tokenizer_config.get("eos_token")),
+            tokenizer_json_sha256=tokenizer_json_sha256,
+            chat_template_sha256=chat_template_sha256,
         )
 
     def _render(self, template_messages: Sequence[Mapping[str, object]]) -> str:
@@ -319,7 +371,11 @@ class ChatTemplateFastTokenizer:
         counts: list[int] = []
         for prefix_length in range(1, len(template_messages) + 1):
             rendered = self._render(template_messages[:prefix_length])
-            counts.append(len(self._fast_tokenizer.encode(rendered).ids))
+            # add_special_tokens=False: exactly what transformers'
+            # apply_chat_template(tokenize=True) does -- the template itself
+            # already emits bos_token, and a tokenizer.json BOS post-processor
+            # would otherwise add a second one.
+            counts.append(len(self._fast_tokenizer.encode(rendered, add_special_tokens=False).ids))
         return tuple(counts)
 
 
@@ -379,13 +435,12 @@ class TokenDistribution:
     p99: int
 
 
-def _percentile(sorted_values: Sequence[int], percentile: float) -> int:
+def _percentile(sorted_values: Sequence[int], percentile: int) -> int:
     """Nearest-rank percentile, deterministic, no numpy dependency added
     just for this. `sorted_values` must already be sorted ascending and
     non-empty."""
     n = len(sorted_values)
-    rank = max(1, -(-int(round(percentile / 100 * n)) // 1))
-    rank = min(rank, n)
+    rank = min(n, max(1, -(-percentile * n // 100)))
     return sorted_values[rank - 1]
 
 
@@ -395,6 +450,8 @@ class TokenizationAnalysisReport:
     distribution: TokenDistribution | None
     issues: tuple[TokenizationAnalysisIssue, ...]
     certifies_training_fit: bool
+    tokenizer_json_sha256: str | None = None
+    chat_template_sha256: str | None = None
 
 
 def _extract_messages(
@@ -480,6 +537,26 @@ def analyze_tokenization(
             certifies_training_fit = False
             continue
 
+        bad_content_positions = [
+            position
+            for position, message in enumerate(messages)
+            if not isinstance(message.get("content"), Sequence)
+            or isinstance(message.get("content"), str | bytes)
+        ]
+        if bad_content_positions:
+            issues.append(
+                TokenizationAnalysisIssue(
+                    batch_position=batch_position,
+                    record_index=record_index,
+                    code="invalid_content",
+                    message="message content must be a list of content parts; non-list "
+                    f"content at message positions {bad_content_positions} would be "
+                    "tokenized as empty text and under-report the real token count",
+                )
+            )
+            certifies_training_fit = False
+            continue
+
         try:
             message_token_counts = tokenizer.prefix_token_counts(messages)
         except ChatTemplateRenderError as exc:
@@ -537,4 +614,6 @@ def analyze_tokenization(
         distribution=distribution,
         issues=tuple(issues),
         certifies_training_fit=certifies_training_fit,
+        tokenizer_json_sha256=getattr(tokenizer, "tokenizer_json_sha256", None),
+        chat_template_sha256=getattr(tokenizer, "chat_template_sha256", None),
     )
