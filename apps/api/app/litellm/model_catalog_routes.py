@@ -153,7 +153,6 @@ from app.auth.tenant_isolation_query_guards import TenantContextError  # noqa: E
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
 from app.litellm.connection_crud import (  # noqa: E402
     ConnectionNotFoundError,
-    ConnectionStateError,
     get_connection,
 )
 from app.litellm.connection_routes import (  # noqa: E402
@@ -405,7 +404,7 @@ def build_model_catalog_router(
             "model_groups": groups,
             "entries": [_serialize_entry(e) for e in entries],
         }
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.post(_PROBE_PATH)
     async def probe(
@@ -469,8 +468,6 @@ def build_model_catalog_router(
                     ) from exc
         except (ConnectionNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        except ConnectionStateError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         secret_config = secret_manager_config_factory()
         policy = validation_policy_factory()
@@ -513,6 +510,6 @@ def build_model_catalog_router(
                 policy=policy,
             )
 
-        return JSONResponse(_serialize_probe_result(probe_type, result), status_code=200)
+        return JSONResponse(_serialize_probe_result(probe_type, result))
 
     return router
