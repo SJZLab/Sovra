@@ -24149,3 +24149,74 @@ sessions: `01Gy4xXk` (0103A), `01BGMHsj` (0500D, 1206A-F2, H034-F1, 1807), `012g
 
 **Mutation gate, first real use:** FTF-0103A's production change ran 51 mutants and killed all 51. Tests-only rounds
 correctly show `targets=[]`; for those, verifiers run the gate in whole-file mode.
+
+## 2026-10-06T21:00Z — Control plane: FTF-0103A and FTF-H034-F2 CERTIFIED; FTF-0510 returned (tests only)
+- **FTF-0103A: CERTIFIED** (round 2, PR #509, merge 5e598e0). Every header and query org override is RED in the unit
+  and live suites. Ten prior faults are RED. See the ledger.
+- **FTF-H034-F2: CERTIFIED** (PR #510, merge 090de1c). Follow-up FTF-H034-F3: pin `scripts/task_claim.py:365` for an
+  empty hash, using a tasks.json entry with non-CERTIFIED status and `evidence_hash=""`, and assert evidence is
+  unchanged and never contains `""`.
+- **FTF-0510: NOT CERTIFIED (round 5, tests only).** Production code is correct: the recorded oracle was
+  re-derived from transformers 4.46.3 `apply_chat_template` and matches exactly, no dependency was added, and there
+  are no stubs. Faults that stay GREEN, each needing a test:
+  1. Distribution through the report: swapping p90 and p99, p50 off by one, or p99 off by one all stay GREEN. Fix:
+     an `analyze_tokenization` test with at least 10 conversations, asserting count, min, max, mean, p50, p90 and p99
+     exactly.
+  2. Truncation policy keyed by `record_index` instead of `batch_position` stays GREEN. Fix: a multi-row batch where
+     the indexes differ and the policy exists for one position only.
+  3. Silently dropped rows. Fix: tests for a non-Mapping candidate (`invalid_candidate`), `content=None`, extra
+     content keys, a string inside `messages`, and a single-message conversation. Each must produce its issue and
+     certify=False, never a crash or a silent skip.
+  4. `distribution.count` replaced by `len(records)` stays GREEN. Fix: a mixed batch of one good row and one issue
+     row, asserting count == 1.
+  5. Template inputs. Fix:
+     - a multi-line template with block newlines (trim_blocks / lstrip_blocks), pinned against a recorded
+       transformers value;
+     - a template that references `tool_call_id`, `name` and `add_generation_prompt`;
+     - `bos_token` and `eos_token` given as AddedToken dicts (`{"content": "<s>"}`);
+     - a row that raises `jinja2.UndefinedError` at render.
+  - Non-blocking (F1): certification should require verified non-None digests; assert the ApproximateAliasTokenizer
+    counts; reject a bool `max_sequence_length`.
+  - Show each fault above RED before submitting (STEP 5b).
+
+## 2026-10-06T21:30Z — Control plane: product-truth gate tightened (#514); 7 certified tasks attested WIRED
+- The gate counted docstrings, the defining file and `.pyc` bytes as callers. It now uses AST and whole-word
+  resolution (governance PR #514).
+- An independent wiring verifier proved live call chains plus fault → RED for FTF-0005, 0102, 0103, 0104, 0105, 0202
+  and H006. Their proving_symbols are recorded, and product-true goes from 27 to 34 (see the ledger).
+- Not recorded:
+  - FTF-H003: the storage tenant policy is unwired, and the cache and alias layers are not built.
+  - FTF-04A03 and FTF-04A04: their UI is unmounted.
+- Relay: wiring work that reaches these tasks must make the missing parts live. FTF-0214 stays 0d.
+
+## 2026-10-06T23:00Z — Control plane: FTF-H034-F3 CERTIFIED; FTF-0214 returned (round 2, 3 blocking)
+- **FTF-H034-F3: CERTIFIED** (PR #517, merge 4e46906). New follow-up FTF-H034-F4 (Backlog, tests only): kill or
+  justify the 12 claim-registry survivors in scripts/task_claim.py lines 80–270.
+- **FTF-0214: NOT CERTIFIED (PR #516, head b396e93; the producer session is independent).**
+  - What holds:
+    - Every unit is live through `create_app()`: enrich_visible_models, enrich_visible_model_groups,
+      reconcile_aliases, LastKnownGoodCatalog, CatalogAnomalyDetector, probe_chat, probe_stream_chat,
+      probe_tool_call, probe_structured_output, require_model_access and build_access_snapshot.
+    - product_truth_check on the merged tree is 45/45. Most unit faults turn RED in the task or integration suite.
+    - Both relay fixes are confirmed: reverting the metadata_status validation turns RED, and the removed except was
+      dead code.
+  - Blocking:
+    1. "No hidden stale access" is violated. After a connection is revoked, the catalog returns
+       `connection_status: revoked` but `access_state: healthy`, with entries `callable`. The UI never renders
+       connection_status, so the user sees "healthy" and an enabled probe button. Faults that skip the
+       revoked-connection check, or return an empty revoked snapshot, stay GREEN everywhere because the revoked
+       fixture was never discovered.
+    2. "Shows capability/probe evidence": the UI does not render `fields`, `model_groups` or the probe's route
+       identity, timestamp or type. These faults stay GREEN in vitest: access_state hardcoded to healthy, alert
+       hidden, anomaly hidden, and the probe kind ignored.
+    3. A model ID containing "/" gets a 404 on probe, because the route lacks `{model_id:path}` and the UI does not
+       encode the ID.
+  - Mutation gate: 88 run, 80 killed, 8 survived. All 8 are EQUIVALENT M9 mutants: `(str, Enum)` equality and values
+    pre-validated at lines 306, 309-312 and 433. Control plane adds line-pinned allowlist entries once the round 2
+    line numbers are final.
+  - UI mount (Law 6): apps/web has no pages, so the component is unmounted. The contract does not require a page, so
+    this does not block certification; it stays disclosed until FTF-H029.
+  - Non-blocking (F1):
+    - The integration "viewer cannot probe" check passes for the wrong reason (no discovery yet). Assert the role-gate
+      detail instead.
+    - Add a route-level test that admin metadata (api_key/api_base) never reaches the response.

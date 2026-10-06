@@ -9975,3 +9975,66 @@ PR is not landed by the next certifier shift.
   - base-digest validation is pinned behaviorally;
   - mutation gate 114/129, with only equivalent survivors or F1 items.
 - Follow-up, not blocking: FTF-1002-F1.
+
+## FTF-0103A — Live session principal and Membership persistence — CERTIFIED (2026-10-06)
+- Criterion: FTF-0103A (addendum, ADR 0003). Production code: PR #499. Round 2 tests: PR #509, merge commit
+  5e598e083ccb78e9f14fd0ecea3b46ab271c99b6 (head `6d0d23b`). This closes rounds 1–2.
+- Validated-by: control-plane session https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. Independent: the
+  producer is `session_013ZizErE5CXhBTxtfAC1eot`.
+- CI: run 37526623884 passed, 47/47 checks.
+- Independent verifier (top tier, security). Both the unit and live suites were run locally against real
+  Postgres 16, the real `create_app()` and the real OIDC provider.
+  - Seven org-override faults in `apps/api/app/auth/rbac_middleware.py` were injected:
+    - org taken from `X-Organization-Id`, `X-Tenant-Id`, `X-Sovra-Organization-Id`, `?organization_id=` or `?tenant_id=`;
+    - a header-only role lookup;
+    - a header honoured in `organization_id_from_path`.
+    All seven are RED in both suites.
+  - Ten prior-criteria faults are RED in at least one suite:
+    - FORCE RLS, the SELECT-only grant, 401 without a session, non-member, insufficient role, a default resolver
+      left on a router, revocation, expiry, revoked membership, and a revoked-only login.
+  - Mutation gate: `session_principal.py` and `membership_store.py` have 0 survivors. `rbac_middleware.py` (FTF-0103
+    code) is 37/42; all 5 survivors are equivalent and none is in org derivation.
+- Product-true: proving_symbol `SessionPrincipalResolver` is passed to every /api/v1 router by `create_app()`.
+- Follow-ups, not blocking:
+  - FTF-0103A-F1: a unit check for the SQL `organization_id = :org` filter (RLS already enforces it), and a unit
+    case for an insufficient role.
+  - Make the in-process session revocation store durable before any multi-replica deploy.
+
+## FTF-H034-F2 — sync_certified_status tracker-update branch pinned — CERTIFIED (2026-10-06)
+- Follow-up of FTF-H034. PR #510, merge commit 090de1c (head `42637f6`). Producer: `session_013ZizErE5CXhBTxtfAC1eot`.
+- CI: gate 112480998215 and mutation-gate 112480998522 passed.
+- Verifier: whole-file gate on scripts/task_claim.py leaves 0 survivors in lines 312–396 (the 12 survivors are all
+  in Claim/TaskClaimRegistry); W1–U2 and 7 extra update-branch faults are RED.
+- Follow-up, not blocking: FTF-H034-F3. Replacing line 365's ternary with `[evidence_hash]` writes `[""]` into
+  tasks.json and the tests stay GREEN; the gate has no ternary operator, so it never generated this mutant.
+
+## Wiring attestation — 7 certified tasks proven on the live path (2026-10-06)
+- Scope: product-true only (proving_symbol). Certification state is unchanged. Validated-by: control-plane session
+  https://claude.ai/code/session_01QVznorVMjnmcttUhyDnoGR. An independent verifier traced each call chain from
+  `create_app()` (apps/api/app/main.py) and ran it live: real uvicorn, real Postgres 16, real OIDC login, POST /projects
+  201. Each symbol was then broken and the run turned RED.
+- Gate: product_truth_check after #514 (AST-resolved callers, merge ab158c4) reports 34/34.
+
+| Task | proving_symbol | Live chain (abridged) | Fault → RED |
+|---|---|---|---|
+| FTF-0005 | `Settings` | main.py:177 `Settings.from_env()` → :184 engine → every router | from_env raises → test_ftf_0005 and the live harness |
+| FTF-0102 | `set_tenant_context` | project_routes:215 → tenant_context:89 → query_guards:136/156 | empty org bind → test_ftf_0102 and the live harness |
+| FTF-0103 | `require_role` | every *_routes `require_role` dep, real resolver main.py:191/196 | role check removed → test_ftf_0103 and the live harness |
+| FTF-0104 | `write_audit_event` | project_routes:216 → project_crud:219 (about 44 CRUD callers) | `session.add` removed → live probe and test_audit_event_writer (proving_test widened) |
+| FTF-0105 | `execute_tenant_scoped` | project_crud:132/151/242, membership_store:74; pool guard main.py:185 | raises → test_ftf_0105 and the live harness |
+| FTF-0202 | `store_secret_ref` | main.py:246 → dataset_source routes:220 → crud:293/250 → secret_manager:437 | KV write skipped → live probe and test_ftf_0202 |
+| FTF-H006 | `guarded_fetch` | component_binding routes:251 → crud:413/400 → outbound_guard:271 (plus connectors) | raises or allow-all → test_ftf_h006 and test_component_bindings |
+
+- Not recorded (Law 6/7):
+  - FTF-H003: only the IDOR core is live. `packages/storage/tenant_policy.py` has no importer, and the cache and
+    model-alias layers have no code.
+  - FTF-04A03 and FTF-04A04: the backend routes are live, but the UI selector is unmounted (apps/web has no pages).
+    They are wired by FTF-0214 / FTF-H029.
+
+## FTF-H034-F3 — sync_certified_status empty-hash pinned in tasks.json — CERTIFIED (2026-10-06)
+- Follow-up of FTF-H034. PR #517, merge commit 4e469067b57c180f12fe2fd61962ef30f88c3970 (head `58e51d2`).
+  Producer: `session_01GiJi9rC1YARspnfGcZoRaD`. CI: 47/47 passed, including gate and mutation-gate.
+- Verifier: `[evidence_hash]`, `[]`, append, and dropped-write faults at task_claim.py:365 are all RED. The F2 faults
+  are still RED. The whole-file gate leaves 0 survivors in lines 312–396.
+- Follow-up, not blocking: FTF-H034-F4. Twelve pre-existing survivors in the claim registry (lines 80–270:
+  Claim.is_expired, TaskClaimRegistry.__init__, _dependencies_ready_locked, complete, snapshot).
